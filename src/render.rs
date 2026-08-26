@@ -1156,18 +1156,38 @@ fn render_footnotes_section(
             // attributes), from AST-JSON ingest (`"type":"footnote"` with an
             // empty `children`), and from a profile whose disallowed action is
             // Strip removing every block of the body. All three arrive here.
-            if blocks.is_empty() {
+            // Render first, then drop the blocks that wrote NOTHING. A
+            // comment is invisible, so joining its empty string left an empty
+            // line in the `li` that the same document with a real blank line
+            // does not produce - an invisible construct having an effect the
+            // visible one lacks (markup-carve/carve-rs#1439). Dropping here
+            // also moves the backlink onto the last VISIBLE block, so a body
+            // ending in a comment does not strand the arrow in a paragraph of
+            // its own.
+            //
+            // The empty case below therefore means "no VISIBLE block", which
+            // subsumes the zero-block one: a body spelled `[^f]: %% c` reaches
+            // it too.
+            let mut visible: Vec<(&BlockNode, String)> = Vec::new();
+            for block in blocks {
+                let mut rendered = String::new();
+                render_block(&mut rendered, block, 3, options, state);
+                if rendered.is_empty() {
+                    continue;
+                }
+                visible.push((block, rendered));
+            }
+            if visible.is_empty() {
                 out.push('\n');
                 indent(&mut out, 3);
                 out.push_str("<p>");
                 out.push_str(&render_backlinks(&entry.backrefs, options));
                 out.push_str("</p>");
             }
-            for (block_idx, block) in blocks.iter().enumerate() {
+            let visible_len = visible.len();
+            for (block_idx, (block, mut rendered)) in visible.into_iter().enumerate() {
                 out.push('\n');
-                let mut rendered = String::new();
-                render_block(&mut rendered, block, 3, options, state);
-                if block_idx + 1 == blocks.len() {
+                if block_idx + 1 == visible_len {
                     let backlink = render_backlinks(&entry.backrefs, options);
                     // The backlink goes INSIDE the body's last paragraph -
                     // but only when that last block IS a paragraph. When it

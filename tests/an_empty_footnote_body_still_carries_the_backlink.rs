@@ -130,13 +130,16 @@ fn control_a_body_ending_in_a_quote_keeps_its_synthesized_paragraph() {
 }
 
 #[test]
-fn control_a_body_that_is_only_a_comment_was_already_correct() {
-    // Not a zero-block body: one Comment block that renders nothing. It already
-    // took the synthesized-paragraph branch before this fix, blank line and
-    // all, and carve-js emits the same blank line.
+fn control_a_body_that_is_only_a_comment_takes_the_same_shape() {
+    // Not a zero-block body: one Comment block that renders nothing. It used to
+    // reach the synthesized paragraph with a BLANK LINE above it, because the
+    // invisible block was joined in as an empty string; since
+    // markup-carve/carve-rs#1439 the invisible block is dropped, so a body with
+    // no visible block takes the zero-block shape exactly. carve-js and
+    // carve-php emit the same bytes.
     assert_eq!(
         endnote(&html("r[^f]\n\n[^f]: %% c\n")),
-        "<li id=\"fn1\">\n\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
