@@ -166,6 +166,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The continuation marker attaches one block in every container (#1431,
+  markup-carve/carve#1782, PART 9 §17 L3/L4). A footnote body and both
+  definition-description spellings took the whole run up to their own
+  boundary where a list item took one block; a second block now costs a
+  second marker.
+- The authored block base belongs to the innermost open container (#1432,
+  #1433, markup-carve/carve#1781, markup-carve/carve#1791, PART 9 §24 C3). A
+  definition description is a container the rebase pass measures, so a block
+  at its content column stays inside it instead of being lifted into the
+  outer body. A definition entry is measured at its exact authored extent
+  rather than a coarse list band, a blank line loosens a block without
+  changing its owner, and below-column prose stays a lazy continuation while
+  a recognized opener returns to the enclosing container.
 - The canonical writer's own output parses back to the same tree (#1277, PART 11
   §1, markup-carve/carve#1602).
 - A whitespace-only block no longer costs two lists their hard boundary (#1292,
