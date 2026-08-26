@@ -494,8 +494,73 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
 
     clear_unbacked_footnote_numbers(&mut doc);
     renumber_captions(&mut doc);
+    promote_ingested_block_images(&mut doc);
 
     Ok(doc)
+}
+
+/// PART 12 section 23 on ingest: TRUST `blockImage`, and promote only where it
+/// is ABSENT (carve-rs#1444).
+///
+/// This is a resolution result, and it is the one kind that must NOT be
+/// recomputed the way the two passes above recompute theirs. The difference is
+/// what ABSENCE means. A stale footnote or caption number is a claim the tree
+/// can be checked against, so it is cleared or re-derived. A missing
+/// `blockImage` is not a claim at all: every AST JSON document written before
+/// the promotion phase existed omits it, so absence says the producer did not
+/// run the phase, NOT that the paragraph is ordinary. A tree is therefore never
+/// refused for omitting it.
+///
+/// So the pass is deliberately one-directional. Where the field arrived it is
+/// left exactly as it is, including on a paragraph this engine would have read
+/// differently - the producer resolved against ITS document's definitions, and
+/// re-deciding here would substitute this tree's (possibly edited-down)
+/// reference table for the answer the producer published. Where it is absent,
+/// the promotion phase's own predicate fills it in.
+///
+/// ABSENCE IS EXACTLY `false` ON THE DECODED NODE, and not by accident of the
+/// default: the schema pins the field at `const: true`, so a payload carrying
+/// `blockImage: false` is refused before this runs (`WIRE_CONST_FIELDS`). The
+/// only two shapes that reach here are `true` and nothing at all, so a `false`
+/// node can only be a field that was never sent.
+///
+/// A WORKLIST over the whole tree, footnote bodies included, for the reason the
+/// promotion phase gives: a lone image can sit inside any container and inside a
+/// footnote body, and the tree is as deep as the document.
+fn promote_ingested_block_images(doc: &mut Document) {
+    let mut worklist: Vec<&mut [BlockNode]> = vec![doc.children.as_mut_slice()];
+    for blocks in doc.footnote_defs.values_mut() {
+        worklist.push(blocks.as_mut_slice());
+    }
+    while let Some(level) = worklist.pop() {
+        for block in level {
+            if let BlockNode::Paragraph(p) = block {
+                if !p.block_image {
+                    p.block_image = p.children.len() == 1
+                        && matches!(&p.children[0], InlineNode::Image(img) if !img.src.is_empty());
+                }
+            }
+            match block {
+                BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
+                BlockNode::Admonition(a) => worklist.push(a.children.as_mut_slice()),
+                BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
+                BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
+                BlockNode::List(l) => {
+                    for item in &mut l.items {
+                        worklist.push(item.children.as_mut_slice());
+                    }
+                }
+                BlockNode::DefinitionList(d) => {
+                    for item in &mut d.items {
+                        for def in &mut item.definitions {
+                            worklist.push(def.as_mut_slice());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Re-derive `caption_number.number` for an ingested tree.
@@ -983,6 +1048,13 @@ fn encode_paragraph_task<'a>(
     depth: usize,
 ) {
     let mut w = typed(out, "paragraph");
+    // Written ONLY when true (PART 12 section 23): a paragraph that is not a
+    // block image omits the field rather than carrying `false`, which is what
+    // the schema's `const: true` says. Ahead of `children` so the streaming and
+    // the direct writer below emit the same key order.
+    if n.block_image {
+        w.field("blockImage", |out| write_bool(out, true));
+    }
     w.field("children", |out| out.push('['));
     finish_attrs_pos(tasks, &n.attrs, &n.pos);
     push_array(tasks, &n.children, |node| {
@@ -1702,6 +1774,9 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
 
 fn write_paragraph(out: &mut String, n: &Paragraph) {
     let mut w = typed(out, "paragraph");
+    if n.block_image {
+        w.field("blockImage", |out| write_bool(out, true));
+    }
     w.field("children", |out| write_inlines(out, &n.children));
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -2500,6 +2575,14 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             // about the source this tree no longer has, and the one thing it
             // could still do is promote a figure the author did not write.
             at_content_column: false,
+            // TRUSTED, and promotion runs only where it is ABSENT (PART 12
+            // section 23). Unlike `at_content_column` above, this IS on the
+            // wire: it is a resolution result the producer published, not a fact
+            // about source this tree no longer has. See
+            // `promote_ingested_block_images`, which fills in the absent case -
+            // absence means the producer did not run the phase, not that the
+            // paragraph is ordinary, so a tree is never refused for omitting it.
+            block_image: optional_bool(obj, "blockImage")?.unwrap_or(false),
             pos: optional_pos(obj, "paragraph")?,
         })),
         "heading" => Ok(BlockNode::Heading(Heading {

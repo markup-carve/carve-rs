@@ -2218,6 +2218,7 @@ impl<'a> Importer<'a> {
                 attrs,
                 children: inlines,
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             };
             if let Some((attributed, overwritten)) = candidate {
@@ -2642,6 +2643,7 @@ impl<'a> Importer<'a> {
                     attrs: None,
                     children: vec![InlineNode::Math(math)],
                     at_content_column: true,
+                    block_image: false,
                     pos: None,
                 })]);
             }
@@ -4150,6 +4152,7 @@ impl<'a> Importer<'a> {
             attrs: None,
             children: figure.caption,
             at_content_column: true,
+            block_image: false,
             pos: None,
         });
         match *figure.target {
@@ -4428,6 +4431,7 @@ impl<'a> Importer<'a> {
                         attrs: None,
                         children: caption,
                         at_content_column: true,
+                        block_image: false,
                         pos: None,
                     }));
                     return Ok((blocks, true));
@@ -4449,6 +4453,7 @@ impl<'a> Importer<'a> {
             attrs: None,
             children: caption,
             at_content_column: true,
+            block_image: false,
             pos: None,
         }));
         Ok((blocks, true))
@@ -7107,12 +7112,14 @@ fn synthesized_wrapper(children: Vec<InlineNode>) -> BlockNode {
             attrs: None,
             children: vec![only],
             at_content_column: true,
+            block_image: false,
             pos: None,
         }),
         Err(children) => BlockNode::Paragraph(Paragraph {
             attrs: None,
             children,
             at_content_column: true,
+            block_image: false,
             pos: None,
         }),
     }

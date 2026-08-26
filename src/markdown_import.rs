@@ -313,6 +313,7 @@ impl Builder {
                 attrs: None,
                 children,
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             })),
             Frame::Heading(level, children) => self.block(BlockNode::Heading(Heading {
@@ -527,6 +528,7 @@ impl Builder {
                 attrs: None,
                 children: vec![node],
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             })),
         }
@@ -576,6 +578,7 @@ fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>
         attrs: None,
         children: std::mem::take(pending),
         at_content_column: true,
+        block_image: false,
         pos: None,
     }));
 }

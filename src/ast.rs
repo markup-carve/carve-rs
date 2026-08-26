@@ -226,6 +226,29 @@ pub struct Paragraph {
     /// four fields over `..Default::default()` at a parse site, so a paragraph
     /// that begins at its content column cannot silently claim otherwise.
     pub at_content_column: bool,
+    /// Set by the BLOCK-IMAGE PROMOTION phase, and by nothing else (PART 9R R7,
+    /// PART 12 section 23): this paragraph's whole content resolves to a single
+    /// image, so it is a block-level image and not a paragraph.
+    ///
+    /// Published ONLY as `true` - a paragraph that is not a block image omits the
+    /// field on the wire rather than carrying `false`. It is a resolution result
+    /// published alongside the authored construct, the same added-alongside rule
+    /// that lets a resolved reference link keep `href` beside `ref` and `rawRef`
+    /// (section 3a).
+    ///
+    /// READ IT, do not re-derive it. Block-image status is a property of the
+    /// RESOLVED tree: `![a][r]` is a block image where `[r]: /u` is written and
+    /// ordinary prose where it is not, and the definition may sit anywhere in the
+    /// document, so re-deriving it means running reference resolution again.
+    ///
+    /// UNLIKE `at_content_column` ABOVE, THE DEFAULT IS THE SAFE ONE. The
+    /// promotion phase RECOMPUTES this for every paragraph it walks rather than
+    /// accumulating it, so a construction site that leaves it `false` is
+    /// corrected before anything is serialized - which is what keeps this from
+    /// repeating carve-rs#610, where a hand-built list lead paragraph left
+    /// `at_content_column` at its default and silently blocked promotion for
+    /// every list item in every document.
+    pub block_image: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

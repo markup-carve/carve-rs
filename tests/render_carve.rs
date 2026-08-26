@@ -685,6 +685,7 @@ fn colon_container_fence_ignores_containers_past_the_render_cap() {
             attrs: None,
             children: Vec::new(),
             at_content_column: true,
+            block_image: false,
             pos: None,
         });
         // Just under the ceiling: past it the writer refuses outright, and the
@@ -809,6 +810,7 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
                     pos: None,
                 })],
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             });
             for _ in 0..depth {

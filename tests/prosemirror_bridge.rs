@@ -744,8 +744,29 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // degrades): 422-4, 422-6, 424-7 and 426-4. Measured over all 1474
     // documents: 1176 / 298; no pre-existing document changed bucket and the
     // exact source-lossy set above remains unchanged.
-    const STRICT: usize = 1176;
-    const LOSSY: usize = 298;
+    // Categories 429-434 add 22 documents, and nothing else moves. Measured by
+    // dumping BOTH buckets at 607e7915 and at e539184 and diffing them: 1180/298
+    // over 1478 documents becomes 1192/308 over 1500, NO document leaves either
+    // bucket in either direction, and all 22 joiners are files the base corpus
+    // does not contain at all. (The recorded 1176 predates 607e7915 by four
+    // documents, all of them strict - a floor cannot see arrivals on its own
+    // side, which is what the exact-total assertion below is for.)
+    // Twelve of the 22 round-trip strictly. The other ten report an
+    // already-declared editor loss, every one of them with `dropped` empty and
+    // the single cause `soft_break`: an invisible line folding as text and a
+    // caption slot handed back as paragraph text both produce a MULTI-LINE
+    // PARAGRAPH, which is what a soft break is. The five 430 documents and the
+    // two 432 documents are the invisible-line band; the three 434 documents are
+    // PART 9R R7's give-back paths.
+    // The reported-cause table is otherwise identical across the two pins - the
+    // same twelve causes, the soft-break row 191 to 201 and every other row
+    // unchanged - so no new KIND of loss appeared, and the exact source-lossy
+    // set above remains unchanged.
+    // 434 is the only category that splits, and instructively: its fourth
+    // document is the resolved reference image inside a list item, which is one
+    // figure and no soft break, so it is the one of the four that lands strict.
+    const STRICT: usize = 1192;
+    const LOSSY: usize = 308;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

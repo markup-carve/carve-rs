@@ -192,6 +192,7 @@ fn drops_invalid_attribute_names_before_rendering() {
         footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: Some(carve::Attrs {
                 id: None,

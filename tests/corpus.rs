@@ -561,6 +561,12 @@ const IMPLEMENTED: &[&str] = &[
     // form differs from its source: the writer declines the indented spelling.
     "a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so",
     "a-lone-reference-image-at-column-0-in-every-spelling",
+    "a-comment-in-a-footnote-body-is-invisible-in-both-spellings",
+    "a-floating-attribute-under-a-definition-attaches-at-column-zero",
+    "an-abbreviation-definition-outside-document-level-is-not-an-invisible-line",
+    "an-invisible-line-before-the-blank-does-not-cancel-the-separation",
+    "an-unresolved-image-gives-its-whole-caption-slot-back-at-any-depth",
+    "below-a-definition-body-s-column-an-invisible-line-folds-as-text",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
