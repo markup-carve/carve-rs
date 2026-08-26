@@ -1586,12 +1586,17 @@ fn extract_footnote_defs(
                         i += 1;
                         let mut attached: Vec<String> = Vec::new();
                         let attached_start = i;
-                        let end =
-                            attached_block_end(&lines, i, &mut comment_closers, &mut |a, _| {
+                        let end = attached_block_lines(
+                            &lines,
+                            i,
+                            &mut comment_closers,
+                            options,
+                            &mut |a, _| {
                                 is_blank_line(a)
                                     || is_plus_marker(a)
                                     || parse_footnote_def_line(a).is_some()
-                            });
+                            },
+                        );
                         while i < end {
                             let a = lines[i];
                             attached.push(a.to_string());
@@ -8346,39 +8351,24 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
-            let end = attached_block_end(
+            // A QUOTE LINE IS A BLOCK LIKE ANY OTHER, so it is not a boundary.
+            // This closure used to end the run at `strip_blockquote_prefix`, and
+            // the one kind of block the marker refused to attach was the kind
+            // written with the container's own marker: `> a` / `+` / `> q`
+            // attached NOTHING and folded `q` into the quoted paragraph, where
+            // §17 L3 says the marker only ever attaches
+            // (markup-carve/carve-rs#1428). A `>` line AFTER the attached block
+            // still continues the quote - the narrowing stops in front of it,
+            // and the quote's own loop reads it on the next turn.
+            let attach_end = attached_block_lines(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
+                options,
                 &mut |next, _| {
-                    is_blank_line(next)
-                        || strip_blockquote_prefix(next).is_some()
-                        || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+                    is_blank_line(next) || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 },
             );
-            // ONE BLOCK, AND THE BOUNDARY IS THAT BLOCK'S EXTENT (§17 L3, ruled
-            // in markup-carve/carve#1290). The scan above finds the boundary -
-            // the next blank line, `>` line or further `+` - and the marker
-            // attaches ONE block up to it, not everything up to it. The block
-            // may still be many lines long: a wrapped paragraph, a list, a
-            // nested quote, a fenced block. So the extent is measured by parsing
-            // one block out of it rather than by taking the whole run.
-            //
-            // The list-item form already counted this way - `parse_continuation_
-            // block` calls the single-block parser and advances by what it
-            // consumed - and this branch was the one place where the two
-            // spellings of the same clause disagreed: `> quoted` / `+` / `para`
-            // / `# H` pulled the heading into the quote as well.
-            //
-            // Under a MEASUREMENT PROBE the whole extent is spliced instead. The
-            // probe only wants a line count, and this marker's own division of
-            // its content cannot change how many lines the block above it spans
-            // - measuring here as well would double the work per nesting level.
-            let attach_end = if measuring_attached_block() {
-                end
-            } else {
-                cur.pos + attached_one_block_lines(&cursor_lines[cur.pos..end], options)
-            };
             while cur.pos < attach_end {
                 let next = cur.lines[cur.pos];
                 // Attached lines are spliced in verbatim, so the container took
@@ -9028,6 +9018,44 @@ fn attached_block_end(
         end += 1;
     }
     end
+}
+
+/// One past the last line the `+` marker at `start - 1` attaches: the container's
+/// own boundary, narrowed to the ONE block PART 9 §17 L3 counts.
+///
+/// THE MARKER IS ONE OPERATION IN EVERY CONTAINER (markup-carve/carve#1782).
+/// Ownership of the next flush-left block passes to the container whose marker
+/// column the line sits at - one block, whatever kind it is - so the two halves
+/// of that measurement live together here instead of being re-paired at each
+/// call site. [`attached_block_end`] finds where the container's terminators
+/// stop the run; [`attached_one_block_lines`] cuts the run down to the single
+/// block.
+///
+/// Pairing them by convention is what markup-carve/carve-rs#1428 was. The
+/// measurement was spelled five times and narrowed in two: the list item
+/// structurally, by parsing one block out of the run, and the block quote by
+/// measuring. So L3's own example, `+` / `para` / `> q`, left the quote outside
+/// a list item and gave it to a footnote body and a definition description.
+/// Nothing distinguished those containers; the narrowing had simply been
+/// written twice.
+///
+/// Under a MEASUREMENT PROBE the whole extent is returned instead. The probe
+/// wants a line count for the block ABOVE this marker, and how this marker
+/// divides its own content cannot change that count - narrowing here as well
+/// would re-parse the attached block once per nesting level. See
+/// [`attached_one_block_lines`] for the cost that avoids.
+fn attached_block_lines(
+    lines: &[&str],
+    start: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    options: &Options<'_>,
+    is_boundary: &mut dyn FnMut(&str, usize) -> bool,
+) -> usize {
+    let end = attached_block_end(lines, start, comment_closers, is_boundary);
+    if measuring_attached_block() {
+        return end;
+    }
+    start + attached_one_block_lines(&lines[start..end], options)
 }
 
 /// Parse ONE block attached by a list `+` continuation marker, bounded to the
@@ -12906,10 +12934,11 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let mut body = if is_plus_marker(def_trimmed) {
                 let mut fb = LineBuffer::default();
                 let lines = cur.lines;
-                let end = attached_block_end(
+                let end = attached_block_lines(
                     lines,
                     cur.pos,
                     &mut cur.comment_closer_last_index,
+                    options,
                     &mut |a, _| {
                         is_blank_line(a)
                             || is_plus_marker(a)
@@ -13279,10 +13308,11 @@ fn collect_definition_body(
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
-            let end = attached_block_end(
+            let end = attached_block_lines(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
+                options,
                 &mut |a, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
