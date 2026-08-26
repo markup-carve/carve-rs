@@ -461,6 +461,32 @@ impl ProfileFilter<'_> {
             let max_nesting = self.profile.max_nesting();
             let canonical = canonical_inline_type(&inlines[i]);
 
+            // Citation items are typed nodes in a homogeneous group array. A
+            // text replacement cannot occupy that array without invalidating
+            // the AST, and type policies apply to every citation, so handle the
+            // group at its ordinary inline slot while reporting each item.
+            if let InlineNode::CitationGroup(group) = &inlines[i] {
+                if !self.profile.is_type_allowed_on("citation", false) {
+                    let count = group.items.len();
+                    for _ in 0..count {
+                        self.record("citation", "element_not_allowed")?;
+                    }
+                    match self.profile.disallowed_action() {
+                        DisallowedAction::Strip => {
+                            inlines.remove(i);
+                            continue;
+                        }
+                        DisallowedAction::ToText => {
+                            let raw = group.raw.clone();
+                            inlines[i] = InlineNode::text(raw);
+                            i += 1;
+                            continue;
+                        }
+                        DisallowedAction::Error => unreachable!("record returned the error"),
+                    }
+                }
+            }
+
             if max_nesting > 0 && depth > max_nesting {
                 let ty = canonical.unwrap_or("unknown").to_string();
                 match self.handle_inline_violation(&inlines[i], &ty, "max_nesting_exceeded")? {
@@ -546,6 +572,19 @@ impl ProfileFilter<'_> {
             InlineNode::Footnote(f) => {
                 if let Some(inline) = &mut f.inline {
                     self.filter_inlines(inline, depth)?;
+                }
+            }
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        self.filter_inlines(prefix, depth)?;
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        self.filter_inlines(locator, depth)?;
+                    }
+                    if let Some(suffix) = &mut item.suffix {
+                        self.filter_inlines(suffix, depth)?;
+                    }
                 }
             }
             _ => {}

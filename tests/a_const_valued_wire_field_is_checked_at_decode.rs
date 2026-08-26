@@ -61,7 +61,7 @@ const LIST: &str = r#"{"type":"list","ordered":true,"bareMarker":VALUE,"tight":t
 
 const DEFINITION_LIST: &str = r#"{"type":"definition_list","loose":VALUE,"items":[{"type":"definition_term","children":[{"type":"text","value":"t"}]},{"type":"definition_description","children":[{"type":"paragraph","children":[{"type":"text","value":"d"}]}]}]}"#;
 
-const CITATION_GROUP: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","mode":VALUE,"raw":"[@a]","items":[{"key":"a","suppressAuthor":false}]}]}"#;
+const CITATION_GROUP: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","mode":VALUE,"raw":"[@a]","items":[{"type":"citation","key":"a","suppressAuthor":false,"pos":{"startLine":1,"endLine":1,"startColumn":1,"endColumn":3,"startOffset":0,"endOffset":2}}]}]}"#;
 
 /// Every case: the shape, the property, its one legal value, and the node with
 /// the property removed entirely.

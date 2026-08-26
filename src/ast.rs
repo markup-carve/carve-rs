@@ -1183,6 +1183,8 @@ pub struct Citation {
     /// Per-key, document-wide use-site index (1-based), assigned only when a
     /// bibliography pool is supplied; drives back-link anchors (#199).
     pub use_index: Option<usize>,
+    /// Span of this semicolon-delimited citation item in the original source.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

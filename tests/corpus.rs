@@ -494,6 +494,9 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#1377: a content-column heading leaves no paragraph
     // open for the following flush-left line.
     "a-heading-at-an-item-s-content-column-leaves-no-paragraph-open",
+    // The parser already follows #1799's matching rule for wrapped attribute
+    // lines; the spec bump adds the three byte-identical corpus assertions.
+    "a-wrapped-attribute-line-leaves-no-paragraph-open",
     // markup-carve/carve#1526 and #1542: a container's span - and a definition
     // list's - ends at its last PLACED child, not at the line the scan reached.
     "a-container-s-span-ends-at-its-last-placed-child",

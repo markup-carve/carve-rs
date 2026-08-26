@@ -14,6 +14,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("autolink", &["attrs", "href", "pos", "text", "type"]),
     ("block_quote", &["attrs", "children", "fenced", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
+    ("citation", &["key", "locator", "locatorLabel", "locatorValue", "number", "pos", "prefix", "suffix", "suppressAuthor", "type", "useIndex"]),
     ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),
     ("code", &["attrs", "pos", "type", "value"]),
@@ -82,7 +83,6 @@ pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
 /// keyed by the `type.property` that holds it.
 #[rustfmt::skip]
 pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
-    ("citation_group.items", &["key", "locator", "locatorLabel", "locatorValue", "number", "prefix", "suffix", "suppressAuthor", "useIndex"]),
     ("table.rowGroups.bodies", &["attrs", "bodyRows", "headRows", "rowHeadColumns"]),
 ];
 
