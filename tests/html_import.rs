@@ -65,36 +65,38 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
     );
 }
 
-/// Shared html-import fixtures this engine does NOT satisfy yet, each naming
-/// the ruling that added it and the ticket that tracks it.
+/// Shared html-import fixtures whose pinned golden and this engine disagree,
+/// each naming the ruling that explains the gap.
 ///
 /// EVERY ENTRY FAILS IN BOTH DIRECTIONS, the same arrangement `AHEAD_OF_PIN`
-/// keeps in `tests/corpus.rs` and `tests/optional_corpus.rs`, pointed the other
-/// way. The third column is what this engine writes TODAY, so a change to that
-/// output is caught exactly as the fixture would have caught it; and the value
-/// must still DIFFER from the fixture, so an entry the engine has caught up on
-/// FAILS and is deleted in the commit that implements the ruling.
+/// keeps in `tests/corpus.rs` and `tests/optional_corpus.rs`, and the same one
+/// carve-js keeps in `test/html-import-conformance.test.ts`. The third column
+/// is what this engine writes TODAY, so a change to that output is caught
+/// exactly as the fixture would have caught it; and the value must still DIFFER
+/// from the fixture, so an entry the fixture has caught up with FAILS and is
+/// deleted in the commit that moves the pin.
 ///
 /// An entry is therefore a statement about the ENGINE with a date on it. It is
 /// not a skip: a skip would go green whether or not the output moved, which is
 /// how a gate stops being able to fail.
-/// EMPTY, and that is a state worth having a word about rather than a hole.
 ///
-/// Every fixture this list held has been implemented - the caret escape
-/// (carve-rs#1311), the endnotes placement (carve-rs#1313), and both halves of
-/// the empty description (carve-rs#1312). The list stays because it is the
-/// mechanism a NEW fixture arrives through when the pin moves ahead of this
-/// engine, and because emptying it is what the two-directional check above is
-/// for: an entry that has caught up FAILS rather than going quiet.
-///
-/// AN ENTRY SKIPS THE TREE COMPARISON TOO, and the third column pins only the
-/// source exit. That is the honest reading of what the column is: an engine
-/// behind on a clause is normally behind on both exits, and a second recorded
-/// value for the tree would be a second thing to keep current for a list that
-/// is empty and is meant to stay that way. When an entry is next needed and its
-/// tree also differs, the column grows then - with the fixture that forced it,
-/// rather than speculatively now.
-const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[];
+/// AN ENTRY SKIPS THE TREE AND THE REPORT TOO, and the third column pins only
+/// the source exit. A clause that moves the written source usually moves the
+/// rows that describe it, and a second and third recorded value would be two
+/// more things to keep current; the engine tests for the ruling pin those
+/// directly instead.
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "empty-definition-description",
+        "an empty description body is written `: {empty}` (markup-carve/carve#1827)",
+        ":: term\n: {empty}\n",
+    ),
+    (
+        "empty-definition-description-not-last",
+        "the sentinel keeps the list whole, so nothing splits (markup-carve/carve#1827)",
+        ":: t1\n: {empty}\n:: t2\n: d2\n",
+    ),
+];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
@@ -144,20 +146,20 @@ fn shared_contract_fixtures_match() {
             serde_json::from_str(&fs::read_to_string(dir.join("expected.ast.json")).unwrap())
                 .unwrap();
         let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
-        if let Some((_, reason, current)) = BEHIND_THE_RULING
+        if let Some((_, reason, current)) = AHEAD_OF_PIN
             .iter()
             .find(|(fixture, _, _)| *fixture == name)
         {
             if result.value != *current {
                 mismatches.push(format!(
-                    "{name}: BEHIND_THE_RULING says this engine writes {current:?} ({reason}), \
+                    "{name}: AHEAD_OF_PIN says this engine writes {current:?} ({reason}), \
                      and it writes {:?} - update the entry or delete it",
                     result.value
                 ));
             }
             if result.value == expected {
                 mismatches.push(format!(
-                    "{name}: matches the fixture now - delete its BEHIND_THE_RULING entry"
+                    "{name}: matches the fixture now - delete its AHEAD_OF_PIN entry"
                 ));
             }
             continue;
@@ -257,7 +259,7 @@ fn shared_contract_fixtures_match() {
     );
 }
 
-/// A `BEHIND_THE_RULING` entry naming a fixture the shared tree does not have
+/// A `AHEAD_OF_PIN` entry naming a fixture the shared tree does not have
 /// is an entry nothing walks, so it can never fail and never be deleted.
 #[test]
 fn behind_the_ruling_names_only_fixtures_that_exist() {
@@ -268,14 +270,14 @@ fn behind_the_ruling_names_only_fixtures_that_exist() {
         .filter(|path| path.is_dir())
         .map(|path| path.file_name().unwrap().to_str().unwrap().to_string())
         .collect();
-    let orphaned: Vec<&str> = BEHIND_THE_RULING
+    let orphaned: Vec<&str> = AHEAD_OF_PIN
         .iter()
         .map(|(fixture, _, _)| *fixture)
         .filter(|fixture| !present.iter().any(|name| name == fixture))
         .collect();
     assert!(
         orphaned.is_empty(),
-        "BEHIND_THE_RULING names fixture(s) the shared tree does not have: {orphaned:?}"
+        "AHEAD_OF_PIN names fixture(s) the shared tree does not have: {orphaned:?}"
     );
 }
 
