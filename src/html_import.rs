@@ -3531,17 +3531,12 @@ impl<'a> Importer<'a> {
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
         let mut definitions: Vec<DefinitionDef> = Vec::new();
-        // Whether the description just read WRITES NOTHING, and whether a `<dt>`
-        // has since arrived to spend that on a break. See `render_definition_list`
-        // for why only a TERM spends it.
-        let mut dropped = false;
-        let mut splits_here = false;
+        // Every entry is written, so a `<dl>` imports and writes back as ONE
+        // list: no term acquires the next entry's description and nothing
+        // splits. See `render_definition_list`.
         for (tag, node, node_depth, entry_path) in entries.iter() {
             let p = entry_path.clone();
             if tag == "dt" {
-                if dropped {
-                    splits_here = true;
-                }
                 if !definitions.is_empty() {
                     items.push(DefinitionItem {
                         terms: std::mem::take(&mut terms),
@@ -3589,45 +3584,14 @@ impl<'a> Importer<'a> {
                 continue;
             }
             let children = self.blocks(&node.children.borrow(), &p, node_depth + 1)?;
-            // THE CONDITION IS "THIS ENTRY WRITES NOTHING", not "the description
-            // is empty", and it is the same question the writer asks. A `<dd>`
-            // holding an invisible paragraph or a list with no items writes
-            // nothing either, and the writer drops all three alike - so a
-            // DOM-shaped predicate here would let `<dd><p> </p></dd>` split the
-            // list while declaring nothing, which is the ceiling breaking in the
-            // direction no row can cover.
-            dropped = writes_nothing(&children);
-            if dropped {
-                self.unspellable.push((
-                    node.clone(),
-                    p.clone(),
-                    "A <dd> that writes nothing has no Carve spelling; the empty description is dropped, because the only line that could carry it is read as more of the term above it".into(),
-                    HtmlImportDiagnosticCode::StructureUnspellable,
-                ));
-            }
+            // A `<dd>` that writes nothing takes the `{empty}` sentinel, which
+            // reads back as a description holding no blocks, so the entry
+            // survives the round trip and owes no row (markup-carve/carve#1827).
             definitions.push(DefinitionDef {
                 attrs: self.attrs(node, &p),
                 children,
                 pos: None,
             });
-        }
-        if splits_here {
-            // THE GROUPING IS A REAL LOSS AND TAKES ITS OWN ROW. `structure-split`
-            // says one source structure was written as MORE THAN ONE, because
-            // writing it as one would have changed what its parts mean. It is not
-            // `structure-unspellable`: that code is for a shape the syntax cannot
-            // spell at all, and here every part is spellable, present and exact -
-            // what the source cannot say is that they were ONE list.
-            //
-            // Both rows are reported, and `report` sorts them into document
-            // order, which puts the `<dl>` ahead of the `<dd>` that is gone -
-            // the order the shared fixture states (markup-carve/carve#1638).
-            self.unspellable.push((
-                h.clone(),
-                path.to_owned(),
-                "A <dd> that writes nothing ends the list it is in; the entries after it are written as a second <dl>, because one list would give the term above it the next entry's description".into(),
-                HtmlImportDiagnosticCode::StructureSplit,
-            ));
         }
         if !terms.is_empty() || !definitions.is_empty() {
             items.push(DefinitionItem {
@@ -6968,28 +6932,6 @@ fn collapse(s: &str) -> String {
 /// nothing was dropped, and PART 11 §10j names the empty paragraph as the
 /// sibling shape whose treatment already keeps §1 - so it is left exactly as it
 /// was.
-/// Whether these blocks WRITE NOTHING, which is the question both the empty-`<dd>`
-/// diagnostic and the writer's own drop are asked over.
-///
-/// Deliberately not "is the description empty". An empty `<dd>`, one holding a
-/// paragraph of layout whitespace, and one holding a list with no items all
-/// reach the writer as different trees and all write nothing, so a predicate
-/// over the tree SHAPE declares one of the three and stays silent on the other
-/// two while the list splits underneath it just the same.
-///
-/// An empty slice writes nothing, which is the plain reading and the common
-/// case: `blocks` already drops a layout-only paragraph on the way in, so most
-/// of these arrive with no children at all.
-fn writes_nothing(blocks: &[BlockNode]) -> bool {
-    blocks.iter().all(|block| match block {
-        BlockNode::Paragraph(paragraph) => {
-            paragraph.children.is_empty() || is_layout_only(&paragraph.children)
-        }
-        BlockNode::List(list) => list.items.is_empty(),
-        _ => false,
-    })
-}
-
 fn is_layout_only(nodes: &[InlineNode]) -> bool {
     !nodes.is_empty()
         && nodes.iter().all(|n| match n {

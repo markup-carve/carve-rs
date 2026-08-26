@@ -2362,52 +2362,13 @@ fn roman_marker(mut n: usize) -> String {
     }
 }
 
-/// A DROPPED ENTRY BREAKS THE LIST (markup-carve/carve#1636, PART 12 §16).
-///
-/// Consecutive `::` lines SHARE the description written below them - that is the
-/// `<dl>` model the syntax mirrors - so dropping an entry that writes nothing
-/// and continuing the same list hands the surviving term the NEXT entry's
-/// description. `<dl><dt>t1</dt><dd></dd><dt>t2</dt><dd>d2</dd></dl>` came back
-/// as `:: t1` / `:: t2` / `:  d2`, and `t1` acquired `d2`.
-///
-/// AN ADDITION IS NOT A LOSS, AND NO ROW CAN DECLARE IT. A loss that stays
-/// inside a declared ceiling is acceptable because the reader is TOLD what is
-/// missing; an addition changes what the surviving term MEANS rather than what
-/// it fails to say, and a reader told the empty description was dropped has been
-/// told nothing about `t1` acquiring `d2`. So the ceiling binds in both
-/// directions: an importer may lose what it declares AND NO MORE, and it may add
-/// nothing at all.
-///
-/// THE SEPARATOR IS A COMMENT LINE, and it is the only construct that can be. A
-/// blank line neither ends a definition list nor loosens one - `:: t1`, blank,
-/// `:: t2`, `:  d2` is ONE list with two terms sharing `d2`, which is the
-/// outcome this rule forbids, and this writer removes the blank line again. The
-/// separator has to render nothing where it stands AND stay where it was
-/// written: a link-reference or footnote definition is hoisted to the end of the
-/// document and lets the two lists re-merge, frontmatter is document-start only,
-/// and an abbreviation definition is a fixed point but defines an abbreviation
-/// the input never had - an addition, which is the thing being avoided.
-///
-/// DEFERRED, AND SPENT ONLY ON A TERM. What the break prevents is a term ABOVE
-/// the drop acquiring a description written BELOW it, and only a `::` line
-/// starts a new entry that could carry one. A second description of the SAME
-/// entry is not that: `<dl><dt>t</dt><dd></dd><dd>d2</dd></dl>` is one entry
-/// whose term already has `d2`, so breaking there would strand `:  d2` outside
-/// the list, where it re-reads as a paragraph - a loss the rule was meant to
-/// prevent, not cause. It clears the mark instead. A dropped entry with nothing
-/// after it needs no separator either, which is the one-entry shape carve#1627
-/// already ruled: an unspent mark is simply dropped at the end.
+/// Every entry writes its own description line, so consecutive `::` lines never
+/// end up sharing one: a `<dl>` writes back as ONE list with the grouping it
+/// parsed from, and no term acquires the next entry's description.
 fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
     let mut out: Vec<String> = Vec::new();
-    let mut pending_break = false;
     for item in items {
         for term in &item.terms {
-            if pending_break {
-                out.push(String::new());
-                out.push("%%".to_string());
-                out.push(String::new());
-                pending_break = false;
-            }
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }
         for def in &item.definitions {
@@ -2419,7 +2380,6 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 let line = def.pos.as_ref().map(|pos| pos.start_line);
                 let written = line.and_then(|line| definition_at_line(line, ctx));
                 if let Some(written) = written {
-                    pending_break = false;
                     let mut written_lines = written.split('\n');
                     out.push(format!(": {}", written_lines.next().unwrap_or_default()));
                     // A footnote body can be multi-line; its continuation lines
@@ -2431,33 +2391,30 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 }
             }
             let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
-            // A DESCRIPTION THAT WRITES NOTHING IS NOT WRITTEN AT ALL
-            // (markup-carve/carve#1627). The bare `:` line it used to emit is
-            // not an empty description - the parser reads it as more of the TERM
-            // above it, so `<dl><dt>term</dt><dd></dd></dl>` came back as a
-            // `<dt>` reading `term\n:` with no `<dd>` at all: the description was
-            // lost AND the term was damaged, which is a loss the row does not
-            // declare. Six other spellings were probed on the ruling and none
-            // works. Writing the term alone loses exactly the empty description
-            // and nothing else, and `structure-unspellable` on the `<dd>` is
-            // what declares it.
+            // A DESCRIPTION THAT WRITES NOTHING TAKES THE SENTINEL `{empty}`
+            // (PART 11 §7b, markup-carve/carve#1827) - the same body
+            // `render_footnote_def_source` writes one construct over.
             //
-            // THE CONDITION IS "THIS ENTRY WRITES NOTHING", not "the description
-            // is empty". All three paths that reach this writer - an HTML
-            // import, an ingested AST, and `fmt` over parsed source - arrive
-            // with a DIFFERENT tree for the same shape, and only the written
-            // result is common to them. A `<dd>` holding an invisible paragraph
-            // or an empty list writes nothing either, and all three are dropped
-            // alike.
+            // The line is a block-attribute line: the block it would attach to
+            // does not exist, so the parse consumes it and the description
+            // reads back holding no blocks. It is empty above a blank line,
+            // above a flush-left paragraph and at end of input alike, so the
+            // writer needs no lookahead over what follows.
             //
-            // The AST keeps the empty description either way. This is the
-            // WRITER, so it is the exit `structure-unspellable` is about: the
-            // structure survives in the AST and not in written Carve.
+            // THE CONDITION IS "THIS ENTRY WRITES NOTHING", not "the
+            // description is empty". An HTML import, an ingested AST and `fmt`
+            // over parsed source arrive with a DIFFERENT tree for the same
+            // shape, and only the written result is common to them: a `<dd>`
+            // holding an invisible paragraph or a list with no items writes
+            // nothing too, and takes the sentinel alike.
+            //
+            // `: \{empty}` and `: {empty} x` are content, not sentinels - the
+            // first escapes the brace and the second is not a block-attribute
+            // line - so both keep writing their own text.
             if body.is_empty() {
-                pending_break = true;
+                out.push(": {empty}".to_string());
                 continue;
             }
-            pending_break = false;
             let mut lines = body.split('\n');
             out.push(format!(": {}", lines.next().unwrap_or_default()));
             for line in lines {
