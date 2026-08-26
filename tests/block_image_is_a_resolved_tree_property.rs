@@ -121,7 +121,10 @@ fn gives_the_slot_back_inside_a_block_quote() {
 #[test]
 fn marks_a_surviving_lone_image_paragraph() {
     let json = carve::to_json(&carve::parse("  ![a](/u)\n"));
-    assert!(json.contains(r#""type":"paragraph","blockImage":true"#), "{json}");
+    assert!(
+        json.contains(r#""type":"paragraph","blockImage":true"#),
+        "{json}"
+    );
 }
 
 #[test]
@@ -149,14 +152,20 @@ const LEGACY: &str = r#"{"type":"document","srcByteLength":0,"children":[{"type"
 #[test]
 fn promotes_a_legacy_tree_that_omits_the_field() {
     let doc = carve::from_json(LEGACY).expect("a tree without the field is accepted");
-    assert_eq!(carve::render_html(&doc).unwrap().trim(), r#"<img src="/u" alt="a">"#);
+    assert_eq!(
+        carve::render_html(&doc).unwrap().trim(),
+        r#"<img src="/u" alt="a">"#
+    );
 }
 
 #[test]
 fn trusts_the_field_where_the_producer_set_it() {
     let with_field = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","blockImage":true,"children":[{"type":"image","src":"/u","alt":"a"}]}]}"#;
     let doc = carve::from_json(with_field).expect("decodes");
-    assert_eq!(carve::render_html(&doc).unwrap().trim(), r#"<img src="/u" alt="a">"#);
+    assert_eq!(
+        carve::render_html(&doc).unwrap().trim(),
+        r#"<img src="/u" alt="a">"#
+    );
 }
 
 #[test]
