@@ -12,16 +12,17 @@ use std::path::{Path, PathBuf};
 /// TWO COLUMNS THAT WERE NOT HERE, and each closes a way the list could not do
 /// its job. `ahead` is what this writer emits TODAY, so the document is still
 /// pinned while it is declared - as a bare skip it was pinned by nothing, and
-/// these four are the only `.fmt` fixtures holding a definition body, so with
-/// all four skipped the canonical form of a definition body had no corpus gate
-/// at all: a writer emitting `:GARBAGE` with a six-column body left this sweep
-/// and `corpus_canonical_form` both green (measured).
+/// these four are the only `.fmt` fixtures holding a definition body.
+///
+/// Measured, by reverting the writer to the two-space separator this repo
+/// shipped before markup-carve/carve#1757: this sweep stayed GREEN. The four
+/// fixtures matched their sidecars again, so the skip was never even reached
+/// and the regression passed through a sweep whose whole job is to notice it.
 ///
 /// And the entry now RETIRES. The skip lived inside the `actual != expected`
-/// branch, so once the pin caught up and the two agreed the branch was never
-/// reached and the line survived forever - a slug whose fixture already matched
-/// sat in this list with the suite green (measured). The check below is made
-/// outside that branch for exactly that reason.
+/// branch, so a slug whose fixture had caught up was never reached and its line
+/// survived forever - which is the same green above, read the other way round.
+/// The check below is made outside that branch for exactly that reason.
 const FMT_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
     (
         "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",

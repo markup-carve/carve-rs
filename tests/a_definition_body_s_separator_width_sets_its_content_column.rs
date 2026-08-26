@@ -110,8 +110,10 @@ fn a_colon_line_below_a_folding_term_is_the_body() {
 fn a_wider_run_is_its_own_column() {
     // The rule is the separator's WIDTH, with no ceiling on it - the same rule
     // a bullet already follows, where `-   first` puts its content column at 4.
-    // No corpus document uses a run wider than two, so this is the only thing
-    // that pins the general form.
+    // No corpus document uses a run wider than two, so nothing else in this
+    // repository pins the general form. Measured: capping the content column at
+    // 3 - identity at width 1 and 2, wrong above them - fails ONE test in the
+    // whole suite, and it is this one.
     for separator in 1..=6 {
         let marker = " ".repeat(separator);
         let column = 1 + separator;

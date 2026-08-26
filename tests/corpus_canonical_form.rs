@@ -24,12 +24,17 @@ use std::path::PathBuf;
 /// markup-carve/carve#1757.
 ///
 /// THE THIRD COLUMN IS WHAT THIS WRITER EMITS TODAY, and it is the difference
-/// between a declaration and a skip. A skipped fixture is not merely unpinned
-/// here, it is unpinned everywhere: these four are the only `.fmt` fixtures
-/// holding a definition body, so while all four were skipped the canonical form
-/// of a definition body had no corpus gate at all. Measured: a writer emitting
-/// `:GARBAGE` with a six-column body left this test and the render-fixture
-/// sweep next to it both green.
+/// between a declaration and a skip. A skip says only that the fixture and the
+/// writer disagree, which leaves the writer's own answer unpinned - and these
+/// four are the only `.fmt` fixtures holding a definition body, so that answer
+/// was unpinned everywhere.
+///
+/// Measured, by reverting the writer to the two-space separator this repo
+/// shipped before markup-carve/carve#1757: under the skip this test failed, but
+/// it reported `an ahead-of-pin canonical-form declaration is stale` - the four
+/// fixtures had started AGREEING again, so the sweep read a writer regression
+/// as a bookkeeping error. The declaration reports the writer instead, and
+/// prints the form it expected beside the form it got.
 ///
 /// `tests/corpus.rs` has recorded the value for the render side since it was
 /// written, and for the same reason. This is that shape, on the writer side.
