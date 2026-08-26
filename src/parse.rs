@@ -5898,6 +5898,18 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 block_at_minimum = false;
                 continue;
             }
+            // A definition entry at the container minimum remains the
+            // innermost owner for its exact extent. Skip that extent so a
+            // structural payload at the description column is not reconsidered
+            // as an authored base of the outer body; the first line outside the
+            // extent is deliberately classified by that outer body.
+            if is_definition_list_start(&lines[i]) {
+                i = definition_entry_end(&lines, i, 0) + 1;
+                after_blank = false;
+                paragraph_open = false;
+                block_at_minimum = true;
+                continue;
+            }
             paragraph_open = line_starts_paragraph(&lines[i]);
             after_blank = false;
             block_at_minimum = true;
@@ -6212,6 +6224,68 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
     if trailing_newline {
         source.source.push('\n');
     }
+}
+
+/// Last line owned by a definition entry authored at `base`.
+fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
+    let mut end = start;
+    let mut description_column = None;
+    let mut j = start + 1;
+    while j < lines.len() {
+        let candidate = &lines[j];
+        if is_blank_line(candidate) {
+            let mut ahead = j + 1;
+            while ahead < lines.len() && is_blank_line(&lines[ahead]) {
+                ahead += 1;
+            }
+            if ahead >= lines.len() {
+                break;
+            }
+            let next_column = indent_columns(&lines[ahead]);
+            let next_local =
+                (next_column >= base).then(|| strip_leading_columns(&lines[ahead], base));
+            let continues = description_column.is_some_and(|column| next_column >= column)
+                || (next_column == base
+                    && next_local.as_deref().is_some_and(|line| {
+                        is_definition_list_start(line) || strip_definition_marker(line).is_some()
+                    }));
+            if !continues {
+                break;
+            }
+            end = j;
+            j += 1;
+            continue;
+        }
+
+        let column = indent_columns(candidate);
+        if column < base {
+            break;
+        }
+        let local = strip_leading_columns(candidate, base);
+        let description = (column == base)
+            .then(|| strip_definition_marker(&local))
+            .flatten();
+        if column == base && (is_definition_list_start(&local) || description.is_some()) {
+            end = j;
+            if let Some((_, width)) = description {
+                description_column = Some(base + width);
+            }
+            j += 1;
+            continue;
+        }
+        if description_column.is_none() && column == base && !item_block_opener(&local) {
+            end = j;
+            j += 1;
+            continue;
+        }
+        if description_column.is_some_and(|content| column >= content) {
+            end = j;
+            j += 1;
+            continue;
+        }
+        break;
+    }
+    end
 }
 
 fn item_block_opener(line: &str) -> bool {
@@ -13507,34 +13581,30 @@ fn collect_definition_body(
             {
                 break;
             }
-            // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
-            // `definition_indent` states the floor as column arithmetic; this is
-            // the other side of it. A line indented 1 or 2 columns reaches
-            // neither band above: it is not the body's own block content, and it
-            // is not lazy text either, because `lazy_continuation_line` is
-            // spelled as a FLUSH-LEFT line. So the body ends and the line is
-            // classified in the surviving context, where PART 2's COLUMN-EXACT
-            // DELIMITERS makes an indented block opener plain text.
-            //
-            // Without this, BELOW and PAST are one band: the fold never looked at
-            // indentation (carve-rs#734 recorded exactly that when it labelled
-            // the no-blank shape a control), so `:  body` / ` > q` and
-            // `:  body` / `    > q` produced the same bytes and the floor of
-            // three columns was unobservable on this side. The footnote body,
-            // which the clause names as the precedent, already answers this way.
-            if indent > 0 {
+            // Below the body's column, a recognized structural opener returns
+            // to the surviving outer container. Ordinary prose is still the
+            // open definition paragraph's lazy continuation; indentation alone
+            // does not manufacture a paragraph boundary.
+            if indent > 0 && item_block_opener(trim_ascii_start(line)) {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
             // does not start an interrupting block folds into the open
             // paragraph (the same rule list items and block quotes use, matching
             // djot). A block opener ends the definition.
-            let owned = line.to_string();
+            let owned = if indent > 0 {
+                trim_ascii_start(line).to_string()
+            } else {
+                line.to_string()
+            };
             if !interrupts_paragraph(cur, &owned) {
                 folded_a_lazy_line = true;
                 lines.push(owned);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
+                col_map.push(
+                    cur.source_col(cur.pos)
+                        .map(|column| column + indent as isize),
+                );
                 cur.consume();
                 continue;
             }

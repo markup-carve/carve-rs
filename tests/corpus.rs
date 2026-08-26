@@ -314,8 +314,18 @@ const IMPLEMENTED: &[&str] = &[
     "an-unresolved-reference-image-takes-no-caption",
     "one-definition-serves-a-link-and-an-image",
     "a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text",
-    "a-definition-past-a-footnote-body-s-column-is-the-body-s-own-text",
-    "a-footnote-body-s-own-column-is-two-and-a-third-column-is-its-text",
+    "a-definition-past-a-footnote-body-s-column-registers-from-its-authored-base",
+    "a-definition-body-opener-at-or-past-its-column-stays-structural",
+    "a-definition-body-s-separator-width-sets-its-content-column",
+    "a-definition-list-inside-a-footnote-body-carries-its-authored-base",
+    "a-footnote-body-s-authored-base-can-open-a-table-past-column-two",
+    "a-recognized-opener-in-a-body-needs-no-blank-line-above-it",
+    "a-sigil-fence-takes-its-attribute-line",
+    "an-ordered-item-s-separator-width-sets-its-content-column",
+    "below-a-definition-body-s-column-the-body-ends",
+    "one-authored-base-rule-reaches-a-definition-nested-in-a-list-item",
+    "text-block-alignment-renders-the-css-declaration",
+    "the-continuation-marker-attaches-one-block-in-every-container",
     // The `[Café][]` half folds NFC, the `[file][]` half must NOT fold
     // compatibility - `# ﬁle` (U+FB01) stays unreachable. This engine already
     // produced the fixture byte-for-byte, so the entry is the whole change
@@ -361,7 +371,6 @@ const IMPLEMENTED: &[&str] = &[
     // Categories this engine already produced byte for byte when they landed;
     // the entry is the whole change.
     "a-blank-line-holds-spaces-and-tabs-and-nothing-else",
-    "a-definition-body-continuation-indented-past-its-column-is-lazy-text",
     "a-tab-continues-a-list-item-just-as-two-spaces-do",
     "an-absorbed-colon-fence-leaves-a-block-quote-s-paragraph-open",
     "code-fence-metadata-slots-must-be-a-space-too",

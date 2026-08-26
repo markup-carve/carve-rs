@@ -739,8 +739,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // spelling makes all new covered cases strict and also promotes three
     // existing fenced-quote documents out of the reported-loss path. Measured
     // over all 1420 documents: 1126 / 294.
-    const STRICT: usize = 1126;
-    const LOSSY: usize = 294;
+    // Categories 419-426 add 54 documents. Fifty round-trip strictly. Four
+    // report an already-declared editor loss (structural content the bridge
+    // degrades): 422-4, 422-6, 424-7 and 426-4. Measured over all 1474
+    // documents: 1176 / 298; no pre-existing document changed bucket and the
+    // exact source-lossy set above remains unchanged.
+    const STRICT: usize = 1176;
+    const LOSSY: usize = 298;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
