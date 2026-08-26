@@ -203,13 +203,26 @@ fn a_heading_at_the_content_column_leaves_no_paragraph_open() {
 }
 
 #[test]
-fn control_the_wrapped_attribute_block_is_untouched() {
-    // The other half the clause names as open: `{.a` opens no paragraph, but
-    // its continuation line arrives at the CONTENT COLUMN and is what reopens
-    // one. It stays literal text here, as it was.
+fn a_wrapped_marker_attribute_leaves_no_paragraph_open() {
     assert_eq!(
         html("- {.a\n  .b}\ntail\n"),
-        "<ul>\n  <li>{.a\n.b}\ntail</li>\n</ul>"
+        "<ul>\n  <li></li>\n</ul>\n<p>tail</p>"
+    );
+}
+
+#[test]
+fn a_wrapped_body_attribute_leaves_no_paragraph_open() {
+    assert_eq!(
+        html("- prose\n  {.a\n  .b}\ntail\n"),
+        "<ul>\n  <li>prose</li>\n</ul>\n<p>tail</p>"
+    );
+}
+
+#[test]
+fn an_unclosed_marker_attribute_remains_literal_paragraph_text() {
+    assert_eq!(
+        html("- {.a\n  .b\ntail\n"),
+        "<ul>\n  <li>{.a\n.b\ntail</li>\n</ul>"
     );
 }
 

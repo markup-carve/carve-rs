@@ -48,16 +48,10 @@ fn a_brace_only_marker_line_with_no_following_block_leaves_an_empty_item() {
 }
 
 #[test]
-fn a_multi_line_attribute_block_on_the_marker_line_stays_literal() {
-    // KNOWN DIVERGENCE from carve-js, which attaches it. Only a complete valid
-    // single-line block is routed to the attribute path here: guessing that an
-    // unterminated run closes later would send an invalid one down the block
-    // path, where a lazy line is not collected and escapes the item (see
-    // `an_invalid_brace_run_keeps_its_lazy_line_in_the_item`). No corpus case
-    // pins the multi-line marker-line form.
+fn a_multi_line_attribute_block_on_the_marker_line_attaches() {
     assert_eq!(
         carve::to_html("- {#id\n  .foo}\n  # H\n"),
-        "<ul>\n  <li>{<span class=\"tag\"><strong>#id</strong></span>\n.foo}\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <h1 id=\"id\" class=\"foo\">H</h1>\n  </li>\n</ul>"
     );
 }
 

@@ -10349,7 +10349,7 @@ fn parse_list(
             continue;
         }
         if marker_content_starts_block(marker.content, cur, content_col)
-            || marker_content_is_attr_line(marker.content)
+            || marker_content_is_attr_block(marker.content, cur, content_col)
         {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
@@ -10507,6 +10507,10 @@ fn parse_list(
         // table); a would-be opener on a LATER lazy-continuation line stays
         // paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
+        // The first raw line a failed wrapped-attribute lookahead has not
+        // already proved cannot start one. Without this floor, a run of
+        // unclosed `{.a` lines scans the whole remaining item once per line.
+        let mut attrs_scan_floor = cur.pos;
         let mut anchors = options
             .positions
             .then(|| vec![inline_anchor_for_line(cur, item_at, marker.content)]);
@@ -10618,7 +10622,20 @@ fn parse_list(
             let suppress_colon_interrupt = para_lines
                 .iter()
                 .any(|line| is_invalid_colon_fence_opener_text(line));
-            let interrupts = interrupts_paragraph_as_container(cur, &dedented)
+            let wrapped_attr_interrupts = if cur.pos < attrs_scan_floor {
+                false
+            } else {
+                match content_column_attr_block(&dedented, &cur.lines[cur.pos + 1..], content_col) {
+                    ContentColumnAttrBlock::Block => true,
+                    ContentColumnAttrBlock::NoneWithin(lines) => {
+                        attrs_scan_floor = cur.pos + lines;
+                        false
+                    }
+                    ContentColumnAttrBlock::No => false,
+                }
+            };
+            let interrupts = (wrapped_attr_interrupts
+                || interrupts_paragraph_as_container(cur, &dedented))
                 && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
             if interrupts {
                 break;
@@ -10869,15 +10886,62 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     false
 }
 
-/// Only a COMPLETE, VALID single-line block counts. The multi-line form (`{#id`
-/// on the marker line, `.foo}` on the next) is deliberately excluded: routing it
-/// here on the guess that it closes later would send an invalid run
-/// (`- {not attrs` / `lazy`) down the block path, where the lazy line is not
-/// collected and escapes the item as a top-level paragraph. It stays literal, as
-/// it was before this rule existed -- a pre-existing divergence from carve-js,
-/// which attaches it, and one no corpus case pins.
-fn marker_content_is_attr_line(content: &str) -> bool {
-    trim_ascii(content).starts_with('{') && parse_standalone_attrs(content).is_some()
+/// Whether a valid standalone attribute block starts in a list marker's
+/// content. Its continuation must reach the item's content column, exactly like
+/// every other nested block. Validate the whole run before routing it through
+/// the block path: an unclosed or malformed brace remains ordinary paragraph
+/// text and therefore keeps the item open.
+fn marker_content_is_attr_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
+    matches!(
+        content_column_attr_block(content, &cur.lines[cur.pos..], content_col),
+        ContentColumnAttrBlock::Block
+    )
+}
+
+enum ContentColumnAttrBlock {
+    Block,
+    NoneWithin(usize),
+    No,
+}
+
+fn content_column_attr_block(
+    content: &str,
+    rest: &[&str],
+    content_col: usize,
+) -> ContentColumnAttrBlock {
+    if !trim_ascii(content).starts_with('{') {
+        return ContentColumnAttrBlock::No;
+    }
+    if parse_standalone_attrs(content).is_some() {
+        return ContentColumnAttrBlock::Block;
+    }
+    if trim_ascii_end(content).ends_with('}') {
+        return ContentColumnAttrBlock::No;
+    }
+
+    let mut normalized = vec![content.to_string()];
+    let mut met_closer = false;
+    for line in rest {
+        if is_blank_line(line) || indent_columns(line) < content_col {
+            break;
+        }
+        normalized.push(slice_columns(line, content_col, false));
+        if trim_ascii_end(line).ends_with('}') {
+            met_closer = true;
+            break;
+        }
+    }
+    let lines: Vec<&str> = normalized.iter().map(String::as_str).collect();
+    match standalone_attrs_block_len(&lines) {
+        Some(_) => ContentColumnAttrBlock::Block,
+        // A closer was available but did not validate this opener. A later
+        // opener may still form a valid block with that closer, so only the
+        // current line has been answered.
+        None if met_closer => ContentColumnAttrBlock::No,
+        // No closer exists in the run. None of the lines scanned before its
+        // boundary can open a valid wrapped attribute block either.
+        None => ContentColumnAttrBlock::NoneWithin(normalized.len()),
+    }
 }
 
 #[derive(Clone)]
