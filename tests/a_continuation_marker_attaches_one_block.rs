@@ -152,8 +152,12 @@ fn control_a_blank_line_still_bounds_the_attachment() {
 
 #[test]
 fn control_a_quote_line_after_the_attachment_still_reaches_the_quote() {
-    // The `>` boundary: the attached block ends at it, and the prefixed line is
-    // the quote's own content again rather than a second quote.
+    // The attached paragraph ends in FRONT of the prefixed line - a `>` line
+    // opens a block, and the marker takes one - and the line is then the
+    // quote's own content again rather than a second quote. This used to be a
+    // boundary test in the quote's own scan, which is what made `> a` / `+` /
+    // `> q` attach nothing at all (markup-carve/carve-rs#1428). The answer here
+    // is unchanged; only what produces it is.
     assert_eq!(
         html("> quoted\n+\npara\n> more\n"),
         "<blockquote>\n  <p>quoted</p>\n  <p>para</p>\n  <p>more</p>\n</blockquote>"
