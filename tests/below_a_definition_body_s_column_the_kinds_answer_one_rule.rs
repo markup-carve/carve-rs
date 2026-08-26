@@ -38,7 +38,10 @@ fn html(source: &str) -> String {
     // BOTH ENTRY POINTS, ALWAYS. `to_html` opens with a layout fast path and the
     // CLI runs transforms, and a divergence living on one path only is what a
     // single-path assertion cannot see.
-    assert_eq!(convenience, cli, "the two render paths disagree on:\n{source}");
+    assert_eq!(
+        convenience, cli,
+        "the two render paths disagree on:\n{source}"
+    );
     convenience
 }
 
@@ -114,7 +117,10 @@ fn controls_the_plain_line_folds_and_the_other_two_kinds_do_not_move() {
         html(":: t\n:  d\n  x\ntail\n"),
         format!("{FOLDS_HEAD}x\ntail</dd>\n</dl>")
     );
-    assert_eq!(html(":: t\n:  d\n  %% c\ntail\n"), format!("{ENDS}<p>tail</p>"));
+    assert_eq!(
+        html(":: t\n:  d\n  %% c\ntail\n"),
+        format!("{ENDS}<p>tail</p>")
+    );
     assert_eq!(
         html(":: t\n:  d\n  {.k}\ntail\n"),
         format!("{ENDS}<p>{{.k}}\ntail</p>")
