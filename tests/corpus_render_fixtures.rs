@@ -7,11 +7,44 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const FMT_AHEAD_OF_PIN: &[&str] = &[
-    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
-    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
-    "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
-    "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
+/// `fmt` fixtures this writer is AHEAD of, as `(slug, reason, ahead)`.
+///
+/// TWO COLUMNS THAT WERE NOT HERE, and each closes a way the list could not do
+/// its job. `ahead` is what this writer emits TODAY, so the document is still
+/// pinned while it is declared - as a bare skip it was pinned by nothing, and
+/// these four are the only `.fmt` fixtures holding a definition body.
+///
+/// Measured, by reverting the writer to the two-space separator this repo
+/// shipped before markup-carve/carve#1757: this sweep stayed GREEN. The four
+/// fixtures matched their sidecars again, so the skip was never even reached
+/// and the regression passed through a sweep whose whole job is to notice it.
+///
+/// And the entry now RETIRES. The skip lived inside the `actual != expected`
+/// branch, so a slug whose fixture had caught up was never reached and its line
+/// survived forever - which is the same green above, read the other way round.
+/// The check below is made outside that branch for exactly that reason.
+const FMT_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        ":: term\n: [r]: /u\n\nsee [t][r]\n",
+    ),
+    (
+        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        ":: term\n: [^f]: x\n\nsee[^f]\n",
+    ),
+    (
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
+        "narrowing the separator carries the body's fence down with it \
+         (markup-carve/carve#1757)",
+        ":: t\n: d\n\n  ```\n  a\n\n  b\n  ```\n",
+    ),
+    (
+        "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        "{loose}\n:: Term\n: Definition.\n",
+    ),
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -64,6 +97,7 @@ fn every_non_html_spec_fixture_matches() {
     );
 
     let mut failures = Vec::new();
+    let mut seen_fmt: Vec<String> = Vec::new();
     for (fixture, target) in fixtures {
         let slug = fixture.file_stem().unwrap().to_string_lossy();
         let source_path = dir.join(format!("{slug}.crv"));
@@ -72,19 +106,52 @@ fn every_non_html_spec_fixture_matches() {
             "{} has no .crv source pair",
             fixture.display()
         );
+        if target == "fmt" {
+            seen_fmt.push(slug.to_string());
+        }
         let source = fs::read_to_string(&source_path).expect("read corpus source");
         let expected = fs::read_to_string(&fixture).expect("read render fixture");
         let actual = render(&target, &source);
-        if actual != expected {
-            if target == "fmt" && FMT_AHEAD_OF_PIN.contains(&slug.as_ref()) {
-                continue;
+        let declared = (target == "fmt")
+            .then(|| {
+                FMT_AHEAD_OF_PIN
+                    .iter()
+                    .find(|(name, _, _)| *name == slug.as_ref())
+            })
+            .flatten();
+        if let Some((_, reason, ahead)) = declared {
+            // OUTSIDE THE MISMATCH BRANCH. Both halves are asked on every run:
+            // the writer still emits what the declaration says, AND the fixture
+            // still disagrees. The second is what retires the entry when the pin
+            // moves past it.
+            if actual != *ahead {
+                failures.push(format!(
+                    "{slug}.fmt ({reason})\n--- declared ahead ---\n{ahead:?}\n\
+                     --- actual ---\n{actual:?}"
+                ));
+            } else if actual == expected {
+                failures.push(format!(
+                    "{slug}.fmt: the pin has caught up; delete its FMT_AHEAD_OF_PIN entry"
+                ));
             }
+            continue;
+        }
+        if actual != expected {
             failures.push(format!(
                 "{slug}.{target}\n--- expected ---\n{expected:?}\n--- actual ---\n{actual:?}"
             ));
         }
     }
 
+    let missing: Vec<_> = FMT_AHEAD_OF_PIN
+        .iter()
+        .map(|(slug, _, _)| *slug)
+        .filter(|slug| !seen_fmt.contains(&slug.to_string()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "FMT_AHEAD_OF_PIN names fixture(s) the corpus does not have: {missing:?}",
+    );
     assert!(
         failures.is_empty(),
         "non-HTML spec fixture mismatch(es):\n{}",

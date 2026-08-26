@@ -19,13 +19,47 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 
-/// Writer rulings implemented ahead of this repository's spec submodule pin.
-/// Remove each entry when the pin reaches markup-carve/carve#1757.
-const AHEAD_OF_PIN: &[&str] = &[
-    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
-    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
-    "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
-    "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
+/// Writer rulings implemented ahead of this repository's spec submodule pin, as
+/// `(slug, reason, ahead)`. Remove each entry when the pin reaches
+/// markup-carve/carve#1757.
+///
+/// THE THIRD COLUMN IS WHAT THIS WRITER EMITS TODAY, and it is the difference
+/// between a declaration and a skip. A skip says only that the fixture and the
+/// writer disagree, which leaves the writer's own answer unpinned - and these
+/// four are the only `.fmt` fixtures holding a definition body, so that answer
+/// was unpinned everywhere.
+///
+/// Measured, by reverting the writer to the two-space separator this repo
+/// shipped before markup-carve/carve#1757: under the skip this test failed, but
+/// it reported `an ahead-of-pin canonical-form declaration is stale` - the four
+/// fixtures had started AGREEING again, so the sweep read a writer regression
+/// as a bookkeeping error. The declaration reports the writer instead, and
+/// prints the form it expected beside the form it got.
+///
+/// `tests/corpus.rs` has recorded the value for the render side since it was
+/// written, and for the same reason. This is that shape, on the writer side.
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        ":: term\n: [r]: /u\n\nsee [t][r]\n",
+    ),
+    (
+        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        ":: term\n: [^f]: x\n\nsee[^f]\n",
+    ),
+    (
+        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
+        "narrowing the separator carries the body's fence down with it \
+         (markup-carve/carve#1757)",
+        ":: t\n: d\n\n  ```\n  a\n\n  b\n  ```\n",
+    ),
+    (
+        "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
+        "one space is the canonical definition separator (markup-carve/carve#1757)",
+        "{loose}\n:: Term\n: Definition.\n",
+    ),
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -74,11 +108,21 @@ fn fmt_matches_every_pinned_canonical_form() {
     let mut observed_ahead = BTreeSet::new();
     for (slug, source, expected) in pinned() {
         let actual = carve::to_carve(&source);
-        if actual != expected {
-            if AHEAD_OF_PIN.contains(&slug.as_str()) {
-                observed_ahead.insert(slug);
-                continue;
+        if let Some((_, reason, ahead)) = AHEAD_OF_PIN.iter().find(|(name, _, _)| *name == slug) {
+            observed_ahead.insert(slug.clone());
+            if actual != *ahead {
+                wrong.push(format!(
+                    "{slug} ({reason})\n  ----- declared ahead -----\n{ahead}\n  \
+                     ----- actual -------\n{actual}"
+                ));
+            } else if actual == expected {
+                wrong.push(format!(
+                    "{slug}: the pin has caught up; delete its AHEAD_OF_PIN entry"
+                ));
             }
+            continue;
+        }
+        if actual != expected {
             wrong.push(format!(
                 "{slug}\n  ----- expected -----\n{expected}\n  ----- actual -------\n{actual}"
             ));
