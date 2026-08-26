@@ -136,17 +136,7 @@ fn shared_contract_fixtures_match() {
     for dir in dirs {
         let name = dir.file_name().unwrap().to_str().unwrap().to_string();
         let html = fs::read_to_string(dir.join("input.html")).unwrap();
-        let mut expected = fs::read_to_string(dir.join("expected.crv")).unwrap();
-        if matches!(
-            name.as_str(),
-            "empty-definition-description-not-last" | "traversal-shaped-index"
-        ) {
-            assert!(
-                expected.contains(":  "),
-                "{name}: the spec pin caught up; remove its canonical-writer adjustment"
-            );
-            expected = expected.replace(":  ", ": ");
-        }
+        let expected = fs::read_to_string(dir.join("expected.crv")).unwrap();
         let expected_report: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.join("expected.report.json")).unwrap())
                 .unwrap();

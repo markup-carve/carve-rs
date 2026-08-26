@@ -23,29 +23,7 @@ use std::path::{Path, PathBuf};
 /// branch, so a slug whose fixture had caught up was never reached and its line
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
-const FMT_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
-        "one space is the canonical definition separator (markup-carve/carve#1757)",
-        ":: term\n: [r]: /u\n\nsee [t][r]\n",
-    ),
-    (
-        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
-        "one space is the canonical definition separator (markup-carve/carve#1757)",
-        ":: term\n: [^f]: x\n\nsee[^f]\n",
-    ),
-    (
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
-        "narrowing the separator carries the body's fence down with it \
-         (markup-carve/carve#1757)",
-        ":: t\n: d\n\n  ```\n  a\n\n  b\n  ```\n",
-    ),
-    (
-        "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
-        "one space is the canonical definition separator (markup-carve/carve#1757)",
-        "{loose}\n:: Term\n: Definition.\n",
-    ),
-];
+const FMT_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")

@@ -65,14 +65,14 @@ fn below_the_column_the_body_ends_and_the_line_is_a_document_level_paragraph() {
     }
 }
 
-/// Plain prose below the column takes the same route: the body ends and the line
-/// is a paragraph of its own, rather than lazy text inside the `dd`.
+/// Plain prose remains lazy continuation of the open description paragraph;
+/// only a recognized structural opener is handed back to the outer container.
 #[test]
-fn plain_text_below_the_column_ends_the_body_too() {
+fn plain_text_below_the_column_is_lazy_body_text() {
     for indent in [1, 2] {
         assert_eq!(
             html(&entry(indent, "x")),
-            format!("{TIGHT}\n<p>x</p>"),
+            "<dl>\n  <dt>t</dt>\n  <dd>body\nx</dd>\n</dl>",
             "indent {indent}"
         );
     }

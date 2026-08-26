@@ -212,3 +212,16 @@ fn a_nested_list_marker_keeps_the_block_in_its_item() {
          </li>\n  </ol>\n</section>"
     );
 }
+
+#[test]
+fn a_nested_definition_writes_back_without_changing_ownership() {
+    let source = "- intro\n\n   :: term\n   :  definition\n\n      > quote\n";
+    let formatted = carve::to_carve(source);
+
+    assert_eq!(
+        formatted,
+        "- intro\n  :: term\n  : definition\n\n    > quote\n"
+    );
+    assert_eq!(carve::to_html(&formatted), carve::to_html(source));
+    assert_eq!(carve::to_carve(&formatted), formatted);
+}
