@@ -4696,6 +4696,9 @@ fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &[usize]) {
             InlineNode::Extension(e) => apply_inline_offsets(&mut e.children, line_starts),
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
+                    if let Some(pos) = &mut item.pos {
+                        apply_offsets(pos, line_starts);
+                    }
                     if let Some(prefix) = &mut item.prefix {
                         apply_inline_offsets(prefix, line_starts);
                     }
@@ -17539,7 +17542,10 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::CaptionNumber(n) => n.pos = pos,
         InlineNode::Mention(n) => n.pos = pos,
         InlineNode::Tag(n) => n.pos = pos,
-        InlineNode::CitationGroup(n) => n.pos = pos,
+        InlineNode::CitationGroup(n) => {
+            n.pos = pos;
+            position_citation_items(n);
+        }
         InlineNode::Extension(n) => n.pos = pos,
         InlineNode::Abbreviation(n) => n.pos = pos,
         InlineNode::Footnote(n) => n.pos = pos,
@@ -17549,6 +17555,63 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::CriticSubstitute(n) => n.pos = pos,
         InlineNode::Comment(n) => n.pos = pos,
         InlineNode::CriticComment(n) => n.pos = pos,
+    }
+}
+
+/// Position semicolon-delimited citation items when the group is contiguous.
+///
+/// A multiline inline source may have container prefixes removed between its
+/// physical lines. The group span alone cannot reconstruct that mapping, so
+/// PART 12 section 4 requires us to omit item positions in that case rather
+/// than inventing offsets. Single-line groups are contiguous by construction.
+fn position_citation_items(group: &mut CitationGroup) {
+    let Some(base) = group.pos else { return };
+    if base.start_line != base.end_line {
+        return;
+    }
+    let inner_start = if group.integral { 2 } else { 1 };
+    if group.raw.len() <= inner_start || !group.raw.ends_with(']') {
+        return;
+    }
+    let inner = &group.raw[inner_start..group.raw.len() - 1];
+    let mut cursor = 0usize;
+    for (item, part) in group.items.iter_mut().zip(inner.split(';')) {
+        let leading = part.len() - part.trim_start().len();
+        let trailing = part.len() - part.trim_end().len();
+        let start_byte = inner_start + cursor + leading;
+        let end_byte = inner_start + cursor + part.len() - trailing;
+        let start_chars = group.raw[..start_byte].chars().count();
+        let end_chars = group.raw[..end_byte].chars().count();
+        item.pos = Some(Pos {
+            start_line: base.start_line,
+            end_line: base.start_line,
+            start_column: base.start_column + start_chars,
+            end_column: base.start_column + end_chars,
+            start_offset: base.start_offset + start_chars,
+            end_offset: base.start_offset + end_chars,
+        });
+        cursor += part.len() + 1;
+    }
+}
+
+fn position_citation_items_from_map(
+    group: &mut CitationGroup,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
+) {
+    let inner_start = if group.integral { 2 } else { 1 };
+    if group.raw.len() <= inner_start || !group.raw.ends_with(']') {
+        return;
+    }
+    let inner = &group.raw[inner_start..group.raw.len() - 1];
+    let mut cursor = 0usize;
+    for (item, part) in group.items.iter_mut().zip(inner.split(';')) {
+        let leading = part.len() - part.trim_start().len();
+        let trailing = part.len() - part.trim_end().len();
+        let start = base + inner_start + cursor + leading;
+        let end = base + inner_start + cursor + part.len() - trailing;
+        item.pos = inline_pos(positions, start, end);
+        cursor += part.len() + 1;
     }
 }
 
@@ -18512,7 +18575,7 @@ fn parse_inline_context(
             continue;
         }
 
-        if let Some(InlineMatch { node, end }) = try_extension_inline(text, i, options) {
+        if let Some(InlineMatch { mut node, end }) = try_extension_inline(text, i, options) {
             // `end` must land on a char boundary or `text[i..]`/slicing panics;
             // a misbehaving extension matcher must not be able to crash the core.
             if end > i && end <= text.len() && text.is_char_boundary(end) {
@@ -18525,6 +18588,10 @@ fn parse_inline_context(
                     &mut buf_placeable,
                     &mut buf_src_delta,
                 );
+                set_inline_node_pos(&mut node, inline_pos(positions, base + i, base + end));
+                if let InlineNode::CitationGroup(group) = &mut node {
+                    position_citation_items_from_map(group, positions, base + i);
+                }
                 out.push(node);
                 i = end;
                 continue;

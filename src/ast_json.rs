@@ -1456,7 +1456,7 @@ fn encode_citation_task<'a>(
     n: &'a Citation,
     depth: usize,
 ) {
-    let mut w = Writer::new(out);
+    let mut w = typed(out, "citation");
     w.field("key", |out| write_string(out, &n.key));
     encode_citation_inline_fields(out, tasks, n, depth, 0);
 }
@@ -1491,6 +1491,7 @@ fn encode_citation_inline_fields<'a>(
             if let Some(index) = n.use_index {
                 w.field("useIndex", |out| write_usize(out, index));
             }
+            write_pos_field(&mut w, &n.pos);
             w.finish();
             return;
         }
@@ -3164,6 +3165,7 @@ fn decode_image(obj: &BTreeMap<String, Json>) -> Result<Image, AstJsonError> {
 
 fn decode_citation(value: &Json) -> Result<Citation, AstJsonError> {
     let obj = value.as_object("citation")?;
+    expect_type(obj, "citation")?;
     Ok(Citation {
         key: required_string(obj, "citation", "key")?.to_string(),
         prefix: optional_inlines(obj, "prefix")?,
@@ -3175,6 +3177,7 @@ fn decode_citation(value: &Json) -> Result<Citation, AstJsonError> {
         number: optional_usize(obj, "number")?,
         label: None,
         use_index: optional_usize(obj, "useIndex")?,
+        pos: optional_pos(obj, "citation")?,
     })
 }
 

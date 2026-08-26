@@ -283,6 +283,7 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
             number: None,
             label: None,
             use_index: None,
+            pos: None,
         });
     }
     None

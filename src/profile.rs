@@ -110,6 +110,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     // could not name them and the resolver denied the nodes outright.
     "heading_ref",
     "citation_group",
+    "citation",
     "caption_number",
     "substitution",
     "critic_comment",

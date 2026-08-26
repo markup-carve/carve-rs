@@ -1,4 +1,4 @@
-use carve::{BlockNode, Citations, InlineNode, Options};
+use carve::{apply_profile, BlockNode, Citations, InlineNode, Options, Profile};
 
 fn h(source: &str) -> String {
     let citations = Citations::new();
@@ -35,6 +35,83 @@ fn group(source: &str) -> Option<carve::CitationGroup> {
 #[test]
 fn parses_key_into_citation_group() {
     assert_eq!(group("[@smith2020]").unwrap().items[0].key, "smith2020");
+}
+
+#[test]
+fn types_and_positions_each_citation_item() {
+    let source = "See [@a; see @bb, p. 4].\n";
+    let citations = Citations::new();
+    let options = Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    let InlineNode::CitationGroup(group) = &paragraph.children[1] else {
+        panic!("expected citation group");
+    };
+    let positions: Vec<_> = group.items.iter().map(|item| item.pos.unwrap()).collect();
+
+    assert_eq!(positions[0].start_offset, 5);
+    assert_eq!(positions[0].end_offset, 7);
+    assert_eq!(positions[1].start_offset, 9);
+    assert_eq!(positions[1].end_offset, 22);
+
+    let json = carve::to_json_with_options(source, &options);
+    assert!(json.contains(r#""type":"citation""#), "{json}");
+}
+
+#[test]
+fn positions_items_across_a_line_boundary() {
+    let citations = Citations::new();
+    let options = Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    let doc = carve::parse_with_options("See [@a;\n@bb].\n", &options);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    let InlineNode::CitationGroup(group) = &paragraph.children[1] else {
+        panic!("expected citation group");
+    };
+    let positions: Vec<_> = group.items.iter().map(|item| item.pos.unwrap()).collect();
+
+    assert_eq!((positions[0].start_offset, positions[0].end_offset), (5, 7));
+    assert_eq!(
+        (positions[1].start_offset, positions[1].end_offset),
+        (9, 12)
+    );
+    assert_eq!((positions[1].start_line, positions[1].end_line), (2, 2));
+}
+
+#[test]
+fn denying_citation_reports_each_item_and_degrades_the_group_as_authored_text() {
+    let source = "See [@a; see @bb, p. 4].\n";
+    let citations = Citations::new();
+    let options = Options::new().with_extension(&citations);
+    let result = apply_profile(
+        carve::parse_with_options(source, &options),
+        &Profile::full().deny_inline(&["citation"]),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        result
+            .violations
+            .iter()
+            .map(|violation| violation.node_type.as_str())
+            .collect::<Vec<_>>(),
+        ["citation", "citation"]
+    );
+    let BlockNode::Paragraph(paragraph) = &result.doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    assert!(paragraph
+        .children
+        .iter()
+        .any(|node| matches!(node, InlineNode::Text(text) if text.value == "[@a; see @bb, p. 4]")));
 }
 
 #[test]

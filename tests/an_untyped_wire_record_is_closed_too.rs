@@ -12,11 +12,9 @@
 //!    `definition_term` and `definition_description` nodes. carve-js found this
 //!    one on its half of the same ticket (carve-js#913) and this engine had it
 //!    too;
-//! 3. the CITATION record inside `citation_group.items`, which the schema DOES
-//!    name and DOES close, and which likewise carries no `type`. Neither the
-//!    type-keyed loop nor the `attrs`/`pos` helper loop reached it, so a
-//!    citation carrying any extra field decoded and the field was dropped in
-//!    silence.
+//! 3. the CITATION node inside `citation_group.items`, which began as an
+//!    untyped record and is now a typed, positioned node. It remains covered
+//!    here because closing the record against extra fields is still required.
 //!
 //! Every case pairs the bogus field with a CONTROL carrying only named fields,
 //! so none of them can pass because decoding was refused wholesale.
@@ -107,13 +105,16 @@ fn control_an_attribute_literally_named_terms_is_not_a_legacy_entry() {
 // 3. The citation record.
 // ---------------------------------------------------------------------------
 
-const CITATION: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","raw":"[@a]","items":[{"key":"a","suppressAuthor":falseFIELDS}]}]}"#;
+const CITATION: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","raw":"[@a]","items":[{"type":"citation","key":"a","suppressAuthor":false,"pos":{"startLine":1,"endLine":1,"startColumn":1,"endColumn":3,"startOffset":0,"endOffset":2}FIELDS}]}]}"#;
 
 #[test]
 fn a_citation_record_refuses_a_field_the_schema_does_not_name() {
     let error = refusal(&CITATION.replace("FIELDS", r#","bogus":1"#));
     assert!(error.contains("\"bogus\""), "{error}");
-    assert!(error.contains("citation_group.items"), "{error}");
+    assert!(
+        error.contains("citation at") && error.contains("items[0]"),
+        "{error}"
+    );
 }
 
 #[test]
