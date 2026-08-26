@@ -2789,6 +2789,23 @@ impl StrippedContainerLine<'_> {
     }
 }
 
+/// Whether a line BELOW a definition body's content column is a reference
+/// definition, and so ends the body rather than folding into it.
+///
+/// The pre-pass has already declined to collect this one - it collects at a
+/// tracked content column, and this line is below one - so the line is still
+/// raw here and stays literal text once the body ends. What it answers is only
+/// "is this a definition-shaped line", with the same two rejections the
+/// collecting pass makes: a citation key is not a label, and an empty
+/// destination is not a definition (`[r]:` with nothing after it is text).
+///
+/// The FOOTNOTE spelling matches this shape too, which is deliberate: it
+/// already interrupts through its placeholder, and one predicate covering both
+/// is what keeps the two kinds from drifting apart again.
+fn is_below_column_definition_line(line: &str) -> bool {
+    parse_link_def_line(line).is_some_and(|(_, target)| !target.trim().is_empty())
+}
+
 fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
     // The grammar requires at least one character:
@@ -13664,7 +13681,36 @@ fn collect_definition_body(
             } else {
                 line.to_string()
             };
-            if !interrupts_paragraph(cur, &owned) {
+            // A LINK REFERENCE DEFINITION ENDS THE BODY, like the footnote
+            // spelling it is listed with. PART 9 section 10 I5 names the two
+            // together and no clause separates them by column, so the band
+            // cannot answer them oppositely (markup-carve/carve-rs#1438).
+            //
+            // It has to be asked HERE rather than in `interrupts_paragraph`,
+            // because the two kinds arrive in different shapes. The definition
+            // pre-pass rewrites what it collects to an invisible `%%`
+            // placeholder, which `interrupts_paragraph` already matches - and
+            // that is how the footnote kind interrupts from below the column,
+            // its own pass reaching an indented body. The link pass collects
+            // only AT a tracked content column, so below one the raw line
+            // survives and no arm matches it. This is the arm for that line, and
+            // it stays literal text at document level: declining to collect it
+            // is the pre-pass's decision, and ending the body does not revisit
+            // it.
+            //
+            // AS A CONTAINER, so the ABBREVIATION arm is waived. Section 7
+            // recognizes `*[A]: a` only as a direct child of the document, so a
+            // line this container is still deciding on is not a definition and
+            // cannot interrupt as one - it is ordinary paragraph text, and
+            // markup-carve/carve#1786 folds "the plain line that is not an
+            // opener" from any column. `cur.at_document_level` described the
+            // CURSOR, not the line, so the identical description answered one
+            // way at top level and the other inside a list item, where this
+            // collector folded all along.
+            if is_below_column_definition_line(&owned) {
+                break;
+            }
+            if !interrupts_paragraph_as_container(cur, &owned) {
                 folded_a_lazy_line = true;
                 lines.push(owned);
                 line_map.push(cur.source_line(cur.pos));
