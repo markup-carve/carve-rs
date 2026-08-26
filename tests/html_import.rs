@@ -86,16 +86,11 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
 /// more things to keep current; the engine tests for the ruling pin those
 /// directly instead.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "empty-definition-description",
-        "an empty description body is written `: {empty}` (markup-carve/carve#1827)",
-        ":: term\n: {empty}\n",
-    ),
-    (
-        "empty-definition-description-not-last",
-        "the sentinel keeps the list whole, so nothing splits (markup-carve/carve#1827)",
-        ":: t1\n: {empty}\n:: t2\n: d2\n",
-    ),
+    // EMPTY. The two entries that stood here described the empty-description
+    // fixtures while the pinned spec still recorded the dropped body. Upstream
+    // records the `{empty}` sentinel now (markup-carve/carve#1827), each entry
+    // failed its own staleness assertion on this pin, and both are deleted
+    // rather than left describing a window that has closed.
 ];
 
 /// The two fields that record WHERE a node was written rather than what it is.

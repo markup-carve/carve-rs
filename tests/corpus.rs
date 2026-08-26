@@ -567,6 +567,11 @@ const IMPLEMENTED: &[&str] = &[
     "an-invisible-line-before-the-blank-does-not-cancel-the-separation",
     "an-unresolved-image-gives-its-whole-caption-slot-back-at-any-depth",
     "below-a-definition-body-s-column-an-invisible-line-folds-as-text",
+    "a-colon-followed-by-only-whitespace-is-not-a-description",
+    "a-leading-continuation-marker-in-a-footnote-body-or-a-quote-is-text",
+    "an-empty-description-body-claims-no-line-below-column-0",
+    "an-empty-description-body-is-written-with-the-empty-sentinel",
+    "the-continuation-marker-s-column-gate-reaches-every-container",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -700,8 +705,9 @@ fn no_case_is_both_deferred_and_ahead_of_pin() {
     // state (markup-carve/carve-php#1583's sweep found it), which is what this
     // refuses.
     let mut unreachable = Vec::new();
+    let pairs = corpus_pairs();
     for (slug, _, _) in AHEAD_OF_PIN {
-        let category = base_category(slug);
+        let category = base_category(slug, &pairs);
         if KNOWN_GAPS.contains(&category) {
             unreachable.push(format!("{slug} (category deferred in KNOWN_GAPS)"));
         } else if !IMPLEMENTED.contains(&category) {
@@ -720,8 +726,10 @@ fn a_known_gap_still_fails() {
     // conformant, unlisted in IMPLEMENTED, and therefore compared against
     // nothing at all. Mirrors what AHEAD_OF_PIN asserts in its own direction.
     let mut stale = Vec::new();
-    for slug in corpus_pairs() {
-        let category = base_category(&slug);
+    let pairs = corpus_pairs();
+    for slug in &pairs {
+        let slug = slug.as_str();
+        let category = base_category(slug, &pairs);
         if !KNOWN_GAPS.contains(&category) {
             continue;
         }
@@ -774,10 +782,20 @@ fn corpus_pairs_present() {
 /// Reduce a corpus pair slug to its base category: `NN-slug` or
 /// `NN-slug-MM` -> `NN-slug`. A trailing `-<digits>` is a variant suffix and is
 /// dropped so all variants of a category map to the single IMPLEMENTED entry.
-fn base_category(slug: &str) -> &str {
+/// A CATEGORY MAY END IN A NUMBER OF ITS OWN, so the variant suffix is dropped
+/// only when what remains names a pair that exists.
+/// `an-empty-description-body-claims-no-line-below-column-0` is the category and
+/// `-0-2` through `-0-7` are its variants; stripping the `-0` off the base pair
+/// invented a category no pair carries, which `all_corpus_categories_implemented`
+/// then demanded and `all_implemented_pairs_exist` refused - one category the two
+/// tests could not both be satisfied on.
+fn base_category<'a>(slug: &'a str, pairs: &[String]) -> &'a str {
     let slug = strip_leading_number(slug);
     if let Some((head, tail)) = slug.rsplit_once('-') {
-        if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) {
+        if !tail.is_empty()
+            && tail.bytes().all(|b| b.is_ascii_digit())
+            && pairs.iter().any(|pair| strip_leading_number(pair) == head)
+        {
             return head;
         }
     }
@@ -816,8 +834,9 @@ fn resolve_slug(slug: &str) -> String {
 #[test]
 fn all_corpus_categories_implemented() {
     let mut missing: Vec<String> = Vec::new();
-    for slug in corpus_pairs() {
-        let category = base_category(&slug);
+    let pairs = corpus_pairs();
+    for slug in &pairs {
+        let category = base_category(slug, &pairs);
         if !IMPLEMENTED.contains(&category) && !KNOWN_GAPS.contains(&category) {
             let category = category.to_string();
             if !missing.contains(&category) {

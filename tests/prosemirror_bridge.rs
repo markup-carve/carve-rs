@@ -765,8 +765,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 434 is the only category that splits, and instructively: its fourth
     // document is the resolved reference image inside a list item, which is one
     // figure and no soft break, so it is the one of the four that lands strict.
-    const STRICT: usize = 1192;
-    const LOSSY: usize = 308;
+    // Categories 435-439 add 38 documents, and nothing else moves. Measured the
+    // same way as the bump above - dumping BOTH buckets at ac2493c0 and at
+    // e539184 and diffing them: 1192/308 over 1500 documents becomes 1220/318
+    // over 1538, NO document leaves either bucket in either direction, and all
+    // 38 joiners are files the base corpus does not contain at all.
+    // Twenty-eight round-trip strictly. The other ten report an
+    // already-declared editor loss: 435-13, four 437 documents and five 439
+    // documents. Every one is the same shape as the ten before them - a refused
+    // continuation marker or a marker that opens no description leaves the line
+    // folding into the paragraph above it, and a MULTI-LINE PARAGRAPH is what a
+    // soft break is.
+    const STRICT: usize = 1220;
+    const LOSSY: usize = 318;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
