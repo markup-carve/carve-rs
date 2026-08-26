@@ -13,6 +13,17 @@
 //! written at the description's column, below it, or at the list's own
 //! (carve-rs#1419). Spec corpus category 419 pins all three columns; two of
 //! its three documents failed here.
+//!
+//! THE LADDER HAS ONE BOUNDARY NOW, not two. carve#1729 spelled the clause per
+//! container, and this file pinned what that spelling produced: a band below
+//! the description's column where the opener folded into the paragraph above it
+//! as literal text, and a list item that answered the same geometry differently
+//! from a footnote body. carve#1781 replaced the three spellings with one - THE
+//! BASE BELONGS TO THE INNERMOST OPEN CONTAINER - and carve#1791 added the list
+//! item to it. Below the description's column the description simply ENDS, and
+//! the surviving container is the body the run was written in, where a
+//! recognized opener is still an opener (carve-rs#1430). The three tests that
+//! asserted the superseded reading now assert this one, and say which.
 
 fn html(source: &str) -> String {
     carve::to_html(source).trim().to_string()
@@ -41,14 +52,20 @@ fn a_block_at_the_description_column_opens_inside_the_description() {
 }
 
 #[test]
-fn one_column_short_of_the_description_is_still_lazy_text() {
+fn one_column_short_of_the_description_is_the_bodys_own_block() {
     // The other side of the upper boundary. Below the description's column the
-    // body ends, and a line that is not the enclosing body's own block folds
-    // into the paragraph above it as literal text - the `>` never opens.
+    // description ENDS, and the surviving container is the footnote body - where
+    // the quote is still a quote. This used to read as literal text: the run
+    // carried the line along and dedented it by the run's base alone, which put
+    // it between the two columns, too shallow to be the description's content
+    // and no longer at the body's minimum (carve-rs#1430).
     let output = html(&footnote_with_quote_at(5));
     assert!(output.contains("<dd>definition</dd>"), "{output}");
-    assert!(output.contains("<p>&gt; quote"), "{output}");
-    assert!(!output.contains("<blockquote>"), "{output}");
+    assert!(
+        output.contains("</dl>\n      <blockquote><p>quote</p></blockquote>"),
+        "{output}"
+    );
+    assert!(!output.contains("&gt; quote"), "{output}");
 }
 
 #[test]
@@ -66,21 +83,36 @@ fn at_or_below_the_lists_own_column_the_block_leaves_the_list() {
 }
 
 #[test]
-fn a_list_at_the_bodys_own_minimum_column_is_unchanged() {
+fn the_boundary_moves_with_the_description_not_with_the_list() {
     // The list is authored AT the footnote body's minimum column, so it takes
-    // no authored base and there is no rebased run for a blank to end. The
-    // block leaves the list at every column, which is what corpus 419's first
-    // document already read here.
+    // no authored base - but the description it opens still has a content
+    // column, and that is the boundary. It is 5 here against 6 above, and the
+    // ladder shifts with it by exactly one.
+    //
+    // The whole ladder used to read BESIDE, because with no rebased run there
+    // was nothing to register the description as a container: a block at the
+    // description's own column was measured against the footnote body and
+    // lifted out of the description it was written into (carve-rs#1430).
     for column in 2..=8 {
         let output = html(&format!(
             "[^n]: intro\n\n  :: term\n  :  definition\n\n{}> quote\n\nsee[^n]\n",
             " ".repeat(column)
         ));
-        assert!(output.contains("<dd>definition</dd>"), "{column}: {output}");
-        assert!(
-            output.contains("</dl>\n      <blockquote><p>quote</p></blockquote>"),
-            "{column}: {output}"
-        );
+        if column >= 5 {
+            assert!(
+                output.contains(
+                    "<dd>\n          <p>definition</p>\n          \
+                     <blockquote><p>quote</p></blockquote>\n        </dd>"
+                ),
+                "{column}: {output}"
+            );
+        } else {
+            assert!(output.contains("<dd>definition</dd>"), "{column}: {output}");
+            assert!(
+                output.contains("</dl>\n      <blockquote><p>quote</p></blockquote>"),
+                "{column}: {output}"
+            );
+        }
     }
 }
 
@@ -126,42 +158,57 @@ fn the_rule_is_not_about_quotes() {
 }
 
 #[test]
-fn a_list_item_is_outside_the_clause_and_keeps_its_own_answer() {
-    // THE CONTAINERS THE CLAUSE NAMES ARE THE ONLY ONES THAT MOVE. PART 9 §24
-    // C3 names "a definition body's column 3 or a footnote body's column 2".
-    // A list item is not one of them, and it legitimately reads the same
-    // geometry differently: the identical list, written at the identical
-    // column inside a list item instead of a footnote body, leaves the block
-    // beside the list at EVERY payload column - where a footnote body folds it
-    // in as lazy text one and two columns short of the description and opens
-    // it inside the description at the description's own column.
+fn a_list_item_answers_the_same_ladder() {
+    // A LIST ITEM IS A CONTAINER THE RULE REACHES (carve#1791). This test used
+    // to assert the opposite - that PART 9 §24 C3 named "a definition body's
+    // column 3 or a footnote body's column 2" and a list item was outside the
+    // clause, so the identical document inside an item left the quote beside
+    // the list at EVERY payload column. carve#1781 replaced the per-container
+    // spellings with one rule and carve#1791 added the item to it, so the
+    // ladder is now the footnote body's ladder with the outer container
+    // swapped: the boundary is the description's content column, 6 here, in
+    // both.
     //
-    // Applying the clause to every container instead of the named two trades
-    // this ticket's defect for that one. carve-js shipped that trade and took
-    // two further tickets to unpick it (markup-carve/carve-js#1508, undone in
-    // #1520). The rendering asserted below is what carve-js reads at
-    // markup-carve/carve-js@10a1698e, whose agreement with the executable
-    // oracle over this ladder is complete.
-    //
-    // WHAT THIS TEST IS AND IS NOT. It asserts the WHOLE document at every
-    // column, so any change that moves list-item placement fails it. It is not
-    // a tripwire on `include_sublists`: flipping that flag at both list-item
-    // call sites was measured and moves no cell of this ladder, because a
-    // marker line registers its content column and returns before the rebase
-    // this ticket changes can see it. That insulation is why the fix could not
-    // have made carve-js's trade here - but it is structural rather than
-    // stated, so the answer is pinned by value.
+    // The nesting question the old comment was really guarding - a block at a
+    // nested LIST MARKER's content column, which carve-js#1508 got wrong and
+    // #1520 unpicked - is answered elsewhere and did not move: a marker line
+    // registers its own content column and returns before this rebase can see
+    // it. `a_nested_list_marker_keeps_the_block_in_its_item` below pins it.
     for column in 2..=9 {
         let output = html(&format!(
             "- item\n\n   :: term\n   :  definition\n\n{}> quote\n",
             " ".repeat(column)
         ));
-        assert_eq!(
-            output,
+        let expected = if column >= 6 {
+            "<ul>\n  <li>item\n    <dl>\n      <dt>term</dt>\n      \
+             <dd>\n        <p>definition</p>\n        \
+             <blockquote><p>quote</p></blockquote>\n      </dd>\n    \
+             </dl>\n  </li>\n</ul>"
+        } else {
             "<ul>\n  <li>item\n    <dl>\n      <dt>term</dt>\n      \
              <dd>definition</dd>\n    </dl>\n    \
-             <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>",
-            "column {column}"
-        );
+             <blockquote><p>quote</p></blockquote>\n  </li>\n</ul>"
+        };
+        assert_eq!(output, expected, "column {column}");
     }
+}
+
+#[test]
+fn a_nested_list_marker_keeps_the_block_in_its_item() {
+    // The shape the old list-item test was guarding, kept as its own claim.
+    // A block at a nested item's content column belongs to that item, not to
+    // the body the marker was written in - the marker is the innermost open
+    // container there. carve#1791 corpus
+    // `423-one-authored-base-rule-reaches-a-definition-nested-in-a-list-item-2`;
+    // this engine already read it that way, and this pins it against the
+    // description registration added for carve-rs#1430.
+    assert_eq!(
+        html("[^n]: intro\n\n  - item\n\n    > quote\n\nsee[^n]\n"),
+        "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n\
+         <section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    \
+         <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li>item\n          \
+         <blockquote><p>quote</p></blockquote>\n        </li>\n      </ul>\n      \
+         <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    \
+         </li>\n  </ol>\n</section>"
+    );
 }
