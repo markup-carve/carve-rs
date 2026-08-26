@@ -9,6 +9,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`paragraph.blockImage` is published on the wire and trusted on ingest** (#1448, #1444, markup-carve/carve#1816, PART 9R R7, PART 12 §23). The block-image promotion phase runs after reference resolution and publishes its answer; an ingested tree is promoted only where the field is absent.
+- **Citation items are typed, positioned nodes** (#1440, markup-carve/carve#1799). Each item of a group serializes and decodes as `type: "citation"` with its own `pos`, item ranges are computed through the inline source map including multiline groups, and profile denial applies per item.
 - `bbcode_to_carve` and `carve migrate --from bbcode`, bringing Rust importer
   parity for forum migrations (#1275). Code and `[noparse]` content stays
   literal, ordinary Carve syntax is escaped, and input is bounded at 256 KiB.
@@ -166,6 +168,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An empty body claims no line below column 0** (#1450, #1449, markup-carve/carve#1817, PART 9 §17 L3). In the first-block form `- +` a payload at column 1 is not flush-left, so the marker is refused and the item stays empty.
+- **The continuation marker's column gate reaches every container** (#1447, #1446, markup-carve/carve#1817, PART 9 §17 L3). The gate was column arithmetic spread through the list-item collectors, so a footnote body, a definition description and a block quote each reached out for a line the clause leaves where the author wrote it.
+- **Below a definition body's column an invisible line folds into it** (#1441, #1445, #1438, #1443, markup-carve/carve#1809, PART 9 §10 I5). The link, footnote and abbreviation kinds now answer one rule: the line is lazy text of the container it fell below and does not register.
+- **A comment in a footnote body leaves no blank line in the output** (#1442, #1439). A block that renders to nothing is dropped before the join, which also lands the backlink on the last visible block.
+- **A wrapped list-item attribute block is one block** (#1436, markup-carve/carve#1799). The wrapped spelling was read as visible list text while the one-line spelling was structural, so source wrapping changed both the tree and the ownership of the following line.
 - The continuation marker attaches one block in every container (#1431,
   markup-carve/carve#1782, PART 9 §17 L3/L4). A footnote body and both
   definition-description spellings took the whole run up to their own
