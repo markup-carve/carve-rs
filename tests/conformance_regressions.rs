@@ -441,8 +441,13 @@ fn empty_term_is_not_definition_list() {
 }
 
 #[test]
-fn empty_definition_body_is_literal_paragraph() {
-    assert_eq!(html(":: t\n:  "), "<dl>\n  <dt>t</dt>\n</dl>\n<p>:</p>");
+fn empty_definition_body_folds_into_the_term() {
+    // A MARKER REQUIRES CONTENT (PART 2), so a colon carrying nothing but
+    // spaces opens no description: it is a plain line under the open term,
+    // which folds it as a soft break and drops its trailing run
+    // (markup-carve/carve#1830). This used to end the list and emit the colon
+    // as its own paragraph, a structure the marker never opened.
+    assert_eq!(html(":: t\n:  "), "<dl>\n  <dt>t\n:</dt>\n</dl>");
 }
 
 #[test]
