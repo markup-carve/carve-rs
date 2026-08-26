@@ -119,7 +119,7 @@ fn it_reaches_a_bare_image_inside_a_container() {
         ),
         (
             r#"<dl><dt>t</dt><dd><img src="g.jpg" alt="G"></dd></dl>"#,
-            ":: t\n:  ![G](g.jpg)\n",
+            ":: t\n: ![G](g.jpg)\n",
         ),
         (
             r#"<section><img src="g.jpg" alt="G"></section>"#,

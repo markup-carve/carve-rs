@@ -30,25 +30,25 @@ fn round_trips(source: &str) -> bool {
 /// describes.
 #[test]
 fn the_carve_target_parses_with_spans() {
-    let out = to_carve(":: term\n:  [r]: /u\n\nsee [t][r]\n");
+    let out = to_carve(":: term\n: [r]: /u\n\nsee [t][r]\n");
     assert!(
         !out.contains(":\n"),
         "an emptied description came back as a bare colon, so the carve target \
          parsed without spans: {out:?}"
     );
-    assert!(out.contains(":  [r]: /u"), "{out:?}");
+    assert!(out.contains(": [r]: /u"), "{out:?}");
 }
 
 #[test]
 fn a_link_definition_is_written_back_on_its_own_line() {
-    let source = ":: term\n:  [r]: /u\n\nsee [t][r]\n";
+    let source = ":: term\n: [r]: /u\n\nsee [t][r]\n";
     assert_eq!(to_carve(source), source);
     assert!(round_trips(source));
 }
 
 #[test]
 fn a_footnote_definition_is_written_back_on_its_own_line() {
-    let source = ":: term\n:  [^f]: x\n\nsee[^f]\n";
+    let source = ":: term\n: [^f]: x\n\nsee[^f]\n";
     assert_eq!(to_carve(source), source);
     assert!(round_trips(source));
 }
@@ -57,13 +57,13 @@ fn a_footnote_definition_is_written_back_on_its_own_line() {
 /// would define the label twice.
 #[test]
 fn the_definition_is_not_written_twice() {
-    let out = to_carve(":: term\n:  [r]: /u\n\nsee [t][r]\n");
+    let out = to_carve(":: term\n: [r]: /u\n\nsee [t][r]\n");
     assert_eq!(out.matches("[r]: /u").count(), 1, "{out}");
 }
 
 #[test]
 fn the_footnote_is_not_written_twice() {
-    let out = to_carve(":: term\n:  [^f]: x\n\nsee[^f]\n");
+    let out = to_carve(":: term\n: [^f]: x\n\nsee[^f]\n");
     assert_eq!(out.matches("[^f]: x").count(), 1, "{out}");
 }
 
@@ -74,7 +74,7 @@ fn the_footnote_is_not_written_twice() {
 /// outright. A second entry is enough to reach a later form.
 #[test]
 fn an_emptied_description_survives_every_escape_pass() {
-    let source = ":: t1\n:  [r]: /u\n\n:: t2\n:  d2\n\nsee [t][r]\n";
+    let source = ":: t1\n: [r]: /u\n\n:: t2\n: d2\n\nsee [t][r]\n";
     let out = to_carve(source);
     assert_eq!(out.matches("[r]: /u").count(), 1, "{out}");
     assert!(round_trips(source));
@@ -82,7 +82,7 @@ fn an_emptied_description_survives_every_escape_pass() {
 
 #[test]
 fn an_emptied_description_as_the_last_entry_survives_every_pass() {
-    let source = ":: t1\n:  d1\n\n:: t2\n:  [r]: /u\n\nsee [t][r]\n";
+    let source = ":: t1\n: d1\n\n:: t2\n: [r]: /u\n\nsee [t][r]\n";
     let out = to_carve(source);
     assert_eq!(out.matches("[r]: /u").count(), 1, "{out}");
     assert!(round_trips(source));
@@ -92,20 +92,20 @@ fn an_emptied_description_as_the_last_entry_survives_every_pass() {
 /// two corpus documents that found it.
 #[test]
 fn an_emptied_description_beside_an_ordinary_one() {
-    let source = ":: term\n:  [r]: /u\n:  body\n\nsee [t][r]\n";
+    let source = ":: term\n: [r]: /u\n: body\n\nsee [t][r]\n";
     assert_eq!(to_carve(source), source);
     assert!(round_trips(source));
 }
 
 #[test]
 fn an_emptied_description_inside_a_block_quote() {
-    let source = "> :: term\n> :  [r]: /u\n>\n> see [t][r]\n";
+    let source = "> :: term\n> : [r]: /u\n>\n> see [t][r]\n";
     assert!(round_trips(source));
 }
 
 #[test]
 fn an_emptied_description_inside_a_list_item() {
-    let source = "- :: term\n  :  [r]: /u\n\nsee [t][r]\n";
+    let source = "- :: term\n  : [r]: /u\n\nsee [t][r]\n";
     assert!(round_trips(source));
 }
 
@@ -115,14 +115,14 @@ fn an_emptied_description_inside_a_list_item() {
 /// this one writing a bare `:`.
 #[test]
 fn an_emptied_description_inside_an_admonition() {
-    let source = "::: note\n:: term\n:  [r]: /u\n:::\n\nsee [t][r]\n";
+    let source = "::: note\n:: term\n: [r]: /u\n:::\n\nsee [t][r]\n";
     assert_eq!(to_carve(source), source);
     assert!(round_trips(source));
 }
 
 #[test]
 fn an_ordinary_description_is_unchanged() {
-    assert_eq!(to_carve(":: term\n:  body\n"), ":: term\n:  body\n");
+    assert_eq!(to_carve(":: term\n: body\n"), ":: term\n: body\n");
 }
 
 #[test]

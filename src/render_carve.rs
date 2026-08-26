@@ -2421,11 +2421,11 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 if let Some(written) = written {
                     pending_break = false;
                     let mut written_lines = written.split('\n');
-                    out.push(format!(":  {}", written_lines.next().unwrap_or_default()));
+                    out.push(format!(": {}", written_lines.next().unwrap_or_default()));
                     // A footnote body can be multi-line; its continuation lines
                     // carry the body's own indent and sit under the description.
                     for written_line in written_lines {
-                        out.push(format!("   {written_line}"));
+                        out.push(format!("  {written_line}"));
                     }
                     continue;
                 }
@@ -2459,9 +2459,9 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             }
             pending_break = false;
             let mut lines = body.split('\n');
-            out.push(format!(":  {}", lines.next().unwrap_or_default()));
+            out.push(format!(": {}", lines.next().unwrap_or_default()));
             for line in lines {
-                out.push(format!("   {line}"));
+                out.push(format!("  {line}"));
             }
         }
     }

@@ -59,7 +59,7 @@ fn a_fenced_block_under_a_definition_description_keeps_its_blank_line_empty() {
         "section 7: the indent of an EMPTY verbatim line is layout and is omitted\n{out:?}"
     );
     assert!(
-        out.contains("   ```\n   a\n\n   b\n   ```"),
+        out.contains("  ```\n  a\n\n  b\n  ```"),
         "the fence body keeps its own indent, the blank line takes none\n{out:?}"
     );
 }

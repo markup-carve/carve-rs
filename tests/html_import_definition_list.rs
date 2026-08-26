@@ -28,7 +28,7 @@ fn reparsed(html: &str) -> String {
 #[test]
 fn a_definition_list_survives_the_import() {
     let html = "<dl><dt>Carve</dt><dd>A markup language.</dd></dl>";
-    assert_eq!(imported(html), ":: Carve\n:  A markup language.\n");
+    assert_eq!(imported(html), ":: Carve\n: A markup language.\n");
     assert_eq!(
         reparsed(html),
         "<dl>\n  <dt>Carve</dt>\n  <dd>A markup language.</dd>\n</dl>"
@@ -79,7 +79,7 @@ fn a_div_grouped_list_imports_the_same_way() {
         imported(
             "<dl><dt>Plain</dt><dd>Direct</dd><div><dt>Wrapped</dt><dd>Grouped</dd></div></dl>"
         ),
-        ":: Plain\n:  Direct\n:: Wrapped\n:  Grouped\n"
+        ":: Plain\n: Direct\n:: Wrapped\n: Grouped\n"
     );
 }
 
@@ -175,7 +175,7 @@ fn a_stray_element_between_the_terms_is_reported() {
 #[test]
 fn a_definition_with_no_term_keeps_its_content_and_states_the_loss() {
     let html = "<dl><dd>Orphan</dd><dt>T</dt><dd>D</dd></dl>";
-    assert_eq!(imported(html), "Orphan\n\n:: T\n:  D\n");
+    assert_eq!(imported(html), "Orphan\n\n:: T\n: D\n");
     assert_eq!(
         reparsed(html),
         "<p>Orphan</p>\n<dl>\n  <dt>T</dt>\n  <dd>D</dd>\n</dl>"
@@ -217,7 +217,7 @@ fn a_representable_list_reports_nothing() {
 fn a_definition_list_between_paragraphs_stays_its_own_block() {
     assert_eq!(
         imported("<p>Before</p><dl><dt>T</dt><dd>D</dd></dl><p>After</p>"),
-        "Before\n\n:: T\n:  D\n\nAfter\n"
+        "Before\n\n:: T\n: D\n\nAfter\n"
     );
 }
 

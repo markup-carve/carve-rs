@@ -3,7 +3,7 @@
 //! (markup-carve/carve#1608, carve#1627, carve#1636; `docs/html-import.md`).
 //!
 //! Carve has no spelling for an empty description. Six candidates were probed on
-//! the ruling and none works - `: `, `:  `, `: {}` and a tab after the colon each
+//! the ruling and none works - `: `, `: `, `: {}` and a tab after the colon each
 //! leak a `:` into the text or fold into the term above, and a colon plus three
 //! spaces yields `<dd>&nbsp;</dd>`, which is not empty. The bare colon line this
 //! engine used to write is the worst of them: the parser reads it as more of the
@@ -58,7 +58,7 @@ fn the_premise_a_bare_colon_line_is_read_as_more_of_the_term() {
 fn the_premise_consecutive_terms_share_the_description_below_them() {
     // Why dropping an entry cannot simply continue the same list.
     assert_eq!(
-        carve::to_html(":: t1\n:: t2\n:  d2\n"),
+        carve::to_html(":: t1\n:: t2\n: d2\n"),
         "<dl>\n  <dt>t1</dt>\n  <dt>t2</dt>\n  <dd>d2</dd>\n</dl>"
     );
 }
@@ -70,12 +70,12 @@ fn the_premise_a_blank_line_neither_ends_a_definition_list_nor_survives_a_format
     // forbids - and the canonical writer removes the blank line again, so even
     // that reading would not survive `fmt`.
     assert_eq!(
-        carve::to_html(":: t1\n\n:: t2\n:  d2\n"),
+        carve::to_html(":: t1\n\n:: t2\n: d2\n"),
         "<dl>\n  <dt>t1</dt>\n  <dt>t2</dt>\n  <dd>d2</dd>\n</dl>"
     );
     assert_eq!(
-        carve::to_carve(":: t1\n\n:: t2\n:  d2\n"),
-        ":: t1\n:: t2\n:  d2\n"
+        carve::to_carve(":: t1\n\n:: t2\n: d2\n"),
+        ":: t1\n:: t2\n: d2\n"
     );
 }
 
@@ -84,7 +84,7 @@ fn the_premise_a_comment_line_ends_the_list_and_is_a_writer_fixed_point() {
     // Why it CAN be a comment: it renders nothing where it stands and it stays
     // where it was written, which of the constructs that render nothing only a
     // comment does both of.
-    let source = ":: t1\n\n%%\n\n:: t2\n:  d2\n";
+    let source = ":: t1\n\n%%\n\n:: t2\n: d2\n";
     assert_eq!(
         carve::to_html(source),
         "<dl>\n  <dt>t1</dt>\n</dl>\n<dl>\n  <dt>t2</dt>\n  <dd>d2</dd>\n</dl>"
@@ -116,7 +116,7 @@ fn a_dropped_last_entry_writes_the_term_alone_and_declares_the_description() {
 #[test]
 fn a_dropped_entry_with_one_after_it_breaks_the_list() {
     let result = imported("<dl><dt>t1</dt><dd></dd><dt>t2</dt><dd>d2</dd></dl>");
-    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n:  d2\n");
+    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n: d2\n");
     // Document order: the `<dl>` before the `<dd>` that is gone.
     assert_eq!(
         rows(&result),
@@ -151,7 +151,7 @@ fn the_break_survives_a_format_pass() {
 fn every_dropped_entry_with_a_term_after_it_breaks() {
     let result =
         imported("<dl><dt>t1</dt><dd></dd><dt>t2</dt><dd></dd><dt>t3</dt><dd>d3</dd></dl>");
-    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n\n%%\n\n:: t3\n:  d3\n");
+    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n\n%%\n\n:: t3\n: d3\n");
     assert_eq!(
         rows(&result),
         [
@@ -165,10 +165,10 @@ fn every_dropped_entry_with_a_term_after_it_breaks() {
 #[test]
 fn the_mark_is_spent_only_on_a_term_so_a_second_description_does_not_break() {
     // `<dl><dt>t</dt><dd></dd><dd>d2</dd></dl>` is ONE entry whose term already
-    // has `d2`. Breaking here would strand `:  d2` outside the list, where it
+    // has `d2`. Breaking here would strand `: d2` outside the list, where it
     // re-reads as a paragraph - a loss the rule was meant to prevent, not cause.
     let result = imported("<dl><dt>t</dt><dd></dd><dd>d2</dd></dl>");
-    assert_eq!(result.value, ":: t\n:  d2\n");
+    assert_eq!(result.value, ":: t\n: d2\n");
     assert_eq!(rows(&result), ["structure-unspellable@/dl[1]/dd[2]"]);
     assert!(
         !result.value.contains("%%"),
@@ -191,7 +191,7 @@ fn a_description_holding_only_layout_writes_nothing_and_takes_the_same_branch() 
     // pinned anyway, because §7's drop is what makes the two agree and nothing
     // else says so; the test below is the one that actually discriminates.
     let result = imported("<dl><dt>t1</dt><dd><p> </p></dd><dt>t2</dt><dd>d2</dd></dl>");
-    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n:  d2\n");
+    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n: d2\n");
     assert!(
         rows(&result).contains(&"structure-split@/dl[1]".to_string()),
         "{:?}",
@@ -214,7 +214,7 @@ fn a_description_holding_only_layout_writes_nothing_and_takes_the_same_branch() 
 #[test]
 fn a_description_holding_an_empty_list_writes_nothing_too() {
     let result = imported("<dl><dt>t1</dt><dd><ul></ul></dd><dt>t2</dt><dd>d2</dd></dl>");
-    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n:  d2\n");
+    assert_eq!(result.value, ":: t1\n\n%%\n\n:: t2\n: d2\n");
     assert_eq!(
         rows(&result),
         [
@@ -231,7 +231,7 @@ fn a_description_holding_an_empty_list_writes_nothing_too() {
 #[test]
 fn an_ordinary_definition_list_is_untouched_and_declares_nothing() {
     let result = imported("<dl><dt>t1</dt><dd>d1</dd><dt>t2</dt><dd>d2</dd></dl>");
-    assert_eq!(result.value, ":: t1\n:  d1\n:: t2\n:  d2\n");
+    assert_eq!(result.value, ":: t1\n: d1\n:: t2\n: d2\n");
     assert!(rows(&result).is_empty(), "{:?}", rows(&result));
     assert!(!result.value.contains("%%"));
 }

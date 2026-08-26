@@ -15,8 +15,18 @@
 //! Measured before adding: this engine already matches every fixture at the
 //! current pin, so this lands green and bites only on a regression.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+
+/// Writer rulings implemented ahead of this repository's spec submodule pin.
+/// Remove each entry when the pin reaches markup-carve/carve#1757.
+const AHEAD_OF_PIN: &[&str] = &[
+    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
+    "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
+    "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3",
+    "407-one-consumed-boolean-spells-the-looseness-no-blank-line-can-2",
+];
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
@@ -61,9 +71,14 @@ fn a_pinned_fixture_is_read() {
 #[test]
 fn fmt_matches_every_pinned_canonical_form() {
     let mut wrong = Vec::new();
+    let mut observed_ahead = BTreeSet::new();
     for (slug, source, expected) in pinned() {
         let actual = carve::to_carve(&source);
         if actual != expected {
+            if AHEAD_OF_PIN.contains(&slug.as_str()) {
+                observed_ahead.insert(slug);
+                continue;
+            }
             wrong.push(format!(
                 "{slug}\n  ----- expected -----\n{expected}\n  ----- actual -------\n{actual}"
             ));
@@ -73,5 +88,10 @@ fn fmt_matches_every_pinned_canonical_form() {
         wrong.is_empty(),
         "the writer disagrees with its pinned canonical form:\n{}",
         wrong.join("\n")
+    );
+    assert_eq!(
+        observed_ahead.len(),
+        AHEAD_OF_PIN.len(),
+        "an ahead-of-pin canonical-form declaration is stale"
     );
 }

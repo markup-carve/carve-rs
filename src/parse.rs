@@ -1123,8 +1123,8 @@ impl ContentColumns {
                 frame.cols.pop();
             }
             frame.def_list = Some(term_indent);
-        } else if let Some(body_indent) =
-            detect_prepass_def_body(line).filter(|at| self.frames[level].def_list == Some(*at))
+        } else if let Some((body_indent, marker_width)) =
+            detect_prepass_def_body(line).filter(|(at, _)| self.frames[level].def_list == Some(*at))
         {
             // `:  ` is three columns wide, so the body's content begins three
             // past the marker - the same arithmetic the collector does when it
@@ -1133,7 +1133,7 @@ impl ContentColumns {
             while frame.cols.last().is_some_and(|col| *col > body_indent) {
                 frame.cols.pop();
             }
-            frame.cols.push(body_indent + DEF_BODY_MARKER_WIDTH);
+            frame.cols.push(body_indent + marker_width);
         } else if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
             let cols = &mut self.frames[level].cols;
             while cols.last().is_some_and(|col| *col > marker_indent) {
@@ -2667,9 +2667,6 @@ fn prepass_quote_scope(line: &str) -> (usize, usize, &str) {
     (depth, quote_col, rest)
 }
 
-/// `:  ` - the definition-body marker, three columns wide.
-const DEF_BODY_MARKER_WIDTH: usize = 3;
-
 /// The indent of a `:: ` TERM line, which opens a definition list.
 fn detect_prepass_def_term(line: &str) -> Option<usize> {
     let indent = leading_ws(line);
@@ -2681,12 +2678,17 @@ fn detect_prepass_def_term(line: &str) -> Option<usize> {
 /// The separator is the marker's own, so a line that is only the marker opens
 /// nothing: `parse_definition_list` reads `:  ` with `strip_prefix`, and an
 /// empty remainder is the placeholder form rather than a body with content.
-fn detect_prepass_def_body(line: &str) -> Option<usize> {
+fn detect_prepass_def_body(line: &str) -> Option<(usize, usize)> {
     let indent = leading_ws(line);
-    line[indent.min(line.len())..]
-        .strip_prefix(":  ")
-        .filter(|body| !is_blank_line(body))
-        .map(|_| indent)
+    strip_definition_marker(&line[indent.min(line.len())..])
+        .filter(|(body, _)| !is_blank_line(body))
+        .map(|(_, width)| (indent, width))
+}
+
+fn strip_definition_marker(line: &str) -> Option<(&str, usize)> {
+    let rest = line.strip_prefix(':')?;
+    let spaces = rest.bytes().take_while(|b| *b == b' ').count();
+    (spaces > 0).then(|| (&rest[spaces..], 1 + spaces))
 }
 
 fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
@@ -12715,7 +12717,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         while let Some(next) = cur.peek() {
             if is_blank_line(next)
                 || next.strip_prefix(":: ").is_some()
-                || next.strip_prefix(":  ").is_some()
+                || strip_definition_marker(next).is_some()
                 || is_list_marker(next)
             {
                 break;
@@ -12779,7 +12781,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             while let Some(following) = cur.peek() {
                 if is_blank_line(following)
                     || following.strip_prefix(":: ").is_some()
-                    || following.strip_prefix(":  ").is_some()
+                    || strip_definition_marker(following).is_some()
                     || is_list_marker(following)
                 {
                     break;
@@ -12823,7 +12825,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     look += 1;
                 }
                 match cur.lines.get(cur.pos + look).copied() {
-                    Some(after) if after.strip_prefix(":  ").is_some() => {
+                    Some(after) if strip_definition_marker(after).is_some() => {
                         for _ in 0..look {
                             cur.consume();
                         }
@@ -12834,7 +12836,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let Some(line) = cur.peek() else {
                 break;
             };
-            let Some(def) = line.strip_prefix(":  ") else {
+            let Some((def, definition_column)) = strip_definition_marker(line) else {
                 break;
             };
             if is_blank_line(def) {
@@ -12844,7 +12846,9 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let def_start = cur.pos;
             // The `:  ` marker is three codepoints; add whatever an enclosing
             // container already took so a nested block maps back to the document.
-            let def_source_col = cur.source_col(cur.pos).map(|c| c + 3);
+            let def_source_col = cur
+                .source_col(cur.pos)
+                .map(|c| c + definition_column as isize);
             cur.consume();
             let def_trimmed = trim_ascii_end(def);
             // First-block form (`:  +`, mirroring the list `- +`): when the sole
@@ -12861,7 +12865,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                         is_blank_line(a)
                             || is_plus_marker(a)
                             || a.strip_prefix(":: ").is_some()
-                            || a.strip_prefix(":  ").is_some()
+                            || strip_definition_marker(a).is_some()
                     },
                 );
                 while cur.pos < end {
@@ -12894,7 +12898,13 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 closed_last: false,
             };
             let seed = body.source.clone();
-            body.append(collect_definition_body(cur, &mut fence, &seed, options));
+            body.append(collect_definition_body(
+                cur,
+                &mut fence,
+                &seed,
+                definition_column,
+                options,
+            ));
             // The span covers the `:  ` marker through the last line the body
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
@@ -13186,6 +13196,7 @@ fn collect_definition_body(
     cur: &mut LineCursor,
     fence: &mut DefinitionBodyFence,
     seed: &str,
+    content_column: usize,
     options: &Options<'_>,
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
@@ -13227,7 +13238,7 @@ fn collect_definition_body(
                     is_blank_line(a)
                         || is_plus_marker(a)
                         || a.strip_prefix(":: ").is_some()
-                        || a.strip_prefix(":  ").is_some()
+                        || strip_definition_marker(a).is_some()
                 },
             );
             while cur.pos < end {
@@ -13253,7 +13264,7 @@ fn collect_definition_body(
         // Form A: an indented continuation line (no intervening blank).
         if !is_blank_line(line) {
             let indent = indent_columns(line);
-            if indent >= 3 {
+            if indent >= content_column {
                 // A STRADDLING TAB LEAVES ITS RESIDUAL COLUMNS IN FRONT OF THE
                 // LINE (PART 9 §24 C1 gives a tab a column value, carve-rs#793).
                 // With `keep_residual` false a single tab - which reaches column
@@ -13265,7 +13276,7 @@ fn collect_definition_body(
                 //
                 // The residual is written back as the spaces the tab bought past
                 // the margin, which is what makes the two spellings agree.
-                let sliced = slice_columns(line, 3.min(indent), true);
+                let sliced = slice_columns(line, content_column.min(indent), true);
                 // Count what was actually removed rather than assuming three:
                 // `slice_columns` works in COLUMNS, and a tab is one codepoint
                 // spanning several of them. The difference in LENGTH is the
@@ -13297,7 +13308,7 @@ fn collect_definition_body(
             }
             // A new term/definition marker ends the definition (the outer loop
             // picks it up).
-            if line.strip_prefix(":: ").is_some() || line.strip_prefix(":  ").is_some() {
+            if line.strip_prefix(":: ").is_some() || strip_definition_marker(line).is_some() {
                 break;
             }
             // A FENCED BODY IS NOT A PARAGRAPH (PART 0 S4,
@@ -13387,7 +13398,7 @@ fn collect_definition_body(
             look += 1;
         }
         match cur.lines.get(cur.pos + look).copied() {
-            Some(after) if !is_blank_line(after) && indent_columns(after) >= 3 => {
+            Some(after) if !is_blank_line(after) && indent_columns(after) >= content_column => {
                 folded_a_lazy_line = false;
                 for _ in 0..look {
                     lines.push(String::new());
