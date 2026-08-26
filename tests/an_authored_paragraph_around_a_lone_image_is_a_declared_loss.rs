@@ -236,7 +236,7 @@ fn it_reports_it_at_every_level_the_tree_keeps_it() {
         ),
         (
             r#"<dl><dt>t</dt><dd><p><img src="g.jpg" alt="G"></p></dd></dl>"#,
-            ":: t\n:  ![G](g.jpg)\n",
+            ":: t\n: ![G](g.jpg)\n",
         ),
     ];
     for (html, written) in cases {
