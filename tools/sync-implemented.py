@@ -30,10 +30,25 @@ CORPUS = ROOT / "tests" / "spec" / "tests" / "corpus"
 TESTS = ROOT / "tests" / "corpus.rs"
 
 
-def base_category(slug: str) -> str:
-    """`12-foo-bar-3` -> `foo-bar`, the same reduction tests/corpus.rs makes."""
-    slug = re.sub(r"^\d+-", "", slug)
-    return re.sub(r"-\d+$", "", slug)
+def strip_leading_number(slug: str) -> str:
+    return re.sub(r"^\d+-", "", slug)
+
+
+def base_category(slug: str, stems: set[str]) -> str:
+    """`12-foo-bar-3` -> `foo-bar`, the same reduction tests/corpus.rs makes.
+
+    A CATEGORY MAY END IN A NUMBER OF ITS OWN, so the variant suffix is dropped
+    only when what remains names a pair that exists - the same rule
+    `base_category` in tests/corpus.rs applies, and for the same reason.
+    Stripping the `-0` off `an-empty-description-body-claims-no-line-below-column-0`
+    invents a category no pair carries, which this tool then asks IMPLEMENTED to
+    name and `all_implemented_pairs_exist` refuses.
+    """
+    slug = strip_leading_number(slug)
+    head, sep, tail = slug.rpartition("-")
+    if sep and tail.isdigit() and head in stems:
+        return head
+    return slug
 
 
 DECLARATION = "const IMPLEMENTED: &[&str] = &["
@@ -75,10 +90,15 @@ def main() -> int:
     known_gaps = re.findall(r'"([^"]+)"', source[gap_start:gap_end])
 
     pairs: dict[str, list[str]] = {}
+    stems = {
+        strip_leading_number(crv.stem)
+        for crv in CORPUS.glob("*.crv")
+        if crv.with_suffix(".html").exists()
+    }
     for crv in sorted(CORPUS.glob("*.crv")):
         if not crv.with_suffix(".html").exists():
             continue
-        pairs.setdefault(base_category(crv.stem), []).append(crv.stem)
+        pairs.setdefault(base_category(crv.stem, stems), []).append(crv.stem)
 
     missing = [c for c in pairs if c not in allowed and c not in known_gaps]
     if not missing:
