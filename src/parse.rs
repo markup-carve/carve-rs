@@ -6005,8 +6005,57 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 end = j;
             }
         } else if is_list_marker(&opener) {
+            // A BLANK LINE DOES NOT END THE RUN. A list item continues across
+            // one exactly as a definition body does (PART 9 §17 FORM A): a
+            // blank line followed by an indented block folds that block into
+            // the item. Stopping the extent at the blank left the block at its
+            // authored column while the marker above it had already moved to
+            // the base, so the item's content column had moved out from under
+            // the block and every payload column read alike - the block landed
+            // beside the list whether it was written at the item's content
+            // column, past it, or short of it (carve-rs#1423). The footnote
+            // branch was #1415/#1420 and the definition-list branch #1419/#1422.
+            //
+            // WHAT THE RUN MUST NOT SWALLOW, and what the old extent hid.
+            // Below the item's content column a blank-separated block is the
+            // ENCLOSING BODY's, so this run has a second bound the branches
+            // beside it do not need: a dedent below the base is not the only
+            // way out of it.
+            //
+            // THIS BRANCH IS ALREADY SCOPED TO THE CONTAINERS PART 9 §24 C3
+            // NAMES. It is reachable only with `include_sublists`, which is
+            // true at the definition-body and footnote-body call sites and
+            // false at all three list-item ones; a marker line registers its
+            // content column and returns above before a list-item call can
+            // reach here. A list item is outside the clause and answers the
+            // same geometry differently, and applying the clause to every
+            // container instead cost carve-js two further tickets to unpick
+            // (markup-carve/carve-js#1508, undone in markup-carve/carve-js#1520).
+            let content = marker_content_col(&lines[i]).unwrap_or(base);
+            let mut blank_seen = false;
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                if is_blank_line(candidate) {
+                    blank_seen = true;
+                    end = j;
+                    continue;
+                }
+                let indent = indent_columns(candidate);
+                if indent < base {
+                    break;
+                }
+                // THE SECOND BOUND. Carrying a block short of the item's
+                // content column into the run puts it in the LIST's coordinate
+                // system one or two columns shy of that content column, where
+                // the ordinary list rule reads it as lazy text - which is
+                // exactly what the enclosing body's own block is not.
+                //
+                // `indent > base` rather than `>= base` is an equivalent mutant
+                // today: measured over the whole corpus and 6000 generated
+                // shapes, widening it moves nothing, because the outer scan
+                // picks a marker at the base up again as its own opener. It is
+                // written this way because a line AT the marker's column is
+                // where a sibling marker goes, which belongs in the run.
+                if blank_seen && indent > base && indent < content {
                     break;
                 }
                 end = j;
