@@ -133,7 +133,10 @@ fn every_description_that_writes_nothing_takes_the_sentinel() {
 #[test]
 fn an_escaped_or_accompanied_brace_run_stays_content() {
     for (source, html) in [
-        (":: t\n: \\{empty}\n", "<dl>\n  <dt>t</dt>\n  <dd>{empty}</dd>\n</dl>"),
+        (
+            ":: t\n: \\{empty}\n",
+            "<dl>\n  <dt>t</dt>\n  <dd>{empty}</dd>\n</dl>",
+        ),
         (
             ":: t\n: {empty} x\n",
             "<dl>\n  <dt>t</dt>\n  <dd>{empty} x</dd>\n</dl>",
