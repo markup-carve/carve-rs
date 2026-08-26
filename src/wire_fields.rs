@@ -50,7 +50,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("literal_inline", &["attrs", "content", "pos", "type"]),
     ("math", &["attrs", "content", "display", "pos", "type"]),
     ("mention", &["attrs", "pos", "type", "user"]),
-    ("paragraph", &["attrs", "children", "pos", "type"]),
+    ("paragraph", &["attrs", "blockImage", "children", "pos", "type"]),
     ("raw_block", &["attrs", "content", "format", "pos", "type"]),
     ("raw_inline", &["attrs", "content", "format", "pos", "type"]),
     ("smart_punctuation", &["attrs", "glyph", "kind", "pos", "type", "value"]),
@@ -94,5 +94,6 @@ pub(crate) const WIRE_CONST_FIELDS: &[(&str, &[(&str, &str)])] = &[
     ("citation_group", &[("mode", "\"integral\"")]),
     ("definition_list", &[("loose", "true")]),
     ("list", &[("bareMarker", "true")]),
+    ("paragraph", &[("blockImage", "true")]),
     ("strong", &[("boldItalic", "true")]),
 ];

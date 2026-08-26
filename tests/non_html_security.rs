@@ -69,6 +69,7 @@ fn markdown_percent_encodes_destination_breakouts() {
         footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: None,
             children: vec![carve::InlineNode::Image(carve::Image {
@@ -206,6 +207,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
         footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: None,
             children: vec![carve::InlineNode::Image(carve::Image {
@@ -232,6 +234,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
         format!("fn{c}"),
         vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: None,
             children: vec![carve::InlineNode::text(format!("note{c}"))],
@@ -261,6 +264,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
                 at_content_column: false,
+                block_image: false,
                 attrs: None,
                 children: vec![
                     carve::InlineNode::text(format!("text{c}")),
@@ -369,6 +373,7 @@ fn render_markdown_with(c: &str) -> String {
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
                 at_content_column: false,
+                block_image: false,
                 attrs: None,
                 children: vec![
                     carve::InlineNode::text(format!("text{c}")),
@@ -388,6 +393,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
         format!("fn{c}"),
         vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: None,
             children: vec![carve::InlineNode::CitationGroup(carve::CitationGroup {
@@ -424,6 +430,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
                 at_content_column: false,
+                block_image: false,
                 attrs: None,
                 children: vec![
                     carve::InlineNode::Image(carve::Image {

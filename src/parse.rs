@@ -10826,6 +10826,7 @@ fn parse_list(
             // content column are lazy continuations and never start this
             // paragraph, so the flag describes the first line correctly.
             at_content_column: true,
+            block_image: false,
             pos: item_paragraph_span(
                 cur,
                 item_at,
@@ -12837,6 +12838,9 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         attrs: None,
         children,
         at_content_column,
+        // The promotion phase recomputes this after resolution; a paragraph
+        // cannot know here whether its reference image resolves.
+        block_image: false,
         pos,
     })
 }
@@ -22093,6 +22097,27 @@ fn promote_block_images(
                     pos: para_pos,
                 });
                 continue;
+            }
+            // THE PHASE PUBLISHES ITS ANSWER (PART 9R R7, PART 12 section 23,
+            // carve-rs#1444). A paragraph reaching here was not replaced by a
+            // block image or a figure above - either because `figures_only` is
+            // on, or because the strict column-0 rule keeps an INDENTED lone
+            // image a paragraph in the tree (carve#1660). It still RENDERS as a
+            // bare <img> at every column, so the question survives into the
+            // published tree, and this is where it is answered rather than left
+            // for each consumer to re-derive by running resolution again.
+            //
+            // UNGATED ON COLUMN, deliberately, and that is the same predicate
+            // `collapse_lone_image_paragraphs` applies at render time - not a
+            // second opinion. The column gate governs whether the paragraph is
+            // REPLACED by an image node; the field states what the HTML does,
+            // and the HTML emits a bare <img> at every column.
+            //
+            // Recomputed rather than accumulated, so promoting one tree twice
+            // cannot leave a stale `true` behind.
+            if let BlockNode::Paragraph(p) = block {
+                p.block_image = p.children.len() == 1
+                    && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img));
             }
             match block {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),

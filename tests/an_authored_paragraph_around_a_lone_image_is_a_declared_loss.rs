@@ -598,6 +598,7 @@ fn an_empty_paragraph_is_the_other_carve_out() {
                 attrs: None,
                 children: Vec::new(),
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
@@ -607,6 +608,7 @@ fn an_empty_paragraph_is_the_other_carve_out() {
                     pos: None,
                 })],
                 at_content_column: true,
+                block_image: false,
                 pos: None,
             }),
         ],
@@ -654,6 +656,7 @@ fn a_block_holding_one_comment_is_the_third_carve_out() {
                 pos: None,
             })],
             at_content_column: true,
+            block_image: false,
             pos: None,
         })],
         source_len: 0,

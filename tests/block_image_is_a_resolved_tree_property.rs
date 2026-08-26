@@ -17,10 +17,8 @@
 //! neither was held by any corpus document, and a mutation that gave back only
 //! the first slot line failed just two tests on the oracle.
 
-use carve::{parse, render_html};
-
 fn html(src: &str) -> String {
-    render_html(&parse(src)).trim().to_string()
+    carve::to_html(src).trim().to_string()
 }
 
 #[test]
@@ -107,4 +105,72 @@ fn gives_the_slot_back_inside_a_block_quote() {
         html("> ![a][r]\n> ^ cap\n"),
         "<blockquote><p>![a][r]\n^ cap</p></blockquote>"
     );
+}
+
+// PART 12 section 23, the wire half. The field is a resolution result published
+// beside the authored construct - the same added-alongside rule that lets a
+// resolved reference link keep `href` next to `ref` and `rawRef`.
+//
+// It appears on the paragraphs that SURVIVE the phase. A block image at a
+// container's content column is published as an `image` block node, so there is
+// no paragraph left to carry it; the strict column-0 rule keeps an INDENTED lone
+// image a paragraph in the tree (carve#1660) while the HTML still renders it as
+// a bare `<img>`, and that is exactly the paragraph a consumer would otherwise
+// have to re-derive the answer for.
+
+#[test]
+fn marks_a_surviving_lone_image_paragraph() {
+    let json = carve::to_json(&carve::parse("  ![a](/u)\n"));
+    assert!(json.contains(r#""type":"paragraph","blockImage":true"#), "{json}");
+}
+
+#[test]
+fn omits_the_field_on_an_ordinary_paragraph() {
+    let json = carve::to_json(&carve::parse("hi\n"));
+    assert!(!json.contains("blockImage"), "{json}");
+}
+
+/// An unresolved reference has no destination and renders as its literal source,
+/// so it stays inside its paragraph and the paragraph is not a block image.
+#[test]
+fn omits_the_field_when_the_reference_did_not_resolve() {
+    let json = carve::to_json(&carve::parse("![a][r]\n"));
+    assert!(!json.contains("blockImage"), "{json}");
+}
+
+// PART 12 section 23 on ingest: TRUST the field, and promote only where it is
+// ABSENT. Absence means the producer did not run the phase - every AST JSON
+// document written before it existed omits the field - so it is never read as a
+// claim that the paragraph is ordinary, and a tree is never refused for omitting
+// it.
+
+const LEGACY: &str = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[{"type":"image","src":"/u","alt":"a"}]}]}"#;
+
+#[test]
+fn promotes_a_legacy_tree_that_omits_the_field() {
+    let doc = carve::from_json(LEGACY).expect("a tree without the field is accepted");
+    assert_eq!(carve::render_html(&doc).unwrap().trim(), r#"<img src="/u" alt="a">"#);
+}
+
+#[test]
+fn trusts_the_field_where_the_producer_set_it() {
+    let with_field = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","blockImage":true,"children":[{"type":"image","src":"/u","alt":"a"}]}]}"#;
+    let doc = carve::from_json(with_field).expect("decodes");
+    assert_eq!(carve::render_html(&doc).unwrap().trim(), r#"<img src="/u" alt="a">"#);
+}
+
+#[test]
+fn invents_no_field_for_an_ordinary_paragraph_on_ingest() {
+    let ordinary = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[{"type":"text","value":"hi"}]}]}"#;
+    let doc = carve::from_json(ordinary).expect("decodes");
+    let json = carve::to_json(&doc);
+    assert!(!json.contains("blockImage"), "{json}");
+}
+
+/// The schema pins the field at `const: true`, which is what makes "absent" and
+/// "false on the decoded node" the same thing - a producer cannot send `false`.
+#[test]
+fn refuses_a_payload_that_sends_the_field_as_false() {
+    let false_field = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","blockImage":false,"children":[{"type":"text","value":"hi"}]}]}"#;
+    assert!(carve::from_json(false_field).is_err());
 }

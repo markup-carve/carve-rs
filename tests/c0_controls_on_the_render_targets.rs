@@ -233,6 +233,7 @@ fn control_a_carriage_return_in_a_constructed_tree_is_still_dropped() {
         footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
+            block_image: false,
             pos: None,
             attrs: None,
             children: vec![carve::InlineNode::text("a\rb".to_string())],
