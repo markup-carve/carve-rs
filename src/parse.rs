@@ -2708,10 +2708,31 @@ fn detect_prepass_def_body(line: &str) -> Option<(usize, usize)> {
         .map(|(_, width)| (indent, width))
 }
 
+/// The description marker on `line`: its body and its content column width.
+///
+/// THE SEPARATOR IS A RUN OF ASCII SPACES and at least one is required, so a
+/// tab straight after the colon satisfies nothing and the line is not a marker
+/// at all - a MARKER SEPARATOR is spelled `space` (PART 1, carve-rs#518).
+///
+/// AND THE MARKER REQUIRES CONTENT (PART 2): it opens its block only when
+/// followed by that space AND non-empty content, a rule that governs EVERY
+/// marker taking a separator space rather than the two the clause names. So `:`
+/// plus spaces and nothing else opens no description - it is a plain line under
+/// whatever is open, which folds it as a soft break and drops its trailing run
+/// (markup-carve/carve#1830). Without the content test the three space
+/// spellings ended the list and emitted the colon as their own paragraph, a
+/// structure the marker never opened, while the tab spelling already folded:
+/// one rule answering two ways depending on which character followed.
+///
+/// EMPTINESS IS MEASURED AFTER THE GREEDY RUN, not over the whole remainder. A
+/// tab past the separator is CONTENT, as a vertical tab and a no-break space
+/// are, so `:` + space + tab opens a description whose body then trims away -
+/// which is what carve-php and carve-js both read.
 fn strip_definition_marker(line: &str) -> Option<(&str, usize)> {
     let rest = line.strip_prefix(':')?;
     let spaces = rest.bytes().take_while(|b| *b == b' ').count();
-    (spaces > 0).then(|| (&rest[spaces..], 1 + spaces))
+    let body = &rest[spaces..];
+    (spaces > 0 && !body.is_empty()).then_some((body, 1 + spaces))
 }
 
 fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
