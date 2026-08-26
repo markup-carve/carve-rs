@@ -31,7 +31,11 @@
 fn html(src: &str) -> String {
     let rendered = carve::to_html(src);
     let collapsed = rendered.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.replace("> <", "><").replace(" </", "</").trim().to_string()
+    collapsed
+        .replace("> <", "><")
+        .replace(" </", "</")
+        .trim()
+        .to_string()
 }
 
 /// The same document twice, `+` where the control has its invisible line.
@@ -72,13 +76,19 @@ const BAND: &[(&str, &str)] = &[
 
 #[test]
 fn the_marker_reaches_no_further_than_a_comment_does() {
-    for (what, src) in BAND {
-        assert_eq!(
-            html(&marker(src)),
-            html(&comment(src)),
-            "the marker reached further than a comment does in {what}"
-        );
-    }
+    // Every row is measured before any of them is reported: the containers
+    // disagree independently, and stopping at the first one hides how many of
+    // them a change actually moved.
+    let drifted: Vec<&str> = BAND
+        .iter()
+        .filter(|(_, src)| html(&marker(src)) != html(&comment(src)))
+        .map(|(what, _)| *what)
+        .collect();
+    assert!(
+        drifted.is_empty(),
+        "the marker reached further than a comment does in: {}",
+        drifted.join("; ")
+    );
 }
 
 #[test]
@@ -120,7 +130,14 @@ const ATTACHES: &[(&str, &str, &str)] = &[
 
 #[test]
 fn a_column_zero_block_still_attaches() {
-    for (what, src, expected) in ATTACHES {
-        assert_eq!(html(src), *expected, "the marker stopped attaching in {what}");
-    }
+    let drifted: Vec<&str> = ATTACHES
+        .iter()
+        .filter(|(_, src, expected)| html(src) != **expected)
+        .map(|(what, _, _)| *what)
+        .collect();
+    assert!(
+        drifted.is_empty(),
+        "the marker stopped attaching in: {}",
+        drifted.join("; ")
+    );
 }

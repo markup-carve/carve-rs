@@ -1584,6 +1584,23 @@ fn extract_footnote_defs(
                     // next footnote definition.
                     if is_plus_marker(line) {
                         i += 1;
+                        // ...AND THE NOTE ENDS WHERE A COMMENT ENDS IT
+                        // (markup-carve/carve#1814). The gate decides whether
+                        // this `+` is a marker at all; when it is not, the line
+                        // is an ordinary invisible line at document column 0,
+                        // and a footnote body ends at one of those exactly as it
+                        // ends at a comment line there. Asked ONE LINE EARLY
+                        // because this loop's own continuation branch would
+                        // otherwise claim the following line before any extent
+                        // is measured. The `+` is consumed either way, so the
+                        // enclosing parse resumes on the line the marker did not
+                        // take.
+                        //
+                        // Continuation is gathered only for a TOP-LEVEL
+                        // definition (see above), so the outer offset here is 0.
+                        if !attaches_flush_left(Some(0), lines.get(i)) {
+                            break;
+                        }
                         let mut attached: Vec<String> = Vec::new();
                         let attached_start = i;
                         let end = attached_block_lines(
@@ -1591,6 +1608,7 @@ fn extract_footnote_defs(
                             i,
                             &mut comment_closers,
                             options,
+                            Some(0),
                             &mut |a, _| {
                                 is_blank_line(a)
                                     || is_plus_marker(a)
@@ -8544,11 +8562,20 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
             // (markup-carve/carve-rs#1428). A `>` line AFTER the attached block
             // still continues the quote - the narrowing stops in front of it,
             // and the quote's own loop reads it on the next turn.
+            // A QUOTE DOES NOT END AT A REFUSED MARKER. It does not end at a
+            // comment line in that position either, and the difference belongs
+            // to each container's invisible-line rule rather than to the marker
+            // (markup-carve/carve#1814). A refusal is an empty attachment: no
+            // blank separators, because a separator would close the quote's open
+            // paragraph, and the clause says the line behaves as if the `+` had
+            // been a comment.
+            let attach_first_col = cur.source_col(cur.pos);
             let attach_end = attached_block_lines(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
                 options,
+                attach_first_col,
                 &mut |next, _| {
                     is_blank_line(next) || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 },
@@ -9204,6 +9231,47 @@ fn attached_block_end(
     end
 }
 
+/// PART 9 §17 L3: does the marker's candidate block begin at DOCUMENT column 0?
+///
+/// `AND FLUSH-LEFT MEANS COLUMN 0` (markup-carve/carve#1436) makes "flush-left"
+/// the marker's REACH rather than a description of the usual case: a line at any
+/// other column is not attached at all and falls through to the ordinary column
+/// rules, which give it to whichever container its own column names, exactly as
+/// if the `+` line had been a comment.
+///
+/// THE SOURCE COLUMN, NOT THE FRAME COLUMN. `outer` is what the enclosing
+/// container's strip already took off the front, so the document column is that
+/// plus what the line still carries. Reading the frame column alone answers a
+/// different question - inside a container it is what the strip left, not what
+/// the author wrote - and the corpus rows that catch the difference are the
+/// nested ones in category 384, not the ones this gate was added for
+/// (markup-carve/carve#1814).
+///
+/// `None` means the offset could not be recovered, and the answer is then TRUE:
+/// a reassembled line keeps the behavior it had rather than silently losing its
+/// attachment (PART 12 §4 rates an absent adjustment above a guessed one).
+fn attaches_flush_left(outer: Option<isize>, line: Option<&&str>) -> bool {
+    let Some(line) = line else {
+        return true;
+    };
+    // A STRIP ONLY EVER ADDS, so a line still carrying indentation in its own
+    // frame is below document column 0 whatever the frame is, and that half of
+    // the answer needs no map at all. It is the half every row this gate was
+    // added for turns on.
+    if indent_columns(line) != 0 {
+        return false;
+    }
+    // The other half: a frame-column-0 line is at DOCUMENT column 0 only when
+    // the enclosing strip took nothing. `col_map` is only built when positions
+    // are tracked, so an unknown offset keeps the behavior the line had rather
+    // than silently losing its attachment - the same choice carve-js and
+    // carve-php make for a reassembled line (PART 12 §4).
+    match outer {
+        None => true,
+        Some(outer) => outer == 0,
+    }
+}
+
 /// One past the last line the `+` marker at `start - 1` attaches: the container's
 /// own boundary, narrowed to the ONE block PART 9 §17 L3 counts.
 ///
@@ -9233,8 +9301,25 @@ fn attached_block_lines(
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
     options: &Options<'_>,
+    first_source_col: Option<isize>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
 ) -> usize {
+    // The column gate, asked ONCE for every container and BEFORE any extent is
+    // measured (markup-carve/carve#1814). It was asked in the list item and
+    // nowhere else - as column arithmetic inside the item collectors rather than
+    // as a predicate - so the footnote body, the definition description and the
+    // block quote each reached out for a line the clause leaves where the author
+    // wrote it: a `<dd>` whose content column is 3 pulled in a column-1 or
+    // column-2 line, a note pulled in a column-1 line, and a quote took a
+    // column-2 line that A QUOTE IS REACHED BY ITS MARKER (§10 I5,
+    // markup-carve/carve#1384) puts in no quote at all.
+    //
+    // An EMPTY range is the refusal: every caller reads that as "the marker
+    // attached nothing" and lets its own ordinary rules have the line, which is
+    // exactly what the clause's comment spelling does.
+    if !attaches_flush_left(first_source_col, lines.get(start)) {
+        return start;
+    }
     let end = attached_block_end(lines, start, comment_closers, is_boundary);
     if measuring_attached_block() {
         return end;
@@ -13229,11 +13314,13 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let mut body = if is_plus_marker(def_trimmed) {
                 let mut fb = LineBuffer::default();
                 let lines = cur.lines;
+                let first_block_col = cur.source_col(cur.pos);
                 let end = attached_block_lines(
                     lines,
                     cur.pos,
                     &mut cur.comment_closer_last_index,
                     options,
+                    first_block_col,
                     &mut |a, _| {
                         is_blank_line(a)
                             || is_plus_marker(a)
@@ -13601,13 +13688,24 @@ fn collect_definition_body(
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
             cur.consume();
+            // ...AND THE DESCRIPTION ENDS WHERE A COMMENT ENDS IT
+            // (markup-carve/carve#1814). Same shape as the footnote body: a `+`
+            // the gate refuses is an ordinary invisible line at document column
+            // 0, and a `<dd>` ends at one of those. Asked ONE LINE EARLY because
+            // the branch below would otherwise fold the following line into the
+            // open paragraph before any extent is measured.
+            if !attaches_flush_left(cur.source_col(cur.pos), cur.lines.get(cur.pos)) {
+                break;
+            }
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
+            let attached_first_col = cur.source_col(cur.pos);
             let end = attached_block_lines(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
                 options,
+                attached_first_col,
                 &mut |a, _| {
                     is_blank_line(a)
                         || is_plus_marker(a)
