@@ -10757,9 +10757,23 @@ fn parse_list(
             // continuation line. Breaking on it at any indent made `- a` / `  +`
             // two paragraphs here and one in carve-js and carve-php
             // (carve-rs#672, markup-carve/carve#812).
-            if is_blank_line(next)
-                || (trim_ascii(next) == "+" && indent_columns(next) <= base_indent)
-            {
+            // ...AND ONLY OVER A LINE AT COLUMN 0 (§17 L3,
+            // markup-carve/carve#1821). Its column makes the `+` eligible; what
+            // FOLLOWS it decides whether it is a marker at all. Over a line at
+            // any other column the clause refuses the marker and says the line
+            // behaves exactly as a comment line there does - consumed, ending
+            // nothing - so the lead paragraph stays open and the indented line
+            // folds into it. Breaking on eligibility alone made `- intro` / `+`
+            // / `  more` an attached block where every other engine and the
+            // executable spec fold one paragraph (corpus 435-13).
+            if trim_ascii(next) == "+" && indent_columns(next) <= base_indent {
+                if attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1)) {
+                    break;
+                }
+                cur.consume();
+                continue;
+            }
+            if is_blank_line(next) {
                 break;
             }
             if let Some(fence_len) = literal_colon_opener {

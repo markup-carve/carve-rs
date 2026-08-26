@@ -200,10 +200,19 @@ fn control_a_continuation_marker_that_places_its_attributes_is_not_reported() {
 }
 
 #[test]
-fn control_an_indented_brace_line_is_text_and_not_an_attribute_at_all() {
-    // The strict column-0 rule: one column in and the braces are ordinary text,
-    // so there is no attribute to be unattached.
-    assert!(unattached("- a\n+\n  {.x}\n> q\n").is_empty());
+fn an_attribute_line_a_refused_marker_leaves_behind_is_reported() {
+    // The marker reaches column 0 and nothing else (§17 L3), so over an
+    // indented line it attaches nothing and the attribute line is left with no
+    // block of its own - `> q` is the quote's, not this one's. An attribute
+    // that reaches no visible block is exactly what this rule names (§15 A4).
+    assert_eq!(unattached("- a\n+\n  {.x}\n> q\n").len(), 1);
+    // The tree the report describes, which is the one the executable spec and
+    // the other engines produce: the item keeps `a` alone and the quote stands
+    // outside the list.
+    assert_eq!(
+        html("- a\n+\n  {.x}\n> q\n"),
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+    );
 }
 
 #[test]

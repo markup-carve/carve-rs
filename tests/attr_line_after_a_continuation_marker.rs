@@ -175,14 +175,19 @@ fn attributes_that_reach_nothing_are_dropped() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn control_an_indented_line_after_the_marker_is_still_text() {
-    // The strict column-0 rule (docs/divergence-from-djot.md §11), measured at
-    // the marker's column: one column further in and the braces are ordinary
-    // text. Trimming the indent before looking for the brace turns this into an
-    // attribute block and deletes a paragraph.
+fn control_an_indented_line_after_the_marker_is_not_the_marker_s() {
+    // The marker reaches column 0 and nothing else (§17 L3), so it attaches
+    // nothing here and the indented line is left to its own column - the item's
+    // content column, where a brace line is the attribute line for a block this
+    // item does not have. It attaches to nothing and renders nothing; `> q` is
+    // the quote's own, not the attribute's.
+    //
+    // This control used to read the line as TEXT inside a block the marker had
+    // attached, which is the attachment the clause refuses. carve-js and the
+    // executable spec both produce what is asserted here (corpus 435-13).
     assert_eq!(
         carve::to_html("- a\n+\n  {.x}\n> q\n"),
-        "<ul>\n  <li>a\n    {.x}\n  </li>\n</ul>\n<blockquote><p>q</p></blockquote>"
+        "<ul>\n  <li>a</li>\n</ul>\n<blockquote><p>q</p></blockquote>"
     );
 }
 
