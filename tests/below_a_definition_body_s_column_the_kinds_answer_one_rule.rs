@@ -1,35 +1,26 @@
 //! Below a definition description's content column, the five invisible-line
-//! kinds have to answer ONE rule, and two of them answered it backwards
-//! (markup-carve/carve-rs#1438).
+//! kinds answer ONE rule - and the rule is that the four registering kinds FOLD
+//! (markup-carve/carve#1809, §10 I5 DEFINITION OWNERSHIP IS COLUMN-SCOPED).
 //!
-//! 1. A LINK REFERENCE DEFINITION folded where the FOOTNOTE spelling ends the
-//!    body. PART 9 section 10 I5 lists the two together and no clause separates
-//!    them by column, so one rule cannot give them opposite answers. carve-js,
-//!    carve-php and the oracle end the body for both. The reason this engine
-//!    split them is mechanical: the pre-pass rewrites a collected definition to
-//!    an invisible `%%` placeholder, which `interrupts_paragraph` sees, and it
-//!    collects only AT a tracked content column - so below the column the
-//!    footnote kind still arrived as a placeholder (its own pass reaches an
-//!    indented body) while the link kind arrived as its raw line, which no arm
-//!    of `interrupts_paragraph` matches.
+//! THIS FILE FIRST ASSERTED THE OPPOSITE FOR TWO OF THEM, and the history is the
+//! point. markup-carve/carve-rs#1438 read the band as "a link reference
+//! definition ends the body, like the footnote spelling PART 9 section 10 I5
+//! lists it with", which made the two kinds agree - in the wrong direction.
+//! carve#1809 then ruled the band from the LIST ITEM's answer: at a nonzero
+//! column below a container's content column an invisible line "is lazy
+//! paragraph text of THAT container (the one whose content column it fell
+//! below) and does not register". Corpus 430 and 430-6 pin it, and
+//! markup-carve/carve-rs#1443 is the change that moved these rows.
 //!
-//! 2. An ABBREVIATION DEFINITION ended the body where it should FOLD.
-//!    AN ABBREVIATION DEFINITION IS RECOGNIZED ONLY AT DOCUMENT LEVEL (PART 12
-//!    section 7), so a line the container is still deciding on is not a
-//!    definition at all - it is ordinary paragraph text, and
-//!    markup-carve/carve#1786 states that half directly: "the plain line that is
-//!    not an opener and folds from any column". The arm was gated on
-//!    `cur.at_document_level`, which describes the CURSOR and not the line, so
-//!    the identical description answered one way at top level and the other
-//!    inside a list item - where this engine folded all along.
+//! What #1438 got right survives unchanged, and is why the file stays: the
+//! ABBREVIATION definition folds because PART 12 section 7 recognizes it only as
+//! a direct child of the DOCUMENT, so inside a `dd` it was never an invisible
+//! line at all - and the arm was gated on `cur.at_document_level`, which
+//! describes the CURSOR and not the line, so the identical description answered
+//! one way at top level and the other inside a list item. Two kinds, two
+//! reasons, one answer.
 //!
-//! The two invert each other, so fixing one alone leaves the band
-//! self-inconsistent in the opposite direction. After both, the band reads:
-//! link and footnote definitions end the body, an abbreviation definition
-//! folds, a comment ends the body, an attribute line ends the body and stays
-//! literal. Every row below is carve-js and carve-php byte for byte.
-//!
-//! Nothing in the corpus pins the band, which is why neither was caught.
+//! Every row runs on BOTH render entry points.
 
 fn html(source: &str) -> String {
     let convenience = carve::to_html(source);
@@ -49,18 +40,20 @@ const ENDS: &str = "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>\n";
 const FOLDS_HEAD: &str = "<dl>\n  <dt>t</dt>\n  <dd>d\n";
 
 #[test]
-fn a_link_definition_below_the_column_ends_the_body_like_the_footnote_one() {
+fn a_link_definition_below_the_column_folds_like_the_footnote_one() {
+    // The pair this file was written about, now both folding. They still have to
+    // AGREE - that half of #1438 was right and no clause separates them by
+    // column - and carve#1809 supplied the direction.
     for indent in ["  ", " "] {
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}[r]: /u\ntail\n")),
-            format!("{ENDS}<p>[r]: /u\ntail</p>"),
+            format!("{FOLDS_HEAD}[r]: /u\ntail</dd>\n</dl>"),
             "indent {:?}",
             indent
         );
-        // The kind it has to agree with, in the same position and build.
         assert_eq!(
             html(&format!(":: t\n:  d\n{indent}[^f]: n\ntail\n")),
-            format!("{ENDS}<p>[^f]: n\ntail</p>"),
+            format!("{FOLDS_HEAD}[^f]: n\ntail</dd>\n</dl>"),
             "indent {:?}",
             indent
         );
@@ -69,10 +62,12 @@ fn a_link_definition_below_the_column_ends_the_body_like_the_footnote_one() {
 
 #[test]
 fn a_link_definition_below_the_column_still_registers_nothing() {
-    // The pre-pass declined to collect it, and ending the body must not change
-    // that: the text reaches the page, so a later reference stays literal.
+    // Unchanged in substance, and it is the row that makes the fold a whole one:
+    // the characters reach the page AND the symbol table stays empty, so a later
+    // reference is literal. Text plus a registration is the half fold corpus 430
+    // exists to catch.
     let out = html(":: t\n:  d\n  [r]: /u\ntail\n\n[link][r]\n");
-    assert!(out.contains("<p>[r]: /u\ntail</p>"), "{out}");
+    assert!(out.contains("<dd>d\n[r]: /u\ntail</dd>"), "{out}");
     assert!(out.contains("<p>[link][r]</p>"), "{out}");
     assert!(!out.contains("href=\"/u\""), "{out}");
 }
@@ -109,21 +104,24 @@ fn the_nested_spelling_answers_the_same_way_it_always_did() {
 }
 
 #[test]
-fn controls_the_plain_line_folds_and_the_other_two_kinds_do_not_move() {
-    // The plain line is what "folds as prose" means, and the comment and
-    // attribute kinds are the two this build already answered - a fix that
-    // reached past the two kinds at issue fails here.
+fn controls_the_plain_line_and_the_comment_bound_the_band() {
+    // The plain line is what "folds as text" means and folded from every column
+    // all along. The ATTRIBUTE line moved with the definitions under carve#1809 -
+    // this row used to assert that it ended the body - while the COMMENT is
+    // column-exempt (PART 9 section 24) and renders nothing at any column, which
+    // corpus 430-5 pins. The comment is what tells this fix from one that folded
+    // the whole invisible set.
     assert_eq!(
         html(":: t\n:  d\n  x\ntail\n"),
         format!("{FOLDS_HEAD}x\ntail</dd>\n</dl>")
     );
     assert_eq!(
-        html(":: t\n:  d\n  %% c\ntail\n"),
-        format!("{ENDS}<p>tail</p>")
+        html(":: t\n:  d\n  {.k}\ntail\n"),
+        format!("{FOLDS_HEAD}{{.k}}\ntail</dd>\n</dl>")
     );
     assert_eq!(
-        html(":: t\n:  d\n  {.k}\ntail\n"),
-        format!("{ENDS}<p>{{.k}}\ntail</p>")
+        html(":: t\n:  d\n  %% c\ntail\n"),
+        format!("{ENDS}<p>tail</p>")
     );
 }
 

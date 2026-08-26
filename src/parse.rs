@@ -2789,23 +2789,6 @@ impl StrippedContainerLine<'_> {
     }
 }
 
-/// Whether a line BELOW a definition body's content column is a reference
-/// definition, and so ends the body rather than folding into it.
-///
-/// The pre-pass has already declined to collect this one - it collects at a
-/// tracked content column, and this line is below one - so the line is still
-/// raw here and stays literal text once the body ends. What it answers is only
-/// "is this a definition-shaped line", with the same two rejections the
-/// collecting pass makes: a citation key is not a label, and an empty
-/// destination is not a definition (`[r]:` with nothing after it is text).
-///
-/// The FOOTNOTE spelling matches this shape too, which is deliberate: it
-/// already interrupts through its placeholder, and one predicate covering both
-/// is what keeps the two kinds from drifting apart again.
-fn is_below_column_definition_line(line: &str) -> bool {
-    parse_link_def_line(line).is_some_and(|(_, target)| !target.trim().is_empty())
-}
-
 fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
     // The grammar requires at least one character:
@@ -3685,6 +3668,16 @@ struct LineCursor<'a> {
     /// asks the ordinary §10 I2 question - `- > q` / `  - s` is still one quoted
     /// paragraph (carve-js#1200).
     in_item_body: bool,
+    /// Whether the INVISIBLE arms of `interrupts_paragraph` are live for the
+    /// question being asked. True everywhere except a container's BELOW-COLUMN
+    /// band, where §10 I5 makes a block-attribute line lazy paragraph text of
+    /// that container rather than a floating attribute (§10 I5 DEFINITION
+    /// OWNERSHIP IS COLUMN-SCOPED, markup-carve/carve#1809).
+    ///
+    /// PASSED, NOT INHERITED, for the reason `in_item_body` gives: it describes
+    /// one question about one line, not the region. Only
+    /// `interrupts_paragraph_in_band` clears it, and it restores it.
+    invisible_arms: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
@@ -3702,6 +3695,7 @@ impl<'a> LineCursor<'a> {
             pos: 0,
             at_document_level: false,
             in_item_body: false,
+            invisible_arms: true,
             comment_closer_last_index: None,
             code_closer_last_index: None,
         }
@@ -5841,6 +5835,28 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             i += 1;
             continue;
         }
+        // AN INVISIBLE LINE IS NOT AN AUTHORED BASE. #1705 is about a BLOCK
+        // authored past its container's content column; a line that is an
+        // "opener" only through the footnote-definition or block-attribute arm is
+        // no block at all below that column - §10 I5 makes it lazy paragraph
+        // text of the container (markup-carve/carve#1809). Rebasing it delivered
+        // it FLUSH into the container, where the block parser recognized its
+        // shape again: `{.k}` became the description's own floating attribute and
+        // attached to the paragraph below it, so the authored characters reached
+        // neither the page nor the block the author meant (corpus 430-3).
+        //
+        // Only the arms that stopped being openers are waived, and only while a
+        // paragraph is open above the line - which is what makes it a
+        // continuation rather than a fresh block. Everything the full arm set
+        // still calls an opener keeps its authored base.
+        if paragraph_open
+            && base > 0
+            && item_block_opener(&local_at_base)
+            && !item_block_opener_with_invisible_arms(&local_at_base, false)
+        {
+            i += 1;
+            continue;
+        }
         // A residual indent below a live descendant's content column is that
         // descendant's below-minimum lazy line, not an authored base of the
         // parent. Keep the descendant live until a flush parent line returns.
@@ -6309,6 +6325,25 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
 }
 
 fn item_block_opener(line: &str) -> bool {
+    item_block_opener_with_invisible_arms(line, true)
+}
+
+/// `item_block_opener`, with the INVISIBLE arms switchable.
+///
+/// `invisible_arms` is false only for a container's BELOW-COLUMN band, where §10
+/// I5 makes a footnote definition and a block-attribute line lazy paragraph text
+/// OF THAT CONTAINER rather than openers (markup-carve/carve#1809). The amended
+/// BELOW THE BODY'S COLUMN THE BODY ENDS bullet is explicit that it is about
+/// openers, and a non-opener still folds - so the question the band asks is
+/// "is this an opener", and these two kinds stop being one there.
+///
+/// PARAMETERIZED RATHER THAN COPIED. A second list of the same twelve arms is
+/// how one rule acquires two spellings and they drift; the band's exclusion is
+/// one argument, and every other caller keeps the full set.
+///
+/// The COMMENT FENCE stays in both sets: a comment is column-exempt (PART 9 §24)
+/// and renders nothing at any column, which corpus 430-5 pins.
+fn item_block_opener_with_invisible_arms(line: &str, invisible_arms: bool) -> bool {
     detect_fence_open(line).is_some()
         || detect_comment_fence_line(line).is_some()
         || thematic_break_marker(line).is_some()
@@ -6318,8 +6353,8 @@ fn item_block_opener(line: &str) -> bool {
         || is_definition_list_start(line)
         || detect_container_open(line).is_some()
         || detect_quote_block_open(line).is_some()
-        || parse_footnote_def_line(line).is_some()
-        || parse_standalone_attrs(line).is_some()
+        || (invisible_arms && parse_footnote_def_line(line).is_some())
+        || (invisible_arms && parse_standalone_attrs(line).is_some())
         || detect_block_image(line).is_some()
 }
 
@@ -12757,7 +12792,11 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // other caller passes a line this cursor is not standing at, and guessing a
     // block's extent from an unrelated position is how a probe reads a closer
     // that is not there.
-    if !line.starts_with([' ', '\t']) {
+    //
+    // `invisible_arms` is false only for a container's BELOW-COLUMN band, where
+    // §10 I5 makes the attribute line lazy paragraph text of that container
+    // instead (markup-carve/carve#1809). See `interrupts_paragraph_in_band`.
+    if cur.invisible_arms && !line.starts_with([' ', '\t']) {
         if parse_standalone_attrs(line).is_some() {
             return true;
         }
@@ -12881,6 +12920,33 @@ fn interrupts_paragraph_as_container(cur: &mut LineCursor<'_>, line: &str) -> bo
     cur.at_document_level = false;
     let interrupts = interrupts_paragraph(cur, line);
     cur.at_document_level = saved;
+    interrupts
+}
+
+/// `interrupts_paragraph` for a container's BELOW-COLUMN band.
+///
+/// Always as a container, so the abbreviation arm is waived (§7 recognizes that
+/// definition only as a direct child of the document). `at_document_column`
+/// additionally selects the band: at a NONZERO column below the content column
+/// the block-attribute line is lazy paragraph text of that container too (§10 I5,
+/// markup-carve/carve#1809), while at column 0 it is a floating attribute that
+/// attaches forward.
+///
+/// The COMMENT is deliberately not waived: it is column-exempt (PART 9 §24) and
+/// renders nothing at any column, which corpus 430-5 pins - waiving it would put
+/// its characters on the page.
+fn interrupts_paragraph_in_band(
+    cur: &mut LineCursor<'_>,
+    line: &str,
+    at_document_column: bool,
+) -> bool {
+    let saved_level = cur.at_document_level;
+    let saved_arms = cur.invisible_arms;
+    cur.at_document_level = false;
+    cur.invisible_arms = at_document_column;
+    let interrupts = interrupts_paragraph(cur, line);
+    cur.at_document_level = saved_level;
+    cur.invisible_arms = saved_arms;
     interrupts
 }
 
@@ -13669,7 +13735,14 @@ fn collect_definition_body(
             // to the surviving outer container. Ordinary prose is still the
             // open definition paragraph's lazy continuation; indentation alone
             // does not manufacture a paragraph boundary.
-            if indent > 0 && item_block_opener(trim_ascii_start(line)) {
+            //
+            // AND AN INVISIBLE LINE IS NOT AN OPENER HERE. §10 I5 makes a
+            // footnote definition and a block-attribute line at a nonzero column
+            // below the content column lazy paragraph text of THIS container
+            // (markup-carve/carve#1809, corpus 430-2 and 430-3). This guard is
+            // the one that ejected them: the interrupt test below never got the
+            // line.
+            if indent > 0 && item_block_opener_with_invisible_arms(trim_ascii_start(line), false) {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
@@ -13681,43 +13754,62 @@ fn collect_definition_body(
             } else {
                 line.to_string()
             };
-            // A LINK REFERENCE DEFINITION ENDS THE BODY, like the footnote
-            // spelling it is listed with. PART 9 section 10 I5 names the two
-            // together and no clause separates them by column, so the band
-            // cannot answer them oppositely (markup-carve/carve-rs#1438).
+            // BELOW THE COLUMN NOTHING INVISIBLE INTERRUPTS (§10 I5 DEFINITION
+            // OWNERSHIP IS COLUMN-SCOPED, markup-carve/carve#1809): at a nonzero
+            // column below a container's content column a link reference,
+            // footnote or abbreviation definition, or a block-attribute line,
+            // "is lazy paragraph text of THAT container - the one whose content
+            // column it fell below - and does not register". Interrupting is
+            // exactly what would end the container and re-classify the line one
+            // level out, which is the half the clause was missing: "lazy
+            // paragraph text" names an operation on an OPEN paragraph, so
+            // emitting the same characters at document level has not carried the
+            // sentence out.
             //
-            // It has to be asked HERE rather than in `interrupts_paragraph`,
-            // because the two kinds arrive in different shapes. The definition
-            // pre-pass rewrites what it collects to an invisible `%%`
-            // placeholder, which `interrupts_paragraph` already matches - and
-            // that is how the footnote kind interrupts from below the column,
-            // its own pass reaching an indented body. The link pass collects
-            // only AT a tracked content column, so below one the raw line
-            // survives and no arm matches it. This is the arm for that line, and
-            // it stays literal text at document level: declining to collect it
-            // is the pre-pass's decision, and ending the body does not revisit
-            // it.
+            // markup-carve/carve-rs#1438 read the band the other way round and
+            // this collector briefly broke on a definition-shaped line, which
+            // put the link and footnote kinds at document level. carve#1809
+            // overruled that reading, and the break is gone rather than
+            // narrowed: the pre-passes already decline to collect a definition
+            // below a tracked content column, so the raw characters are here and
+            // the only question left is which container keeps them.
             //
-            // AS A CONTAINER, so the ABBREVIATION arm is waived. Section 7
-            // recognizes `*[A]: a` only as a direct child of the document, so a
-            // line this container is still deciding on is not a definition and
-            // cannot interrupt as one - it is ordinary paragraph text, and
-            // markup-carve/carve#1786 folds "the plain line that is not an
-            // opener" from any column. `cur.at_document_level` described the
-            // CURSOR, not the line, so the identical description answered one
-            // way at top level and the other inside a list item, where this
-            // collector folded all along.
-            if is_below_column_definition_line(&owned) {
-                break;
-            }
-            if !interrupts_paragraph_as_container(cur, &owned) {
+            // The two pre-passes DO agree, measured: neither collects
+            // `  [r]: /u` nor `  [^f]: n` under a `:  ` body. What made them
+            // look like they disagreed was this break, which matched both
+            // spellings.
+            //
+            // AS A CONTAINER waives the ABBREVIATION arm (§7 recognizes that
+            // definition only as a direct child of the document), and
+            // `invisible_arms` waives the attribute one for the column band.
+            // Column 0 keeps both: it is the document's own opener column, where
+            // a definition registers and a floating attribute attaches forward.
+            let below_the_column = indent > 0;
+            if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
+                // THE RESIDUAL INDENT GOES IN WITH THE LINE, and dropping it is
+                // a HALF fold. Trimmed, the line arrives FLUSH inside the
+                // description, where its shape is recognized all over again -
+                // `{.k}` became the `dd`'s floating attribute and attached to
+                // the paragraph after it, which is characters off the page AND a
+                // block wearing metadata the author wrote for something else
+                // (markup-carve/carve#1809, corpus 430-3). Indented, it is the
+                // literal attribute line corpus 157 pins, which is what a
+                // paragraph continuation is. The renderer drops the leading run
+                // of a continuation line, so the fold's bytes are unchanged for
+                // every kind that was already right - the plain control included.
+                //
+                // The test above still reads the TRIMMED line: an indented `> q`
+                // has to answer the opener question the same way a flush one
+                // does, which is what the band's other half is for.
+                let keep = if below_the_column {
+                    line.to_string()
+                } else {
+                    owned
+                };
                 folded_a_lazy_line = true;
-                lines.push(owned);
+                lines.push(keep);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(
-                    cur.source_col(cur.pos)
-                        .map(|column| column + indent as isize),
-                );
+                col_map.push(cur.source_col(cur.pos));
                 cur.consume();
                 continue;
             }
