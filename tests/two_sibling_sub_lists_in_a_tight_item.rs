@@ -224,10 +224,10 @@ fn spells_the_boundary_with_every_host_prefix_however_deep() {
     round_trips("- x\n\n  > - a\n  >\n  >\n  >\n  > - b\n");
     round_trips("- x\n\n  > - o\n  >\n  >   - a\n  >\n  >\n  >\n  >   - b\n");
     assert_eq!(
-        fmt(":: t\n:  - a\n\n\n\n   - b\n"),
-        ":: t\n:  - a\n\n\n\n   - b\n"
+        fmt(":: t\n: - a\n\n\n\n   - b\n"),
+        ":: t\n: - a\n\n\n\n  - b\n"
     );
-    round_trips(":: t\n:  - a\n\n\n\n   - b\n");
+    round_trips(":: t\n: - a\n\n\n\n   - b\n");
     round_trips("::: note\n- a\n\n\n\n- b\n:::\n");
 }
 
@@ -270,12 +270,7 @@ fn writes_one_blank_line_below_every_kind_that_leaves_a_paragraph_open() {
     // Each member of the set is load-bearing rather than carried along for
     // symmetry: with a sub-list already open at the item's content column, all
     // four of these lose the second sub-list without the blank line.
-    for above in [
-        "para",
-        "![a](i.png)",
-        "![a](i.png)\n  ^ cap",
-        ":: t\n  :  d",
-    ] {
+    for above in ["para", "![a](i.png)", "![a](i.png)\n  ^ cap", ":: t\n  : d"] {
         round_trips(&format!("- o\n  - z\n  | t |\n  {above}\n\n  - s1\n"));
     }
 }

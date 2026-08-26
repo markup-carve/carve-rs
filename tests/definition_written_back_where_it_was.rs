@@ -26,14 +26,14 @@ fn round_trips(source: &str) -> bool {
 
 #[test]
 fn a_definition_in_a_description_is_written_back_on_that_line() {
-    let source = ":: term\n:  [r]: /u\n\nsee [t][r]\n";
+    let source = ":: term\n: [r]: /u\n\nsee [t][r]\n";
     assert_eq!(fmt(source), source);
     assert!(round_trips(source));
 }
 
 #[test]
 fn a_footnote_in_a_description_is_written_back_on_that_line() {
-    let source = ":: term\n:  [^f]: x\n\nsee[^f]\n";
+    let source = ":: term\n: [^f]: x\n\nsee[^f]\n";
     assert_eq!(fmt(source), source);
     assert!(round_trips(source));
 }
@@ -83,7 +83,7 @@ fn a_definition_written_at_document_level_stays_there() {
 fn an_ordinary_description_is_unchanged() {
     // The control: a description with real content must not gain a definition
     // from anywhere.
-    assert_eq!(fmt(":: term\n:  body\n"), ":: term\n:  body\n");
+    assert_eq!(fmt(":: term\n: body\n"), ":: term\n: body\n");
 }
 
 #[test]
