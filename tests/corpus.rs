@@ -561,6 +561,26 @@ const IMPLEMENTED: &[&str] = &[
     // form differs from its source: the writer declines the indented spelling.
     "a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so",
     "a-lone-reference-image-at-column-0-in-every-spelling",
+    // Corpus 429-433, which this pin bump brings with it. Five categories,
+    // eighteen documents, and every one renders byte-identically to its pinned
+    // HTML on this engine, so all five are IMPLEMENTED rather than deferred -
+    // KNOWN_GAPS would stop asserting them, and AHEAD_OF_PIN is for goldens
+    // this engine DIFFERS from.
+    // markup-carve/carve#1808: an invisible line before the blank does not
+    // cancel the separation either.
+    "an-invisible-line-before-the-blank-does-not-cancel-the-separation",
+    // markup-carve/carve#1809: below a definition body's column an invisible
+    // line folds as text, and a floating attribute under a definition attaches
+    // at column zero. Landed here as markup-carve/carve-rs#1441 and #1445.
+    "below-a-definition-body-s-column-an-invisible-line-folds-as-text",
+    "a-floating-attribute-under-a-definition-attaches-at-column-zero",
+    // markup-carve/carve#1813: one classification for the invisible lines, and
+    // the semantic action per kind - an abbreviation definition outside
+    // document level is not an invisible line, and a comment in a footnote body
+    // is invisible in both spellings. The second landed here as
+    // markup-carve/carve-rs#1442.
+    "an-abbreviation-definition-outside-document-level-is-not-an-invisible-line",
+    "a-comment-in-a-footnote-body-is-invisible-in-both-spellings",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
