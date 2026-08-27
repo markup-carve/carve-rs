@@ -63,9 +63,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRs run stable only; the MSRV leg runs on pushes to main, so a
-        # 1.75 regression is still caught on merge without doubling every
-        # PR's CI time.
+        # PRs RUN THE SUITE ON STABLE ONLY; the MSRV leg runs the suite on
+        # pushes to main. What a pull request gets instead is the `msrv` job
+        # below, which compiles against 1.75 without running ~4500 tests a
+        # second time - so a pull request that breaks the floor is caught
+        # before merge without doubling the expensive half of this job.
         toolchain: ${{ github.event_name == 'push' && fromJSON('["stable", "1.75"]') || fromJSON('["stable"]') }}
     steps:
       - uses: actions/checkout@v6
@@ -162,6 +164,37 @@ jobs:
         run: |
           rm -rf target/release
           python3 tools/sync-implemented.py --check
+
+  # DOES THE FLOOR STILL COMPILE? Asked on every pull request, unlike the
+  # `test` matrix above, and cheap enough to be: compiling against 1.75 is a
+  # fraction of running the suite against it.
+  #
+  # The case this exists for is a DEPENDENCY BUMP. `rust-version = "1.75"`
+  # binds this crate, not the tree beneath it, so a transitive dependency can
+  # raise its own minimum in a semver-compatible release and take the floor
+  # with it. Dependabot opens exactly those pull requests (see
+  # .github/dependabot.yml), and without this job every one of them would go
+  # green on stable and turn main red on merge - which is the failure mode
+  # committing Cargo.lock was meant to close off, arriving through the other
+  # door.
+  #
+  # `--all-targets` because the dev-dependencies are on the floor too, and
+  # `--locked` because the lock file is the thing under test here.
+  msrv:
+    name: Compiles on the MSRV (Rust 1.75)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # `tests/source_layout.rs` reaches into the submodule with
+          # `include_str!`, so the corpus has to be on disk for a CHECK too,
+          # not only for a run.
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.75"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets
 
   lints:
     name: rustfmt + clippy
