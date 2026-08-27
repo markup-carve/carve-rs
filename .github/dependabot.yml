@@ -6,11 +6,9 @@
 # updates it: one pull request per bump, gated by the same suite as any other
 # change, rather than a `cargo update` nobody has a reason to run.
 #
-# NOT GROUPED, deliberately. The manifest still pins `html5ever` at 0.27 and
-# `markup5ever_rcdom` at 0.3 while 0.39 is published, and those are large
-# enough moves to need real work rather than a merge. Grouped into one pull
-# request they would take every other bump down with them; on their own they
-# fail on their own and everything else stays mergeable.
+# UNGROUPED BY DEFAULT, with one exception below. A bump that needs real work
+# rather than a merge should fail on its own rather than take every other bump
+# down with it, which is what a single catch-all group would do.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -18,3 +16,20 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # html5ever AND ITS DOM SINK CANNOT MOVE SEPARATELY. markup5ever_rcdom
+      # depends on the exact html5ever it was cut against, so a pull request
+      # bumping one of them cannot resolve, cannot build, and cannot be fixed
+      # by a maintainer without pulling in the other. Ungrouped, that is not a
+      # red PR someone has to decide about - it is two red PRs that are red BY
+      # CONSTRUCTION and can never go green, which is how a bot teaches people
+      # to ignore it. Measured: carve-rs#1471 and carve-rs#1472 both failed
+      # every gate within a minute of being opened.
+      #
+      # Deliberately narrow. This groups a package with the package it is
+      # inseparable from, and nothing else.
+      html5ever:
+        patterns:
+          - html5ever
+          - markup5ever*
+          - xml5ever

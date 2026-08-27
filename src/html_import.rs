@@ -11,7 +11,7 @@ use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
 use crate::{render_carve, RenderCarveError};
 use html5ever::tendril::TendrilSink;
-use html5ever::{namespace_url, ns, QualName};
+use html5ever::{ns, QualName};
 use html5ever::{serialize, serialize::SerializeOpts};
 use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
 use std::cell::RefCell;
