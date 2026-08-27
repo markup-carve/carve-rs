@@ -117,6 +117,31 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
+      # GATE: the notes are not the workflow's to write. A CHANGELOG entry is
+      # deliberately one or two lines for a contributor, which makes poor
+      # release notes for a reader deciding whether to upgrade. A human writes
+      # the draft first and this refuses to publish without one.
+      #
+      # Found by listing rather than `gh release view <tag>`: a draft's tag is
+      # not a git ref, so addressing one by tag can match nothing, change
+      # nothing and still exit 0.
+      - name: A release draft for this tag exists and has notes
+        if: github.event_name != 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq "[.[] | select(.tag_name == \"$GITHUB_REF_NAME\")] | first")"
+          if [ -z "$release" ]; then
+            echo "::error::no release for $GITHUB_REF_NAME. Write the notes first:" \
+                 "gh release create $GITHUB_REF_NAME --draft --notes-file NOTES.md"
+            exit 1
+          fi
+          body="$(printf '%s' "$release" | jq -r '.body // ""' | tr -d '[:space:]')"
+          [ -n "$body" ] \
+            || { echo "::error::the release for $GITHUB_REF_NAME has no notes"; exit 1; }
+          printf '%s' "$release" | jq -r '"draft=\(.draft) tag=\(.tag_name)"'
+
       # The tag is the release's for a published release, and the dispatch
       # input otherwise - so an existing release can be backfilled with assets
       # without cutting a new version.
