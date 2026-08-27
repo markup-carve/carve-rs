@@ -510,20 +510,6 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         };
         let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
-        // NESTING COMES FROM THE PARENT'S CONTINUATION PAD ALONE. This used to
-        // add `"  ".repeat(list_depth - 1)` as well, and the enclosing item then
-        // padded the same lines again by its marker width, so every level was
-        // indented twice: two levels landed at four spaces and three at ten.
-        // Ten spaces under a marker whose content column is six is four PAST
-        // it, which is where a reader opens an indented verbatim block -- so a
-        // third level stopped being a list for every reader that is not Carve
-        // itself. Carve's own content-column model is lenient enough to read it
-        // back as a list, which is why this was invisible from inside the
-        // engine and only pandoc showed it (carve#1069, carve-php#1142).
-        // An item whose content was collected away -- a link reference or a
-        // footnote definition is the whole item -- leaves the marker alone on
-        // its line. The marker's own separator is then trailing whitespace,
-        // which is what the continuation pad below already refuses to write.
         let first = lines.next().unwrap_or_default();
         if first.is_empty() {
             out.push_str(&format!("{}\n", prefix.trim_end()));
@@ -587,18 +573,6 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     let mut header = None;
     let mut header_columns = 0usize;
     let mut rows = Vec::new();
-    // Per-column alignment for the separator row, which is the only place Markdown
-    // can express it.
-    //
-    // COLUMN alignment is declared on the HEADER cells -- that is where `|=> Age`
-    // puts it, and the HTML renderer applies it to every cell in the column. This
-    // used to read the first NON-header row, where `align` is set only by a
-    // per-CELL override, so an ordinary aligned table lost its alignment outright
-    // and a table with one overridden cell reported that cell's alignment as the
-    // whole column's (carve#352, corpus 48/49/52/53).
-    //
-    // A per-cell override cannot be expressed in a Markdown table at all, so it is
-    // deliberately not consulted here; the column keeps what the header declared.
     let mut aligns: Vec<Option<TableAlign>> = Vec::new();
     let take_aligns = |aligns: &mut Vec<Option<TableAlign>>, row: &TableRow| {
         for (i, cell) in row.cells.iter().enumerate() {
@@ -729,18 +703,6 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
         return String::new();
     }
     let target = render_figure_target(node, ctx, depth);
-    // The caption sits on its own line directly under the figure (`\n`) - an
-    // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
-    // the blank-line separation.
-    //
-    // A TABLE TARGET IS THE SAME RULE AS `render_table`'s CAPTION, and takes the
-    // same blank line for the same reason (PART 11 §10e T2). This is the second
-    // spelling of one rule: a captioned table the parser produces is a `table`
-    // carrying its own caption, but a `figure` over a table arrives through the
-    // AST-ingest path from an engine that models it that way. The separator here
-    // was the empty string, so the caption was written with no line break at all
-    // - `| a |Fruit prices` - fusing the words INTO the last data cell rather
-    // than merely following it.
     let sep = match &*node.target {
         FigureTarget::BlockQuote(_) | FigureTarget::Table(_) => "\n\n",
         _ => "\n",
@@ -1308,26 +1270,6 @@ fn escape_text(text: &str) -> String {
 
 /// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
 /// CHOSEN PER DOCUMENT from code points it does not contain.
-///
-/// Four slots: §8a M1b's three narrowed characters - `_`, `#`, `[` - and §8b
-/// M2b's authored hash, which is a second family because it is decided by a
-/// different test (see `authored_sentinel`).
-///
-/// They used to be the fixed U+E004..U+E007, and author content was kept off
-/// them by DELETING that range on the way in - so an author who wrote one of the
-/// four lost it, on this target and no other, in every context measured
-/// including a fenced code block where the bytes are the whole point
-/// (markup-carve/carve-rs#1216). PART 9 §29 had already settled that question
-/// for the C0 controls: every character that is not one of the four whitespace
-/// characters is CONTENT (PART 7), and a target that silently deletes content is
-/// the lossy party rather than the safe one.
-///
-/// Picking them removes the collision instead of deleting around it, and takes
-/// the strip with it: a code point the document does not contain cannot arrive
-/// in author content, so there is nothing on the way in to drop. Same remedy as
-/// markup-carve/carve#678, which the canonical writer in this crate already runs
-/// (`SENTINEL_DEFAULTS` in `render_carve.rs`) and the parser since
-/// markup-carve/carve-rs#1218; ported from markup-carve/carve-js#1289.
 const CARRIER_DEFAULTS: [char; 4] = ['\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}'];
 const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 
@@ -1696,31 +1638,6 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 }
 
 /// Resolve the narrowed escapes: PART 11 §8a, M1b.
-///
-/// `_`, `#` and `[` are escaped IF AND ONLY IF the character is adjacent on the
-/// emitted line to an unescaped delimiter of the same character. Adjacent, and
-/// unescaping would MERGE THE TWO INTO ONE RUN, which every Markdown reader this
-/// target answers to resolves by run length - so that escape is holding a run
-/// boundary apart under all of them at once, and it is kept. Not adjacent, and
-/// the escape protects nothing under any of them: `company_id`, `C#` and
-/// `issue #123` are written as the author typed them, and a backslash inside an
-/// identifier no longer breaks exact-match search in the published document.
-///
-/// THE ASTERISK IS NOT HERE, and that is M1a rather than an omission. See
-/// `escape_text`.
-///
-/// IT RUNS ON THE ASSEMBLED OUTPUT because the test is over the LINE and not
-/// over the node: the parser splits `company_id` into the text nodes `company`
-/// and `_id`, so at escape time the underscore looks like it starts a word.
-///
-/// IT DECIDES ON THE SENTINEL rather than on a `\_` in the output, because the
-/// assembled document also contains regions this renderer must reproduce
-/// byte-exact - code spans, code blocks, link destinations, titles, raw HTML -
-/// and a backslash there is content, not an escape. Matching `\_` rewrote those
-/// too (carve-js issue 400). It is also what keeps §8b M2b off a backslash the
-/// author wrote inside such a region: the hash decided here reached the output
-/// as a SENTINEL this writer emitted for an `escaped_text` node, and a literal
-/// `\#` in a code span never becomes one.
 fn resolve_narrowed_escapes(text: &str) -> String {
     // READ ONCE. The carriers are a property of the render, not of the
     // character, and this pass asks about every character of the assembled
@@ -1776,37 +1693,6 @@ fn resolve_narrowed_escapes(text: &str) -> String {
 }
 
 /// Whether the `#` at `index` would open an ATX heading (PART 11 §8b M2b).
-///
-/// `line` is the assembled output with every candidate resolved to its BARE
-/// character, the same view M1b decides on, indexed by CHARACTER rather than by
-/// byte - a sentinel is one `char` exactly like the character it stands for, so
-/// the index carries across.
-///
-/// Three conditions, all of them CommonMark's: the character stands at the
-/// line's CONTENT POSITION; the run of hashes starting there is one to six
-/// long; and the run is closed by a space, a tab or the end of the line. A tag,
-/// an issue reference and a hex colour fail the third even at a line's start,
-/// which is why the test is spelled on the run rather than on the position
-/// alone.
-///
-/// `content_start` is the line's content position, computed once per line by
-/// [`content_position`] rather than re-derived here. Column 0 is the content
-/// position only of a line no container encloses (markup-carve/carve#1332).
-///
-/// THE RUN IS COUNTED TO SEVEN AND NO FURTHER. The comparison only asks whether
-/// the run EXCEEDS six, and seven is the smallest count that still answers that.
-/// Behaviour is identical either way - a run longer than six is refused on the
-/// count alone, so `line.get(index + run)` is only ever reached when the count is
-/// exact.
-///
-/// IT IS DEFENSIVE RATHER THAN LOAD-BEARING, and the perf rows say so by NOT
-/// separating it: removing the bound leaves them green. The position test above
-/// returns before it for every candidate but the one AT the content position, so
-/// the count already runs at most once per line whatever its bound. It stays
-/// because it costs nothing and because that ordering is the only thing keeping
-/// it cheap - a future edit that tests the run first would reintroduce
-/// markup-carve/carve#1331's other half, and would find the bound already in
-/// place.
 fn opens_an_atx_heading(line: &[char], index: usize, content_start: usize) -> bool {
     if index != content_start {
         return false;
@@ -1830,27 +1716,6 @@ fn opens_an_atx_heading(line: &[char], index: usize, content_start: usize) -> bo
 /// Where the CONTENT of the line beginning at `line_start` begins, which is
 /// after every container prefix the writer put in front of it (PART 11 §8b,
 /// markup-carve/carve#1332).
-///
-/// Column 0 is the content position only of a line no container encloses.
-/// Measuring from column 0 unconditionally is what made `> \# heading` emit
-/// `> # heading`, which CommonMark reads back as a heading inside the quote -
-/// content corruption on a plain round trip (markup-carve/carve#1330).
-///
-/// The prefixes are the ones this writer EMITS, read back off the line it
-/// emitted: a quote marker, a bullet, a task marker, an ordered marker, a
-/// footnote definition's label, and the indentation any of them pads its
-/// continuation lines with. They nest, so the scan loops rather than matching
-/// once - `> > ` is two quote markers and `- ` inside `- ` is a pad and a
-/// bullet.
-///
-/// A DEFINITION-LIST body and a colon fence are deliberately absent: the
-/// Markdown target flattens both to column 0, so there is no prefix in front of
-/// their content to pass over.
-///
-/// Indentation is consumed whether or not a marker follows it, because a
-/// continuation line's pad IS the container's prefix - a paragraph line inside
-/// an item sits at the item's content column, and a hash there opens a heading
-/// exactly as one at column 0 does outside.
 fn content_position(line: &[char], line_start: usize) -> usize {
     let mut at = line_start;
     loop {

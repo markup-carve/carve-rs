@@ -213,20 +213,6 @@ impl CarveExtension for TableOfContents {
         let list = build_list(&entries, self.opts.list_type, &|nodes| {
             crate::render::render_inlines_inside_anchor(nodes, ctx.options())
         });
-        // COLLAPSIBLE: the heading list sits directly inside a `<details>`
-        // disclosure, closed unless `open`. Byte-identical to carve-js's
-        // `tableOfContents` and carve-php's `TableOfContentsExtension`, which
-        // have carried this shape since before this engine had the option at
-        // all (carve-rs#1243).
-        //
-        // NOTHING NAMES IT, and that is the shape rather than an omission: the
-        // disclosure emits no `<nav>`, so there is no landmark for `tocNav` to
-        // name, and the `<summary>` a reader hears is the visible text of the
-        // widget. `nav_label_attr` is therefore NOT called on this branch.
-        //
-        // The DIRECTIVE keeps the bare nav in every engine: `TocPlacement` has
-        // no disclosure here, in carve-js, or in carve-php. The option belongs
-        // to the injector, which owns the element it inserts.
         let html = if self.opts.collapsible {
             format!(
                 "<details class=\"{}\"{}>\n<summary>{}</summary>\n{}</details>",
@@ -462,26 +448,6 @@ fn escape_html(s: &str) -> String {
 /// [`TableOfContents`] (which injects one TOC at the document top or bottom),
 /// this renders a named `<nav class="toc">` exactly where the author writes a
 /// `::: toc` block. Off by default.
-///
-/// The level window is set with attributes on the line *before* the opener
-/// (Carve attaches `:::`-block attributes on a preceding attribute line):
-///
-/// ```text
-/// ::: toc              (all levels, 1-6)
-/// :::
-///
-/// {depth=2}            (levels 1-2)
-/// ::: toc
-/// :::
-///
-/// {from=2 to=4}        (levels 2-4)
-/// ::: toc
-/// :::
-/// ```
-///
-/// The nested `<ul>` is byte-identical to carve-js / carve-php. Heading ids are
-/// derived with the renderer's `lowercase_heading_ids` option so link targets
-/// match the emitted `<section id>` anchors.
 pub struct TocPlacement {
     entries: RefCell<Vec<TocEntry>>,
     /// Remaining `<nav>` output budget for the current render; bounds K blocks

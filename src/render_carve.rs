@@ -70,76 +70,6 @@ enum EscapeMode {
 }
 
 /// Render a tree as canonical Carve source.
-///
-/// # The contract, and what it does NOT cover
-///
-/// What this returns re-reads as what it was given - EXCEPT for the shapes named
-/// below, which it writes as the nearest source Carve has and which therefore
-/// re-read as something else.
-///
-/// The list is the point. A contract stated as an absolute while carrying an
-/// exception nothing declares is worse than a narrower one that is true as
-/// written, because every reader of the first is entitled to rely on it
-/// (markup-carve/carve#1658). PART 11 section 1c is the normative form of this,
-/// and it is written over the PROPERTY rather than the node type: where a
-/// block's whole content is a single node whose own spelling, at the block's
-/// column, reads back as a block opener of that node's kind, the writer emits
-/// the spelling and the wrapper is lost. So the invariant holds AS WRITTEN and
-/// these are outside it rather than places it quietly fails:
-///
-/// - **A paragraph whose whole content is one image.** It is written as a bare
-///   block image at column 0, which re-reads as a block image and not as the
-///   paragraph it was. `resources/examples/edge-cases.md` rules the shape - "a
-///   paragraph whose whole content is one image is still the standalone image
-///   shape, not a wrapped one" - so there is no source to write instead. An
-///   indented spelling is not one either: this engine reads an indented image as
-///   a block image at every indent, and inside a list item or a definition
-///   description a marker absorbs the padding at every width, so
-///   `list_item > paragraph > image` has no spelling at all.
-///
-///   MEASURED, AND IT IS THE ONLY ONE THE IMPORTER CAN BUILD. Twenty-eight
-///   single-child paragraph shapes were imported and re-read; every other kind -
-///   a link, a code span, an emphasis of each sort, a span, a hard break, a raw
-///   inline, a quote, a critic mark, plain text - comes back as the paragraph it
-///   was. The comment shape below has the same property and is NOT in that
-///   sweep, because no HTML builds it: it reaches this writer from a hand-built
-///   or ingested tree, which is exactly why the list is stated rather than
-///   derived from what an import happens to produce.
-///
-///   NOT SILENT WHERE IT MATTERS. This function has no diagnostic channel and
-///   can only return an error, and refusing would break every import of a
-///   `<p><img></p>`, so the caller that WRITES source declares the loss instead:
-///   [`crate::html_to_carve`] reports a `structure-unspellable` row for it
-///   (`docs/html-import.md`, markup-carve/carve-rs#1331).
-///
-/// - **A block whose whole content is one COMMENT.** `%%  c` reads back as the
-///   block comment, so the wrapper is lost the same way. This one has no
-///   top-level escape at all - `%%` opens a block comment at every column, where
-///   an indented image at least parses as a paragraph on some engines - which is
-///   why PART 11 section 1c is written over the PROPERTY (a wrapper whose own
-///   content, written at the block's column, reads back as a block opener of
-///   that node's kind) rather than over the image.
-///
-/// - **A paragraph with no content at all.** It writes nothing, so it is simply
-///   not in the source and the re-read document is one block shorter. No source
-///   spells an empty paragraph - a blank line is a separator, not a block - so
-///   there is nothing to write instead.
-///
-///   The parser cannot build one, so this shape reaches the writer only from a
-///   HAND-BUILT or INGESTED tree. It is named here anyway: the point of the
-///   ruling is that the carve-outs a caller may rely on are listed rather than
-///   discovered.
-///
-/// Where it CAN see that emitting source would change the tree and no carve-out
-/// above covers the shape, it returns
-/// [`crate::RenderCarveError::SourceUnspellable`] rather than emitting the
-/// nearest form - an empty raw inline is the standing example. That is a
-/// statement about the shapes it detects, not a second absolute: the list above
-/// is what a caller may rely on.
-///
-/// Returns [`crate::RenderCarveError::Depth`] when a hand-built or ingested tree
-/// reaches the render ceiling. Parser-produced trees cannot contain either
-/// condition.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
@@ -359,26 +289,6 @@ fn render_carve_once(doc: &Document) -> String {
 
 /// The conservative form of the units that need it, and the minimal form of
 /// every other unit (PART 11 §2b).
-///
-/// WHY THIS IS A SEARCH AND NOT A LOOKUP. The comparison stays document-scoped
-/// -- §4's argument holds, a unit re-parsed alone has lost the document's link
-/// reference and footnote definitions -- so what a failure reports is THAT the
-/// document changed, never WHERE. The unit is found by trying: start from the
-/// conservative form, which is known to hold, and hand each unit back its
-/// minimal form only while the whole document still re-parses to the same tree.
-/// Every state this walks through is verified, and the one returned is the last
-/// that passed.
-///
-/// HALVED RATHER THAN SWEPT, because a document is mostly units that need
-/// nothing. A group is offered its minimal form all at once and only split when
-/// that fails, so a document with one failing unit costs about log(n) renders
-/// instead of n.
-///
-/// THE FIRST RENDER IS A CONTROL. With every unit escalated this must reproduce
-/// the conservative form byte for byte; if it does not, the selection is
-/// deciding something other than the escape mode -- a unit the walk did not
-/// reach, for instance -- and the document-scoped form is returned rather than
-/// a narrowing built on a state that is not what it claims.
 fn narrow_escalation(
     doc: &Document,
     conservative: String,
@@ -401,33 +311,6 @@ fn narrow_escalation(
 
     let all: Vec<usize> = (1..=total).collect();
     ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(all.iter().copied().collect()));
-    // THE CONTROL RENDER LOGS WHICH UNITS THE WRITER ACTUALLY ASKS ABOUT, so the
-    // search below can skip the ones it cannot move. The walk that hands out
-    // ordinals reaches every node that COULD carry an escaped character; the
-    // units that DO are whatever the writer's own escape arms charge a character
-    // to, and only those read `ESCALATED_UNITS`. A unit the writer never asks
-    // about renders the same bytes in or out of the set, so offering it its
-    // minimal form is a render and a parse spent to learn nothing.
-    //
-    // The gap is not small on nested documents. On the deepest corpus document
-    // -- 203 nested colon fences, whose overflow past the nesting cap is the
-    // text the writer must keep from re-opening a div -- the walk hands out 208
-    // ordinals and the writer asks about SEVEN. The other 201 were halved over
-    // at a render and a parse each, and that document's own output is 21x its
-    // source (a colon fence widens by one per level, PART 9 §12), so each of
-    // those cost about what parsing 42 KB costs.
-    //
-    // Seven where carve-js and carve-php ask about four, because
-    // `next_unit_escape_mode` charges the ordinal a node has not claimed yet.
-    // A superset, and the safe direction: a unit logged that never writes is a
-    // group the search relaxes in one render, where a unit MISSED would be one
-    // it can no longer offer its minimal form.
-    //
-    // Logging it rather than predicting it is the same choice the ordinal walk
-    // makes and for the same reason: the set is whatever the arms visit, so an
-    // arm that grows a new escape cannot fall out of the search. And a unit
-    // wrongly left out cannot produce wrong output -- every state the search
-    // returns is re-parsed against `conservative_tree` below, exactly as before.
     ASKED_UNITS.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
     let control = render_with_escapes(doc, EscapeMode::Conservative);
     let asked = ASKED_UNITS
@@ -797,54 +680,6 @@ thread_local! {
 
 /// Render, and fall back to a break spelling that cannot be read as frontmatter
 /// when the finished bytes would be.
-///
-/// A frontmatter block is an opening fence AT BYTE 0 plus a bare `---` CLOSER
-/// anywhere below it, so the collision is a property of the WHOLE emitted
-/// document rather than of its first line. Two writer decisions reach it, and
-/// this seam is the only thing they share:
-///
-/// - a break the author spelled `---` opens the document and gains a closer from
-///   any later `---` break. `---` / blank / `---` is an EMPTY frontmatter block
-///   rendering nothing where the input rendered two rules (carve-rs#732).
-/// - §7 writes a hoisted link or footnote definition after the body, promoting
-///   whatever stood second to byte 0 - and that block can be a PARAGRAPH whose
-///   first line is `---yaml`-shaped. NO HEAD-OF-DOCUMENT RESPELLING REPAIRS
-///   THAT ONE, because the paragraph's text is not the writer's to change. It is
-///   saved by respelling the CLOSER instead, which is why the fallback moves
-///   every hyphen break in the document rather than the one at the head
-///   (carve-rs#819).
-///
-/// The second is why the previous seam is replaced rather than extended. That
-/// one asked whether the FIRST RENDERED BLOCK was the string `---` and rewrote
-/// that single line; a `---yaml` paragraph is not that block, and the break that
-/// has to move is four lines further down.
-///
-/// THE DEPARTURE IS THE SMALLEST ONE THAT RESTORES §1, which is what §1a asks
-/// for: only the HYPHEN spelling can be read as a fence, so only hyphen breaks
-/// move and every other authored marker survives untouched. A document whose
-/// breaks are all `***` or `___` never reaches the second pass at all.
-///
-/// The FINISHED bytes are handed to the PARSER'S own opener test, twice: once to
-/// ask whether the authored spelling is misread, and once to confirm the
-/// fallback is not. A document still misread with `***` keeps the authored
-/// spelling rather than paying a respelling that buys nothing, which is the case
-/// where the `---` closer came from somewhere other than a break, such as the
-/// inside of a fenced block.
-///
-/// A leading `---` break with nothing below it to close a block keeps its
-/// marker, which is what corpus
-/// `132-thematic-break-requires-contiguous-markers-4` asks for. It is a CONTROL:
-/// no mutation of this fallback moves it.
-///
-/// The `doc.frontmatter` arm is a COST GATE, not a correctness one, and saying
-/// so is the honest reading. A document that really carries frontmatter has it
-/// written by `render_frontmatter`, whose closer is not a break, so the fallback
-/// pass opens frontmatter too and the authored form is returned anyway. Removing
-/// the arm changes no output, only the number of renders paid by every document
-/// that has frontmatter. Verified by mutation.
-///
-/// The test runs on the output of `normalize`, which is where `restore_verbatim`
-/// turns staged content back into the bytes the next parse will actually see.
 fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     let authored = render_with_escapes_once(doc, escape_mode);
     if !doc.frontmatter.is_empty() || !crate::parse::opens_frontmatter(&authored) {
@@ -1281,30 +1116,6 @@ fn leaves_a_paragraph_open(block: &BlockNode) -> bool {
 
 /// Whether a sub-list written at the item's content column needs a blank line
 /// above it to open at all.
-///
-/// THE MARKER COLUMN. A block attached by §17 L3's marker sits at column 0, and
-/// a sub-list at the item's content column below it is INDENTED under an open
-/// paragraph - lazy continuation, so the list never opens and its markers come
-/// back as text.
-///
-/// A BLOCKQUOTE. It takes any non-blank line below it as lazy continuation,
-/// bullet line included, so an item holding a quote and then a bullet at the
-/// content column came back as a quote whose paragraph carries the bullet line
-/// as its own text. That shape holds no §11 N1a boundary at all: it failed on
-/// its own account before markup-carve/carve#1501, and the same rule settles it.
-///
-/// A PARAGRAPH BELOW A SUB-LIST THAT ALREADY OPENED. Once a sub-list has opened
-/// at the item's content column, a bullet written at that column below a
-/// paragraph joins THAT list instead of opening under the paragraph - so the
-/// paragraph keeps the line and the list keeps the marker. Without an earlier
-/// sub-list the same two lines open a list, which is why this is conditional
-/// rather than a blanket blank line after every paragraph: writing one there
-/// would re-spell every nested list in the corpus.
-///
-/// A BLANK LINE IS SAFE HERE. It loosens an item only before a PARAGRAPH; before
-/// a sub-list the item stays tight, which is why an item whose sub-list follows
-/// a blank line and one whose sub-list follows the marker line directly are the
-/// same document.
 fn needs_a_blank_line_above(
     previous: Option<&BlockNode>,
     previous_at_marker_column: bool,
@@ -1321,50 +1132,12 @@ fn needs_a_blank_line_above(
 }
 
 /// Whether a block's rendered text puts NOTHING into the written source.
-///
-/// The empty string is the obvious member. A run of spaces, tabs and newlines
-/// is the one that ambushed both callers: the writer trims every line's trailing
-/// run and then collapses the blank run around it, so such a block reaches the
-/// output as nothing at all - but `is_empty` called it content, and the two
-/// callers below decide against that answer what stands BETWEEN two lists.
-///
-/// The cost was §11 N1a's hard boundary. Two lists with a whitespace-only
-/// paragraph between them are two lists, and both callers concluded the
-/// paragraph separated them, so neither wrote the boundary; the paragraph then
-/// trimmed away and the lists merged on re-parse. An EMPTY paragraph in the same
-/// position was handled correctly all along, which is the tell that this is one
-/// predicate's defect rather than a question about what a blank paragraph means
-/// (markup-carve/carve-rs#1290).
-///
-/// U+00A0 IS CONTENT and is deliberately not swept: `trim_non_nbsp` is the
-/// writer's own trimming and preserves it, a lone U+00A0 line parses back as a
-/// paragraph, so a block holding one really does put something in the source.
-/// Sharing the helper with the trimming is what keeps the two answers equal - a
-/// hand-written character set here would drift from it silently.
 fn writes_nothing(text: &str) -> bool {
     trim_non_nbsp(text).is_empty()
 }
 
 /// A caption line's written form, or `None` where the run reaches the page as
 /// nothing.
-///
-/// `^` WITH NOTHING AFTER IT IS NOT A CAPTION LINE. It re-parses as a paragraph
-/// holding a literal caret, so a block carrying an empty caption came back
-/// saying something the tree never said - an ADDITION rather than a loss, which
-/// is why it is fixed here rather than declared in a report
-/// (markup-carve/carve-rs#1405, ruling markup-carve/carve-js#1423).
-///
-/// ONE PREDICATE FOR EVERY SLOT, which is the whole point of extracting it.
-/// Carve has three places a caption is written - the `^ ` line under a figure,
-/// the one after a figure group's closer, and a table's own caption, which is
-/// the last ROW of the table rather than a line under it - and the third going
-/// through different code is exactly how it kept the bare caret. A second
-/// mechanism would agree today and drift on the next clause.
-///
-/// U+00A0 SPELLS SOMETHING and keeps its line (PART 11 §7), because
-/// [`writes_nothing`] defers to `trim_non_nbsp`, the writer's own trimming.
-/// Sharing that is what keeps this answer equal to the one the rest of the
-/// writer gives.
 fn caption_row(caption: &[InlineNode], ctx: &mut CarveContext) -> Option<String> {
     let written = render_inlines(caption, ctx);
     if writes_nothing(&written) {
@@ -1626,78 +1399,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
                 separated = true;
             }
         }
-        // §17 L3: a block after a paragraph needs its continuation marker
-        // written back whenever the block's own first line would FOLD into that
-        // paragraph. Indented under the item it is a lazy continuation of the
-        // paragraph above (§10 I2), so the item comes back holding ONE block
-        // where the author wrote two (carve#861).
-        //
-        // "ONLY A PARAGRAPH REACHES THIS" WAS FALSE, and the comment that said
-        // so said why the corpus never caught it: it pins a fence and a quote,
-        // both of which OPEN a block at the item's content column and so never
-        // needed the marker. An IMAGE line opens nothing. `- x` / `+` /
-        // `![a](i.png)` / `^ cap` came back as `- x` / `  ![a](i.png)` /
-        // `  ^ cap`, where the image is no longer a standalone image paragraph,
-        // PART 9 §4 does not attach the caption, and the `<figure>` is gone with
-        // the caption left as literal text (carve-rs#819). The bare image
-        // without a caption loses its block just the same, and that one is not
-        // on the ticket.
-        //
-        // So the test is the PARSER'S OWN opener test on the bytes about to be
-        // emitted, rather than a list of block kinds maintained by hand here -
-        // the same deviation `markup-carve/carve#961` records for the leading
-        // thematic break.
         let folds_into_the_paragraph_above = rendered
             .lines()
             .next()
             .is_some_and(crate::parse::line_starts_paragraph);
-        // ONCE ONE CHILD IS AT THE MARKER COLUMN, EVERY LATER ONE IN THE RUN
-        // MUST BE.
-        //
-        // The marker column is the ITEM's column, to the LEFT of the item's
-        // content column, so a later child written at the content column is
-        // INDENTED relative to the block above it - it becomes that block's
-        // lazy continuation (§10 I2) or is absorbed into it outright. `- x` /
-        // `+` / image / `+` / image came back as an item holding ONE image
-        // paragraph with the second image's source as literal text; with a
-        // caption on each, the second figure's whole source landed inside the
-        // first one's `<figcaption>` (carve-rs#819).
-        //
-        // The condition is the PREVIOUS child's COLUMN, not its kind. Its kind
-        // is what the arm above already asks, and that answers a different
-        // question - whether this child folds into an open PARAGRAPH. This one
-        // is about where the child sits relative to the block before it, which
-        // no property of the child alone can decide.
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
-        // A LIST CHILD NEVER GOES TO THE MARKER COLUMN. The marker column is
-        // column 0, which is where the list this item belongs to writes ITS
-        // markers - so a sub-list put there is not attached to the item, it is
-        // dissolved into the list around it, and the `+` above it is read as the
-        // sibling item's own text. The ticket document came back as one flat
-        // list of three items with both sub-lists and the boundary between them
-        // gone (markup-carve/carve#1501). §17 L3's marker cannot help here: it
-        // attaches a block that could not open at column 0 on its own, and a
-        // list opens there in preference to being attached.
-        //
-        // So a sub-list is written at the item's CONTENT column, and what it
-        // needs there is the right separator above it. Three shapes, one
-        // question each - what would eat this list if nothing separated it:
-        //
-        //   - THE LIST ABOVE IT WOULD SWALLOW IT. Two sibling sub-lists whose
-        //     markers match are one list when written adjacent, which is the
-        //     whole of §11 N1's merge rule; N1a's boundary is the language's way
-        //     of saying they are two, and §10i fixes its length at three blank
-        //     lines.
-        //   - THE BLOCK ABOVE IT SITS AT COLUMN 0, or is a BLOCKQUOTE. Either
-        //     way a line at the item's content column is INDENTED under it and
-        //     reads as its lazy continuation, so the list never opens. One blank
-        //     line closes the block above without loosening the item - a blank
-        //     line before a sub-list does not make a list loose, only a blank
-        //     line before a paragraph does.
-        //   - NOTHING ABOVE IT REACHES DOWN. Every other block kind was swept:
-        //     heading, fence, table, break, div, admonition, and a sub-list with
-        //     a different marker all close at their last line, and the list
-        //     opens on the next one with no separator at all.
         if matches!(block, BlockNode::List(_)) {
             if !separated && prev.is_some_and(|previous| adjacent_blocks_merge(previous, block)) {
                 out.push_str(&hard_list_boundary_in_a_tight_item(&rendered));
@@ -2068,24 +1774,6 @@ fn without_key(attrs: &Attrs, key: &str) -> Option<Attrs> {
 
 /// PART 9 §17 L7: the writer spells the looseness with `{loose}` ONLY where the
 /// blank-line spelling cannot say it.
-///
-/// The decision procedure is markup-carve/carve#1639's, and it is a RE-PARSE
-/// OVER THE DOCUMENT: write the body without the key, read it back, and emit
-/// the key exactly where the container's own looseness field did not survive.
-/// PART 11 §1's equality is taken over the document, not over the render, which
-/// is why an HTML fixture cannot see this - the key is a render no-op, so the
-/// `.fmt` sidecars are the expectation.
-///
-/// AN ITEM COUNT IS WRONG IN BOTH DIRECTIONS, and both were measured. It ADDS a
-/// key to a one-item list whose blank line sits inside the item (corpus
-/// `05-lists-11`, an ordered list whose single item holds two paragraphs), and
-/// it OMITS the key from a definition list, whose entries count two or more
-/// while a blank line between entries does not loosen a `<dl>` at any count.
-///
-/// `attrs` is the node's own set, which never contains `loose`: the parser
-/// CONSUMED it, so the writer re-derives it from the tree rather than echoing
-/// what the author wrote. That is what makes a redundant `{loose}` a no-op
-/// through a format pass as well as through a render.
 fn with_loose_key(needs_key: bool, attrs: &Option<Attrs>, body: &str) -> String {
     if !needs_key {
         return with_block_attrs(attrs, body);
@@ -2270,20 +1958,6 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         let continuation = " ".repeat(continuation_width);
         for line in lines {
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {
-                // A blank continuation line is emitted EMPTY, never indented to
-                // the content column: PART 11 section 7 forbids a whitespace-only
-                // line, because editors and CI that strip trailing whitespace
-                // rewrite one, and `fmt` would then report a diff on a file
-                // nobody edited (carve#375).
-                //
-                // A blank line INSIDE verbatim content arrives as the sentinel
-                // rather than as "", because `protect_verbatim` encodes it to
-                // keep whole-document normalization off it. That made it look
-                // like content here, so it was indented, and the indent stayed
-                // behind when the sentinel was restored to nothing - a
-                // whitespace-only line, from a code block in a list item
-                // (carve-rs#440). The sentinel is written through UNindented so
-                // it keeps protecting the line it stands for.
                 out.push_str(&line);
                 out.push('\n');
             } else if let Some(rest) = line.strip_prefix(marker_column()) {
@@ -2391,26 +2065,6 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 }
             }
             let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
-            // A DESCRIPTION THAT WRITES NOTHING TAKES THE SENTINEL `{empty}`
-            // (PART 11 §7b, markup-carve/carve#1827) - the same body
-            // `render_footnote_def_source` writes one construct over.
-            //
-            // The line is a block-attribute line: the block it would attach to
-            // does not exist, so the parse consumes it and the description
-            // reads back holding no blocks. It is empty above a blank line,
-            // above a flush-left paragraph and at end of input alike, so the
-            // writer needs no lookahead over what follows.
-            //
-            // THE CONDITION IS "THIS ENTRY WRITES NOTHING", not "the
-            // description is empty". An HTML import, an ingested AST and `fmt`
-            // over parsed source arrive with a DIFFERENT tree for the same
-            // shape, and only the written result is common to them: a `<dd>`
-            // holding an invisible paragraph or a list with no items writes
-            // nothing too, and takes the sentinel alike.
-            //
-            // `: \{empty}` and `: {empty} x` are content, not sentinels - the
-            // first escapes the brace and the second is not a block-attribute
-            // line - so both keep writing their own text.
             if body.is_empty() {
                 out.push(": {empty}".to_string());
                 continue;
@@ -2431,32 +2085,6 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 
 /// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
 /// per-cell `<`/`>`/`~` alignment markers.
-///
-/// The GFM delimiter row is an accepted alias on input, but it says something
-/// the AST does not: its alignment applies to the WHOLE column, header and body
-/// alike (PART 9 T7), while alignment on the AST belongs to each cell. Writing a
-/// delimiter row for the ordinary shape - an aligned header over unaligned body
-/// cells - brought every body cell back aligned, so `parse(fmt(x)) == parse(x)`
-/// did not hold (carve issue 359).
-///
-/// One header shape has no native spelling, because `span_cell` is an
-/// ALTERNATIVE to `header_cell` in the grammar rather than a suffix of one:
-///
-/// ```text
-/// | < | b |     a span marker promoted to a header cell
-/// ```
-///
-/// An attributed header cell used to be the second such shape, and is not one
-/// any more: `header_cell` now reads `'=' [alignment_marker] [cell_attributes]
-/// content` (PART 9 §5 T10), so `|={.x} a |` spells it natively. Writing it as a
-/// data cell under a delimiter row was never wrong, but it is no longer the
-/// canonical form, and the fallback that produced it was the very shape the
-/// clause exists to retire.
-///
-/// The span shape still needs a delimiter row to promote the first row. It is emitted BARE
-/// (`|---|---|`), never with colons: the cells keep their own alignment markers,
-/// so the delimiter contributes structure only and cannot spill alignment down
-/// the column.
 fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     let mut rows = Vec::new();
     let header_row = node
@@ -2579,31 +2207,6 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
 }
 
 /// THE TARGET KEEPS ITS OWN ATTRIBUTES (ruling markup-carve/carve#1721).
-///
-/// Every arm but the image goes through [`render_block`], which is the only
-/// writer that puts a block's own attribute line above it. The table arm called
-/// [`render_table`] instead, one level under that line, so a `<table id="g">`
-/// inside a `<figure id="f">` came back carrying `id="f"` and NOTHING carried
-/// `id="g"`: the id that survived belonged to the element that did not, and the
-/// id that died belonged to the element that did. An id is a link target, so
-/// every anchor pointing at that table broke while the document rendered
-/// perfectly.
-///
-/// The two lines STACK and the parse merges them - the last `id` wins, classes
-/// union - so writing the target's line under the figure's is what hands the
-/// table back its own identity: `{#f}` over `{#g}` over the rows re-reads as
-/// `<table id="g">`. What the merge displaces is the FIGURE's id, and
-/// `html_import` declares it with an `attribute-dropped` row rather than
-/// letting either side go in silence.
-///
-/// THE OTHER ARMS ALREADY WROTE BOTH LINES, and there the merged pair lands on
-/// the FIGURE the caption line rebuilds rather than on the quote or the fence
-/// inside it. The value that survives is still the target's, which is what the
-/// ruling asks; only the table arm was dropping a line outright.
-///
-/// AN IMAGE NEVER MEETS THE COLLISION. Its attributes are written INLINE, after
-/// the destination, so `{#f}` above `![A](a.png){#g}` puts one on the figure and
-/// one on the image and both survive. That arm is unchanged.
 fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
     let target = match &*node.target {
         FigureTarget::Image(image) => render_image(image),
@@ -3037,23 +2640,6 @@ fn render_inline_body(
 }
 
 fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
-    // UNRESOLVED means no destination, not "carries a label": PART 12 §3a keeps
-    // `ref` and `raw_ref` on a RESOLVED reference too, so the label alone no
-    // longer answers this and a working reference round-tripped as its own
-    // source instead of normalizing to the inline form (carve#597).
-    // The AUTHORED source, in two cases. UNRESOLVED: there is no destination to
-    // write instead. HEADING-DERIVED (PART 11 R1, carve#478): there is no
-    // definition line, so the reference is the only record of what the author
-    // wrote, and resolving it bakes a generated id into the source on every fmt
-    // pass. An explicit definition normalizes to the inline form - its
-    // definition line is dropped either way.
-    //
-    // A RESOLVED explicit reference now takes this path too. Inlining it
-    // satisfied to_html(fmt(x)) == to_html(x) and broke PART 11 §1: `ref` and
-    // `raw_ref` were absent from the reparse, and one destination became N after
-    // a single pass - the duplication the definition form exists to avoid. The
-    // definition line is no longer "dropped either way": §10 gives it a node and
-    // render_block above writes it (carve-rs#631, carve#642).
     if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
     }
@@ -3401,57 +2987,6 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 }
 
 /// The staging characters an AUTHORED occurrence can be mistaken for.
-///
-/// Six, in two groups, and both groups have the same failure:
-///
-///   VERBATIM_BLANK  a line that was blank inside verbatim content
-///   THEMATIC_GUARD  prefixes a line that would re-parse as a thematic break
-///   MARKER_COLUMN   prefixes a line owed the item's marker column (§17 L3)
-///   ESCAPED_SPACE   stands in for `\ ` until normalize expands it
-///   STAGED_SPACE    a space that must survive escaping
-///   STAGED_TAB      a tab that must survive escaping
-///
-/// Why `ESCAPED_SPACE` exists at all: an escaped space is written back AS an
-/// escape, not as a real U+00A0. Resolving it to the character lost the
-/// distinction the parser draws - `10\ kg` came back carrying a literal nbsp,
-/// which re-parses as text rather than as an escape, so the node differed even
-/// though the HTML did not (carve#352, corpus 29-non-breaking-space). It
-/// resolves in `normalize` rather than during rendering because the backslash
-/// it expands to is itself an unconditional escape, and expanding earlier let
-/// the escaper double it.
-///
-/// The last three live at U+E010 and up deliberately. U+E000 is a PUBLISHED
-/// value - the no-break-space placeholder a parsed document carries - so a
-/// writer marker sharing it would be indistinguishable from document content.
-/// They used to sit at U+E001 and U+E002 (carve-rs#404).
-///
-/// The first three are undone BY POSITION - a line that is nothing but the
-/// marker, and two line prefixes. The last three are undone by a GLOBAL
-/// replace, because each has more than one insertion site. Either way a
-/// character the author wrote is indistinguishable from one the writer
-/// inserted, and restore ate it: carve-rs#607 for the first positional pair,
-/// carve-rs#630 for the global three, carve-rs#1226 for the marker column,
-/// which was the one site left out of this scheme.
-///
-/// Narrowing the positional group to its exact sites (carve-rs#613) fixed every
-/// INLINE placement and could not fix the line-alone one, because that
-/// ambiguity IS positional. The global three have no narrowing available at
-/// all. So the CHARACTER moves instead: the writer counts what it inserts, and
-/// if the document holds more than that, the extra ones are the author's and
-/// the render repeats with characters the document does not contain. carve-js
-/// reached the same place from the other side in markup-carve/carve-js#666, and
-/// moved its own marker-column tag in markup-carve/carve-js#1289.
-///
-/// OCCUPANCY IS ANSWERED BY COUNTING, NOT BY WALKING THE TREE. The writer is
-/// handed an AST, not the source, so "which private-use code points does the
-/// document hold" would mean a hand-written walk over every node type - and a
-/// field missed there would not delete a character, it would INVENT one, which
-/// is the worse direction to fail in. Counting inserted against seen asks the
-/// assembled document instead, and the assembled document is what the sentinels
-/// actually live in. carve-rs#1219 made the same call for the Markdown target.
-///
-/// A document with no private-use character - every real one - takes the first
-/// render and pays six integer compares.
 const SENTINEL_DEFAULTS: [char; SENTINEL_COUNT] = [
     '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}',
 ];
@@ -3869,25 +3404,6 @@ fn guard_thematic_break_lines(body: &str) -> String {
 }
 
 /// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
-///
-/// This used to be four global `replace` calls, which cannot tell a sentinel the
-/// writer inserted from one the AUTHOR wrote. So an authored U+E003 was deleted
-/// and an authored U+E004 became a space - in 16 of 17 constructs measured, not
-/// just in a code block (carve-rs#607).
-///
-/// Each sentinel is only ever inserted in ONE position, so each is only undone
-/// there:
-///
-///   VERBATIM_BLANK  a line consisting of nothing else (protect_verbatim emits it
-///                   for an empty line, and never inside one)
-///   U+E004          a line PREFIX (guard_thematic_break_lines prepends it)
-///   STAGED_SPACE    within the TRAILING whitespace run of a line, which is the
-///   STAGED_TAB      only place protect_verbatim stages them
-///
-/// That leaves a much smaller residue than the global form: an authored sentinel
-/// still collides if it sits in the exact position the writer uses one. Closing
-/// that needs the insertion COUNTS, which is the design sketched on carve-rs#607
-/// - this is the part that needs no bookkeeping and no AST traversal.
 fn restore_verbatim(text: &str) -> String {
     text.split('\n')
         .map(|line| {
@@ -3905,40 +3421,6 @@ fn restore_verbatim(text: &str) -> String {
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
             {
-                // `>` belongs in the set: inside a block quote the line reaching
-                // here is `> ` + marker, not the marker alone, and requiring pure
-                // whitespace left a raw U+E003 in the output - which
-                // `verbatim_content_stable_inside_containers` and the corpus
-                // formatter's semantic check both caught. A line that is nothing
-                // but container prefix plus the marker is the blank the marker
-                // stands for, at any nesting.
-                //
-                // A PURELY WHITESPACE PREFIX IS DROPPED WITH IT. PART 11 section
-                // 7 emits the STRUCTURAL INDENT of an empty verbatim line as
-                // nothing: "when the verbatim content on that line is EMPTY the
-                // indent alone is what remains -- that is layout, and it is
-                // omitted". Keeping it left a whitespace-only line, which editors
-                // that strip on save, `git apply --whitespace=fix` and CI
-                // whitespace checks all rewrite behind the formatter.
-                //
-                // The comment here used to say "a later trim removes a
-                // whitespace-only line". Nothing does: `normalize` runs its
-                // whitespace-only pass BEFORE this function, when the line still
-                // carries the marker and so is not whitespace-only yet. That was
-                // a check that could not fail, and a blank line inside a fenced
-                // block under a footnote definition or a definition-list
-                // description came out indented (carve#1040).
-                //
-                // The block-quote prefix is not layout and stays: an EMPTY line
-                // would close the quote, taking the open fence with it. What
-                // goes with the marker is the prefix's TRAILING whitespace, and
-                // that is how the host itself spells a blank line: a quote
-                // writes `>`, not `> `. Keeping the space wrote a line with a
-                // trailing run - the same tooling hazard §7 names, and a
-                // divergence from carve-js and carve-php, which both spell the
-                // boundary inside a nested quote `> >`. A purely whitespace
-                // prefix trims away to nothing, which is §7's structural-indent
-                // rule and needs no branch of its own.
                 return prefix.trim_end_matches([' ', '\t']).to_string();
             }
             let line = match line.strip_prefix(thematic_guard()) {
@@ -4212,26 +3694,6 @@ fn escape_text(
     next_boundary: char,
     note: NeighbourEscape,
 ) -> String {
-    // The offset of the first `$` of a trailing `$`-run, or of a trailing `!`,
-    // when a verbatim span follows this text in the OUTPUT. Both sigils bind to
-    // the backtick fence that node writes: `$` makes the span inline math, `$$`
-    // display math, `!` an inline literal - so text the source meant as text
-    // re-parses as markup that was never written, silently and with no
-    // diagnostic. PART 11 §2 escapes exactly this, "if and only if omitting the
-    // escape would change the re-parsed AST", and corpus-convert
-    // 05-markdown-verbatim-sigils-stay-text is the document that asks.
-    //
-    // The whole run is escaped, not just the last one: in `\$$`x`` the SECOND
-    // dollar still opens inline math. This mirrors carve-js
-    // (`escapeCarveConstructsSpelledLikeText`) and carve-php, which do it in
-    // their line-rewriting Markdown converters; carve-rs's importers are
-    // AST-first and hand the job to this writer, so this is where the rule has
-    // to live - and living here covers every importer at once rather than one.
-    //
-    // Only a run that REACHES the end of this node matters. A sigil with
-    // anything after it inside the node is not adjacent to the fence, and a
-    // literal backtick inside the node is escaped unconditionally below, so no
-    // span opens against it either.
     let verbatim_sigil_at = note
         .next_node_opens_a_verbatim_span
         .then(|| {
@@ -4247,19 +3709,6 @@ fn escape_text(
     // site in this run gets an index the search can address it by
     // (markup-carve/carve#1533).
     let call = next_escape_call_index(unit);
-    // A `^` is only dangerous where a caption marker could be read: at the
-    // start of a line. Anywhere else it is literal text - superscript is
-    // braced-only (`{^x^}`), so `10^6^` carries no markup - and forcing the
-    // escape there put `10\^6\^` in the output where the other two engines
-    // write `10^6^`. PART 11 §4 asks for the minimal form when dropping the
-    // escape changes nothing, and this one changed nothing (carve-rs#555).
-    //
-    // Line-initial stays forced rather than left to the minimal/conservative
-    // vote, because that vote is per DOCUMENT: letting `^ Figure 1` render
-    // unescaped in the minimal pass makes it a caption, the two passes differ,
-    // and the whole document escalates to conservative - which then escapes
-    // every candidate in it, including the `:` that needs nothing. The corpus
-    // pins that exact shape at 158-indented-image-and-caption-stay-literal.
     let mut at_line_start = opens_block_line;
     let mut chars = text.char_indices().peekable();
     let mut previous = previous_boundary;
@@ -4297,24 +3746,6 @@ fn escape_text(
         // is that document - so `^<TAB>` re-parses as text either way and PART 11
         // §4 asks for the minimal form when dropping the escape changes nothing.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
-        // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (carve#1447, corpus 388), so
-        // neither caret of `{^^}` opens anything and PART 11 §2 escapes a
-        // character IF AND ONLY IF omitting the escape would change the
-        // re-parsed AST. Against this engine's own parser `{^^}` and `{\^\^}`
-        // differ in nothing but escape bytes, and §1's EQUALITY IS MODULO
-        // ESCAPING makes them the same document - so §4 asks for the bare form
-        // and §10g's unconditional set does not reach here either, because that
-        // one is about a LEADING caret and neither of these leads.
-        //
-        // `parse_forced_emphasis` is the rule being mirrored: it takes the
-        // first `^}` pair after the opener and returns `None` when that pair
-        // meets the opener with nothing in between. So EMPTINESS is the whole
-        // test, and `{^x^}` - which holds something, and IS a forced
-        // superscript - keeps both of its escapes untouched.
-        //
-        // The neighbouring over-escapes stay open on purpose: §2a's `}^p` and
-        // `[^` are open in all three engines, and corpus 388 deliberately does
-        // not pin them.
         let empty_braced_super = ch == '^'
             && ((previous == '{' && text[offset..].starts_with("^^}"))
                 || (next == '}' && text[..offset].ends_with("{^")));
@@ -4324,28 +3755,6 @@ fn escape_text(
                 || next == '}'
                 || (next == '['
                     && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode)));
-        // A `:` opens something only where a marker can START: `:: term`,
-        // `:  def` and `::: fence` are all recognized at the beginning of a
-        // line, so the FIRST colon of that run is the one that has to be
-        // escaped and the rest cannot open anything.
-        //
-        // The conservative pass used to escape every candidate character it
-        // saw, so a literal `:::` came out `\:\:\:` where carve-js and
-        // carve-php write `\:::`, and `\[x\]: /u` picked up an escape on a
-        // colon that no rule can read (carve-rs#566). PART 11 §4 asks for the
-        // minimal form when dropping the escape changes nothing, and it
-        // changes nothing for every colon but the first.
-        //
-        // Same shape as the caret above: ask what the character could open
-        // HERE, rather than escaping the class it belongs to.
-        //
-        // A MID-LINE COLON IS NOT INERT, though: `:rocket:` is a symbol
-        // shortcode, an inline construct that opens anywhere, and under a
-        // configured symbol map it renders a GLYPH where the document held
-        // text. `:` was already in §5's candidate set and this guard was
-        // withholding it from the search on every line but the first
-        // (markup-carve/carve#1609). Asking `symbol_opens_at` rather than
-        // widening the guard keeps the writer's question the parser's own.
         let colon_cannot_open =
             ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
         at_line_start = ch == '\n';
@@ -4354,25 +3763,6 @@ fn escape_text(
             || caret_opens_a_caption
             || caret_opens_inline
             || opens_a_verbatim_construct;
-        // A CELL PAYLOAD IS WHERE A CARET IS MARKUP AGAIN. `span_cell` is
-        // `rowspan_marker | colspan_marker`, one production over two markers,
-        // and only the `<` half was ever reachable here - `<` is in the
-        // candidate set below and `^` was not - so a cell holding a caret was
-        // written bare, re-read as a rowspan marker, and the cell was DELETED
-        // while the cell above it grew a `rowspan="2"` (markup-carve/carve#1609).
-        //
-        // PART 11 §6f is why the cell's own padding does not already cover it:
-        // `rowspan_marker = {space}, '^', {space}` is written WITH the padding
-        // inside it, so the space `pad_cell` puts either side of the content
-        // puts nothing out of the marker's reach.
-        //
-        // OFFERED, NOT FORCED, and that is the whole point of putting it here
-        // rather than in a payload test of its own. Whether a caret in a cell
-        // is a marker depends on what else the cell holds - `| ^ |` is a span
-        // and `| a ^ b |` is text - and §2's search already answers that
-        // question by re-parsing, the same way it answers it for `<`. A
-        // predicate spelled here instead would be a second reading of
-        // `span_cell` that could drift from the parser's.
         let caret_is_a_span_marker = ch == '^' && in_table_cell;
         let candidate = caret_is_a_span_marker
             || matches!(
@@ -4466,25 +3856,6 @@ fn escape_plain_line(text: &str) -> String {
 }
 
 /// An image's ALT TEXT, written between `![` and `]`.
-///
-/// ALT IS RAW. It is an HTML attribute, so nothing inside it is inline-parsed
-/// and no escape inside it is resolved: `![t\]z](/i.png)` gives `alt="t\]z"`,
-/// backslash and all. That is what makes escaping the wrong tool here - a `\]`
-/// the writer emits is not a neutralized bracket, it is two more characters of
-/// alt text, and the document says something else on the next read. It
-/// compounded, too, because each pass escaped the backslash the last pass wrote
-/// (markup-carve/carve#1197).
-///
-/// The run closes at the MATCHING `]`, by the same scan a link's text closes by,
-/// so the alt an author can write is exactly the alt that re-reads as itself and
-/// the writer's job is to put it back verbatim (markup-carve/carve#1206).
-///
-/// The fallback covers an alt with NO Carve spelling - a bare unbalanced `]`, or
-/// a run ending inside an unclosed code span. `parse` cannot produce one; an
-/// ingested AST can. Escaping is not a representation of that value either, but
-/// it keeps the image a well-formed image instead of letting a stray `]` split
-/// the line, and it settles: the escaped alt IS representable, so the pass after
-/// it writes the same bytes.
 fn escape_image_alt(text: &str) -> String {
     if crate::parse::raw_bracket_run_closes(text) {
         return text.to_string();
@@ -4588,26 +3959,6 @@ fn escape_quoted(text: &str) -> String {
 
 /// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a
 /// footnote's `[^id]` in both its definition and its references.
-///
-/// The same rule as an alt text and for the same reason - the value is raw, so
-/// an escape the writer emits reaches the reader as two characters of content
-/// rather than as a neutralized bracket - but a narrower close. These readers
-/// take the run up to the FIRST `]`, with no balance and no escape, so a run is
-/// representable exactly when it holds neither a `]` nor a line break.
-///
-/// One function for one rule. It was written twice and both spellings escaped,
-/// so `::: [a\b]` and `[^n\m]` grew a backslash on every format pass - a div
-/// label is rendered, so that document said something new each time, and the
-/// other three merely refused to settle.
-///
-/// WRITTEN AS AUTHORED WITH NO FALLBACK, unlike an alt text. A value holding a
-/// `]` has no spelling here either, but the escape is not a spelling of it: each
-/// of these readers requires the run to be the whole of what follows, so
-/// `[a\]b]` fails to match exactly as `[a]b]` does, and `::: [a\]b]` and
-/// `::: [a]b]` render the same paragraph, container and all. Where the construct
-/// survives as text instead - a code fence, a footnote definition - the escape
-/// only adds a backslash the reader can see. The branch would change no output
-/// anywhere, which is a branch that cannot fail, so it is not written.
 fn write_flat_bracket_run(text: &str) -> &str {
     text
 }

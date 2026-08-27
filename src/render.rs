@@ -18,32 +18,6 @@ use std::fmt::Write as _;
 
 /// The recursion bound every renderer shares, and it MUST sit ABOVE the
 /// parser's (§25).
-///
-/// The guard is for trees that did not come from the parser: `from_json`
-/// accepts a good deal deeper than the parser produces, and a tree built
-/// through the API has no limit at all. It is not a language rule, and
-/// equality with `parse::MAX_NESTING_DEPTH` made it one - a renderer past its
-/// bound emits nothing, where the parser degrades an over-cap opener to
-/// literal text, so the render path deleted content the parse path kept
-/// (issue 517).
-///
-/// ONE constant, not one per renderer. Five copies of the same number is how
-/// the HTML renderer kept the old bound through the first sweep: its copy was
-/// already spelled symbolically, so a search for the literal missed it.
-///
-/// THE UNIT IS NOT THE PARSER'S, which is why the margin is a FACTOR and not
-/// `+ 32`. §25 states the bound as a property - a parsed tree must not be able
-/// to reach it - and these renderers count AST LEVELS while the parse cap
-/// counts SOURCE nesting levels. One source level of a list costs two AST
-/// levels (`list`, then `list_item`) before its body, so `MAX_NESTING_DEPTH +
-/// 32` was reachable at about 120 nested items: this engine truncated a
-/// document its own parser had just accepted, where carve-js and carve-php -
-/// which count CONTAINER depth, one per level - rendered it whole. Same shape
-/// as the ingest bound's unit trap (PART 12 §9(b), `MAX_JSON_DEPTH`).
-///
-/// The factor covers the deepest AST-per-source ratio the parser can produce
-/// (a list or definition list at two levels each, plus the leaf paragraph),
-/// with the same absolute margin on top for the blocks a container subtree adds.
 pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 32;
 
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
@@ -263,30 +237,6 @@ fn render_html_pass(
 
 /// The preferred marker for a `::: footnotes` placement block: what a document
 /// that writes no private-use character of its own gets.
-///
-/// PICKED PER DOCUMENT, not fixed. The marker used to be the fixed string NUL +
-/// `carve:footnotes-placement` + NUL, on the claim that NUL "cannot appear in
-/// rendered HTML output". Source cannot supply it - `normalize_source` replaces
-/// an authored NUL - and neither can the AST-JSON ingest, since PART 12 §21
-/// replaces it there too (carve-rs#1217). But that is a property of the two
-/// DOORS rather than of the marker, and a tree built through the node API passes
-/// through neither: carve-php recorded that exact string rendering a footnotes
-/// `div` in the middle of an author's paragraph
-/// (markup-carve/carve-php#1087).
-///
-/// A PICKED marker has the property the fixed string was borrowing from its
-/// surroundings - the finished document does not contain it, so no text of the
-/// author's can be mistaken for it. carve-php picks its marker with the break
-/// guards; this renderer has no break guards, so it picks its own, which is what
-/// the parser's definition placeholder (carve-rs#1218) and the Markdown target's
-/// escape carriers (carve-rs#1216) already do here. The allocator is
-/// [`crate::sentinel_run`], shared with both.
-///
-/// U+E008 rather than the pool's first code point: the parser's placeholders
-/// (U+E005-U+E006) and the Markdown carriers (U+E004-U+E007) have preferred runs
-/// of their own, and a distinct one per site keeps a marker seen in a debugger
-/// attributable to the site that wrote it. Nothing depends on the value - each
-/// site allocates independently, and each is re-picked against its own document.
 const FOOTNOTES_PLACEMENT_DEFAULT: char = '\u{e008}';
 
 thread_local! {
@@ -1143,31 +1093,6 @@ fn render_footnotes_section(
                 .get(label)
                 .map(Vec::as_slice)
                 .unwrap_or_default();
-            // A body with NO blocks at all still owes the reader a way back.
-            // PART 9 §16 hangs the backlink on the body's last block and
-            // synthesizes a wrapping paragraph when that block is not one
-            // (markup-carve/carve#688); a body with no last block has nothing
-            // to hang it on, so the whole paragraph is synthesized. The loop
-            // below runs zero times here, which is how the anchor went missing
-            // while the reference kept pointing at the note (carve-rs#826).
-            //
-            // Zero blocks is reachable from source (a body that is only a
-            // block-attribute line, `[^f]: {x}`, whose line is consumed as
-            // attributes), from AST-JSON ingest (`"type":"footnote"` with an
-            // empty `children`), and from a profile whose disallowed action is
-            // Strip removing every block of the body. All three arrive here.
-            // Render first, then drop the blocks that wrote NOTHING. A
-            // comment is invisible, so joining its empty string left an empty
-            // line in the `li` that the same document with a real blank line
-            // does not produce - an invisible construct having an effect the
-            // visible one lacks (markup-carve/carve-rs#1439). Dropping here
-            // also moves the backlink onto the last VISIBLE block, so a body
-            // ending in a comment does not strand the arrow in a paragraph of
-            // its own.
-            //
-            // The empty case below therefore means "no VISIBLE block", which
-            // subsumes the zero-block one: a body spelled `[^f]: %% c` reaches
-            // it too.
             let mut visible: Vec<(&BlockNode, String)> = Vec::new();
             for block in blocks {
                 let mut rendered = String::new();
@@ -1189,19 +1114,6 @@ fn render_footnotes_section(
                 out.push('\n');
                 if block_idx + 1 == visible_len {
                     let backlink = render_backlinks(&entry.backrefs, options);
-                    // The backlink goes INSIDE the body's last paragraph -
-                    // but only when that last block IS a paragraph. When it
-                    // is anything else the body gets a synthesized paragraph
-                    // to carry it (PART 9 §16, spec markup-carve/carve#799,
-                    // corpus 225).
-                    //
-                    // Searching the rendered string for the last `</p>` was
-                    // wrong twice over: it appended a bare anchor after
-                    // `</pre>` for a body ending in a fence, leaving the
-                    // endnote ending in something that is not a block; and
-                    // for a body ending in a quote or a list it found the
-                    // paragraph nested INSIDE that block and put the
-                    // backlink there, which reads as part of the quotation.
                     if matches!(block, BlockNode::Paragraph(_)) {
                         if let Some(pos) = rendered.rfind("</p>") {
                             rendered.insert_str(pos, &backlink);
@@ -1428,18 +1340,6 @@ fn render_heading(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    // A heading rendered here carries no `<section>` wrapper - either because
-    // it is nested inside another block (list item, blockquote, div, ...) or
-    // because the `sections` option is off - so it emits its id directly on the
-    // tag. The id is allocated from the same document-order counter as
-    // top-level headings, so duplicate slugs are numbered consistently across
-    // nesting levels.
-    //
-    // PART 10 §1 decides where that id sits. The author's own attributes keep
-    // their source order, and a GENERATED attribute joins at the end; an id the
-    // author WROTE is not generated, so it stays in the slot they wrote it in.
-    // carve-rs used to put the id first in both cases, which agreed with no
-    // other engine.
     let id = next_heading_id(h, state);
     // AUTHORED means the id took a SLOT in an attribute block, not merely that
     // the node carries one. Since carve#750 the parse stamps a heading's

@@ -169,25 +169,6 @@ pub fn is_valid_attr_name(name: &str) -> bool {
 /// fetches, with the separators that attribute's own grammar uses. PART 9 §25
 /// probes these token-wise instead of at the value's head, so a dangerous
 /// scheme cannot hide behind a safe one (markup-carve/carve#1320).
-///
-/// THE SEPARATORS DIFFER BETWEEN THE TWO HALVES AND THAT IS DELIBERATE.
-/// `ping` and `attributionsrc` are space-separated sets whose grammar holds no
-/// comma at all, so splitting them on commas would blank a single legitimate
-/// URL that merely carries one in its path - the binding false-positive bound.
-/// `srcset` and `imagesrcset` are comma-separated candidate strings, and there
-/// the comma has to count: a whitespace-only split misses
-/// `safe.png 1x,javascript:alert(1) 2x` outright, because with no space after
-/// the comma the second candidate hides inside the first one's descriptor.
-///
-/// The split is on ASCII whitespace and not the wider Unicode class, because
-/// that is where both grammars put their boundaries: `a<U+202F>javascript:x`
-/// is ONE token to a consumer and resolves as a relative URL. The per-token
-/// STRIP is wider than the split - see `is_url_probe_skippable` - so
-/// `<U+202F>javascript:` still blanks wherever it sits.
-///
-/// Prose attributes are NOT in the set and must not be tokenized: `title`,
-/// `alt` and `aria-label` legitimately carry colons, and tokenizing them would
-/// refuse ordinary text.
 const URL_LIST_ATTRS: [(&str, bool); 4] = [
     // (name, comma is also a separator)
     ("srcset", true),
@@ -392,31 +373,6 @@ pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
 
 /// Characters dropped before probing a URL's scheme: every control character
 /// and every whitespace character, plus the zero-width no-break space / BOM.
-///
-/// `char::is_control` is the Cc category exactly - U+0000..U+001F, DEL (U+007F)
-/// and the C1 block U+0080..U+009F - and naming it is what widened this
-/// predicate. It used to read `(c as u32) <= 0x20`, which stopped short of DEL
-/// and covered only U+0085 of the C1 block (through `is_whitespace`). While it
-/// did, `[x](java<DEL>script:alert(1))` reached the rendered `href` with the raw
-/// `7f` byte intact and `![a](...)` reached `src` the same way, though the plain
-/// `javascript:alert(1)` was blanked correctly (markup-carve/carve-rs#833).
-///
-/// THIS IS A PROBE CLASS AND IT IS DELIBERATELY WIDER THAN PART 9 §29's EMIT
-/// CLASS. §29 governs what a target may write, and by T5 it puts DEL and C1
-/// outside itself; this governs what the probe must see THROUGH. The two answer
-/// different questions, and reading the second off the first is what left the
-/// gap. The membership test here is "may a URL consumer discard this character
-/// before it reads the scheme", not "is this character a control".
-///
-/// The ANSI target already had this right one file over: it runs
-/// `strip_terminal_controls` - which is `char::is_control` - over the
-/// destination before handing it to `sanitize_url`, so the split form never
-/// reached the narrow predicate from that direction. The Markdown target does
-/// the same through `is_not_emitted`. HTML had no such pre-strip, which is why
-/// it was the target that leaked.
-///
-/// Filtering only ever REMOVES characters, so widening this can deny more and
-/// can never allow more.
 pub(crate) fn is_url_probe_skippable(c: char) -> bool {
     c.is_control() || c.is_whitespace() || c == '\u{FEFF}'
 }
