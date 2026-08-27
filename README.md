@@ -676,9 +676,13 @@ brew install markup-carve/carve/carve       # macOS and Linux
 Each archive ships a `.sha256` sidecar next to it. From source instead:
 
 ```bash
-cargo install carve-lang                    # from crates.io
-cargo install --path .                      # from a checkout
+cargo install --locked carve-lang           # from crates.io
+cargo install --locked --path .             # from a checkout
 ```
+
+`--locked` builds the dependency set in the crate's `Cargo.lock`, which is the
+one the release was tested against; without it Cargo re-resolves and you get
+whatever the registry serves that day.
 
 Then:
 

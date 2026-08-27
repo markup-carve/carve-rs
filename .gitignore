@@ -1,5 +1,10 @@
 /target
-Cargo.lock
+# Cargo.lock is TRACKED, not ignored: this package ships a `carve` binary,
+# CI runs an MSRV leg, and the release workflow builds installable
+# artifacts - all three want one resolved dependency set rather than
+# whatever the registry serves that day. A committed lock file is ignored
+# by anything that depends on `carve-lang`, so it constrains nobody
+# downstream.
 .idea/
 .vscode/
 *.swp

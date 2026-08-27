@@ -70,7 +70,9 @@ jobs:
         id: auth
         if: env.HAS_TOKEN != 'true'
 
-      - run: cargo publish
+      # `--locked`: publish the dependency set the tag was tested against,
+      # rather than re-resolving at release time.
+      - run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
 
@@ -147,11 +149,10 @@ jobs:
         # The release profile carries `lto = "thin"` and `codegen-units = 1`
         # from Cargo.toml, so the shipped binary is the optimized one.
         #
-        # No `--locked`: this is a library crate and does not commit a
-        # Cargo.lock, so the build resolves whatever the registry serves within
-        # the declared ranges. That is the same trade the CI suite already
-        # makes, and changing it is a separate decision from shipping binaries.
-        run: cargo build --release --bin carve --target ${{ matrix.target }}
+        # `--locked`: every target in the matrix builds the dependency set in
+        # Cargo.lock, so the six archives attached to one release are the same
+        # program, and rebuilding a tag later reproduces what shipped.
+        run: cargo build --locked --release --bin carve --target ${{ matrix.target }}
 
       # One archive per target, each carrying the licence and the README next to
       # the binary, so an extracted tarball is self-describing rather than a
