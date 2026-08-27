@@ -506,31 +506,6 @@ fn collect_figure_group_warnings(
 
 /// The one authoring hazard around the fenced block quote that no other rule
 /// here reaches (markup-carve/carve#1718).
-///
-/// A `::: >` opener written at the column of the quote above it is a block
-/// opener, so it ends that quote and starts a SIBLING one:
-///
-/// ```text
-/// > a
-/// ::: >
-/// b
-/// :::
-/// ```
-///
-/// renders two adjacent `<blockquote>` elements. That is ordinary container
-/// behavior and correct - nesting needs the marker, `> ::: >`.
-///
-/// It is reported because the failure is INVISIBLE for this container kind
-/// alone. With any other type token the mistake produces a visibly different
-/// element and the author notices; with `::: >` it produces the two quotes
-/// above, which read exactly like the nesting that was intended. Nothing is
-/// malformed, so no other rule fires and `carve lint` exits 0. The hazards
-/// beside it are covered already: a closer on the wrong side of the marker
-/// leaves the fence unclosed to end of input.
-///
-/// Reported only for a fenced quote directly below a PREFIXED one. A blank
-/// line makes two quotes deliberate, and after a closing fence a sibling is
-/// where it looks, so a fenced quote below a fenced quote is left alone.
 fn collect_quote_fence_warnings(
     blocks: &[BlockNode],
     to_byte: &dyn Fn(usize) -> usize,

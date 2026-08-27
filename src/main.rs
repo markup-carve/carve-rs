@@ -336,18 +336,6 @@ fn main() -> ExitCode {
             (checked.losses, checked.total_losses, checked.truncated),
         )
     } else {
-        // Mention/tag URL templates are an HTML-link concern, so they only affect
-        // HTML output. All formats share the same parse + profile pipeline.
-        //
-        // The FALLIBLE entry points, deliberately. Their infallible siblings map
-        // a refusal to `String::new()`, which is the right trade for a library
-        // caller who asked not to handle it and the wrong one here: a command
-        // line tool has an exit status and a stderr, so a refusal has somewhere
-        // to go, and writing nothing while reporting success makes an over-cap
-        // document indistinguishable from one that legitimately rendered to
-        // nothing (carve-rs#1190). The ingest branch above already answers this
-        // input with `eprintln!` + FAILURE; both branches reach it through the
-        // same `RenderError`, so they print the same line.
         let checked = carve::with_render_loss_report(target, checked_options, || match format {
             OutputFormat::Html => carve::try_to_html_with_options(&source, &options),
             // Positions ON for the three targets that PRINT the footnote

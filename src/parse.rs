@@ -14,40 +14,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
 /// is ours rather than something the author wrote.
-///
-/// A definition removed from a container cannot leave a blank line: inside a
-/// quoted list item the leftover structural prefix IS blank, and a blank there
-/// loosens the list (§17 L1) even though the definition rendered nothing. `%%`
-/// is the one construct that is invisible at any column and closes nothing
-/// (§24 C3), so the line is replaced with a comment rather than emptied.
-///
-/// It must not become a comment NODE. An authored `%%` and this placeholder are
-/// otherwise the same thing, so the writer serialized a comment the author never
-/// typed - carve-rs#602, corpus 194 - and an item holding one is not empty, so
-/// the writer's emptied-item branch never fired and it wrote `- %%` where the
-/// other two engines write `- +` (markup-carve/carve#620).
-///
-/// The private-use suffix is what tells them apart. It reaches only the block
-/// parser's `%%` arm, which drops the line instead of building a node; nothing
-/// downstream sees it, and the line is still non-blank for every collection and
-/// tightness decision made before that point. Same device as `VERBATIM_BLANK`
-/// in the writer - INCLUDING the part where the character has to be picked
-/// against the document rather than fixed.
-///
-/// So these two code points are PREFERRED, not fixed:
-/// `pick_definition_placeholders` re-picks them for any document that already
-/// contains one.
-///
-/// A FIXED suffix cannot be told apart from one the AUTHOR wrote, and the
-/// parser answers `is_definition_placeholder` positionally, so a line an author
-/// writes as `%%` + U+E005 reaches every branch the collector's own marker
-/// reaches. That is not theoretical here: measured against the same document
-/// with an ordinary comment, an authored `%%`+U+E005 loses the comment node from
-/// the AST, empties the list item holding it (`- +` where the author wrote a
-/// comment), and dedents an item's continuation line out of the item. Same rule
-/// carve#678 settled and markup-carve/carve-js#1289 re-applied to the JS writer;
-/// the canonical writer in this crate already picks its own five per render
-/// (`SENTINEL_DEFAULTS`, markup-carve/carve-rs#607 and #630).
 const PLACEHOLDER_DEFAULTS: [char; 2] = ['\u{E005}', '\u{E006}'];
 
 /// Slot indices into [`PLACEHOLDER_DEFAULTS`] / [`PLACEHOLDERS`].
@@ -606,18 +572,6 @@ fn parse_with_options_mode_and_index(
         for blocks in footnote_defs.values_mut() {
             narrow_to_last_placed_child(blocks, &source_lines);
         }
-        // THE DEFINITION ITSELF ENDS AT ITS LAST PLACED CHILD TOO, and this is
-        // the same rule the two calls above apply - so it runs AFTER them,
-        // bottom-up, or it would copy an end its own body had not settled yet.
-        //
-        // This was a WIDEN, and only a widen: it moved the end out to the body
-        // when the body reached further and left it alone otherwise. So a
-        // definition whose extent came from the LINES it consumed kept the line
-        // terminator that ended it, one codepoint past its body, on 27 corpus
-        // documents (markup-carve/carve-rs#1303). Widening is not a separate
-        // rule from narrowing - "ends at its last placed child" is one bound,
-        // reached from either side - and spelling only half of it is what let
-        // the two directions disagree.
         for (label, pos) in &mut footnote_def_pos {
             let last = footnote_defs
                 .get(label)
@@ -677,21 +631,6 @@ fn parse_with_options_mode_and_index(
         // Keep the document-id seeder authoritative. Unlike the heading index,
         // it reserves explicit ids carried by inline nodes as well as blocks.
         stamp_generated_heading_ids(&mut doc, options.heading_id_options());
-        // PART 12 §5: footnote numbering is a resolution result that IS
-        // serialized, "because recomputing them requires reimplementing PART 9R".
-        // Caption numbers were assigned here and reached the wire; footnote
-        // numbers were assigned only inside the HTML renderer, so `--ast` and
-        // every other consumer of the tree saw none (carve-rs#638).
-        //
-        // The existing pass is reused rather than a second numbering rule
-        // written: first-use order, a repeat reusing its number, and a reference
-        // to an undefined label left unnumbered. Its endnote list is discarded
-        // here - only the numbers it writes onto the refs are wanted.
-        // `ref_id` is NOT assigned here. It is an HTML backlink anchor; the
-        // schema permits the field and carve-js does not publish it, so writing
-        // it would add something to the wire no other engine emits. The flag is a
-        // parameter rather than a second walk - this tree has 51 inline variants
-        // and a hand-written sweep to undo it would silently miss one.
         if !matches!(mode, ParseMode::HtmlFacade) {
             let _ = crate::render::collect_footnotes(&mut doc, false);
         }
@@ -1450,23 +1389,6 @@ fn extract_footnote_defs(
             !columns.descendant_still_owns(def_indent),
         );
         if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
-            // A LIST MARKER on a line the block parser folds into an open
-            // paragraph is lazy paragraph text, and the definition behind it is
-            // part of that text (markup-carve/carve-rs#1024). Cutting it out
-            // deleted the author's line AND defined a note nobody wrote.
-            //
-            // The marker test is what SCOPES the guard, and it reads the RAW
-            // line. §10 gives a list the property this turns on - it does not
-            // interrupt an open paragraph - and a quote does not have it, so
-            // `r` then `> [^f]: t` opens a real quote whose definition IS
-            // collected, in all three engines. A quoted marker (`> - [^f]: t`)
-            // does not match here either, so the same shape inside a quote is
-            // still collected; `line_folds_into_an_open_paragraph` answers that
-            // one correctly if it is ever asked, but widening what asks it is a
-            // separate change with its own controls.
-            //
-            // Everything past the marker is the block parser's answer, not this
-            // pass's guess. See `line_folds_into_an_open_paragraph`.
             !(marker_line_may_be_lazy(lines[i])
                 && line_folds_into_an_open_paragraph(&body, lines[i], options, &mut probe_budget))
         }) {
@@ -1528,35 +1450,6 @@ fn extract_footnote_defs(
                         break;
                     }
                     if is_blank_line(line) {
-                        // A footnote body extends to following lines indented by
-                        // >= 2 spaces (grammar PART 9 §16); blank lines are
-                        // allowed between chunks. A `+` continuation marker also
-                        // keeps the body open (PART 9 §17).
-                        //
-                        // THE WHOLE BLANK RUN, not the next line. Reading only
-                        // `lines[i + 1]` ended the definition at the SECOND
-                        // blank, because the line after the first blank was
-                        // itself blank and so neither indented nor a marker. An
-                        // indented continuation after two blank lines was
-                        // ejected to a top-level paragraph, and not where it was
-                        // written either - it landed ahead of the endnotes
-                        // section, so the content moved backward past unrelated
-                        // blocks (markup-carve/carve#1620).
-                        //
-                        // A blank run does not end an indented block anywhere
-                        // else in Carve - a list item, a quote and a container
-                        // all keep an indented continuation across one - and
-                        // nothing in §16 says a footnote definition differs.
-                        // Ruled in carve#1620: the continuation stays in the
-                        // note. carve-js already read it that way at every count.
-                        //
-                        // THIS IS NOT §11 N1a. That fires at three or more blank
-                        // lines and only before a LIST MARKER; this fired at two
-                        // and for a plain paragraph as readily as a list, so the
-                        // boundary settled in carve#1430 is untouched. The run is
-                        // pushed through intact rather than collapsed, so a
-                        // genuine N1a boundary written INSIDE a note still
-                        // reaches the parser as the author wrote it.
                         let mut after_run = i + 1;
                         while after_run < lines.len() && is_blank_line(lines[after_run]) {
                             after_run += 1;
@@ -1584,20 +1477,6 @@ fn extract_footnote_defs(
                     // next footnote definition.
                     if is_plus_marker(line) {
                         i += 1;
-                        // ...AND THE NOTE ENDS WHERE A COMMENT ENDS IT
-                        // (markup-carve/carve#1814). The gate decides whether
-                        // this `+` is a marker at all; when it is not, the line
-                        // is an ordinary invisible line at document column 0,
-                        // and a footnote body ends at one of those exactly as it
-                        // ends at a comment line there. Asked ONE LINE EARLY
-                        // because this loop's own continuation branch would
-                        // otherwise claim the following line before any extent
-                        // is measured. The `+` is consumed either way, so the
-                        // enclosing parse resumes on the line the marker did not
-                        // take.
-                        //
-                        // Continuation is gathered only for a TOP-LEVEL
-                        // definition (see above), so the outer offset here is 0.
                         if !attaches_flush_left(Some(0), lines.get(i)) {
                             break;
                         }
@@ -1754,18 +1633,6 @@ fn extract_footnote_defs(
             // marker-consuming case above keeps the item non-empty. `%%` is
             // invisible at any column and closes nothing (§24 C3).
             let mut replacement = stripped.replacement();
-            // NOT gated on a container prefix. The hazard is the blank the
-            // removal leaves, and a definition at an item's content column with
-            // no marker or quote in front of it - `- a` / `  [^f]: x` / `  more`
-            // - leaves exactly the same blank. That read as an interior
-            // separator and loosened the item, so corpus 228 rendered
-            // `<p>a</p>` and `<p>more</p>` where the other two engines render
-            // both bare (carve#801, the `list.tight` divergence).
-            //
-            // Top-level needs the marker too: a plain blank is caption_slot's
-            // optional blank line, so replacing a definition with one allowed a
-            // caption to attach THROUGH the definition (carve#1028). The marker
-            // is invisible but non-blank, preserving the interruption.
             if !replacement.ends_with("%%") && !replacement.ends_with(&definition_placeholder()) {
                 // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
                 // container the structural prefix already carries it; at top
@@ -1819,19 +1686,6 @@ fn extract_footnote_defs(
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.strip_prefix("[^")?;
     let (label, body) = rest.split_once("]: ")?;
-    // The same two validations `parse_link_def_line` below carries, for the
-    // same reason: a line that is NOT a definition must stay on the page.
-    // Consuming it as one renders nothing, so the line disappears from the
-    // document entirely.
-    //
-    // A `]` inside the label - `[^a]b]: x`, `[^]]: x` - is excluded by the
-    // reference-label production at every position, so the line is a paragraph.
-    // This is the case a first fix on the link-def side missed (carve-rs#456);
-    // this function got neither fix.
-    // `footnote_label = {character - ']'}+` - one or more. `[^]: x` has an EMPTY
-    // label, so it is not a footnote definition. It is a valid LINK reference
-    // definition whose label is `^`, and claiming it here kept the link path
-    // from ever seeing it - `[text][^]` then never resolved (carve#552).
     if label.is_empty() || label.contains(']') {
         return None;
     }
@@ -2510,18 +2364,6 @@ fn extract_link_defs_with_guard(
             body.push(std::borrow::Cow::Borrowed(line));
             continue;
         }
-        // A definition on an item's CONTINUATION line carries no marker, so
-        // `strip_container_prefixes` (which strips blockquote markers and list
-        // MARKERS) leaves the item's indentation in front of the `[` and the
-        // line reads as text. carve-js, carve-php and the executable spec all
-        // collect it; this engine rendered the line AND failed to resolve the
-        // reference (carve-rs#552).
-        //
-        // Exactly the tracked content column is stripped, never more: a line
-        // indented PAST the column is item paragraph text, and all four
-        // implementations agree it defines nothing there. Zero columns is the
-        // top-level case, where `text` / `  [r]: /u` is likewise text
-        // everywhere - so this only ever fires inside a list item.
         let def_indent = indent_columns(stripped.bare);
         let def_line = at_content_column(
             stripped.bare,
@@ -2530,25 +2372,6 @@ fn extract_link_defs_with_guard(
             !columns.descendant_still_owns(def_indent),
         );
         if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
-            // A LIST MARKER on a line the block parser folds into an open
-            // paragraph is lazy paragraph text, and the definition behind it is
-            // part of that text. Cutting it out deletes the author's line and
-            // defines a reference nobody wrote (markup-carve/carve#1425).
-            //
-            // THE PREVIOUS LINE IS NOT THE QUESTION. This guard used to ask
-            // whether that line was blank, which is a different question with a
-            // different answer: a heading, a comment, a definition of any of the
-            // three kinds and a marker line are all non-blank and all leave NO
-            // OPEN PARAGRAPH (grammar PART 0), so the cheap spelling refused a
-            // collection carve-js, carve-php and the executable spec all make -
-            // and the definition came back as visible item text. The footnote
-            // pass answered this for its own kind in carve-rs#1024 and left this
-            // one filed; this is that fix.
-            //
-            // The marker test SCOPES the guard and reads the RAW line, so a
-            // quoted marker (`> - [d]: u`) never reaches it and is collected as
-            // before - the same scope the footnote pass has, deliberately, so
-            // the two kinds answer alike.
             !(marker_line_may_be_lazy(line)
                 && guard.as_mut().is_some_and(|(options, budget)| {
                     line_folds_into_an_open_paragraph(&body, line, options, budget)
@@ -2709,25 +2532,6 @@ fn detect_prepass_def_body(line: &str) -> Option<(usize, usize)> {
 }
 
 /// The description marker on `line`: its body and its content column width.
-///
-/// THE SEPARATOR IS A RUN OF ASCII SPACES and at least one is required, so a
-/// tab straight after the colon satisfies nothing and the line is not a marker
-/// at all - a MARKER SEPARATOR is spelled `space` (PART 1, carve-rs#518).
-///
-/// AND THE MARKER REQUIRES CONTENT (PART 2): it opens its block only when
-/// followed by that space AND non-empty content, a rule that governs EVERY
-/// marker taking a separator space rather than the two the clause names. So `:`
-/// plus spaces and nothing else opens no description - it is a plain line under
-/// whatever is open, which folds it as a soft break and drops its trailing run
-/// (markup-carve/carve#1830). Without the content test the three space
-/// spellings ended the list and emitted the colon as their own paragraph, a
-/// structure the marker never opened, while the tab spelling already folded:
-/// one rule answering two ways depending on which character followed.
-///
-/// EMPTINESS IS MEASURED AFTER THE GREEDY RUN, not over the whole remainder. A
-/// tab past the separator is CONTENT, as a vertical tab and a no-break space
-/// are, so `:` + space + tab opens a description whose body then trims away -
-/// which is what carve-php and carve-js both read.
 fn strip_definition_marker(line: &str) -> Option<(&str, usize)> {
     let rest = line.strip_prefix(':')?;
     let spaces = rest.bytes().take_while(|b| *b == b' ').count();
@@ -2830,21 +2634,6 @@ impl StrippedContainerLine<'_> {
 
 fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
-    // The grammar requires at least one character:
-    //
-    //     reference_label = (character - ']' - '@'), {character - ']'} ;
-    //
-    // So `[]` is not a label and `[]: u` is a paragraph. Without this the line
-    // was consumed as a definition and rendered nothing, so it DISAPPEARED -
-    // carve-js and carve-php both keep it as text (carve-rs#451).
-    //
-    // Validate against the WHOLE production, not just the empty case. The first
-    // fix here rejected only `[]`, and left `[]]: u` and `[a]b]: u` consumed -
-    // both have a `]` inside the label, which the production excludes at every
-    // position, and both vanished the same way (carve-rs#451).
-    //
-    // A space IS a `character`, so `[ ]` is a legal one-character label, which
-    // is what all three engines do.
     let first = label.chars().next()?;
     if first == '@' || label.contains(']') {
         return None;
@@ -3078,24 +2867,6 @@ fn strip_container_prefixes_at<'a>(
     columns: &ContentColumns,
     after_term: bool,
 ) -> StrippedContainerLine<'a> {
-    // ASKED AFTER THE QUOTE MARKERS, because that is where the column it asks
-    // about is measured. `at_content_column` records why: columns are counted
-    // INSIDE the quote, so the item opened by `> - a` has content column 2 and
-    // not 4. Asking about the raw line answered for the wrong depth - the indent
-    // before a `>` is zero on a line that starts with one, so `> - a` /
-    // `>   > [r]: /u` found no column, the inner quote was never stripped, and
-    // the definition inside it stayed paragraph text where the block parser
-    // publishes it (markup-carve/carve-rs#1082).
-    //
-    // The column is still what decides, which is the whole rule: an indented `>`
-    // opens a quote only AT a live item's content column. `> a` / `>   > b` has
-    // no item, so no column matches, the `>` is ordinary text, and this pass
-    // agrees with the block parser about that too.
-    // AND ASKED AGAIN AT EACH DEPTH, because the prefixes alternate. Each hop
-    // consumes one indent-then-quote, and the markers between two hops are what
-    // the workhorse below already walks - so `- > - > x` /
-    // `  >   > [r]: /url` needs the question twice, once per item that holds a
-    // quote. Asking once left the inner one unstripped.
     let mut cut = 0usize;
     // WHICH LEVEL the question is asked at, not just how deep the walk has got.
     // Each hop enters one more container, and the column a `>` must sit at is
@@ -3246,23 +3017,6 @@ fn parse_link_def_target(target: &str) -> LinkDef {
 /// widening the parse cannot change what counts as a definition.
 /// Hoist every authored `[label]: /url` definition into the document as a
 /// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
-///
-/// §10 wants a NODE rather than a root field because §4 requires a `pos` on
-/// everything but the root and a root field cannot carry one - a definition
-/// occupies real bytes, and an editor, a formatter and a language server all need
-/// to find them. Without it the canonical writer had nowhere to write a definition
-/// back from and INLINED every resolved reference instead, which lost
-/// `ref`/`raw_ref` on the reparse and turned one destination into N (carve-rs#631).
-///
-/// SOURCE ORDER, not the label order of the map: §10 answers "which definition
-/// wins" by document order, and the writer has to put the lines back where the
-/// author had them.
-///
-/// A definition lifted out of a FOOTNOTE BODY has no document line to point at -
-/// the index it was found at belongs to the lifted body, not the source. It still
-/// hoists, with no `pos`: §4 allows omitting a position the parser cannot
-/// determine, and says a position pointing somewhere else is worse than none.
-/// Dropping the node instead would lose the line from `fmt` entirely.
 fn append_link_reference_definitions(
     doc: &mut Document,
     link_defs: &BTreeMap<String, LinkDef>,
@@ -3389,26 +3143,6 @@ fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
                         return (target, None);
                     }
                     let block = &end[start..];
-                    // AN INVALID BLOCK IS NOT `attributes`, SO THE LINE IS NOT A
-                    // DEFINITION (markup-carve/carve#933). `[space, attributes]`
-                    // names the `attributes` production, and a balanced `{...}`
-                    // that production does not accept is not an instance of it -
-                    // it is leftover content, and the end-of-line anchor above
-                    // disposes of it like any other leftover.
-                    //
-                    // The scan is what has to say so. It peels the block off
-                    // BEFORE anything validates it, so a rejected block had
-                    // already been consumed and DISCARDED and the line went on
-                    // to define with the author's braces gone from the page -
-                    // the exact outcome PART 7 names as the one to avoid. The
-                    // remedy is structural: handing the block back as CONTENT is
-                    // a third outcome, and where "rejected" and "absent" are the
-                    // same value the failure has nowhere to be observed.
-                    //
-                    // `x {#}` in a paragraph already keeps its braces as text,
-                    // because `attributes` rejects that block there too. Two
-                    // readings of the same characters one construct apart is
-                    // what this removes.
                     if parse_attrs(&block[1..block.len() - 1]).is_none() {
                         return (target, None);
                     }
@@ -3463,55 +3197,7 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
 }
 
 /// The format token of a frontmatter opener, given everything after the `---`.
-///
-/// `Some("")` is a bare fence (`---`), which defaults to yaml; `None` means the
-/// line is not a typed opener at all.
-///
-/// THE PADDING RUN IS SPACES. `frontmatter_open`'s slot before the format token
-/// is a PADDING slot - the `---` pair has already decided the block, and the
-/// token only names the metadata dialect - but PART 7's MARKER SEPARATORS AND
-/// PADDING SLOTS decides the terminal by POSITION rather than by role: the slot
-/// sits after the first non-whitespace character of the line, and a tab is
-/// syntax only inside a line's leading indentation run. So `---<TAB>yaml` is
-/// not a typed opener; it is an ordinary line (carve#901, carve#905).
-///
-/// The whole run is checked, not its first character. A check on the first
-/// character rejects `---<TAB>yaml` and passes `---<SP><TAB>yaml`, and the rule
-/// is about the run. This is the shape that survived carve-rs#720 inside
-/// `detect_container_open` and was only found in carve-rs#722.
-///
-/// The terminal is a literal `' '`, not `[' ', '\t']`. Widening it to a set
-/// would re-admit the tab being removed, and narrowing to `' '` drops U+00A0
-/// with it - which the previous `str::trim` admitted, so `---<NBSP>yaml` opened
-/// frontmatter too.
-///
-/// CARDINALITY IS UNCHANGED. The production spells the slot `[space]`, exactly
-/// one, while every engine reads a run; that is a separate question from the
-/// terminal and no ticket asks for it here. `resources/carve-core.ohm` makes
-/// the same call for `titleSp+`.
-///
-/// TRAILING whitespace after the token is the line-ending rule rather than this
-/// slot, so it stays tolerated - matching the spec oracle. THE SAME IS TRUE
-/// WITH NO TOKEN AT ALL: `---<TAB>` is a bare opener whose whole tail is
-/// trailing, because a frontmatter delimiter takes no content on its line and
-/// there is therefore no slot for the terminal to govern (carve#1295).
 pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
-    // WHITESPACE IS SPACE OR TAB (PART 7, carve#977), at both of this
-    // function's slots.
-    //
-    // The TRAILING one is what was wrong. `char::is_whitespace` is the Unicode
-    // White_Space property and takes a VERTICAL TAB, a FORM FEED and a NO-BREAK
-    // SPACE, so `trim_end` cut a trailing vertical tab off the token and a yaml
-    // opener carrying one was typed - and its block then swallowed the document
-    // down to the next bare three-dash line.
-    //
-    // NAMED SURVIVOR: reverting the LEADING scan alone changes no output, and
-    // no test can be written that it does. The next statement already rejects
-    // any character in that run that is not a space, so a wider scan cannot
-    // leak - it only shifts which of the two statements says no. It is narrowed
-    // anyway so the function reads its own production rather than depending on
-    // a downstream check, which is what the padding-slot history in this
-    // function (carve-rs#720, carve-rs#722) is a record of.
     let token_start = after_marker
         .find(|c: char| !matches!(c, ' ' | '\t'))
         .unwrap_or(after_marker.len());
@@ -3551,26 +3237,6 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
 }
 
 /// Whether `source` opens a frontmatter block, by the parser's own test.
-///
-/// The canonical writer needs exactly one question answered: would a leading
-/// `---` in the bytes it is about to emit be read back as a frontmatter opener
-/// instead of as the thematic break it wrote? It asks `split_frontmatter`
-/// rather than re-deriving the answer, because a second reader of the same
-/// question is only safe while it agrees - the seam carve-rs#725 had to unify
-/// once already and carve-rs#732 lost a whole document to.
-///
-/// `normalize_source` runs first for the same reason: the parser tests the
-/// normalized text, so a reader that tested the raw text would disagree about
-/// a CRLF or BOM'd document - the exact fall-through carve-rs#732 lost a
-/// frontmatter block to.
-///
-/// NAMED SURVIVOR: no fixture can tell that call apart from a no-op today.
-/// The only caller passes the CANONICAL WRITER'S OUTPUT, which is built from a
-/// tree that was itself parsed out of normalized text, so it can hold no
-/// carriage return, no NUL and no leading byte order mark. The call is kept so
-/// the helper answers for any text rather than only for the one caller's, which
-/// is the same reason `raw_frontmatter` was made to share the opener test
-/// instead of keeping a second copy of it (carve-rs#725).
 pub(crate) fn opens_frontmatter(source: &str) -> bool {
     let normalized = normalize_source(source);
     split_frontmatter(normalized.as_ref(), false).1.is_some()
@@ -3686,26 +3352,6 @@ struct LineCursor<'a> {
     pos: usize,
     at_document_level: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
-    ///
-    /// PART 9 §24 C3: "AT content_column: dedented to the body's column 0, a
-    /// block opener nests and a list marker opens a sublist", holding "whether
-    /// or not a blank line precedes the child". §10 I2 defers to it by name -
-    /// "TIGHT NESTED LISTS UNAFFECTED ... that is §24 C3 (content column), not
-    /// this relation" - so an item body is the one context where a marker
-    /// interrupts an open paragraph, and the clause calls that an intentional
-    /// divergence from djot.
-    ///
-    /// It answered for the FIRST marker in an item only. The collector hands the
-    /// sub-list to the list parser and the rest of the body back as a further
-    /// chunk, so the first marker met no open paragraph while every later one
-    /// met §10 I2 with one open and folded - and two documents differing only by
-    /// a sub-list that had already closed disagreed about their shared last line
-    /// (markup-carve/carve#1517).
-    ///
-    /// PASSED, NOT INHERITED. Only the two item-body entry points set it, so a
-    /// quote, a div or a definition body inside the item reads with it clear and
-    /// asks the ordinary §10 I2 question - `- > q` / `  - s` is still one quoted
-    /// paragraph (carve-js#1200).
     in_item_body: bool,
     /// Whether the INVISIBLE arms of `interrupts_paragraph` are live for the
     /// question being asked. True everywhere except a container's BELOW-COLUMN
@@ -3842,18 +3488,6 @@ impl LineBuffer {
     }
 
     fn into_source(self) -> MappedSource {
-        // TERMINATE only when the buffer ends in a blank the AUTHOR wrote.
-        //
-        // `join` loses a trailing empty line on the round trip back through
-        // `str::lines()`, so a fence that runs to a container's closer came out
-        // a line short. Terminating unconditionally fixed that and broke the
-        // other half: `push_synthetic_blank` inserts blanks so an attached
-        // block parses on its own, and preserving one of those re-parses as a
-        // real blank line that `fmt` then writes out
-        // (tests/comment_body_is_relative_to_its_fence).
-        //
-        // The two are told apart by who pushed the line, which is the only
-        // place the difference is known (markup-carve/carve-rs#908).
         let ends_in_authored_blank =
             !self.last_is_synthetic && self.lines.last().is_some_and(|line| line.is_empty());
         let mut source = self.lines.join("\n");
@@ -3926,58 +3560,6 @@ impl MappedSource {
 }
 
 /// Codepoints a container took from the front of a line, when that is knowable.
-///
-/// SIGNED, because a container can hand the parser a line that is LONGER at the
-/// front than the source line was. When a tab straddles the column a container
-/// strips to, `strip_leading_columns` re-inserts the overshoot as spaces - two
-/// characters where one was consumed - and the constant that maps a column in
-/// the result back to a column in the document is then NEGATIVE. An unsigned
-/// map cannot hold it, which is the whole reason a tab-indented footnote
-/// continuation published no positions while the two-space spelling published
-/// all five (carve-rs#736).
-///
-/// Three shapes have a knowable width, and all three are affine:
-///
-///   A PREFIX REMOVAL. The line the parser sees is a SUFFIX of the source line,
-///   and the difference between them is what the container took.
-///
-///   A TRIM AT BOTH ENDS. The line the parser sees is the source line with its
-///   leading indentation AND its trailing ASCII whitespace removed. Dropping
-///   characters off the END moves nothing in front of them, so the constant is
-///   the leading width alone - the trailing trim is invisible to it.
-///
-///   Without this a paragraph line ending in a space or a tab placed NOTHING:
-///   `abc<SP>` is not a suffix of itself trimmed, so every inline anchored on
-///   that line lost its position and `abc` published no `pos` while the same
-///   document without the trailing space published one (PART 12 §4's test is
-///   whether a true span EXISTS, and here it plainly does - `abc` is the
-///   source at offset 0). Fifteen of this engine's position findings were that
-///   one line, across a paragraph, a list item, a block quote and a line
-///   block.
-///
-///   A RESIDUAL-AWARE DEDENT. The line the parser sees is a suffix of the
-///   source line carrying a SYNTHETIC prefix of spaces, and what the container
-///   consumed in front of that suffix was itself nothing but indentation. The
-///   constant is then what it consumed minus what it synthesized, which may be
-///   negative.
-///
-/// Anything else - a tab expansion in the middle of a line, a synthesized
-/// replacement, a line block's indent sentinel - has no such correspondence and
-/// yields `None`, so blocks starting there carry no position rather than a
-/// wrong one. The guard is that the two lines differ ONLY in leading
-/// whitespace: if what either side put in front of the shared tail contains a
-/// single non-indent character, there is no constant and this returns `None`.
-///
-/// THAT LAST GUARD IS UNREACHABLE TODAY, and is recorded as such rather than
-/// presented as a fix (markup-carve/carve#755: a check that cannot fail is
-/// recorded, not deleted and not counted as proof). Deleting it changes no
-/// output over the 830-document spec corpus and over 8018 generated
-/// tab-and-space indentation shapes, and no test in this suite fails. The
-/// reason is that the second branch is only reached when the parser's line is
-/// NOT a suffix of the source line, and the only producer that rewrites a line
-/// that way is `strip_leading_columns`, which consumes nothing but whitespace.
-/// It is here so a future producer that does consume content cannot silently
-/// publish an affine map that is not one.
 fn stripped_col(outer: Option<isize>, original: &str, stripped: &str) -> Option<isize> {
     let outer = outer?;
     if original.ends_with(stripped) {
@@ -4211,28 +3793,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Heading(h) => apply_inline_offsets(&mut h.children, line_starts),
             BlockNode::Paragraph(p) => {
                 apply_inline_offsets(&mut p.children, line_starts);
-                // THE FIRST CHILD, NOT THE FIRST PLACED ONE
-                // (markup-carve/carve-rs#1247). A container starts at the
-                // MARKUP THAT OPENS IT, whether or not its first child carries
-                // a position, and the start and end rules are not symmetric
-                // because they answer different questions: markup-carve/carve#1526's
-                // end rule asks where a container's CONTENT stops, so the last
-                // placed child is the right boundary there, while the start
-                // rule asks where the CONSTRUCT begins - and an unplaced child
-                // says nothing about where the construct was written.
-                //
-                // This used to skip PAST an unplaced child to the first placed
-                // one, which is how a line block stanza whose first line holds
-                // a TAB - unplaceable, because the verse text is rebuilt with
-                // expanded tabs and a tab's display width is not a source
-                // length - published a paragraph starting at the line BELOW
-                // it. The break ending the tab-bearing line then sat OUTSIDE
-                // the paragraph that holds it, which PART 12 §4 containment
-                // refuses and `checkContainment` in the spec's
-                // scripts/spec/ast-positions.mjs reported against this engine
-                // alone. Reading the first child rather than the first placed
-                // one keeps the stanza's own first line in the extent, and the
-                // break inside it.
                 let first = p
                     .children
                     .iter()
@@ -4240,26 +3800,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                         !matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_))
                     })
                     .and_then(owned_inline_pos);
-                // AND THE LAST CHILD, NOT THE LAST PLACED ONE
-                // (markup-carve/carve#1551). The mirror of the paragraph above,
-                // ruled the same way: a container ends at the markup that
-                // CLOSES it, and an unplaced child says nothing about where the
-                // author closed the construct. Skipping BACK past an unplaced
-                // last child to the last placed one ended a stanza's paragraph
-                // at the line terminator above its own last line - `::: |` then
-                // `%%` then a tab-bearing verse line published a paragraph
-                // ending at 9 where carve-js and carve-php publish 12 - so the
-                // tab-bearing line was outside the paragraph that holds it,
-                // which is the start-side defect of
-                // markup-carve/carve-rs#1247 read backwards.
-                //
-                // `None` here leaves the extent the BLOCK LAYER recorded, which
-                // is line geometry and knows where the stanza's last line ends
-                // even where the text on it cannot be placed. That is the same
-                // mechanism the first-child half relies on: the two ends are
-                // taken from the children only when the children can supply
-                // both, and otherwise the lines the construct was written on
-                // are the honest answer.
                 let last = p.children.last().and_then(owned_inline_pos);
                 // THE TWO ENDS ARE TAKEN SEPARATELY, because they are two
                 // rules. Requiring BOTH before touching either meant an
@@ -4443,46 +3983,6 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
 }
 
 /// Widen a container over the DEFINITION it hosted.
-///
-/// A footnote definition is lifted out of the body before the block parser
-/// runs, and only ONE invisible placeholder is left behind, on the line the
-/// definition opened - padded, but not always to the same width the author
-/// wrote, and never covering the body's continuation lines. So a container
-/// that hosted a definition can end short of the source it consumed:
-/// `- a` / `  [^f]: t` / `    more` reported the list as ending on line 2, and
-/// `- > [^f]: t` ended the item at the placeholder rather than at the end of
-/// the line. carve-js and carve-php reach the definition's end in both, and
-/// PART 12 section 4 is markup-inclusive (markup-carve/carve#913): a
-/// container's extent has to cover the source it consumed.
-///
-/// Only a block whose span ENDS ON the definition's own line is widened. That
-/// placeholder is the last line such a block consumed, so it is precisely the
-/// block that consumed the definition; a block that ended earlier never
-/// reached it, and a block that ended later already covers it. This is why the
-/// list widens in the first example while its item, which ends on line 1, does
-/// not - the same split carve-js reports.
-///
-/// Runs after `fill_offsets`, because a definition's own end is only known
-/// once its body has been placed. Nothing re-derives a span from its children
-/// afterwards, so the widening is not undone.
-/// A CONTAINER ENDS AT ITS LAST PLACED CHILD (PART 12 §4,
-/// markup-carve/carve#1522 and markup-carve/carve#1524).
-///
-/// A list, an item and a block quote have no closer, so their extent came from
-/// the lines they CONSUMED - and a container consumes lines whose content ends
-/// up somewhere else. A definition written at an item's content column is
-/// collected and hoisted to the document, so it becomes the list's SIBLING and
-/// the two spans overlapped; an attribute block that attaches to nothing yields
-/// no child at all, which §4 excludes by name. Everything else ends at a fence
-/// closer, a trailing pipe or a delimiter run and is left alone.
-///
-/// This REPLACES `widen_over_hosted_definitions`, which pushed a container's end
-/// out to cover exactly the definition this rule says it must stop before. That
-/// was the settled convention in all three engines until carve#1522 ruled the
-/// other way, so the direction reversing is the point rather than a regression.
-///
-/// Runs after `fill_offsets`, so a child's end offset is real and can be copied
-/// whole. Bottom-up: an item is narrowed before the list that reads it.
 fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
     for block in blocks.iter_mut() {
         match block {
@@ -4578,21 +4078,6 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                     end_at_last_placed_child(pos, last);
                 }
             }
-            // A DEFINITION LIST ENDS AT ITS LAST PLACED CHILD TOO
-            // (markup-carve/carve#1530). It was the one container that answered
-            // otherwise: a floating attribute is scoped to the container that
-            // holds it, so the attribute line is one the list consumed - and
-            // consuming it was read as owning it, which ran the extent past the
-            // last description. Scope decides which blocks an attribute may
-            // reach; extent decides which source a node claims, and §4 excludes
-            // an unattached attribute block by name.
-            //
-            // ITS CHILDREN ARE NOT ITS `items`. An item is a grouping this
-            // engine keeps in memory and does not publish; the children §4 means
-            // are the `definition_term` and `definition_description` nodes on the
-            // wire, in that order within an item. So the last placed child is the
-            // last placed description, or the last placed term where an item has
-            // no description at all.
             BlockNode::DefinitionList(n) => {
                 let last = n.items.iter().rev().find_map(|item| {
                     item.definitions
@@ -4612,27 +4097,6 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
 
 /// One container's end: its last placed child's, or its own markup where it has
 /// no placed child at all.
-///
-/// The second half is the addendum to the ruling. "Ends at its last placed
-/// child" is silent when there is none, and a definition written as an item's
-/// only content is collected out of it and leaves nothing behind. Zero width was
-/// rejected - it discards the marker the author typed, and is a shape every
-/// consumer has to special-case.
-/// THE rule, in one place: a container ENDS IMMEDIATELY AFTER ITS LAST PLACED
-/// CHILD (PART 12 section 4, markup-carve/carve#913).
-///
-/// Every type that has no closer reaches its end through this function - a
-/// block quote, a list and its items, a definition list and its terms, a
-/// heading, a footnote definition. Writing the rule once is the point: it had
-/// been spelled per type, and the three types nobody had spelled it for ended
-/// one codepoint late, taking in either the trailing whitespace run the content
-/// line drops or the line terminator that ended it (markup-carve/carve-rs#1303).
-///
-/// Answers `false` when there is no placed child to end at. That is not the
-/// same as ending at the start: a container with nothing placed inside it has
-/// no bound to take from a child, and what it should say instead differs by
-/// type - `narrow_container_end` falls back to the markup that opened it, while
-/// a footnote definition and a heading keep the line they were written on.
 pub(crate) fn end_at_last_placed_child(pos: &mut Pos, last: Option<Pos>) -> bool {
     let Some(last) = last else {
         return false;
@@ -4996,21 +4460,6 @@ fn parse_eof_closed_colon_ladder(
     } else {
         let _guard = in_group.then(FigureGroupGuard::enter);
         if opens.len() > available {
-            // PART 9 §25: past the cap an opener "becomes literal paragraph
-            // text" - it degrades, it does not vanish. This used to locate the
-            // first non-opener line and keep only the body from there, so every
-            // opener past the cap was discarded with no text, no marker and no
-            // diagnostic: the output for 205 openers and for 8000 was
-            // byte-identical, which made the amount dropped invisible
-            // (carve-rs#418). carve-php keeps them, and now so does this.
-            // §25: the flattened run and the text after it are ONE paragraph
-            // "ending at the first blank line like any other". Joining the whole
-            // tail put a literal blank line inside a paragraph - which nothing
-            // else in the language can hold - and swallowed the block after it
-            // (carve-rs#530).
-            // No maps: this path is only reached with positions OFF (its
-            // guard is `!options.source_lines && !options.positions`), so
-            // there is nothing to place and nothing to lose.
             flattened_paragraphs(tail, None, options)
         } else {
             let tail_source = tail.join("\n");
@@ -5110,20 +4559,6 @@ fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) 
     let stripped = *col_map.get(start)?.as_ref()?;
     let end_stripped = *col_map.get(last)?.as_ref()?;
     let first = lines.get(start)?;
-    // Space and tab, the same reason as in `span_of`: a leading no-break space
-    // is content the span must cover, not indentation in front of it.
-    //
-    // UNREACHABLE TODAY, and recorded as such rather than presented as a fix.
-    // A flattened run begins at the line that exceeded the nesting cap, and
-    // that line is a marker line by construction - `:::`, `>`, a bullet - so
-    // this indent is zero in every shape reachable from the parser. Mutating it
-    // back to the Unicode property changes no output, which was measured over a
-    // colon ladder, a quote ladder, an indented list ladder and an indented
-    // body line before writing this. It matches `span_of` because the two are
-    // one measurement written twice, and a copy that disagrees with its twin is
-    // how the pair diverges the day a caller does reach it
-    // (markup-carve/carve#755: a check that cannot fail is recorded, not
-    // deleted and not counted as proof).
     let indent = first.chars().count() - trim_ascii_start(first).chars().count();
     let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
     Some(Pos {
@@ -5874,20 +5309,6 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             i += 1;
             continue;
         }
-        // AN INVISIBLE LINE IS NOT AN AUTHORED BASE. #1705 is about a BLOCK
-        // authored past its container's content column; a line that is an
-        // "opener" only through the footnote-definition or block-attribute arm is
-        // no block at all below that column - §10 I5 makes it lazy paragraph
-        // text of the container (markup-carve/carve#1809). Rebasing it delivered
-        // it FLUSH into the container, where the block parser recognized its
-        // shape again: `{.k}` became the description's own floating attribute and
-        // attached to the paragraph below it, so the authored characters reached
-        // neither the page nor the block the author meant (corpus 430-3).
-        //
-        // Only the arms that stopped being openers are waived, and only while a
-        // paragraph is open above the line - which is what makes it a
-        // continuation rather than a fresh block. Everything the full arm set
-        // still calls an opener keeps its authored base.
         if paragraph_open
             && base > 0
             && item_block_opener(&local_at_base)
@@ -5919,20 +5340,6 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 continue;
             }
         }
-        // A DESCRIPTION IS A CONTAINER TOO (PART 9 §24 C3, ruled in
-        // markup-carve/carve#1781). The base question is asked of the innermost
-        // container open where the line is written, and only LIST markers
-        // registered one here - so a block written at a nested description's own
-        // content column was measured against the OUTER body instead, rebased to
-        // its column and lifted out of the description it was written into
-        // (markup-carve/carve-rs#1430). Registering is all this needs: the test
-        // below already keeps a line at or past a live descendant's column out
-        // of the parent's coordinate system.
-        //
-        // The marker line itself falls through rather than returning, because a
-        // description marker at the container's own minimum column is a block
-        // written there, which is the ownership evidence `block_at_minimum`
-        // carries to the opener below it (carve-rs#1415).
         if let Some(column) = definition_body_content_col(&lines[i]) {
             nested_columns.push(column);
         }
@@ -5999,30 +5406,6 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             i += 1;
             continue;
         }
-        // A later residual indent can have been preserved precisely because
-        // the physical line fell short of the item's content column (for
-        // example after a closed comment fence). It is not an authored base.
-        // A separating blank, an interrupted paragraph, a BLOCK AT THE
-        // MINIMUM COLUMN, or a chunk explicitly identified from its
-        // over-indented first opener provides the missing ownership evidence.
-        //
-        // THE BLOCK AT THE MINIMUM COLUMN IS THE ONE THAT WAS MISSING. Only a
-        // paragraph counted, and `line_starts_paragraph` is false for every
-        // block opener - so a quote, a heading or a table written at the
-        // body's own column left the following opener unrebased, and it then
-        // folded into whatever the block above had left open. In a footnote
-        // body `[^a]: > q` / `<six spaces># h` came back as one blockquote
-        // paragraph holding a literal `# h`, where carve-js and carve-php both
-        // end the quote and open the heading; the definition-list body and the
-        // list item spell the same defect (carve-rs#1415).
-        //
-        // PART 9 §24 C3's authored-base clause (carve#1729) does not ask for a
-        // paragraph: "A recognized block opener AT OR PAST a definition body's
-        // column 3 or a footnote body's column 2 belongs to that body. Its
-        // authored visual column is the local `block_base` for that one
-        // block." What the guard is really for is the residual indent a
-        // DESCENDANT left behind, which is why the flag is cleared on every
-        // path that hands a line to one.
         if i > 0
             && !after_blank
             && !paragraph_open
@@ -6114,32 +5497,6 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 end = j;
             }
         } else if is_list_marker(&opener) {
-            // A BLANK LINE DOES NOT END THE RUN. A list item continues across
-            // one exactly as a definition body does (PART 9 §17 FORM A): a
-            // blank line followed by an indented block folds that block into
-            // the item. Stopping the extent at the blank left the block at its
-            // authored column while the marker above it had already moved to
-            // the base, so the item's content column had moved out from under
-            // the block and every payload column read alike - the block landed
-            // beside the list whether it was written at the item's content
-            // column, past it, or short of it (carve-rs#1423). The footnote
-            // branch was #1415/#1420 and the definition-list branch #1419/#1422.
-            //
-            // WHAT THE RUN MUST NOT SWALLOW, and what the old extent hid.
-            // Below the item's content column a blank-separated block is the
-            // ENCLOSING BODY's, so this run has a second bound the branches
-            // beside it do not need: a dedent below the base is not the only
-            // way out of it.
-            //
-            // THIS BRANCH IS ALREADY SCOPED TO THE CONTAINERS PART 9 §24 C3
-            // NAMES. It is reachable only with `include_sublists`, which is
-            // true at the definition-body and footnote-body call sites and
-            // false at all three list-item ones; a marker line registers its
-            // content column and returns above before a list-item call can
-            // reach here. A list item is outside the clause and answers the
-            // same geometry differently, and applying the clause to every
-            // container instead cost carve-js two further tickets to unpick
-            // (markup-carve/carve-js#1508, undone in markup-carve/carve-js#1520).
             let content = marker_content_col(&lines[i]).unwrap_or(base);
             let mut blank_seen = false;
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
@@ -6190,36 +5547,6 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 end = j;
             }
         } else if is_definition_list_start(&opener) {
-            // Wrapped term text and description markers are one definition
-            // run. Rebasing only the marker-shaped lines strands the wrapped
-            // term and makes the following `:  ` literal text.
-            //
-            // A BLANK LINE DOES NOT END THE RUN. A definition body continues
-            // like a list item (PART 9 §17 FORM A): a blank line followed by
-            // an indented block folds in. Stopping the extent at the blank
-            // left that block at its authored column while the definition
-            // above it had already moved to the base, so every column read
-            // the same - the block landed beside the list instead of in the
-            // description at the body's column and beside it below that.
-            // Only a non-blank line BELOW the base leaves the run, which is
-            // the test the footnote branch above already uses (carve-rs#1419).
-            //
-            // THE SECOND BOUND, which the list-marker branch above already has
-            // and this one did not. BELOW THE DESCRIPTION'S CONTENT COLUMN THE
-            // DESCRIPTION ENDS, and the surviving container is the body this
-            // run was written in - where a recognized opener is still an opener
-            // (PART 9 §24 C3, markup-carve/carve-rs#1430). Carrying such a line
-            // into the run dedents it by the run's base alone, which lands it
-            // between the two columns: too shallow to be the description's
-            // content and no longer at the body's minimum, where the strict
-            // column-0 rule reads it as literal text. `[^n]: intro` / `:: term`
-            // / `:  definition` / a quote one column short came back as a
-            // paragraph holding a literal `> quote`.
-            //
-            // Only an OPENER leaves the run. A wrapped term line and a lazy
-            // continuation are also written past the base and short of the
-            // column, and they belong to the definition above them - stranding
-            // them is what the run exists to prevent.
             let mut content = definition_body_content_col(&lines[i]);
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
                 if is_blank_line(candidate) {
@@ -6602,21 +5929,6 @@ fn parse_blocks(
             parse_block(cur, options, &mut item_bodies)
         };
         if let Some(node) = parsed {
-            // §15 A2a: a floating attribute skips what renders NOTHING and
-            // attaches to the next VISIBLE block. The other invisible kinds -
-            // comments, reference and footnote definitions - never reach here
-            // (they are consumed earlier, leaving the pending attrs alone), so
-            // an abbreviation definition was the one that took them and, having
-            // nowhere to put them, dropped them: `{#i}` / `*[A]: b` / blank /
-            // `e` lost the id where carve-js and the spec publish
-            // `<p id="i">e</p>` (carve-rs#511 item 2).
-            // Resolve a code fence's opener title to the `title` attribute (after
-            // the preceding {title=...} line was applied, so that line wins), so
-            // the title lives on the node attrs and survives every consumer: the
-            // core renderer, a caption Figure, and a FencedRender extension that
-            // rewrites the block (it clones the code block's attrs).
-            // Stamp blocks with their 1-based original source line for editor
-            // preview scroll-sync. Synthetic extracted lines carry no map entry.
             append_parsed_block(
                 &mut out,
                 node,
@@ -6790,19 +6102,6 @@ fn parse_block(
         })));
     }
     if let Some((level, first_text)) = detect_heading(line) {
-        // SINGLE-LINE HEADINGS (NORMATIVE, diverges from Djot): a heading ENDS
-        // AT THE NEWLINE. Nothing folds into it -- not a plain line, not a
-        // same-count `#` line -- so the following line begins whatever block it
-        // begins, exactly as after any other closed block. Lazy continuation
-        // therefore means one thing across the language: it continues an open
-        // PARAGRAPH, and a heading is not one.
-        // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
-        // line carries NO trailing `{...}` attribute block -- a trailing brace
-        // block is ordinary inline content, and the heading id derives from
-        // the full literal text. Attributes attach via a PRECEDING
-        // block-attribute line (the pending-attrs loop, PART 9 §15).
-        // §756 (NORMATIVE): strip the line's trailing whitespace (trim_ascii_end
-        // -- ASCII whitespace, so a trailing NBSP survives).
         return Some(parse_heading_block(cur, level, first_text, options));
     }
     if strip_blockquote_prefix(line).is_some() {
@@ -7078,55 +6377,6 @@ fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
 
 /// The opener as the definition PRE-PASSES may read it: past leading
 /// whitespace, and past a list marker on the fence's own line.
-///
-/// PART 9 §24 S1 places a line by the column it REACHES and never by its first
-/// character, and §28 makes a comment fence's body verbatim and invisible
-/// wherever the fence sits. Neither clause is scoped to column 0, and the block
-/// parser already reads both spellings (it consumes `- %%%` through
-/// `marker.content`). The pre-passes read only the strict column-0 form, so a
-/// fence indented to a list item's content column was invisible to them and they
-/// walked into its body and registered from it: `- item` / `  %%%` /
-/// `  [r]: /url` / `  %%%` left the label live in the link table while the
-/// comment rendered nothing, so a later `[r][]` resolved against text the author
-/// had commented out (markup-carve/carve-rs#1047). A footnote definition there
-/// was worse still - it produced a whole endnote section nobody wrote.
-///
-/// A BLOCKQUOTE prefix is deliberately NOT stripped here. `> %%%` /
-/// `> [r]: /url` / `> %%%` registers in carve-js, carve-php and carve-rs alike
-/// and only the executable oracle leaves it literal, so that shape is an open
-/// cross-engine question rather than this engine's defect; widening the strip
-/// would answer it unilaterally.
-/// The widening is to a fence AT a live list item's content column, and no
-/// further. Both of the shapes just outside it are refused, and both refusals
-/// are load-bearing:
-///
-/// - An indented fence with NO live content column is a top-level comment, and a
-///   top-level comment's body may sit BELOW its own fence
-///   (`comment_body_is_relative_to_its_fence`). Its real closer can therefore be
-///   at a column this line-based pass cannot bound, and guessing mispaired the
-///   delimiters of ` %%%` / `x` / `  %%%`: the pass rejected the true pair, took
-///   the second delimiter as an opener, and let a later `%%% tail` close it, so
-///   the definition in between was swallowed.
-/// - A fence BELOW a live content column keeps the item open without being the
-///   item's content (§24 C3). Entering opacity there freezes the stale content
-///   column across the blank line that actually ends the list, so a line the
-///   block parser reads as a top-level paragraph gets stripped to the dead
-///   column and registered.
-///
-/// Returns the fence and the COLUMN its `%` run starts at, which is what bounds
-/// its body - see `container_comment_fence_closes`.
-/// A comment fence opener, and the column it is written at, when that column
-/// reaches a live list item.
-///
-/// WHICH COLUMN THE FENCE REACHES, not which one is innermost. `- - inner`
-/// opens two items on one line and leaves BOTH content columns live, 2 and 4
-/// (carve#655); a fence written at 2 is the outer item's, and asking the
-/// innermost column alone declined it while the outer item was still open
-/// (carve-rs#1054). `reached_by` is the question the definition scan beside this
-/// one already asks, so both halves now measure against the same thing.
-///
-/// The gate that remains is the §24 C3 one: a fence reaching no live column at
-/// all is below the container and is not its comment.
 fn detect_comment_fence_opener_in_container(
     line: &str,
     columns: &ContentColumns,
@@ -7558,19 +6808,6 @@ struct FenceOpen {
 }
 
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
-    // A TRAILING whitespace run is dropped before the separator below is asked
-    // anything (markup-carve/carve#1295, markup-carve/carve-rs#1022's `330-2`).
-    //
-    // Two clauses meet on this line and POSITION decides which governs. A tab
-    // BEFORE content is the marker-to-content separator, which is the `space`
-    // terminal and nothing else, so ```` ```<TAB>php ```` opens no fence - that
-    // refusal is the `== b' '` test below and it stays. A tab at the END of the
-    // line with nothing after it never reaches that slot: it is trailing
-    // whitespace on a content line, PART 2 drops it, and what is left is the
-    // bare opener. Read that way the two clauses never overlap.
-    //
-    // Trailing SPACES already behaved this way, by being eaten further down; a
-    // tab had no such path and left a fence that refused to open.
     let line = trim_ascii_end(line);
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -8027,21 +7264,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
     while idx < lines.len() {
         let line = lines[idx];
         let top = *stack.last().unwrap();
-        // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE - the same rule as in
-        // `collect_colon_container_body`, which walks this body for real. The
-        // two must agree about where the container ends, and they answer with
-        // the same test (carve-rs#719).
-        //
-        // NOT INDEPENDENTLY OBSERVABLE today, and changed anyway. This walk is
-        // reached only from `parse_continuation_block`, where the extent it
-        // reports decides where a `+`-attached block ends; leaving the old
-        // absorbing test here is a GREEN mutation against 690 corpus documents
-        // x six targets and 55223 generated `+`/colon documents. It moves
-        // regardless, because the two walks disagreeing about a container's end
-        // is itself the bug shape - carve#515 was exactly that, and the comment
-        // in the fence branch below records it. A test asserting this line
-        // alone would be a check that cannot fail (markup-carve/carve#755), so
-        // the reason lives here instead.
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
@@ -8102,35 +7324,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
 }
 
 /// The column a footnote body's continuation lines must reach.
-///
-/// PART 9 §16 asks for ">= 2", RELATIVE to the definition line. Measured from
-/// column 0 instead, an INDENTED definition swallowed anything at column 2 -
-/// including a `:::` closer belonging to the container the definition sits in,
-/// which then rendered as an empty `<div>` inside the endnote and pushed the
-/// backlink out of its paragraph (carve-rs#591). carve-js and carve-php both
-/// measure it relative: `  [^f]: x` takes a `    more` continuation and leaves
-/// a `  more` alone.
-///
-/// COLUMNS, not characters. Every caller compares this against
-/// `indent_columns`, which expands a tab to its stop, so computing it with
-/// `leading_ws` - a CHARACTER count - put the two sides of the comparison in
-/// different units and a tab made them disagree. That is the class the
-/// tabs-are-columns family has been correcting throughout: markup-carve/carve#692,
-/// #796, #901, #905 and #893 were each a rule stated in one unit and
-/// implemented in another (carve-rs#735).
-///
-/// UNREACHABLE TODAY, and fixed anyway. The two spellings can only differ on a
-/// definition line whose own indentation contains a tab, and no such line
-/// reaches here: an indented top-level definition is not collected at all (it
-/// stays a literal paragraph), and a container-nested one skips the
-/// continuation loop entirely (`if !in_container`). Measured - swapping the
-/// units back changes nothing across the corpus or any input built for it.
-///
-/// It is corrected rather than left because the next change to which
-/// definitions are collected makes it a live defect with nothing to catch it,
-/// which is why carve-rs#735 was filed before it could bite. A test asserting
-/// the ENGINE's output could not fail here, so the unit is pinned on this
-/// function directly instead (markup-carve/carve#755).
 fn footnote_body_floor(def_line: &str) -> usize {
     indent_columns(def_line) + 2
 }
@@ -8156,24 +7349,6 @@ fn indent_columns(line: &str) -> usize {
     col
 }
 
-// Drop leading whitespace up to `cols` columns (tab-stop aware) and return the
-// remainder. With keep_residual, the unconsumed columns of a straddling tab are
-// re-emitted as spaces, so the line keeps the column the tab actually reached.
-// For space-only indentation there is never a residual.
-//
-// THE RESIDUAL MATTERS INSIDE A LIST ITEM, and the note here used to say the
-// opposite: that a straddling tab could be consumed whole because "Carve has no
-// indent-sensitive block where the leftover column would change meaning". Every
-// block opener in an item is indent-sensitive in exactly that way -- at the
-// item's content column an opener parses, one column past it the line is
-// paragraph text -- so dropping the residual let a tab landing PAST the column
-// dedent flush and open a fence, heading, quote or thematic break that the same
-// column written in spaces does not (carve-rs#889). PART 7: a leading tab
-// indents to column 4, and an ordered item's content column is 3.
-//
-// Marker lines still pass it for their own reason: tab+space-aligned sibling
-// markers keep the same visual column and the recursive parse re-derives the
-// child base from it.
 fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     slice_columns_mapped(line, cols, keep_residual).0
 }
@@ -8220,26 +7395,6 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
 }
 
 /// Whether the quoted body so far leaves a paragraph open.
-///
-/// Deciding this means walking a quoted line down to its INNERMOST content,
-/// which costs one `strip_blockquote_prefix` per quote marker still on the
-/// line -- and every enclosing level of a nested quote repeats that walk over
-/// the same markers, because each level strips one marker and hands the rest
-/// down. Deciding it eagerly, on every quoted line, therefore cost
-/// `depth^3 / 6` strips on a depth ladder: 1,556,994 at depth 200, against
-/// carve-js's 20,100 on the same document (markup-carve/carve-rs#731).
-///
-/// The answer is READ only when a fence opener or an unprefixed line arrives,
-/// which on a ladder is never. So the walk belongs at the read. The predicate
-/// and its inputs are unchanged; only the moment it runs is.
-///
-/// PART 9 §12's absorption is part of the same answer, so it is decided here
-/// rather than sampled around this value: `inherited_absorption` is the state
-/// the line inherits, and the resolved verdict carries both whether the
-/// paragraph is open and whether THIS line opens an absorption. Reading the
-/// flag on every quoted line - which is what `suppress_colon_interrupt` did
-/// when it stood outside - is precisely the eager read this defers
-/// (markup-carve/carve-rs#738 landing under markup-carve/carve-rs#731).
 enum ParaOpen<'a> {
     /// Closed, decided without consulting any line.
     Closed,
@@ -8333,33 +7488,6 @@ impl<'a> ParaOpen<'a> {
         while let Some(rest) = strip_blockquote_prefix(innermost) {
             innermost = rest;
         }
-        // An open paragraph requires plain paragraph text. A line that is
-        // itself a block-opener (heading, thematic break, table row, `:::` div
-        // / line block opener) leaves NO open paragraph -- so a following list
-        // marker has nothing to fold into and must end the quote.
-        // `interrupts_paragraph_with_rest` is the §10 predicate: a line that
-        // would interrupt a paragraph is, by definition, not paragraph
-        // continuation text.
-        //
-        // Only a FLUSH-LEFT `:::` container closes the quoted paragraph; an
-        // INDENTED `::: note` / `:::` (above the quote's content column) is
-        // literal paragraph text, so it keeps the paragraph open and lazy
-        // continuation stays in the quote (strict column-0 rule,
-        // docs/divergence-from-djot.md §11) -- uniform with the opener paths
-        // in parse_block / interrupts_paragraph.
-        //
-        // The rest-of-body slice is empty: the only lookahead
-        // `interrupts_paragraph_with_rest` consults is a fenced-code closer
-        // probe, and this predicate is reached only from the branch where the
-        // line is NOT a fence opener, so the caller never had a slice to give.
-        // It passed a `Vec` built under `if detect_fence_open(stripped)`, which
-        // the enclosing `else if let Some(open) = detect_fence_open(stripped)`
-        // had already decided was `None` - so that `Vec` was always empty. An
-        // assertion in its place held over the whole corpus and test suite.
-        //
-        // A fence-shaped line the open paragraph has already absorbed is
-        // paragraph text, so it neither opens a block nor interrupts: §12's
-        // absorption decides before the shape tests do (carve-rs#727).
         let absorbed = suppressed && is_suppressed_colon_fence_line(innermost);
         let open = !is_blank_line(innermost)
             && (absorbed
@@ -8393,22 +7521,6 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = ParaOpen::Closed;
-    // PART 9 §12's absorption, tracked for the QUOTED paragraph the way
-    // `parse_paragraph` tracks it for a top-level one: once a line has failed
-    // the opener test, the paragraph absorbs the next fence-shaped line as text
-    // "INSTEAD of being interrupted by it". The quote body collector already
-    // pushed such a line into `inner`, where the nested parse folded it into the
-    // paragraph correctly - but `para_open` was computed from the line's SHAPE
-    // alone, so a bare `:::` set it false and the flush-left line under it could
-    // not fold. That made the quote disagree with its own body about whether a
-    // paragraph was open (carve-rs#727). `ParaOpen` owns that state now,
-    // instead of requiring a second boolean whose validity depends on the
-    // enum's current variant.
-    //
-    // It is a RUNNING state, and only a resolved `para_open` can advance it, so
-    // it is carried by `ParaOpen` and advanced from the resolved verdict rather
-    // than read on every quoted line. Reading it per line is what would put
-    // markup-carve/carve-rs#731's cubic walk back.
     let mut in_fence: Option<FenceOpen> = None;
     // THE QUOTE'S OWN LAST BLOCK IS WHAT S4 ASKS ABOUT, and a continuation row
     // belongs to the table above it (§5 T6, markup-carve/carve#1348). `ParaOpen`
@@ -8536,27 +7648,6 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                         QuotedAttrsBlock::No => {}
                     }
                 }
-                // Advancing the absorption flag needs the verdict, and getting
-                // the verdict is the walk. So force it only where the answer
-                // can change the flag. While the flag is OFF, a line carrying
-                // no COLON RUN settles it either way without being read, and
-                // the flag stays off whether the paragraph turns out open or
-                // closed. Both §12 predicates need `:::`:
-                //
-                // - `is_invalid_colon_fence_opener_text` returns early unless
-                //   the trimmed line opens with `fence_len >= 3` colons;
-                // - `is_suppressed_colon_fence_line` is `exact_colon_fence_len`
-                //   AND `is_colon_fence_opener_shape`, and each of the three
-                //   detectors the latter ORs (`detect_container_open`,
-                //   `detect_line_block_open`, `detect_hardbreaks_block_open`)
-                //   returns `None` on that same `fence_len < 3` test.
-                //
-                // `innermost` is a suffix of `stripped`, so testing `stripped`
-                // is conservative: it can only force a walk that was not
-                // needed, never skip one that was. Ordinary quoted prose - a
-                // `Note:`, a `12:30`, an `https://` - therefore stays on the
-                // deferred path, which is what lets markup-carve/carve-rs#738
-                // ride on the deferral instead of undoing it.
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
@@ -8574,22 +7665,6 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
-            // A QUOTE LINE IS A BLOCK LIKE ANY OTHER, so it is not a boundary.
-            // This closure used to end the run at `strip_blockquote_prefix`, and
-            // the one kind of block the marker refused to attach was the kind
-            // written with the container's own marker: `> a` / `+` / `> q`
-            // attached NOTHING and folded `q` into the quoted paragraph, where
-            // §17 L3 says the marker only ever attaches
-            // (markup-carve/carve-rs#1428). A `>` line AFTER the attached block
-            // still continues the quote - the narrowing stops in front of it,
-            // and the quote's own loop reads it on the next turn.
-            // A QUOTE DOES NOT END AT A REFUSED MARKER. It does not end at a
-            // comment line in that position either, and the difference belongs
-            // to each container's invisible-line rule rather than to the marker
-            // (markup-carve/carve#1814). A refusal is an empty attachment: no
-            // blank separators, because a separator would close the quote's open
-            // paragraph, and the clause says the line behaves as if the `+` had
-            // been a comment.
             let attach_first_col = cur.source_col(cur.pos);
             let attach_end = attached_block_lines(
                 cursor_lines,
@@ -9295,28 +8370,6 @@ fn attaches_flush_left(outer: Option<isize>, line: Option<&&str>) -> bool {
 
 /// One past the last line the `+` marker at `start - 1` attaches: the container's
 /// own boundary, narrowed to the ONE block PART 9 §17 L3 counts.
-///
-/// THE MARKER IS ONE OPERATION IN EVERY CONTAINER (markup-carve/carve#1782).
-/// Ownership of the next flush-left block passes to the container whose marker
-/// column the line sits at - one block, whatever kind it is - so the two halves
-/// of that measurement live together here instead of being re-paired at each
-/// call site. [`attached_block_end`] finds where the container's terminators
-/// stop the run; [`attached_one_block_lines`] cuts the run down to the single
-/// block.
-///
-/// Pairing them by convention is what markup-carve/carve-rs#1428 was. The
-/// measurement was spelled five times and narrowed in two: the list item
-/// structurally, by parsing one block out of the run, and the block quote by
-/// measuring. So L3's own example, `+` / `para` / `> q`, left the quote outside
-/// a list item and gave it to a footnote body and a definition description.
-/// Nothing distinguished those containers; the narrowing had simply been
-/// written twice.
-///
-/// Under a MEASUREMENT PROBE the whole extent is returned instead. The probe
-/// wants a line count for the block ABOVE this marker, and how this marker
-/// divides its own content cannot change that count - narrowing here as well
-/// would re-parse the attached block once per nesting level. See
-/// [`attached_one_block_lines`] for the cost that avoids.
 fn attached_block_lines(
     lines: &[&str],
     start: usize,
@@ -9325,19 +8378,6 @@ fn attached_block_lines(
     first_source_col: Option<isize>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
 ) -> usize {
-    // The column gate, asked ONCE for every container and BEFORE any extent is
-    // measured (markup-carve/carve#1814). It was asked in the list item and
-    // nowhere else - as column arithmetic inside the item collectors rather than
-    // as a predicate - so the footnote body, the definition description and the
-    // block quote each reached out for a line the clause leaves where the author
-    // wrote it: a `<dd>` whose content column is 3 pulled in a column-1 or
-    // column-2 line, a note pulled in a column-1 line, and a quote took a
-    // column-2 line that A QUOTE IS REACHED BY ITS MARKER (§10 I5,
-    // markup-carve/carve#1384) puts in no quote at all.
-    //
-    // An EMPTY range is the refusal: every caller reads that as "the marker
-    // attached nothing" and lets its own ordinary rules have the line, which is
-    // exactly what the clause's comment spelling does.
     if !attaches_flush_left(first_source_col, lines.get(start)) {
         return start;
     }
@@ -9391,18 +8431,6 @@ fn parse_continuation_block(
         start,
         &mut cur.comment_closer_last_index,
         &mut |line, end| {
-            // A FURTHER `+` ends this attachment, on the first line as on any other.
-            // §17 L3 lists the terminators as "the next blank line, sibling marker,
-            // or a further `+`" and makes no exception for an attachment that has
-            // taken nothing yet. Requiring `end > cur.pos` here swallowed the
-            // second marker as CONTENT of the first, so `- a` / `+` / `+` / `b`
-            // rendered a literal `+` in the item where carve-js, carve-php and the
-            // executable spec all attach `b` (carve-rs#704). The first marker
-            // simply attaches an empty block, which adds nothing.
-            //
-            // The sibling-marker guard below keeps its `end > cur.pos` for a
-            // different reason: a list marker on the first attached line is a
-            // sibling ITEM, and ending the attachment there is what makes it one.
             if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
                 return true;
             }
@@ -9435,25 +8463,6 @@ fn parse_continuation_block(
         cur.line_map.is_some().then_some(line_map.as_slice()),
         cur.col_map.is_some().then_some(col_map.as_slice()),
     );
-    // A BLOCK-ATTRIBUTE LINE IS A BLOCK, AND IT FLOATS TO THE NEXT ONE.
-    // PART 2 lists `block_attributes` among the alternatives of `block`, so
-    // PART 11's `continuation_marker_block = continuation_marker, block` admits
-    // one after the marker, and PART 9 §15 sends it to the block that follows.
-    // `parse_blocks` owns the only pending-attribute slot and this is a
-    // `parse_block` call, so the line arrived here with nothing to read it and
-    // fell through to a paragraph: `- a` / `+` / `{.x}` / `> q` rendered a
-    // literal `{.x}` in the item and left the quote OUTSIDE it, where carve-js
-    // and carve-php put the quote inside carrying the class
-    // (markup-carve/carve-rs#1020, rule in markup-carve/carve#1238).
-    //
-    // AT THE MARKER'S OWN COLUMN, the same guard `parse_blocks` spells as
-    // `line_flush`. These lines are taken VERBATIM (see above), so "flush"
-    // is measured against `base_indent` rather than against column 0 - a `+`
-    // inside a nested list attaches at ITS column. A line one column further in
-    // is ordinary text (strict column-0 rule, docs/divergence-from-djot.md §11).
-    //
-    // Attribute blocks STACK, so this takes the whole leading run and merges
-    // it, the way `parse_blocks` merges consecutive lines into one slot.
     let mut floating_attrs: Option<Attrs> = None;
     let mut floating_attrs_pos: Option<Pos> = None;
     while let Some(line) = sub.peek() {
@@ -9750,36 +8759,6 @@ fn parse_list(
                 {
                     break;
                 }
-                // AN EMPTY ITEM CLAIMS NOTHING BELOW ITS CONTENT COLUMN (§17 L3,
-                // markup-carve/carve#1821). The two flags above name two ways an
-                // item can reach here holding nothing; this asks the question
-                // they are each a special case of, which is the one the clause
-                // actually states - has this item collected a body at all? An
-                // item with no blocks has no open paragraph, so a line below its
-                // content column has nothing here to continue and belongs to
-                // whatever its own column names.
-                //
-                // The comment spelling is what the flags missed: `- %% c` over a
-                // column-1 line folded the payload into the `<li>` while the
-                // marker spelling beside it did the same through the PULL path,
-                // so guarding either one alone left the other claiming the same
-                // line into the same empty item. The clause makes the two
-                // spellings one answer, so the guard is asked once, of the item.
-                //
-                // Column 0 never reaches here (this branch is `indent >
-                // base_indent`), and the content column itself is excluded - a
-                // line AT `content_col` is the item's own first block, which is
-                // why `- +` and `- %% c` over a column-2 line both keep it.
-                // AN ITEM HOLDING ONLY INVISIBLE BLOCKS IS EMPTY. The question
-                // is "did this item collect a BODY", and a comment contributes
-                // no body line - `- %% c` builds an item whose one child is a
-                // `Comment` node that renders nothing. Asking
-                // `children.is_empty()` therefore answered "not empty" for the
-                // very spelling the clause uses as its control, and the fold
-                // went on claiming the line. Measured on the TREE, not the
-                // HTML: the comment renders to nothing either way, so the
-                // rendered output could not show which of the two the parser
-                // had built.
                 if items
                     .last()
                     .is_some_and(|item| item.children.iter().all(crate::ast::publishes_nothing))
@@ -9796,32 +8775,6 @@ fn parse_list(
                         &mut item_open_fence,
                     );
                     nested.authored_base_at_start |= authored_overindented_opener;
-                    // A heading keeps the item open for flush-left lazy text.
-                    // The heading itself ends at its newline and absorbs
-                    // nothing (PART 2 SINGLE-LINE HEADINGS), but when the
-                    // indented block ends in a heading the following flush-left
-                    // lines still belong to the ITEM, so pull them in: they
-                    // become the item's own content beside the heading rather
-                    // than the list ending and the text floating to the top
-                    // level (corpus 73-list-nesting-and-looseness-4; matches
-                    // carve-php / carve-js, carve#326). A blank BEFORE the
-                    // heading is irrelevant to whether text AFTER it belongs to
-                    // the item, so this is not gated on pending_blank
-                    // (collect_trailing_lazy still stops at a blank of its own).
-                    // Only headings keep the item open this way: a code block or
-                    // table leaves its trailing text a separate top-level block.
-                    //
-                    // CommonMark lazy continuation otherwise: the dedented
-                    // non-blank line folds into the nested block's deepest open
-                    // paragraph (e.g. a block quote's or an unterminated div's
-                    // trailing paragraph) so it stays INSIDE the item. The
-                    // recursive block parse absorbs it.
-                    //
-                    // And then collection RESUMES, because S4's lazy branch
-                    // closes nothing -- see fold_lazy_run_and_resume. This
-                    // branch used to fold once and stop, which put the line
-                    // AFTER the folded one outside the container it never left
-                    // (carve#980, carve-rs#813).
                     fold_lazy_run_and_resume(
                         cur,
                         &mut nested,
@@ -9854,19 +8807,6 @@ fn parse_list(
                     // waiting for `parse_item_chunk` would drop the attributes
                     // before they can be carried across that boundary.
                     rebase_overindented_blocks(&mut nested, false);
-                    // A `{…}` block that ENDS this chunk was written in front of
-                    // whatever comes next, and what comes next is in the next
-                    // chunk - the collector broke on the sub-list marker. Hold
-                    // it rather than letting the chunk's own pending slot drop
-                    // it (carve-rs#1007). Split BEFORE parsing, so the block it
-                    // was going to attach to inside this chunk is unaffected.
-                    //
-                    // Repeatedly, because attribute blocks STACK: `{.x}` /
-                    // `{#i}` in front of one block merges into a single set
-                    // everywhere else, and lifting only the last one off would
-                    // have made the nested list the one target that keeps just
-                    // the final block. Each split shortens the chunk, so this
-                    // terminates.
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -9953,19 +8893,6 @@ fn parse_list(
                     continue;
                 }
             }
-            // §24 C3: a comment is recognized at ANY column and renders nothing,
-            // so a FLUSH-LEFT one does not close the item it follows - nor the
-            // list. `- a` / `%% c` / `b` keeps `b` in the item as a second
-            // paragraph, and a following sibling marker resumes the SAME list,
-            // as carve-js, carve-php and the executable spec all have it
-            // (carve-rs#562). Collecting the comment into the item also stops a
-            // TRAILING one from being hoisted to document level, where the other
-            // engines leave it inside the item that preceded it.
-            //
-            // Two neighbours are deliberately excluded, both measured against
-            // all three: a comment FENCE (`%%%`) ends the list, and so does a
-            // comment after a BLANK line - past a blank the item is closed
-            // already, and nothing reopens it.
             if !pending_blank && is_flush_line_comment(line) {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
@@ -10028,19 +8955,6 @@ fn parse_list(
                 let last_item = items.len() - 1;
                 let sub_indent = marker.indent;
                 let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
-                // A column-0 lazy-continuation line folds into the sub-list's
-                // last open paragraph (e.g. `inner` / `lazy`). It must NOT close
-                // the sub-list: a following sibling marker at the sub-list's own
-                // column (`2. sibling`) resumes the SAME list. Loop folding the
-                // lazy line, then resume collecting the sub-list continuation, so
-                // the sibling joins the open list rather than starting a new one
-                // (corpus 05-lists-17, matches carve-php / carve-js).
-                //
-                // Only fold the column-0 lazy line when the collected content
-                // still ends in an OPEN paragraph OR a heading (a heading folds
-                // trailing plain text as continuation, carve#326). After a
-                // CLOSED block (fenced code, table, closed div) there is
-                // neither, so the dedented line ends the item -> top-level.
                 fold_lazy_run_and_resume(
                     cur,
                     &mut nested,
@@ -10048,38 +8962,9 @@ fn parse_list(
                     |src, below| collected_body_takes_the_lazy_line(src, below, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
-                // READ FROM THE SOURCE BEFORE THE CHUNK LEAVES: the chunk is
-                // handed to the worklist below, so every test that asks the
-                // collected text a question has to have asked it by then. Both
-                // of these already did - neither ever looked at the parsed
-                // blocks - so nothing about the ruling moves, only the order
-                // the two lines sit in.
-                //
-                // A blank line INSIDE the outer item -- swallowed into the nested
-                // source by the collection above -- that directly separates the
-                // sub-list from a following PARAGRAPH still attached to the outer
-                // item makes the OUTER item loose. This is the same paragraph-only
-                // rule the plain-continuation branch applies via `pending_blank`
-                // (matches carve-js). The check is precise: the blank must
-                // directly precede outer-item content (not inner-item content or a
-                // sibling marker -- corpus 142: nested looseness does not
-                // propagate) and that content must begin a paragraph (a `<hr>`,
-                // block quote, or other block opener does not loosen).
                 if sublist_source_loosens_outer_item(&nested.source) {
                     tight = false;
                 }
-                // The block-attribute block written in front of this sub-list,
-                // carried across the chunk boundary that separated them
-                // (carve-rs#1007). It lands on the nested LIST, not on the item
-                // and not on the outer list: `apply_attrs_to_block` already has
-                // the arm, and a list is a block like the paragraph, quote and
-                // fence in this position that have always taken them.
-                //
-                // The first non-comment child, matching how the looseness check
-                // above picks the block that counts - a comment renders nothing
-                // and is not what the author wrote the attributes for. It
-                // travels WITH the chunk now (`ItemBody::attrs`), because the
-                // block it reaches does not exist until the chunk parses.
                 let held = pending_attrs.take();
                 if held.is_some() {
                     pending_attrs_pos = None;
@@ -10203,21 +9088,6 @@ fn parse_list(
                 .then(|| parse_continuation_block(cur, options, base_indent))
                 .flatten()
             {
-                // AN EMPTY PARAGRAPH IS NOT ONE OF THE ITEM'S BLOCKS, the same
-                // reading the standalone `+` line above already applies. It
-                // arises when the attached block's whole content was a
-                // collected definition: the prepass blanks that line, so what
-                // parses is a paragraph with no children. The two spellings of
-                // the continuation marker - `- +` here, a `+` on its own line
-                // there - are one construct (§17), and only one of them was
-                // filtering, so `- [ref]: /url` came back as an item holding a
-                // node the author's document did not contain.
-                //
-                // This is what breaks PART 11 §1 on seven corpus documents:
-                // the WRITER emits `- +` for an emptied item, and this parser
-                // was the only one of the three that read its own bytes as a
-                // paragraph. carve-js and carve-php both build no node at all
-                // (markup-carve/carve-rs#1277).
                 let is_empty_paragraph = matches!(
                     &block,
                     BlockNode::Paragraph(p) if p.children.is_empty()
@@ -10251,20 +9121,6 @@ fn parse_list(
         if marker.content.starts_with('>') {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
-            // A column-0 line after the item folds into the quote's open
-            // paragraph, exactly as it does when the quote is written on the
-            // NEXT line - the shape this branch used to disagree with itself
-            // about, ending the list where every other path continued it
-            // (carve#572). PART 1 S4 folds a lazy continuation into the
-            // innermost OPEN paragraph, and the guard is that there is one: an
-            // empty quote has none, so `- >` + text still ends the item.
-            // A BLANK line ends the item, so a line after one is not lazy.
-            // The collector consumes a trailing blank when the item collected
-            // nothing indented, so the test is the LINE JUST CONSUMED rather
-            // than the collected text, which no longer shows it.
-            // And collection RESUMES after the fold, because S4 closes nothing:
-            // `- > a` / `d` / `  > b` is ONE quote holding one paragraph, not a
-            // quote followed by a second one (carve#980, carve-rs#813).
             let after_blank = cur.pos > 0 && is_blank_line(cur.lines[cur.pos - 1]);
             fold_lazy_run_and_resume(
                 cur,
@@ -10317,29 +9173,6 @@ fn parse_list(
                 content_col.saturating_sub(1),
                 content_col,
             ));
-            // A FLUSH-LEFT line is not the block this attribute floats onto.
-            //
-            // This used to pull that line INTO the item so the attributes could
-            // reach it - which is the same absorb-a-flush-left-block behavior
-            // PART 1 S4 refuses (markup-carve/carve#1280), and it made the item
-            // swallow a block the author wrote outside it purely because an
-            // attribute line was looking for a target. `- {.k}` / `# H`
-            // published `<li><h1 class="k">` where the heading belongs at
-            // document level, and `- {.k}` / `tail` published a classed
-            // paragraph inside the item.
-            //
-            // An attribute line leaves no open paragraph, so the flush-left
-            // line ends the item and the attribute has nothing left in scope: it
-            // is dropped where it was written rather than travelling out of its
-            // container (§15 A4, markup-carve/carve#1281). The indented
-            // spelling - `- {a=b .c}` / `  # H`, corpus 170 - reaches the item's
-            // content column and is collected above, so it still attaches.
-            // A blank line between the item's blocks loosens the list, whatever
-            // the marker-line lead happens to be. This branch and the two beside
-            // it build their item and `continue` past the loosening test the
-            // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
-            // where `- x` / blank / `Body.` went loose - on the same blank line
-            // (carve-rs#476).
             if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
@@ -10368,19 +9201,6 @@ fn parse_list(
             } else {
                 base_indent
             };
-            // Comments are collected at any column by design. A definition-only
-            // innermost item has no paragraph for that exception to preserve,
-            // so do not even enter the collector until the next line reaches
-            // the innermost content column. Otherwise `%%` pulled itself and
-            // the following lazy line into the nested stream (#1424).
-            // A NESTED LEAD ENDING IN A BARE `+` REACHES FOR COLUMN 0 AND
-            // NOTHING ELSE (§17 L3, markup-carve/carve#1436). `* * +` is the
-            // outer item's content and the continuation marker one level in, so
-            // the block it names is written flush left - a column the ordinary
-            // collector treats as a dedent that ENDS the item, which is why this
-            // engine attached nothing there and left the line a document
-            // paragraph. A line at any OTHER column was never the marker's and
-            // must not be collected as the item's own either.
             let nested_lead_is_continuation =
                 trim_ascii(innermost_marker_content(marker.content)) == "+";
             last_item_bare_continuation = nested_lead_is_continuation;
@@ -10570,37 +9390,6 @@ fn parse_list(
             // marker-line content rather than a collected line - so the
             // collector's fenced-body guard is seeded from it (corpus 276).
             item_open_fence = detect_fence_open(marker.content);
-            // A COMMENT FENCE OPENED ON THE MARKER LINE TAKES ITS BODY FROM THE
-            // CONTENT COLUMN AND NOWHERE ELSE.
-            //
-            // The code fence beside it gets this from the collector's open-fence
-            // guard (`fence.is_some() && indent < strip_cols`), which is keyed on
-            // a `FenceOpen` and so never sees a `%%%` opener. Left at the
-            // ordinary floor the collector took BELOW-column lines as the item's,
-            // and the recursive parse then read them as the comment's body - so
-            // `- %%%` / ` hidden` / ` %%%` published an empty item and DELETED
-            // `hidden`. A line below the content column reaches no container
-            // (§24 C3): it ends the item and re-parses outside it, exactly as
-            // `- ``` ` / ` x` / ` ``` ` already does.
-            //
-            // Raising the floor to `content_col - 1` says that directly, and it
-            // is the same expression the sub-list and lazy-resume collectors use
-            // for "at or past this column only".
-            // A MARKER-LINE BLOCK THAT PUBLISHES NOTHING LEAVES NO BODY FOR A
-            // BELOW-COLUMN LINE TO JOIN (§17 L3, markup-carve/carve#1821).
-            //
-            // The comment FENCE already raised the floor here, for exactly this
-            // reason. The plain comment LINE beside it did not, so `- %% c` over
-            // a column-1 line collected the line as the item's own content and
-            // rendered `<li>flush</li>`, where its marker twin `- +` ends the
-            // item and leaves a top-level paragraph. The clause makes those two
-            // spellings ONE answer, so they need one floor.
-            //
-            // `content_col - 1` is the floor that says "at the content column or
-            // not at all": the collector stops at `indent <= parent_indent`, so
-            // a column-1 line ends the item and a column-2 line - the item's own
-            // first block - is still collected. Column 0 is unaffected, having
-            // ended the item at that same test all along.
             let body_floor = if detect_comment_fence_line(marker.content).is_some()
                 || is_flush_line_comment(marker.content)
             {
@@ -10614,26 +9403,6 @@ fn parse_list(
                 content_col,
                 &mut item_open_fence,
             ));
-            // A heading on the marker line (`- # H`) folds its trailing
-            // flush-left plain text as heading continuation (`- # H\nlazy` ->
-            // one `<h1>H\nlazy</h1>` inside the item), matching carve-js /
-            // carve-php and the indented-heading-in-item path above. Only a
-            // heading folds this way; the other marker-line block openers
-            // (fence, table, thematic, container) keep their trailing text as a
-            // separate block, so the guard is heading-only. A blank line closes
-            // the heading (§heading rule 2), so skip the fold once one was
-            // consumed while collecting -- `- # H\n\nsep` keeps `sep` as its own
-            // top-level block.
-            // True only when the block collection ended by swallowing a TRAILING
-            // blank separator -- the single-line marker-line block case (heading,
-            // thematic break), where the last consumed line is that blank. A
-            // blank INSIDE a multiline block (e.g. a fenced code block with an
-            // interior blank) is NOT a separator: there the last consumed line is
-            // block content, and any real trailing separator is left for the
-            // outer loop, so this stays false and tightness is unaffected.
-            // And collection RESUMES after the fold, on the same S4 reading the
-            // other three call sites take: nothing closed, so a line back at the
-            // content column is still the item's (carve#980, carve-rs#813).
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
@@ -10645,51 +9414,9 @@ fn parse_list(
                     if swallowed_blank_separator {
                         return false;
                     }
-                    // NO OPEN PARAGRAPH, NO LAZY LINE (PART 1 S4, ruled in
-                    // markup-carve/carve#1280). The marker line's content is the
-                    // item's FIRST BLOCK, so `- # H` writes a heading there
-                    // exactly as `- ` plus an indented `# H` would, and a block
-                    // that leaves no open paragraph leaves none wherever it was
-                    // written. Ask S4's one question of the body and let the
-                    // answer decide, instead of enumerating the kinds that fold.
-                    //
-                    // The enumeration this replaces listed the heading, table,
-                    // thematic break, comment, link reference definition,
-                    // footnote definition and attribute-block spellings as
-                    // FOLDING - eight kinds, none of which holds an open
-                    // paragraph, and every one of which the same engine already
-                    // ended on in a block quote (`> # H` / `tail`). One rule
-                    // stated for one container and not the other.
-                    //
-                    // Only when the marker line IS the whole block. Once the
-                    // item collected lines at its CONTENT COLUMN the same
-                    // question has a different answer under S4, and the clause
-                    // leaves that half deliberately open (corpus
-                    // 75-list-nesting-and-looseness-4 pins the folding answer
-                    // for a nested spelling of it) - so that path keeps the
-                    // enumeration it had.
                     if marker_line_was_the_whole_block {
                         return body_ends_with_open_paragraph(src, options);
                     }
-                    // S4 DOES NOT ASK WHETHER THE OPEN PARAGRAPH IS THE
-                    // CONTAINER'S FIRST BLOCK (markup-carve/carve#1370, a
-                    // clarifying passage on the same clause). The half left open
-                    // above is settled: an item whose first block is a table, a
-                    // fence or a heading and whose next line is prose holds an
-                    // open paragraph exactly as an item that began with prose
-                    // does. The blocks before that paragraph are spent - they
-                    // answered S4 while they were the item's last block and
-                    // stopped answering it when prose reopened one.
-                    //
-                    // Without this the engine rendered `b` AS the item's prose
-                    // and then declined to treat its paragraph as open, which is
-                    // one line answered two ways in a single parse
-                    // (carve-rs#1098).
-                    //
-                    // A direct trailing heading is bounded and supplements
-                    // nothing (carve#1377). If it belongs to a nested
-                    // definition or item, the enclosing paragraph may still
-                    // take the line after that inner container closes.
                     body_ends_with_open_paragraph(src, options)
                         || nested_ends_with_heading(src, options)
                 },
@@ -10750,22 +9477,6 @@ fn parse_list(
             .or_else(|| detect_hardbreaks_block_open(marker.content))
             .or_else(|| detect_quote_block_open(marker.content));
         while let Some(next) = cur.peek() {
-            // A `+` ends the lead paragraph only where it can ACT as a
-            // continuation marker - at or below the item's base column. An
-            // INDENTED one is not consumed as a marker by any engine (all three
-            // render it), so it is lazy text and folds like any other
-            // continuation line. Breaking on it at any indent made `- a` / `  +`
-            // two paragraphs here and one in carve-js and carve-php
-            // (carve-rs#672, markup-carve/carve#812).
-            // ...AND ONLY OVER A LINE AT COLUMN 0 (§17 L3,
-            // markup-carve/carve#1821). Its column makes the `+` eligible; what
-            // FOLLOWS it decides whether it is a marker at all. Over a line at
-            // any other column the clause refuses the marker and says the line
-            // behaves exactly as a comment line there does - consumed, ending
-            // nothing - so the lead paragraph stays open and the indented line
-            // folds into it. Breaking on eligibility alone made `- intro` / `+`
-            // / `  more` an attached block where every other engine and the
-            // executable spec fold one paragraph (corpus 435-13).
             if trim_ascii(next) == "+" && indent_columns(next) <= base_indent {
                 if attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1)) {
                     break;
@@ -10807,22 +9518,6 @@ fn parse_list(
                 break;
             }
             if indent < content_col {
-                // NO SPECIAL CASE FOR AN ABSORBED FENCE. This used to break
-                // when the paragraph held an invalid colon fence and ended in a
-                // bare one, which ended the item and made the flush-left line a
-                // document paragraph. PART 1 S4 says the opposite: `:::note`
-                // fails §12's opener test so it is paragraph text, §12 then has
-                // the paragraph absorb the bare fence below it as text too, and
-                // a paragraph nothing ever interrupted is still OPEN when the
-                // flush-left line arrives (carve#891, corpus
-                // `86-list-lazy-continuation-9`). What decides is whether a
-                // block was opened, never the shape of the line that tried.
-                // BELOW content_column (§24 C3): a line -- flush-left OR indented
-                // short of the content column -- lazily continues the item's open
-                // paragraph and folds in as text. A block opener here is NOT a
-                // block opener (the residual/absent indent disqualifies it), so it
-                // never interrupts; only a genuine lazy-continuation interrupt
-                // (blank, sibling marker, ...) ends it.
                 let next_owned = next.to_string();
                 if interrupts_lazy_continuation_as_container(cur, &next_owned) {
                     break;
@@ -11568,23 +10263,6 @@ fn nested_ends_with_open_paragraph(
     options: &Options<'_>,
 ) -> bool {
     let blocks = probe_blocks(nested, options);
-    // A COMMENT AT THE CONTENT COLUMN IS A BLOCK, AND A BLOCK ENDS THE PARAGRAPH
-    // IT SITS UNDER, whatever it renders (PART 1 S4, markup-carve/carve#1364).
-    // §24 C3 makes the content column the container body's own column 0, so a
-    // line there is read as a block - and a block ends the paragraph above it
-    // whether or not anything reaches the page. This walk used to look PAST a
-    // trailing run of comments at whatever they were sitting on, which is the
-    // reading that made `- a` / `  %% c` / `tail` fold while the `dd` spelling
-    // one construct over did not.
-    //
-    // The §17 L1a objection does not reach it: whether a line IS a paragraph
-    // (markup-carve/carve#621, #625) and whether it ENDS one are different
-    // questions, and the ATTRIBUTE BLOCK settles it by measurement - it is
-    // invisible, it ends the item, and every implementation already agrees.
-    //
-    // BELOW the content column nothing changes, because a line down there never
-    // reaches this predicate as a block: `- a` / `  %% c` / ` b` keeps `b` in
-    // the item (corpus 358, and 189/192 for the nested spelling).
     let mut end = blocks.len();
     if trailing_below_column {
         // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
@@ -11608,22 +10286,6 @@ fn nested_ends_with_open_paragraph(
         return false;
     }
 
-    // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939). PART 1 S4
-    // folds a flush-left line into the innermost OPEN PARAGRAPH, and a `::: `
-    // div that no `:::` line closed still holds one - so the line folds into
-    // the div, not out of the item.
-    //
-    // A div CLOSED by its fence is the case the catch-all below is right about:
-    // the fence closes the paragraph inside it, and a dedented line after it
-    // ends the item. One line of body decides it two ways, which is why the
-    // termination has to be read from the SOURCE rather than from the node -
-    // the AST records what a div holds, not whether the author closed it.
-    // DEPTH IS NOT A PARAMETER of this rule (carve#506), so the unterminated
-    // fence is looked through wherever the recursion below reaches it -- an
-    // item holding an item holding an open div answers the same as a bare one
-    // (markup-carve/carve#980). The termination is read from the SOURCE rather
-    // than from the node either way: the AST records what a div holds, not
-    // whether the author closed it.
     block_ends_with_open_paragraph(blocks.get(end - 1), colon_fences_left_open(nested))
 }
 
@@ -11857,47 +10519,6 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
     let is_the_whole_item_body = |start: usize, end: usize| {
         source_is_the_item_body && start == 0 && last_content.is_some_and(|last| end > last)
     };
-    // A BLANK LINE ABOVE THE CHUNK MAKES THE CONTAINER BELOW IT TRANSPARENT, so
-    // its interior blank is reached like any other and can loosen the item.
-    //
-    // `blank_line_above` has to be TOLD, not read off `lines`: the leading blank
-    // is not part of the collected chunk, so
-    //
-    //     - x
-    //
-    //       ::: d
-    //       a
-    //
-    //       b
-    //       :::
-    //
-    // and the same document with no blank under `- x` arrive here with the
-    // IDENTICAL five lines. That is the bound the note above records for corpus
-    // 279-10, and it is why only the caller can separate them.
-    //
-    // THE SKIP IS FOR AN ATTACHED CONTAINER. With nothing between it and the
-    // block above, a container is one of the item's blocks and its body is its
-    // own content rather than a separator between the item's blocks
-    // (markup-carve/carve#985). A blank line above it is a different document:
-    // that is the separator that loosens an item before a plain block, and §17
-    // cannot read the same blank one way there and another way here.
-    //
-    // THIS CRATE ALREADY CONTRADICTED ITSELF ON IT, which is the half that needs
-    // no ruling at all. Drop the `  :::` closer from the document above and it
-    // read LOOSE - an unterminated opener has no span to skip - while with the
-    // closer written it read TIGHT. markup-carve/carve#1602 settled that an
-    // explicit closer is a SPELLING change and tightness may not move across it,
-    // and the canonical writer SUPPLIES the missing closer, so the two are `x`
-    // and `fmt(x)` and PART 11 §1 requires them to parse alike. That fix bounded
-    // itself to an item whose whole body IS the container; the attached
-    // configuration kept the defect until markup-carve/carve#1622 measured it.
-    // Ruled loose there, which is the reading the unclosed spelling already gave
-    // and the one carve-php gives both.
-    //
-    // WHAT DOES NOT MOVE. With no blank above it the container stays attached
-    // and the item stays tight (corpus 279-10, markup-carve/carve-js#1376), and
-    // a container holding no interior blank stays tight either way, because it
-    // has no second block inside for the separator to reach.
     let mut fence: Option<FenceOpen> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
     let mut i = 0;
@@ -11985,43 +10606,6 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
 
 /// Whether a list item's second block came from a PARAGRAPH-SHAPED line, and so
 /// loosens the item when a blank line sits above it (§17 L1).
-///
-/// §17 decides looseness from the BLANK LINE and from what the line below it
-/// spells: a blank followed by a plain paragraph loosens, a blank followed by a
-/// sub-block opener keeps the item tight (L2). The line-based half of that rule
-/// lives in `continuation_line_opens_sub_block`, which is what carve-js and the
-/// executable-spec oracle both ask. This is the same question asked of the
-/// PARSED chunk, for the one caller that has a parsed chunk rather than the
-/// lines it came from.
-///
-/// It used to be spelled `matches!(block, BlockNode::Paragraph(_))`, and that
-/// held only for as long as every paragraph-shaped line stayed a paragraph in
-/// the tree. PART 11 §1c does not leave it one: a lone image at the item's
-/// content column is a BLOCK image (markup-carve/carve#1660), and an image with
-/// a `^ ` caption is a `Figure`. Neither is a `Paragraph`, so
-///
-/// ```text
-/// - t
-///
-///   ![A](a.jpg)
-/// ```
-///
-/// published `tight: true` and dropped the item's `<p>t</p>`, where carve-js,
-/// carve-php and the oracle all publish `tight: false`
-/// (markup-carve/carve-rs#1358). The same document with the image ONE column
-/// further in stayed loose, because an INDENTED lone image is still a paragraph
-/// in the tree - which is the tell that the collapse, not the blank line, was
-/// deciding looseness.
-///
-/// The blank line settles looseness before anything is known about what the
-/// second block RENDERS as, so §1c may take the `<p>` WRAPPER and may not take
-/// the item's looseness with it. That is the scope this predicate restores: the
-/// collapse still happens (the image is still bare, corpus 411), and it no
-/// longer reaches a decision that belongs to the line above it.
-///
-/// A figure is paragraph-shaped only when its target remains a paragraph. A
-/// block image (captioned or not) is now a recognized #1705 sub-block opener
-/// and therefore takes §17 L2 instead.
 fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
     match block {
         BlockNode::Paragraph(_) => true,
@@ -12083,24 +10667,6 @@ fn lazy_line_pending(cur: &mut LineCursor) -> bool {
 
 /// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
 /// markup-carve/carve#980).
-///
-/// S4's lazy branch folds a flush-left line into the innermost OPEN PARAGRAPH
-/// and ends with "and NOTHING closes". That binds the lines AFTER the folded
-/// one as much as the folded one itself, so a line that comes back to the
-/// container's content column is still that container's content. Fold the lazy
-/// run, RESUME collecting into the same stream, and repeat.
-///
-/// Folding once and stopping renders a document nothing in the stack ever
-/// closed: `- x` / `  :::` / `  a` / `d` / `  b` / `  :::` folded `d` into the
-/// div's paragraph and then left `b` beside the div with a stray empty one
-/// after it (markup-carve/carve-rs#813).
-///
-/// `open` is the governing parameter and the caller supplies it, because the
-/// three call sites qualify it differently -- a pending blank closes the
-/// paragraph in one, and a trailing heading keeps the container open for
-/// flush-left text in two (carve#326). What none of them may do is read the
-/// FENCE KIND: a code fence body simply never holds an open paragraph, which
-/// is the whole of the asymmetry (carve#980).
 fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
@@ -12282,19 +10848,6 @@ fn collect_indented_block_mapped_with(
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
-    // A COLON CONTAINER IS THE THIRD OPEN FENCE at the item's content column,
-    // and this collector tracked only the code one. §24 S1 MATCH PREFIXES and
-    // S2 place a line by the COLUMN it reaches and never by its first
-    // character, so a marker at the body's own column inside an open `:::` is
-    // the same continuation a plain `x` is - which is exactly what the code
-    // spelling beside it already answers (corpus category 278). Without it
-    // `- x` / `  :::` / `  a` / `  - m` / `  b` / `  :::` split the div around a
-    // nested list and published a spurious empty `div` for the closer (corpus
-    // category 279 row 5).
-    //
-    // A STACK of exact widths, not a depth count: a colon fence closes on an
-    // EXACT length match (markup-carve/carve#455), so a wider run nests rather
-    // than closes.
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
@@ -12405,54 +10958,10 @@ fn collect_indented_block_mapped_with(
         if definition_ended_paragraph && indent < strip_cols {
             break;
         }
-        // A FENCED BODY IS NOT A PARAGRAPH, so nothing below the content column
-        // folds while one is open (PART 9 §24, markup-carve/carve#950). §24's
-        // STEP algorithm says it twice over: a below-column line supplies none
-        // of the body's indentation, so S1 MATCH PREFIXES stops at the ITEM and
-        // S2 FENCED BODY never fires - S2 wants the innermost MATCHED container
-        // to be the body. S4 governs, and its lazy branch continues an open
-        // PARAGRAPH, which a verbatim body is not. The unmatched containers
-        // close: the item holds an EMPTY code block and the residue re-parses in
-        // the surviving context.
-        //
-        // The guard is on the OPEN FENCE, not on where the fence was opened.
-        // Seeding it from the marker line alone leaves the identical shape with
-        // the fence opened at the content column still folding, because a reader
-        // that asks "is a paragraph open" sees one again as soon as the body
-        // collects a line (corpus 276 row 6). And the fence need not be the
-        // item's first block at all - one opened on a CONTINUATION line closes
-        // the item at the same place (row 7).
         if fence.is_some() && indent < strip_cols {
             break;
         }
         let is_marker = detect_list_marker_full(line).is_some();
-        // INSIDE AN OPEN FENCE THE MARKER IS CODE TEXT (corpus category 278,
-        // markup-carve/carve#975). PART 9 §24's S1 MATCH PREFIXES and S2 FENCED
-        // BODY place a line by the COLUMN it reaches; neither reads the line's
-        // first character. So a list marker at the item's content column, inside
-        // a fence that item opened, is the same continuation a plain `x` is -
-        // which corpus 276 row 3 already pins, and which category 278 differs
-        // from by two characters. Without the guard the marker severed the
-        // verbatim body: the fence closed empty, the marker opened a sub-list,
-        // and the fence's own closer became an empty code span.
-        //
-        // A COMMENT BODY IS VERBATIM FOR THE SAME REASON (§28, carve-rs#1053).
-        // §28 makes a comment's body opaque exactly as §24 makes a code fence's,
-        // so the marker inside one is comment text and severing the chunk there
-        // is the same defect in a second spelling. Left out, the opener landed
-        // in a chunk of its own and re-parsed as an unterminated fence - which
-        // §28 degrades to a `%%` line comment - the marker opened a sub-list,
-        // and the closer degraded the same way in the next chunk. Both
-        // delimiters vanished and the body rendered: the one outcome a comment
-        // may never have. A heading or a block quote in that position was
-        // already correct, but by omission - they never set `is_marker` - so the
-        // asymmetry was in this gate, not in any opener set.
-        //
-        // `comment_fence` is the state the PRECEDING lines left, because the
-        // tracker below has not run for this line yet, which is what makes it
-        // the right question here: it is set only where a closer really follows
-        // (§28), so an unterminated `%%%` still degrades and a marker under it
-        // still stops the chunk.
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
@@ -12470,23 +10979,6 @@ fn collect_indented_block_mapped_with(
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        // Dedent by the item's content column so a nested block (sub-list, block
-        // quote, heading) reaches column 0 and parses. A sub-list marker line is
-        // dedented residual-aware so tab+space-aligned siblings keep the same
-        // visual column (the recursive parse re-derives the child base); other
-        // lines use whole-tab dedent so they land flush at column 0.
-        // A comment fence travels as ONE span, opener through closer, at ONE
-        // dedent. Per-line dedenting takes the opener's whole indent (the `%%`
-        // exception in `dedent_for_collection` matches `%%%` too) and leaves it
-        // on the frame's base column, where it ends the list nested there:
-        // `- - a` / ` %%% c` / ` %%%` / ` b` closed the inner item and moved `b`
-        // out of it. Dedenting the opener but not its body is no better - the
-        // body then sits outside its own fence and renders as item text
-        // (carve-rs#581, corpus 191).
-        //
-        // Below the content column the fence reached no container, so the span
-        // keeps its columns; at or past it the span is item content and dedents
-        // like everything else.
         let was_in_comment_span = comment_fence_strip.is_some();
         if let Some((fence_len, _)) = comment_fence {
             if is_comment_fence_close_any_column(line, fence_len) {
@@ -12495,25 +10987,6 @@ fn collect_indented_block_mapped_with(
         } else if let Some(open) =
             detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
         {
-            // A `%%%` INSIDE A CODE FENCE IS CODE TEXT, so it opens no span
-            // (§24, and the same reading of §28 the marker gate above applies).
-            // `fence` is the state the preceding lines left, so the code fence's
-            // own opener and closer still read as themselves and only body lines
-            // are excluded. Without the filter the span opened on code text and
-            // was still open at the code fence's end, which suppressed the
-            // marker gate for the REAL comment that followed: `- item` / a code
-            // fence holding `%%%` / `  - x` / `  %%%` / `  - z` / `  %%%` put
-            // `z` on the page, where the delimiters around it should have hidden
-            // it. The dedent below reads the same state, so opening it on code
-            // text was already wrong before the gate started asking.
-            //
-            // §28: a fence with NO closer ahead is not a fence - it degrades to
-            // an ordinary `%%` line comment, and the lines after it are just
-            // lines. Opening the span anyway dedented the next one by the span's
-            // strip, which lifted a BELOW-column line to the body's column 0 and
-            // parsed it as a block: `- a` / `  %%% x` / ` # h` published an
-            // `<h1>` where every other engine keeps `# h` as text
-            // (carve-rs#586).
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
@@ -12549,24 +11022,6 @@ fn collect_indented_block_mapped_with(
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
         }
-        // The enclosing container may already have stripped something, so the
-        // widths accumulate; an unknown parent width keeps this unknown too.
-        //
-        // A straddling tab's residual is re-emitted as SPACES that are not in
-        // the source, so the plain `outer + stripped` charged offsets past them
-        // to characters that do not exist and spans ran off the end of the
-        // document (carve-rs#700). The content after the run is still a suffix,
-        // so the anchor moves back by the synthetic width instead: what the
-        // slice actually consumed, minus what was written in its place.
-        //
-        // Only a position INSIDE the run has no source, and nothing starts
-        // there - it is whitespace and the marker follows it.
-        //
-        // The difference is SIGNED and no longer bails out when the slice wrote
-        // more than it consumed. It used to `checked_sub` and drop the line's
-        // anchor, because the map could not hold a negative constant - the same
-        // limit that lost a tab-indented footnote continuation its positions
-        // (carve-rs#736).
         col_map.push(
             cur.source_col(cur.pos)
                 .map(|outer| outer + consumed as isize - synthetic as isize),
@@ -12661,19 +11116,6 @@ fn collect_indented_block_plain_with(
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
-    // A COLON CONTAINER IS THE THIRD OPEN FENCE at the item's content column,
-    // and this collector tracked only the code one. §24 S1 MATCH PREFIXES and
-    // S2 place a line by the COLUMN it reaches and never by its first
-    // character, so a marker at the body's own column inside an open `:::` is
-    // the same continuation a plain `x` is - which is exactly what the code
-    // spelling beside it already answers (corpus category 278). Without it
-    // `- x` / `  :::` / `  a` / `  - m` / `  b` / `  :::` split the div around a
-    // nested list and published a spurious empty `div` for the closer (corpus
-    // category 279 row 5).
-    //
-    // A STACK of exact widths, not a depth count: a colon fence closes on an
-    // EXACT length match (markup-carve/carve#455), so a wider run nests rather
-    // than closes.
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
@@ -12885,31 +11327,6 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         cur.consume();
-        // Leading indentation is not significant in a paragraph (djot has no
-        // indented code blocks); strip it so an indented line like ` c` renders
-        // as `<p>c</p>`, matching list-item continuation handling.
-        //
-        // TRAILING WHITESPACE IS DROPPED ON EVERY CONTENT LINE, not just the
-        // block's last (PART 2 NO TRAILING WHITESPACE, carve#926). The two
-        // documents `abc<newline>def` and `abc<SP><newline>def` are the same
-        // document. This engine stripped only the joined END, which is the
-        // paragraph-final line, so a run before a SOFT BREAK survived into the
-        // output.
-        //
-        // carve-rs#359 limited stripping to block-final lines on the strength of
-        // PART 12 §7, which claimed `a` + SPACE + newline + `b` renders
-        // `<p>a \nb</p>` and argued from that claim that stripping breaks
-        // `to_html(fmt(x)) == to_html(x)`. §7 has been corrected: the executable
-        // spec does not render it that way, and the PARSER is the half that
-        // moves.
-        //
-        // `trim_ascii_end` is space-and-tab, deliberately not `str::trim_end`:
-        // every other invisible character is CONTENT and survives, however
-        // invisible - a no-break space, a zero-width space, a byte order mark,
-        // an en quad, an ideographic space, a form feed and a vertical tab. An
-        // implementation using a Unicode whitespace property (or a language's
-        // legacy `\s`) fails seven of those rows, and a plain-space fixture
-        // cannot see it.
         let trimmed = trim_ascii_end(trim_ascii_start(line));
         suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
         lines.push(trimmed);
@@ -12969,26 +11386,6 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     {
         return true;
     }
-    // A standalone block-attribute line floats forward to the next block (or is
-    // dropped when none follows, §15), so it interrupts the paragraph rather
-    // than folding in as literal text -- but only FLUSH-LEFT, like the
-    // quote/heading/table checks below. `parse_standalone_attrs` trims leading
-    // whitespace, so without this guard an INDENTED `{...}` line would interrupt
-    // where an indented `> q` / `# h` does not; an indented attr line is lazy
-    // paragraph text under the strict column-0 rule (§24 C3), not a floater.
-    //
-    // The WRAPPED spelling (`{.k` / `#x}`) interrupts on the same grounds. Only
-    // the single-line form was tested here, so `{.k` folded into the paragraph
-    // as literal text: the author's braces reached the page and the attributes
-    // reached nothing (markup-carve/carve-rs#1039). The continuation lines come
-    // from the CURSOR, and only when `line` is the line it is parked on - every
-    // other caller passes a line this cursor is not standing at, and guessing a
-    // block's extent from an unrelated position is how a probe reads a closer
-    // that is not there.
-    //
-    // `invisible_arms` is false only for a container's BELOW-COLUMN band, where
-    // §10 I5 makes the attribute line lazy paragraph text of that container
-    // instead (markup-carve/carve#1809). See `interrupts_paragraph_in_band`.
     if cur.invisible_arms && !line.starts_with([' ', '\t']) {
         if parse_standalone_attrs(line).is_some() {
             return true;
@@ -13053,20 +11450,6 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         }
         let strip = leading_ws(cur.lines[cur.pos]);
         let rest = &cur.lines[cur.pos + 1..];
-        // THE CLOSER HAS TO BE INSIDE THE SAME CONTAINER. Once this fence
-        // opens, a line below the container's content column closes the
-        // container: a fenced body is not a paragraph, so nothing folds into it
-        // from below (PART 9 §24, markup-carve/carve#950). A closer past that
-        // line is therefore not this fence's closer, and by §10 I4 a fence with
-        // no closer left does not interrupt - the delimiter run stays paragraph
-        // text.
-        //
-        // `strip` IS that column here: the caller dedents an item's line by the
-        // content column before asking, and `detect_fence_open` refuses a line
-        // that still carries indentation, so a fence reaching this point sat
-        // exactly at the column. At document level the strip is 0 and no line
-        // is below it, which leaves top-level fences untouched. A BLANK line is
-        // not below anything - inside an open fence it is verbatim content.
         if rest
             .iter()
             .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
@@ -13082,25 +11465,6 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    // A caption line (`^ …`) ends a list/blockquote item's lazy continuation
-    // rather than folding in: a caption is a heading/figure terminator, not
-    // plain prose the item absorbs. It becomes its own top-level block, matching
-    // carve-js / carve-php (carve#326). Top-level caption-to-figure attachment
-    // runs in the block parser, not this lazy-continuation path.
-    //
-    // THE §24 C3 SUBLIST ARM IS WAIVED HERE, and the quote's own comment at the
-    // call site states why: a marker on a block quote's lazy continuation is
-    // TEXT. carve-js#1200 ruled that the quote's OPEN paragraph claims the line
-    // before the item's content column does - `- > q` / `  - s` is one quoted
-    // paragraph, and this engine and the executable spec are the two that always
-    // read it that way. §24 C3 decides a child of the ITEM, not a line the quote
-    // is still holding.
-    //
-    // It does not hand the quote every marker: the caller tests `para_open`
-    // first, so a quote that ended on a heading, a table or a blank line breaks
-    // there instead and the marker reaches the item body, where §24 C3 opens the
-    // sublist. `collect_trailing_lazy_through`, the other caller, tests
-    // `is_list_marker` on its own line before it ever gets here.
     let saved = cur.in_item_body;
     cur.in_item_body = false;
     let interrupts = interrupts_paragraph(cur, line);
@@ -13576,56 +11940,6 @@ impl DefinitionBodyFence {
 
 /// Does the definition body collected so far end in something a flush-left line
 /// can FOLD INTO?
-///
-/// PART 0 S4's lazy branch continues an open PARAGRAPH. `DefinitionBodyFence`
-/// above answers that for the body's own code fence and has to, because this
-/// test reads the body collected SO FAR: an unterminated fence has no closer
-/// yet, and PART 9 S10 degrades it to a paragraph, which would answer the open
-/// half backwards (carve-rs#785, #789). Everything else the body can end in -
-/// an empty block quote, a closed div or admonition, a table, a thematic break,
-/// a line block, a block-attribute line that left no block at all - holds no
-/// open paragraph either, and this is where those are answered
-/// (markup-carve/carve#956, carve-rs#790).
-///
-/// THE HEADING IS AN EXCEPTION AND IT IS SPELLED HERE, not in
-/// `block_ends_with_open_paragraph`. A heading is not a paragraph, so the shared
-/// predicate says false for one - yet `- one` / `  :: term` / `  :  # H` /
-/// `lazy` keeps the line inside the body, and so does every list spelling beside
-/// it (`heading_folds_lazy.rs`, carve#326). The list path arrives at that answer
-/// without consulting the shared predicate at all, so an arm added THERE would
-/// move the list's pinned answers as well as this one. Written here, it reaches
-/// the definition body and nothing else.
-/// Whether `source`'s last non-blank line is a standalone block-attribute line,
-/// written flush at the body's own column.
-///
-/// The source is already dedented to that column, so "flush" is column 0 here -
-/// the strict column-0 rule, which is what keeps an INDENTED `{…}` ordinary
-/// paragraph text.
-/// The body's last line is an INTERRUPTER that leaves no block behind.
-///
-/// A DEFINITION BODY IS A CONTAINER WITH A CONTENT COLUMN (PART 9 §24 C3,
-/// markup-carve/carve#1350), and a construct §10 I5 makes an interrupter ends
-/// the paragraph it sits under wherever that column is. Most interrupters leave
-/// a node the block-level test below can see and need nothing here. These do
-/// not, and the tree records what a body HOLDS rather than what was taken out
-/// of it, so they are read from the SOURCE:
-///
-/// - a BLOCK-ATTRIBUTE line (§15 A1), which is applied to the block it precedes
-///   and is never a block itself;
-/// - a COMMENT (§24 C3), recognized at any column and publishing nothing;
-/// - the PLACEHOLDER a collected link or footnote definition leaves in its
-///   place, which `parse_comment_block` consumes without building a node so a
-///   definition leaves no trace (markup-carve/carve#801).
-///
-/// The last of the three is why one answer closes both spellings the ruling
-/// names: `:  a` / `   [r]: /u` reaches this predicate as `a` over a comment
-/// line, exactly as `:  a` / `   %% c` does, because the prepass has already
-/// swapped the definition out. Reading the definition line HERE as well would
-/// be a second rule for a shape that is already one.
-///
-/// An OPEN verbatim body cannot reach this: a body whose fence is still open is
-/// ended by `DefinitionBodyFence` before the fold is ever asked, so a `%%` line
-/// inside code is not read as a comment here.
 fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
     if body_ends_with_an_attribute_line(source) {
         return true;
@@ -13686,25 +12000,6 @@ fn definition_body_takes_the_fold(
     marker_line_is_the_whole_body: bool,
     options: &Options<'_>,
 ) -> bool {
-    // A BLOCK-ATTRIBUTE LINE LEAVES NO NODE, so the block-level test below
-    // cannot see it - and it INTERRUPTS an open paragraph (§15 A1), which is the
-    // one thing that test is asking about. `d` / `{.k}` parses to a single
-    // paragraph, exactly as `d` alone does, so a body ending in an attribute
-    // line reported the paragraph the attribute had already closed, and a
-    // flush-left line folded in: `:: t` / `:  d` / `   {.k}` / `tail` published
-    // `tail` INSIDE the `dd`, wearing a class the author wrote for a block that
-    // never came (markup-carve/carve#1281; the question is S4's, which that
-    // ruling leaves to markup-carve/carve#1280).
-    //
-    // The docblock above already listed "a block-attribute line that left no
-    // block at all" among the things this answers. It did - for a body that is
-    // ONLY the attribute line, where there is no paragraph node either. With
-    // content in front of it there was one, and it answered for that.
-    //
-    // The WRAPPED spelling (`{.k` / `#x}`) is deliberately NOT covered: a
-    // multi-line attribute block interrupts no open paragraph anywhere in this
-    // engine, at document level as much as here, and making it do so is a §10 I5
-    // question rather than this one.
     if body_ends_with_an_unnoded_interrupter(source) {
         return false;
     }
@@ -13891,22 +12186,6 @@ fn collect_definition_body(
             if line.strip_prefix(":: ").is_some() || strip_definition_marker(line).is_some() {
                 break;
             }
-            // A FENCED BODY IS NOT A PARAGRAPH (PART 0 S4,
-            // markup-carve/carve#956). This line is below the body's content
-            // column, so it supplies none of the body's indentation: S1 MATCH
-            // PREFIXES stops at the DEFINITION ENTRY and S2 FENCED BODY never
-            // fires, S2 wanting the innermost MATCHED container to be the body.
-            // S4 governs, and its lazy branch continues an open PARAGRAPH, which
-            // a verbatim body is not. The containers close, the `dd` holds an
-            // EMPTY code block, and the residue re-parses at document level -
-            // byte for byte the answer corpus 276 pins for the list spelling,
-            // which this engine already gives (#772).
-            //
-            // NEITHER WHILE IT RUNS NOR ONCE IT HAS FINISHED. A CLOSED code
-            // block is a finished block, so the body has no open paragraph after
-            // it either and the same derivation ends the body there. The worked
-            // example in the clause shows the open half; the rule is stated on
-            // the paragraph, not on the delimiter.
             if fence.holds_no_paragraph() {
                 break;
             }
@@ -13960,53 +12239,8 @@ fn collect_definition_body(
             } else {
                 line.to_string()
             };
-            // BELOW THE COLUMN NOTHING INVISIBLE INTERRUPTS (§10 I5 DEFINITION
-            // OWNERSHIP IS COLUMN-SCOPED, markup-carve/carve#1809): at a nonzero
-            // column below a container's content column a link reference,
-            // footnote or abbreviation definition, or a block-attribute line,
-            // "is lazy paragraph text of THAT container - the one whose content
-            // column it fell below - and does not register". Interrupting is
-            // exactly what would end the container and re-classify the line one
-            // level out, which is the half the clause was missing: "lazy
-            // paragraph text" names an operation on an OPEN paragraph, so
-            // emitting the same characters at document level has not carried the
-            // sentence out.
-            //
-            // markup-carve/carve-rs#1438 read the band the other way round and
-            // this collector briefly broke on a definition-shaped line, which
-            // put the link and footnote kinds at document level. carve#1809
-            // overruled that reading, and the break is gone rather than
-            // narrowed: the pre-passes already decline to collect a definition
-            // below a tracked content column, so the raw characters are here and
-            // the only question left is which container keeps them.
-            //
-            // The two pre-passes DO agree, measured: neither collects
-            // `  [r]: /u` nor `  [^f]: n` under a `:  ` body. What made them
-            // look like they disagreed was this break, which matched both
-            // spellings.
-            //
-            // AS A CONTAINER waives the ABBREVIATION arm (§7 recognizes that
-            // definition only as a direct child of the document), and
-            // `invisible_arms` waives the attribute one for the column band.
-            // Column 0 keeps both: it is the document's own opener column, where
-            // a definition registers and a floating attribute attaches forward.
             let below_the_column = indent > 0;
             if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
-                // THE RESIDUAL INDENT GOES IN WITH THE LINE, and dropping it is
-                // a HALF fold. Trimmed, the line arrives FLUSH inside the
-                // description, where its shape is recognized all over again -
-                // `{.k}` became the `dd`'s floating attribute and attached to
-                // the paragraph after it, which is characters off the page AND a
-                // block wearing metadata the author wrote for something else
-                // (markup-carve/carve#1809, corpus 430-3). Indented, it is the
-                // literal attribute line corpus 157 pins, which is what a
-                // paragraph continuation is. The renderer drops the leading run
-                // of a continuation line, so the fold's bytes are unchanged for
-                // every kind that was already right - the plain control included.
-                //
-                // The test above still reads the TRIMMED line: an indented `> q`
-                // has to answer the opener question the same way a flush one
-                // does, which is what the band's other half is for.
                 let keep = if below_the_column {
                     line.to_string()
                 } else {
@@ -14208,18 +12442,6 @@ fn trim_cell_padding_start(s: &str) -> &str {
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let mut rows: Vec<TableRow> = Vec::new();
-    // GFM-style header separator: a delimiter row directly after the first row
-    // turns that row into a header and sets per-column alignment. The colons land
-    // on the HEADER cells only, matching what the native `|=<` markers produce.
-    // The first row must not itself be a delimiter row.
-    //
-    // They used to be applied to every body row as well, so the same logical table
-    // parsed to two different trees depending on which separator syntax the author
-    // used, and the writer then serialized the propagated values as per-cell
-    // markers nobody wrote (carve#352, corpus 09-tables-3). Nothing is lost: the
-    // HTML renderer inherits column alignment for a body cell whose own align is
-    // unset, which is how the native path has always rendered aligned body cells.
-    // A genuine per-cell override sets the cell's own align and is untouched.
     let mut first_is_delim = false;
     let mut saw_separator = false;
     while let Some(line) = cur.peek() {
@@ -14356,40 +12578,10 @@ impl TableRun {
     /// guard is on the continuation, so the two halves of one table cannot be
     /// read at two different columns.
     fn observe(&mut self, line: &str) -> bool {
-        // A PIPE IS THE PRE-TEST, and it has to be one. Both `is_table_start`
-        // and `is_table_continuation` require a closing `|`, so a line holding
-        // no pipe at all is neither a row nor a continuation row and no run
-        // survives it - which is answerable from the BYTES, before anything is
-        // stripped.
-        //
-        // Without it the walk below ran on every quoted line at every depth,
-        // which is one strip per marker per line: a depth ladder of ordinary
-        // prose went from 16 strips per unit of work to 79.5, and
-        // `a_depth_ladder_costs_strips_in_proportion_to_its_markers` caught it.
-        // Same shape as §12's absorption pre-test one function over
-        // (markup-carve/carve-rs#738), and conservative in the same direction:
-        // it can only force a walk that was not needed, never skip one that was.
-        //
-        // The reset is unconditional here rather than depth-aware, which costs
-        // nothing: with no run open the depth is re-read from the next line that
-        // opens one.
         if !line.as_bytes().contains(&b'|') {
             *self = TableRun::default();
             return false;
         }
-        // A QUOTE INSIDE A QUOTE IS ASKED WHAT IT ENDS ON (markup-carve/carve#1355,
-        // corpus 356). The line is read at the depth it sits at: `> > | a |` in
-        // an outer quote arrives here as `> | a |`, which is not a row at this
-        // level and is a row one level in. Stripping to the innermost content is
-        // the same walk `ParaOpen::resolve` makes for the same reason - a lazy
-        // line continues the innermost open paragraph however many containers it
-        // failed to match (markup-carve/carve#506).
-        //
-        // The DEPTH is carried with it, because a run lives inside ONE container.
-        // Without it `> > | a |` over `> + b |` would read as two lines of one
-        // table, where the second is content of the OUTER quote written after the
-        // inner one ended - and a `+ ...|` with no table above it AT ITS OWN
-        // LEVEL is prose (markup-carve/carve#1345).
         let mut innermost = line;
         let mut depth = 0usize;
         while let Some(rest) = strip_blockquote_prefix(innermost) {
@@ -14738,26 +12930,6 @@ fn split_table_cells_ranged(content: &str) -> RowSplit {
 /// `seed_len` / `open_run_at` seed the scanner with a verbatim run left OPEN by
 /// the row this line CONTINUES (carve#1293), and with the WIDTH that run was
 /// opened at.
-///
-/// A `+` continuation extends the cell, so the block an unclosed run reaches
-/// the end of is that whole cell, continuation included: the pipes it spans on
-/// the continuation row are its content, exactly as they are on the row that
-/// opened it. Scanning a continuation with a fresh scanner cut the line at a
-/// pipe INSIDE the run, and every segment past the first was then dropped for
-/// want of a column to join - content loss rather than a different answer.
-///
-/// THE SEED BELONGS TO ONE COLUMN. The run was open in the row above's LAST
-/// cell, and a continuation joins PER COLUMN, so the columns before it are
-/// scanned normally and the pipe that ends them still separates. Seeding the
-/// whole line instead swallows those separators and pushes the continuation
-/// into the wrong cell.
-///
-/// AND THE SEED CARRIES ITS WIDTH. A run closes on a run of EXACTLY its own
-/// length, which is the rule the scanner below already applies within a line;
-/// re-seeding the continuation at one backtick made the boundary the one place
-/// where the same scanner answered the width question a second way, and a run
-/// of two was then closed by a single one on the continuation row
-/// (carve-rs#1051).
 fn split_table_cells_seeded(
     content: &str,
     seed_len: Option<usize>,
@@ -14765,21 +12937,6 @@ fn split_table_cells_seeded(
 ) -> RowSplit {
     let mut cells = Vec::new();
     let mut buf = String::new();
-    // The WIDTH of the verbatim run this scanner is inside, or `None` when it
-    // is outside one. A parity toggle stood here and counted single backticks,
-    // so a run of two closed itself the moment it opened and the pipe after it
-    // split the row (markup-carve/carve#1284, corpus `328-...-4`). The tell was
-    // that one backtick and three worked while two did not - the signature of
-    // parity rather than of a delimiter.
-    //
-    // A verbatim run is opened by a RUN of N backticks and closed by a run of
-    // EXACTLY N; a run of any other width inside it is content. That is the
-    // same rule the inline parser already applies, and this scanner only needs
-    // it to know which pipes are separators.
-    //
-    // ACROSS THE ROW BOUNDARY TOO, which is why the seed is a width and not a
-    // flag: the run the continuation picks up was opened at some length on the
-    // row above, and only a run of that same length closes it here.
     let mut open_len: Option<usize> = if open_run_at == 0 { seed_len } else { None };
     let mut index = 0usize;
     let mut cell_start = 0usize;
@@ -15142,22 +13299,6 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let after_fence = &trimmed[fence_len..];
-    // THE SEPARATOR IS A RUN OF U+0020, and the token starts where that run
-    // ends. #720 tested only the FIRST character (`after_fence.starts_with(' ')`)
-    // and then read the token out of `after_fence.trim()`, whose Unicode trim
-    // swallowed whatever came after that space. So a lone leading tab was
-    // rejected while `::: <TAB>note` still opened an admonition, and
-    // `::: <NBSP>note` did too - a first-character test wearing a run test's
-    // clothes, the same shape found in carve-php's copy of this rule (#722,
-    // corpus 254-2 and 254-5). Splitting the run here is what makes the check
-    // about the rule: `rest` now begins at the token, so every test below sees
-    // the character the grammar actually puts there.
-    //
-    // A RUN, not one space: `:::  note` is a two-space opener and a valid
-    // admonition (corpus 254-10), so narrowing this to a single U+0020 would
-    // break it alone.
-    // `trimmed` is `line.trim()`, so there is no trailing whitespace left to
-    // strip here and `rest` is exactly the token and what follows it.
     let sep_len = after_fence.bytes().take_while(|b| *b == b' ').count();
     let rest = &after_fence[sep_len..];
     // STRICT (djot): the opener is the colon fence, an optional type word,
@@ -15736,30 +13877,6 @@ fn splice_verse_comments(
     let mut opened_inside_a_run = false;
     let mut out =
         splice_verse_comments_into(inlines, &mut pending, &mut line, &mut opened_inside_a_run);
-    // A COMMENT ON THE STANZA'S LAST LINE has no boundary after it to sit
-    // before, so it goes at the end - the boundary that OPENS its line is still
-    // there, which is what says the line is still there. The walk drains before
-    // each node and so never reaches this one.
-    //
-    // STILL GATED ON THE LINE. Anything left over after that is a comment whose
-    // line has no boundary at all, which is the open verbatim run swallowing the
-    // rest of the stanza: the run carries the emptied line as a newline and
-    // there is no place inside it for a node. Those stay dropped, as they were -
-    // pushing the leftovers unconditionally puts the note back at a position the
-    // author never wrote.
-    //
-    // AND GATED ON WHAT OPENED THAT LINE, which the counter alone cannot say.
-    // §23: BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE - "there is no
-    // boundary left in the tree for a `comment` node to sit on and the run's
-    // value holds an EMPTY LINE instead". A run reaching the end of the stanza
-    // advances the counter with the newlines it swallowed, so the last of them
-    // lands exactly on the last comment's line and the drain fired on a line
-    // that is INSIDE the run: `::: |` / `` ` `` / `%%` / `:::` came back as
-    // `` ` %%``, appending a node PART 12 containment refuses - after the run
-    // that contains it. The interior drain above needs no such guard, because a
-    // swallowed line is strictly inside the run's newline count and the counter
-    // only moves forward. The writer's answer for that empty line is PART 11
-    // §7c, which `spell_verse_empty_lines` already gives it (carve-rs#1193).
     if !opened_inside_a_run {
         while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
             out.push(InlineNode::Comment(comment));
@@ -15907,43 +14024,6 @@ fn splice_verse_comments_into(
 
 /// Give every line-block hard break a span, even where the stanza's TEXT has
 /// none.
-///
-/// A tab expands to placeholders and shifts every column after it within the
-/// line, so the anchor machinery refuses that line and its inlines come out
-/// unplaced. That is right for text: the value stops being a slice of the
-/// source. A break is not content on the line, though - it is the newline
-/// ENDING it, and tab expansion does not move a line ending. The k-th break is
-/// the newline after stanza line k, which is pure line geometry, so it stays
-/// derivable exactly where the text is not (carve-rs#480).
-///
-/// Only breaks still MISSING a span are filled: where the anchors placed one it
-/// is already the same fact, computed the same way.
-///
-/// AT EVERY DEPTH, AND COUNTING A BOUNDARY HOWEVER IT IS SPELLED
-/// (carve-rs#1246). This walk used to visit the stanza's top-level nodes and
-/// count break NODES, which is the same pair of mistakes `harden_verse_breaks`
-/// and `splice_verse_comments_into` each had to give up:
-///
-/// - An inline container that opens on one body line and closes on a later one
-///   holds the boundaries between them as its OWN children, so a top-level walk
-///   never sees them. The break ending an emptied comment line under a `strong`
-///   therefore kept the span the inline parser gave it, measured from the
-///   EMPTIED text - which is zero-length there, so the span started at that
-///   line's FIRST column and ran to the next line's, covering the whole comment
-///   line and overlapping the `comment` node published at exactly those bytes.
-///   PART 12 §4 ends a span "immediately after the last source codepoint the
-///   construct owns", and what a break owns is the boundary, not the line the
-///   block layer emptied to get there.
-/// - A verbatim run spanning a boundary carries that newline in its VALUE
-///   rather than as a node, so counting nodes alone named a line short and every
-///   break after it was measured against the wrong one.
-///
-/// So it walks the slots `splice_verse_comments_into` walks and tracks the LINE
-/// the way that function does, which is what makes the two agree by
-/// construction rather than by coincidence. THE START IS THE SOURCE LINE'S END:
-/// `end_cols` is measured on the source line before `expand_line_block_ws`
-/// touches it, which is why the geometry was right all along and only the walk
-/// that read it was not.
 fn place_line_block_breaks(
     inlines: Vec<InlineNode>,
     lines: &LineBuffer,
@@ -16182,45 +14262,6 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // `splice_verse_comments`.
         let comment = verse_comment_line(&stripped);
         let expanded = expand_line_block_ws(&stripped);
-        // A verse line stays placeable only while the rewrite is a SPACE
-        // PROMOTED IN PLACE: one space becomes one placeholder, so every column
-        // still maps back one to one and the node's value is still the source
-        // read differently. Anything else refuses.
-        //
-        // A TAB is the case that refuses. It expands to up to four placeholders
-        // from one source character, which pushes every column after it too far
-        // right - and even where the arithmetic happens to yield exactly one
-        // column, the character changed, so the value stops being a slice of
-        // the source and a consumer asked to highlight it gets a mismatch.
-        // carve-js publishes no position for the same lines.
-        //
-        // The check used to look only at the LEADING run, which was right while
-        // the rule only preserved the indent. Medial and trailing gaps are
-        // preserved too now (PART 9 §23), so a tab anywhere in the line has to
-        // count - `tab\tgap` kept a position while its value read `tab gap`.
-        //
-        // Per line, not per stanza: one tab-bearing line does not cost its
-        // neighbours their positions.
-        //
-        // A DROPPED TRAILING ONE-COLUMN RUN is not a rewrite. §23 leaves a lone
-        // space at the end of a verse line as an ordinary space and PART 2 then
-        // drops it, so `def<SP>` arrives as `def` - SHORTER than its source
-        // line, where an equal-length test reads a refusal. Nothing in front of
-        // it moved, so the constant is unaffected and the line is still
-        // placeable; the equal-length test cost `def` its position while the
-        // identical line without the space kept one (markup-carve/carve#961).
-        // Only the DROPPED tail may differ, and it must be whitespace: a
-        // trailing tab expands to at least two columns, becomes NBSP content
-        // and makes `expanded` longer, which still refuses here.
-        //
-        // THE WHITESPACE HALF OF THAT TEST CANNOT FAIL TODAY, recorded rather
-        // than presented as a fix (markup-carve/carve#755). Widening it to
-        // accept any dropped tail changes no corpus document and no output over
-        // 6125 generated verse-line shapes, and fails no test: the only way
-        // `expanded` gets shorter is `expand_line_block_ws` dropping a
-        // one-column run, which is whitespace by construction. It stays because
-        // the length arithmetic alone would not notice a future rewrite that
-        // dropped CONTENT off the end, and that one would move the columns.
         let dropped = stripped
             .chars()
             .count()
@@ -17015,19 +15056,6 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
             return None;
         }
         if !joined.is_empty() {
-            // A QUOTED VALUE STOPS AT THE NEWLINE (PART 4, carve#888). A line
-            // break inside the quotes is not content: it ends the production,
-            // and the whole attribute block is unrecognized.
-            //
-            // This engine collapsed the break to a SPACE, which no production
-            // in either normative file describes - all three engines accepted
-            // the shape and none of them agreed on what it meant, which is what
-            // an unstated rule looks like.
-            //
-            // `continuation` is where a newline IS admitted, and it sits
-            // BETWEEN two tokens rather than inside one, so a block attribute
-            // may still span lines: the space below is that continuation, and
-            // it is only reached where no value is open across the break.
             if quote.is_some() {
                 return None;
             }
@@ -17234,28 +15262,6 @@ fn open_quote_at_end(s: &str) -> Option<char> {
 
 /// Split a TRAILING standalone block-attribute block off a collected chunk,
 /// returning its attributes and shortening the chunk to the lines before it.
-///
-/// WHY A LIST ITEM NEEDS THIS AND NOTHING ELSE DOES. `parse_blocks` owns the
-/// only pending-attribute slot, and it attaches a `{…}` line to the block that
-/// follows it in the SAME stream. Inside a list item that stream is a chunk:
-/// `collect_item_continuation_block_mapped` stops at a marker sitting at the
-/// item's content column, so `parse_list` can own the sub-list and its
-/// looseness bookkeeping. That stop puts the attribute line at the END of one
-/// chunk and the nested list at the start of a different one, each parsed with
-/// its own slot - so the attributes had nothing to attach to and were dropped
-/// where `parse_blocks` returns (markup-carve/carve-rs#1007).
-///
-/// A paragraph, block quote or code fence in that position is not a marker, so
-/// the collector never breaks and both lines land in one chunk, which is why
-/// only a NESTED LIST lost them. Handing the split-off attributes to the
-/// sub-list branch reunites the two halves without teaching `parse_blocks` to
-/// return leftovers, which would thread a new value through every one of its
-/// callers.
-///
-/// The block may span lines (`{#id` / `.foo}`), so the whole trailing run is
-/// validated by `parse_standalone_attrs_block` - the same reader the top-level
-/// path uses - and the split only happens when that reader consumes the run
-/// exactly.
 fn split_trailing_attrs(nested: &mut MappedSource) -> Option<(Attrs, Option<Pos>)> {
     let lines: Vec<&str> = nested.source.lines().collect();
     if lines.is_empty() {
@@ -20655,39 +18661,6 @@ fn read_link_target(
     if href.is_empty() {
         return None;
     }
-    // THE TITLE'S PADDING RUN IS SPACES. `link_title` is spelled `space` in the
-    // grammar, and `image_title = link_title`, so this one run serves both
-    // callers. The slot is PADDING rather than a marker separator - a link is
-    // already a link once its destination has been read - but PART 7's MARKER
-    // SEPARATORS AND PADDING SLOTS decides the terminal by POSITION, and an
-    // inline destination is about as far from a leading indentation run as a
-    // slot gets. The executable grammar spells it `destTitle = titleSp+ (quoted
-    // | squoted)` with `titleSp = " "` (carve#901, carve-rs#726).
-    //
-    // The run is tested rather than its first character: a check on the first
-    // character rejects `[t](/u<TAB>"T")` and passes `[t](/u<SP><TAB>"T")`, and
-    // the rule is about the run.
-    //
-    // A run holding a tab therefore leaves `i` short of the `)` this production
-    // requires below, and the whole construct falls back to literal text -
-    // which is already what a U+00A0 in the same slot does, since the
-    // destination scan rejects a non-ASCII space outright.
-    //
-    // THE SLOT IS EXACTLY ONE SPACE. `link_title = space, ('"' ...)` spells it
-    // as one character, and carve#912 ruled that the production is right and
-    // the lax readers narrow: a padding slot sits between two tokens on a line
-    // whose construct is already fixed, so its width means nothing and a run
-    // means nothing twice. `image_title = link_title`, so this one test serves
-    // both callers - the two have disagreed before (carve#888).
-    //
-    // A wider run does not lose the TITLE, it loses the LINK: the slot does not
-    // match, the quoted run is left unconsumed, the `)` test below fails and
-    // every character survives as text. That is the failure PART 7 already
-    // names, not a new one.
-    //
-    // Only the title's own padding narrows. A run before the `)` with NO title
-    // after it is not this slot - nothing is being padded - and stays tolerated,
-    // which is why the one-space test is conditioned on a quote following it.
     let title_at = if bytes.get(i) == Some(&b' ') {
         i + 1
     } else {
@@ -21559,34 +19532,6 @@ impl CrossrefIndex {
 /// The comparison PART 11 R1 specifies for the implicit heading fallback: the
 /// label and the heading text are "both trimmed, their internal whitespace runs
 /// collapsed to one space, and then compared case-INSENSITIVELY".
-///
-/// Deliberately looser than the exact, case-sensitive matching `linkDefs` uses:
-/// a linkDefs label is an identifier the author wrote twice, while a heading ref
-/// is prose quoted from elsewhere in the document.
-/// The key R1's heading index is built on and looked up by: whitespace runs
-/// collapsed, NFC-normalized, then case-folded.
-///
-/// NFC is here because heading IDS are already NFC (section 25), so without it a
-/// document publishes a precomposed id and then declines a reference spelling
-/// that exact string. This engine LOOKED right before the fold was added, but
-/// only through `resolve_ref`'s slug fallback - which answers a cross-spelling
-/// reference solely when the heading's id IS the slug of its text. Give the
-/// heading an id of its own and the accident stops working:
-///
-/// ```text
-/// {#custom}
-/// # Cafe + U+0301
-///
-/// see [precomposed Cafe][]
-/// ```
-///
-/// resolved in the executable spec, carve-js and carve-php and stayed literal
-/// here (carve#725). The fold belongs on the TEXT index, which is the index R1
-/// describes.
-///
-/// NFC and not NFKC: a ligature heading must not be reached by its ASCII
-/// spelling - compatibility folding changes which text the author is quoting,
-/// not how it is spelled.
 fn normalize_heading_label(s: &str) -> String {
     case_fold(&crate::unicode_nfc::nfc(
         &s.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -21746,50 +19691,6 @@ fn resolve_reference_links_inline(
                         // label as "unresolved".
                         apply_link_def(l, def);
                     } else if is_collapsed_reference(l) {
-                        // Implicit heading reference. The LABEL goes in, not a
-                        // slug of it: PART 11 R1 keys this index by the heading's
-                        // rendered text, and `resolve_ref` slugifies only for its
-                        // fallback. Slugifying here first hid every heading whose
-                        // id is not the slug of its text (carve-rs#477).
-                        //
-                        // `resolve_ref` declines a heading with a blockquote
-                        // ancestor; the plain `resolve` used by `</#id>` does
-                        // not. Sharing one index for both lookups is what made
-                        // this engine resolve into quoted material (#410).
-                        //
-                        // R1 OFFERS THE INDEX TWO KEYS, IN ORDER: the label AS
-                        // WRITTEN, then its rendered plain text. They are the
-                        // same string for a label carrying no markup, no escape
-                        // and no smart-punctuation trigger, which is why the
-                        // second was never separated out. Where they differ,
-                        // `ref` publishes THE ONE THAT ANSWERED (PART 12 §3a,
-                        // markup-carve/carve#962): the field is defined as the
-                        // label the reference RESOLVES BY, and the authored
-                        // spelling is already kept in `raw_ref`, so publishing
-                        // it in both left the resolution key nowhere in the
-                        // tree.
-                        //
-                        // The derived form is `plain_inlines_parse` over the
-                        // link's OWN CHILDREN, which are the parsed label - the
-                        // same function the heading index derives its key from,
-                        // so the resolver and the index cannot disagree about
-                        // what a label renders as.
-                        //
-                        // DERIVED, NOT NORMALIZED. Trimming, whitespace
-                        // collapse, NFC and case folding belong to MATCHING and
-                        // stay inside `normalize_heading_label`;
-                        // `[Getting Started][]` under `# getting started` has
-                        // always published `Getting Started`, and publishing the
-                        // folded key would rewrite every plain label in every
-                        // document to make one markup-bearing one right.
-                        //
-                        // NOT A BLANKET STRIP. The definition branch above is
-                        // the case a blanket strip inverts: `defs` keys on the
-                        // label AS WRITTEN, case-sensitively, and never reaches
-                        // here. Five corpus documents carry a collapsed
-                        // reference with a markup-bearing label and only TWO
-                        // resolve through this branch; a strip would have moved
-                        // all five.
                         let derived = plain_inlines_parse(&l.children);
                         let key = if heading_index.answers_by_text(label) {
                             None
@@ -21811,19 +19712,6 @@ fn resolve_reference_links_inline(
                             if let Some(key) = key {
                                 l.ref_label = Some(key);
                             }
-                            // KEEP `ref_label` / `raw_ref`. The href is what the
-                            // HTML needs; the reference is what the AUTHOR wrote,
-                            // and the canonical writer has to reproduce it. Clearing
-                            // them turned `[getting started][]` into
-                            // `[getting started](#Getting-Started)` on every fmt
-                            // pass, baking a generated id into the source and
-                            // disagreeing with carve-js, which keeps the reference
-                            // form (carve#478).
-                            //
-                            // An EXPLICIT definition above still clears them: there
-                            // both engines write the resolved link, so the authored
-                            // `[x][]` plus its `[x]: url` line is not reproducible
-                            // from the tree either way.
                         }
                     }
                     // A reference tail FRAMES this link's text; it does not
@@ -22017,33 +19905,7 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
 /// of markup-carve/carve#1660. A block image is a top-level block construct, so
 /// an INDENTED lone image is a paragraph holding an inline image and the parse
 /// tree must say so. The HTML says something else on purpose: a paragraph whose
-/// whole content is one image renders as a bare `<img>` with no `<p>` wrapper,
-/// at every column, which is what carve-js and carve-php both do and what the
-/// executable spec renders. So the renderer runs this pass again with the gate
-/// lifted, and every layout decision downstream sees the same `BlockImage` it
-/// has always seen.
-///
-/// The FIGURE half is gated at both, and deliberately: an indented image with a
-/// `^ ` caption is literal paragraph text in the HTML as well as in the tree
-/// (corpus `158-indented-image-and-caption-stay-literal`), so lifting the gate
-/// there would build a figure the author did not write.
-/// Render-time half of markup-carve/carve#1660.
-///
-/// The parse tree keeps an INDENTED lone image as `paragraph > image`, because a
-/// block image is a top-level block construct and section 15's strict column-0
-/// rule reaches it. The HTML does not distinguish: a paragraph whose whole
-/// content is one resolved image renders as a bare `<img>` at every column, the
-/// way carve-js, carve-php and the executable spec all render it. Running the
-/// promotion once more here, with the column gate lifted, is what keeps those
-/// two facts from having to be reconciled at every layout decision downstream -
-/// the blockquote and `<dd>` compact forms, the footnote backlink placement and
-/// the paragraph renderer itself all keep seeing the `BlockImage` they saw
-/// before, so none of them had to learn a second shape.
-///
-/// It also closes a divergence that predates the ruling: a `paragraph > image`
-/// arriving through `--from-json` rendered `<p><img></p>` here and `<img>` on
-/// the other two engines, because this engine's collapse lived in the parser
-/// and theirs live in the renderer.
+/// Collapse lone-image paragraphs for HTML, regardless of source column.
 pub(crate) fn collapse_lone_image_paragraphs(doc: &mut Document) {
     promote_block_images(&mut doc.children, false, false);
     for blocks in doc.footnote_defs.values_mut() {
@@ -22059,34 +19921,6 @@ fn promote_block_images(
     let mut worklist: Vec<&mut [BlockNode]> = vec![blocks];
     while let Some(level) = worklist.pop() {
         for block in level {
-            // The sole-image -> block-image promotion is skipped in `figures_only`
-            // mode (the formatter): a paragraph and a bare block image serialize
-            // identically, so the only effect there would be dropping a leading
-            // block-attribute line (`{#id}`) that the paragraph carries but a bare
-            // block image cannot. The formatter keeps it a paragraph so those attrs
-            // survive.
-            //
-            // Only a REAL image (direct or resolved reference) promotes. An
-            // unresolved reference image keeps its `ref_label` and renders as
-            // literal source inside the paragraph; promoting it would drop that
-            // required `<p>` wrapper.
-            //
-            // STRICT COLUMN-0, same gate as the figure promotion below: a block
-            // image is a top-level block construct, so it opens only at its
-            // container's content column (docs/divergence-from-djot.md
-            // section 15, whose worked example renders ` # H` as `<p># H</p>`).
-            // An INDENTED lone image is a paragraph holding an inline image.
-            // The syntactic path never reached here for it -- `detect_block_image`
-            // requires the line to start with `![` -- but this pass runs over the
-            // built tree, so without `at_content_column` it could not tell the two
-            // columns apart and promoted both (markup-carve/carve#1660).
-            //
-            // NOTHING PINNED THIS BEFORE because every corpus document that
-            // indents an image carries a SECOND line, and the promotion only
-            // fires on a paragraph whose whole content is one image. The HTML
-            // cannot see it either: a sole-image paragraph renders as a bare
-            // `<img>`, so both readings emit the same bytes and only the tree
-            // differs.
             let single_image = !figures_only
                 && matches!(
                     block,
@@ -22113,22 +19947,6 @@ fn promote_block_images(
                 }
                 continue;
             }
-            // A resolved reference image on its own line followed by a `^ ` caption
-            // becomes a Figure, matching a direct-image figure and carve-php. A
-            // reference image arrives here as `Paragraph[Image, SoftBreak,
-            // "^ caption…"]` (the syntactic block-image/caption pass only knows the
-            // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
-            // literal. The caption inlines are already parsed
-            // (paragraph interruption already stopped the caption at a block opener,
-            // so a multi-line caption keeps its interior soft breaks); strip the
-            // `^ ` marker from the leading Text.
-            // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
-            // sat at its container's content column. An INDENTED image + caption is
-            // literal paragraph text (a `<p>` with an inline image and a literal
-            // `^ caption` line), matching carve-php / carve-js -- so gate on
-            // `at_content_column`. A flush-left DIRECT image + caption never reaches
-            // here (it became a Figure at parse time); this path serves resolved
-            // REFERENCE images, which likewise promote only when flush-left.
             let ref_figure = matches!(
                 block,
                 BlockNode::Paragraph(p)
@@ -22169,18 +19987,6 @@ fn promote_block_images(
                         children.remove(0);
                     } else {
                         t.value = rest;
-                        // The SPAN moves with the value. Stripping the marker from
-                        // the text and leaving the position covering it left a node
-                        // whose span did not slice back to its own content - span
-                        // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
-                        // corpus 207). The direct-image path never had this: it
-                        // parses the caption from the text after the marker, so its
-                        // anchor is right to begin with, and only this post-parse
-                        // promotion edits a node the parser already positioned.
-                        //
-                        // The marker is `^` plus spaces, so bytes and codepoints
-                        // advance together and one `n` serves both the offset and
-                        // the column.
                         if let Some(pos) = &mut t.pos {
                             pos.start_offset += n;
                             pos.start_column += n;
@@ -22202,23 +20008,7 @@ fn promote_block_images(
                 });
                 continue;
             }
-            // THE PHASE PUBLISHES ITS ANSWER (PART 9R R7, PART 12 section 23,
-            // carve-rs#1444). A paragraph reaching here was not replaced by a
-            // block image or a figure above - either because `figures_only` is
-            // on, or because the strict column-0 rule keeps an INDENTED lone
-            // image a paragraph in the tree (carve#1660). It still RENDERS as a
-            // bare <img> at every column, so the question survives into the
-            // published tree, and this is where it is answered rather than left
-            // for each consumer to re-derive by running resolution again.
-            //
-            // UNGATED ON COLUMN, deliberately, and that is the same predicate
-            // `collapse_lone_image_paragraphs` applies at render time - not a
-            // second opinion. The column gate governs whether the paragraph is
-            // REPLACED by an image node; the field states what the HTML does,
-            // and the HTML emits a bare <img> at every column.
-            //
-            // Recomputed rather than accumulated, so promoting one tree twice
-            // cannot leave a stale `true` behind.
+            // The field records render semantics, so it is not column-gated.
             if let BlockNode::Paragraph(p) = block {
                 p.block_image = p.children.len() == 1
                     && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img));
@@ -23255,38 +21045,6 @@ fn sanitize_id_source(text: &str) -> String {
 }
 
 pub(crate) fn slugify_parse(text: &str, opts: HeadingIdOptions) -> String {
-    // Carve "Automatic Identifiers" (spec #73), kept byte-identical to
-    // carve-js / carve-php:
-    //   - keep ASCII alphanumerics AND every non-ASCII code point (>= U+0080)
-    //     verbatim; replace each maximal run of ASCII non-alphanumerics with a
-    //     single '-' and trim. (Do NOT filter by Unicode is_alphanumeric: the
-    //     spec keeps non-ASCII symbols, marks, and punctuation, e.g. a CJK
-    //     comma or a bullet, just like the `[^0-9A-Za-z\x80-\x10FFFF]+` rule.)
-    //   - smart-typography output is first reversed to its ASCII source (see
-    //     de_typography) so an id never depends on presentational typography.
-    //   - the DEFAULT is CASE-PRESERVING: kept characters are emitted verbatim
-    //     (`# Getting Started` -> `Getting-Started`, `# Über uns` -> `Über-uns`).
-    //   - when `lowercase` is set, fold kept characters per code point
-    //     (`char::to_lowercase`). Per-code-point folding avoids context mappings
-    //     (Greek final-sigma) so the result is portable and matches the other
-    //     impls regardless of stdlib whole-string casing behavior.
-    //   - when `ascii` is set, transliterate through the shared table
-    //     (`translit_map`) and slug again, dropping the unmapped residue in
-    //     `Strict` and keeping it in `Fold`.
-    // Trojan-Source hardening for generated ids (corpus 117), applied BEFORE
-    // the slug run so the remaining text slugs as usual:
-    //   - NFC normalization, so a precomposed `é` (U+00E9) and a decomposed
-    //     `e`+U+0301 produce the SAME id.
-    //   - strip bidi-override / isolate controls (U+202A..U+202E, U+2066..U+2069)
-    //     and zero-width characters (U+200B/C/D, U+2060, U+FEFF, U+00AD) so none
-    //     of these can ever appear inside an `id="..."`.
-    // Matches carve-js `sanitizeIdSource` (heading-ids.ts).
-    //
-    // THE ORDER IS THE CONTRACT, and it is carve-js `slugify`'s: slug, then
-    // transliterate and slug again, then lowercase. Lowercasing during the
-    // FIRST run instead - which this function used to do, when there was no
-    // transliteration step to come after it - hands the table a folded code
-    // point, and the table is not closed under case folding.
     let sanitized = sanitize_id_source(text);
     let detyped = de_typography(&sanitized);
     let mut out = slug_run(detyped.chars(), false);

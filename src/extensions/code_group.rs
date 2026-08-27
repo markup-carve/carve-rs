@@ -81,40 +81,6 @@ impl Default for CodeGroupOptions {
 }
 
 /// Render `::: code-group` containers as tabbed code panels.
-///
-/// Two modes, the same two Tabs carries (extensions §13.1). `Css` is the
-/// default: a radio per panel and a sibling `<label for=…>`, revealed by a
-/// stylesheet, so with no stylesheet at all every panel is visible. `Aria`
-/// emits `role="tablist"` with buttons and `role="tabpanel"` panels and hides
-/// every unselected one, which needs a client script - which is exactly why it
-/// is not the default: §2.5 says content is never dropped, only interaction.
-///
-/// A group is either a `::: code-group` typed div, which parses to an
-/// admonition, or any div carrying the `code-group` class. Each fenced code
-/// block inside becomes one tab; the tab's name is the block's `[label]`, its
-/// language, or `Code N` in that order.
-///
-/// EXACTLY ONE PANEL IS SELECTED (extensions §13.5): the first block the
-/// document marks `selected`, and the first block where it marks none. Marking
-/// several is not an error and is not diagnosed - the later marks are ignored.
-/// The rule is Tabs' rule and runs through Tabs' own step, because §13 binds
-/// both constructs alike.
-///
-/// A container holding no code block is left to the core div renderer, which
-/// is what carve-js and carve-php do - the class alone is not a reason to
-/// build an empty tab strip.
-///
-/// In static mode there are no radios and neither mode applies: each panel
-/// becomes a `<section>` headed by its label, so a reader offline can still
-/// tell the panels apart.
-///
-/// A `Css` panel carries `role="group"` and its own label as an `aria-label`
-/// (§13.2) - nothing else binds it to the control that reveals it. An `Aria`
-/// panel takes neither: it is bound by `aria-labelledby` already, and a second
-/// accessible name would leave which one applies undefined (§13.3).
-///
-/// The `Aria` control is a `<button type="button">` (§13.3), so a code group
-/// inside a `<form>` switches panels instead of submitting the form.
 #[derive(Debug, Default)]
 pub struct CodeGroup {
     opts: CodeGroupOptions,

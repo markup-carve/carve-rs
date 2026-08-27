@@ -77,25 +77,6 @@ pub struct Document {
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     /// Where a footnote definition was WRITTEN, for the definitions whose body
     /// cannot say - keyed by the same label.
-    ///
-    /// A definition's extent is derived from its body, which works only while
-    /// there is a body to derive from: `[^f]: {empty}` parses to no blocks at
-    /// all, so the derivation had nothing to measure and the node reached the
-    /// wire with no `pos` - the one node in the corpus that PART 12 §4 requires
-    /// to carry one and this engine did not publish (markup-carve/carve#1023).
-    ///
-    /// ONLY definitions whose body places nothing are in here, and that bound is
-    /// load-bearing rather than an optimization. §6 makes a document
-    /// reconstructible from its serialization, so this map may hold no fact the
-    /// wire does not carry - and the wire carries one span per definition, the
-    /// PUBLISHED extent. For a definition with content that extent is the body's
-    /// and says nothing about the definition line, so recording the line for one
-    /// would make a parsed document differ from its own round trip.
-    ///
-    /// A separate map rather than a field on the body because the body is a
-    /// plain `Vec<BlockNode>` shared by every renderer, and what is recorded
-    /// here belongs to the DEFINITION LINE, which no block in the body owns.
-    /// Empty unless the caller asked for positions (§4 makes them opt-in).
     pub footnote_def_pos: BTreeMap<String, Pos>,
     pub children: Vec<BlockNode>,
     /// Byte length of the (normalized) source this document was parsed from.
@@ -226,28 +207,7 @@ pub struct Paragraph {
     /// four fields over `..Default::default()` at a parse site, so a paragraph
     /// that begins at its content column cannot silently claim otherwise.
     pub at_content_column: bool,
-    /// Set by the BLOCK-IMAGE PROMOTION phase, and by nothing else (PART 9R R7,
-    /// PART 12 section 23): this paragraph's whole content resolves to a single
-    /// image, so it is a block-level image and not a paragraph.
-    ///
-    /// Published ONLY as `true` - a paragraph that is not a block image omits the
-    /// field on the wire rather than carrying `false`. It is a resolution result
-    /// published alongside the authored construct, the same added-alongside rule
-    /// that lets a resolved reference link keep `href` beside `ref` and `rawRef`
-    /// (section 3a).
-    ///
-    /// READ IT, do not re-derive it. Block-image status is a property of the
-    /// RESOLVED tree: `![a][r]` is a block image where `[r]: /u` is written and
-    /// ordinary prose where it is not, and the definition may sit anywhere in the
-    /// document, so re-deriving it means running reference resolution again.
-    ///
-    /// UNLIKE `at_content_column` ABOVE, THE DEFAULT IS THE SAFE ONE. The
-    /// promotion phase RECOMPUTES this for every paragraph it walks rather than
-    /// accumulating it, so a construction site that leaves it `false` is
-    /// corrected before anything is serialized - which is what keeps this from
-    /// repeating carve-rs#610, where a hand-built list lead paragraph left
-    /// `at_content_column` at its default and silently blocked promotion for
-    /// every list item in every document.
+    /// Set after reference resolution when the paragraph contains one resolved image.
     pub block_image: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,

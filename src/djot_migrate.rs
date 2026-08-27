@@ -705,40 +705,6 @@ fn normalize_plus_bullets(source: &str) -> String {
 }
 
 /// Escape Carve inline syntax that is ORDINARY TEXT in Djot.
-///
-/// The converter's job has two halves and this is the half the delimiter rules
-/// cannot do. `/x/`, `=x=`, `%% c` and `{,x,}` carry no meaning in Djot, so an
-/// author writes them as text - but each one IS markup in Carve, so passing
-/// them through unchanged renders something the source never said. `%% c` is
-/// the worst of them: Carve reads it as a line comment and the line disappears
-/// from the output entirely.
-///
-/// Only delimiters this converter does NOT itself rewrite are escaped. `~`,
-/// `*` and `_` are Djot's own, so they are converted rather than escaped, and
-/// `{^…^}`, `{=…=}`, `{+…+}` and `{-…-}` mean the same in both languages.
-///
-/// THE BRACE IS NOT ESCAPED ALONE. Escaping only the `{` of `{/y/}` leaves the
-/// `/y/` inside it bare, and a bare `/` is Carve emphasis, so the "literal"
-/// text still renders as `{<em>y</em>}`. The bare pass below therefore runs
-/// over the escaped brace as well - it has no `{` exclusion - which is what
-/// produces `\{\/y/}` and renders the text the author wrote. A delimiter with
-/// no bare Carve form, such as `,`, needs only the brace.
-/// The delimiters a converter's OWN language owns and rewrites itself.
-///
-/// The escaper freezes Carve constructs that are literal text in the source
-/// language. A delimiter the calling language also spells is NOT literal text:
-/// it is markup the converter is about to rewrite, and escaping it first would
-/// freeze the markup instead of protecting the text. So the set is a property of
-/// the CALLER, not of this function, and every call site states its own -- the
-/// shape carve-js and carve-php's escapers already have.
-///
-/// Naming it here, hardwired, is what made this rule the org's fourth spelling
-/// and the only one measurable end to end through a converter and no other way
-/// (markup-carve/carve-rs#995). The profiles below are the ones the shared
-/// escaper corpus defines (`tests/spec/tests/corpus-escape`), NOT a table of
-/// this engine's live policy for three source languages: `DJOT` and `PLAIN`
-/// have production callers, while Markdown stays `#[cfg(test)]` because that
-/// importer is AST-first (markup-carve/carve-rs#1289, #1275).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HandledDelimiters<'a> {
     /// Braced runs (`{X…X}`) the caller's language spells too.
@@ -764,31 +730,6 @@ impl HandledDelimiters<'_> {
     };
 
     /// Markdown: the `markdown` profile of the shared escaper corpus.
-    ///
-    /// NO PRODUCTION PATH PASSES THIS. Djot and BBCode pass `DJOT` and `PLAIN`;
-    /// `markdown_to_carve` never reaches the escaper at all: it builds a
-    /// `Document` and hands it to the canonical writer, which escapes by
-    /// construction, so PART 11 §2 is already satisfied on that path without a
-    /// delimiter table. The HTML importer is AST-first the same way.
-    ///
-    /// SO WHY IS IT HERE. It is this engine's declaration of a profile the
-    /// SHARED escaper corpus defines (`tests/spec/tests/corpus-escape`), and it
-    /// is measured: `the_handled_sets_match_the_corpus_profiles` pins these two
-    /// strings against the corpus's own, and `every_case_matches_under_every_
-    /// profile` runs every case through them. Widening this set to `DJOT`'s
-    /// fails `braced-unclosed`, `braced-nested-pairs` and
-    /// `two-braced-runs-on-one-line` under `[markdown]`, so it is a live
-    /// assertion rather than an unused constant - deleting it would drop this
-    /// engine out of a cross-engine fixture, not tidy a dead entry
-    /// (markup-carve/carve-rs#1289).
-    ///
-    /// WHAT `#[cfg(test)]` BUYS. Without it the three sit side by side and read
-    /// as this engine's live policy for three source languages, which is what
-    /// invites someone comparing engines to "fix" the table into agreement with
-    /// carve-js and carve-php - where it IS live policy, and where two entries
-    /// are missing (markup-carve/carve-js#1382, markup-carve/carve-php#1624).
-    /// Wiring a future text-level Markdown converter means lifting this out of
-    /// the test build deliberately, which is the point.
     #[cfg(test)]
     pub(crate) const MARKDOWN: HandledDelimiters<'static> = HandledDelimiters {
         braced: "*_",
@@ -913,21 +854,6 @@ pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters
         }
     }
 
-    // A TAG is the one construct here that is not a pair: `#x` opens on its own
-    // and needs no closer, so nothing downstream neutralizes it and escaping an
-    // enclosing brace cannot either - `\{#y#}` still rendered a tag span inside
-    // literal braces (carve-php#1191).
-    //
-    // Djot has no hashtag at all: pandoc's Djot reader renders `a #y b` as
-    // `<p>a #y b</p>`. So every `#word` in Djot prose became a Carve tag span
-    // that existed nowhere in the source, of which the braced case was only the
-    // rarest instance.
-    //
-    // Mirrors the parser's opener rather than approximating it: a tag opens on
-    // a `#` NOT preceded by an alphanumeric and followed by an alphanumeric or
-    // `-`. A heading is `#` plus a SPACE and is shared with Djot, so it is left
-    // alone, and `a#y` is not a tag either. `&` is excluded because `&#8212;`
-    // is a numeric character reference and escaping its `#` stops it decoding.
     let mut i = 0;
     while i < mask.len() {
         if mask[i] != b'#' || is_escaped(mask, i) {
@@ -970,32 +896,6 @@ pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters
         i += 1;
     }
 
-    // A SYMBOL SHORTCODE is the third opener with nothing downstream to
-    // neutralize it. `:rocket:` is ONE token rather than a pair: the closing
-    // colon belongs to the same production, so - unlike a bare or braced run -
-    // there is no separate delimiter a later line could supply or withhold, and
-    // the whole construct is decided inside the run itself.
-    //
-    // Djot has no symbol shortcode: pandoc's Djot reader renders `a :rocket: b`
-    // as `<p>a :rocket: b</p>`. So every `:name:` in Djot prose became a Carve
-    // `symbol` node that existed nowhere in the source, and under a configured
-    // symbol map it rendered a GLYPH where the source held text. `:` is already
-    // in PART 11 §5's candidate set, and §2's test - escaped if and only if
-    // omitting the escape would change the re-parsed AST - therefore already
-    // asked for this (markup-carve/carve#1609).
-    //
-    // Mirrors `parse_symbol` rather than approximating it: a symbol opens on a
-    // `:` NOT preceded by an alphanumeric or `_`, whose next byte is an
-    // alphanumeric, `+` or `-` - never `_`, which would steal from underline -
-    // followed by a run of name characters and a CLOSING `:`. A name character
-    // is never a newline, so the run cannot leave the line it opened on.
-    //
-    // ONLY THE OPENING COLON IS ESCAPED. The closing one opens nothing by
-    // itself, and neutralizing the opener is what makes the whole run text; a
-    // rule over every colon would also escape `a : b : c`, where the space
-    // against each colon means no symbol opens at either of them (corpus cases
-    // `a-symbol-shortcode` and `a-colon-that-closes-no-shortcode` are that
-    // pair).
     let mut i = 0;
     while i < mask.len() {
         if mask[i] != b':' || is_escaped(mask, i) {

@@ -237,23 +237,6 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         .collect::<Vec<_>>()
         .join(".");
 
-    // CAPTURE BEFORE INJECTING THE SPAN, and capture the NODES. A heading's
-    // cloned nodes are its AUTHORED inline content; whatever this pass adds to
-    // the heading below -- the `section-number` span -- is not part of the label
-    // and never appears in derived text (PART 9R R4, THE LABEL IS TAKEN BEFORE
-    // ANY RENDER-STAGE INJECTION, markup-carve/carve#957). This engine resolves
-    // cross-references AFTER the transform, which is the side of the injection
-    // this sentence exists to name.
-    //
-    // Cloning also settles the smart-typography question by not answering it.
-    // The switch is DOCUMENT-GLOBAL and applies to every target (PART 9 §19);
-    // this used to flatten the heading in the document's mode, which put a
-    // presentational decision in a pre-render pass. The nodes carry the author's
-    // run and each renderer spells it in the mode it was given.
-    //
-    // The `base` id above deliberately keeps reading `plain_inlines` (glyph):
-    // an id must not depend on presentational typography, and PART 9 §19 pins
-    // heading ids as byte-identical in both modes.
     let title = crossref_label_clone(&h.children);
     state.by_id.insert(
         id,

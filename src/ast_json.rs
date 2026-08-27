@@ -348,25 +348,6 @@ fn describe_json(value: &Json) -> String {
 }
 
 /// PART 12 section 12(d), for a property the schema pins with `const`.
-///
-/// A `const` admits ONE value, and the schema writes it exactly where the
-/// field's PRESENCE is the fact. `definition_list.loose` is `const: true`
-/// because absent means each description derives its own wrapper from its block
-/// count, so there is no `false` to write and `loose: false` states the OPPOSITE
-/// of what the field means.
-///
-/// This engine decodes field by field, so a wrong TYPE was already refused
-/// (`bareMarker must be a boolean`) but a wrong VALUE of the right type was
-/// read for the value the decoder wanted and anything else discarded:
-/// `optional_bool(obj, "bareMarker")?.unwrap_or(false)` turned `false` into
-/// "not a bare marker" and reported nothing. That is a silent REPAIR rather
-/// than carve-js's silent republish, and section 12(d) names both halves as the
-/// same objection (carve-rs#1332, markup-carve/carve-js#1418).
-///
-/// A SEPARATE walk from `refuse_unknown_fields` deliberately: section 11 rules
-/// on a property's NAME and section 12(d) on its VALUE, they carry different
-/// errors, and folding them together would make one function answer to two
-/// clauses.
 fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> {
     match node {
         Json::Array(items) => {
@@ -499,34 +480,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     Ok(doc)
 }
 
-/// PART 12 section 23 on ingest: TRUST `blockImage`, and promote only where it
-/// is ABSENT (carve-rs#1444).
-///
-/// This is a resolution result, and it is the one kind that must NOT be
-/// recomputed the way the two passes above recompute theirs. The difference is
-/// what ABSENCE means. A stale footnote or caption number is a claim the tree
-/// can be checked against, so it is cleared or re-derived. A missing
-/// `blockImage` is not a claim at all: every AST JSON document written before
-/// the promotion phase existed omits it, so absence says the producer did not
-/// run the phase, NOT that the paragraph is ordinary. A tree is therefore never
-/// refused for omitting it.
-///
-/// So the pass is deliberately one-directional. Where the field arrived it is
-/// left exactly as it is, including on a paragraph this engine would have read
-/// differently - the producer resolved against ITS document's definitions, and
-/// re-deciding here would substitute this tree's (possibly edited-down)
-/// reference table for the answer the producer published. Where it is absent,
-/// the promotion phase's own predicate fills it in.
-///
-/// ABSENCE IS EXACTLY `false` ON THE DECODED NODE, and not by accident of the
-/// default: the schema pins the field at `const: true`, so a payload carrying
-/// `blockImage: false` is refused before this runs (`WIRE_CONST_FIELDS`). The
-/// only two shapes that reach here are `true` and nothing at all, so a `false`
-/// node can only be a field that was never sent.
-///
-/// A WORKLIST over the whole tree, footnote bodies included, for the reason the
-/// promotion phase gives: a lone image can sit inside any container and inside a
-/// footnote body, and the tree is as deep as the document.
+/// Preserve a published result; compute it only for legacy payloads that omit it.
 fn promote_ingested_block_images(doc: &mut Document) {
     let mut worklist: Vec<&mut [BlockNode]> = vec![doc.children.as_mut_slice()];
     for blocks in doc.footnote_defs.values_mut() {
@@ -581,30 +535,6 @@ fn renumber_captions(doc: &mut Document) {
 }
 
 /// Drop `number` from any footnote REFERENCE whose definition is not in the tree.
-///
-/// PART 12 §5 serializes footnote numbering, and on a parsed document the number
-/// always describes the document it came from. On an INGESTED one it need not:
-/// delete a definition from a published tree - what an editor does when a user
-/// removes one - and the reference no longer resolves, so every renderer emits
-/// the literal `[^a]`, while the number copied off the payload still claimed a
-/// footnote that is not there (carve#758). carve-php already drops it.
-///
-/// CLEARS, NEVER ASSIGNS. Numbering an ingested tree outright would break §6:
-/// that round trip is `parse(x)` serialized and deserialized, and parsing alone
-/// does no numbering, so a tree that legitimately carries none would come back
-/// carrying them.
-///
-/// An INLINE footnote carries its own body and cannot be orphaned by a missing
-/// definition; the pass leaves those numbered.
-///
-/// THE SAME PASS `parse` RUNS, not a second implementation. It assigns as well as
-/// clears, which is right here and would be wrong in carve-js: `parse` numbers
-/// footnotes in this engine, so an ingested tree numbered the same way agrees
-/// with the parsed one and §6's round trip holds. carve-js does its numbering in
-/// resolution instead, so there the pass has to clear without assigning.
-///
-/// `assign_ref_ids` stays false: `ref_id` is a rendering anchor and carve#762
-/// removed it from the schema entirely (carve-rs#648).
 fn clear_unbacked_footnote_numbers(doc: &mut Document) {
     let _ = crate::render::collect_footnotes(doc, false);
 }
@@ -680,35 +610,6 @@ pub(crate) enum DocEntry<'a> {
 }
 
 /// PART 12 §7: "Definitions appear in DOCUMENT ORDER by source position."
-///
-/// The two COLLECTED definition kinds - `link_reference_definition` and
-/// `footnote` - are moved to the document, and §4 keeps the `pos` each was
-/// written at, so their published order has to follow that `pos`. Writing
-/// `doc.children` and then the footnote map put every link definition ahead of
-/// every footnote whatever the author wrote, and `pos` then ran backwards
-/// between two adjacent siblings (carve#746).
-///
-/// Only the collected kinds move. An `abbreviation_def` is not collected out of
-/// the document - §7 refuses that specifically, since hoisting it would empty
-/// the line rather than relocate visible output - so it already sits at its
-/// source position and keeps its index here.
-///
-/// The reordering is confined to the slots the collected definitions already
-/// occupy, so no other child moves, and the sort is stable, so two definitions
-/// reporting the same offset keep the order they arrived in (which for
-/// footnotes is the label tie-break applied by the caller).
-/// A document's footnote definitions in SOURCE ORDER.
-///
-/// `Document::footnote_defs` is a `BTreeMap`, so iterating it yields label
-/// order - and §7 orders collected definitions by source position. Every target
-/// that prints the definitions needs this, so it lives here rather than being
-/// re-derived per renderer: the `carve` writer had its own copy
-/// (carve-rs#685) and markdown, plain and ansi each walked the map directly
-/// (carve-rs#686).
-///
-/// A definition with no recorded span - positions are opt-in (§4) - sorts to the
-/// end and keeps label order among its peers, which is the only order available
-/// there.
 pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Vec<BlockNode>)> {
     let mut defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
     defs.sort_by_key(|(label, children)| {
@@ -835,19 +736,6 @@ fn write_footnote_def(
     w.field("type", |out| write_string(out, "footnote"));
     w.field("label", |out| write_string(out, label));
     w.field("children", |out| write_blocks(out, children));
-    // FIRST block's start through the LAST placed block's end. Taking the
-    // first block's span alone left every later block - a `+` continuation, an
-    // indented second paragraph - outside its own footnote (carve#565).
-    //
-    // A definition with NO PLACED BLOCK has nothing to derive from, and that is
-    // not the same thing as being unplaceable: `[^f]: {empty}` is written on a
-    // line of its own, so §4's "omit rather than invent" does not apply and the
-    // definition line is the honest extent - the one the reference publishes.
-    // Deriving from the body alone left this node the only one in the corpus
-    // with no `pos` (markup-carve/carve#1023).
-    //
-    // The fallback is only reached when the body places nothing, so a
-    // definition that HAS content keeps the extent it has always had.
     let pos = match def_pos
         .copied()
         .or_else(|| first_block_pos(children).copied())
@@ -2040,33 +1928,6 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
         InlineNode::Emphasis(n) => {
             let mut w = typed(out, emphasis_type(n.kind));
             if n.kind == EmphasisKind::BoldItalic {
-                // PART 11 §6: `/*x*/` and `*/x/*` BOTH yield a `strong`
-                // wrapping an `emphasis`. `boldItalic` records which spelling
-                // the author used; it does not replace the nesting.
-                //
-                // This engine holds the combined form as ONE node, which is
-                // fine internally and wrong on the wire: the published tree had
-                // `strong` > `text`, so carve-js decoding it produced a strong
-                // with no emphasis at all and the italic was silently lost
-                // (#513). The nesting is materialised here, at the boundary,
-                // rather than changing the internal representation.
-                // The materialised node needs its own span, or it is the one
-                // node in the tree without one (PART 12 §4). The combined form
-                // is `/*` CONTENT `*/`, both delimiters two ASCII characters,
-                // so the inner span is this node's with two trimmed off each
-                // end - lines are unchanged, because the delimiters sit on the
-                // first and last line of the run. Checked against carve-js on
-                // the single-run, nested-strong, mid-paragraph and multi-line
-                // shapes.
-                //
-                // NOT when the node carries attributes. This engine's span for
-                // an attributed inline covers the attribute block too, so
-                // `/*x*/{#id}` ends at the `}` and trimming two lands inside
-                // the attributes rather than at the content boundary. Omitting
-                // is what §4 allows for a node with no honest span, and
-                // inventing one that selects `x*/{#` is worse than none. The
-                // outer span is the thing that is actually wrong there, and it
-                // is not specific to this form - carve-rs#521.
                 let inner_pos = n.pos.as_ref().filter(|_| n.attrs.is_none()).map(|p| Pos {
                     start_line: p.start_line,
                     end_line: p.end_line,
@@ -3543,39 +3404,6 @@ impl Json {
 }
 
 /// Deepest JSON nesting the reader will follow.
-///
-/// The reader is recursive-descent, so nesting depth is stack depth, and a
-/// document is untrusted input: `[[[[…]]]]` 200000 deep overflowed the stack and
-/// ABORTED the process rather than returning an error. The markup parser bounds
-/// itself the same way (`MAX_NESTING_DEPTH` in parse.rs, 200, matching carve-js
-/// and carve-php).
-///
-/// THE UNIT IS NOT THE PARSER'S. This bound counts JSON structural levels; the
-/// parser's `MAX_NESTING_DEPTH` counts AST levels. The conversion between them
-/// is not a property of the format - it is a property of whichever container
-/// has the LONGEST FIELD CHAIN on the wire, so it changes whenever a node type
-/// gains a field:
-///
-/// - a div is `object` + `children` array, 2 structural levels per AST level
-/// - a list is `object` + `items` + `list_item` + `children`, about 4
-/// - a table is 6, the deepest chain any container has
-///
-/// Measured at the parser's cap of 200: 405 structural levels for a div ladder,
-/// 405 for blockquotes, 805 for a list ladder (the worst that SCALES, ~4.1 per
-/// level), 402 for a table under a deep chain, where an innermost table adds a
-/// constant rather than scaling.
-///
-/// Getting this wrong is how the reader came to reject ASTs its own encoder had
-/// produced (carve-rs#389): the bound was once the parser's 200 read as if it
-/// were structural, which fits only about 99 containers, and a first fix
-/// generalised a 2:1 ratio off the div shape and still rejected a 200-deep
-/// list.
-///
-/// The lesson is the RATIO, not the deriving. This stays a function of the
-/// parser's cap - raise that and this rises with it, which is the point, since
-/// the reader must accept whatever the parser can emit whatever that limit
-/// becomes. What is derived from measurement is the multiplier: the longest
-/// field chain, not a ratio read off one shape.
 const LONGEST_FIELD_CHAIN: usize = 6;
 const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * LONGEST_FIELD_CHAIN + 16;
 
@@ -3730,45 +3558,6 @@ impl<'a> Parser<'a> {
                 } else if (0xdc00..=0xdfff).contains(&code) {
                     return Err(self.err("unpaired JSON unicode surrogate"));
                 } else if code == 0 {
-                    // PART 12 §21: a reader replaces every U+0000 with U+FFFD in
-                    // every string VALUE it ingests, before reading that value
-                    // for anything else - before a sentinel is looked for in it,
-                    // before it is used as a key, before it reaches a renderer.
-                    //
-                    // THIS MIRRORS THE PARSE BOUNDARY. `normalize_source` does
-                    // the same to Carve source before the first line is read,
-                    // which is why PART 9 §29 carves the character out of the
-                    // content class. The AST is a second door into the same
-                    // renderers and it had no equivalent, so an authored NUL and
-                    // an ingested one stood on different footings - one
-                    // replaced, one content.
-                    //
-                    // HERE, because this is where the character can be spelled.
-                    // `parse_string` refuses a raw control byte, which is RFC
-                    // 8259 and not a Carve rule and stays a syntax error; the
-                    // six-character escape is the only route in, and a surrogate
-                    // pair cannot produce U+0000 because its scalar starts at
-                    // U+10000.
-                    //
-                    // NOT A REFUSAL, unlike §11's unknown property and §12's
-                    // deviant root. Those are structure a producer got wrong;
-                    // this is the replacement the parse boundary already
-                    // performs on the identical string, so doing it is the
-                    // documented reading rather than a repair, and refusing
-                    // would make an ingested document stricter than the same
-                    // document written as source.
-                    //
-                    // WHY IT IS A CLAUSE AND NOT ONE RENDERER'S DEFENSE. It
-                    // was found through the HTML renderer's footnote-placement
-                    // marker, which wrapped a fixed string in NUL on the claim
-                    // that the character "cannot appear in rendered HTML
-                    // output" - a claim about ONE of the two doors, and through
-                    // this one a text node carrying the marker pulled the
-                    // endnotes section into itself (carve-rs#1217). That marker
-                    // is now picked per document and no longer spells a NUL at
-                    // all (carve-rs#1245), which changes nothing here: the rule
-                    // is that the two doors agree about the character, and PART
-                    // 12 §21 is what makes them.
                     out.push('\u{fffd}');
                 } else {
                     out.push(

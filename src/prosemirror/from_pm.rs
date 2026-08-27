@@ -184,18 +184,6 @@ impl Reader {
                 remove_nulls(&mut n);
                 Ok(n)
             }
-            // `div` and `admonition` share one ProseMirror name, so which of
-            // them a `carveDiv` resolved to is not a fact about the schema - it
-            // is a fact about map iteration order, and the two engines that do
-            // this walk the map in different orders. Deciding here from the
-            // node's own state makes the question moot: whichever type
-            // resolution named, the same code runs and the payload decides.
-            //
-            // They used to be two arms that each re-decided, which is the shape
-            // that let them drift - only one of them carried the label, so
-            // `:::[First]` lost its heading when resolution happened to pick
-            // the other. The `link`/`autolink` pair has always been one arm for
-            // the same reason, branching on `carveAutolink`.
             "block_quote" | "div" | "line_block" | "admonition" => {
                 // `admonition` is not a container type of its own: an
                 // admonition that turns out to have no kind IS a div.
