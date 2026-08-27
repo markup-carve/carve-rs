@@ -262,7 +262,6 @@ jobs:
           class Carve < Formula
             desc "Parser and renderer for the Carve markup language"
             homepage "https://markup-carve.github.io/carve/"
-            version "${TAG}"
             license "MIT"
 
             on_macos do
@@ -288,7 +287,7 @@ jobs:
             end
 
             test do
-              assert_match "<h1", pipe_output("#{bin}/carve", "# Hello\n")
+              assert_match "<h1", pipe_output(bin/"carve", "# Hello\n")
             end
           end
           RUBY
