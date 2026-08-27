@@ -663,8 +663,8 @@ and writes the rendered output to stdout. HTML is the default; pass a format
 flag for Markdown, plain text, or ANSI-colored terminal output.
 
 Prebuilt binaries are attached to every release for macOS (Apple silicon and
-Intel), Linux (glibc and musl) and Windows, so the CLI does not require a Rust
-toolchain:
+Intel), Linux (glibc on x86-64 and ARM64, musl on x86-64) and Windows, so the
+CLI does not require a Rust toolchain:
 
 ```bash
 brew install markup-carve/carve/carve       # macOS and Linux

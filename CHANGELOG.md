@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A prebuilt `aarch64-unknown-linux-gnu` binary is attached to every release,
+  and the Homebrew tap installs it on ARM64 Linux.
+
 ## [0.1.4] - 2026-08-27
 
 ### Added
