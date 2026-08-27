@@ -481,6 +481,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
 }
 
 /// Preserve a published result; compute it only for legacy payloads that omit it.
+/// `refuse_const_violations` rejects `false`, so decoded `false` means absence.
 fn promote_ingested_block_images(doc: &mut Document) {
     let mut worklist: Vec<&mut [BlockNode]> = vec![doc.children.as_mut_slice()];
     for blocks in doc.footnote_defs.values_mut() {
