@@ -18,7 +18,7 @@ categories = ["parser-implementations", "text-processing"]
 include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 [dependencies]
-html5ever = "0.27"
+html5ever = "0.39"
 markup5ever_rcdom = "0.3"
 # The Markdown importer parses to an AST first, the way the HTML importer uses
 # html5ever, rather than rewriting source lines. pulldown-cmark is the
