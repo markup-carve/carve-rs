@@ -208,6 +208,8 @@ pub struct Paragraph {
     /// that begins at its content column cannot silently claim otherwise.
     pub at_content_column: bool,
     /// Set after reference resolution when the paragraph contains one resolved image.
+    /// On the wire it appears only as `true`; absence means the producer skipped
+    /// the phase, not that the paragraph is ordinary.
     pub block_image: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
