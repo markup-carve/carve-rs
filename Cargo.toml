@@ -19,7 +19,7 @@ include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENS
 
 [dependencies]
 html5ever = "0.27"
-markup5ever_rcdom = "0.3"
+markup5ever_rcdom = "0.39"
 # The Markdown importer parses to an AST first, the way the HTML importer uses
 # html5ever, rather than rewriting source lines. pulldown-cmark is the
 # ecosystem's CommonMark parser and emits an event stream that walks straight
