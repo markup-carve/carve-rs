@@ -1,0 +1,20 @@
+# Dependency drift, now that Cargo.lock is pinned.
+#
+# Every CI and release step passes `--locked`, so the lock file is what gets
+# built - which also means CI stops seeing a dependency's newly published,
+# semver-compatible versions until somebody updates the lock. This is what
+# updates it: one pull request per bump, gated by the same suite as any other
+# change, rather than a `cargo update` nobody has a reason to run.
+#
+# NOT GROUPED, deliberately. The manifest still pins `html5ever` at 0.27 and
+# `markup5ever_rcdom` at 0.3 while 0.39 is published, and those are large
+# enough moves to need real work rather than a merge. Grouped into one pull
+# request they would take every other bump down with them; on their own they
+# fail on their own and everything else stays mergeable.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
