@@ -2108,6 +2108,9 @@ impl<'a> Importer<'a> {
                 items.push(ListItem {
                     attrs: self.attrs(li, &p),
                     checked: checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()),
+                    // HTML spells a ticked box and nothing else, so an imported
+                    // item takes the default state for the box it carries.
+                    task_state: None,
                     children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
                     pos: None,
                 });

@@ -288,6 +288,7 @@ impl ProfileFilter<'_> {
                                 list.items[i] = ListItem {
                                     attrs: None,
                                     checked: None,
+                                    task_state: None,
                                     children: vec![BlockNode::Paragraph(Paragraph {
                                         attrs: None,
                                         children: text_with_breaks(&text),

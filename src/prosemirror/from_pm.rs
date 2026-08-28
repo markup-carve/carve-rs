@@ -344,7 +344,21 @@ impl Reader {
                 ));
             }
             let mut n = self.container(io, "list_item", "children", false)?;
-            insert(&mut n, "checked", optional_bool(attrs_obj(io), "checked"));
+            let checked = optional_bool(attrs_obj(io), "checked");
+            // A payload is an editor's, not a parser's: it can carry any pair.
+            // One that contradicts `checked` is dropped rather than trusted,
+            // because `checked` is the attribute tiptap itself maintains.
+            let state = match optional_string(attrs_obj(io), "carveTaskState") {
+                Json::String(s)
+                    if checked == Json::Bool(false)
+                        && matches!(s.as_str(), " " | "-" | "_" | ">" | "?") =>
+                {
+                    Json::String(s)
+                }
+                _ => Json::Null,
+            };
+            insert(&mut n, "checked", checked);
+            insert(&mut n, "taskState", state);
             items.push(n);
         }
         let ordered = flavor == 1;
@@ -1027,6 +1041,7 @@ fn is_structural_attr(k: &str) -> bool {
             | "carveRef"
             | "carveSource"
             | "carveSpanMarker"
+            | "carveTaskState"
             | "checked"
             | "class"
             | "colspan"

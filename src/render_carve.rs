@@ -1050,6 +1050,16 @@ fn lists_would_merge(a: &List, b: &List) -> bool {
     a.bullet_char.unwrap_or('-') == b.bullet_char.unwrap_or('-')
 }
 
+/// The task marker, with the state the author chose (PART 11 §6g). An item
+/// with no recorded state takes the default for its box, which is what a
+/// hand-built tree and every document written before the field carry.
+fn task_marker(item: &ListItem) -> String {
+    let state = item
+        .task_state
+        .unwrap_or(if item.checked == Some(true) { 'x' } else { ' ' });
+    format!("[{state}]")
+}
+
 fn is_task_list(list: &List) -> bool {
     list.items.iter().any(|item| item.checked.is_some())
 }
@@ -1892,8 +1902,8 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
             };
             counter += 1;
             format!("{marker}{delim} ")
-        } else if let Some(checked) = item.checked {
-            format!("{bullet} [{}] ", if checked { "x" } else { " " })
+        } else if item.checked.is_some() {
+            format!("{bullet} {} ", task_marker(item))
         } else {
             format!("{bullet} ")
         };
@@ -1902,11 +1912,8 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         if !item_attrs.is_empty() {
             prefix = if node.ordered {
                 format!("{}{item_attrs} ", prefix.trim_end())
-            } else if let Some(checked) = item.checked {
-                format!(
-                    "{bullet}{item_attrs} [{}] ",
-                    if checked { "x" } else { " " }
-                )
+            } else if item.checked.is_some() {
+                format!("{bullet}{item_attrs} {} ", task_marker(item))
             } else {
                 format!("{bullet}{item_attrs} ")
             };

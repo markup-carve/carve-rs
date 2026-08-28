@@ -156,6 +156,13 @@ impl Renderer {
                         if let Some(checked) = item.checked {
                             ia.insert("checked".into(), Json::Bool(checked));
                         }
+                        // tiptap's taskItem has a ticked box and nothing else,
+                        // so the four extended states would cross the bridge as
+                        // `[ ]` (carve#1866). The prefixed attribute carries
+                        // what `checked` cannot, like the other `carve*` keys.
+                        if let Some(state) = item.task_state {
+                            ia.insert("carveTaskState".into(), Json::String(state.to_string()));
+                        }
                         Some(node_with(item_name, ia, self.blocks(&item.children)))
                     })
                     .collect();

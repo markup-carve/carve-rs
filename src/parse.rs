@@ -7934,7 +7934,18 @@ fn roman_to_int(s: &str) -> Option<usize> {
     (total > 0).then_some(total as usize)
 }
 
-fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>, &str)> {
+/// A task marker the reader recognized: the box, the authored state, and the
+/// three spans the caller needs to open the item.
+struct TaskMarker<'a> {
+    checked: bool,
+    /// The authored state, when it is not the default for the box.
+    task_state: Option<char>,
+    content: &'a str,
+    attrs: Option<Attrs>,
+    marker: &'a str,
+}
+
+fn detect_task(line: &str) -> Option<TaskMarker<'_>> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -7969,7 +7980,17 @@ fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>, &str)> {
         return None;
     }
     let checked = matches!(ab[1], b'x' | b'X');
-    Some((checked, trim_ascii_end(&after[4..]), attrs, &line[i..i + 1]))
+    // The authored state, when it is not the default for the box (PART 11
+    // §6g). A checked box records nothing: `[X]` folds to `[x]`, so recording
+    // the case would make two spellings of one state two documents.
+    let task_state = (!checked && ab[1] != b' ').then(|| ab[1] as char);
+    Some(TaskMarker {
+        checked,
+        task_state,
+        content: trim_ascii_end(&after[4..]),
+        attrs,
+        marker: &line[i..i + 1],
+    })
 }
 
 /// Lower-alpha index of a single letter (`a`=1 … `z`=26), case-insensitive.
@@ -9017,6 +9038,7 @@ fn parse_list(
             let mut item = ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children: Vec::new(),
 
                 pos: None,
@@ -9092,6 +9114,7 @@ fn parse_list(
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children,
 
                 // The item runs from its marker to the last line its body
@@ -9129,6 +9152,7 @@ fn parse_list(
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children,
                 pos: span_of(cur, item_at, cur.pos, options),
             });
@@ -9283,6 +9307,7 @@ fn parse_list(
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children,
 
                 // The item runs from its marker to the last line its body
@@ -9316,6 +9341,7 @@ fn parse_list(
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children,
                 pos: span_of(cur, item_at, cur.pos, options),
             });
@@ -9383,6 +9409,7 @@ fn parse_list(
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
+                task_state: marker.task_state,
                 children,
 
                 // The item runs from its marker to the last line its body
@@ -9591,6 +9618,7 @@ fn parse_list(
         items.push(ListItem {
             attrs: item_attrs,
             checked: marker.checked,
+            task_state: marker.task_state,
             children: vec![paragraph],
 
             pos: span_of(cur, item_at, cur.pos, options),
@@ -9838,6 +9866,8 @@ struct ListMarker<'a> {
     indent: usize,
     ordered: bool,
     checked: Option<bool>,
+    /// The authored task state, when it is not the default for `checked`.
+    task_state: Option<char>,
     start: Option<usize>,
     ol_type: Option<OrderedListType>,
     content: &'a str,
@@ -10057,17 +10087,18 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     let indent = indent_columns(line);
-    if let Some((checked, content, attrs, marker)) = detect_task(line) {
+    if let Some(task) = detect_task(line) {
         return Some(ListMarker {
             indent,
             ordered: false,
-            checked: Some(checked),
+            checked: Some(task.checked),
+            task_state: task.task_state,
             start: None,
             ol_type: None,
-            content,
-            attrs,
+            content: task.content,
+            attrs: task.attrs,
             delim: None,
-            marker,
+            marker: task.marker,
         });
     }
     if let Some((content, start, ol_type, attrs, delim, marker)) = detect_ordered_full(line) {
@@ -10075,6 +10106,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             indent,
             ordered: true,
             checked: None,
+            task_state: None,
             start,
             ol_type,
             content,
@@ -10088,6 +10120,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             indent,
             ordered: false,
             checked: None,
+            task_state: None,
             start: None,
             ol_type: None,
             content,

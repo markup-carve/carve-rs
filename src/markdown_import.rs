@@ -358,6 +358,8 @@ impl Builder {
                 let item = ListItem {
                     attrs: None,
                     checked,
+                    // GFM has `[ ]` and `[x]` only.
+                    task_state: None,
                     children,
                     pos: None,
                 };
