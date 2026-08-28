@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Djot migration preserves Carve table continuation rows instead of rewriting
+  their `+` marker as a bullet.
+
 ### Added
 
 - A prebuilt `aarch64-unknown-linux-gnu` binary is attached to every release,
