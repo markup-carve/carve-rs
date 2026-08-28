@@ -25,6 +25,10 @@
 //! assert_eq!(carve::djot_to_carve("_em_ and ~sub~"), "/em/ and {,sub,}");
 //! ```
 
+use std::collections::HashSet;
+
+use crate::ast::{BlockNode, FigureTarget};
+
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
     let source = djot.replace("\r\n", "\n").replace('\r', "\n");
@@ -666,8 +670,17 @@ fn normalize_plus_bullets(source: &str) -> String {
     let masked = mask_code_and_destinations(source);
     let mask = masked.as_bytes();
     let mut out = source.as_bytes().to_vec();
+    let continuation_lines = if masked
+        .lines()
+        .any(|line| line.trim_start_matches([' ', '\t']).starts_with('+') && line.contains('|'))
+    {
+        table_continuation_lines(source)
+    } else {
+        HashSet::new()
+    };
 
     let mut line_start = 0;
+    let mut line_number = 1;
     while line_start <= out.len() {
         let line_end = mask[line_start..]
             .iter()
@@ -681,7 +694,7 @@ fn normalize_plus_bullets(source: &str) -> String {
             i += 1;
         }
 
-        if i < line_end && mask[i] == b'+' {
+        if i < line_end && mask[i] == b'+' && !continuation_lines.contains(&line_number) {
             // `+ content` is a bullet; a bare `+` (or `+` then only spaces) is
             // the continuation marker and stays.
             let mut j = i + 1;
@@ -699,9 +712,60 @@ fn normalize_plus_bullets(source: &str) -> String {
             break;
         }
         line_start = line_end + 1;
+        line_number += 1;
     }
 
     String::from_utf8(out).expect("one-byte substitution preserves UTF-8")
+}
+
+fn table_continuation_lines(source: &str) -> HashSet<usize> {
+    fn visit(blocks: &[BlockNode], lines: &mut HashSet<usize>) {
+        for block in blocks {
+            match block {
+                BlockNode::Table(table) => visit_table(table, lines),
+                BlockNode::List(list) => {
+                    for item in &list.items {
+                        visit(&item.children, lines);
+                    }
+                }
+                BlockNode::BlockQuote(node) => visit(&node.children, lines),
+                BlockNode::Admonition(node) => visit(&node.children, lines),
+                BlockNode::Div(node) => visit(&node.children, lines),
+                BlockNode::LineBlock(node) => visit(&node.children, lines),
+                BlockNode::DefinitionList(list) => {
+                    for item in &list.items {
+                        for definition in &item.definitions {
+                            visit(&definition.children, lines);
+                        }
+                    }
+                }
+                BlockNode::Figure(figure) => match &*figure.target {
+                    FigureTarget::Table(table) => visit_table(table, lines),
+                    FigureTarget::BlockQuote(node) => visit(&node.children, lines),
+                    _ => {}
+                },
+                BlockNode::FigureGroup(group) => visit(&group.children, lines),
+                BlockNode::Extension(extension) => visit(&extension.children, lines),
+                _ => {}
+            }
+        }
+    }
+
+    fn visit_table(table: &crate::ast::Table, lines: &mut HashSet<usize>) {
+        for row in &table.rows {
+            if let Some(pos) = row.pos {
+                lines.extend((pos.start_line + 1)..=pos.end_line);
+            }
+        }
+    }
+
+    let mut lines = HashSet::new();
+    let options = crate::Options::default().with_positions(true);
+    visit(
+        &crate::parse_with_options(source, &options).children,
+        &mut lines,
+    );
+    lines
 }
 
 /// Escape Carve inline syntax that is ORDINARY TEXT in Djot.
@@ -1260,6 +1324,21 @@ mod tests {
     fn a_lone_plus_and_an_inline_plus_are_left_alone() {
         assert_eq!(djot_to_carve("+\n"), "+\n");
         assert_eq!(djot_to_carve("a + b\n"), "a + b\n");
+    }
+
+    #[test]
+    fn a_table_continuation_row_is_left_alone() {
+        let source = "| a | b |\n|---|---|\n| one | x |\n+ continues here | y |\n";
+        assert_eq!(table_continuation_lines(source), HashSet::from([4]));
+        assert_eq!(djot_to_carve(source), source);
+    }
+
+    #[test]
+    fn a_plus_bullet_containing_a_pipe_still_becomes_a_dash() {
+        assert_eq!(
+            djot_to_carve("A paragraph.\n\n+ a bullet with a | pipe\n"),
+            "A paragraph.\n\n- a bullet with a | pipe\n"
+        );
     }
 
     /// Carve syntax that is ordinary text in Djot has to be escaped or the
