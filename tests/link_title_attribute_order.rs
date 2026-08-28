@@ -24,12 +24,18 @@ fn a_reference_link_writes_them_in_the_same_order() {
 }
 
 #[test]
-fn an_explicit_title_attribute_still_follows_the_authored_one() {
-    // Both are published, in the order they were written. Pinned so the fix
-    // above cannot quietly become "the attribute wins" instead.
+fn a_destination_title_occupies_the_html_slot() {
     assert_eq!(
-        to_html("[E](/u \"T\"){title=Z}"),
-        "<p><a href=\"/u\" title=\"T\" title=\"Z\">E</a></p>"
+        to_html("[E](/u \"T\"){TITLE=Z}"),
+        "<p><a href=\"/u\" title=\"T\">E</a></p>"
+    );
+}
+
+#[test]
+fn an_attribute_title_survives_without_a_destination_title() {
+    assert_eq!(
+        to_html("[E](/u){title=Z}"),
+        "<p><a href=\"/u\" title=\"Z\">E</a></p>"
     );
 }
 
@@ -38,5 +44,13 @@ fn an_image_was_already_in_that_order() {
     assert_eq!(
         to_html("![A](/i \"T\"){.x}"),
         "<img src=\"/i\" alt=\"A\" title=\"T\" class=\"x\">"
+    );
+}
+
+#[test]
+fn an_image_destination_title_occupies_the_html_slot() {
+    assert_eq!(
+        to_html("![A](/i \"T\"){title=Z}"),
+        "<img src=\"/i\" alt=\"A\" title=\"T\">"
     );
 }
