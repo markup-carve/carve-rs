@@ -1,12 +1,15 @@
 //! JSON encoding/decoding for the public Carve AST exchange shape.
 //!
-//! The JSON reader and writer below are hand-rolled. They should not be - that
-//! is a leftover of the same mistaken no-dependency policy - and they are being
-//! replaced by serde_json.
+//! Reading and writing generic JSON is serde_json's job. What is local is the
+//! mapping between that and the AST, and the depth budget the reader enforces
+//! before serde recurses.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+
+use serde::Deserialize;
+use serde_json::Map;
 
 use crate::ast::*;
 
@@ -21,6 +24,10 @@ impl AstJsonError {
             message: message.into(),
         }
     }
+
+    fn from_serde(error: serde_json::Error) -> Self {
+        Self::new(error.to_string())
+    }
 }
 
 impl fmt::Display for AstJsonError {
@@ -31,76 +38,81 @@ impl fmt::Display for AstJsonError {
 
 impl std::error::Error for AstJsonError {}
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Json {
-    Null,
-    Bool(bool),
-    Number(i64),
-    Float(f64),
-    String(String),
-    Array(Vec<Json>),
-    Object(BTreeMap<String, Json>),
+pub(crate) type Json = serde_json::Value;
+
+/// Refuse a document nested past the budget WITHOUT recursing, so the check
+/// cannot itself overflow the stack on the input it exists to reject. Only
+/// after this passes is serde's own recursion limit lifted.
+fn refuse_deeper_than_budget(input: &str) -> Result<(), AstJsonError> {
+    let (mut depth, mut in_string, mut escaped) = (0usize, false, false);
+    for &byte in input.as_bytes() {
+        if in_string {
+            match byte {
+                _ if escaped => escaped = false,
+                b'\\' => escaped = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'[' | b'{' => {
+                depth += 1;
+                if depth > MAX_JSON_DEPTH {
+                    return Err(AstJsonError::new(
+                        "JSON nests deeper than the reader's depth budget",
+                    ));
+                }
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// PART 12 section 21: a NUL arriving as `\u0000` is replaced rather than
+/// carried into the tree. A RAW NUL byte stays a syntax error, which is
+/// serde_json's answer for any C0 control inside a string.
+///
+/// This used to live in the hand-rolled string scanner, where it read as part
+/// of the JSON grammar. It is not: it is a Carve ingest rule, so it runs as its
+/// own pass. Iterative, because the tree it walks may be nested to the reader's
+/// full depth budget.
+fn replace_nul(root: &mut Json) {
+    let mut stack = vec![root];
+    while let Some(value) = stack.pop() {
+        match value {
+            Json::String(text) if text.contains('\0') => *text = text.replace('\0', "\u{fffd}"),
+            Json::Array(values) => stack.extend(values.iter_mut()),
+            Json::Object(entries) => {
+                if entries.keys().any(|key| key.contains('\0')) {
+                    *entries = std::mem::take(entries)
+                        .into_iter()
+                        .map(|(key, value)| (key.replace('\0', "\u{fffd}"), value))
+                        .collect();
+                }
+                stack.extend(entries.values_mut());
+            }
+            _ => {}
+        }
+    }
 }
 
 pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
-    Parser::new(input).parse()
+    refuse_deeper_than_budget(input)?;
+    let mut reader = serde_json::Deserializer::from_str(input);
+    reader.disable_recursion_limit();
+    let mut value = Json::deserialize(&mut reader).map_err(AstJsonError::from_serde)?;
+    reader.end().map_err(AstJsonError::from_serde)?;
+    replace_nul(&mut value);
+    Ok(value)
 }
 
 pub(crate) fn value_to_json(value: &Json) -> String {
-    enum Task<'a> {
-        Value(&'a Json, usize),
-        String(&'a str),
-        Char(char),
-    }
-
-    let mut out = String::new();
-    let mut tasks = vec![Task::Value(value, 0)];
-    while let Some(task) = tasks.pop() {
-        let Task::Value(value, depth) = task else {
-            match task {
-                Task::String(value) => write_string(&mut out, value),
-                Task::Char(value) => out.push(value),
-                Task::Value(_, _) => unreachable!(),
-            }
-            continue;
-        };
-        assert!(
-            depth <= MAX_JSON_DEPTH,
-            "JSON value exceeds the encoder's depth budget"
-        );
-        match value {
-            Json::Null => out.push_str("null"),
-            Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
-            Json::Number(value) => out.push_str(&value.to_string()),
-            Json::Float(value) => out.push_str(&value.to_string()),
-            Json::String(value) => write_string(&mut out, value),
-            Json::Array(values) => {
-                out.push('[');
-                tasks.push(Task::Char(']'));
-                for (index, value) in values.iter().enumerate().rev() {
-                    tasks.push(Task::Value(value, depth + 1));
-                    if index != 0 {
-                        tasks.push(Task::Char(','));
-                    }
-                }
-            }
-            Json::Object(values) => {
-                out.push('{');
-                tasks.push(Task::Char('}'));
-                for (index, (key, value)) in values.iter().enumerate().rev() {
-                    tasks.push(Task::Value(value, depth + 1));
-                    tasks.push(Task::Char(':'));
-                    tasks.push(Task::String(key));
-                    if index != 0 {
-                        tasks.push(Task::Char(','));
-                    }
-                }
-            }
-        }
-    }
-    out
+    serde_json::to_string(value).expect("a serde_json Value always serializes")
 }
-
 thread_local! {
     static ENCODE_DEPTH: Cell<usize> = const { Cell::new(0) };
     static ENCODE_REFUSED: Cell<bool> = const { Cell::new(false) };
@@ -133,12 +145,11 @@ pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usi
         match value {
             Json::Object(object) => {
                 if let Some(Json::Object(pos)) = object.get("pos") {
-                    if let (Some(Json::Number(start)), Some(Json::Number(end))) =
-                        (pos.get("startOffset"), pos.get("endOffset"))
-                    {
-                        if *start >= 0 && *end >= 0 {
-                            out.push((path.to_owned(), *start as usize, *end as usize));
-                        }
+                    if let (Some(start), Some(end)) = (
+                        pos.get("startOffset").and_then(Json::as_u64),
+                        pos.get("endOffset").and_then(Json::as_u64),
+                    ) {
+                        out.push((path.to_owned(), start as usize, end as usize));
                     }
                 }
                 for (key, child) in object {
@@ -157,9 +168,7 @@ pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usi
             _ => {}
         }
     }
-    let json = Parser::new(&to_json(doc))
-        .parse()
-        .expect("encoder always writes valid JSON");
+    let json = parse_value(&to_json(doc)).expect("encoder always writes valid JSON");
     let mut out = Vec::new();
     walk(&json, "", &mut out);
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -193,7 +202,7 @@ const LEGACY_DEFINITION_ENTRY_FIELDS: &[&str] =
 /// `attrs.keyValues` is an open map of strings, so a document with an attribute
 /// literally named `terms` would otherwise be read as a legacy entry and have
 /// its other attributes refused.
-fn is_legacy_definition_entry(obj: &BTreeMap<String, Json>) -> bool {
+fn is_legacy_definition_entry(obj: &Map<String, Json>) -> bool {
     if obj.contains_key("type") {
         return false;
     }
@@ -341,7 +350,6 @@ fn describe_json(value: &Json) -> String {
         Json::Null => "null".to_string(),
         Json::Bool(flag) => flag.to_string(),
         Json::Number(number) => number.to_string(),
-        Json::Float(number) => number.to_string(),
         Json::String(text) => format!("{text:?}"),
         Json::Array(_) => "an array".to_string(),
         Json::Object(_) => "an object".to_string(),
@@ -397,10 +405,10 @@ fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> 
 }
 
 pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
-    let json = Parser::new(input).parse()?;
+    let json = parse_value(input)?;
     refuse_unknown_fields(&json, "")?;
     refuse_const_violations(&json, "")?;
-    let root = json.as_object("document root")?;
+    let root = json.expect_object("document root")?;
     let root_type = required_string(root, "document", "type")?;
     if root_type != "document" {
         return Err(AstJsonError::new(format!(
@@ -413,7 +421,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let mut footnote_defs = BTreeMap::new();
     let mut footnote_def_pos = BTreeMap::new();
     for child in required_array(root, "document", "children")? {
-        let obj = child.as_object("document.children[]")?;
+        let obj = child.expect_object("document.children[]")?;
         match required_string(obj, "block node", "type")? {
             "frontmatter" => {
                 if frontmatter_raw.is_some() {
@@ -2424,7 +2432,7 @@ fn decode_inlines(values: &[Json]) -> Result<Vec<InlineNode>, AstJsonError> {
 }
 
 fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
-    let obj = value.as_object("block node")?;
+    let obj = value.expect_object("block node")?;
     let ty = required_string(obj, "block node", "type")?;
     match ty {
         "paragraph" => Ok(BlockNode::Paragraph(Paragraph {
@@ -2598,7 +2606,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
 }
 
 fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {
-    let obj = value.as_object("list_item")?;
+    let obj = value.expect_object("list_item")?;
     expect_type(obj, "list_item")?;
     Ok(ListItem {
         attrs: optional_attrs(obj)?,
@@ -2608,7 +2616,7 @@ fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {
     })
 }
 
-fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
+fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
     let rows: Vec<TableRow> = required_array(obj, "table", "rows")?
         .iter()
         .map(decode_table_row)
@@ -2640,10 +2648,9 @@ fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
 }
 
 fn decode_table_column(value: &Json) -> Result<TableColumn, AstJsonError> {
-    let obj = value.as_object("table.columns[]")?;
+    let obj = value.expect_object("table.columns[]")?;
     let width = match obj.get("width") {
-        Some(Json::Number(v)) if *v > 0 && *v <= 1 => Some(*v as f64),
-        Some(Json::Float(v)) if *v > 0.0 && *v <= 1.0 => Some(*v),
+        Some(Json::Number(v)) if v.as_f64().is_some_and(|v| v > 0.0 && v <= 1.0) => v.as_f64(),
         Some(_) => {
             return Err(AstJsonError::new(
                 "table.columns[].width must be in (0, 1]".to_owned(),
@@ -2670,13 +2677,13 @@ fn decode_table_column(value: &Json) -> Result<TableColumn, AstJsonError> {
 /// there the counts and the rows are built from the same list. A payload
 /// arriving from elsewhere is the one place the two can disagree.
 fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJsonError> {
-    let obj = value.as_object("table.rowGroups")?;
+    let obj = value.expect_object("table.rowGroups")?;
     let head_rows = required_usize(obj, "table.rowGroups", "headRows")?;
     let foot_rows = required_usize(obj, "table.rowGroups", "footRows")?;
     let bodies = required_array(obj, "table.rowGroups", "bodies")?
         .iter()
         .map(|body| {
-            let body = body.as_object("table.rowGroups.bodies[]")?;
+            let body = body.expect_object("table.rowGroups.bodies[]")?;
             Ok(TableBodyGroup {
                 head_rows: required_usize(body, "table.rowGroups.bodies[]", "headRows")?,
                 body_rows: required_usize(body, "table.rowGroups.bodies[]", "bodyRows")?,
@@ -2716,7 +2723,7 @@ fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJso
 }
 
 fn decode_table_row(value: &Json) -> Result<TableRow, AstJsonError> {
-    let obj = value.as_object("table_row")?;
+    let obj = value.expect_object("table_row")?;
     expect_type(obj, "table_row")?;
     Ok(TableRow {
         cells: required_array(obj, "table_row", "cells")?
@@ -2729,7 +2736,7 @@ fn decode_table_row(value: &Json) -> Result<TableRow, AstJsonError> {
 }
 
 fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
-    let obj = value.as_object("table_cell")?;
+    let obj = value.expect_object("table_cell")?;
     expect_type(obj, "table_cell")?;
     Ok(TableCell {
         header: required_bool(obj, "table_cell", "header")?,
@@ -2760,7 +2767,7 @@ fn decode_definition_entries(values: &[Json]) -> Result<Vec<DefinitionItem>, Ast
     let mut items: Vec<DefinitionItem> = Vec::new();
 
     for value in values {
-        let obj = value.as_object("definition_list.items[]")?;
+        let obj = value.expect_object("definition_list.items[]")?;
         if obj.contains_key("terms") || obj.contains_key("definitions") {
             items.push(decode_definition_item(value)?);
             continue;
@@ -2829,13 +2836,13 @@ fn decode_definition_entries(values: &[Json]) -> Result<Vec<DefinitionItem>, Ast
 }
 
 fn decode_definition_item(value: &Json) -> Result<DefinitionItem, AstJsonError> {
-    let obj = value.as_object("definition_item")?;
+    let obj = value.expect_object("definition_item")?;
     let terms = required_array(obj, "definition_item", "terms")?
         .iter()
         .map(|value| {
             Ok(DefinitionTerm {
                 attrs: None,
-                children: decode_inlines(value.as_array("definition_item.terms[]")?)?,
+                children: decode_inlines(value.expect_array("definition_item.terms[]")?)?,
                 pos: None,
             })
         })
@@ -2845,7 +2852,7 @@ fn decode_definition_item(value: &Json) -> Result<DefinitionItem, AstJsonError> 
         .map(|value| {
             Ok(DefinitionDef {
                 attrs: None,
-                children: decode_blocks(value.as_array("definition_item.definitions[]")?)?,
+                children: decode_blocks(value.expect_array("definition_item.definitions[]")?)?,
                 pos: None,
             })
         })
@@ -2858,7 +2865,7 @@ fn decode_definition_item(value: &Json) -> Result<DefinitionItem, AstJsonError> 
 }
 
 fn decode_figure_target(value: &Json) -> Result<FigureTarget, AstJsonError> {
-    let obj = value.as_object("figure.target")?;
+    let obj = value.expect_object("figure.target")?;
     match required_string(obj, "figure.target", "type")? {
         "image" => Ok(FigureTarget::Image(decode_image(obj)?)),
         "block_quote" => match decode_block(value)? {
@@ -2881,7 +2888,7 @@ fn decode_figure_target(value: &Json) -> Result<FigureTarget, AstJsonError> {
 }
 
 fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
-    let obj = value.as_object("inline node")?;
+    let obj = value.expect_object("inline node")?;
     let ty = required_string(obj, "inline node", "type")?;
     match ty {
         "text" => Ok(InlineNode::Text(Text {
@@ -3097,7 +3104,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
     }
 }
 
-fn decode_image(obj: &BTreeMap<String, Json>) -> Result<Image, AstJsonError> {
+fn decode_image(obj: &Map<String, Json>) -> Result<Image, AstJsonError> {
     Ok(Image {
         attrs: optional_attrs(obj)?,
         src: required_string(obj, "image", "src")?.to_string(),
@@ -3110,7 +3117,7 @@ fn decode_image(obj: &BTreeMap<String, Json>) -> Result<Image, AstJsonError> {
 }
 
 fn decode_citation(value: &Json) -> Result<Citation, AstJsonError> {
-    let obj = value.as_object("citation")?;
+    let obj = value.expect_object("citation")?;
     expect_type(obj, "citation")?;
     Ok(Citation {
         key: required_string(obj, "citation", "key")?.to_string(),
@@ -3127,10 +3134,7 @@ fn decode_citation(value: &Json) -> Result<Citation, AstJsonError> {
     })
 }
 
-fn decode_emphasis_kind(
-    ty: &str,
-    obj: &BTreeMap<String, Json>,
-) -> Result<EmphasisKind, AstJsonError> {
+fn decode_emphasis_kind(ty: &str, obj: &Map<String, Json>) -> Result<EmphasisKind, AstJsonError> {
     Ok(match ty {
         "emphasis" => EmphasisKind::Italic,
         "strong" if optional_bool(obj, "boldItalic")?.unwrap_or(false) => EmphasisKind::BoldItalic,
@@ -3189,7 +3193,7 @@ fn decode_table_valign(value: &str) -> Result<TableVerticalAlign, AstJsonError> 
 }
 
 fn optional_marker_char(
-    obj: &BTreeMap<String, Json>,
+    obj: &Map<String, Json>,
     field: &str,
 ) -> Result<Option<char>, AstJsonError> {
     optional_string(obj, field)?
@@ -3208,9 +3212,7 @@ fn optional_marker_char(
         .transpose()
 }
 
-fn optional_thematic_break_marker(
-    obj: &BTreeMap<String, Json>,
-) -> Result<Option<char>, AstJsonError> {
+fn optional_thematic_break_marker(obj: &Map<String, Json>) -> Result<Option<char>, AstJsonError> {
     let marker = optional_marker_char(obj, "marker")?;
     match marker {
         None | Some('-' | '*' | '_') => Ok(marker),
@@ -3220,34 +3222,34 @@ fn optional_thematic_break_marker(
     }
 }
 
-fn optional_attrs(obj: &BTreeMap<String, Json>) -> Result<Option<Attrs>, AstJsonError> {
+fn optional_attrs(obj: &Map<String, Json>) -> Result<Option<Attrs>, AstJsonError> {
     let Some(value) = obj.get("attrs") else {
         return Ok(None);
     };
-    let attrs_obj = value.as_object("attrs")?;
+    let attrs_obj = value.expect_object("attrs")?;
     let mut key_values = BTreeMap::new();
     if let Some(kv) = attrs_obj.get("keyValues") {
-        for (key, value) in kv.as_object("attrs.keyValues")? {
+        for (key, value) in kv.expect_object("attrs.keyValues")? {
             key_values.insert(
                 key.clone(),
-                value.as_string("attrs.keyValues value")?.to_string(),
+                value.expect_string("attrs.keyValues value")?.to_string(),
             );
         }
     }
     let classes = match attrs_obj.get("classes") {
         Some(value) => value
-            .as_array("attrs.classes")?
+            .expect_array("attrs.classes")?
             .iter()
-            .map(|value| value.as_string("attrs.classes[]").map(str::to_string))
+            .map(|value| value.expect_string("attrs.classes[]").map(str::to_string))
             .collect::<Result<_, _>>()?,
         None => Vec::new(),
     };
     let order = match attrs_obj.get("order") {
         Some(value) => value
-            .as_array("attrs.order")?
+            .expect_array("attrs.order")?
             .iter()
             .map(|value| {
-                let slot = value.as_string("attrs.order[]")?;
+                let slot = value.expect_string("attrs.order[]")?;
                 Ok(match slot {
                     "#id" => AttrSlot::Id,
                     ".class" => AttrSlot::Class,
@@ -3265,14 +3267,11 @@ fn optional_attrs(obj: &BTreeMap<String, Json>) -> Result<Option<Attrs>, AstJson
     }))
 }
 
-fn optional_pos(
-    obj: &BTreeMap<String, Json>,
-    node_type: &str,
-) -> Result<Option<Pos>, AstJsonError> {
+fn optional_pos(obj: &Map<String, Json>, node_type: &str) -> Result<Option<Pos>, AstJsonError> {
     let Some(value) = obj.get("pos") else {
         return Ok(None);
     };
-    let pos = value.as_object("pos")?;
+    let pos = value.expect_object("pos")?;
     Ok(Some(Pos {
         start_line: required_usize(pos, node_type, "startLine")?,
         end_line: required_usize(pos, node_type, "endLine")?,
@@ -3284,15 +3283,15 @@ fn optional_pos(
 }
 
 fn optional_inlines(
-    obj: &BTreeMap<String, Json>,
+    obj: &Map<String, Json>,
     field: &str,
 ) -> Result<Option<Vec<InlineNode>>, AstJsonError> {
     obj.get(field)
-        .map(|value| decode_inlines(value.as_array(field)?))
+        .map(|value| decode_inlines(value.expect_array(field)?))
         .transpose()
 }
 
-fn expect_type(obj: &BTreeMap<String, Json>, expected: &str) -> Result<(), AstJsonError> {
+fn expect_type(obj: &Map<String, Json>, expected: &str) -> Result<(), AstJsonError> {
     let actual = required_string(obj, expected, "type")?;
     if actual == expected {
         Ok(())
@@ -3304,7 +3303,7 @@ fn expect_type(obj: &BTreeMap<String, Json>, expected: &str) -> Result<(), AstJs
 }
 
 fn required_value<'a>(
-    obj: &'a BTreeMap<String, Json>,
+    obj: &'a Map<String, Json>,
     node_type: &str,
     field: &str,
 ) -> Result<&'a Json, AstJsonError> {
@@ -3313,91 +3312,101 @@ fn required_value<'a>(
 }
 
 fn required_array<'a>(
-    obj: &'a BTreeMap<String, Json>,
+    obj: &'a Map<String, Json>,
     node_type: &str,
     field: &str,
 ) -> Result<&'a [Json], AstJsonError> {
-    required_value(obj, node_type, field)?.as_array(&format!("{node_type}.{field}"))
+    required_value(obj, node_type, field)?.expect_array(&format!("{node_type}.{field}"))
 }
 
 fn required_string<'a>(
-    obj: &'a BTreeMap<String, Json>,
+    obj: &'a Map<String, Json>,
     node_type: &str,
     field: &str,
 ) -> Result<&'a str, AstJsonError> {
-    required_value(obj, node_type, field)?.as_string(&format!("{node_type}.{field}"))
+    required_value(obj, node_type, field)?.expect_string(&format!("{node_type}.{field}"))
 }
 
 fn required_bool(
-    obj: &BTreeMap<String, Json>,
+    obj: &Map<String, Json>,
     node_type: &str,
     field: &str,
 ) -> Result<bool, AstJsonError> {
-    required_value(obj, node_type, field)?.as_bool(&format!("{node_type}.{field}"))
+    required_value(obj, node_type, field)?.expect_bool(&format!("{node_type}.{field}"))
 }
 
 fn required_usize(
-    obj: &BTreeMap<String, Json>,
+    obj: &Map<String, Json>,
     node_type: &str,
     field: &str,
 ) -> Result<usize, AstJsonError> {
-    required_value(obj, node_type, field)?.as_usize(&format!("{node_type}.{field}"))
+    required_value(obj, node_type, field)?.expect_usize(&format!("{node_type}.{field}"))
 }
 
 fn optional_string<'a>(
-    obj: &'a BTreeMap<String, Json>,
+    obj: &'a Map<String, Json>,
     field: &str,
 ) -> Result<Option<&'a str>, AstJsonError> {
     obj.get(field)
-        .map(|value| value.as_string(field))
+        .map(|value| value.expect_string(field))
         .transpose()
 }
 
-fn optional_bool(obj: &BTreeMap<String, Json>, field: &str) -> Result<Option<bool>, AstJsonError> {
-    obj.get(field).map(|value| value.as_bool(field)).transpose()
-}
-
-fn optional_usize(
-    obj: &BTreeMap<String, Json>,
-    field: &str,
-) -> Result<Option<usize>, AstJsonError> {
+fn optional_bool(obj: &Map<String, Json>, field: &str) -> Result<Option<bool>, AstJsonError> {
     obj.get(field)
-        .map(|value| value.as_usize(field))
+        .map(|value| value.expect_bool(field))
         .transpose()
 }
 
-impl Json {
-    fn as_object(&self, context: &str) -> Result<&BTreeMap<String, Json>, AstJsonError> {
+fn optional_usize(obj: &Map<String, Json>, field: &str) -> Result<Option<usize>, AstJsonError> {
+    obj.get(field)
+        .map(|value| value.expect_usize(field))
+        .transpose()
+}
+
+/// Reading a wire value as the shape the schema pins, with the field path in
+/// the message rather than a bare type mismatch. Named off `as_*` so serde_json's
+/// own inherent methods cannot shadow these.
+trait Expect {
+    fn expect_object(&self, context: &str) -> Result<&Map<String, Json>, AstJsonError>;
+    fn expect_array(&self, context: &str) -> Result<&[Json], AstJsonError>;
+    fn expect_string(&self, context: &str) -> Result<&str, AstJsonError>;
+    fn expect_bool(&self, context: &str) -> Result<bool, AstJsonError>;
+    fn expect_usize(&self, context: &str) -> Result<usize, AstJsonError>;
+}
+
+impl Expect for Json {
+    fn expect_object(&self, context: &str) -> Result<&Map<String, Json>, AstJsonError> {
         match self {
             Json::Object(obj) => Ok(obj),
             _ => Err(AstJsonError::new(format!("{context} must be an object"))),
         }
     }
 
-    fn as_array(&self, context: &str) -> Result<&[Json], AstJsonError> {
+    fn expect_array(&self, context: &str) -> Result<&[Json], AstJsonError> {
         match self {
             Json::Array(values) => Ok(values),
             _ => Err(AstJsonError::new(format!("{context} must be an array"))),
         }
     }
 
-    fn as_string(&self, context: &str) -> Result<&str, AstJsonError> {
+    fn expect_string(&self, context: &str) -> Result<&str, AstJsonError> {
         match self {
             Json::String(value) => Ok(value),
             _ => Err(AstJsonError::new(format!("{context} must be a string"))),
         }
     }
 
-    fn as_bool(&self, context: &str) -> Result<bool, AstJsonError> {
+    fn expect_bool(&self, context: &str) -> Result<bool, AstJsonError> {
         match self {
             Json::Bool(value) => Ok(*value),
             _ => Err(AstJsonError::new(format!("{context} must be a boolean"))),
         }
     }
 
-    fn as_usize(&self, context: &str) -> Result<usize, AstJsonError> {
+    fn expect_usize(&self, context: &str) -> Result<usize, AstJsonError> {
         match self {
-            Json::Number(value) if *value >= 0 => Ok(*value as usize),
+            Json::Number(value) if value.is_u64() => Ok(value.as_u64().unwrap_or(0) as usize),
             _ => Err(AstJsonError::new(format!(
                 "{context} must be a non-negative integer"
             ))),
@@ -3408,275 +3417,3 @@ impl Json {
 /// Deepest JSON nesting the reader will follow.
 const LONGEST_FIELD_CHAIN: usize = 6;
 const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * LONGEST_FIELD_CHAIN + 16;
-
-struct Parser<'a> {
-    input: &'a str,
-    pos: usize,
-    depth: usize,
-}
-
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        Self {
-            input,
-            pos: 0,
-            depth: 0,
-        }
-    }
-
-    /// Run `f` one level deeper, refusing past the cap.
-    fn nested<T>(
-        &mut self,
-        f: impl FnOnce(&mut Self) -> Result<T, AstJsonError>,
-    ) -> Result<T, AstJsonError> {
-        if self.depth >= MAX_JSON_DEPTH {
-            return Err(self.err("JSON nests deeper than the reader's depth budget"));
-        }
-        self.depth += 1;
-        let out = f(self);
-        self.depth -= 1;
-        out
-    }
-
-    fn parse(mut self) -> Result<Json, AstJsonError> {
-        let value = self.parse_value()?;
-        self.skip_ws();
-        if self.pos != self.input.len() {
-            return Err(self.err("trailing characters after JSON value"));
-        }
-        Ok(value)
-    }
-
-    fn parse_value(&mut self) -> Result<Json, AstJsonError> {
-        self.skip_ws();
-        match self.peek() {
-            Some(b'n') => self.parse_literal(b"null", Json::Null),
-            Some(b't') => self.parse_literal(b"true", Json::Bool(true)),
-            Some(b'f') => self.parse_literal(b"false", Json::Bool(false)),
-            Some(b'"') => self.parse_string().map(Json::String),
-            Some(b'[') => self.nested(Self::parse_array),
-            Some(b'{') => self.nested(Self::parse_object),
-            Some(b'-' | b'0'..=b'9') => self.parse_number(),
-            Some(_) => Err(self.err("unexpected character in JSON value")),
-            None => Err(self.err("unexpected end of input")),
-        }
-    }
-
-    fn parse_literal(&mut self, literal: &[u8], value: Json) -> Result<Json, AstJsonError> {
-        if self.input.as_bytes()[self.pos..].starts_with(literal) {
-            self.pos += literal.len();
-            Ok(value)
-        } else {
-            Err(self.err("invalid JSON literal"))
-        }
-    }
-
-    fn parse_array(&mut self) -> Result<Json, AstJsonError> {
-        self.expect(b'[')?;
-        let mut values = Vec::new();
-        loop {
-            self.skip_ws();
-            if self.consume(b']') {
-                break;
-            }
-            values.push(self.parse_value()?);
-            self.skip_ws();
-            if self.consume(b']') {
-                break;
-            }
-            self.expect(b',')?;
-        }
-        Ok(Json::Array(values))
-    }
-
-    fn parse_object(&mut self) -> Result<Json, AstJsonError> {
-        self.expect(b'{')?;
-        let mut values = BTreeMap::new();
-        loop {
-            self.skip_ws();
-            if self.consume(b'}') {
-                break;
-            }
-            let key = self.parse_string()?;
-            self.skip_ws();
-            self.expect(b':')?;
-            let value = self.parse_value()?;
-            values.insert(key, value);
-            self.skip_ws();
-            if self.consume(b'}') {
-                break;
-            }
-            self.expect(b',')?;
-        }
-        Ok(Json::Object(values))
-    }
-
-    fn parse_string(&mut self) -> Result<String, AstJsonError> {
-        self.expect(b'"')?;
-        let mut out = String::new();
-        while let Some(byte) = self.next() {
-            match byte {
-                b'"' => return Ok(out),
-                b'\\' => self.parse_escape(&mut out)?,
-                0x00..=0x1f => return Err(self.err("control character in JSON string")),
-                _ => {
-                    let start = self.pos - 1;
-                    let ch = self.input[start..]
-                        .chars()
-                        .next()
-                        .ok_or_else(|| self.err("invalid UTF-8 in JSON string"))?;
-                    self.pos = start + ch.len_utf8();
-                    out.push(ch);
-                }
-            }
-        }
-        Err(self.err("unterminated JSON string"))
-    }
-
-    fn parse_escape(&mut self, out: &mut String) -> Result<(), AstJsonError> {
-        match self.next() {
-            Some(b'"') => out.push('"'),
-            Some(b'\\') => out.push('\\'),
-            Some(b'/') => out.push('/'),
-            Some(b'b') => out.push('\u{08}'),
-            Some(b'f') => out.push('\u{0c}'),
-            Some(b'n') => out.push('\n'),
-            Some(b'r') => out.push('\r'),
-            Some(b't') => out.push('\t'),
-            Some(b'u') => {
-                let code = self.parse_hex4()?;
-                if (0xd800..=0xdbff).contains(&code) {
-                    self.expect(b'\\')?;
-                    self.expect(b'u')?;
-                    let low = self.parse_hex4()?;
-                    if !(0xdc00..=0xdfff).contains(&low) {
-                        return Err(self.err("invalid JSON unicode surrogate pair"));
-                    }
-                    let scalar = 0x10000 + (((code - 0xd800) << 10) | (low - 0xdc00));
-                    out.push(
-                        char::from_u32(scalar)
-                            .ok_or_else(|| self.err("invalid JSON unicode escape"))?,
-                    );
-                } else if (0xdc00..=0xdfff).contains(&code) {
-                    return Err(self.err("unpaired JSON unicode surrogate"));
-                } else if code == 0 {
-                    out.push('\u{fffd}');
-                } else {
-                    out.push(
-                        char::from_u32(code)
-                            .ok_or_else(|| self.err("invalid JSON unicode escape"))?,
-                    );
-                }
-            }
-            Some(_) => return Err(self.err("invalid JSON string escape")),
-            None => return Err(self.err("unterminated JSON string escape")),
-        }
-        Ok(())
-    }
-
-    fn parse_hex4(&mut self) -> Result<u32, AstJsonError> {
-        let mut value = 0;
-        for _ in 0..4 {
-            let Some(byte) = self.next() else {
-                return Err(self.err("unterminated JSON unicode escape"));
-            };
-            value = (value << 4)
-                | match byte {
-                    b'0'..=b'9' => (byte - b'0') as u32,
-                    b'a'..=b'f' => (byte - b'a' + 10) as u32,
-                    b'A'..=b'F' => (byte - b'A' + 10) as u32,
-                    _ => return Err(self.err("invalid JSON unicode escape")),
-                };
-        }
-        Ok(value)
-    }
-
-    fn parse_number(&mut self) -> Result<Json, AstJsonError> {
-        let start = self.pos;
-        self.consume(b'-');
-        match self.peek() {
-            Some(b'0') => {
-                self.pos += 1;
-            }
-            Some(b'1'..=b'9') => {
-                self.pos += 1;
-                while matches!(self.peek(), Some(b'0'..=b'9')) {
-                    self.pos += 1;
-                }
-            }
-            _ => return Err(self.err("invalid JSON number")),
-        }
-        let mut is_float = false;
-        if self.consume(b'.') {
-            is_float = true;
-            let digit_start = self.pos;
-            while matches!(self.peek(), Some(b'0'..=b'9')) {
-                self.pos += 1;
-            }
-            if self.pos == digit_start {
-                return Err(self.err("invalid JSON number"));
-            }
-        }
-        if matches!(self.peek(), Some(b'e' | b'E')) {
-            is_float = true;
-            self.pos += 1;
-            if matches!(self.peek(), Some(b'+' | b'-')) {
-                self.pos += 1;
-            }
-            let digit_start = self.pos;
-            while matches!(self.peek(), Some(b'0'..=b'9')) {
-                self.pos += 1;
-            }
-            if self.pos == digit_start {
-                return Err(self.err("invalid JSON number"));
-            }
-        }
-        let raw = &self.input[start..self.pos];
-        if is_float {
-            raw.parse::<f64>()
-                .map(Json::Float)
-                .map_err(|_| self.err("JSON number is out of range"))
-        } else {
-            raw.parse::<i64>()
-                .map(Json::Number)
-                .map_err(|_| self.err("JSON number is out of range"))
-        }
-    }
-
-    fn skip_ws(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\n' | b'\r' | b'\t')) {
-            self.pos += 1;
-        }
-    }
-
-    fn expect(&mut self, byte: u8) -> Result<(), AstJsonError> {
-        if self.consume(byte) {
-            Ok(())
-        } else {
-            Err(self.err(format!("expected '{}'", byte as char)))
-        }
-    }
-
-    fn consume(&mut self, byte: u8) -> bool {
-        if self.peek() == Some(byte) {
-            self.pos += 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn peek(&self) -> Option<u8> {
-        self.input.as_bytes().get(self.pos).copied()
-    }
-
-    fn next(&mut self) -> Option<u8> {
-        let byte = self.peek()?;
-        self.pos += 1;
-        Some(byte)
-    }
-
-    fn err(&self, message: impl Into<String>) -> AstJsonError {
-        AstJsonError::new(format!("{} at byte {}", message.into(), self.pos))
-    }
-}

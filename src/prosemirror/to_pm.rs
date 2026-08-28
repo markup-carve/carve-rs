@@ -1,3 +1,4 @@
+use serde_json::Map;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
@@ -5,7 +6,7 @@ use crate::ast_json::{value_to_json, Json};
 
 use super::{schema_map, ProseMirrorDoc, SchemaMap};
 
-type Object = BTreeMap<String, Json>;
+type Object = Map<String, Json>;
 
 pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
     let mut renderer = Renderer {
@@ -81,7 +82,7 @@ impl Renderer {
                             }
                         })
                         .as_ref(),
-                    [("level", Json::Number(i64::from(n.level)))],
+                    [("level", Json::from(n.level))],
                 ),
                 self.inlines(&n.children, &[]),
             ),
@@ -122,7 +123,7 @@ impl Renderer {
                 };
                 let mut a = attrs(n.attrs.as_ref());
                 if n.ordered {
-                    a.insert("start".into(), Json::Number(n.start.unwrap_or(1) as i64));
+                    a.insert("start".into(), Json::from(n.start.unwrap_or(1)));
                     if n.start.is_some() {
                         a.insert("carveListStartExplicit".into(), Json::Bool(true));
                     }
@@ -293,7 +294,7 @@ impl Renderer {
                 if let Some(short) = &n.short_caption {
                     children.push(node_with(
                         self.name("caption")?,
-                        BTreeMap::from([("short".into(), Json::Bool(true))]),
+                        Map::from_iter([("short".into(), Json::Bool(true))]),
                         self.inlines(short, &[]),
                     ));
                 }
@@ -341,12 +342,12 @@ impl Renderer {
             }
             BlockNode::RawBlock(n) => (
                 self.name("raw_block")?,
-                BTreeMap::from([("format".into(), Json::String(n.format.clone()))]),
+                Map::from_iter([("format".into(), Json::String(n.format.clone()))]),
                 self.text_content(&n.content, &[]),
             ),
             BlockNode::Comment(n) => (
                 self.nth_name("comment", 0)?,
-                BTreeMap::from([
+                Map::from_iter([
                     ("block".into(), Json::Bool(n.block)),
                     // §21a: the delimiters are the node's identity, not
                     // decoration. Drop the flag and a `{% ... %}` comment
@@ -415,8 +416,8 @@ impl Renderer {
                         self.nth_name("table_cell", 0)?
                     };
                     let mut a = attrs(cell.attrs.as_ref());
-                    a.insert("colspan".into(), Json::Number(1));
-                    a.insert("rowspan".into(), Json::Number(1));
+                    a.insert("colspan".into(), Json::from(1));
+                    a.insert("rowspan".into(), Json::from(1));
                     if let Some(align) = cell.align {
                         a.insert(
                             "alignment".into(),
@@ -612,7 +613,7 @@ impl Renderer {
                 };
                 out.push(node_marked(
                     name,
-                    BTreeMap::from([
+                    Map::from_iter([
                         ("format".into(), Json::String(n.format.clone())),
                         ("content".into(), Json::String(n.content.clone())),
                     ]),
@@ -642,7 +643,7 @@ impl Renderer {
                 };
                 out.push(node_marked(
                     name,
-                    BTreeMap::from([("target".into(), Json::String(n.target.clone()))]),
+                    Map::from_iter([("target".into(), Json::String(n.target.clone()))]),
                     Vec::new(),
                     marks,
                 ));
@@ -715,7 +716,7 @@ impl Renderer {
                 };
                 next.push(mark(
                     name,
-                    BTreeMap::from([("title".into(), Json::String(n.expansion.clone()))]),
+                    Map::from_iter([("title".into(), Json::String(n.expansion.clone()))]),
                 ));
                 self.push_text(out, &n.abbr, &next);
             }
@@ -751,7 +752,7 @@ impl Renderer {
                 };
                 out.push(node_marked(
                     name,
-                    BTreeMap::from([
+                    Map::from_iter([
                         ("oldText".into(), Json::String(n.old_text.clone())),
                         ("newText".into(), Json::String(n.new_text.clone())),
                     ]),
@@ -773,7 +774,7 @@ impl Renderer {
                 };
                 out.push(node_marked(
                     name,
-                    BTreeMap::from([
+                    Map::from_iter([
                         ("content".into(), Json::String(n.content.clone())),
                         ("delimited".into(), Json::Bool(n.delimited)),
                     ]),
@@ -910,7 +911,7 @@ impl Renderer {
 }
 
 fn object(name: &str) -> Object {
-    BTreeMap::from([("type".into(), Json::String(name.into()))])
+    Map::from_iter([("type".into(), Json::String(name.into()))])
 }
 fn node_with(name: &str, attrs: Object, content: Vec<Json>) -> Json {
     let mut o = object(name);

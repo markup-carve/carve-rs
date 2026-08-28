@@ -152,12 +152,7 @@ fn a_raw_byte_in_json_text_stays_a_syntax_error() {
 
     let error = from_json(&raw).expect_err("a raw control byte is refused");
 
-    assert!(
-        error
-            .to_string()
-            .contains("control character in JSON string"),
-        "{error}"
-    );
+    assert!(error.to_string().contains("control character"), "{error}");
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! Conservative three-way merge for the normative PART 12 exchange tree.
 
+use serde_json::Map;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::Document;
@@ -90,7 +91,7 @@ fn kind(value: &Json) -> String {
         Json::Array(_) => "array".into(),
         Json::Null => "null".into(),
         Json::Bool(_) => "boolean".into(),
-        Json::Number(_) | Json::Float(_) => "number".into(),
+        Json::Number(_) => "number".into(),
         Json::String(_) => "string".into(),
     }
 }
@@ -289,7 +290,7 @@ fn merge_sequence(
 ) -> Result<Option<Json>, AstJsonError> {
     let om = match_side(base, ours, path);
     let tm = match_side(base, theirs, path);
-    let mut values = BTreeMap::<String, Json>::new();
+    let mut values = Map::<String, Json>::new();
     let mut omitted = BTreeSet::<String>::new();
     for (i, base_value) in base.iter().enumerate() {
         let (oi, ti) = (
@@ -539,7 +540,7 @@ fn merge_value(
             .chain(theirs.keys())
             .cloned()
             .collect::<BTreeSet<_>>();
-        let mut out = BTreeMap::new();
+        let mut out = Map::new();
         for key in keys {
             if strip_metadata(path) && (key == "pos" || key == "srcByteLength") {
                 continue;
@@ -615,7 +616,7 @@ fn merge_ast_inner(
     }
     merged = clean(&merged, true);
     if let Json::Object(root) = &mut merged {
-        root.insert("srcByteLength".into(), Json::Number(0));
+        root.insert("srcByteLength".into(), Json::from(0));
     }
     Ok(MergeResult::Merged(from_json(&value_to_json(&merged))?))
 }

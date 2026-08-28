@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use serde_json::Map;
 use std::fmt;
 
 use crate::ast::Document;
@@ -6,7 +6,7 @@ use crate::ast_json::{from_json, parse_value, value_to_json, Json};
 
 use super::{schema_map, SchemaMap};
 
-type Object = BTreeMap<String, Json>;
+type Object = Map<String, Json>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProseMirrorError {
@@ -104,7 +104,7 @@ impl Reader {
             "document",
             [
                 ("children", Json::Array(children)),
-                ("srcByteLength", Json::Number(0)),
+                ("srcByteLength", Json::from(0)),
             ],
         ))
     }
@@ -867,8 +867,8 @@ fn optional_string(o: &Object, k: &str) -> Json {
 }
 fn number_json(o: &Object, k: &str, d: i64) -> Json {
     match o.get(k) {
-        Some(Json::Number(n)) => Json::Number(*n),
-        _ => Json::Number(d),
+        Some(value @ Json::Number(_)) => value.clone(),
+        _ => Json::from(d),
     }
 }
 fn bool_value(o: &Object, k: &str, d: bool) -> bool {
@@ -1081,7 +1081,7 @@ fn add_flavor_class(n: &mut Json, flavor: usize) {
     };
     if let Json::Object(o) = n {
         let attrs = o
-            .entry("attrs".into())
+            .entry(String::from("attrs"))
             .or_insert_with(|| Json::Object(Object::new()));
         if let Json::Object(a) = attrs {
             a.insert(

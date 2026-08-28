@@ -3,6 +3,7 @@
 mod from_pm;
 mod to_pm;
 
+use serde_json::Map;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
@@ -94,7 +95,7 @@ fn schema_map() -> &'static SchemaMap {
         // `types` is not the whole map. Two further sections name nodes that
         // are part of the wire without being Carve types, and a bridge that
         // reads only `types` refuses both of them as unknown.
-        let section = |key: &str| -> BTreeMap<String, BTreeMap<String, Json>> {
+        let section = |key: &str| -> BTreeMap<String, Map<String, Json>> {
             match root.get(key) {
                 Some(Json::Object(entries)) => entries
                     .iter()
