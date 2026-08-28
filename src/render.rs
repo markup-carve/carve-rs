@@ -1655,6 +1655,13 @@ fn render_list_item(
 ) {
     indent(out, level);
     out.push_str("<li");
+    // PART 10 §11. Structural, so it leads the authored attributes (§1).
+    if let Some(task_state) = item.task_state {
+        out.push_str(&format!(
+            " data-task-state=\"{}\"",
+            escape_attr(&task_state.to_string())
+        ));
+    }
     write_attrs(out, &item.attrs);
     out.push('>');
     let task_name = match item.children.first() {
