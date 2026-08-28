@@ -840,6 +840,9 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                     if let Some(checked) = n.checked {
                         w.field("checked", |out| write_bool(out, checked));
                     }
+                    if let Some(state) = n.task_state {
+                        w.field("taskState", |out| write_string(out, &state.to_string()));
+                    }
                     write_attrs_field(&mut w, &n.attrs);
                     write_pos_field(&mut w, &n.pos);
                     w.finish();
@@ -1725,6 +1728,9 @@ fn write_list_item(out: &mut String, n: &ListItem) {
     w.field("children", |out| write_blocks(out, &n.children));
     if let Some(checked) = n.checked {
         w.field("checked", |out| write_bool(out, checked));
+    }
+    if let Some(state) = n.task_state {
+        w.field("taskState", |out| write_string(out, &state.to_string()));
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -2612,9 +2618,11 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
 fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {
     let obj = value.expect_object("list_item")?;
     expect_type(obj, "list_item")?;
+    let checked = optional_bool(obj, "checked")?;
     Ok(ListItem {
         attrs: optional_attrs(obj)?,
-        checked: optional_bool(obj, "checked")?,
+        checked,
+        task_state: optional_task_state(obj, checked)?,
         children: decode_blocks(required_array(obj, "list_item", "children")?)?,
         pos: optional_pos(obj, "list_item")?,
     })
@@ -3214,6 +3222,32 @@ fn optional_marker_char(
             Ok(ch)
         })
         .transpose()
+}
+
+/// The schema's enum and its `if`/`then` together (PART 11 §6g): `taskState` is
+/// `x` exactly when the box is ticked. The generated wire fields name the
+/// property but cannot weigh a PAIR, so a payload claiming a dropped task with
+/// a ticked box would decode here and then write a marker its own `checked`
+/// denies.
+fn optional_task_state(
+    obj: &Map<String, Json>,
+    checked: Option<bool>,
+) -> Result<Option<char>, AstJsonError> {
+    let Some(state) = optional_marker_char(obj, "taskState")? else {
+        return Ok(None);
+    };
+    if !matches!(state, ' ' | 'x' | '-' | '_' | '>' | '?') {
+        return Err(AstJsonError::new(format!(
+            "list_item.taskState must be one of ` `, `x`, `-`, `_`, `>`, or `?`, got `{state}`"
+        )));
+    }
+    if checked != Some(state == 'x') {
+        return Err(AstJsonError::new(format!(
+            "list_item.taskState `{state}` needs checked {}",
+            state == 'x'
+        )));
+    }
+    Ok(Some(state))
 }
 
 fn optional_thematic_break_marker(obj: &Map<String, Json>) -> Result<Option<char>, AstJsonError> {

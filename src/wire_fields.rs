@@ -46,7 +46,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("link", &["attrs", "children", "href", "pos", "rawRef", "ref", "title", "type"]),
     ("link_reference_definition", &["attrs", "href", "label", "pos", "title", "type"]),
     ("list", &["attrs", "bareMarker", "bulletChar", "delim", "items", "olType", "ordered", "pos", "start", "tight", "type"]),
-    ("list_item", &["attrs", "checked", "children", "pos", "type"]),
+    ("list_item", &["attrs", "checked", "children", "pos", "taskState", "type"]),
     ("literal_inline", &["attrs", "content", "pos", "type"]),
     ("math", &["attrs", "content", "display", "pos", "type"]),
     ("mention", &["attrs", "pos", "type", "user"]),
