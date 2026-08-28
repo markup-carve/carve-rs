@@ -65,9 +65,28 @@ impl ExternalLinks {
     }
 
     fn mark(&self, attrs: &mut Attrs) {
-        set_attr(attrs, "target", &self.target);
+        if self.target.is_empty() {
+            remove_attr(attrs, "target");
+        } else {
+            set_attr(attrs, "target", &self.target);
+        }
         set_attr(attrs, "rel", &self.rel);
     }
+}
+
+fn remove_attr(attrs: &mut Attrs, name: &str) {
+    let keys: Vec<String> = attrs
+        .key_values
+        .keys()
+        .filter(|key| key.eq_ignore_ascii_case(name))
+        .cloned()
+        .collect();
+    for key in keys {
+        attrs.key_values.remove(&key);
+    }
+    attrs
+        .order
+        .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key.eq_ignore_ascii_case(name)));
 }
 
 impl Default for ExternalLinks {

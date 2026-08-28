@@ -11,6 +11,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Djot migration preserves Carve table continuation rows instead of rewriting
   their `+` marker as a bullet.
+- An empty `ExternalLinks` target omits the `target` attribute while retaining
+  the configured `rel` policy.
 
 ### Added
 
