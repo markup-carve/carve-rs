@@ -51,7 +51,6 @@ mod source_layout;
 mod stamp;
 pub mod stream;
 mod translit_map;
-mod unicode_nfc;
 mod wire_fields;
 
 /// Private-use sentinel for a parser/renderer-GENERATED non-breaking space

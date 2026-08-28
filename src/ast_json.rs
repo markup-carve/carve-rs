@@ -1,7 +1,8 @@
 //! JSON encoding/decoding for the public Carve AST exchange shape.
 //!
-//! This module intentionally has no serde dependency. It contains the small
-//! JSON writer and parser needed for the schema-backed AST interchange format.
+//! The JSON reader and writer below are hand-rolled. They should not be - that
+//! is a leftover of the same mistaken no-dependency policy - and they are being
+//! replaced by serde_json.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
