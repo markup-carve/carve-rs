@@ -7934,8 +7934,7 @@ fn roman_to_int(s: &str) -> Option<usize> {
     (total > 0).then_some(total as usize)
 }
 
-/// A task marker the reader recognized: the box, the authored state, and the
-/// three spans the caller needs to open the item.
+/// A task marker the reader recognized.
 struct TaskMarker<'a> {
     checked: bool,
     /// The authored state, when it is not the default for the box.
@@ -7980,9 +7979,7 @@ fn detect_task(line: &str) -> Option<TaskMarker<'_>> {
         return None;
     }
     let checked = matches!(ab[1], b'x' | b'X');
-    // The authored state, when it is not the default for the box (PART 11
-    // §6g). A checked box records nothing: `[X]` folds to `[x]`, so recording
-    // the case would make two spellings of one state two documents.
+    // PART 11 §6g. A checked box records nothing: `[X]` and `[x]` are one state.
     let task_state = (!checked && ab[1] != b' ').then(|| ab[1] as char);
     Some(TaskMarker {
         checked,

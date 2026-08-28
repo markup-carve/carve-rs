@@ -3224,11 +3224,8 @@ fn optional_marker_char(
         .transpose()
 }
 
-/// The schema's enum and its `if`/`then` together (PART 11 §6g): `taskState` is
-/// `x` exactly when the box is ticked. The generated wire fields name the
-/// property but cannot weigh a PAIR, so a payload claiming a dropped task with
-/// a ticked box would decode here and then write a marker its own `checked`
-/// denies.
+/// The schema's enum and its `if`/`then` together. The generated wire fields
+/// name the property but cannot weigh a PAIR.
 fn optional_task_state(
     obj: &Map<String, Json>,
     checked: Option<bool>,

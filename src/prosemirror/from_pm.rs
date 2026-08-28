@@ -345,9 +345,8 @@ impl Reader {
             }
             let mut n = self.container(io, "list_item", "children", false)?;
             let checked = optional_bool(attrs_obj(io), "checked");
-            // A payload is an editor's, not a parser's: it can carry any pair.
-            // One that contradicts `checked` is dropped rather than trusted,
-            // because `checked` is the attribute tiptap itself maintains.
+            // An editor payload can carry any pair; `checked` is the one tiptap
+            // maintains, so a state contradicting it is dropped.
             let state = match optional_string(attrs_obj(io), "carveTaskState") {
                 Json::String(s)
                     if checked == Json::Bool(false)

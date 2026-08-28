@@ -262,9 +262,8 @@ pub struct ListItem {
     pub attrs: Option<Attrs>,
     /// `None` for plain bullets; `Some(checked)` for task-list items.
     pub checked: Option<bool>,
-    /// Task marker character as authored, when it is not the default for
-    /// `checked` (`x` when true, a space when false). Same author-choice role
-    /// as `List::bullet_char`; `X` folds to `x`, which is a case, not a state.
+    /// Marker character as authored, when it is not the default for `checked`.
+    /// Same author-choice role as `List::bullet_char`; `X` folds to `x`.
     pub task_state: Option<char>,
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
