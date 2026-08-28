@@ -37,12 +37,14 @@ markup5ever_rcdom = "0.39"
 pulldown-cmark = { version = "0.13", default-features = false }
 unicode-normalization = "0.1"
 regex = "1"
+serde = "1"
+# `unbounded_depth` because the corpus holds a document nested to the parser's
+# cap (200 containers), and this crate's own AST JSON is then past serde_json's
+# default 128-level limit. `parse_value` bounds the depth itself, before serde
+# recurses, so lifting serde's own limit does not lift the budget.
+serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [dev-dependencies]
-# `unbounded_depth` for the corpus formatter sweep: the corpus holds a
-# document nested to the parser's cap (200 containers), and reading this
-# crate's own AST JSON back is past serde_json's default 128-level limit.
-serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [lib]
 name = "carve"

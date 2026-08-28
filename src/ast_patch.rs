@@ -72,7 +72,7 @@ pub fn apply_reversible_ast_patch(
 pub fn ast_patch_to_json(operations: &[AstPatchOperation]) -> Result<String, AstPatchError> {
     let mut encoded = Vec::with_capacity(operations.len());
     for operation in operations {
-        let mut object = std::collections::BTreeMap::new();
+        let mut object = serde_json::Map::new();
         match operation {
             AstPatchOperation::Add { path, value } => {
                 object.insert("op".into(), Json::String("add".into()));
@@ -395,6 +395,6 @@ pub fn apply_ast_patch(
             "patch result is not a PART 12 document root".into(),
         ));
     }
-    values.insert("srcByteLength".into(), Json::Number(0));
+    values.insert("srcByteLength".into(), Json::from(0));
     Ok(from_json(&value_to_json(&root))?)
 }
