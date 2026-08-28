@@ -177,6 +177,20 @@ fn external_links_nofollow_golden() {
 }
 
 #[test]
+fn external_links_empty_target_is_omitted() {
+    let ext = ExternalLinks::with_options(ExternalLinksOptions {
+        target: String::new(),
+        rel: "external".into(),
+        nofollow: true,
+    });
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("[docs](https://example.com){target=_self}", &opts),
+        "<p><a href=\"https://example.com\" rel=\"external nofollow\">docs</a></p>"
+    );
+}
+
+#[test]
 fn external_links_angle_autolink_golden() {
     let ext = ExternalLinks::new();
     let opts = Options::new().with_extension(&ext);
