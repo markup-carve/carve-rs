@@ -491,7 +491,7 @@ fn parse_with_options_mode_and_index(
         &mut note_link_defs,
         options,
     );
-    let mut link_def_probe_budget = probe_budget_for(body.source.len());
+    let mut link_def_probe_budget = ProbeState::new(body.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
     // A definition written inside a footnote body is document-level metadata,
@@ -1207,7 +1207,7 @@ fn extract_footnote_defs(
     // See `probe_budget_for`: spent by `line_folds_into_an_open_paragraph`, and
     // running out only ever collects a definition this guard would have left as
     // text.
-    let mut probe_budget = probe_budget_for(source.len());
+    let mut probe_budget = ProbeState::new(source.len());
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
@@ -1873,6 +1873,33 @@ fn probe_budget_for(source_bytes: usize) -> usize {
     source_bytes.saturating_mul(4).saturating_add(4096)
 }
 
+/// A pass's budget plus the last frame the probe computed.
+///
+/// The probe asked the block parser the same question twice per line: once
+/// about the run, once about the run plus the candidate. `body` is append-only
+/// within a pass, so when the candidate is written the run for the NEXT call is
+/// exactly the one just parsed - the previous `after` IS this `before`. Keeping
+/// it halves what the budget buys per line, which raises how far into a run the
+/// question can still be answered before the cap declines it.
+///
+/// Keyed on the run's own text rather than on a length or a position, because a
+/// candidate that was collected instead of written puts a placeholder in `body`
+/// at the same index and the same length. Comparing what was parsed is the only
+/// key that cannot confuse the two.
+struct ProbeState {
+    budget: usize,
+    memo: Option<(String, OpenFrame)>,
+}
+
+impl ProbeState {
+    fn new(source_bytes: usize) -> Self {
+        Self {
+            budget: probe_budget_for(source_bytes),
+            memo: None,
+        }
+    }
+}
+
 /// One level of a probe's LAST-CHILD CHAIN: what kind of node the level ends
 /// with, and - carried alongside in [`OpenFrame`] - how many nodes it holds.
 ///
@@ -1881,7 +1908,7 @@ fn probe_budget_for(source_bytes: usize) -> usize {
 /// from a lazy continuation lives exactly there: `- a` / `  lazy` and the same
 /// with `- [^f]: t` under it hold the identical blocks at every OTHER level and
 /// differ only in how many items the list has.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 enum ProbeLevel {
     Blocks(std::mem::Discriminant<BlockNode>),
     ListItems,
@@ -1890,6 +1917,7 @@ enum ProbeLevel {
 
 /// The chain of still-open levels a parse ends in, from the document level down
 /// to the innermost last node.
+#[derive(Clone)]
 struct OpenFrame {
     levels: Vec<(ProbeLevel, usize)>,
     /// Whether the innermost node the chain reached is a paragraph. Read from
@@ -2008,11 +2036,12 @@ fn marker_line_may_be_lazy(line: &str) -> bool {
 /// unbounded by construction: a custom `match_block` extension cannot be listed
 /// at all, because the pre-pass does not know its syntax.
 ///
-/// So the run is handed to the block parser TWICE, without `line` and with it,
-/// and the open frames compared. A line that folds adds NO node: every level
-/// holds what it held and the innermost is still a paragraph. Anything that
-/// opens a block changes a count along that chain. Extensions are answered for
-/// free, which is what no list could cover.
+/// So the block parser is asked about the run without `line` and about the run
+/// with it, and the open frames compared. A line that folds adds NO node: every
+/// level holds what it held and the innermost is still a paragraph. Anything
+/// that opens a block changes a count along that chain. Extensions are answered
+/// for free, which is what no list could cover. The first of those two answers
+/// is usually the previous call's second one, which is what `ProbeState` keeps.
 ///
 /// FAILING SAFE IS THE DEFAULT. Every early return is `false`, and `false`
 /// declines to suppress, so an unrecognised shape can only collect the way the
@@ -2033,7 +2062,7 @@ fn line_folds_into_an_open_paragraph(
     body: &[impl AsRef<str>],
     line: &str,
     options: &Options<'_>,
-    budget: &mut usize,
+    state: &mut ProbeState,
 ) -> bool {
     let run_start = body
         .iter()
@@ -2043,40 +2072,56 @@ fn line_folds_into_an_open_paragraph(
     if run.is_empty() {
         return false;
     }
-    // What the two probes will PARSE, which is the run twice over plus the
-    // candidate line - so the price is the work rather than the question.
-    let cost = run
-        .iter()
-        .map(|written| written.as_ref().len().saturating_add(1))
-        .fold(0usize, |total, len| total.saturating_add(len))
-        .saturating_mul(2)
-        .saturating_add(line.len());
-    if *budget < cost {
-        return false;
-    }
-    *budget -= cost;
 
-    let mut before = String::with_capacity(run.iter().map(|line| line.as_ref().len() + 1).sum());
+    let mut before_source =
+        String::with_capacity(run.iter().map(|line| line.as_ref().len() + 1).sum());
     for (index, written) in run.iter().enumerate() {
         if index != 0 {
-            before.push('\n');
+            before_source.push('\n');
         }
-        before.push_str(written.as_ref());
+        before_source.push_str(written.as_ref());
     }
-    let mut after = String::with_capacity(before.len() + line.len() + 1);
-    after.push_str(&before);
-    after.push('\n');
-    after.push_str(line);
 
-    let before = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&before).0,
-        options,
-    ));
+    let reused = state
+        .memo
+        .as_ref()
+        .is_some_and(|(source, _)| *source == before_source);
+
+    // Charge for what will actually be PARSED: the candidate always, the run
+    // only when the memo cannot answer for it.
+    let run_bytes = before_source.len().saturating_add(1);
+    let cost = run_bytes
+        .saturating_add(line.len())
+        .saturating_add(if reused { 0 } else { run_bytes });
+    if state.budget < cost {
+        return false;
+    }
+    state.budget -= cost;
+
+    let before = if reused {
+        state.memo.as_ref().map(|(_, frame)| frame.clone())
+    } else {
+        None
+    }
+    .unwrap_or_else(|| {
+        open_frame(&probe_blocks_at_document_level(
+            &extract_link_defs(&before_source).0,
+            options,
+        ))
+    });
+
+    let mut after_source = String::with_capacity(before_source.len() + line.len() + 1);
+    after_source.push_str(&before_source);
+    after_source.push('\n');
+    after_source.push_str(line);
     let after = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&after).0,
+        &extract_link_defs(&after_source).0,
         options,
     ));
-    after.ends_in_paragraph && before.levels == after.levels
+
+    let folds = after.ends_in_paragraph && before.levels == after.levels;
+    state.memo = Some((after_source, after));
+    folds
 }
 
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
@@ -2094,14 +2139,14 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
 fn extract_link_defs_guarded(
     source: &str,
     options: &Options<'_>,
-    budget: &mut usize,
+    budget: &mut ProbeState,
 ) -> (String, BTreeMap<String, LinkDef>) {
     extract_link_defs_with_guard(source, Some((options, budget)))
 }
 
 fn extract_link_defs_with_guard(
     source: &str,
-    mut guard: Option<(&Options<'_>, &mut usize)>,
+    mut guard: Option<(&Options<'_>, &mut ProbeState)>,
 ) -> (String, BTreeMap<String, LinkDef>) {
     let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
