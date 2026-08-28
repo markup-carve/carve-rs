@@ -106,7 +106,11 @@ pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
     reader.disable_recursion_limit();
     let mut value = Json::deserialize(&mut reader).map_err(AstJsonError::from_serde)?;
     reader.end().map_err(AstJsonError::from_serde)?;
-    replace_nul(&mut value);
+    // A raw NUL is a syntax error, so the escape is the only way one reaches a
+    // decoded string. Documents without it skip the walk over every node.
+    if input.contains("\\u0000") {
+        replace_nul(&mut value);
+    }
     Ok(value)
 }
 
