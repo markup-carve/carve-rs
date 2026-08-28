@@ -2509,11 +2509,23 @@ fn detect_prepass_def_body(line: &str) -> Option<(usize, usize)> {
 }
 
 /// The description marker on `line`: its body and its content column width.
+/// The description marker `:` plus its separator run, and the body behind it.
+///
+/// MARKER REQUIRES CONTENT ignores TRAILING WHITESPACE, and NO TRAILING
+/// WHITESPACE spells whitespace `' ' | '\t'` in this position - so a body that
+/// is only tabs is a trailing run and opens nothing. `: <TAB>` therefore folds
+/// into the term, the way `:` + tab already does without the space
+/// (markup-carve/carve#1836).
+///
+/// The separator run is SPACES ONLY, so the body may still START with a tab:
+/// `: <TAB>text` opens with the tab as content, and a vertical tab or a
+/// no-break space is content too. Only space and tab are trailing whitespace.
 fn strip_definition_marker(line: &str) -> Option<(&str, usize)> {
     let rest = line.strip_prefix(':')?;
     let spaces = rest.bytes().take_while(|b| *b == b' ').count();
     let body = &rest[spaces..];
-    (spaces > 0 && !body.is_empty()).then_some((body, 1 + spaces))
+    let has_content = body.bytes().any(|b| b != b' ' && b != b'\t');
+    (spaces > 0 && has_content).then_some((body, 1 + spaces))
 }
 
 fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
