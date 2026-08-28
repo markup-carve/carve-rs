@@ -394,31 +394,21 @@ enum ParseMode {
 ///  - replace a NUL (U+0000) with the U+FFFD replacement char so a control byte
 ///    never reaches output (WHATWG-style).
 ///
-/// This lived inline in `parse_with_options_mode` and was the parser's alone,
-/// so `to_carve` scanned the RAW source for the frontmatter block while the
-/// parser scanned this copy. On a CRLF or BOM'd document the two disagreed
-/// about whether the file HAD frontmatter, and the writer lost the block's
-/// format token or dropped the block entirely (carve-rs#732). It is a function
-/// so there is one answer to that question rather than one per caller - the
-/// same reason carve-rs#725 had to unify the frontmatter OPENER test between
-/// these two callers.
+/// A function rather than inline, so the parser and `to_carve` cannot disagree
+/// about whether a CRLF or BOM'd file HAS frontmatter (carve-rs#732, #725).
 /// Join collected lines back into a source string, TERMINATED.
 ///
-/// The parser rebuilds its source several times - a footnote body, the document
-/// body after definitions are lifted out, a container's collected lines - and
-/// each consumer splits it again with `str::lines()`. `join` alone makes that
-/// round trip lossy in exactly one place, a trailing EMPTY line:
+/// The parser rebuilds its source several times and each consumer splits it
+/// again with `str::lines()`. `join` alone makes that round trip lossy in
+/// exactly one place, a trailing EMPTY line:
 ///
 /// ```text
 /// ["a", ""]  ->  join  ->  "a\n"    ->  lines()  ->  ["a"]      the blank is gone
 /// ["a", ""]  ->  here  ->  "a\n\n"   ->  lines()  ->  ["a", ""]  preserved
-/// ["a"]      ->  here  ->  "a\n"    ->  lines()  ->  ["a"]      unchanged
 /// ```
 ///
-/// Every other line survives a plain `join` because the separator before it is
-/// still in the string; only the last one has nothing after it to imply it.
-/// `lines()` drops one trailing newline, so terminating changes the
-/// empty-last-line case and nothing else (markup-carve/carve-rs#908).
+/// Only the last line has nothing after it to imply its separator, so
+/// terminating changes that case and nothing else (carve-rs#908).
 fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     if lines.is_empty() {
         return String::new();
@@ -2006,46 +1996,32 @@ fn marker_line_may_be_lazy(line: &str) -> bool {
 
 /// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
 ///
-/// This is the question a definition pre-pass has to answer before it may cut a
-/// definition out of a line, and the pre-pass has no business answering it
-/// itself. Both passes ask it - the footnote one since carve-rs#1024, the
-/// link-reference one since carve#1425. §10 says a list does not interrupt an open paragraph, so `r` then
-/// `. [^f]: t` is one paragraph holding both lines - and a pre-pass that
-/// collects the definition out of the second line deletes text the block parser
-/// keeps and defines a note nobody wrote (markup-carve/carve-rs#1024).
+/// A definition pre-pass must answer this before it may cut a definition out of
+/// a line, and has no business answering it itself. §10 says a list does not
+/// interrupt an open paragraph, so `r` then `. [^f]: t` is ONE paragraph holding
+/// both lines - and a pre-pass that collects the second line deletes text the
+/// block parser keeps and defines a note nobody wrote (carve-rs#1024, carve#1425).
 ///
-/// THE ANSWER IS ASKED OF THE PARSER, NOT ENUMERATED. The predicate this
-/// replaced listed the openers a line can be and called every line it did not
-/// recognise ordinary paragraph text - so every opener nobody thought of
-/// answered "a paragraph is open", and that answer SUPPRESSES a collection the
-/// engine used to make. Four such openers were found and closed; one review
-/// pass then found three more of the same class, and a custom `match_block`
-/// extension is a fourth that cannot be listed at all, because the pre-pass does
-/// not know the extension's syntax. The list is unbounded by construction, so
-/// there is no version of it that is finished.
+/// THE ANSWER IS ASKED OF THE PARSER, NOT ENUMERATED. Listing the openers a line
+/// can be makes every unlisted opener answer "a paragraph is open", which
+/// SUPPRESSES a collection the engine would otherwise make. The list is
+/// unbounded by construction: a custom `match_block` extension cannot be listed
+/// at all, because the pre-pass does not know its syntax.
 ///
-/// So the run is handed to the block parser TWICE, once without `line` and once
-/// with it, and the two open frames are compared. A line that folds into an open
-/// paragraph adds NO node anywhere: every level holds what it held, and the
-/// innermost one is still a paragraph. A line that opens anything - a sibling
-/// item, a nested list, a quote, a container, a block an extension defines -
-/// changes a count somewhere along that chain, and the frames differ. The parser
-/// answers for its own extensions for free, which is the case no list could have
-/// covered.
+/// So the run is handed to the block parser TWICE, without `line` and with it,
+/// and the open frames compared. A line that folds adds NO node: every level
+/// holds what it held and the innermost is still a paragraph. Anything that
+/// opens a block changes a count along that chain. Extensions are answered for
+/// free, which is what no list could cover.
 ///
-/// FAILING SAFE IS THE DEFAULT AND NOT A CLAIM. Every early return here is
-/// `false`, and `false` declines to suppress: an empty run, an exhausted budget,
-/// a chain the walk cannot enter, a probe that ends in anything but a paragraph.
-/// The worst an unrecognised shape can do is collect the definition the way the
-/// engine did before the guard existed, which is a defect that reports itself.
-/// It can never make the pre-pass delete an author's line unasked.
+/// FAILING SAFE IS THE DEFAULT. Every early return is `false`, and `false`
+/// declines to suppress, so an unrecognised shape can only collect the way the
+/// engine did before this guard - never delete an author's line unasked.
 ///
-/// THE RUN IS BOUNDED BY THE LAST BLANK LINE, which is sound and not an
-/// approximation: a blank line closes every paragraph in every container, so a
-/// paragraph still open at the end of `body` began after the last blank one.
-/// Losing the container frame ABOVE that blank can only cost a suppression -
-/// an indented run read at the document level parses its marker lines as list
-/// items rather than as lazy text - which is the safe direction again.
+/// THE RUN IS BOUNDED BY THE LAST BLANK LINE, soundly: a blank closes every
+/// paragraph in every container, so one still open at the end of `body` began
+/// after the last blank. Losing the container frame above it can only cost a
+/// suppression, which is the safe direction again.
 ///
 /// The run is taken from `body`, the document THIS PASS has extracted so far,
 /// not from the raw source: a definition already collected is gone from the
@@ -6560,17 +6536,12 @@ thread_local! {
 /// ends?
 ///
 /// `comment_fence_close_index` answers "is there a closer of this length
-/// anywhere later", which is the whole question for a column-0 opener: nothing
-/// bounds its body but the end of input. A fence inside a container is bounded
-/// by the container, and a `%%%` written back at column 0 does not close it -
-/// the block parser has ended the item long before, and reads the indented fence
-/// as an unterminated one-line comment instead. Entering the fence state on that
-/// far closer swallowed everything in between, so an item holding `%%%` and
-/// `hidden`, then a blank, then `[r]: /url`, then a blank and a column-0 `%%%`,
-/// lost a definition that carve-rs and the oracle both register. That is a worse
-/// defect than the one the container-aware opener fixes, which is why the bound
-/// is part of the same change. (carve-js loses that definition today - a
-/// separate divergence, not something to reproduce here.)
+/// anywhere later", which is the whole question for a column-0 opener, whose
+/// body nothing bounds but the end of input. A fence inside a container is
+/// bounded by the container: a `%%%` written back at column 0 does not close it,
+/// because the block parser ended the item long before and reads the indented
+/// fence as an unterminated one-line comment. Entering the fence state on that
+/// far closer swallows every definition in between.
 ///
 /// The container's extent is approximated the way the rest of this line-based
 /// pre-pass approximates: the first non-blank line that dedents past the fence's
@@ -6578,12 +6549,9 @@ thread_local! {
 /// that is not at column 0, so a column-0 opener costs exactly what it did
 /// before.
 ///
-/// INDEXED rather than scanned, for the reason `comment_fence_close_index`
-/// exists: one container can hold many openers, and walking it once per opener
-/// is the quadratic shape this file's perf suite guards. `m` fence widths above
-/// `m * m` filler lines, with every matching closer only past the dedent, made
-/// each opener walk the whole container - O(m^3) work for an O(m^2) document,
-/// measured at 3x on 1.8 MB and widening with size.
+/// INDEXED rather than scanned: one container can hold many openers, and
+/// walking it once per opener is O(m^3) work for an O(m^2) document - the
+/// quadratic shape this file's perf suite guards.
 ///
 /// Two facts answer the question without the walk. `closer` is the first
 /// comment-fence closer of this exact width after the opener, from an index
@@ -6598,15 +6566,9 @@ thread_local! {
 /// every query point in `p..dedent`. Openers at different columns keep separate
 /// entries, so alternating columns do not evict each other.
 ///
-/// A list MARKER inside the body is not a stop, and the block parser now agrees.
-/// It used to end a contained comment at one, so `- item` / `  %%%` / `  - x` /
-/// `  y` / `  %%%` rendered `x` and `y` where the oracle and carve-js render an
-/// empty item. This scan stayed with the clause through that, which made the two
-/// halves disagree: the definition stopped registering while the body still
-/// leaked. carve-rs#1053 fixed the block parser's side - its content-column
-/// marker gate now treats an open comment span as opaque, the way it already
-/// treated a code fence - so both halves answer §28 the same way and the shape
-/// is correct end to end.
+/// A list MARKER inside the body is not a stop, and the block parser agrees:
+/// its content-column marker gate treats an open comment span as opaque, the
+/// way it treats a code fence, so both halves answer §28 alike (carve-rs#1053).
 #[derive(Default)]
 struct ContainerCommentClosers {
     /// Line index of every comment-fence closer, keyed by its exact `%` run AND
@@ -8099,11 +8061,8 @@ fn has_indexed_comment_closer_after(
 /// block, so a boundary line written between an opener and its closer is fence
 /// content and ends nothing.
 ///
-/// ONE SPELLING FOR EVERY CONTAINER. `is_boundary` is the only per-container
-/// part; the four fence shapes are not. This scan is
-/// `parse_continuation_block`'s, moved here unchanged so that collector keeps
-/// its exact behavior and the other four gain it. The second closure argument
-/// is the index of the line being tested.
+/// ONE SPELLING FOR EVERY CONTAINER: `is_boundary` is the only per-container
+/// part, and its second argument is the index of the line being tested.
 ///
 /// `comment_closers` is the caller's lazily built exact-width `%%%` closer
 /// index. It is a parameter rather than a local because REBUILDING it per call
@@ -8113,41 +8072,30 @@ fn has_indexed_comment_closer_after(
 ///
 /// `slice` is the marker's EXTENT, already bounded by the caller's blank-line /
 /// sibling / further-`+` scan. Within it the marker takes one block, which is
-/// exactly what the single-block parser consumes - a wrapped paragraph, a list,
-/// a quote and a fenced block are each one block and each many lines.
+/// what the single-block parser consumes.
 ///
-/// The block is parsed here only to be MEASURED; the caller splices the lines
-/// into the container's body, where they parse again in their real context.
-/// Measuring by re-parsing rather than by a second line scan keeps one
-/// definition of where a block ends - a scan would be a copy of the block
-/// grammar that could drift from it silently.
+/// Parsed here only to be MEASURED; the caller splices the lines into the
+/// container's body, where they parse again in context. Re-parsing rather than
+/// scanning keeps ONE definition of where a block ends - a scan would be a copy
+/// of the block grammar, free to drift from it silently.
 ///
 /// A LEADING ATTRIBUTE RUN IS PART OF THE BLOCK IT FLOATS ONTO. Only
-/// `parse_blocks` owns a pending-attribute slot, and this is a `parse_block`
-/// call, so an attribute line left to it reads as a paragraph and the
-/// measurement stops in front of the block the attributes were written for.
-/// `> q` / `+` / `{.x}` / `# h` then attached the attribute line ALONE, dropped
-/// the attributes and left the heading outside the quote - where the list form
-/// attaches an attributed heading. The run is consumed here so the block behind
-/// it is what gets measured, exactly as `parse_continuation_block` does it.
+/// `parse_blocks` owns a pending-attribute slot, so an attribute line left to
+/// this `parse_block` call would read as a paragraph and stop the measurement
+/// in front of the block the attributes were written for. The run is consumed
+/// here so the block behind it is what gets measured.
 ///
-/// A SELF-DELIMITING BLOCK IS NOT PARSED AT ALL. A fence and a colon container
-/// end at a CLOSER, which is a line-level fact that `attached_block_end` already
-/// reads with these same helpers - so their extent is taken from the lines and
-/// the body is never walked. This is what keeps a deeply nested attachment
-/// affordable: parsing the body would re-walk the whole subtree at every level
-/// above it. Measured on `> q` / `+` / `::: d` nested to the cap: 9.52 s when the
-/// probe parsed the container, 0.2 s when it reads the closer, against 0.22 s
-/// for the same document before this clause was implemented at all.
+/// A SELF-DELIMITING BLOCK IS NOT PARSED AT ALL: a fence and a colon container
+/// end at a closer, a line-level fact, so their extent is read from the lines.
+/// Do not parse the body instead - that re-walks the whole subtree at every
+/// level above it, 0.2 s to 9.52 s on a container nested to the cap.
 ///
-/// MEASURING DOES NOT NEST either. The probe parses the attached block and the
-/// caller then parses those same lines again, so an inner `+` under a probe
-/// would be measured twice per level - doubling per level, at 0.02 s / 0.06 s /
-/// 0.26 s / 1.05 s for depths 8 / 10 / 12 / 14 against a flat 0.00 s before. An
-/// inner marker under a probe therefore splices its whole extent instead. That
-/// cannot change the answer here: what this returns is a LINE COUNT, and a
-/// block's line extent is decided by closers, quote prefixes and indentation -
-/// never by how an inner marker divided its own content.
+/// MEASURING DOES NOT NEST either: the caller re-parses these same lines, so an
+/// inner `+` under a probe would be measured twice per level, doubling with
+/// depth. An inner marker therefore splices its whole extent instead. That
+/// cannot change the answer, because a block's LINE extent is decided by
+/// closers, quote prefixes and indentation, never by how an inner marker
+/// divided its content.
 ///
 /// At least one line, always. A parser that consumed nothing would leave the
 /// caller's cursor where it was, and the container loop would see the same line
@@ -10299,20 +10247,14 @@ fn nested_ends_with_open_paragraph(
 /// the reading that made `:::note` stop being a container.
 ///
 /// The DEPTH is what the caller needs, not just "any". An unterminated fence can
-/// only be the last block at its level, so the open ones are exactly the last
-/// N containers on the last-child chain - and a CLOSED container nested inside
-/// an open one must still read as closed. Answering `true` for the whole source
-/// let `:::: outer` / `::: inner` / `a` / `:::` fold a flush-left line into the
-/// inner div's paragraph, which its own `:::` line had already closed.
+/// only be the last block at its level, so the open ones are exactly the last N
+/// containers on the last-child chain, and a CLOSED container nested inside an
+/// open one must still read as closed.
 ///
-/// A VERBATIM BODY OPENS NOTHING. A colon-shaped line inside a code fence is
-/// code text and one inside a LINE BLOCK is verse text, so this scan carries
-/// both bodies' state. Without it, `- x` / `  ``` ` / `  :::` / `  ::::` /
-/// `  ``` ` charged two containers the parser never opened, and the properly
-/// closed divs after the fence were then looked through as though they were
-/// open. The line-block spelling is the same defect one construct over, and it
-/// is the one that made the whole scan wrong rather than merely optimistic: a
-/// line block's body is where a colon-shaped line is MOST likely to be content.
+/// A VERBATIM BODY OPENS NOTHING: a colon-shaped line inside a code fence is
+/// code text and inside a LINE BLOCK is verse text, so this scan carries both
+/// bodies' state. A line block's body is where such a line is MOST likely to be
+/// content, which is what makes the omission wrong rather than optimistic.
 fn colon_fences_left_open(nested: &str) -> usize {
     let mut open: Vec<usize> = Vec::new();
     let mut code: Option<FenceOpen> = None;
@@ -10458,39 +10400,21 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
     // family; matches carve-js / carve-php). A blank AFTER the fence closes
     // still loosens against a following paragraph.
     //
-    // ALL THREE FENCE KINDS. This knew only the code fence, which is the same
-    // one-kind-of-three read corpus category 279 pins for the `+` collectors:
-    // a blank inside an item's own `%%%` or `:::` body loosened the item that
-    // held it, where the identical code fence kept it tight
-    // (markup-carve/carve#985). §28 makes a comment body verbatim and a colon
-    // container is one block; neither is two blocks with a separator between
-    // them.
+    // ALL THREE FENCE KINDS, not the code fence alone: §28 makes a comment body
+    // verbatim and a colon container is one block, so neither is two blocks with
+    // a separator between them (markup-carve/carve#985).
     //
     // ONE STATEFUL LEFT-TO-RIGHT PASS, not one scan per line: each closed span
     // is jumped over whole, and spans never overlap, so the walk stays linear.
     //
     // WHEN THE CONTAINER IS THE ITEM'S WHOLE BODY, ITS CLOSER IS A SPELLING.
-    // An opener with no closer runs to the end of the item, and one closed on
-    // the item's final line ends in the same place, so the two spell ONE
-    // container and §17's looseness may not depend on which the author wrote.
-    // It did: the blank inside the body was skipped over when the closer was
-    // present and seen when it was absent, so
-    //
-    //     - ::: d
-    //       b
-    //
-    //       tail
-    //
-    // read LOOSE while the same document with `  :::` appended read TIGHT.
-    //
-    // That is not an academic pair - the canonical writer SUPPLIES the missing
-    // closer, so those two documents are `x` and `fmt(x)`, and PART 11 §1
-    // requires them to parse alike. Ruled in markup-carve/carve#1602: an
-    // explicit closer is a spelling change, tightness must not move across it,
-    // and the reading to converge on is the one the source already gives,
-    // LOOSE, which is also the one carve-php gives both. Whether an item whose
-    // only child is a container holding a blank line SHOULD be loose is left
-    // open there on purpose; what is settled is that it cannot be both.
+    // An unclosed opener runs to the end of the item and a closer on the item's
+    // final line ends in the same place, so the two spell ONE container and §17's
+    // looseness may not move across them. The canonical writer SUPPLIES the
+    // missing closer, so the pair is `x` and `fmt(x)`, which PART 11 §1 requires
+    // to parse alike. markup-carve/carve#1602 ruled the reading is the one the
+    // source already gives, LOOSE. Whether such an item SHOULD be loose is left
+    // open there; that it cannot be both is settled.
     //
     // BOUNDED TO AN ITEM WHOSE WHOLE BODY IS THE CONTAINER: the source must be
     // the item's body from its first block (`source_is_the_item_body`, which
@@ -10500,22 +10424,11 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
     // content rather than a separator between the item's blocks - that is the
     // case the skip was written for (markup-carve/carve#985).
     //
-    // The bound is measured, not assumed. Corpus
-    // `279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-10`
-    //
-    //     - x
-    //       :::
-    //       a
-    //
-    //       b
-    //       :::
-    //
-    // reaches this scan with the SAME lines as the document above - `:::`, `a`,
-    // blank, `b`, `:::` - because the marker-line `x` is the item's lead
-    // paragraph and is not part of the collected chunk. Nothing in the text
-    // tells the two apart; only the caller knows whether a block precedes it.
-    // Widening the lift to that caller flips 279-10 loose and moves its pinned
-    // HTML, which is how the bound was found.
+    // The bound is measured, not assumed: corpus 279-10 reaches this scan with
+    // the SAME lines as the case above, because its lead paragraph is not part of
+    // the collected chunk. Nothing in the text tells the two apart - only the
+    // caller knows whether a block precedes it - so widening the lift to that
+    // caller flips 279-10 loose and moves its pinned HTML.
     let last_content = lines.iter().rposition(|line| !is_blank_line(line));
     let is_the_whole_item_body = |start: usize, end: usize| {
         source_is_the_item_body && start == 0 && last_content.is_some_and(|last| end > last)
@@ -13748,71 +13661,33 @@ fn verse_comment_line(stripped: &str) -> Option<String> {
 /// one came from.
 ///
 /// The block layer emptied those lines before the stanza reached the inline
-/// parser, which is the whole point of the clause: no inline run can reach a
-/// comment, so an unclosed verbatim run opened on an EARLIER line cannot claim
-/// it (carve#1333). The node is still published, because the author wrote it and
-/// PART 12 has a `comment` node for it.
+/// parser, so no inline run can reach a comment and an unclosed verbatim run
+/// opened on an earlier line cannot claim it (carve#1333). The node is still
+/// published: PART 12 has a `comment` node and the author wrote it.
 ///
-/// Line k begins just after the k-th boundary. Where a stanza has no k-th
-/// boundary the comment is dropped: the only way that happens is an UNCLOSED
-/// verbatim run swallowing the rest of the stanza, and inside that run there is
-/// no place for a node - the run's own value carries the emptied line as a
-/// newline, like every other break it swallows.
+/// Line k begins just after the k-th boundary, counted AT EVERY DEPTH and
+/// however it is spelled - an inline container holds the boundaries it spans as
+/// its own children, and a closed verbatim run carries one in its value rather
+/// than as a node. A stanza with no k-th boundary drops the comment, which
+/// happens only inside an unclosed run, where there is no place for a node.
 ///
-/// COUNT A BOUNDARY HOWEVER IT IS SPELLED, AND AT EVERY DEPTH. This walk used to
-/// count top-level `HardBreak` nodes, which is one of the three spellings a
-/// stanza boundary has, and the two it missed each lost a comment:
-///
-/// - An inline container that opens on one body line and closes on a later one
-///   holds the boundaries between them as its OWN children, so a top-level walk
-///   never sees them and a comment whose line ended under a `strong` found
-///   nowhere to sit (markup-carve/carve-rs#1079). The boundary is the same
-///   boundary at either depth, so the node goes back at it at either depth.
-/// - A CLOSED verbatim run spanning a boundary carries that newline in its
-///   value rather than as a node, so counting nodes alone reported a line number
-///   short and every comment after it was placed a line late. `carve fmt` then
-///   wrote it onto the following line, merging the author's comment text into
-///   the next line's text.
-///
-/// The soft-to-hard conversion is a SEPARATE walk over the same slots
-/// (`harden_verse_breaks`), and it always was - it just used to stop at the
-/// stanza's top level. markup-carve/carve#1351 ruled that it does not, so both
-/// walks now reach the same depths. This one is unchanged by that: it asks where
-/// the boundary IS and never what it is called, which is why either answer kept
-/// it.
-///
-/// ONE PASS, building new vectors rather than inserting into the old ones. The
-/// comments arrive in line order, at most one per line, so the walk can consume
-/// them alongside the boundaries - and a stanza of nothing but comment lines is
-/// a document an author can write, where repeated `Vec::insert` would be
-/// quadratic in the block's length.
+/// One pass building new vectors: a stanza of nothing but comment lines is
+/// writable, and repeated `Vec::insert` would be quadratic in its length.
 /// PART 9 §23: every SOFT line break inside a stanza becomes a HARD break, at
 /// EVERY DEPTH (markup-carve/carve#1351, corpus `348`).
 ///
-/// The conversion used to run on the stanza's top-level nodes only, so a closed
-/// inline construct spanning a boundary kept the bare newline: `*a` / `b*`
-/// rendered `a\nb` inside the `strong` while the same two lines without the
-/// emphasis got a `<br>`. This engine broke the clause's own invariant against
-/// itself - `*a\` / `b*` DID emit the `<br>` inside the `strong`, so one line
-/// boundary in one container gave two different answers depending on how it was
-/// spelled.
+/// DRIVEN BY NODE KIND, not by depth. §23's neighbouring clause exempts a
+/// backslash break and a verbatim run because neither leaves a boundary node in
+/// the tree - the backslash consumes its own newline, the run carries it as
+/// content. An emphasis run consumes nothing, so its boundary is a node beside
+/// the text and the exemption never reaches it.
 ///
-/// DRIVEN BY NODE KIND, which is what §23's neighbour A BACKSLASH BREAK IS NOT
-/// ADDITIVE fixes as the test. Both worked exemptions there turn on there being
-/// no node: a backslash consumes its own newline, and a verbatim run carries the
-/// newline as its content, so "there is no boundary left in the tree". An
-/// emphasis run consumes nothing - the boundary is a node beside its text - so
-/// the exemption never reached it, and the difference is in KIND rather than in
-/// depth.
+/// Both exemptions therefore need no code here: a verbatim run has no children
+/// to walk (corpus `348-2`), and a `hard_break` is already hard (corpus
+/// `348-4`).
 ///
-/// Both exemptions therefore need no code here and get none. A verbatim run has
-/// no children to walk and no break node inside it, so `a `b` / `c` d` keeps its
-/// bare newline (corpus `348-2`); and a `hard_break` is already hard, so a
-/// backslash inside emphasis still produces exactly one `<br>` (corpus `348-4`).
-///
-/// The slots are the ones `splice_verse_comments_into` walks, for the same
-/// reason: a boundary is a child of whatever construct spans it, whichever slot
-/// that construct keeps its inlines in.
+/// The slots are `splice_verse_comments_into`'s, for the same reason: a
+/// boundary is a child of whatever construct spans it.
 fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<InlineNode> {
     inlines
         .into_iter()
@@ -15768,13 +15643,10 @@ pub(crate) struct InlineAnchor<'a> {
     /// Byte offsets in the text at which a new anchor SEGMENT begins without a
     /// newline being there to mark it.
     ///
-    /// A newline in the text is the ordinary way one line ends and the next
-    /// begins, and it needs no list. A TABLE CELL rebuilt across a `+`
-    /// continuation has no newline in it - the fragments are joined by a
-    /// manufactured space - and yet each fragment sits on a different source
-    /// line. Without this the whole cell reads as one line and every position
-    /// past the first fragment lands on the row line at a column that holds
-    /// something else.
+    /// A newline needs no list. A TABLE CELL rebuilt across a `+` continuation
+    /// has none - its fragments are joined by a manufactured space - yet each
+    /// fragment sits on a different source line, so without this the whole cell
+    /// reads as one and every later position lands on the wrong column.
     ///
     /// Each break opens a segment, so `lines` is indexed by segment rather than
     /// by newline count.
@@ -19291,45 +19163,24 @@ pub(crate) fn derive_display_nodes(children: &[InlineNode], inside_link: bool) -
 
 /// Reduce a cloned run to what the AUTHOR wrote.
 ///
-/// THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE INJECTION (PART 9R R4). A heading's
-/// cloned nodes are its AUTHORED inline content, so whatever a later stage added
-/// to the heading is not part of the label. That half of the clause is aimed at
-/// THIS engine: it builds the crossref index at RENDER time, after every
-/// `before_render` hook has already run, so the injections are in the heading by
-/// the time the label is taken and the pristine reading has to be recovered here
-/// rather than obtained by ordering.
+/// THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE INJECTION (PART 9R R4). This
+/// engine builds the crossref index at RENDER time, after every `before_render`
+/// hook has run, so the injections are already in the heading and the pristine
+/// reading has to be recovered here rather than obtained by ordering.
 ///
-/// Five kinds come out, and each is what the flatten this replaces already
-/// produced, so no construct moves byte-wise by being dropped:
+/// What comes out, and what leaving it in would cost:
 ///
-/// - A `section-number` SPAN, injected by `headingNumbers` (§9). R4 names this
-///   one explicitly.
-/// - A PERMALINK ANCHOR, injected by `headingPermalinks`. R4 names this one too.
-///   Left in, a resolved `</#id>` rendered an `<a>` INSIDE its own `<a>`.
-/// - A FOOTNOTE REFERENCE, which is a pointer into the endnotes rather than
-///   display text: a second copy publishes a duplicate `fnref` id and points the
-///   backlink at whichever rendered last.
-/// - An `:index[term]` MARKER, invisible by §8.1 - it emits no visible text, so
-///   it is not display text anywhere it is derived, and its `idx-…` anchor id is
-///   published exactly once. What comes out is the COUNTED CARRIER the extension
-///   rewrites a body marker to, and only that. The AUTHORED `index` extension
-///   stays: with the extension off it degrades to the visible generic fallback
-///   `<span class="ext-index">term</span>` (§8.3, "the marker cannot hide without
-///   its handler"), so dropping it would make a derived label disagree with the
-///   heading it was derived from and lose authored text (raised by codex review).
-///   With the extension ON, an authored marker that reaches here unrewritten
-///   renders inert and invisible, which is the heading's own answer too.
-/// - A CITATION GROUP, the other resolution result a heading can carry. It
-///   renders as an anchor into the references list, and with a bibliography pool
-///   active it also carries a per-use `cite-…` id - so a second copy nests an
-///   anchor inside the derived label's own anchor AND publishes a duplicate DOM
-///   id, the same two failures the footnote reference has. The author's raw
-///   `[@key]` run goes back in its place, which is what the flatten produced.
-/// - An ABBREVIATION, an R3 resolution result. The author wrote the short form;
-///   cloning the resolved node republishes the whole `<abbr title="…">` once per
-///   derived site, an amplification the body renderer bounds with a budget this
-///   path cannot reach. Taking the author's `abbr` back out is both the bounded
-///   answer and the correct one.
+/// - A `section-number` SPAN and a PERMALINK ANCHOR, both named by R4. The
+///   anchor renders an `<a>` inside the resolved `</#id>`'s own `<a>`.
+/// - A FOOTNOTE REFERENCE and a CITATION GROUP: pointers rather than display
+///   text, so a second copy publishes a duplicate id and steals the backlink.
+///   The author's raw `[@key]` run goes back in the citation's place.
+/// - An `:index[term]` MARKER - the COUNTED CARRIER only, which is invisible by
+///   §8.1. The AUTHORED `index` extension stays: with the extension off it
+///   degrades to visible text (§8.3), so dropping it would lose authored text.
+/// - An ABBREVIATION (R3). Cloning the resolved node republishes the whole
+///   `<abbr title="…">` per derived site, past the budget the body renderer
+///   bounds it with; the author wrote the short form.
 fn strip_non_authored(nodes: &mut Vec<InlineNode>) {
     nodes.retain(|node| match node {
         InlineNode::Footnote(_) => false,
@@ -20517,12 +20368,10 @@ fn collect_caption_title(
 /// with `inside_link = false`.
 /// PART 12 §1a: no node's children hold two adjacent `text` nodes.
 ///
-/// The parser splits a run wherever it had to make a decision -- a reference
-/// that never resolved and stayed as its reference node, an autolink unwrapped
-/// because links do not nest, a table cell rebuilt from several lines. Those
-/// splits are bookkeeping, not the document: publishing them lets two engines
-/// put out 1 node and 4 for the same characters, both valid against the schema,
-/// which is what §1's "read another's output" exists to rule out.
+/// The parser splits a run wherever it had to make a decision. Those splits are
+/// bookkeeping, not the document: publishing them lets two engines emit 1 node
+/// and 4 for the same characters, both schema-valid, which is what §1's "read
+/// another's output" rules out.
 ///
 /// This runs on the TREE rather than on the way out, because §6 requires
 /// `parse(x)` serialized and deserialized to equal `parse(x)`. Merging only at
