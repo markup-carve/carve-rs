@@ -1104,6 +1104,22 @@ impl<'a> Importer<'a> {
             .collect()
     }
 
+    /// Whether `data-task-state` IS the item's state: one PART 10 §11 writes,
+    /// on an EMPTY box. Anything else is the author's attribute.
+    fn reads_task_state(li: &Handle) -> bool {
+        let Some(state) = Self::attr(li, "data-task-state") else {
+            return false;
+        };
+        if !matches!(state.as_str(), "-" | "_" | ">" | "?") {
+            return false;
+        }
+        li.children.borrow().iter().any(|child| {
+            Self::tag(child).as_deref() == Some("input")
+                && Self::attr(child, "type").is_some_and(|t| t.eq_ignore_ascii_case("checkbox"))
+                && Self::attr(child, "checked").is_none()
+        })
+    }
+
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
         let mut out = Attrs::default();
@@ -1240,7 +1256,10 @@ impl<'a> Importer<'a> {
                         // makes the element MathML in the first place: consumed
                         // by having been recognized, not discarded.
                         | ("math", "display" | "alttext" | "xmlns")
-                ) {
+                ) || (tag == "li"
+                    && name == "data-task-state"
+                    && Self::reads_task_state(handle))
+                {
                     // CONSUMED by the branch that builds this node, and written
                     // back from there. Keeping it here as well would spell the
                     // same string twice, and diagnosing it would name a loss
@@ -2108,9 +2127,11 @@ impl<'a> Importer<'a> {
                 items.push(ListItem {
                     attrs: self.attrs(li, &p),
                     checked: checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()),
-                    // HTML spells a ticked box and nothing else, so an imported
-                    // item takes the default state for the box it carries.
-                    task_state: None,
+                    // PART 10 §11: the only carrier the HTML has.
+                    task_state: Self::reads_task_state(li)
+                        .then(|| Self::attr(li, "data-task-state"))
+                        .flatten()
+                        .and_then(|state| state.chars().next()),
                     children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
                     pos: None,
                 });
