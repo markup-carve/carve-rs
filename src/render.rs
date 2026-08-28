@@ -2890,7 +2890,12 @@ fn render_image(out: &mut String, img: &Image) {
     if let Some(title) = &img.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
-    out.push_str(&render_attrs_without_keys(&img.attrs, &["src"]));
+    let blocked = if img.title.is_some() {
+        &["src", "title"][..]
+    } else {
+        &["src"][..]
+    };
+    out.push_str(&render_attrs_without_keys(&img.attrs, blocked));
     out.push('>');
 }
 
@@ -3593,11 +3598,9 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
         out.push_str(&escape_text(l.raw_ref.as_deref().unwrap_or_default()));
         return;
     }
-    // `href`, then the AUTHORED title, then the attribute block - the order the
-    // author wrote them in, and the one carve-js, carve-php and the executable
-    // spec emit. Attributes came first here, so `[E](/u "T"){.x}` published
-    // `class` before `title` (carve-rs#543); an explicit `{title=Z}` beside a
-    // `"T"` title still publishes both, in that order, in every engine.
+    // `href`, then the destination title, then the attribute block. A
+    // destination title occupies the HTML `title` slot, so an authored
+    // case-insensitive title key cannot produce a duplicate attribute.
     out.push_str(&format!(
         "<a href=\"{}\"",
         escape_attr(&sanitize_url(&l.href))
@@ -3605,7 +3608,12 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     if let Some(title) = &l.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
-    out.push_str(&render_attrs_without_keys(&l.attrs, &["href"]));
+    let blocked = if l.title.is_some() {
+        &["href", "title"][..]
+    } else {
+        &["href"][..]
+    };
+    out.push_str(&render_attrs_without_keys(&l.attrs, blocked));
     out.push('>');
     state.link_depth += 1;
     // Render the label through the anchor-unwrapping view.
