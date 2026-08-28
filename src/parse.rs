@@ -11,6 +11,7 @@ use crate::extension::{
 use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use unicode_normalization::UnicodeNormalization;
 
 /// The line a collected definition leaves behind, and the marker that says it
 /// is ours rather than something the author wrote.
@@ -19533,9 +19534,8 @@ impl CrossrefIndex {
 /// label and the heading text are "both trimmed, their internal whitespace runs
 /// collapsed to one space, and then compared case-INSENSITIVELY".
 fn normalize_heading_label(s: &str) -> String {
-    case_fold(&crate::unicode_nfc::nfc(
-        &s.split_whitespace().collect::<Vec<_>>().join(" "),
-    ))
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    case_fold(&collapsed.nfc().collect::<String>())
 }
 
 /// Per-code-point lowercase fold, used for case-insensitive `</#id>` lookup.
@@ -21038,10 +21038,7 @@ fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item 
 
 /// `sanitizeIdSource`.
 fn sanitize_id_source(text: &str) -> String {
-    crate::unicode_nfc::nfc(text)
-        .chars()
-        .filter(|c| !is_id_strippable(*c))
-        .collect()
+    text.nfc().filter(|c| !is_id_strippable(*c)).collect()
 }
 
 pub(crate) fn slugify_parse(text: &str, opts: HeadingIdOptions) -> String {

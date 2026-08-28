@@ -760,7 +760,9 @@ binding should use and for what the guard cannot see.
 ## Design
 
 - **Linear-time** parsing: block lexer reads line by line, inline scanner does a single linear pass with no backtracking.
-- **Zero dependencies** in the runtime crate. Tests use only `std`.
+- **Few dependencies**: `html5ever` and `markup5ever_rcdom` for the HTML importer,
+  `pulldown-cmark` for the Markdown importer, `regex`, and `unicode-normalization`
+  for heading-id NFC.
 - **Conformance via corpus**: every supported construct has a `.crv` / `.html` pair in the upstream spec. The Rust output must match the JS reference byte-for-byte (after trimming).
 
 See `src/parse.rs` for the parser and `src/render.rs` for the renderer. The AST in `src/ast.rs` mirrors the shape of [`carve-js`'s `ast.ts`](https://github.com/markup-carve/carve-js/blob/main/src/ast.ts).

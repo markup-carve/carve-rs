@@ -8,10 +8,9 @@
 //! combining-mark, Cyrillic, Latin-Extended-Additional, punctuation,
 //! super/subscript, currency and letterlike ranges.
 //!
-//! WHY A TABLE AND NOT A CRATE. This engine is zero-dependency, and the
-//! transform is opt-in - a heading-id option is not worth a transliteration
-//! dependency. The table is bounded and auditable, and being the SAME table the
-//! other two engines carry is what makes the ids byte-identical across them.
+//! WHY A TABLE AND NOT A CRATE. Being the SAME table the other two engines
+//! carry is what makes the ids byte-identical across all three; a general
+//! transliteration crate would romanize a different set and break that.
 //!
 //! WHAT IT DELIBERATELY DOES NOT COVER: Greek, CJK, Arabic and anything else
 //! outside those ranges. carve-php's ICU path romanizes them and is OPT-IN
