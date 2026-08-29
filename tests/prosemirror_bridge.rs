@@ -776,8 +776,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // continuation marker or a marker that opens no description leaves the line
     // folding into the paragraph above it, and a MULTI-LINE PARAGRAPH is what a
     // soft break is.
-    const STRICT: usize = 1220;
-    const LOSSY: usize = 318;
+    // Two 439 documents join, one per bucket, and nothing leaves either -
+    // measured the same way, dumping both buckets at 95e0a2de and at c9ff9245
+    // and diffing them. `-8` writes `: <tab>text`, which opens a description
+    // and round-trips strictly; `-7` writes `: <tab>` with nothing after it,
+    // which opens none, so the line folds into the paragraph above it. That is
+    // the same soft-break shape as the five 439 documents already here.
+    const STRICT: usize = 1221;
+    const LOSSY: usize = 319;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

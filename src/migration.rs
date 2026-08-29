@@ -74,8 +74,7 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
         // the same false claim one layer up (markup-carve/carve-js#1468).
         HtmlImportDiagnosticCode::ElementUnwrapped
         | HtmlImportDiagnosticCode::AttributePreserved
-        | HtmlImportDiagnosticCode::RawPreserved
-        | HtmlImportDiagnosticCode::StructureSplit => MigrationFidelity::Carried,
+        | HtmlImportDiagnosticCode::RawPreserved => MigrationFidelity::Carried,
     }
 }
 

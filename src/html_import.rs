@@ -115,16 +115,6 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// the entry below lend the term above its own, so the list breaks instead
     /// (markup-carve/carve#1638).
     ///
-    /// NOT PRODUCED BY THIS ENGINE YET, and named here because the published
-    /// vocabulary is the schema's and this enum is only its spelling -
-    /// `every_report_vocabulary_is_exactly_the_one_the_schema_admits` compares
-    /// the two as sets, in both directions. The behavior is
-    /// markup-carve/carve-rs#1312, and it belongs in the WRITER rather than
-    /// here: like `structure-unspellable`, an empty description survives into
-    /// the AST intact and only a writer loses it. The gap is pinned by
-    /// `BEHIND_THE_RULING` in `tests/html_import.rs`, which fails in both
-    /// directions, so it cannot go quiet.
-    StructureSplit => "structure-split",
     /// The source did not declare how to read a value and this importer picked
     /// an encoding anyway, so the node it produced is only correct if that
     /// guess holds.
