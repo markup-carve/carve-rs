@@ -1776,51 +1776,38 @@ fn with_active_link_defs<T>(
     (parsed, active.defs, active.needs_late_resolution)
 }
 
+/// A reference is RECORDED here and resolved after the parse, never during it.
+///
+/// Resolving while the inline is built is what forces every definition to be
+/// known before parsing starts, which is what the line-based definition
+/// pre-passes exist to arrange - and they cannot answer "is a paragraph open"
+/// without asking the block parser, which is quadratic. Deferring is the first
+/// step of removing them: `resolve_reference_links` already resolves the whole
+/// tree with the same `apply_link_def`, and a collapsed reference already had
+/// to wait for the heading index, so the late walk was never optional.
 fn resolve_active_link(link: &mut Link) {
-    let Some(label) = link.ref_label.take() else {
+    if link.ref_label.is_none() {
         return;
-    };
+    }
     ACTIVE_LINK_DEFS.with(|active| {
-        let mut active = active.borrow_mut();
-        let Some(context) = active.last_mut() else {
-            return;
-        };
-        let Some(def) = is_single_line_label(&label)
-            .then(|| context.defs.get(&label_key(&label)))
-            .flatten()
-        else {
-            // Only a collapsed reference can still resolve through the heading
-            // index, which does not exist until all headings have been parsed.
-            // An unresolved explicit reference is already in its final shape.
-            context.needs_late_resolution |= is_collapsed_reference(link);
-            return;
-        };
-        apply_link_def(link, def);
+        if let Some(context) = active.borrow_mut().last_mut() {
+            context.needs_late_resolution = true;
+        }
     });
-    link.ref_label = Some(label);
 }
 
+/// Recorded, not resolved - see [`resolve_active_link`]. An image has no
+/// heading fallback, so before deferral it needed no late walk; it needs one now
+/// for the same reason a link does.
 fn resolve_active_image(image: &mut Image) {
-    let Some(label) = image.ref_label.take() else {
+    if image.ref_label.is_none() {
         return;
-    };
+    }
     ACTIVE_LINK_DEFS.with(|active| {
-        let mut active = active.borrow_mut();
-        let Some(context) = active.last_mut() else {
-            return;
-        };
-        let Some(def) = is_single_line_label(&label)
-            .then(|| context.defs.get(&label_key(&label)))
-            .flatten()
-        else {
-            // Images have no heading-reference fallback. Leaving `src` empty is
-            // their final unresolved representation, so no late tree walk is
-            // required.
-            return;
-        };
-        apply_image_def(image, def);
+        if let Some(context) = active.borrow_mut().last_mut() {
+            context.needs_late_resolution = true;
+        }
     });
-    image.ref_label = Some(label);
 }
 
 fn apply_link_def(link: &mut Link, def: &LinkDef) {
