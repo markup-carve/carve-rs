@@ -469,6 +469,7 @@ fn parse_with_options_mode_and_index(
             let body_line_count = body.lines().count();
             (
                 MappedSource {
+                    lazy_map: Vec::new(),
                     source: body.to_owned(),
                     line_map: (body_start_line..body_start_line + body_line_count)
                         .map(Some)
@@ -491,26 +492,24 @@ fn parse_with_options_mode_and_index(
         &mut note_link_defs,
         options,
     );
-    let mut link_def_probe_budget = probe_budget_for(body.source.len());
-    let (body_source, mut link_defs) =
-        extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
+    let body_source = body.source.clone();
+    let body = remap_source(body_source, &body);
+    let (((mut footnote_defs, mut children), mut link_defs), _, needs_late_link_resolution) =
+        with_active_link_defs(BTreeMap::new(), || {
+            with_link_def_collector(|| {
+                let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
+                    .into_iter()
+                    .map(|(label, source)| (label, parse_mapped_source(&source, options)))
+                    .collect();
+                let children = parse_mapped_source_at_document_level(&body, options);
+                (footnote_defs, children)
+            })
+        });
     // A definition written inside a footnote body is document-level metadata,
-    // and a definition at the top level WINS over one of the same label there -
-    // measured on carve-js and carve-php, which both resolve `[t][r]` to the
-    // outer target when both exist.
+    // and one at the top level wins over it - the order the pre-pass gave.
     for (label, def) in note_link_defs {
         link_defs.entry(label).or_insert(def);
     }
-    let body = remap_source(body_source, &body);
-    let ((mut footnote_defs, mut children), link_defs, needs_late_link_resolution) =
-        with_active_link_defs(link_defs, || {
-            let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
-                .into_iter()
-                .map(|(label, source)| (label, parse_mapped_source(&source, options)))
-                .collect();
-            let children = parse_mapped_source_at_document_level(&body, options);
-            (footnote_defs, children)
-        });
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
@@ -596,7 +595,21 @@ fn parse_with_options_mode_and_index(
         // Definition nodes are part of the published AST and canonical writer,
         // but render no HTML. The source-to-HTML facade already owns the
         // resolved definition index and does not materialize invisible nodes.
+        //
+        // The BLOCK PARSER emits each definition where it was written, which is
+        // what lets every "does this body end in an open paragraph" rule see it.
+        // The published shape hoists them to document level, so they are lifted
+        // back out here and re-placed from the collected table, in source order.
+        strip_link_reference_definitions(&mut doc.children);
+        for blocks in doc.footnote_defs.values_mut() {
+            strip_link_reference_definitions(blocks);
+        }
         append_link_reference_definitions(&mut doc, &link_defs, source, options);
+    } else {
+        strip_link_reference_definitions(&mut doc.children);
+        for blocks in doc.footnote_defs.values_mut() {
+            strip_link_reference_definitions(blocks);
+        }
     }
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         if source.contains("*[") {
@@ -873,6 +886,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
     let source_line_count = source.lines().count();
     if source_line_count <= original.line_map.len() {
         return MappedSource {
+            lazy_map: Vec::new(),
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
@@ -880,6 +894,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
         };
     }
     MappedSource {
+        lazy_map: Vec::new(),
         line_map: (1..=source_line_count).map(Some).collect(),
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.
@@ -1603,6 +1618,7 @@ fn extract_footnote_defs(
             if first_for_label {
                 definition_keys.insert(normalized_label, label.to_string());
                 let mut definition_source = MappedSource {
+                    lazy_map: Vec::new(),
                     col_map: def_col_map,
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
@@ -1656,6 +1672,7 @@ fn extract_footnote_defs(
     }
     (
         MappedSource {
+            lazy_map: Vec::new(),
             // The document body's lines are top-level: the footnote-definition
             // extraction removes whole lines, never a prefix, so nothing has
             // been stripped from the front of the ones that remain.
@@ -2988,9 +3005,160 @@ fn parse_link_def_target(target: &str) -> LinkDef {
     }
 }
 
-/// `parse_link_def_target`, with a trailing attribute block split off first
-/// (carve#604). The block comes off BEFORE the destination/title scan, so
-/// widening the parse cannot change what counts as a definition.
+thread_local! {
+    /// Definitions the BLOCK PARSER has met, one frame per parse in progress.
+    ///
+    /// A line-based pre-pass had to answer "is a paragraph open here" before it
+    /// could cut a definition out of a line, and could only answer it by asking
+    /// the block parser - a reparse of the run per candidate, bounded by a
+    /// budget that ran out after about thirteen lines. The parser never has to
+    /// ask: a definition line reaches `parse_block` only when no paragraph is
+    /// open, because an open paragraph consumes its own lazy continuations
+    /// first. So the question disappears rather than getting a cheaper answer.
+    static COLLECTED_LINK_DEFS: RefCell<Vec<BTreeMap<String, LinkDef>>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Run `parse` with a fresh collection frame and hand back what it gathered.
+fn with_link_def_collector<T>(parse: impl FnOnce() -> T) -> (T, BTreeMap<String, LinkDef>) {
+    COLLECTED_LINK_DEFS.with(|defs| defs.borrow_mut().push(BTreeMap::new()));
+    struct Frame;
+    impl Drop for Frame {
+        fn drop(&mut self) {
+            COLLECTED_LINK_DEFS.with(|defs| {
+                let mut defs = defs.borrow_mut();
+                if defs.len() > 1 {
+                    defs.pop();
+                }
+            });
+        }
+    }
+    // Parsing may unwind through user extension code; the frame stack has to
+    // stay balanced if it does.
+    let frame = Frame;
+    let out = parse();
+    std::mem::forget(frame);
+    let collected = COLLECTED_LINK_DEFS.with(|defs| defs.borrow_mut().pop().unwrap_or_default());
+    (out, collected)
+}
+
+/// Is this line an authored `[label]: /url` definition?
+///
+/// A definition is INVISIBLE metadata, so it interrupts an open paragraph the
+/// way a comment and an abbreviation definition do (PART 9 §10). The collector
+/// below and the interruption set must agree exactly: a line that interrupts
+/// without being collected would vanish, and one collected without
+/// interrupting would never be reached.
+///
+/// Read on the line AS WRITTEN, which is what keeps a lazy list marker out of
+/// it - `- [r]: /u` under an open paragraph is not a definition line here, it
+/// is a marker line, and §10 says a list does not interrupt.
+fn line_is_link_definition(line: &str) -> bool {
+    // COLUMN-STRICT, the way carve-js spells it `indentColumns(line, 1) === 0`.
+    // `line` is already dedented to its container's content column, so residual
+    // indent means the line sits BELOW every column and is text: a `[^f]: x`
+    // down there folds, and this predicate would otherwise claim it, because a
+    // link definition reads `[^f]` as the label `^f`.
+    !line.starts_with([' ', '\t'])
+        && parse_link_def_line(line).is_some_and(|(label, target)| {
+            // A FOOTNOTE definition is not one of these, and the shapes
+            // overlap: `parse_link_def_line` reads `[^f]: x` as the label `^f`.
+            // The pre-passes never had to say so, because footnotes were lifted
+            // out in an earlier pass and were gone by the time link definitions
+            // were scanned; collecting during the parse means the two shapes
+            // meet. Asked of the footnote reader rather than of the caret,
+            // because a BARE caret is a reference label and not a nameless
+            // footnote (corpus 185). A CITATION definition is its own construct.
+            parse_footnote_def_line(line).is_none()
+                && !label.starts_with('@')
+                && !target.trim().is_empty()
+        })
+}
+
+/// Consume a link reference definition standing where a block may begin.
+///
+/// LAST WINS on a repeated label, which is what the pre-pass did with a plain
+/// `insert`. The line leaves no node: PART 12 section 10's node is hoisted from
+/// the collected table afterwards, in source order, by
+/// `append_link_reference_definitions`.
+fn take_link_definition(cur: &mut LineCursor<'_>, options: &Options<'_>) -> Option<Box<BlockNode>> {
+    let line = cur.peek()?;
+    // A LAZY LINE IS PARAGRAPH TEXT, not a definition position: it belongs to
+    // the paragraph the container folded it into, however flush it looks once
+    // that container's body is re-parsed (corpus 369).
+    if cur.is_lazy(cur.pos) {
+        return None;
+    }
+    // The SAME gate the interruption set uses. §10 I5 turns `invisible_arms` off
+    // inside a container's below-column band, where a definition-shaped line is
+    // lazy paragraph text; collecting there would delete an author's line.
+    if !cur.invisible_arms || !line_is_link_definition(line) {
+        return None;
+    }
+    let (label_part, target_part) = parse_link_def_line(line)?;
+    let mut def = parse_link_def_target_with_attrs(target_part.trim());
+    def.raw_label = Some(label_part.to_string());
+    def.line = cur.source_line(cur.pos).map(|line| line.saturating_sub(1));
+    let node = LinkReferenceDefinition {
+        label: label_part.to_string(),
+        href: def.href.clone(),
+        title: def.title.clone(),
+        attrs: def.attrs.clone(),
+        pos: None,
+    };
+    let key = label_key(label_part);
+    COLLECTED_LINK_DEFS.with(|defs| {
+        if let Some(frame) = defs.borrow_mut().last_mut() {
+            frame.insert(key, def);
+        }
+    });
+    let start = cur.pos;
+    cur.consume();
+    Some(Box::new(BlockNode::LinkReferenceDefinition(
+        LinkReferenceDefinition {
+            pos: span_of(cur, start, cur.pos, options),
+            ..node
+        },
+    )))
+}
+
+/// Lift the definition nodes the block parser emitted back out of the tree.
+///
+/// They exist during the parse so a container's body ends in a FINISHED block
+/// rather than an open paragraph - the fact every lazy-continuation rule asks
+/// for, and the one the pre-pass simulated by leaving a blank line. The
+/// published shape puts them at document level, so the tree is cleared here and
+/// `append_link_reference_definitions` places them from the collected table.
+fn strip_link_reference_definitions(blocks: &mut Vec<BlockNode>) {
+    blocks.retain_mut(|block| {
+        if matches!(block, BlockNode::LinkReferenceDefinition(_)) {
+            return false;
+        }
+        match block {
+            BlockNode::BlockQuote(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::Div(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::Admonition(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::FigureGroup(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::LineBlock(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::Extension(b) => strip_link_reference_definitions(&mut b.children),
+            BlockNode::List(b) => {
+                for item in &mut b.items {
+                    strip_link_reference_definitions(&mut item.children);
+                }
+            }
+            BlockNode::DefinitionList(b) => {
+                for item in &mut b.items {
+                    for definition in &mut item.definitions {
+                        strip_link_reference_definitions(definition);
+                    }
+                }
+            }
+            _ => {}
+        }
+        true
+    });
+}
+
 /// Hoist every authored `[label]: /url` definition into the document as a
 /// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
 fn append_link_reference_definitions(
@@ -3277,7 +3445,14 @@ fn parse_blocks_with_options_at_level(
     at_document_level: bool,
 ) -> Vec<BlockNode> {
     drained(options, |pending| {
-        parse_blocks_with_options_at_level_into(source, options, at_document_level, false, pending)
+        parse_blocks_with_options_at_level_into(
+            source,
+            options,
+            at_document_level,
+            false,
+            pending,
+            None,
+        )
     })
 }
 
@@ -3287,6 +3462,7 @@ fn parse_blocks_with_options_at_level_into(
     at_document_level: bool,
     in_item_body: bool,
     pending: &mut Vec<PendingBody>,
+    lazy_map: Option<&[bool]>,
 ) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
@@ -3312,6 +3488,7 @@ fn parse_blocks_with_options_at_level_into(
         want_lines.then_some(line_map.as_slice()),
         options.positions.then_some(col_map.as_slice()),
     );
+    cursor.lazy_map = lazy_map;
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     parse_blocks(&mut cursor, options, pending)
@@ -3325,6 +3502,9 @@ struct LineCursor<'a> {
     /// for a line whose stripped width is not known - a block starting there
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<isize>]>,
+    /// Which lines arrived as a container's lazy continuation. See
+    /// [`LineBuffer::lazy_map`].
+    lazy_map: Option<&'a [bool]>,
     pos: usize,
     at_document_level: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
@@ -3353,6 +3533,7 @@ impl<'a> LineCursor<'a> {
             lines,
             line_map,
             col_map,
+            lazy_map: None,
             pos: 0,
             at_document_level: false,
             in_item_body: false,
@@ -3378,6 +3559,15 @@ impl<'a> LineCursor<'a> {
     fn source_line(&self, pos: usize) -> Option<usize> {
         self.line_map
             .and_then(|map| map.get(pos).copied().flatten())
+    }
+
+    /// Did the line at `pos` arrive as a container's lazy continuation?
+    ///
+    /// Such a line is paragraph text of the container that folded it, whatever
+    /// column it lands on once that container's body is re-parsed.
+    fn is_lazy(&self, pos: usize) -> bool {
+        self.lazy_map
+            .is_some_and(|map| map.get(pos).copied().unwrap_or(false))
     }
 
     /// Columns stripped from the front of the line at `pos`, when known.
@@ -3435,6 +3625,20 @@ struct LineBuffer {
     /// nested block a WRONG column, which is worse than the `None` an absent
     /// entry produces.
     col_map: Vec<Option<isize>>,
+    /// Which lines arrived as a container's LAZY CONTINUATION, parallel to
+    /// `lines`.
+    ///
+    /// A lazy line belongs to the paragraph it folded into, not to whatever
+    /// column it happens to sit at once the container's body is re-parsed. The
+    /// definition pre-pass never needed this: it read the ORIGINAL document, so
+    /// it could see that `> - x` / `  [r]: /url` puts the definition outside the
+    /// quote. The block parser reads the quote's body, where that line is at the
+    /// item's content column and looks like a definition position. Keeping the
+    /// provenance is what tells the two apart.
+    ///
+    /// NOT derived from `col_map`, which exists only when positions are on: a
+    /// parse rule that changed with an unrelated option would be worse than none.
+    lazy_map: Vec<bool>,
     /// Whether the LAST line pushed was a synthetic blank rather than one the
     /// author wrote. `into_source` needs the difference: a real trailing blank
     /// is content and must survive the round trip, a synthetic one is
@@ -3451,11 +3655,19 @@ impl LineBuffer {
     /// of the line by the enclosing container.
     fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<isize>) {
         self.last_is_synthetic = false;
+        self.lazy_map.push(false);
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
         }
         self.col_map.push(stripped);
+    }
+
+    /// The line just pushed was a container's lazy continuation.
+    fn mark_last_lazy(&mut self) {
+        if let Some(last) = self.lazy_map.last_mut() {
+            *last = true;
+        }
     }
 
     fn push_synthetic_blank(&mut self) {
@@ -3474,6 +3686,7 @@ impl LineBuffer {
             col_map: self.col_map,
             source,
             line_map: self.line_map,
+            lazy_map: self.lazy_map,
             authored_base_at_start: false,
         }
     }
@@ -3488,6 +3701,9 @@ struct MappedSource {
     /// mapped back to a column in the document, which is why nested blocks
     /// could not carry a position (spec PART 12 section 4).
     col_map: Vec<Option<isize>>,
+    /// Which lines arrived as a container's lazy continuation. See
+    /// [`LineBuffer::lazy_map`].
+    lazy_map: Vec<bool>,
     /// The collector consumed an authored blank immediately before this
     /// chunk's first line, making an over-indented opener a block boundary.
     authored_base_at_start: bool,
@@ -3497,6 +3713,7 @@ impl MappedSource {
     /// Like `new_line`, recording how many bytes were stripped from the front.
     fn new_line_at(line: String, source_line: Option<usize>, stripped: Option<isize>) -> Self {
         MappedSource {
+            lazy_map: Vec::new(),
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
@@ -4354,6 +4571,7 @@ fn parse_unpositioned_mapped_source(
         at_document_level,
         in_item_body,
         pending,
+        (!source.lazy_map.is_empty()).then_some(source.lazy_map.as_slice()),
     )
 }
 
@@ -4374,6 +4592,7 @@ fn parse_positioned_mapped_source(
         Some(&source.line_map),
         options.positions.then_some(source.col_map.as_slice()),
     ));
+    cursor.lazy_map = (!source.lazy_map.is_empty()).then_some(source.lazy_map.as_slice());
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     parse_blocks(&mut cursor, options, pending)
@@ -4899,7 +5118,15 @@ fn append_parsed_block(
     options: &Options<'_>,
 ) {
     let mut node = *node;
-    let renders_nothing = matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_));
+    // A link reference definition renders nothing either, so a floating
+    // attribute set must pass THROUGH it to the next visible block. The pre-pass
+    // got this by leaving a blank line where the definition had been.
+    let renders_nothing = matches!(
+        node,
+        BlockNode::AbbreviationDef(_)
+            | BlockNode::Comment(_)
+            | BlockNode::LinkReferenceDefinition(_)
+    );
     if !renders_nothing {
         if let Some(attrs) = pending_attrs.take() {
             apply_attrs_to_block(&mut node, attrs);
@@ -5696,6 +5923,11 @@ fn item_block_opener_with_invisible_arms(line: &str, invisible_arms: bool) -> bo
         || detect_container_open(line).is_some()
         || detect_quote_block_open(line).is_some()
         || (invisible_arms && parse_footnote_def_line(line).is_some())
+        // A LINK definition is invisible the same way a footnote definition is,
+        // so it opens only where the invisible arms are live. Below a content
+        // column (§10 I5) it is lazy paragraph text of the container, and must
+        // stay text rather than be collected out of the author's line.
+        || (invisible_arms && line_is_link_definition(line))
         || (invisible_arms && parse_standalone_attrs(line).is_some())
         || detect_block_image(line).is_some()
 }
@@ -6065,6 +6297,13 @@ fn parse_block(
         CommentBlock::Consumed(node) => return node,
     }
     let line = cur.peek()?;
+    // Before any block opens: a definition line standing where a block may begin
+    // is metadata, not content. Reaching here at all means no paragraph is open
+    // to fold it, which is the whole question the definition pre-pass could not
+    // answer without reparsing.
+    if let Some(node) = take_link_definition(cur, options) {
+        return Some(node);
+    }
     if let Some(fence_marker) = detect_fence_open(line) {
         return Some(parse_fenced_block(cur, fence_marker, options));
     }
@@ -7582,7 +7821,15 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                     inner.push_at(stripped.to_string(), source_line, stripped_at);
                     continue;
                 }
-                para_open = ParaOpen::from_line(stripped, inherited_absorption);
+                // A DEFINITION OPENS NO PARAGRAPH, so nothing below it is a
+                // lazy continuation of one. The pre-pass got this by leaving a
+                // blank line where the definition had been (corpus 266-14).
+                //
+                para_open = if line_is_link_definition(stripped) {
+                    ParaOpen::Closed
+                } else {
+                    ParaOpen::from_line(stripped, inherited_absorption)
+                };
                 // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
                 // the lines after its opener can tell it apart from prose that
                 // happens to start with a brace. `ParaOpen` is handed ONE line
@@ -7685,6 +7932,12 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         let source_col = cur.source_col(cur.pos);
         cur.consume();
         inner.push_at(line.to_string(), source_line, source_col);
+        // This line is the quote's LAZY CONTINUATION: it belongs to the
+        // paragraph it folded into, not to whatever column it lands on when the
+        // quote's body is re-parsed. Without the mark, `> - x` / `  [r]: /url`
+        // reaches the item at the item's content column and reads as a
+        // definition position (corpus 369).
+        inner.mark_last_lazy();
     }
     (span_start, inner)
 }
@@ -10774,6 +11027,7 @@ fn collect_indented_block_mapped_with(
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     if cur.line_map.is_none() {
         return MappedSource {
+            lazy_map: Vec::new(),
             source: collect_indented_block_plain_with(
                 cur,
                 parent_indent,
@@ -10979,6 +11233,7 @@ fn collect_indented_block_mapped_with(
         source.push('\n');
     }
     MappedSource {
+        lazy_map: Vec::new(),
         col_map,
         source,
         line_map,
@@ -11330,6 +11585,9 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         return true;
     }
     if cur.invisible_arms && !line.starts_with([' ', '\t']) {
+        if line_is_link_definition(line) {
+            return true;
+        }
         if parse_standalone_attrs(line).is_some() {
             return true;
         }
@@ -12220,6 +12478,7 @@ fn collect_definition_body(
     }
     debug_assert_eq!(col_map.len(), lines.len());
     MappedSource {
+        lazy_map: Vec::new(),
         col_map,
         source: lines.join("\n"),
         line_map,
@@ -14137,6 +14396,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let start_cols = std::mem::take(&mut stanza_start_cols);
                 stanzas.push(Stanza {
                     lines: LineBuffer {
+                        lazy_map: Vec::new(),
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
                         col_map: std::mem::take(&mut stanza_col_map),
@@ -14229,6 +14489,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let at = stanza_start.take();
         stanzas.push(Stanza {
             lines: LineBuffer {
+                lazy_map: Vec::new(),
                 lines: stanza,
                 line_map: stanza_line_map,
                 col_map: stanza_col_map,
