@@ -360,13 +360,19 @@ fn the_same_shape_inside_a_quote_is_lazy_text_too() {
     );
 }
 
-/// THE FAIL-SAFE DIRECTION, asserted rather than claimed. The probe budget is
-/// what a document can exhaust, and exhausting it must COLLECT - the answer the
-/// engine gave before the guard existed - never suppress. A long blank-free run
-/// of definition-shaped marker lines is the document that spends it, so the
-/// last of them is collected while the first ones are text. Both halves are
-/// asserted here: whichever way a future change moves the budget, this row says
-/// that running out is not allowed to start deleting lines.
+/// THE FAIL-SAFE DIRECTION, asserted rather than claimed - on BOTH halves, which
+/// is what this row used to miss.
+///
+/// It said that running out must not start deleting lines, and then asserted
+/// only that an endnotes section existed. Deleting lines is exactly what running
+/// out did: the pre-pass cut the definition out of a line it had not established
+/// was one, so `- [^f]: t` rendered as a bare `-`. Four thousand of them lost
+/// 3,857, and the row stayed green throughout because nothing here looked at the
+/// lines (carve-rs#1492).
+///
+/// The collection half is unchanged and still asserted. Whether an unaffordable
+/// probe should register at all is a separate question, open for all three
+/// engines at markup-carve/carve#1881.
 #[test]
 fn running_out_of_probe_budget_collects_rather_than_suppresses() {
     let mut src = String::from("r\n");
@@ -380,4 +386,18 @@ fn running_out_of_probe_budget_collects_rather_than_suppresses() {
         "the budget ran out and suppressed instead of collecting: {}",
         &out[..out.len().min(400)]
     );
+    // AND THE LINES ARE STILL THE AUTHOR'S. A bare `-` is a line whose
+    // definition was cut out from under it.
+    assert_eq!(
+        out.lines().filter(|line| line.trim() == "-").count(),
+        0,
+        "the budget ran out and deleted authored lines"
+    );
+    // Asserted on the BODY, not the label: registration is unchanged, so every
+    // `[^fN]` in a kept line renders as a footnote reference rather than as
+    // literal text. The body is what a deleted line loses.
+    for n in [0usize, 14, 3998] {
+        let body = format!("t{n}");
+        assert!(out.contains(&body), "line {n} lost its body text: {body}");
+    }
 }

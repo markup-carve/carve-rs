@@ -209,11 +209,16 @@ fn control_an_unmarked_definition_after_a_paragraph_still_collects() {
     );
 }
 
-/// THE FAIL-SAFE DIRECTION, asserted rather than claimed. The probe budget is
-/// what a document can exhaust, and exhausting it must COLLECT - the answer the
-/// pass gave before the guard existed - never suppress an author's line. A long
-/// blank-free run of definition-shaped marker lines is the document that spends
-/// it.
+/// THE FAIL-SAFE DIRECTION, asserted rather than claimed - on BOTH halves.
+///
+/// "Never suppress an author's line" was the goal, and collecting is what
+/// removed them: past the budget the pass cut the definition out of a line it
+/// had not established was one, so `- [d]: u` rendered as a bare `-`. This row
+/// asserted only that the reference resolved, so four thousand lines could lose
+/// 3,856 of them and stay green (carve-rs#1492).
+///
+/// The collection half is unchanged. Whether an unaffordable probe should
+/// register at all is markup-carve/carve#1881.
 #[test]
 fn running_out_of_probe_budget_collects_rather_than_suppresses() {
     let mut src = String::from("r\n");
@@ -227,4 +232,16 @@ fn running_out_of_probe_budget_collects_rather_than_suppresses() {
         "the budget ran out and suppressed instead of collecting: {}",
         &out[..out.len().min(400)]
     );
+    assert_eq!(
+        out.lines().filter(|line| line.trim() == "-").count(),
+        0,
+        "the budget ran out and deleted authored lines"
+    );
+    // Asserted on the destination text, not the whole line: an unreferenced
+    // `[dN]` in a kept line still renders literally, but the referenced one
+    // does not, and the destination is what a deleted line loses.
+    for n in [0usize, 14, 3998] {
+        let dest = format!("u{n}");
+        assert!(out.contains(&dest), "line {n} lost its text: {dest}");
+    }
 }
