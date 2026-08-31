@@ -542,6 +542,7 @@ const IMPLEMENTED: &[&str] = &[
     // gap still fails; `a_known_gap_still_fails` below now does.
     "a-continuation-marker-attaches-only-a-flush-left-block",
     "a-raw-block-keeps-the-blank-line-at-the-end-of-its-payload-too",
+    "a-raw-block-passes-its-attributes-through-untouched",
     "an-unterminated-fence-at-a-content-column-opens-no-block-so-the-paragraph-stays-open",
     // Corpus 405-408, which this pin bump brings with it.
     // markup-carve/carve#1633: a blank line loosens an item only where a
