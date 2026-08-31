@@ -1379,19 +1379,26 @@ fn extract_footnote_defs(
             columns.reached_by(def_indent),
             !columns.descendant_still_owns(def_indent),
         );
-        // Set when the probe could not afford to decide. The definition is
-        // still collected - changing that is markup-carve/carve#1881 - but the
-        // author's line is kept rather than cut out from under it.
+        // PART 9R R1a: a line that folds into an open paragraph defines nothing,
+        // and a probe that cannot afford to say so collects nothing either. The
+        // two are one condition here - the fallback is conservative, so it may
+        // decline a definition an affordable probe would have taken.
         let mut unaffordable = false;
+        // THE PROBE STAYS INSIDE THE FILTER, which only runs on a line that
+        // PARSED as a definition. Hoisting it out spent the budget on every
+        // ordinary `- item` too, and the budget is shared: four hundred of them
+        // ahead of a real definition exhausted it and the definition was
+        // declined.
         if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
-            !(marker_line_may_be_lazy(lines[i])
+            let folds = marker_line_may_be_lazy(lines[i])
                 && line_folds_into_an_open_paragraph(
                     &body,
                     lines[i],
                     options,
                     &mut probe_budget,
                     &mut unaffordable,
-                ))
+                );
+            !(folds || unaffordable)
         }) {
             let normalized_label = label_key(label);
             let first_for_label = !definition_keys.contains_key(&normalized_label);
@@ -1656,16 +1663,7 @@ fn extract_footnote_defs(
                         .saturating_sub(replacement.chars().count()),
                 ),
             );
-            // See the link pass: past the budget the probe established nothing,
-            // so cutting the definition's text out of the line would be removing
-            // what the author wrote on a guess (carve-rs#1492).
-            body.push(if unaffordable {
-                // `raw_def_line`, not `lines[i]`: `i` has already advanced past
-                // the definition and its collected body by here.
-                raw_def_line.to_string()
-            } else {
-                replacement
-            });
+            body.push(replacement);
             body_line_map.push(Some(def_start_line));
         } else {
             body.push(lines[i].to_string());
@@ -2368,10 +2366,13 @@ fn extract_link_defs_with_guard(
             columns.reached_by(def_indent),
             !columns.descendant_still_owns(def_indent),
         );
-        // See the footnote pass: an unaffordable probe keeps the line.
+        // See the footnote pass: folding and not being able to tell are one
+        // condition, and both collect nothing (PART 9R R1a).
+        // See the footnote pass: the probe stays inside the filter so the shared
+        // budget is spent only on lines that parsed as a definition.
         let mut unaffordable = false;
         if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
-            !(marker_line_may_be_lazy(line)
+            let folds = marker_line_may_be_lazy(line)
                 && guard.as_mut().is_some_and(|(options, budget)| {
                     line_folds_into_an_open_paragraph(
                         &body,
@@ -2380,7 +2381,8 @@ fn extract_link_defs_with_guard(
                         budget,
                         &mut unaffordable,
                     )
-                }))
+                });
+            !(folds || unaffordable)
         }) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
@@ -2439,15 +2441,7 @@ fn extract_link_defs_with_guard(
                         .saturating_sub(replacement.chars().count()),
                 ),
             );
-            // KEEP THE LINE WHEN THE PROBE COULD NOT AFFORD TO DECIDE. The
-            // replacement removes the definition's text, which is only sound
-            // once the pre-pass has established that it IS a definition. Past
-            // the budget it has established nothing (carve-rs#1492).
-            body.push(if unaffordable {
-                std::borrow::Cow::Borrowed(line)
-            } else {
-                std::borrow::Cow::Owned(replacement)
-            });
+            body.push(std::borrow::Cow::Owned(replacement));
         } else {
             body.push(std::borrow::Cow::Borrowed(line));
         }
