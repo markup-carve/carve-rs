@@ -204,9 +204,38 @@ fn shared_contract_fixtures_match() {
             // unpinned.
             .map(|d| d.code.as_str())
             .collect::<Vec<_>>();
-        if actual_codes != expected_codes {
+        // A FIXTURE'S ROWS ARE A SUBSEQUENCE, NOT AN ARRAY TO MATCH
+        // (markup-carve/carve#1884). How many rows one loss takes is
+        // engine-defined: a table whose `<thead>` sits between two `<tbody>`
+        // runs is one degradation, and carve-php itemizes the distinct losses
+        // where carve-js coalesces them. Comparing the vectors pinned whichever
+        // granularity the fixture's author generated.
+        //
+        // The codes must still appear IN ORDER, and no row may carry a code the
+        // fixture does not name: an engine may split a row, never invent one,
+        // drop one, or reorder them.
+        let unexpected = actual_codes
+            .iter()
+            .filter(|code| !expected_codes.contains(code))
+            .collect::<Vec<_>>();
+        if !unexpected.is_empty() {
             mismatches.push(format!(
-                "{name} diagnostics\n  expected: {expected_codes:?}\n  actual:  {actual_codes:?}"
+                "{name} diagnostics: report adds code(s) the fixture does not name: {unexpected:?}"
+            ));
+            continue;
+        }
+        // The row each expectation matched, so the field checks below read the
+        // row they are about: a split earlier in the report shifts every index
+        // after it.
+        let mut matched: Vec<usize> = Vec::with_capacity(expected_codes.len());
+        for (index, code) in actual_codes.iter().enumerate() {
+            if matched.len() < expected_codes.len() && *code == expected_codes[matched.len()] {
+                matched.push(index);
+            }
+        }
+        if matched.len() != expected_codes.len() {
+            mismatches.push(format!(
+                "{name} diagnostics\n  expected as a subsequence: {expected_codes:?}\n  actual:  {actual_codes:?}"
             ));
             continue;
         }
@@ -224,7 +253,7 @@ fn shared_contract_fixtures_match() {
             .iter()
             .enumerate()
         {
-            let actual = &result.report.diagnostics[index];
+            let actual = &result.report.diagnostics[matched[index]];
             let at = format!("{name} diagnostic {index}");
             if let Some(path) = expected_diagnostic["path"].as_str() {
                 if actual.path.as_deref() != Some(path) {
