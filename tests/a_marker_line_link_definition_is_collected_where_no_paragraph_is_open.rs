@@ -217,31 +217,63 @@ fn control_an_unmarked_definition_after_a_paragraph_still_collects() {
 /// asserted only that the reference resolved, so four thousand lines could lose
 /// 3,856 of them and stay green (carve-rs#1492).
 ///
-/// The collection half is unchanged. Whether an unaffordable probe should
-/// register at all is markup-carve/carve#1881.
+/// PART 9R R1a now rules the other half (markup-carve/carve#1881): an
+/// unaffordable probe collects nothing, so the reference does NOT resolve and
+/// renders as the literal source the author typed - which is the visible,
+/// reportable failure, against a deleted line which reports nothing.
 #[test]
-fn running_out_of_probe_budget_collects_rather_than_suppresses() {
+fn running_out_of_probe_budget_keeps_the_text_and_collects_nothing() {
     let mut src = String::from("r\n");
     for n in 0..4000 {
         src.push_str(&format!("- [d{n}]: u{n}\n"));
     }
     src.push_str("\n[go][d3999]\n");
     let out = html(&src);
+
+    // NOTHING IS COLLECTED: every one of these lines is lazy continuation text,
+    // so none of them defines a reference at any size.
     assert!(
-        out.contains("<a href=\"u3999\">go</a>"),
-        "the budget ran out and suppressed instead of collecting: {}",
+        !out.contains("<a href=\"u3999\">go</a>"),
+        "an unaffordable probe registered a definition: {}",
         &out[..out.len().min(400)]
     );
+
+    // AND EVERY LINE IS STILL THE AUTHOR'S.
     assert_eq!(
         out.lines().filter(|line| line.trim() == "-").count(),
         0,
         "the budget ran out and deleted authored lines"
     );
-    // Asserted on the destination text, not the whole line: an unreferenced
-    // `[dN]` in a kept line still renders literally, but the referenced one
-    // does not, and the destination is what a deleted line loses.
     for n in [0usize, 14, 3998] {
-        let dest = format!("u{n}");
-        assert!(out.contains(&dest), "line {n} lost its text: {dest}");
+        for text in [format!("u{n}"), format!("[d{n}]")] {
+            assert!(out.contains(&text), "line {n} lost {text}");
+        }
     }
+}
+
+/// THE BUDGET IS SPENT ON DEFINITIONS, NOT ON EVERY MARKER LINE.
+///
+/// The probe lives inside the `filter`, which `Option::filter` runs only on a
+/// line that PARSED as a definition. Hoisting it out to compute the fold answer
+/// first - which reads more clearly - spends the shared budget on every ordinary
+/// `- item` as well, and four hundred of those ahead of a real definition
+/// exhausted it: the definition was then declined and its reference rendered
+/// literal. Found by review on the carve#1881 port.
+#[test]
+fn ordinary_list_items_do_not_spend_the_probe_budget() {
+    let mut src = String::from("# H\n");
+    for n in 0..400 {
+        src.push_str(&format!("- item {n}\n"));
+    }
+    src.push_str("- [d]: /u\n\n[go][d]\n");
+    let out = html(&src);
+
+    // No paragraph is open under a heading, so this IS a definition and an
+    // affordable probe collects it. Nothing ahead of it should have made it
+    // unaffordable.
+    assert!(
+        out.contains("<a href=\"/u\">go</a>"),
+        "ordinary list items exhausted the probe budget: {}",
+        &out[..out.len().min(400)]
+    );
 }

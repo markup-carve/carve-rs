@@ -360,44 +360,49 @@ fn the_same_shape_inside_a_quote_is_lazy_text_too() {
     );
 }
 
-/// THE FAIL-SAFE DIRECTION, asserted rather than claimed - on BOTH halves, which
-/// is what this row used to miss.
+/// THE FAIL-SAFE DIRECTION, asserted rather than claimed - on BOTH halves.
 ///
-/// It said that running out must not start deleting lines, and then asserted
-/// only that an endnotes section existed. Deleting lines is exactly what running
+/// This row used to say running out must not start deleting lines, and then
+/// assert only that an endnotes section existed. Deleting lines is what running
 /// out did: the pre-pass cut the definition out of a line it had not established
-/// was one, so `- [^f]: t` rendered as a bare `-`. Four thousand of them lost
-/// 3,857, and the row stayed green throughout because nothing here looked at the
-/// lines (carve-rs#1492).
+/// was one, so `- [^f]: t` rendered as a bare `-`, and four thousand of them lost
+/// 3,857 while this stayed green (carve-rs#1492).
 ///
-/// The collection half is unchanged and still asserted. Whether an unaffordable
-/// probe should register at all is a separate question, open for all three
-/// engines at markup-carve/carve#1881.
+/// PART 9R R1a now rules the other half too (markup-carve/carve#1881): an
+/// unaffordable probe collects NOTHING. The fallback is conservative rather than
+/// identical to the affordable answer - it may decline a definition a probe would
+/// have taken - and what it never does is remove a character the author typed.
 #[test]
-fn running_out_of_probe_budget_collects_rather_than_suppresses() {
+fn running_out_of_probe_budget_keeps_the_text_and_collects_nothing() {
     let mut src = String::from("r\n");
     for n in 0..4000 {
         src.push_str(&format!("- [^f{n}]: t{n}\n"));
     }
     src.push_str("\n[^f3999] ref\n");
     let out = html(&src);
+
+    // NOTHING IS COLLECTED. Every one of these lines is lazy continuation text
+    // of the paragraph `r` opened, so none of them defines anything - at any
+    // size, whatever the probe could afford to establish.
     assert!(
-        out.contains("doc-endnotes"),
-        "the budget ran out and suppressed instead of collecting: {}",
+        !out.contains("doc-endnotes"),
+        "an unaffordable probe registered a definition: {}",
         &out[..out.len().min(400)]
     );
-    // AND THE LINES ARE STILL THE AUTHOR'S. A bare `-` is a line whose
+
+    // AND EVERY LINE IS STILL THE AUTHOR'S. A bare `-` is a line whose
     // definition was cut out from under it.
     assert_eq!(
         out.lines().filter(|line| line.trim() == "-").count(),
         0,
         "the budget ran out and deleted authored lines"
     );
-    // Asserted on the BODY, not the label: registration is unchanged, so every
-    // `[^fN]` in a kept line renders as a footnote reference rather than as
-    // literal text. The body is what a deleted line loses.
+
+    // The label and the body BOTH stay on the page: nothing was registered, so
+    // the marker renders as the literal text the author wrote.
     for n in [0usize, 14, 3998] {
-        let body = format!("t{n}");
-        assert!(out.contains(&body), "line {n} lost its body text: {body}");
+        for text in [format!("t{n}"), format!("[^f{n}]")] {
+            assert!(out.contains(&text), "line {n} lost {text}");
+        }
     }
 }
