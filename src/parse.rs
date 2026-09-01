@@ -1241,6 +1241,10 @@ fn extract_footnote_defs(
     // like a definition, and was neither collected nor rendered - the author's
     // line disappeared and a reference to it stayed literal (carve-rs#568).
     let mut columns = ContentColumns::new();
+    // The line the `after_term` gate below asks about. See its note: a blank
+    // line between entries is transparent to a definition list, so the gate
+    // reads past one.
+    let mut previous_non_blank = "";
     let mut i = 0;
     while i < lines.len() {
         // A footnote definition is collected at the top level AND from inside a
@@ -1259,8 +1263,17 @@ fn extract_footnote_defs(
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
-        let after_term = i > 0 && opens_definition_entry(lines[i - 1]);
+        //
+        // THE PREVIOUS NON-BLANK LINE, not the one directly above: a blank
+        // between description entries does not end the list, it only makes it
+        // loose. Asking the line above left the `:  ` marker unstripped after
+        // one, so a definition written as that description's body was consumed
+        // by the parser and collected by nobody (#1500).
+        let after_term = opens_definition_entry(previous_non_blank);
         let stripped = strip_container_prefixes_at(lines[i], &columns, after_term);
+        if !is_blank_line(lines[i]) {
+            previous_non_blank = lines[i];
+        }
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -2192,6 +2205,8 @@ fn extract_link_defs_with_guard(
             tilde_closer_max[index] = tilde_closer_max[index].max(run);
         }
     }
+    // See `extract_footnote_defs`: the line the `after_term` gate asks about.
+    let mut previous_non_blank = "";
     for (line_index, line) in all_lines.iter().copied().enumerate() {
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
@@ -2207,8 +2222,15 @@ fn extract_link_defs_with_guard(
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
-        let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
+        //
+        // THE PREVIOUS NON-BLANK LINE - see the note in `extract_footnote_defs`
+        // (#1500). Carried rather than scanned backwards, so a document of
+        // blank lines does not make this pre-pass quadratic.
+        let after_term = opens_definition_entry(previous_non_blank);
         let stripped = strip_container_prefixes_at(line, &columns, after_term);
+        if !is_blank_line(line) {
+            previous_non_blank = line;
+        }
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
