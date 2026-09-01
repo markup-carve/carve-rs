@@ -964,12 +964,26 @@ impl ContentColumns {
         if opaque {
             return self.current().cols.last().copied().unwrap_or(0);
         }
-        // A blank line does not open or close a container: a quote's blank
-        // continuation is commonly written without the `>`, and treating its
-        // absence as leaving the quote would drop the columns of the item the
-        // next line still belongs to. It opens nothing either, so it is fed to
-        // the innermost frame as it stands rather than walked.
+        // A blank line opens no container, so it is fed to a frame as it stands
+        // rather than walked. Whether it CLOSES one depends on how it is
+        // written, and the two spellings part here.
+        //
+        // A BARE blank ends every open quote, and every column opened inside one
+        // dies with it (PART 0, A NEW MARKER DOES NOT REACH A DEAD CONTAINER'S
+        // COLUMN; carve#1892). The parser already reads it that way - `> - x`
+        // over a blank over `>   [r]: /u` renders as two separate quotes - but
+        // the frames outlived the quote that held them, so the second `>` line
+        // reached the dead item's column, and its definition registered
+        // document-wide while the page printed it as ordinary text. I5 permits
+        // neither reading to do both. Level 0 is document level and survives:
+        // a list item IS transparent across a blank.
+        //
+        // A QUOTE-MARKED blank (`>`) closes nothing - it is the quote's own
+        // continuation - so its frames stand.
         if trim_ascii(bare).is_empty() {
+            if trim_ascii(raw_line).is_empty() {
+                self.frames.truncate(1);
+            }
             let level = self.frames.len() - 1;
             self.observe_segment(level, bare, was_prev_blank);
             return self.current().cols.last().copied().unwrap_or(0);
