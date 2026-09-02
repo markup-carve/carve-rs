@@ -3363,6 +3363,26 @@ fn parse_blocks_with_options_at_level_into(
     in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
+    parse_blocks_with_options_at_level_into_reached(
+        source,
+        &[],
+        options,
+        at_document_level,
+        in_item_body,
+        pending,
+    )
+}
+
+/// The same parse, told which of `source`'s lines reached the content column of
+/// the container that collected them - see `LineCursor::reached`.
+fn parse_blocks_with_options_at_level_into_reached(
+    source: &str,
+    reached: &[bool],
+    options: &Options<'_>,
+    at_document_level: bool,
+    in_item_body: bool,
+    pending: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
@@ -3389,6 +3409,7 @@ fn parse_blocks_with_options_at_level_into(
     );
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
+    cursor.reached = Some(reached);
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -3414,6 +3435,17 @@ struct LineCursor<'a> {
     /// one question about one line, not the region. Only
     /// `interrupts_paragraph_in_band` clears it, and it restores it.
     invisible_arms: bool,
+    /// Did each line of the source this cursor reads REACH the content column
+    /// of the container that collected it? `None` at the document level and
+    /// wherever the answer was not carried down.
+    ///
+    /// THE COLLECTOR'S DEDENT DESTROYS THE COLUMN, so a nested re-parse cannot
+    /// recompute it: a line one column past a container's column and a line
+    /// below it both arrive with a single residual column. `MappedSource`
+    /// records the answer per line and this is where the nested parse reads it
+    /// (markup-carve/carve-rs#1518, the same fact markup-carve/carve#1896 added
+    /// `MappedSource::reached` for one layer up).
+    reached: Option<&'a [bool]>,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
@@ -3432,6 +3464,7 @@ impl<'a> LineCursor<'a> {
             at_document_level: false,
             in_item_body: false,
             invisible_arms: true,
+            reached: None,
             comment_closer_last_index: None,
             code_closer_last_index: None,
         }
@@ -3458,6 +3491,20 @@ impl<'a> LineCursor<'a> {
     /// Columns stripped from the front of the line at `pos`, when known.
     fn source_col(&self, pos: usize) -> Option<isize> {
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
+    }
+
+    /// Did the line at `pos` reach the content column of the container that
+    /// collected it?
+    ///
+    /// The carried answer wins when there is one. Without it the local column
+    /// arithmetic is the best available reading, which is what every frame did
+    /// before the flag was threaded - and what made a line that reached the
+    /// OUTER item indistinguishable from one that reached nothing.
+    fn line_reached(&self, pos: usize, indent: usize, strip_cols: usize) -> bool {
+        match self.reached.and_then(|flags| flags.get(pos).copied()) {
+            Some(reached) => reached,
+            None => indent >= strip_cols,
+        }
     }
 
     /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
@@ -4456,8 +4503,9 @@ fn parse_unpositioned_mapped_source(
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
         return blocks;
     }
-    parse_blocks_with_options_at_level_into(
+    parse_blocks_with_options_at_level_into_reached(
         &source.source,
+        &source.reached,
         options,
         at_document_level,
         in_item_body,
@@ -4484,6 +4532,7 @@ fn parse_positioned_mapped_source(
     ));
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
+    cursor.reached = Some(source.reached.as_slice());
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -9306,6 +9355,8 @@ fn parse_list(
             // column. Using the outer `content_col` assigned a following line
             // between the two columns to the outer item instead (#1424).
             let nested_content_col = content_col + innermost_marker_content_col(marker.content);
+            let ladder_descendant_columns =
+                marker_ladder_descendant_columns(content_col, marker.content);
             let nested_definition_ended_paragraph =
                 is_collected_definition_placeholder(innermost_marker_content(marker.content));
             let mut stream = item_marker_source(cur, marker.content, item_at);
@@ -9329,10 +9380,11 @@ fn parse_list(
                     .peek()
                     .is_some_and(|line| indent_columns(line) >= content_col)
             {
-                stream.append(collect_indented_block_mapped(
+                stream.append(collect_indented_block_mapped_over_ladder(
                     cur,
                     collection_floor,
                     content_col,
+                    &ladder_descendant_columns,
                 ));
             }
             // A blank line closes the sub-list's last paragraph, so the next
@@ -10146,6 +10198,28 @@ fn innermost_marker_content_col(mut line: &str) -> usize {
     column
 }
 
+/// The content columns a marker-ladder line opens BELOW its own: `- - - x`
+/// whose own content column is 2 also opens 4 and 6.
+///
+/// A degraded comment fence at any of them was authored inside some item of the
+/// ladder, so every frame that re-parses this chunk has to end its item there.
+/// Only the innermost frame ever sees that fence at its own `strip_cols`, which
+/// is why the frames above it kept collecting (markup-carve/carve-rs#1518).
+fn marker_ladder_descendant_columns(content_col: usize, content: &str) -> Vec<usize> {
+    let mut columns = Vec::new();
+    let mut column = content_col;
+    let mut line = content;
+    while let Some(marker) = detect_list_marker_full(line) {
+        let Some(width) = marker_content_col(line) else {
+            break;
+        };
+        column += width;
+        columns.push(column);
+        line = marker.content;
+    }
+    columns
+}
+
 fn innermost_marker_content(mut line: &str) -> &str {
     while let Some(marker) = detect_list_marker_full(line) {
         line = marker.content;
@@ -10938,7 +11012,15 @@ fn collect_item_continuation_block_mapped(
     content_col: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, content_col, true, open_fence, false)
+    collect_indented_block_mapped_with(
+        cur,
+        parent_indent,
+        content_col,
+        true,
+        open_fence,
+        false,
+        &[],
+    )
 }
 
 /// How far to dedent a collected line, given the container's content column.
@@ -10998,7 +11080,7 @@ fn collect_indented_block_mapped(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, false)
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, false, &[])
 }
 
 /// The same collection for an item whose marker-line content ENDS IN A BARE
@@ -11014,7 +11096,7 @@ fn collect_indented_block_mapped_after_continuation(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, true)
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, true, &[])
 }
 
 /// The same collection, told that a fenced code block is ALREADY OPEN because
@@ -11027,7 +11109,40 @@ fn collect_indented_block_mapped_after_fence(
     strip_cols: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, open_fence, false)
+    collect_indented_block_mapped_with(
+        cur,
+        parent_indent,
+        strip_cols,
+        false,
+        open_fence,
+        false,
+        &[],
+    )
+}
+
+/// The same collection for a MARKER-LADDER item (`- - - x`), told the content
+/// columns its descendants opened.
+///
+/// The ladder re-parses a dedented copy of the chunk at every level, and each
+/// level collects against ITS OWN content column - so a degraded comment fence
+/// written at a DESCENDANT's column looked like ordinary over-indented content
+/// to every frame above the innermost one, and the item that ended was the
+/// wrong one (markup-carve/carve-rs#1518).
+fn collect_indented_block_mapped_over_ladder(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+    descendant_columns: &[usize],
+) -> MappedSource {
+    collect_indented_block_mapped_with(
+        cur,
+        parent_indent,
+        strip_cols,
+        false,
+        &mut None,
+        false,
+        descendant_columns,
+    )
 }
 
 fn collect_indented_block_mapped_with(
@@ -11037,6 +11152,7 @@ fn collect_indented_block_mapped_with(
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
+    descendant_columns: &[usize],
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     if cur.line_map.is_none() {
@@ -11047,6 +11163,7 @@ fn collect_indented_block_mapped_with(
             stop_at_content_column_marker,
             fence,
             lead_is_continuation,
+            descendant_columns,
         );
         return MappedSource {
             source,
@@ -11074,6 +11191,12 @@ fn collect_indented_block_mapped_with(
     // the executable spec keeps it: an at-column line after the fence does not
     // reopen the band.
     let mut degraded_comment_fence = false;
+    // The same degradation, for a fence written at a DESCENDANT's content
+    // column rather than at this container's own. It closed the DESCENDANT's
+    // paragraph, so this container ends only for a line that reached nothing at
+    // all - which is what the carried `reached` flag answers and the local
+    // column arithmetic cannot (markup-carve/carve-rs#1518).
+    let mut degraded_descendant_fence = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -11186,6 +11309,9 @@ fn collect_indented_block_mapped_with(
         if degraded_comment_fence && indent < strip_cols {
             break;
         }
+        if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
+            break;
+        }
         if fence.is_some() && indent < strip_cols {
             break;
         }
@@ -11221,11 +11347,16 @@ fn collect_indented_block_mapped_with(
             } else if indent == strip_cols {
                 // Degraded, and written AT this container's own content column.
                 // Below it the fence never reached the container and ends
-                // nothing there; PAST it a deeper container may own the fence
-                // instead, and this collector cannot see the deeper column -
-                // `- - x` over `    %%% x` ends the INNER item, whose line the
-                // chunk boundary already places in the outer one.
+                // nothing there.
                 degraded_comment_fence = true;
+            } else if cur.in_item_body && descendant_columns.contains(&indent) {
+                // Degraded at a DESCENDANT's content column. Every frame of a
+                // marker ladder re-parses a dedented copy of the same chunk
+                // against its OWN column, so only the innermost one ever saw
+                // this fence - and the frames above it kept collecting, which
+                // put the line under the fence one item too deep
+                // (markup-carve/carve-rs#1518).
+                degraded_descendant_fence = true;
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
@@ -11360,11 +11491,16 @@ fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_conte
 /// the same thing here as it does inside the collector.
 fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &MappedSource) -> bool {
     let mut open: Option<usize> = None;
-    // The descendants live at the fence's line, so a fence written at a
-    // SUB-item's column ends that item and not this one: `- - x` over
-    // `    %%% x` leaves the line to the outer item, which the chunk boundary
-    // already places it in. Same walk `rebase_overindented_blocks` runs.
-    let mut nested_columns: Vec<usize> = Vec::new();
+    // NO DESCENDANT-COLUMN WALK HERE. There used to be one, on the reading that
+    // a fence at a SUB-item's column ends that item and not this one - the rule
+    // markup-carve/carve-rs#1518 is about. It could not reach a document from
+    // here: this answer only matters through a break that needs the collector to
+    // have STOPPED on a below-column line, and the degraded stop that leaves one
+    // fires at `indent == strip_cols`, where the fence is at chunk column 0 and
+    // no descendant column can be at or below it. Measured: it changed this
+    // function's answer 2424 times over 162504 swept documents and changed none
+    // of them, nor any of the 1564 corpus documents. The rule now lives in
+    // `collect_indented_block_*`, where the collector can act on it.
     for (index, line) in chunk.source.lines().enumerate() {
         if let Some(fence_len) = open {
             if is_comment_fence_close_any_column(line, fence_len) {
@@ -11372,16 +11508,7 @@ fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &Mapped
             }
             continue;
         }
-        let base = indent_columns(line);
-        while nested_columns.last().is_some_and(|column| base < *column) {
-            nested_columns.pop();
-        }
-        let owned_by_descendant = nested_columns.last().is_some_and(|column| base >= *column);
-        if let Some(column) = marker_content_col(line) {
-            nested_columns.push(column);
-            continue;
-        }
-        if owned_by_descendant || !chunk.reached.get(index).copied().unwrap_or(false) {
+        if !chunk.reached.get(index).copied().unwrap_or(false) {
             continue;
         }
         if let Some(fence) = detect_comment_fence_line_any_column(line) {
@@ -11398,6 +11525,7 @@ fn collect_indented_block_plain_with(
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
+    descendant_columns: &[usize],
 ) -> (String, Vec<bool>) {
     let mut lines = Vec::new();
     // See `MappedSource::reached`. Kept here as well as in the mapped
@@ -11418,6 +11546,12 @@ fn collect_indented_block_plain_with(
     // the executable spec keeps it: an at-column line after the fence does not
     // reopen the band.
     let mut degraded_comment_fence = false;
+    // The same degradation, for a fence written at a DESCENDANT's content
+    // column rather than at this container's own. It closed the DESCENDANT's
+    // paragraph, so this container ends only for a line that reached nothing at
+    // all - which is what the carried `reached` flag answers and the local
+    // column arithmetic cannot (markup-carve/carve-rs#1518).
+    let mut degraded_descendant_fence = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
@@ -11495,6 +11629,9 @@ fn collect_indented_block_plain_with(
         if degraded_comment_fence && indent < strip_cols {
             break;
         }
+        if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
+            break;
+        }
         // Same fenced-body guard as the mapped collector above (§24, #950).
         if fence.is_some() && indent < strip_cols {
             break;
@@ -11545,11 +11682,16 @@ fn collect_indented_block_plain_with(
             } else if indent == strip_cols {
                 // Degraded, and written AT this container's own content column.
                 // Below it the fence never reached the container and ends
-                // nothing there; PAST it a deeper container may own the fence
-                // instead, and this collector cannot see the deeper column -
-                // `- - x` over `    %%% x` ends the INNER item, whose line the
-                // chunk boundary already places in the outer one.
+                // nothing there.
                 degraded_comment_fence = true;
+            } else if cur.in_item_body && descendant_columns.contains(&indent) {
+                // Degraded at a DESCENDANT's content column. Every frame of a
+                // marker ladder re-parses a dedented copy of the same chunk
+                // against its OWN column, so only the innermost one ever saw
+                // this fence - and the frames above it kept collecting, which
+                // put the line under the fence one item too deep
+                // (markup-carve/carve-rs#1518).
+                degraded_descendant_fence = true;
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
