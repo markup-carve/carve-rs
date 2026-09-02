@@ -5495,7 +5495,12 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             }
             paragraph_open = line_starts_paragraph(&lines[i]);
             after_blank = false;
-            block_at_minimum = true;
+            // A COMMENT IS NOT OWNERSHIP EVIDENCE. It renders nothing at any
+            // column (§24 C3), so a line at the container's minimum column that
+            // is only a comment does not put the scan back in the container's
+            // coordinate system - and the below-column opener under it was
+            // never the container's (markup-carve/carve-rs#1517).
+            block_at_minimum = !is_line_comment_any_column(&lines[i]);
             i += 1;
             continue;
         }
