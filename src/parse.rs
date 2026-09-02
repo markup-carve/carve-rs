@@ -9219,7 +9219,9 @@ fn parse_list(
                 cur,
                 &mut stream,
                 content_col,
-                |src, below| !after_blank && nested_ends_with_open_paragraph(src, below, options),
+                |src, below| {
+                    !after_blank && nested_ends_with_open_paragraph(src, below, below, options)
+                },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
             // A blank line between the item's blocks loosens the list, whatever
@@ -9392,6 +9394,12 @@ fn parse_list(
                 if !nested_ends_with_open_paragraph(
                     &stream.source,
                     last_consumed_line_below_column(cur, nested_content_col),
+                    // The DEEP half of §24 C3 turns on the OUTER column: a
+                    // comment that reached this list's own content column is a
+                    // block of its item and does end it, however far the
+                    // marker-line ladder runs past that column
+                    // (markup-carve/carve-rs#1516).
+                    last_consumed_line_below_column(cur, content_col),
                     options,
                 ) {
                     break;
@@ -10301,7 +10309,7 @@ fn collected_body_takes_the_lazy_line(
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
-    nested_ends_with_open_paragraph(src, trailing_below_column, options)
+    nested_ends_with_open_paragraph(src, trailing_below_column, trailing_below_column, options)
         || nested_ends_with_heading(src, options)
 }
 
@@ -10352,7 +10360,7 @@ fn trailing_marker_line_content(body: &str) -> Option<String> {
 /// (markup-carve/carve#1280).
 fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
     let blocks = parse_blocks_with_options(body, options);
-    block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body))
+    block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
 }
 
 /// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
@@ -10366,6 +10374,7 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
 fn nested_ends_with_open_paragraph(
     nested: &str,
     trailing_below_column: bool,
+    below_outer_column: bool,
     options: &Options<'_>,
 ) -> bool {
     let blocks = probe_blocks(nested, options);
@@ -10392,7 +10401,11 @@ fn nested_ends_with_open_paragraph(
         return false;
     }
 
-    block_ends_with_open_paragraph(blocks.get(end - 1), colon_fences_left_open(nested))
+    block_ends_with_open_paragraph(
+        blocks.get(end - 1),
+        colon_fences_left_open(nested),
+        below_outer_column,
+    )
 }
 
 /// How many colon fences does this collected body end INSIDE, unclosed?
@@ -10459,19 +10472,46 @@ fn colon_fences_left_open(nested: &str) -> usize {
     open.len()
 }
 
-fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) -> bool {
+/// The last child that could hold the open paragraph.
+///
+/// §24 C3's comment exception has to reach every level, not only the outermost:
+/// a comment written below the content column of a NESTED item is not that
+/// item's block either, and reading it as the last one answered "the paragraph
+/// is closed" for a container that never saw a block at all
+/// (markup-carve/carve-rs#1516).
+fn last_open_child(children: &[BlockNode], skip_comments: bool) -> Option<&BlockNode> {
+    if skip_comments {
+        children
+            .iter()
+            .rev()
+            .find(|block| !matches!(block, BlockNode::Comment(_)))
+    } else {
+        children.last()
+    }
+}
+
+fn block_ends_with_open_paragraph(
+    block: Option<&BlockNode>,
+    colon_open: usize,
+    skip_comments: bool,
+) -> bool {
     match block {
         Some(BlockNode::Paragraph(_)) => true,
         // A blockquote has no explicit closer: lazy continuation keeps its
         // trailing paragraph open, so a dedented line folds into it.
-        Some(BlockNode::BlockQuote(q)) => {
-            block_ends_with_open_paragraph(q.children.last(), colon_open)
-        }
+        Some(BlockNode::BlockQuote(q)) => block_ends_with_open_paragraph(
+            last_open_child(&q.children, skip_comments),
+            colon_open,
+            skip_comments,
+        ),
         // A list's last item can hold an open paragraph (the deepest open
         // paragraph a dedented line continues, e.g. a sub-list item's text).
         Some(BlockNode::List(l)) => block_ends_with_open_paragraph(
-            l.items.last().and_then(|it| it.children.last()),
+            l.items
+                .last()
+                .and_then(|it| last_open_child(&it.children, skip_comments)),
             colon_open,
+            skip_comments,
         ),
         // A definition list has no explicit closer either: its last item stays
         // open -- a term still awaiting its `:  ` definition, or a definition
@@ -10486,8 +10526,11 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) 
             Some(item) if item.definitions.is_empty() => true,
             // Otherwise the last definition's body must end in an open paragraph.
             Some(item) => block_ends_with_open_paragraph(
-                item.definitions.last().and_then(|d| d.children.last()),
+                item.definitions
+                    .last()
+                    .and_then(|d| last_open_child(&d.children, skip_comments)),
                 colon_open,
+                skip_comments,
             ),
         },
         // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939, carve#909).
@@ -10498,18 +10541,24 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) 
         // about: the fence closes the paragraph inside it, and a dedented line
         // after it ends the item (like code/table). One line of body decides it
         // two ways, which is why `colon_open` is read from the SOURCE.
-        Some(BlockNode::Div(d)) if colon_open > 0 => {
-            block_ends_with_open_paragraph(d.children.last(), colon_open - 1)
-        }
-        Some(BlockNode::Admonition(a)) if colon_open > 0 => {
-            block_ends_with_open_paragraph(a.children.last(), colon_open - 1)
-        }
+        Some(BlockNode::Div(d)) if colon_open > 0 => block_ends_with_open_paragraph(
+            last_open_child(&d.children, skip_comments),
+            colon_open - 1,
+            skip_comments,
+        ),
+        Some(BlockNode::Admonition(a)) if colon_open > 0 => block_ends_with_open_paragraph(
+            last_open_child(&a.children, skip_comments),
+            colon_open - 1,
+            skip_comments,
+        ),
         // A bare `::: figure` fence is a container like the two above; left
         // unterminated it still holds its open paragraph (§4c defers to §12's
         // container rules for body and closer discipline).
-        Some(BlockNode::FigureGroup(g)) if colon_open > 0 => {
-            block_ends_with_open_paragraph(g.children.last(), colon_open - 1)
-        }
+        Some(BlockNode::FigureGroup(g)) if colon_open > 0 => block_ends_with_open_paragraph(
+            last_open_child(&g.children, skip_comments),
+            colon_open - 1,
+            skip_comments,
+        ),
         _ => false,
     }
 }
@@ -10722,6 +10771,17 @@ fn is_flush_line_comment(line: &str) -> bool {
     line.starts_with("%%") && detect_comment_fence_line(line).is_none()
 }
 
+/// The `%%` line form at ANY column.
+///
+/// A comment is column-exempt (§24 C3): below a container's content column it is
+/// still invisible and still closes the paragraph, and because it adds no block
+/// there it cannot end the container it never reached
+/// (markup-carve/carve-rs#1516).
+fn is_line_comment_any_column(line: &str) -> bool {
+    let trimmed = trim_ascii_start(line);
+    trimmed.starts_with("%%") && detect_comment_fence_line(trimmed).is_none()
+}
+
 /// Is the next line one `collect_trailing_lazy` could actually fold?
 ///
 /// A cheap peek, kept separate because the open-paragraph test that follows it
@@ -10746,6 +10806,36 @@ fn fold_lazy_run_and_resume(
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
     loop {
+        // A COMMENT BELOW THE CONTENT COLUMN ENDS NOTHING. §10 I5's first
+        // exception keeps it invisible and paragraph-closing at any column, and
+        // §24 C3 reserves ending a container for a line that REACHED its
+        // column - so the comment joins the chunk and the line under it lands
+        // in the innermost open item rather than the outer one
+        // (markup-carve/carve-rs#1516). The marker-line sub-list ran this arm
+        // already, flush-left only, for the same reason (carve-rs#1424).
+        if cur.peek().is_some_and(|line| {
+            indent_columns(line) < content_col && is_line_comment_any_column(line)
+        }) {
+            let line = cur.peek().unwrap();
+            nested.push_newline_at(
+                trim_ascii_start(line).to_string(),
+                cur.source_line(cur.pos),
+                cur.source_col(cur.pos)
+                    .map(|col| col + leading_ws(line) as isize),
+            );
+            cur.consume();
+            // The comment CLOSED the paragraph, so the open-paragraph gate
+            // below would stop the fold here - and the container is still open,
+            // which is the whole point of the exception. Resume against the
+            // sub-list's own column exactly as the plain lazy path does.
+            collect_trailing_lazy(cur, nested);
+            let before_resume = cur.pos;
+            nested.append(resume(cur));
+            if cur.pos == before_resume && !cur.peek().is_some_and(is_line_comment_any_column) {
+                break;
+            }
+            continue;
+        }
         if !lazy_line_pending(cur) {
             break;
         }
@@ -12216,7 +12306,7 @@ fn definition_body_takes_the_fold(
     if if marker_line_is_the_whole_body {
         body_ends_with_open_paragraph(source, options)
     } else {
-        nested_ends_with_open_paragraph(source, false, options)
+        nested_ends_with_open_paragraph(source, false, false, options)
     } {
         return true;
     }
