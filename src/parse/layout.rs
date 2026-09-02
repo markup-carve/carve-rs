@@ -317,6 +317,16 @@ fn render_layout_body(
             out.push_str("<blockquote><p>");
             let mut end = i;
             while let Some(text) = lines[end].strip_prefix("> ") {
+                // A QUOTED LINE'S OWN INDENT IS NOT CONTENT. `parse_paragraph`
+                // trims every line it joins, so the authoritative pipeline
+                // answers `>  a` exactly as it answers `> a`; the facade read
+                // the residual column as text and `to_html` parted ways with
+                // the CLI, which turns positions on and never reaches here
+                // (carve-rs#908's shape, carve-rs#1511).
+                let text = trim_ascii_start(text);
+                // Asked of the TRIMMED line, because that is the line the
+                // paragraph parser sees: `>  | A |` is a row once the column
+                // is gone, and a row is not a shape this facade answers.
                 if !is_layout_quote_line(text) {
                     return None;
                 }
