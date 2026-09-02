@@ -478,6 +478,7 @@ fn parse_with_options_mode_and_index(
                     } else {
                         Vec::new()
                     },
+                    reached: Vec::new(),
                     authored_base_at_start: false,
                 },
                 BTreeMap::new(),
@@ -877,6 +878,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
             authored_base_at_start: original.authored_base_at_start,
+            reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
         };
     }
     MappedSource {
@@ -885,6 +887,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
         // text is a column in the document.
         col_map: vec![Some(0); source_line_count],
         authored_base_at_start: false,
+        reached: Vec::new(),
         source,
     }
 }
@@ -1643,6 +1646,7 @@ fn extract_footnote_defs(
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                     authored_base_at_start: false,
+                    reached: Vec::new(),
                 };
                 rebase_overindented_blocks(&mut definition_source, true);
                 defs.insert(label.to_string(), definition_source);
@@ -1702,6 +1706,7 @@ fn extract_footnote_defs(
             },
             source: joined_source(&body),
             authored_base_at_start: false,
+            reached: Vec::new(),
             line_map: body_line_map,
         },
         defs,
@@ -3545,6 +3550,7 @@ impl LineBuffer {
             source,
             line_map: self.line_map,
             authored_base_at_start: false,
+            reached: Vec::new(),
         }
     }
 }
@@ -3561,6 +3567,17 @@ struct MappedSource {
     /// The collector consumed an authored blank immediately before this
     /// chunk's first line, making an over-indented opener a block boundary.
     authored_base_at_start: bool,
+    /// Did each line REACH the enclosing container's content column?
+    ///
+    /// The collector leaves a line one column PAST the column and a line BELOW
+    /// it with the SAME single residual column - `- - x` over `   # H` and over
+    /// ` # H` both arrive here as `- x` / ` # H` - so the re-parse cannot tell
+    /// the container's own authored base from a descendant's lazy line without
+    /// being told (markup-carve/carve#1896).
+    ///
+    /// Recorded by the collectors alone. `false` is the conservative reading
+    /// everywhere else, and a short vector reads as `false` beyond its end.
+    reached: Vec<bool>,
 }
 
 impl MappedSource {
@@ -3571,7 +3588,23 @@ impl MappedSource {
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
             authored_base_at_start: false,
+            reached: vec![false],
         }
+    }
+
+    /// Lines in `source`, counted the way `rebase_overindented_blocks` counts
+    /// them so `reached` can be kept exactly as long.
+    fn line_count(&self) -> usize {
+        if self.source.is_empty() {
+            0
+        } else {
+            self.source.matches('\n').count() + 1
+        }
+    }
+
+    fn pad_reached(&mut self) {
+        let lines = self.line_count();
+        self.reached.resize(lines, false);
     }
 
     /// Append a line, recording how many codepoints were stripped from its
@@ -3590,18 +3623,23 @@ impl MappedSource {
             self.line_map.push(source_line);
         }
         self.col_map.push(stripped);
+        self.pad_reached();
     }
 
     fn append(&mut self, other: MappedSource) {
         if other.source.is_empty() {
             return;
         }
+        let mut other_reached = other.reached;
+        other_reached.resize(other.source.matches('\n').count() + 1, false);
+        self.pad_reached();
         if !self.source.is_empty() {
             self.source.push('\n');
         }
         self.source.push_str(&other.source);
         self.line_map.extend(other.line_map);
         self.col_map.extend(other.col_map);
+        self.reached.extend(other_reached);
     }
 }
 
@@ -5363,16 +5401,33 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             i += 1;
             continue;
         }
-        // A residual indent below a live descendant's content column is that
-        // descendant's below-minimum lazy line, not an authored base of the
-        // parent. Keep the descendant live until a flush parent line returns.
-        if !after_blank && nested_columns.last().is_some_and(|column| base < *column) {
+        // Did the line REACH the container's own content column? A line one
+        // column past it and a line below it both arrive with a single
+        // residual column and only `reached` separates them - see
+        // `MappedSource::reached`. Unknown reads as "below", which is what
+        // this scan assumed before markup-carve/carve#1896.
+        let reaches_container = source.reached.get(i).copied().unwrap_or(false);
+        // A residual indent below EVERY live column is nobody's authored base:
+        // it reaches no descendant, and not the container either, so it stays
+        // the lazy line of whatever the line above left open.
+        if !reaches_container
+            && !after_blank
+            && nested_columns.last().is_some_and(|column| base < *column)
+        {
             let local = strip_leading_columns(&lines[i], base);
             if base > 0 || !item_block_opener(&local) {
                 block_at_minimum = false;
                 i += 1;
                 continue;
             }
+        }
+        // It reached the container and fell short of every descendant, so no
+        // descendant owns it (markup-carve/carve#1896): the deeper one opened
+        // on a line above and never on this one. The scan is back in the
+        // container's coordinate system exactly as a line at its minimum column
+        // puts it there, and the opener written here is the container's own.
+        if reaches_container && nested_columns.last().is_some_and(|column| base < *column) {
+            block_at_minimum = true;
         }
         while nested_columns.last().is_some_and(|column| base < *column) {
             nested_columns.pop();
@@ -10843,23 +10898,27 @@ fn collect_indented_block_mapped_with(
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     if cur.line_map.is_none() {
+        let (source, reached) = collect_indented_block_plain_with(
+            cur,
+            parent_indent,
+            strip_cols,
+            stop_at_content_column_marker,
+            fence,
+            lead_is_continuation,
+        );
         return MappedSource {
-            source: collect_indented_block_plain_with(
-                cur,
-                parent_indent,
-                strip_cols,
-                stop_at_content_column_marker,
-                fence,
-                lead_is_continuation,
-            ),
+            source,
             line_map: Vec::new(),
             col_map: Vec::new(),
             authored_base_at_start,
+            reached,
         };
     }
     let mut lines = Vec::new();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
+    // See `MappedSource::reached`.
+    let mut reached: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
@@ -10878,6 +10937,7 @@ fn collect_indented_block_mapped_with(
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
                 }
+                reached.push(false);
                 col_map.push(cur.source_col(cur.pos));
                 cur.consume();
                 continue;
@@ -10922,6 +10982,7 @@ fn collect_indented_block_mapped_with(
             if cur.line_map.is_some() {
                 line_map.push(cur.source_line(cur.pos));
             }
+            reached.push(false);
             col_map.push(cur.source_col(cur.pos));
             cur.consume();
             continue;
@@ -10959,6 +11020,7 @@ fn collect_indented_block_mapped_with(
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
                 }
+                reached.push(false);
                 col_map.push(cur.source_col(cur.pos));
                 cur.consume();
                 continue;
@@ -11035,6 +11097,7 @@ fn collect_indented_block_mapped_with(
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
         }
+        reached.push(indent >= strip_cols);
         col_map.push(
             cur.source_col(cur.pos)
                 .map(|outer| outer + consumed as isize - synthetic as isize),
@@ -11048,11 +11111,13 @@ fn collect_indented_block_mapped_with(
     if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
         source.push('\n');
     }
+    debug_assert_eq!(reached.len(), lines.len());
     MappedSource {
         col_map,
         source,
         line_map,
         authored_base_at_start,
+        reached,
     }
 }
 
@@ -11126,8 +11191,13 @@ fn collect_indented_block_plain_with(
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
-) -> String {
+) -> (String, Vec<bool>) {
     let mut lines = Vec::new();
+    // See `MappedSource::reached`. Kept here as well as in the mapped
+    // collector because the two paths must parse a document the same way, and
+    // this one runs whenever positions are off - which is every `to_html`
+    // (markup-carve/carve-rs#908 is the same lesson).
+    let mut reached: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
@@ -11144,6 +11214,7 @@ fn collect_indented_block_plain_with(
             // any join could preserve it (markup-carve/carve-rs#908).
             if fence.is_some() {
                 lines.push(String::new());
+                reached.push(false);
                 cur.consume();
                 continue;
             }
@@ -11171,6 +11242,7 @@ fn collect_indented_block_plain_with(
                 }
             }
             lines.push(String::new());
+            reached.push(false);
             cur.consume();
             continue;
         }
@@ -11193,6 +11265,7 @@ fn collect_indented_block_plain_with(
         if lead_is_continuation && lines.is_empty() {
             if indent == 0 {
                 lines.push(slice_columns(line, 0, true).to_string());
+                reached.push(false);
                 cur.consume();
                 continue;
             }
@@ -11280,17 +11353,19 @@ fn collect_indented_block_plain_with(
             indent >= strip_cols && !opaque_here,
         );
         lines.push(sliced);
+        reached.push(indent >= strip_cols);
         cur.consume();
     }
     // TERMINATE while a fence is still open, so the blank the loop above just
     // collected survives the round trip back through `str::lines()`. Outside a
     // fence a trailing blank is spacing and the plain join is right
     // (markup-carve/carve-rs#908).
+    debug_assert_eq!(reached.len(), lines.len());
     let mut source = lines.join("\n");
     if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
         source.push('\n');
     }
-    source
+    (source, reached)
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
@@ -12294,6 +12369,7 @@ fn collect_definition_body(
         source: lines.join("\n"),
         line_map,
         authored_base_at_start: false,
+        reached: Vec::new(),
     }
 }
 

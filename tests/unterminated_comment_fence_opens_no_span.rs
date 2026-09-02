@@ -23,11 +23,20 @@ fn an_unterminated_fence_does_not_lift_a_below_column_line() {
 }
 
 #[test]
-fn the_same_holds_one_level_deeper() {
-    assert_eq!(
-        to_html("- - a\n    %%% x\n   # h"),
-        "<ul>\n  <li>\n    <ul>\n      <li>a\n        # h\n      </li>\n    </ul>\n  </li>\n</ul>"
-    );
+fn one_level_deeper_the_line_is_between_two_columns_instead() {
+    // NOT the same shape, which is why it does not answer the same way. Under
+    // `- - a` the live columns are 2 and 4, so `   # h` is written BETWEEN them
+    // rather than below the only column there is: it reaches the outer item and
+    // opens there (markup-carve/carve-rs#1506, ruled by markup-carve/carve#1896).
+    //
+    // This test asserted the folded reading. The executable spec never had it -
+    // measured against it here for the first time, at the pinned corpus.
+    let expected =
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n    </ul>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>";
+    assert_eq!(to_html("- - a\n    %%% x\n   # h"), expected);
+    // The degraded fence is beside the point: the same two columns answer the
+    // same way with nothing between them.
+    assert_eq!(to_html("- - a\n   # h"), expected);
 }
 
 #[test]
