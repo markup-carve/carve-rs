@@ -808,7 +808,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // same twelve causes, the soft-break row 212 to 216 and every other row
     // unchanged - so no new KIND of loss appeared, and the exact source-lossy
     // set above remains unchanged.
-    const STRICT: usize = 1231;
+    // The pin moves on to carve 95fc3a04 (markup-carve/carve#1915), which adds
+    // corpus 443's TEN documents - the unterminated comment fence band inside a
+    // list item - and changes nothing else. Measured the same way against the
+    // d4f278b0 dump with the same engine: 1231/323 over 1554 documents becomes
+    // 1241/323 over 1564. Every one of the ten round-trips STRICTLY, so the
+    // lossy side does not move at all; no document leaves either bucket in
+    // either direction and all ten joiners are files the base corpus does not
+    // contain. `lossy` holding EXACTLY at 323 is the half that matters - a
+    // ceiling that merely fails to rise cannot distinguish ten arrivals from
+    // some number leaving, which is what the by-name diff is for.
+    const STRICT: usize = 1241;
     const LOSSY: usize = 323;
     assert!(
         covered >= STRICT,

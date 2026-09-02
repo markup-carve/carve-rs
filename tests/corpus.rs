@@ -575,6 +575,7 @@ const IMPLEMENTED: &[&str] = &[
     "the-continuation-marker-s-column-gate-reaches-every-container",
     "a-definition-between-two-open-content-columns-reaches-the-outer-one",
     "a-marker-folds-only-strictly-between-the-item-s-base-and-content-column",
+    "an-unterminated-comment-fence-in-a-list-item-is-the-line-form",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
