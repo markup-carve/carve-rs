@@ -8891,6 +8891,7 @@ fn parse_list(
                         .source
                         .lines()
                         .any(is_collected_definition_placeholder);
+                    let degraded_comment_fence = chunk_ends_in_degraded_comment_fence(cur, &nested);
                     // Normalize the authored base before peeling trailing
                     // attribute lines: the peel is intentionally syntactic and
                     // only recognizes a flush attribute block. The target may
@@ -8973,7 +8974,7 @@ fn parse_list(
                     // exception. If the collector stopped on a nonzero line
                     // below the item's content column, no paragraph remains
                     // for that line to continue (markup-carve/carve#1376).
-                    if definition_ended_paragraph
+                    if (definition_ended_paragraph || degraded_comment_fence)
                         && cur.peek().is_some_and(|line| {
                             let indent = indent_columns(line);
                             indent > 0 && indent < content_col
@@ -10943,6 +10944,14 @@ fn collect_indented_block_mapped_with(
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
     let mut definition_ended_paragraph = false;
+    // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
+    // PART 9 SS28 degrades it to a line comment, and with the paragraph closed
+    // there is nothing below the content column for a line to continue - so the
+    // item ends there and the line reparses at document level
+    // (markup-carve/carve-rs#1512). Sticky for the rest of the item, exactly as
+    // the executable spec keeps it: an at-column line after the fence does not
+    // reopen the band.
+    let mut degraded_comment_fence = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -11052,6 +11061,9 @@ fn collect_indented_block_mapped_with(
         if definition_ended_paragraph && indent < strip_cols {
             break;
         }
+        if degraded_comment_fence && indent < strip_cols {
+            break;
+        }
         if fence.is_some() && indent < strip_cols {
             break;
         }
@@ -11084,6 +11096,14 @@ fn collect_indented_block_mapped_with(
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            } else if indent == strip_cols {
+                // Degraded, and written AT this container's own content column.
+                // Below it the fence never reached the container and ends
+                // nothing there; PAST it a deeper container may own the fence
+                // instead, and this collector cannot see the deeper column -
+                // `- - x` over `    %%% x` ends the INNER item, whose line the
+                // chunk boundary already places in the outer one.
+                degraded_comment_fence = true;
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
@@ -11203,6 +11223,52 @@ fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_conte
     }
 }
 
+/// Does this collected chunk leave a comment fence that never closes?
+///
+/// PART 9 SS28 degrades such a fence to an ordinary line comment, and a line
+/// comment leaves no paragraph open - so a line written BELOW the container's
+/// content column continues nothing and the container ends there
+/// (markup-carve/carve-rs#1512).
+///
+/// The collector's own `break` cannot say this: it ends the CHUNK, and the
+/// outer loop collects the next one and takes the line back. `reached` is what
+/// keeps the column question answerable after the dedent - a fence below the
+/// content column never reached the container and ends nothing there - and the
+/// closer index is asked from the cursor's position, so "unterminated" means
+/// the same thing here as it does inside the collector.
+fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &MappedSource) -> bool {
+    let mut open: Option<usize> = None;
+    // The descendants live at the fence's line, so a fence written at a
+    // SUB-item's column ends that item and not this one: `- - x` over
+    // `    %%% x` leaves the line to the outer item, which the chunk boundary
+    // already places it in. Same walk `rebase_overindented_blocks` runs.
+    let mut nested_columns: Vec<usize> = Vec::new();
+    for (index, line) in chunk.source.lines().enumerate() {
+        if let Some(fence_len) = open {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                open = None;
+            }
+            continue;
+        }
+        let base = indent_columns(line);
+        while nested_columns.last().is_some_and(|column| base < *column) {
+            nested_columns.pop();
+        }
+        let owned_by_descendant = nested_columns.last().is_some_and(|column| base >= *column);
+        if let Some(column) = marker_content_col(line) {
+            nested_columns.push(column);
+            continue;
+        }
+        if owned_by_descendant || !chunk.reached.get(index).copied().unwrap_or(false) {
+            continue;
+        }
+        if let Some(fence) = detect_comment_fence_line_any_column(line) {
+            open = Some(fence.fence_len);
+        }
+    }
+    open.is_some_and(|fence_len| !cur.has_comment_closer_after(cur.pos, fence_len))
+}
+
 fn collect_indented_block_plain_with(
     cur: &mut LineCursor,
     parent_indent: usize,
@@ -11222,6 +11288,14 @@ fn collect_indented_block_plain_with(
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
     let mut definition_ended_paragraph = false;
+    // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
+    // PART 9 SS28 degrades it to a line comment, and with the paragraph closed
+    // there is nothing below the content column for a line to continue - so the
+    // item ends there and the line reparses at document level
+    // (markup-carve/carve-rs#1512). Sticky for the rest of the item, exactly as
+    // the executable spec keeps it: an at-column line after the fence does not
+    // reopen the band.
+    let mut degraded_comment_fence = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
@@ -11296,6 +11370,9 @@ fn collect_indented_block_plain_with(
         if definition_ended_paragraph && indent < strip_cols {
             break;
         }
+        if degraded_comment_fence && indent < strip_cols {
+            break;
+        }
         // Same fenced-body guard as the mapped collector above (§24, #950).
         if fence.is_some() && indent < strip_cols {
             break;
@@ -11343,6 +11420,14 @@ fn collect_indented_block_plain_with(
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            } else if indent == strip_cols {
+                // Degraded, and written AT this container's own content column.
+                // Below it the fence never reached the container and ends
+                // nothing there; PAST it a deeper container may own the fence
+                // instead, and this collector cannot see the deeper column -
+                // `- - x` over `    %%% x` ends the INNER item, whose line the
+                // chunk boundary already places in the outer one.
+                degraded_comment_fence = true;
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
