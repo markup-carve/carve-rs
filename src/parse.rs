@@ -5796,6 +5796,18 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
     end
 }
 
+/// A code fence with NO closer ahead is paragraph text, past a container's
+/// content column exactly as at it (§10 I4).
+///
+/// `item_block_opener` is a shape test and cannot ask the closer question, so
+/// the over-indented band broke out of the lead paragraph on a fence the
+/// at-column band folds - the same document answered two ways one column apart
+/// (markup-carve/carve-rs#1523). Only the code-fence arm is affected: every
+/// other opener this predicate recognizes stands on its own line.
+fn unterminated_code_fence_folds(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    detect_fence_open(line).is_some_and(|open| !code_fence_closer_ahead(cur, open))
+}
+
 fn item_block_opener(line: &str) -> bool {
     item_block_opener_with_invisible_arms(line, true)
 }
@@ -9649,7 +9661,10 @@ fn parse_list(
                 // base, and the continuation collector below rebases the whole
                 // block relative to it (#1705). Ordinary over-indented prose is
                 // still lazy paragraph text.
-                if item_block_opener(trim_ascii_start(next)) {
+                let over_indented = trim_ascii_start(next);
+                if item_block_opener(over_indented)
+                    && !unterminated_code_fence_folds(cur, over_indented)
+                {
                     break;
                 }
                 // Fully strip ordinary prose's indent and fold it into the lead
@@ -11675,6 +11690,35 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
 /// interrupt, `+` is the continuation marker not a bullet, and a bare image
 /// stays inline.
+/// Whether the fence opened on the cursor's current line has a matching closer
+/// ahead (§10 I4: a fence with no closer never opened).
+///
+/// ONE spelling for two bands. `interrupts_paragraph` asks it at a container's
+/// content column and `parse_list`'s over-indented band asks it past that
+/// column; answering the closer question in only the first is what let the same
+/// fence fold at the column and open a `<pre>` one column further out
+/// (markup-carve/carve-rs#1523).
+///
+/// The index answers "no closer anywhere ahead" in constant time. The exact
+/// probe still decides, but without that gate it runs from every opener to the
+/// end of the document, so a file of unterminated openers costs O(n^2) - the
+/// shape `comment_closer_last_index` already removed for `%%%`.
+///
+/// The opener has been dedented to its container's content column by the
+/// caller, but the closer probe runs over the RAW remaining lines - so dedent
+/// each by the current line's own indentation before the column-exact
+/// `is_fence_close`, or a closer carrying the container indent is missed.
+fn code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
+    if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
+        return false;
+    }
+    let strip = leading_ws(cur.lines[cur.pos]);
+    cur.lines[cur.pos + 1..]
+        .iter()
+        .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
+        .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+}
+
 fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
     // with no blank line. Invisible constructs (comments, abbreviation defs)
@@ -11739,21 +11783,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // unaffected; a strict opener only matches when `line` is flush, so the
     // strip comes from the raw current line's own indentation.
     if let Some(open) = detect_fence_open(line) {
-        // The index answers "no closer anywhere ahead" in constant time. The
-        // exact probe below still decides, but without this gate it runs from
-        // every opener to the end of the document, so a file of unterminated
-        // openers costs O(n^2) - the shape `comment_closer_last_index` already
-        // removed for `%%%`.
-        if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
-            return false;
-        }
-        let strip = leading_ws(cur.lines[cur.pos]);
-        let rest = &cur.lines[cur.pos + 1..];
-        if rest
-            .iter()
-            .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
-            .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
-        {
+        if code_fence_closer_ahead(cur, open) {
             return true;
         }
     }
