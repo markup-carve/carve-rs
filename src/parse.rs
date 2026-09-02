@@ -9009,7 +9009,7 @@ fn parse_list(
                     // a second paragraph rather than a continuation of the
                     // first: a comment ends the paragraph above it (§10) while
                     // leaving its container open.
-                    collect_trailing_lazy_through(cur, &mut nested, base_indent);
+                    collect_trailing_lazy_through(cur, &mut nested, base_indent, base_indent);
                     let children = item_body(deferred, last_item, nested, None, false);
                     items[last_item].children.extend(children);
                     continue;
@@ -9354,6 +9354,7 @@ fn parse_list(
                         cur,
                         &mut stream,
                         nested_content_col.saturating_sub(1),
+                        base_indent,
                     );
                     let before_block = cur.pos;
                     stream.append(collect_indented_block_mapped(
@@ -9400,6 +9401,7 @@ fn parse_list(
                     cur,
                     &mut stream,
                     nested_content_col.saturating_sub(1),
+                    base_indent,
                 );
                 if cur.pos == before {
                     break;
@@ -10766,7 +10768,7 @@ fn fold_lazy_run_and_resume(
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
-    collect_trailing_lazy_through(cur, nested, 0);
+    collect_trailing_lazy_through(cur, nested, 0, 0);
 }
 
 /// Fold lazy lines down to a container's own base column.
@@ -10774,15 +10776,25 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
 /// Most callers parse at document column zero and use `collect_trailing_lazy`.
 /// A flush comment can keep an INDENTED list open too, where a line at that
 /// list's base column is still below its content column and therefore lazy.
+///
+/// `list_base` is the column a SIBLING marker would be written at. Only a
+/// marker at or below it ends the run: `parse_list`'s own rule is that a marker
+/// indented past the list's base but below the content column folds as lazy
+/// item text (§10 - no marker interrupts a paragraph), and this collector broke
+/// on every marker instead, letting a below-column one out to open a sub-list
+/// (markup-carve/carve-rs#1514). The two callers that pass a `list_base` below
+/// `base_indent` are the marker-line sub-list's, where the band between the two
+/// columns exists at all.
 fn collect_trailing_lazy_through(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
     base_indent: usize,
+    list_base: usize,
 ) {
     while let Some(line) = cur.peek() {
         if is_blank_line(line)
             || indent_columns(line) > base_indent
-            || is_list_marker(line)
+            || (is_list_marker(line) && indent_columns(line) <= list_base)
             || trim_ascii(line) == "+"
             || {
                 let line_owned = line.to_string();
