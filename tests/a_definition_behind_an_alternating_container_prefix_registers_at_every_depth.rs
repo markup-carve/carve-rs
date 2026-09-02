@@ -189,16 +189,23 @@ fn an_indented_quote_that_reaches_no_item_is_still_text() {
 }
 
 #[test]
-fn a_definition_between_canonical_columns_stays_with_the_descendant() {
+fn a_definition_between_canonical_columns_belongs_to_the_outer_item() {
+    // RULED BY markup-carve/carve#1896 (carve-rs#1505). The live columns here
+    // are 6 and 8; a definition at 7 reaches 6, because the item at 8 opened on
+    // the marker line above and owns nothing on this one. This test used to
+    // assert the opposite and to claim the executable spec answered the same
+    // way - it does not, and the claim was never measured. The family it
+    // belongs to is pinned in
+    // `a_definition_between_two_content_columns_registers`.
     let src = "- > - - x\n  >    [r]: /url\n\nSee [r][].\n";
     let html = to_html(src);
     assert!(
-        html.contains("[r]: /url"),
-        "below-minimum descendant text disappeared: {html}"
+        html.contains("href=\"/url\""),
+        "the definition between two columns registered nothing: {html}"
     );
     assert!(
-        !html.contains("href=\"/url\""),
-        "below-minimum descendant text registered: {html}"
+        !html.contains("[r]: /url"),
+        "the definition stayed visible: {html}"
     );
 }
 
