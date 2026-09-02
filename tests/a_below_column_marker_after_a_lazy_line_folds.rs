@@ -135,3 +135,35 @@ fn a_deeper_lazy_column_folds_the_same_way() {
         both_paths("- - - x\n b\n - y\n"),
     );
 }
+
+#[test]
+fn a_sibling_marker_after_a_flush_comment_still_ends_the_run() {
+    // THE UPPER EDGE OF THE WINDOW, and the only row that pins it. A flush
+    // comment keeps the list open and hands the rest of the run to this
+    // collector, so a marker at the LIST's own base column reaches the guard
+    // here rather than an earlier break. Dropping the guard outright, or asking
+    // `<` instead of `<=`, folds these into the item above; every other row in
+    // this file survives both, measured.
+    assert_eq!(
+        both_paths("- x\n%% k\n- y\n").trim(),
+        "<ul>\n  <li>x</li>\n  <li>y</li>\n</ul>",
+    );
+    assert_eq!(
+        both_paths("- x\n%% k\n1. y\n").trim(),
+        "<ul>\n  <li>x</li>\n</ul>\n<ol>\n  <li>y</li>\n</ol>",
+    );
+    // The same at a nested list's base column, where `list_base` is not 0.
+    assert_eq!(
+        both_paths("- - x\n  %% k\n  - y\n").trim(),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <ul>\n",
+            "      <li>x</li>\n",
+            "      <li>y</li>\n",
+            "    </ul>\n",
+            "  </li>\n",
+            "</ul>",
+        ),
+    );
+}
