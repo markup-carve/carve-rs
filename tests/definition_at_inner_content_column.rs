@@ -42,14 +42,18 @@ fn a_definition_at_the_outer_content_column_still_registers() {
 }
 
 #[test]
-fn a_definition_between_two_content_columns_stays_text() {
-    // Column 3 reaches neither item, so PART 9 §24 C3's fold applies: the line
-    // is item paragraph text and defines nothing. All three engines agree.
+fn a_definition_between_two_content_columns_registers_against_the_outer_one() {
+    // Column 3 reaches the outer item at 2, not the inner one at 4, and that is
+    // enough: the item at 4 opened on the marker line above and owns nothing on
+    // this one (markup-carve/carve#1896, carve-rs#1505). This test previously
+    // asserted the line stayed text and claimed all three engines agreed; the
+    // executable spec registers it, and the claim was never measured. The
+    // family is pinned in `a_definition_between_two_content_columns_registers`.
     let html = to_html("- - a\n   [^f]: x\n\nsee[^f]\n");
 
-    assert!(html.contains("[^f]: x"), "line should stay text: {html}");
+    assert!(html.contains("doc-endnotes"), "note not registered: {html}");
     assert!(
-        !html.contains("doc-endnotes"),
-        "nothing should register: {html}"
+        !html.contains("[^f]: x"),
+        "definition line still rendered: {html}"
     );
 }

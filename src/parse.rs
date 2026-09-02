@@ -915,7 +915,6 @@ struct ContentColumns {
     /// measured in whichever coordinate the caller happened to strip to.
     frames: Vec<ColumnFrame>,
     prev_blank: bool,
-    after_blank: bool,
 }
 
 /// One container's live content columns, plus the definition list open inside
@@ -939,7 +938,6 @@ impl ContentColumns {
         Self {
             frames: vec![ColumnFrame::default()],
             prev_blank: true,
-            after_blank: true,
         }
     }
 
@@ -959,7 +957,6 @@ impl ContentColumns {
     fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
         let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
-        self.after_blank = was_prev_blank;
         self.prev_blank = trim_ascii(bare).is_empty();
         if opaque {
             return self.current().cols.last().copied().unwrap_or(0);
@@ -1124,17 +1121,14 @@ impl ContentColumns {
     /// the deepest one at or below it, or 0 when it reaches none.
     ///
     /// Not always the innermost. Under `- - a` a definition written at column 2
-    /// belongs to the outer item and one at column 4 to the inner one; between
-    /// them it reaches neither and folds as text (PART 9 §24 C3).
+    /// belongs to the outer item, and one written between the two live columns
+    /// belongs to the outer of them - the deeper item never opened on that
+    /// line, so it cannot own it (markup-carve/carve#1896).
     ///
     /// Only the INNERMOST container's columns are consulted: a column measured
     /// outside the quote a line sits in is not a column that line can reach.
     fn reached_by(&self, indent: usize) -> usize {
         self.reached_by_at(self.frames.len() - 1, indent)
-    }
-
-    fn descendant_still_owns(&self, indent: usize) -> bool {
-        !self.after_blank && self.current().cols.iter().any(|col| *col > indent)
     }
 
     /// `reached_by`, asked of a NAMED container level rather than the innermost
@@ -1156,16 +1150,15 @@ impl ContentColumns {
     }
 }
 
-/// A definition line with the enclosing item's content column removed. Under
-/// carve#1705, residual indentation is removed when the definition may establish
-/// an authored base. It is retained while a deeper descendant still owns the
-/// uninterrupted line.
-fn at_content_column<'a>(
-    bare: &'a str,
-    structural: &str,
-    content_col: usize,
-    allow_authored_base: bool,
-) -> &'a str {
+/// A definition line with the enclosing item's content column removed, plus the
+/// residual indentation that carve#1705's authored base absorbs.
+///
+/// The residual is absorbed WHENEVER the line reaches a content column, not only
+/// where no deeper column is live. Withholding it there was the whole of
+/// carve-rs#1505: under `- - x` the live columns are 2 and 4, and a definition
+/// at 3 reaches 2 - the item at 4 opened on the marker line above and never on
+/// this one, so it owns nothing here (markup-carve/carve#1896).
+fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) -> &'a str {
     // A BLOCKQUOTE prefix does not disqualify the strip: columns are measured
     // inside the quote, so `> - a` / `>   [r]: /u` is the same shape as its
     // unquoted twin and the definition is the item's block either way
@@ -1179,7 +1172,7 @@ fn at_content_column<'a>(
     if content_col > 0 && (structural.is_empty() || quoted_only) {
         let at = bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare);
         let authored = at.trim_start_matches([' ', '\t']);
-        if allow_authored_base && authored.starts_with('[') && authored.contains("]: ") {
+        if authored.starts_with('[') && authored.contains("]: ") {
             authored
         } else {
             at
@@ -1404,7 +1397,6 @@ fn extract_footnote_defs(
             stripped.bare,
             stripped.structural,
             columns.reached_by(def_indent),
-            !columns.descendant_still_owns(def_indent),
         );
         // PART 9R R1a: a line that folds into an open paragraph defines nothing,
         // and a probe that cannot afford to say so collects nothing either. The
@@ -2400,7 +2392,6 @@ fn extract_link_defs_with_guard(
             stripped.bare,
             stripped.structural,
             columns.reached_by(def_indent),
-            !columns.descendant_still_owns(def_indent),
         );
         // See the footnote pass: folding and not being able to tell are one
         // condition, and both collect nothing (PART 9R R1a).
