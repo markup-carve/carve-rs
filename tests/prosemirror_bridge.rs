@@ -782,8 +782,34 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // and round-trips strictly; `-7` writes `: <tab>` with nothing after it,
     // which opens none, so the line folds into the paragraph above it. That is
     // the same soft-break shape as the five 439 documents already here.
-    const STRICT: usize = 1221;
-    const LOSSY: usize = 319;
+    // The bump to carve 2775b6df adds THIRTEEN documents - corpus 441's four
+    // (markup-carve/carve#1897) and corpus 442's nine (markup-carve/carve#1910) -
+    // and changes none: the pin diff over `tests/corpus` is 26 files, every one
+    // of them an ADDITION.
+    //
+    // MEASURED THE SAME WAY as every bump above - dumping BOTH buckets at
+    // 86569bd9 and at 2775b6df with the same engine and diffing them by name:
+    // 1222/319 over 1541 documents becomes 1231/323 over 1554, NO document
+    // leaves either bucket in either direction, and all 13 joiners are files
+    // the base corpus does not contain at all. (The recorded 1221 sat one below
+    // the measured 1222 - a floor cannot see arrivals on its own side, which is
+    // what the exact-total assertion below is for.)
+    //
+    // Nine round-trip strictly. The other four report an already-declared
+    // editor loss, every one with `dropped` EMPTY and the single cause
+    // `soft_break`. They are exactly 442's folding cases - `-2`, `-5`, `-6` and
+    // `-9`, the four whose marker column is strictly BETWEEN the item's base
+    // and content column - and a folded marker leaves its line running on into
+    // the lead text above it, which is a MULTI-LINE PARAGRAPH and so a soft
+    // break by construction. The other five 442 documents put the marker AT the
+    // base column (a sibling item) or at the content column (a nested item), so
+    // no line folds and they land strict; all four 441 documents are strict.
+    // The reported-cause table is otherwise identical across the two pins - the
+    // same twelve causes, the soft-break row 212 to 216 and every other row
+    // unchanged - so no new KIND of loss appeared, and the exact source-lossy
+    // set above remains unchanged.
+    const STRICT: usize = 1231;
+    const LOSSY: usize = 323;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

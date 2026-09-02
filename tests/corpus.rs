@@ -573,6 +573,8 @@ const IMPLEMENTED: &[&str] = &[
     "an-empty-description-body-claims-no-line-below-column-0",
     "an-empty-description-body-is-written-with-the-empty-sentinel",
     "the-continuation-marker-s-column-gate-reaches-every-container",
+    "a-definition-between-two-open-content-columns-reaches-the-outer-one",
+    "a-marker-folds-only-strictly-between-the-item-s-base-and-content-column",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
