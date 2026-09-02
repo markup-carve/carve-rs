@@ -10790,11 +10790,20 @@ fn collect_trailing_lazy_through(
         {
             break;
         }
-        let stripped = leading_ws(line);
+        // A BLOCK-SHAPED LINE KEEPS ITS COLUMN HERE TOO. This collector took
+        // every lazy line flush, so a `:::` written below every content column
+        // arrived at the next re-parse spelled as a closer and published an
+        // empty `<div>` where the spec folds it (carve-rs#1510). The column is
+        // the whole reason the line is text, and `dedent_for_collection`
+        // already spends one to say so - the two collectors have to agree, or
+        // the same line parses differently depending on which one took it.
+        let indent = indent_columns(line);
+        let take = dedent_below_column(line, indent);
+        let (sliced, consumed, _) = slice_columns_mapped(line, take, true);
         nested.push_newline_at(
-            trim_ascii_start(line).to_string(),
+            sliced,
             cur.source_line(cur.pos),
-            cur.source_col(cur.pos).map(|col| col + stripped as isize),
+            cur.source_col(cur.pos).map(|col| col + consumed as isize),
         );
         cur.consume();
     }
@@ -10821,6 +10830,16 @@ fn dedent_for_collection(line: &str, indent: usize, strip_cols: usize) -> usize 
     if indent >= strip_cols {
         return strip_cols;
     }
+    dedent_below_column(line, indent)
+}
+
+/// How much of a BELOW-COLUMN line's own indentation a collector takes.
+///
+/// Split out of `dedent_for_collection` because `collect_trailing_lazy_through`
+/// asks the same question and used to answer it "all of it", which is how a
+/// below-column `:::` reached the next re-parse spelled flush
+/// (markup-carve/carve-rs#1510).
+fn dedent_below_column(line: &str, indent: usize) -> usize {
     // Two exceptions dedent all the way. A DEFINITION (`:  `) attaches to the
     // term above it from ANY column, which is why an under-indented one is a
     // `<dd>` and not lazy text (corpus 154) - its TERM (`:: `) is not lenient
