@@ -99,14 +99,16 @@ fn control_a_bare_image_folds_in_both() {
 }
 
 #[test]
-fn the_content_column_half_is_untouched() {
-    // S4's clause leaves the CONTENT-COLUMN half deliberately open, and corpus
-    // 75-list-nesting-and-looseness-4 pins the folding answer for the list
-    // spelling of it. A heading collected at a definition body's content column
-    // therefore still takes the fold, which is what keeps the change above a
-    // narrowing of the marker line rather than a sweep of the whole predicate.
+fn the_content_column_half_answers_the_same_way_now() {
+    // S4's clause used to leave the CONTENT-COLUMN half open, and this row
+    // asserted that a heading collected at a definition body's content column
+    // still took the fold - on the reading that corpus
+    // 75-list-nesting-and-looseness-4 pinned it. It does not: there the lazy
+    // line lands in the OUTER item, not in the item whose last block is the
+    // heading. markup-carve/carve#1911 closed the half, so both columns end the
+    // body and the marker-line change above is no longer a narrowing.
     assert_eq!(
         carve::to_html(":: t\n:  d\n\n   # H\ntail\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <h1 id=\"H\">H</h1>\n    <p>tail</p>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <h1 id=\"H\">H</h1>\n  </dd>\n</dl>\n<p>tail</p>"
     );
 }

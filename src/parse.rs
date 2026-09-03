@@ -5442,20 +5442,27 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             i += 1;
             continue;
         }
-        if paragraph_open
-            && base > 0
-            && item_block_opener(&local_at_base)
-            && !item_block_opener_with_invisible_arms(&local_at_base, false)
-        {
-            i += 1;
-            continue;
-        }
         // Did the line REACH the container's own content column? A line one
         // column past it and a line below it both arrive with a single
         // residual column and only `reached` separates them - see
         // `MappedSource::reached`. Unknown reads as "below", which is what
         // this scan assumed before markup-carve/carve#1896.
         let reaches_container = source.reached.get(i).copied().unwrap_or(false);
+        // §10 I5's invisible kinds are lazy paragraph text of THIS container
+        // only BELOW its content column (markup-carve/carve#1809, corpus
+        // 430-2/430-3). At or past the column the same line is the container's
+        // own block content and rebases like any other opener
+        // (markup-carve/carve#1911, corpus 444-7) - the residual the slice
+        // leaves in front of it is what made the two look alike.
+        if paragraph_open
+            && base > 0
+            && !reaches_container
+            && item_block_opener(&local_at_base)
+            && !item_block_opener_with_invisible_arms(&local_at_base, false)
+        {
+            i += 1;
+            continue;
+        }
         // A residual indent below EVERY live column is nobody's authored base:
         // it reaches no descendant, and not the container either, so it stays
         // the lazy line of whatever the line above left open.
@@ -12409,6 +12416,26 @@ impl DefinitionBodyFence {
     }
 }
 
+/// The body's collected lines with their authored bases rebased away - the form
+/// `parse_mapped_source` will actually read (markup-carve/carve#1911).
+///
+/// Same `rebase_overindented_blocks` the caller runs on the finished body, over
+/// a throwaway `MappedSource` carrying no maps: the fold question needs the
+/// TEXT, and the real body keeps its own positions.
+fn body_as_read(source: String, reached: Vec<bool>) -> String {
+    let mut probe = MappedSource {
+        source,
+        line_map: Vec::new(),
+        col_map: Vec::new(),
+        // The body's own `MappedSource` is built with both of these, so the
+        // rebase reads the same document here as it does there.
+        authored_base_at_start: false,
+        reached,
+    };
+    rebase_overindented_blocks(&mut probe, true);
+    probe.source
+}
+
 /// Does the definition body collected so far end in something a flush-left line
 /// can FOLD INTO?
 fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
@@ -12498,13 +12525,14 @@ fn definition_body_takes_the_fold(
     if end == 0 {
         return false;
     }
+    // NO HEADING ARM. There used to be one, folding a flush-left line into a
+    // body whose last block is a heading written AT the content column, on the
+    // reading that carve#1280 left that half open. markup-carve/carve#1911
+    // closed it: an opener at the body's column and an opener past it are both
+    // the body's own block content, §10 I1 closes the paragraph for either, and
+    // the follower has nothing left to fold into. Corpus 444 rows 4 and 15 are
+    // that half, and this engine was the only reader still folding them.
     matches!(
-        blocks[end - 1],
-        // See above. A HEADING FOLDS ONLY AT THE CONTENT COLUMN, which is the
-        // half carve#1280 leaves open; on the marker line S4 has already
-        // answered above, and the answer is that it does not.
-        BlockNode::Heading(_) if !marker_line_is_the_whole_body
-    ) || matches!(
         blocks[end - 1],
         // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
         // `image_is_block` makes a bare image line a block ONLY when the
@@ -12558,6 +12586,13 @@ fn collect_definition_body(
     // `lines`. `None` means unknown, and a block starting there gets no
     // position rather than a guessed one (PART 12 section 4).
     let mut col_map: Vec<Option<isize>> = Vec::new();
+    // Did each collected line REACH the body's content column? See
+    // `MappedSource::reached`: the slice at the column leaves a line one past
+    // it and a line below it with the SAME residual, and only this tells them
+    // apart. `:  ` bodies recorded nothing, so the rebase read an attribute
+    // block written PAST the column as §10 I5's below-column lazy text
+    // (markup-carve/carve#1911, corpus 444-7 against 430-3).
+    let mut reached: Vec<bool> = Vec::new();
     while let Some(line) = cur.peek() {
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
@@ -12604,6 +12639,9 @@ fn collect_definition_body(
                 lines.extend(attached.lines);
                 line_map.extend(attached.line_map);
                 col_map.extend(attached.col_map);
+                // A `+` block is pulled in FLUSH LEFT, so it has no residual
+                // for the rebase to read either way.
+                reached.resize(lines.len(), false);
             }
             continue;
         }
@@ -12649,6 +12687,7 @@ fn collect_definition_body(
                 folded_a_lazy_line = false;
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
+                reached.push(true);
                 cur.consume();
                 continue;
             }
@@ -12674,6 +12713,18 @@ fn collect_definition_body(
                     so_far.push('\n');
                     so_far.push_str(collected);
                 }
+                // ASKED OF THE BODY AS THE BODY WILL READ IT
+                // (markup-carve/carve#1911). The collector slices each line at
+                // the body's content column and leaves the residue in front, so
+                // a heading written one column past a three-column body arrives
+                // here as ` # H` - not an opener - and reported a paragraph the
+                // body does not have. The caller rebases those residuals away
+                // before parsing; the fold question has to see the same lines.
+                // The seed is the `:  ` marker line's own content, which is
+                // at the body's column 0 by construction, so it reaches.
+                let mut probe_reached = vec![true; seed.lines().count()];
+                probe_reached.extend_from_slice(&reached);
+                so_far = body_as_read(so_far, probe_reached);
             }
             // NOTHING HAS BEEN COLLECTED AT THE BODY'S COLUMN YET, so the body
             // is the marker line's own content and S4's one question is asked of
@@ -12721,6 +12772,7 @@ fn collect_definition_body(
                 lines.push(keep);
                 line_map.push(cur.source_line(cur.pos));
                 col_map.push(cur.source_col(cur.pos));
+                reached.push(false);
                 cur.consume();
                 continue;
             }
@@ -12740,6 +12792,7 @@ fn collect_definition_body(
                     lines.push(String::new());
                     line_map.push(cur.source_line(cur.pos));
                     col_map.push(cur.source_col(cur.pos));
+                    reached.push(false);
                     cur.consume();
                 }
             }
@@ -12747,12 +12800,13 @@ fn collect_definition_body(
         }
     }
     debug_assert_eq!(col_map.len(), lines.len());
+    debug_assert_eq!(reached.len(), lines.len());
     MappedSource {
         col_map,
         source: lines.join("\n"),
         line_map,
         authored_base_at_start: false,
-        reached: Vec::new(),
+        reached,
     }
 }
 

@@ -17,9 +17,9 @@
 //! kinds rather than from S4's one question. The list spelling of both already
 //! ended, in this same engine, so the enumeration made one document give two
 //! answers depending on which kind sat on the marker. On the MARKER LINE the
-//! question is now asked directly and all five kinds agree; at a CONTENT COLUMN
-//! the clause is open and the enumeration stands, which is the row
-//! `a_heading_at_the_bodys_content_column_still_takes_the_fold` holds.
+//! question was asked directly first; markup-carve/carve#1911 closed the
+//! CONTENT-COLUMN half the same way, and the last of the enumeration went with
+//! it - see `a_heading_at_the_bodys_content_column_ends_the_body_too`.
 //!
 //! TWO ROWS BELOW STOPPED BEING DIVERGENCES. The attribute and thematic-break
 //! twins used to answer differently from their bodies; markup-carve/carve#1280
@@ -168,14 +168,21 @@ fn a_comment_body_ends_the_body_like_its_list_twin() {
 }
 
 #[test]
-fn a_heading_at_the_bodys_content_column_still_takes_the_fold() {
-    // THE OTHER HALF OF S4, which the ruling leaves deliberately open: corpus
-    // 75-list-nesting-and-looseness-4 pins the folding answer for a line at a
-    // CONTENT COLUMN, so a heading collected there keeps it. This is the row
-    // that makes the marker-line change above a narrowing rather than a sweep.
+fn a_heading_at_the_bodys_content_column_ends_the_body_too() {
+    // THE OTHER HALF OF S4, and markup-carve/carve#1911 closed it: an opener AT
+    // the body's content column is the body's own block content, section 10 I1
+    // closes the paragraph, and the flush-left line has nothing to fold into.
+    // This row used to assert the opposite on the reading that corpus
+    // 75-list-nesting-and-looseness-4 pinned the folding answer - it does not:
+    // there `lazy` lands in the OUTER item, not in the item whose last block is
+    // the heading.
     assert_eq!(
         html(":: t\n:  d\n\n   # H\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <h1 id=\"H\">H</h1>\n    <p>lazy</p>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <h1 id=\"H\">H</h1>\n  </dd>\n</dl>\n<p>lazy</p>"
+    );
+    assert_eq!(
+        list_twin("- d\n\n  # H\nlazy\n"),
+        "<ul>\n  <li>d\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 
