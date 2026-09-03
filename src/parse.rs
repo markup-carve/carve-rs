@@ -12982,6 +12982,22 @@ fn collect_definition_body(
                 line.to_string()
             };
             let below_the_column = indent > 0;
+            // A FLUSH-LEFT LINE THAT IS NOT PLAIN DOES NOT CONTINUE THE BODY.
+            // `interrupts_paragraph` answers a different question - §10 says a
+            // list marker does not interrupt a PARAGRAPH - but the question
+            // here is whether the line CONTINUES this body, and a marker does
+            // not. The oracle keeps the two apart: `foldablePlain` excludes
+            // BULLET, an ordered marker and CAPTION alongside the visible
+            // openers, and never asks the fold question about a line that
+            // fails it (markup-carve/carve-rs#1534).
+            if !below_the_column
+                && cur.at_document_level
+                && (detect_list_marker_full(&owned).is_some()
+                    || detect_fence_open(&owned).is_some()
+                    || caption_content(&owned).is_some())
+            {
+                break;
+            }
             if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
                 let keep = if below_the_column {
                     line.to_string()
