@@ -7676,12 +7676,84 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNod
     )
 }
 
+/// Which half of a definition-list entry the quote's own lines last left open.
+///
+/// A lazy `:`-shaped line attaches a fresh description to an open TERM, and is
+/// the open DESCRIPTION's own continuation when there is one - two answers for
+/// one shape, which is why the half has to be tracked rather than the mere
+/// presence of a list (markup-carve/carve-js#1608 measured the same split).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DefHalf {
+    Term,
+    Description,
+}
+
+/// What a quote's OWN lines have left open for a lazy line below them: which
+/// half of a definition entry, and the content column of the innermost
+/// container.
+///
+/// ADVANCED ON DEMAND. `strip_blockquote_prefix` is counted, and a depth ladder
+/// must not pay a walk per level per line (`quote_prefix_calls`), so nothing
+/// here runs until a `:`-shaped lazy line actually asks - and the scan resumes
+/// from where it stopped, so the whole walk is one pass over the quote's lines
+/// however many times it is asked.
+#[derive(Default)]
+struct QuotedEntryScan {
+    scanned: usize,
+    half: Option<DefHalf>,
+    content_col: Option<usize>,
+}
+
+impl QuotedEntryScan {
+    fn advance(&mut self, lines: &[String]) {
+        while self.scanned < lines.len() {
+            let line = &lines[self.scanned];
+            self.scanned += 1;
+            if is_blank_line(line) {
+                self.half = None;
+                continue;
+            }
+            // NO QUOTE-MARKER PEEL HERE. There used to be one, so a line still
+            // carrying a `>` could report the container it opens. It cannot
+            // reach a document: a nested quote's lazy line is written into this
+            // buffer verbatim and read again by the INNER quote's own collector,
+            // whose lines carry no further marker - and that collector strips
+            // the line to the same place this one would have. Measured after
+            // instrumenting it, the way markup-carve/carve-rs#1518 asks: the walk
+            // fires 8856 times over the two description sweeps and changes 0 of
+            // their 24360 documents.
+            let column = indent_columns(line);
+            let rest = trim_ascii_start(line);
+            let ladder = innermost_marker_content_col(rest);
+            if ladder > 0 {
+                self.content_col = Some(column + ladder);
+            }
+            let content = trim_ascii_start(innermost_marker_content(rest));
+            if is_definition_list_start(content) {
+                self.half = Some(DefHalf::Term);
+            } else if strip_definition_marker(content).is_some() {
+                self.half = Some(DefHalf::Description);
+            } else if item_block_opener(content) {
+                // A block written inside the entry closes it, so a lazy line
+                // below has no open half to continue.
+                self.half = None;
+            }
+        }
+    }
+}
+
 #[inline(never)]
 fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usize, LineBuffer) {
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = ParaOpen::Closed;
     let mut in_fence: Option<FenceOpen> = None;
+    // What the quote's own lines have left open, for the lazy branch below.
+    // ADVANCED ON DEMAND, never per line: `strip_blockquote_prefix` is counted
+    // and a depth ladder must not pay per level per line
+    // (`quote_prefix_calls`). Only a `:`-shaped lazy line asks, and the scan
+    // resumes where it stopped, so the whole walk is one pass over the lines.
+    let mut open_entry = QuotedEntryScan::default();
     // THE QUOTE'S OWN LAST BLOCK IS WHAT S4 ASKS ABOUT, and a continuation row
     // belongs to the table above it (§5 T6, markup-carve/carve#1348). `ParaOpen`
     // is handed ONE line and a `+ b |` line reads as prose on its own, so a
@@ -7881,8 +7953,42 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
         let source_col = cur.source_col(cur.pos);
+        // A LAZY LINE HAS NO COLUMN INSIDE THE QUOTE (PART 0). It supplies no
+        // `>`, so it is not the quote's content at any column - it reached the
+        // innermost open paragraph by the fold, and its indentation inside the
+        // quote body means nothing. The collectors below read the quote's inner
+        // lines BY COLUMN, so a `:  a` written at a quoted item's content column
+        // arrived past that column, was dedented by the item's own column, and
+        // kept the rest as leading indent - and an indented `:` is no longer a
+        // description marker, so the body folded into the TERM
+        // (markup-carve/carve-rs#1526).
+        //
+        // ONE SHAPE, DELIBERATELY. Every lazy line has this much in common, and
+        // stripping them all is the general port carve-js#1609 measured
+        // separately: it moves fence-shaped lines off the oracle's answer.
+        // UNLESS A DESCRIPTION BODY IS ALREADY OPEN, where the same line is that
+        // body's own lazy continuation rather than a second entry - and only for
+        // a line that REACHED the innermost container's content column, because
+        // one below it reached no container at all and is already lazy text
+        // wherever it sits.
+        let strips = strip_definition_marker(trim_ascii_start(line)).is_some() && {
+            open_entry.advance(&inner.lines);
+            open_entry.half != Some(DefHalf::Description)
+                && open_entry
+                    .content_col
+                    .is_some_and(|col| indent_columns(line) >= col)
+        };
+        let (kept, stripped_cols) = if strips {
+            (trim_ascii_start(line).to_string(), leading_ws(line))
+        } else {
+            (line.to_string(), 0)
+        };
         cur.consume();
-        inner.push_at(line.to_string(), source_line, source_col);
+        inner.push_at(
+            kept,
+            source_line,
+            source_col.map(|col| col + stripped_cols as isize),
+        );
     }
     (span_start, inner)
 }
