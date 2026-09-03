@@ -155,15 +155,22 @@ fn control_the_first_block_form_is_untouched() {
 /// A MARKER below the body's column takes the same route as any other line: the
 /// entry closes with its empty code block, and only THEN is the residue
 /// classified - in the surviving context, which is the definition LIST, so the
-/// marker opens the next description on the same term. The list spelling answers
-/// identically (a sibling marker at the base column ends the item while its list
-/// carries on), which is what makes this the rule rather than an escape from it.
+/// marker opens the next description on the same term.
+///
+/// THE TWO SPELLINGS DO NOT ANSWER ALIKE, and this test used to say they did.
+/// The trailing flush-left fence is an OPENER for the definition body - the
+/// oracle's `foldablePlain` excludes FENCE, so the body ends there and the run
+/// becomes a code BLOCK - while the list item absorbs it and publishes an inline
+/// code span. Measured against the executable spec at carve `2f654da9`, which
+/// answers the `dd` rows the way they now read and the `li` row the way it
+/// always did (markup-carve/carve-rs#1534). The `li` assertion is unchanged and
+/// is what says the divergence is real rather than a sweep of both.
 #[test]
 fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     let out = html(":: t\n:  ```\n:  d\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
     );
     assert_eq!(
         html("- ```\n- d\n```\n"),
@@ -173,7 +180,7 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     // A TERM marker there opens the next entry, for the same reason.
     assert_eq!(
         html(":: t\n:  ```\n:: u\n:  d\n```\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
     );
 }
 
