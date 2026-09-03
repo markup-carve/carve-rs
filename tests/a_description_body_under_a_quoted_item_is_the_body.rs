@@ -207,3 +207,47 @@ fn a_term_shaped_lazy_line_keeps_its_column() {
         "<blockquote><ul><li><dl><dt>t</dt><dt>u tail</dt></dl></li></ul></blockquote>",
     );
 }
+
+// ---------------------------------------------------------------------------
+// TWO CONDITIONS THE FIRST TABLE LEFT UNPINNED.
+// ---------------------------------------------------------------------------
+
+/// A BLANK DOES NOT CLOSE THE ENTRY. It only loosens the list, so a paragraph
+/// reopened at the body's own column is still that body's, and the `:` under it
+/// is its continuation rather than a second entry. The scan reset its half on a
+/// blank at first, which moved 12 documents of this band off the oracle.
+#[test]
+fn a_blank_does_not_close_the_open_description() {
+    assert_html(
+        "> - :: t\n>   :  d\n>\n>       p\n    :  a\ntail\n",
+        "<blockquote><ul><li><dl><dt>t</dt><dd><p>d</p><p>p : a tail</p></dd></dl></li>\
+         </ul></blockquote>",
+    );
+}
+
+/// The control that says it is the BODY's column doing the work and not the
+/// blank: reopen the paragraph at the ITEM's column instead and the entry is
+/// behind it, so the `:` is ordinary text either way.
+#[test]
+fn a_paragraph_reopened_at_the_item_column_leaves_the_entry() {
+    assert_html(
+        "> - :: t\n>   :  d\n>\n>   q\n    :  a\ntail\n",
+        "<blockquote><ul><li><dl><dt>t</dt><dd>d</dd></dl><p>q : a tail</p></li></ul></blockquote>",
+    );
+}
+
+/// THE STRIPPED COLUMNS STAY IN THE POSITION MAP. Dedenting the line moves its
+/// text, so the columns removed have to be added back to what the container
+/// recorded as stripped - and NO HTML COMPARISON CAN SEE THIS. Without it the
+/// description's text reports column 4 of line 2, four columns early, which is
+/// where the `:` sits rather than the body (the #908 shape).
+#[test]
+fn the_stripped_columns_stay_in_the_position_map() {
+    let src = "> - :: t\n    :  a\ntail\n";
+    let json = carve::to_json_with_options(src, &Options::default().with_positions(true));
+    let flat: String = json.split_whitespace().collect::<Vec<_>>().join("");
+    assert!(
+        flat.contains("\"value\":\"a\",\"pos\":{\"startLine\":2,\"endLine\":2,\"startColumn\":8"),
+        "the description text must report the column it was written at; got {json}"
+    );
+}

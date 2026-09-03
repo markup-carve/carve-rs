@@ -7709,8 +7709,11 @@ impl QuotedEntryScan {
         while self.scanned < lines.len() {
             let line = &lines[self.scanned];
             self.scanned += 1;
+            // A BLANK ONLY LOOSENS THE LIST, so the open half survives it and
+            // a `:` below is still the open description's own continuation.
+            // Resetting here put 12 documents of the blank-then-reopen band on
+            // the wrong side of the oracle.
             if is_blank_line(line) {
-                self.half = None;
                 continue;
             }
             // NO QUOTE-MARKER PEEL HERE. There used to be one, so a line still
