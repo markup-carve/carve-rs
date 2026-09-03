@@ -8677,6 +8677,24 @@ fn parse_continuation_block(
     // unbounded. (Code / colon fences are handled INSIDE the scan: code fences
     // with matching closers are skipped, and colon fences close at their closer
     // or EOF, so inner `+` lines are content rather than parent boundaries.)
+    // A DEFINITION AT THE BLOCK'S OWN COLUMN 0 IS THE BLOCK'S, however many of
+    // them there are. `+` attaches ONE flush-left block, and §10 I5 spends the
+    // lazy fold first, so a definition the block registers was never a boundary
+    // - the extent runs past it to the content it introduces
+    // (markup-carve/carve#1918 row 24, markup-carve/carve-rs#1532).
+    //
+    // Consumed BEFORE the sibling-marker test below, so that test reads the line
+    // the definitions INTRODUCE. Leaving them for the caller ends the list on
+    // them instead (they are document-column definitions, which are I5
+    // interrupters there), and `- a` / `+` / `[r]: /a` / `- z` came out as two
+    // lists rather than one.
+    // No `&& indent_columns(line) == 0` here: the DOCUMENT placeholder is only
+    // ever emitted where the container prefix is empty AND the line has no
+    // leading whitespace, so the column test could never disagree with the
+    // predicate.
+    while cur.peek().is_some_and(is_document_definition_placeholder) {
+        cur.consume();
+    }
     if let Some(line) = cur.peek() {
         if let Some(nm) = detect_list_marker_full(line) {
             // A marker indented past the base nests as a child list of THIS
