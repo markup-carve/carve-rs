@@ -1473,6 +1473,14 @@ fn extract_footnote_defs(
             //
             let body_indent = footnote_body_floor(lines[def_start_line - first_source_line]);
             let mut note_fence: Option<FenceOpen> = None;
+            // The body column of the note a NESTED definition opened inside this
+            // one, live only while that note is the block a line lands in. See
+            // its use below.
+            // Is this note's body still open for an INDENTED definition below
+            // it? A flush line opens it and a block opener closes it. Only
+            // whether, not where: a footnote definition registers wherever it
+            // lands and is hoisted either way, so no column bound is enforced.
+            let mut body_open_below = false;
             if !in_container {
                 while i < lines.len() {
                     let line = lines[i];
@@ -1609,6 +1617,61 @@ fn extract_footnote_defs(
                                 continue;
                             }
                         }
+                        // A NESTED NOTE DEFINITION IS AT THE BODY'S OWN COLUMN.
+                        // carve#1918 puts a line STRICTLY BETWEEN two open content
+                        // columns at the outer of them, and inside a note body the
+                        // outer one is the body itself - which the dedent above has
+                        // already moved to column 0. The line above absorbs that
+                        // residual for a link definition; a footnote definition kept
+                        // it, so the recursive pass saw an indented line, left it as
+                        // text, and the note never registered (band 447 row 14).
+                        //
+                        // BETWEEN, not merely indented: a line AT OR PAST the nested
+                        // note's own body column is that note's, and one under no
+                        // nested note reaches nothing to be between. Absorbing there
+                        // too hoisted a line every other engine keeps in the body.
+                        let residual = indent_columns(trimmed);
+                        let flush = trim_ascii_start(trimmed);
+                        let is_note_def = parse_footnote_def_line(flush).is_some();
+                        // A DEFINITION OPENS THE NESTED BODY; A BLOCK CLOSES IT.
+                        // Plain prose is that body's own lazy continuation and
+                        // leaves it open, so the flag survives it - closing on
+                        // every non-definition line lost three documents the
+                        // oracle registers.
+                        //
+                        // AN OPAQUE PAYLOAD IS NOT ABSORBED, and the closer has
+                        // to be read at ANY column to say so: `detect_fence_open`
+                        // above only sees a flush fence, so an INDENTED one left
+                        // the flag standing and the dedent ate a column of the
+                        // code block - 40 documents, raised by `codex review`
+                        // and invisible to a 2289-document sweep.
+                        //
+                        // NO UPPER BOUND on the residual. A first version
+                        // absorbed only strictly BELOW the nested note's own
+                        // floor, reading an at-or-past line as that note's. A
+                        // footnote definition registers wherever it lands and is
+                        // hoisted either way, so the oracle takes it at every
+                        // column - the bound only withheld 50 it accepts.
+                        // A FENCE PAYLOAD IS OPAQUE, state and all. The flush
+                        // arm below would otherwise re-open the body on a
+                        // payload LINE inside the fence, and the absorb would
+                        // then eat a column from a definition-shaped line of
+                        // code. `note_fence` is updated above for this line, so
+                        // it already covers the opener and the closer.
+                        if !is_note_def && item_block_opener(flush) {
+                            body_open_below = false;
+                        } else if residual == 0 {
+                            body_open_below = true;
+                        }
+                        // No `residual > 0` on the absorb: at column 0 `flush`
+                        // IS `trimmed`, so the arm could never return anything
+                        // different there.
+                        let trimmed: &str =
+                            if body_open_below && is_note_def && note_fence.is_none() {
+                                flush
+                            } else {
+                                trimmed
+                            };
                         def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
                         if positions {
