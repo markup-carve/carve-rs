@@ -9058,7 +9058,7 @@ fn parse_list(
                     continue;
                 }
             }
-            if !pending_blank && is_flush_line_comment(line) {
+            if !pending_blank && flush_comment_keeps_the_item_open(cur, line) {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
                 // interrupter: below the open item's content column it closes
@@ -9420,7 +9420,11 @@ fn parse_list(
                 // then resume relative to that item's column just as the plain
                 // lazy path below does. Leaving it for the outer list's comment
                 // exception put the line after it in the outer item (#1424).
-                if cur.peek().is_some_and(is_flush_line_comment) {
+                if cur
+                    .peek()
+                    .map(str::to_string)
+                    .is_some_and(|line| flush_comment_keeps_the_item_open(cur, &line))
+                {
                     let line = cur.peek().unwrap();
                     stream.push_newline_at(
                         line.to_string(),
@@ -10865,11 +10869,36 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
 }
 
 /// A flush-left single-line comment (`%% ...`), the one construct §24 C3
-/// recognizes at any column that leaves its container open. A comment FENCE
-/// (`%%%`) is NOT one: it opens a multi-line block, and all three engines let it
-/// end the list it follows.
+/// recognizes at any column that leaves its container open.
+///
+/// SHAPE ONLY. A comment FENCE is not one BY SHAPE, but §28 can degrade it into
+/// one - see `flush_comment_keeps_the_item_open`, which is the ownership
+/// question. Callers that want the shape (seeding a body floor, the marker-line
+/// sub-list arm) keep asking this.
 fn is_flush_line_comment(line: &str) -> bool {
     line.starts_with("%%") && detect_comment_fence_line(line).is_none()
+}
+
+/// Does a flush-left comment at THIS frame's column 0 leave the item open?
+///
+/// §24 C3's comment exception names both spellings in one breath - the `%%`
+/// line and the `%%%` fence, "whose body and closer travel with it" - and says
+/// a comment "does not close the ITEM either". §28 decides which of the two a
+/// `%%%` opener IS: with an exact-width closer AHEAD it opens a `fenced_comment`
+/// and is a comment BLOCK at the enclosing context's own opener column, which
+/// ends the item (corpus 214, 445-3); with no closer it opens nothing and IS one
+/// `comment_line`. That degradation is a CLASSIFICATION and it is TOTAL -
+/// ownership included - so the degraded opener leaves the frame open exactly as
+/// a `%%` line does (markup-carve/carve#1903, normative in carve#1919).
+///
+/// THE CLOSER IS LOOKED FOR AHEAD, not on the next line: `- x` / `%%%` / `y` /
+/// `%%%` / `z` opens a real block that hides `y` and ends the item.
+fn flush_comment_keeps_the_item_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    if is_flush_line_comment(line) {
+        return true;
+    }
+    detect_comment_fence_line(line)
+        .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
 }
 
 /// The `%%` line form at ANY column.
@@ -10881,6 +10910,22 @@ fn is_flush_line_comment(line: &str) -> bool {
 fn is_line_comment_any_column(line: &str) -> bool {
     let trimmed = trim_ascii_start(line);
     trimmed.starts_with("%%") && detect_comment_fence_line(trimmed).is_none()
+}
+
+/// `is_line_comment_any_column`, over BOTH spellings §28 gives a comment.
+///
+/// An opener with no exact-width closer AHEAD opens nothing and IS one
+/// `comment_line`, and that classification is TOTAL - ownership included
+/// (markup-carve/carve#1903). So a degraded fence below a container's content
+/// column is column-exempt exactly as the `%%` line is, and the line under it
+/// still lands in the innermost open item. A TERMINATED fence is a comment
+/// BLOCK and keeps its own answer.
+fn line_comment_keeps_the_container_open(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    if is_line_comment_any_column(line) {
+        return true;
+    }
+    detect_comment_fence_line_any_column(line)
+        .is_some_and(|open| !cur.has_comment_closer_after(cur.pos + 1, open.fence_len))
 }
 
 /// Is the next line one `collect_trailing_lazy` could actually fold?
@@ -10914,8 +10959,8 @@ fn fold_lazy_run_and_resume(
         // in the innermost open item rather than the outer one
         // (markup-carve/carve-rs#1516). The marker-line sub-list ran this arm
         // already, flush-left only, for the same reason (carve-rs#1424).
-        if cur.peek().is_some_and(|line| {
-            indent_columns(line) < content_col && is_line_comment_any_column(line)
+        if cur.peek().map(str::to_string).is_some_and(|line| {
+            indent_columns(&line) < content_col && line_comment_keeps_the_container_open(cur, &line)
         }) {
             let line = cur.peek().unwrap();
             nested.push_newline_at(
@@ -10932,7 +10977,11 @@ fn fold_lazy_run_and_resume(
             collect_trailing_lazy(cur, nested);
             let before_resume = cur.pos;
             nested.append(resume(cur));
-            if cur.pos == before_resume && !cur.peek().is_some_and(is_line_comment_any_column) {
+            let next_is_comment = cur
+                .peek()
+                .map(str::to_string)
+                .is_some_and(|line| line_comment_keeps_the_container_open(cur, &line));
+            if cur.pos == before_resume && !next_is_comment {
                 break;
             }
             continue;

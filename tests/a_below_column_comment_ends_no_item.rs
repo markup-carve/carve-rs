@@ -137,13 +137,23 @@ fn a_single_item_was_right_before_and_after() {
 }
 
 #[test]
-fn a_comment_fence_at_column_zero_still_ends_the_list() {
-    // NOT THE SAME LINE. A `%%%` opener is a fence spelling, and the executable
-    // spec ends the list here where the `%%` line form folds - the one place
-    // the two spellings part, which markup-carve/carve#1907 recorded rather
-    // than decided and markup-carve/carve#1903 asks about. This branch does not
-    // touch it, and the assertion is here so a later one cannot move it by
-    // accident.
-    let html = both_paths("- a\n  - x\n%%% c\ntail\n");
+fn an_unterminated_comment_fence_at_column_zero_answers_as_the_line_form_does() {
+    // THE SAME LINE, since markup-carve/carve#1903. A `%%%` opener with no
+    // exact-width closer ahead opens nothing and IS one `comment_line` (§28),
+    // and that classification is TOTAL - ownership included - so it folds here
+    // exactly as the `%%` spelling does. This row used to assert the opposite,
+    // on carve#1907's record that the two spellings parted; the ruling closed
+    // it.
+    let folded = both_paths("- a\n  - x\n%% c\ntail\n");
+    assert_eq!(both_paths("- a\n  - x\n%%% c\ntail\n"), folded);
+    assert!(folded.contains("<li>x\n        tail"), "{folded}");
+}
+
+#[test]
+fn a_terminated_comment_fence_at_column_zero_still_ends_the_list() {
+    // THE CONTROL THE RULING KEEPS. A fence WITH a closer ahead is a comment
+    // BLOCK at the document's own opener column, and a block there ends the
+    // item (corpus 214, 445-3).
+    let html = both_paths("- a\n  - x\n%%% c\n%%%\ntail\n");
     assert!(html.ends_with("<p>tail</p>"), "{html}");
 }
