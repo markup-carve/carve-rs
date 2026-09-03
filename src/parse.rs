@@ -9074,6 +9074,7 @@ fn parse_list(
                         .lines()
                         .any(is_collected_definition_placeholder);
                     let degraded_comment_fence = chunk_ends_in_degraded_comment_fence(cur, &nested);
+                    let closed_comment_span = chunk_ends_in_closed_comment_span(&nested);
                     // Normalize the authored base before peeling trailing
                     // attribute lines: the peel is intentionally syntactic and
                     // only recognizes a flush attribute block. The target may
@@ -9156,7 +9157,7 @@ fn parse_list(
                     // exception. If the collector stopped on a nonzero line
                     // below the item's content column, no paragraph remains
                     // for that line to continue (markup-carve/carve#1376).
-                    if (definition_ended_paragraph || degraded_comment_fence)
+                    if (definition_ended_paragraph || degraded_comment_fence || closed_comment_span)
                         && cur.peek().is_some_and(|line| {
                             let indent = indent_columns(line);
                             indent > 0 && indent < content_col
@@ -11362,6 +11363,13 @@ fn collect_indented_block_mapped_with(
     // all - which is what the carried `reached` flag answers and the local
     // column arithmetic cannot (markup-carve/carve-rs#1518).
     let mut degraded_descendant_fence = false;
+    // A span that CLOSED renders nothing either, so it leaves no paragraph open
+    // and the degraded reasoning applies unchanged: below the content column
+    // there is nothing left for a line to continue, so this frame ends for a
+    // line that reached nothing (markup-carve/carve-rs#1531). Recorded when the
+    // span OPENS - the closer line does not carry the opener's column.
+    let mut span_reached_this_frame = false;
+    let mut closed_comment_span_above = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -11477,6 +11485,9 @@ fn collect_indented_block_mapped_with(
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
             break;
         }
+        if closed_comment_span_above && !cur.line_reached(cur.pos, indent, strip_cols) {
+            break;
+        }
         if fence.is_some() && indent < strip_cols {
             break;
         }
@@ -11502,6 +11513,8 @@ fn collect_indented_block_mapped_with(
         if let Some((fence_len, _)) = comment_fence {
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
+                closed_comment_span_above |= span_reached_this_frame;
+                span_reached_this_frame = false;
             }
         } else if let Some(open) =
             detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
@@ -11509,6 +11522,7 @@ fn collect_indented_block_mapped_with(
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+                span_reached_this_frame = cur.in_item_body && indent >= strip_cols;
             } else if indent == strip_cols {
                 // Degraded, and written AT this container's own content column.
                 // Below it the fence never reached the container and ends
@@ -11683,6 +11697,41 @@ fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &Mapped
     open.is_some_and(|fence_len| !cur.has_comment_closer_after(cur.pos, fence_len))
 }
 
+/// Does the chunk END with a comment span that OPENED at a line reaching this
+/// container and CLOSED inside it?
+///
+/// A closed span renders nothing, exactly as a degraded fence does, so it
+/// leaves no paragraph for a below-column line to continue and the frames under
+/// it end the same way (markup-carve/carve-rs#1531). The degraded test above
+/// cannot answer this: it reports the span still OPEN at the chunk's end.
+fn chunk_ends_in_closed_comment_span(chunk: &MappedSource) -> bool {
+    let mut open: Option<usize> = None;
+    let mut closed_at_end = false;
+    for (index, line) in chunk.source.lines().enumerate() {
+        if is_blank_line(line) {
+            continue;
+        }
+        if let Some(fence_len) = open {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                open = None;
+                closed_at_end = true;
+            }
+            continue;
+        }
+        closed_at_end = false;
+        if !chunk.reached.get(index).copied().unwrap_or(false) {
+            continue;
+        }
+        if let Some(fence) = detect_comment_fence_line_any_column(line) {
+            open = Some(fence.fence_len);
+        }
+    }
+    // No `&& open.is_none()` here: a second opener resets `closed_at_end` on
+    // its own line, so the two can never disagree - and a span still open at
+    // the chunk's end is what the degraded test above already reports.
+    closed_at_end
+}
+
 fn collect_indented_block_plain_with(
     cur: &mut LineCursor,
     parent_indent: usize,
@@ -11717,6 +11766,13 @@ fn collect_indented_block_plain_with(
     // all - which is what the carried `reached` flag answers and the local
     // column arithmetic cannot (markup-carve/carve-rs#1518).
     let mut degraded_descendant_fence = false;
+    // A span that CLOSED renders nothing either, so it leaves no paragraph open
+    // and the degraded reasoning applies unchanged: below the content column
+    // there is nothing left for a line to continue, so this frame ends for a
+    // line that reached nothing (markup-carve/carve-rs#1531). Recorded when the
+    // span OPENS - the closer line does not carry the opener's column.
+    let mut span_reached_this_frame = false;
+    let mut closed_comment_span_above = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
@@ -11797,6 +11853,9 @@ fn collect_indented_block_plain_with(
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
             break;
         }
+        if closed_comment_span_above && !cur.line_reached(cur.pos, indent, strip_cols) {
+            break;
+        }
         // Same fenced-body guard as the mapped collector above (§24, #950).
         if fence.is_some() && indent < strip_cols {
             break;
@@ -11834,6 +11893,8 @@ fn collect_indented_block_plain_with(
         if let Some((fence_len, _)) = comment_fence {
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
+                closed_comment_span_above |= span_reached_this_frame;
+                span_reached_this_frame = false;
             }
         } else if let Some(open) =
             detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
@@ -11844,6 +11905,7 @@ fn collect_indented_block_plain_with(
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+                span_reached_this_frame = cur.in_item_body && indent >= strip_cols;
             } else if indent == strip_cols {
                 // Degraded, and written AT this container's own content column.
                 // Below it the fence never reached the container and ends
