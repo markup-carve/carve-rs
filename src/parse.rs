@@ -11413,24 +11413,21 @@ fn collect_indented_block_mapped_with(
     descendant_columns: &[usize],
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
-    if cur.line_map.is_none() {
-        let (source, reached) = collect_indented_block_plain_with(
-            cur,
-            parent_indent,
-            strip_cols,
-            stop_at_content_column_marker,
-            fence,
-            lead_is_continuation,
-            descendant_columns,
-        );
-        return MappedSource {
-            source,
-            line_map: Vec::new(),
-            col_map: Vec::new(),
-            authored_base_at_start,
-            reached,
-        };
-    }
+    // ONE COLLECTOR FOR BOTH PATHS. Without a `line_map` there is nothing to
+    // map, so both maps stay empty and the rest of the walk is the walk the
+    // separate plain collector used to run line for line. Keeping it as a second
+    // copy is what let a fix land in one and not the other, which split
+    // `to_html` from the position path on eighteen documents
+    // (markup-carve/carve-rs#908, #1490).
+    //
+    // ONE FLAG FOR BOTH MAPS, and it is the LINE map's. The two are gated
+    // differently upstream - the line map by `source_lines || positions`, the
+    // column map by `positions` alone - so with only `source_lines` asked for,
+    // `col_map` is pushed and every entry is `None`, because `source_col` has
+    // nothing to answer from. That is what the delegated plain path produced too,
+    // and reading the column map's own gate here would produce a SHORTER vector
+    // instead, which the parallel-to-`lines` invariant below forbids.
+    let building_maps = cur.line_map.is_some();
     let mut lines = Vec::new();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
@@ -11476,7 +11473,9 @@ fn collect_indented_block_mapped_with(
                     line_map.push(cur.source_line(cur.pos));
                 }
                 reached.push(false);
-                col_map.push(cur.source_col(cur.pos));
+                if building_maps {
+                    col_map.push(cur.source_col(cur.pos));
+                }
                 cur.consume();
                 continue;
             }
@@ -11517,11 +11516,13 @@ fn collect_indented_block_mapped_with(
                 }
             }
             lines.push(String::new());
-            if cur.line_map.is_some() {
+            if building_maps {
                 line_map.push(cur.source_line(cur.pos));
             }
             reached.push(false);
-            col_map.push(cur.source_col(cur.pos));
+            if building_maps {
+                col_map.push(cur.source_col(cur.pos));
+            }
             cur.consume();
             continue;
         }
@@ -11559,7 +11560,9 @@ fn collect_indented_block_mapped_with(
                     line_map.push(cur.source_line(cur.pos));
                 }
                 reached.push(false);
-                col_map.push(cur.source_col(cur.pos));
+                if building_maps {
+                    col_map.push(cur.source_col(cur.pos));
+                }
                 cur.consume();
                 continue;
             }
@@ -11662,14 +11665,16 @@ fn collect_indented_block_mapped_with(
             indent >= strip_cols && !opaque_here,
         );
         lines.push(sliced);
-        if cur.line_map.is_some() {
+        if building_maps {
             line_map.push(cur.source_line(cur.pos));
         }
         reached.push(indent >= strip_cols);
-        col_map.push(
-            cur.source_col(cur.pos)
-                .map(|outer| outer + consumed as isize - synthetic as isize),
-        );
+        if building_maps {
+            col_map.push(
+                cur.source_col(cur.pos)
+                    .map(|outer| outer + consumed as isize - synthetic as isize),
+            );
+        }
         cur.consume();
     }
     // TERMINATE while a fence is still open, so the blank collected above
@@ -11827,242 +11832,6 @@ fn chunk_ends_in_closed_comment_span(chunk: &MappedSource) -> bool {
     // its own line, so the two can never disagree - and a span still open at
     // the chunk's end is what the degraded test above already reports.
     closed_at_end
-}
-
-fn collect_indented_block_plain_with(
-    cur: &mut LineCursor,
-    parent_indent: usize,
-    strip_cols: usize,
-    stop_at_content_column_marker: bool,
-    fence: &mut Option<FenceOpen>,
-    lead_is_continuation: bool,
-    descendant_columns: &[usize],
-) -> (String, Vec<bool>) {
-    let mut lines = Vec::new();
-    // See `MappedSource::reached`. Kept here as well as in the mapped
-    // collector because the two paths must parse a document the same way, and
-    // this one runs whenever positions are off - which is every `to_html`
-    // (markup-carve/carve-rs#908 is the same lesson).
-    let mut reached: Vec<bool> = Vec::new();
-    let mut block_indent: Option<usize> = None;
-    let mut colon_open: Vec<usize> = Vec::new();
-    let mut comment_fence: Option<(usize, usize)> = None;
-    let mut comment_fence_strip: Option<usize> = None;
-    let mut definition_ended_paragraph = false;
-    // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
-    // PART 9 SS28 degrades it to a line comment, so a frame one level in ends at
-    // a line an ancestor claimed (markup-carve/carve-rs#1512) while the OUTERMOST
-    // frame keeps it, the follower being the item's own lazy line
-    // (markup-carve/carve#1920). See the break below for which of the two a line
-    // gets. Sticky for the rest of the item, exactly as the executable spec keeps
-    // it: an at-column line after the fence does not reopen the band.
-    let mut degraded_comment_fence = false;
-    // The same degradation, for a fence written at a DESCENDANT's content
-    // column rather than at this container's own. It closed the DESCENDANT's
-    // paragraph, so this container ends only for a line that reached nothing at
-    // all - which is what the carried `reached` flag answers and the local
-    // column arithmetic cannot (markup-carve/carve-rs#1518).
-    let mut degraded_descendant_fence = false;
-    // A span that CLOSED renders nothing either, so it leaves no paragraph open
-    // and the degraded reasoning applies unchanged: below the content column
-    // there is nothing left for a line to continue, so this frame ends for a
-    // line that reached nothing (markup-carve/carve-rs#1531). Recorded when the
-    // span OPENS - the closer line does not carry the opener's column.
-    let mut span_reached_this_frame = false;
-    let mut closed_comment_span_above = false;
-    while let Some(line) = cur.peek() {
-        if is_blank_line(line) {
-            // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
-            // The lookahead below asks whether the ITEM continues, and answers
-            // no when nothing after the blank reaches the content column - which
-            // is right for spacing and wrong for a fence still running, whose
-            // body continues to its closer or to the container's end. A fence
-            // that ended with the item therefore lost its trailing blank before
-            // any join could preserve it (markup-carve/carve-rs#908).
-            if fence.is_some() {
-                lines.push(String::new());
-                reached.push(false);
-                cur.consume();
-                continue;
-            }
-            {
-                // No block collected yet means the item's content is all on the
-                // MARKER line (`- - a`, `- # H`), so there is no block indent to
-                // compare against - and this guard used to be skipped entirely,
-                // letting a post-blank line BELOW the content column be collected
-                // as part of the item. `- - a` / blank / ` b` put `b` in the
-                // outer item where carve-js and the executable spec end the list
-                // (#578, corpus 190). The content column is the right floor: it
-                // is what a line has to reach to still belong to the item.
-                let bi = block_indent.unwrap_or(strip_cols);
-                let mut k = cur.pos + 1;
-                while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
-                    k += 1;
-                }
-                // The item's CONTENT COLUMN outright - see the mapped
-                // collector above (carve-rs#301).
-                let threshold = strip_cols;
-                let _ = bi;
-                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
-                if !continues {
-                    break;
-                }
-            }
-            lines.push(String::new());
-            reached.push(false);
-            cur.consume();
-            continue;
-        }
-        let indent = indent_columns(line);
-        // A MARKER THAT CAN NEVER REACH COLUMN 0 ATTACHES NOTHING (§17 L3,
-        // markup-carve/carve#1436). Inside a body this collector is stripping,
-        // document column 0 is unreachable by construction, so a lone `+` at the
-        // content column reaches for a block that cannot be written here. It is
-        // consumed and dropped - "as if the marker line had been a comment" -
-        // rather than handed to the nested parse, where it would end the item
-        // and cost the lazy fold the same document without it still has.
-        if strip_cols > 0 && indent == strip_cols && trim_ascii(line) == "+" {
-            cur.consume();
-            continue;
-        }
-        // Same §17 L3 rule as the mapped collector above
-        // (markup-carve/carve#1436): while a bare-`+` lead has collected
-        // nothing, a column-0 line is the block the marker named and every
-        // other column was never the marker's.
-        if lead_is_continuation && lines.is_empty() {
-            if indent == 0 {
-                lines.push(slice_columns(line, 0, true).to_string());
-                reached.push(false);
-                cur.consume();
-                continue;
-            }
-            break;
-        }
-        if indent <= parent_indent {
-            break;
-        }
-        if definition_ended_paragraph && indent < strip_cols {
-            break;
-        }
-        // ONLY FOR A LINE AN ANCESTOR ALREADY CLAIMED. PART 9 SS28's degradation
-        // is total, so at the outermost frame the follower is the item's own lazy
-        // line and stays, exactly as it does under `%%` (markup-carve/carve#1920,
-        // corpus 446). One frame in, the carried flag says the line reached an
-        // ancestor and not this container, and the frame still ends there.
-        if degraded_comment_fence && cur.carried_reach(cur.pos) == Some(false) {
-            break;
-        }
-        if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
-            break;
-        }
-        if closed_comment_span_above && !cur.line_reached(cur.pos, indent, strip_cols) {
-            break;
-        }
-        // Same fenced-body guard as the mapped collector above (§24, #950).
-        if fence.is_some() && indent < strip_cols {
-            break;
-        }
-        let is_marker = detect_list_marker_full(line).is_some();
-        // INSIDE AN OPEN FENCE THE MARKER IS CODE TEXT (corpus category 278,
-        // markup-carve/carve#975). PART 9 §24's S1 MATCH PREFIXES and S2 FENCED
-        // BODY place a line by the COLUMN it reaches; neither reads the line's
-        // first character. So a list marker at the item's content column, inside
-        // a fence that item opened, is the same continuation a plain `x` is -
-        // which corpus 276 row 3 already pins, and which category 278 differs
-        // from by two characters. Without the guard the marker severed the
-        // verbatim body: the fence closed empty, the marker opened a sub-list,
-        // and the fence's own closer became an empty code span.
-        // Same comment-body guard as the mapped collector above (§28, #1053).
-        if stop_at_content_column_marker
-            && is_marker
-            && indent >= strip_cols
-            && fence.is_none()
-            && comment_fence.is_none()
-            && colon_open.is_empty()
-        {
-            break;
-        }
-        // A comment is not a block, so it does not set the block indent. It
-        // renders nothing and may sit BELOW the content column (§24 C3), and
-        // taking its column here lowered the post-blank threshold below the
-        // content column - which is how `- - a` / ` %% c` / blank / ` b` kept
-        // `b` in the item after the bare form had been fixed (#578, corpus 190).
-        if block_indent.is_none() {
-            block_indent = Some(indent);
-        }
-        // Same one-dedent-per-span rule as the mapped collector above.
-        let was_in_comment_span = comment_fence_strip.is_some();
-        if let Some((fence_len, _)) = comment_fence {
-            if is_comment_fence_close_any_column(line, fence_len) {
-                comment_fence = None;
-                closed_comment_span_above |= span_reached_this_frame;
-                span_reached_this_frame = false;
-            }
-        } else if let Some(open) =
-            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
-        {
-            // See the mapped collector: a fence with no closer ahead degrades to
-            // a line comment (§28), so it opens no span (carve-rs#586); and a
-            // `%%%` inside a code fence is code text, so it opens none either.
-            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-                comment_fence = Some((open.fence_len, indent));
-                comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
-                span_reached_this_frame = cur.in_item_body && indent >= strip_cols;
-            } else if indent == strip_cols {
-                // Degraded, and written AT this container's own content column.
-                // Below it the fence never reached the container and ends
-                // nothing there.
-                degraded_comment_fence = true;
-            } else if cur.in_item_body && descendant_columns.contains(&indent) {
-                // Degraded at a DESCENDANT's content column. Every frame of a
-                // marker ladder re-parses a dedented copy of the same chunk
-                // against its OWN column, so only the innermost one ever saw
-                // this fence - and the frames above it kept collecting, which
-                // put the line under the fence one item too deep
-                // (markup-carve/carve-rs#1518).
-                degraded_descendant_fence = true;
-            }
-        }
-        let in_comment_span = was_in_comment_span || comment_fence.is_some();
-        let stripped = match (in_comment_span, comment_fence_strip) {
-            (true, Some(span_strip)) => span_strip.min(indent),
-            _ => dedent_for_collection(line, indent, strip_cols),
-        };
-        if comment_fence.is_none() {
-            comment_fence_strip = None;
-        }
-        let sliced = slice_columns(line, stripped, true);
-        definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
-        // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
-        // §28 makes both bodies verbatim, which is the same reading that keeps a
-        // marker in one from being a marker. Read before the code tracker
-        // advances, so the CLOSER line counts as inside its own fence.
-        //
-        // Without it a `:::` written inside a code fence pushed onto the stack
-        // and never came off, so the item's next REAL `:::` opener matched that
-        // ghost as a closer, the stack emptied one level early, and the marker
-        // gate severed the very div this tracker exists to keep whole.
-        let opaque_here = fence.is_some() || in_comment_span;
-        track_collected_fence(fence, &sliced, indent >= strip_cols);
-        track_collected_colon_fence(
-            &mut colon_open,
-            &sliced,
-            indent >= strip_cols && !opaque_here,
-        );
-        lines.push(sliced);
-        reached.push(indent >= strip_cols);
-        cur.consume();
-    }
-    // TERMINATE while a fence is still open, so the blank the loop above just
-    // collected survives the round trip back through `str::lines()`. Outside a
-    // fence a trailing blank is spacing and the plain join is right
-    // (markup-carve/carve-rs#908).
-    debug_assert_eq!(reached.len(), lines.len());
-    let mut source = lines.join("\n");
-    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
-        source.push('\n');
-    }
-    (source, reached)
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
