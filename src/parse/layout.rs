@@ -759,7 +759,12 @@ fn render_layout_ordered_list(
 
 fn layout_pipe_cells(line: &str) -> Option<Vec<&str>> {
     let line = line.trim();
-    if !line.starts_with('|') || !line.ends_with('|') || line.contains("\\|") {
+    // TWO PIPES, NOT ONE BYTE TESTED TWICE. `starts_with` and `ends_with` both
+    // answer for the SAME `|` on a one-character line, so the slice below ran as
+    // `line[1..0]` and panicked - `carve::to_html("|")` took the process down
+    // (markup-carve/carve-rs#1553). A lone `|` opens no row, which is the answer
+    // `||` already got.
+    if line.len() < 2 || !line.starts_with('|') || !line.ends_with('|') || line.contains("\\|") {
         return None;
     }
     Some(line[1..line.len() - 1].split('|').map(str::trim).collect())
