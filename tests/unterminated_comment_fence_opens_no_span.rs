@@ -20,20 +20,18 @@ use carve::to_html;
 // --- An unterminated comment fence opens no span (carve-rs#586) ---
 
 #[test]
-fn an_unterminated_fence_ends_the_item_and_does_not_lift_the_line() {
+fn an_unterminated_fence_does_not_lift_the_line() {
     // §28: a fence with no closer degrades to a `%%` line comment, so the lines
-    // after it are just lines - and the comment closed the item's paragraph, so
-    // a line below the item's content column continues nothing and the list
-    // ends. The line reparses at document level, where its own column keeps it
-    // paragraph text.
+    // after it are just lines. Where the line then GOES is markup-carve/carve#1920's
+    // question, and at the outermost frame the answer is the item's own lazy
+    // follower - the same place the `%%` line form puts it (carve-rs#1543).
     //
-    // BOTH HALVES MATTER. #586's defect was the span's dedent LIFTING the line
-    // to column 0, where it parsed as a heading; that is still guarded by the
-    // `<h1>` assertion below. What #586 left unmeasured was where the
-    // unlifted line goes, and the folded reading it settled on is not the
-    // executable spec's.
+    // BOTH HALVES MATTER, and only the first one moved. #586's defect was the
+    // span's dedent LIFTING the line to column 0, where it parsed as a heading;
+    // that is still guarded by the `<h1>` assertion below, and it is what this
+    // test is really for.
     let html = to_html("- a\n  %%% x\n # h");
-    assert_eq!(html, "<ul>\n  <li>a</li>\n</ul>\n<p># h</p>", "{html}");
+    assert_eq!(html, "<ul>\n  <li>a\n    # h\n  </li>\n</ul>", "{html}");
     assert!(
         !html.contains("<h1"),
         "the line was lifted to column 0: {html}"

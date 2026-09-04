@@ -192,15 +192,37 @@ fn a_line_that_reached_an_item_stays_in_it() {
         "</ul>",
     );
     assert_eq!(both_paths("- - - x\n      %%% x\n   b\n"), depth_two_b);
-    assert_eq!(both_paths("- - - x\n      %%% x\n     b\n"), depth_two_b);
+    // COLUMN 5 REACHES THE DEPTH-TWO ITEM'S OWN COLUMN 4, so it is that item's
+    // lazy line and folds - the outermost frame of the two it passes through is
+    // the one that keeps it (markup-carve/carve#1920, carve-rs#1543). Column 3
+    // above reaches only the OUTERMOST item and still moves out one level, which
+    // is the pair this test exists to separate.
+    assert_eq!(
+        both_paths("- - - x\n      %%% x\n     b\n"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <ul>\n",
+            "      <li>\n",
+            "        <ul>\n",
+            "          <li>x\n",
+            "            b\n",
+            "          </li>\n",
+            "        </ul>\n",
+            "      </li>\n",
+            "    </ul>\n",
+            "  </li>\n",
+            "</ul>",
+        )
+    );
 }
 
 #[test]
 fn a_fence_at_the_frames_own_column_still_uses_the_local_column() {
-    // THE CONTROL FOR THE OTHER BAND (carve-rs#1512). At depth two the fence
-    // sits at the innermost frame's own `strip_cols`, and a column-3 line below
-    // that column ends the item there - the carried flag must NOT be consulted
-    // here, or this line stays in the item it left.
+    // THE CONTROL FOR THE OTHER BAND (carve-rs#1512, narrowed by carve#1920).
+    // At depth two the fence sits at the innermost frame's own `strip_cols`, and
+    // which item a line below that column lands in is decided by the carried
+    // answer: the outermost frame the line passes through keeps it.
     let outer = concat!(
         "<ul>\n",
         "  <li>\n",
@@ -211,10 +233,26 @@ fn a_fence_at_the_frames_own_column_still_uses_the_local_column() {
         "  </li>\n",
         "</ul>",
     );
+    // COLUMN 3 REACHES THE INNER ITEM'S HOST, and the inner frame is the
+    // outermost one this line passes through, so it folds there
+    // (markup-carve/carve#1920, carve-rs#1543).
     assert_eq!(
         both_paths("- - x\n    %%% x\n   b\n"),
-        outer.replace("{}", "b")
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <ul>\n",
+            "      <li>x\n",
+            "        b\n",
+            "      </li>\n",
+            "    </ul>\n",
+            "  </li>\n",
+            "</ul>",
+        )
     );
+    // COLUMN 1 REACHED NOTHING the inner frame could claim, so it still leaves
+    // the inner item. This is the pair that says the rule is the carried answer
+    // and not the fence.
     assert_eq!(
         both_paths("- - x\n    %%% x\n # h\n"),
         outer.replace("{}", "# h")
@@ -224,11 +262,12 @@ fn a_fence_at_the_frames_own_column_still_uses_the_local_column() {
 #[test]
 fn a_single_item_still_ends_at_the_document() {
     // THE CONTROL FOR THE LADDER ITSELF. With no descendant there is no
-    // descendant column, and #1512's answer stands: the item ends and the line
-    // reparses at document level.
+    // descendant column and no ancestor to have claimed the line, so the single
+    // item keeps its own lazy follower - #1512's answer as carve#1920 narrowed
+    // it. A follower at the DOCUMENT column still leaves (corpus 443).
     assert_eq!(
         both_paths("- x\n  %%% x\n # h\n"),
-        "<ul>\n  <li>x</li>\n</ul>\n<p># h</p>"
+        "<ul>\n  <li>x\n    # h\n  </li>\n</ul>"
     );
 }
 

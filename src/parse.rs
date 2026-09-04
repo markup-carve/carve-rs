@@ -3570,6 +3570,17 @@ impl<'a> LineCursor<'a> {
         }
     }
 
+    /// `line_reached` WITHOUT the local fallback: `None` at the outermost frame,
+    /// where no enclosing collection recorded an answer.
+    ///
+    /// The distinction matters where the fallback and the absence of a carried
+    /// flag mean opposite things. A degraded fence ends a frame for a line an
+    /// ancestor already claimed, and at the outermost frame there is no ancestor
+    /// to have claimed one.
+    fn carried_reach(&self, pos: usize) -> Option<bool> {
+        self.reached.and_then(|flags| flags.get(pos).copied())
+    }
+
     /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
     ///
     /// A closer must match the opener width EXACTLY, so ANY later line carrying a
@@ -11431,12 +11442,12 @@ fn collect_indented_block_mapped_with(
     let mut comment_fence_strip: Option<usize> = None;
     let mut definition_ended_paragraph = false;
     // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
-    // PART 9 SS28 degrades it to a line comment, and with the paragraph closed
-    // there is nothing below the content column for a line to continue - so the
-    // item ends there and the line reparses at document level
-    // (markup-carve/carve-rs#1512). Sticky for the rest of the item, exactly as
-    // the executable spec keeps it: an at-column line after the fence does not
-    // reopen the band.
+    // PART 9 SS28 degrades it to a line comment, so a frame one level in ends at
+    // a line an ancestor claimed (markup-carve/carve-rs#1512) while the OUTERMOST
+    // frame keeps it, the follower being the item's own lazy line
+    // (markup-carve/carve#1920). See the break below for which of the two a line
+    // gets. Sticky for the rest of the item, exactly as the executable spec keeps
+    // it: an at-column line after the fence does not reopen the band.
     let mut degraded_comment_fence = false;
     // The same degradation, for a fence written at a DESCENDANT's content
     // column rather than at this container's own. It closed the DESCENDANT's
@@ -11560,7 +11571,12 @@ fn collect_indented_block_mapped_with(
         if definition_ended_paragraph && indent < strip_cols {
             break;
         }
-        if degraded_comment_fence && indent < strip_cols {
+        // ONLY FOR A LINE AN ANCESTOR ALREADY CLAIMED. PART 9 SS28's degradation
+        // is total, so at the outermost frame the follower is the item's own lazy
+        // line and stays, exactly as it does under `%%` (markup-carve/carve#1920,
+        // corpus 446). One frame in, the carried flag says the line reached an
+        // ancestor and not this container, and the frame still ends there.
+        if degraded_comment_fence && cur.carried_reach(cur.pos) == Some(false) {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
@@ -11834,12 +11850,12 @@ fn collect_indented_block_plain_with(
     let mut comment_fence_strip: Option<usize> = None;
     let mut definition_ended_paragraph = false;
     // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
-    // PART 9 SS28 degrades it to a line comment, and with the paragraph closed
-    // there is nothing below the content column for a line to continue - so the
-    // item ends there and the line reparses at document level
-    // (markup-carve/carve-rs#1512). Sticky for the rest of the item, exactly as
-    // the executable spec keeps it: an at-column line after the fence does not
-    // reopen the band.
+    // PART 9 SS28 degrades it to a line comment, so a frame one level in ends at
+    // a line an ancestor claimed (markup-carve/carve-rs#1512) while the OUTERMOST
+    // frame keeps it, the follower being the item's own lazy line
+    // (markup-carve/carve#1920). See the break below for which of the two a line
+    // gets. Sticky for the rest of the item, exactly as the executable spec keeps
+    // it: an at-column line after the fence does not reopen the band.
     let mut degraded_comment_fence = false;
     // The same degradation, for a fence written at a DESCENDANT's content
     // column rather than at this container's own. It closed the DESCENDANT's
@@ -11928,7 +11944,12 @@ fn collect_indented_block_plain_with(
         if definition_ended_paragraph && indent < strip_cols {
             break;
         }
-        if degraded_comment_fence && indent < strip_cols {
+        // ONLY FOR A LINE AN ANCESTOR ALREADY CLAIMED. PART 9 SS28's degradation
+        // is total, so at the outermost frame the follower is the item's own lazy
+        // line and stays, exactly as it does under `%%` (markup-carve/carve#1920,
+        // corpus 446). One frame in, the carried flag says the line reached an
+        // ancestor and not this container, and the frame still ends there.
+        if degraded_comment_fence && cur.carried_reach(cur.pos) == Some(false) {
             break;
         }
         if degraded_descendant_fence && !cur.line_reached(cur.pos, indent, strip_cols) {
