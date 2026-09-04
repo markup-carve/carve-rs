@@ -9564,8 +9564,6 @@ fn parse_list(
             // column. Using the outer `content_col` assigned a following line
             // between the two columns to the outer item instead (#1424).
             let nested_content_col = content_col + innermost_marker_content_col(marker.content);
-            let ladder_descendant_columns =
-                marker_ladder_descendant_columns(content_col, marker.content);
             let nested_definition_ended_paragraph =
                 is_collected_definition_placeholder(innermost_marker_content(marker.content));
             let mut stream = item_marker_source(cur, marker.content, item_at);
@@ -9589,11 +9587,10 @@ fn parse_list(
                     .peek()
                     .is_some_and(|line| indent_columns(line) >= content_col)
             {
-                stream.append(collect_indented_block_mapped_over_ladder(
+                stream.append(collect_indented_block_mapped(
                     cur,
                     collection_floor,
                     content_col,
-                    &ladder_descendant_columns,
                 ));
             }
             // A blank line closes the sub-list's last paragraph, so the next
@@ -10409,28 +10406,6 @@ fn innermost_marker_content_col(mut line: &str) -> usize {
         line = marker.content;
     }
     column
-}
-
-/// The content columns a marker-ladder line opens BELOW its own: `- - - x`
-/// whose own content column is 2 also opens 4 and 6.
-///
-/// A degraded comment fence at any of them was authored inside some item of the
-/// ladder, so every frame that re-parses this chunk has to end its item there.
-/// Only the innermost frame ever sees that fence at its own `strip_cols`, which
-/// is why the frames above it kept collecting (markup-carve/carve-rs#1518).
-fn marker_ladder_descendant_columns(content_col: usize, content: &str) -> Vec<usize> {
-    let mut columns = Vec::new();
-    let mut column = content_col;
-    let mut line = content;
-    while let Some(marker) = detect_list_marker_full(line) {
-        let Some(width) = marker_content_col(line) else {
-            break;
-        };
-        column += width;
-        columns.push(column);
-        line = marker.content;
-    }
-    columns
 }
 
 fn innermost_marker_content(mut line: &str) -> &str {
@@ -11270,15 +11245,7 @@ fn collect_item_continuation_block_mapped(
     content_col: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(
-        cur,
-        parent_indent,
-        content_col,
-        true,
-        open_fence,
-        false,
-        &[],
-    )
+    collect_indented_block_mapped_with(cur, parent_indent, content_col, true, open_fence, false)
 }
 
 /// How far to dedent a collected line, given the container's content column.
@@ -11338,7 +11305,7 @@ fn collect_indented_block_mapped(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, false, &[])
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, false)
 }
 
 /// The same collection for an item whose marker-line content ENDS IN A BARE
@@ -11354,7 +11321,7 @@ fn collect_indented_block_mapped_after_continuation(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, true, &[])
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, true)
 }
 
 /// The same collection, told that a fenced code block is ALREADY OPEN because
@@ -11367,15 +11334,7 @@ fn collect_indented_block_mapped_after_fence(
     strip_cols: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(
-        cur,
-        parent_indent,
-        strip_cols,
-        false,
-        open_fence,
-        false,
-        &[],
-    )
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, open_fence, false)
 }
 
 /// The same collection for a MARKER-LADDER item (`- - - x`), told the content
@@ -11386,23 +11345,6 @@ fn collect_indented_block_mapped_after_fence(
 /// written at a DESCENDANT's column looked like ordinary over-indented content
 /// to every frame above the innermost one, and the item that ended was the
 /// wrong one (markup-carve/carve-rs#1518).
-fn collect_indented_block_mapped_over_ladder(
-    cur: &mut LineCursor,
-    parent_indent: usize,
-    strip_cols: usize,
-    descendant_columns: &[usize],
-) -> MappedSource {
-    collect_indented_block_mapped_with(
-        cur,
-        parent_indent,
-        strip_cols,
-        false,
-        &mut None,
-        false,
-        descendant_columns,
-    )
-}
-
 fn collect_indented_block_mapped_with(
     cur: &mut LineCursor,
     parent_indent: usize,
@@ -11410,7 +11352,6 @@ fn collect_indented_block_mapped_with(
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
-    descendant_columns: &[usize],
 ) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     // ONE COLLECTOR FOR BOTH PATHS. Without a `line_map` there is nothing to
@@ -11628,13 +11569,23 @@ fn collect_indented_block_mapped_with(
                 // Below it the fence never reached the container and ends
                 // nothing there.
                 degraded_comment_fence = true;
-            } else if cur.in_item_body && descendant_columns.contains(&indent) {
-                // Degraded at a DESCENDANT's content column. Every frame of a
+            } else if cur.in_item_body && indent > strip_cols {
+                // Degraded PAST this frame's own content column, so it was
+                // written inside some item below this one. Every frame of a
                 // marker ladder re-parses a dedented copy of the same chunk
                 // against its OWN column, so only the innermost one ever saw
-                // this fence - and the frames above it kept collecting, which
-                // put the line under the fence one item too deep
-                // (markup-carve/carve-rs#1518).
+                // the fence - and the frames above it kept collecting, which put
+                // the line under it one item too deep (markup-carve/carve-rs#1518).
+                //
+                // THE COLUMN, NOT A MEMBERSHIP TEST. This asked
+                // `descendant_columns.contains(&indent)`, so a fence at a column
+                // that is not exactly some listed descendant's - column 5 under
+                // `- - - x`, where the listed ones are 2, 4 and 6 - armed nothing
+                // and the item ended in the wrong place. The CLOSED spelling of
+                // the same fence has used `indent >= strip_cols` since #1540,
+                // which is why the two spellings answered one document two ways
+                // (markup-carve/carve-rs#1545). `>` rather than `>=` because the
+                // equal case is the arm above, which ends nothing.
                 degraded_descendant_fence = true;
             }
         }
