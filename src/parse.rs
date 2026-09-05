@@ -5055,10 +5055,10 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
                 ));
             }
 
-            let mut pos = span_of(cur, span_start, cur.pos, options);
-            if let Some(pos) = &mut pos {
-                pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
-            }
+            // A comment is a LEAF, so its span begins at the `%` markup, not in
+            // the leading indentation - the latitude the leaf keeps was withdrawn
+            // by markup-carve/carve#1928 (carve-rs#1549).
+            let pos = span_of(cur, span_start, cur.pos, options);
             return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
                 delimited: false,
@@ -5089,10 +5089,8 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         let span_start = cur.pos;
         cur.consume();
 
-        let mut pos = span_of(cur, span_start, cur.pos, options);
-        if let Some(pos) = &mut pos {
-            pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
-        }
+        // A comment leaf begins at its `%` markup (carve#1928, carve-rs#1549).
+        let pos = span_of(cur, span_start, cur.pos, options);
         return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
             block: false,
             delimited: false,
