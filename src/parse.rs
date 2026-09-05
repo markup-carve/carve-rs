@@ -409,6 +409,36 @@ enum ParseMode {
 ///
 /// Only the last line has nothing after it to imply its separator, so
 /// terminating changes that case and nothing else (carve-rs#908).
+/// Marks a line that reached its container by LAZY FOLDING (PART 0, PART 9 §10
+/// I2): always paragraph text, never re-classified as structure when the
+/// container's body is re-parsed.
+///
+/// A line carrying no `>` is not the quote's content at ANY column, so the frame
+/// does two jobs at once - its first character is not whitespace, so the line
+/// stands at column 0, and no block detector matches a line starting with it, so
+/// an indentation the quote never gave the line cannot re-open a block from it
+/// (markup-carve/carve-rs#1538).
+///
+/// UNFORGEABLE BY CONSTRUCTION rather than by luck: `normalize_source` replaces
+/// every U+0000 in the input with U+FFFD before the first line is read, so no
+/// document can carry the character this frame is built from. The executable
+/// spec relies on exactly the same prerequisite (markup-carve/carve#1523), and
+/// container bodies are re-parsed through `parse_blocks*`, which does NOT
+/// re-normalize - so a frame inserted during collection survives the nested
+/// parse instead of being replaced by it.
+pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
+
+/// A body line with the LAZY frame removed.
+///
+/// EVERY SITE THAT TURNS A LINE INTO TEXT MUST CALL THIS, and the ones that
+/// rebuild a source string for re-parsing must NOT: stripping there erases the
+/// frame before it has done its job, which fails as a wrong answer rather than
+/// as a visible sentinel. `tests/lazy_framing_never_leaks.rs` generates the
+/// shapes that tell the two apart rather than listing them.
+pub(crate) fn strip_lazy(line: &str) -> &str {
+    line.strip_prefix(LAZY).unwrap_or(line)
+}
+
 fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     if lines.is_empty() {
         return String::new();
@@ -4805,7 +4835,11 @@ fn flattened_paragraphs(
         while idx < lines.len() && !is_blank_line(lines[idx]) {
             idx += 1;
         }
-        let text = lines[start..idx].join("\n");
+        let text = lines[start..idx]
+            .iter()
+            .map(|line| strip_lazy(line))
+            .collect::<Vec<_>>()
+            .join("\n");
         // The lines are joined VERBATIM here, unlike `parse_paragraph` which
         // strips each line's indentation first, so a line's anchor is the
         // column its container took and nothing more.
@@ -5028,7 +5062,11 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
                 delimited: false,
-                content: content.join("\n"),
+                content: content
+                    .iter()
+                    .map(|l| strip_lazy(l))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 pos,
             }))));
         }
@@ -5086,7 +5124,11 @@ fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockN
     while let Some(line) = cur.consume() {
         rest.push(line);
     }
-    let text = rest.join("\n");
+    let text = rest
+        .iter()
+        .map(|l| strip_lazy(l))
+        .collect::<Vec<_>>()
+        .join("\n");
     // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
     // multi-line all-blank tail (which contains newlines) must be tested
     // per line, not on the joined string.
@@ -7243,7 +7285,11 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     // the author wrote it, not just its content.
     let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(format) = raw_format {
-        let mut content = content_lines.join("\n");
+        let mut content = content_lines
+            .iter()
+            .map(|l| strip_lazy(l))
+            .collect::<Vec<_>>()
+            .join("\n");
         // Joining cannot distinguish zero payload lines from one or more blank
         // payload lines. The latter still own their newline (corpus 372).
         if !content_lines.is_empty() && content_lines.iter().all(String::is_empty) {
@@ -7260,7 +7306,11 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             lang,
             title,
             label,
-            content: content_lines.join("\n"),
+            content: content_lines
+                .iter()
+                .map(|l| strip_lazy(l))
+                .collect::<Vec<_>>()
+                .join("\n"),
             pos,
         })
     }
@@ -7776,6 +7826,12 @@ struct QuotedEntryScan {
     scanned: usize,
     half: Option<DefHalf>,
     content_col: Option<usize>,
+    // A BLOCK closed the innermost entry, so no paragraph is open below it. This
+    // is what separates the two `half == None` states: no entry ever opened
+    // (a paragraph is still open and a lazy marker folds into it) versus an
+    // entry a block ended (a lazy marker below the content column is the
+    // enclosing item's own text - carve-rs#1526's below-column row, #1538).
+    closed_by_block: bool,
 }
 
 impl QuotedEntryScan {
@@ -7790,17 +7846,19 @@ impl QuotedEntryScan {
             if is_blank_line(line) {
                 continue;
             }
-            // NO QUOTE-MARKER PEEL HERE. There used to be one, so a line still
-            // carrying a `>` could report the container it opens. It cannot
-            // reach a document: a nested quote's lazy line is written into this
-            // buffer verbatim and read again by the INNER quote's own collector,
-            // whose lines carry no further marker - and that collector strips
-            // the line to the same place this one would have. Measured after
-            // instrumenting it, the way markup-carve/carve-rs#1518 asks: the walk
-            // fires 8856 times over the two description sweeps and changes 0 of
-            // their 24360 documents.
-            let column = indent_columns(line);
-            let rest = trim_ascii_start(line);
+            // PEEL NESTED QUOTE MARKERS. A line still carrying a `>` opens the
+            // INNER quote whose entry a lazy line below is continuing - `> > -
+            // :: t` collected at the OUTER quote keeps one `>`, and without
+            // peeling it the term went unseen and a lazy `:: u` below reported no
+            // open half, so it framed and escaped instead of opening a second
+            // term (markup-carve/carve-rs#1538). The single-quote sweeps did not
+            // exercise this, which is why the earlier no-peel form measured clean.
+            let mut peeled = line.as_str();
+            while let Some(after) = strip_blockquote_prefix(peeled) {
+                peeled = after;
+            }
+            let column = indent_columns(peeled);
+            let rest = trim_ascii_start(peeled);
             let ladder = innermost_marker_content_col(rest);
             if ladder > 0 {
                 self.content_col = Some(column + ladder);
@@ -7808,12 +7866,24 @@ impl QuotedEntryScan {
             let content = trim_ascii_start(innermost_marker_content(rest));
             if is_definition_list_start(content) {
                 self.half = Some(DefHalf::Term);
+                self.closed_by_block = false;
             } else if strip_definition_marker(content).is_some() {
                 self.half = Some(DefHalf::Description);
+                self.closed_by_block = false;
             } else if item_block_opener(content) {
                 // A block written inside the entry closes it, so a lazy line
                 // below has no open half to continue.
                 self.half = None;
+                // ONLY A LEAF block leaves no open paragraph below it. A quote or
+                // a nested list is a CONTAINER whose own innermost paragraph a
+                // lazy marker folds into, so it does not make the marker the
+                // enclosing item's loose text - `> - > x` / ` :: t` folds `:: t`
+                // into the quoted paragraph, not into the item (carve-rs#1538).
+                self.closed_by_block = detect_heading(content).is_some()
+                    || thematic_break_marker(content).is_some()
+                    || detect_fence_open(content).is_some()
+                    || detect_comment_fence_line(content).is_some()
+                    || is_table_start(content);
             }
         }
     }
@@ -8026,6 +8096,34 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         } {
             break;
         }
+        // NESTED, A VISIBLE BLOCK OPENER INTERRUPTS AT ANY COLUMN. A quote inside
+        // a list item is re-parsed on the item body, which was dedented by the
+        // item's content column, so a heading, rule, table, term or fence the
+        // author wrote past that column arrives here INDENTED - and the flush-left
+        // block tests would miss it, folding into the quote a line the executable
+        // spec makes a block in the enclosing item (markup-carve/carve-rs#1538).
+        // Top-level (`at_document_level`) the same over-indented opener IS lazy
+        // text, so the trimmed retest is gated on the context: pure `> - x` /
+        // `    # h` folds, wrapped `- > - x` / `    # h` does not. Caption and
+        // the invisible-construct arms are deliberately NOT retested - captions
+        // fold, and a comment renders nothing at any column.
+        if !cur.at_document_level {
+            let trimmed = trim_ascii_start(line);
+            if trimmed.len() < line.len() {
+                let owned = trimmed.to_string();
+                // Clear `in_item_body` for the retest: the marker-at-content-column
+                // arm is about the line's ACTUAL column, and a list marker folded
+                // lazily never interrupts (§10 I2). Only the genuine block openers -
+                // heading, rule, table, term, fence, colon fence - should break.
+                let saved = cur.in_item_body;
+                cur.in_item_body = false;
+                let interrupts = interrupts_paragraph_as_container(cur, &owned);
+                cur.in_item_body = saved;
+                if interrupts {
+                    break;
+                }
+            }
+        }
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
@@ -8048,17 +8146,81 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         // a line that REACHED the innermost container's content column, because
         // one below it reached no container at all and is already lazy text
         // wherever it sits.
-        let strips = strip_definition_marker(trim_ascii_start(line)).is_some() && {
+        // FRAMING vs #1526's DEFINITION-LIST HANDLING turns on whether the item
+        // already has an open definition entry. A `:` description or `::` term
+        // folded into a quoted item is that item's own definition list ONLY when
+        // one is open; with a paragraph open instead, the same line is lazy text
+        // and folds into the paragraph. `open_entry` tracks which
+        // (markup-carve/carve-rs#1526).
+        //
+        //   half == None (a paragraph is open)  -> FRAME, fold as text
+        //   half == Term, `:`  -> the term's description: DEDENT and keep the `:`
+        //   half == Term, `::` -> a second term: keep AS-IS (the item re-parse
+        //                         dedents it to its own column)
+        //   half == Description, `::` -> a new term: keep AS-IS
+        //   half == Description, `:`  -> the open description's continuation:
+        //                         keep AS-IS so it folds into the `<dd>`
+        //   below the content column -> reached no entry: keep AS-IS as lazy text
+        //
+        // Every line that is NOT a definition marker is framed so its
+        // indentation cannot re-open a block on re-parse (carve-rs#1538).
+        let trimmed = trim_ascii_start(line);
+        let is_term = is_definition_list_start(trimmed);
+        let is_desc = strip_definition_marker(trimmed).is_some();
+        let (frame, dedent) = if is_term || is_desc {
             open_entry.advance(&inner.lines);
-            open_entry.half != Some(DefHalf::Description)
-                && open_entry
-                    .content_col
-                    .is_some_and(|col| indent_columns(line) >= col)
-        };
-        let (kept, stripped_cols) = if strips {
-            (trim_ascii_start(line).to_string(), leading_ws(line))
+            // A LAZY LINE HAS NO COLUMN (PART 0), so a `:`/`::` marker continues
+            // the innermost open definition entry wherever it was written - the
+            // column it reached does not gate the recognition. Only the OPEN HALF
+            // decides.
+            match open_entry.half {
+                // No open entry, and the marker sits BELOW the innermost content
+                // column: it reached no container at all and is the enclosing
+                // item's lazy text wherever it sits, so it is kept as-is. Pulling
+                // it to column 0 (frame) would eject it from a nested item -
+                // `> - - :: t` / `>     # h` / ` :  a` folds the `:` into the
+                // outer item instead of escaping to a top-level paragraph
+                // (markup-carve/carve-rs#1526's below-column row, #1538).
+                None if open_entry.closed_by_block
+                    && open_entry
+                        .content_col
+                        .is_some_and(|col| indent_columns(line) < col) =>
+                {
+                    (false, false)
+                }
+                // A paragraph is open, no entry: the marker is lazy text of that
+                // paragraph, framed so it folds in rather than re-opening a list.
+                None => (true, false),
+                // The term's description (`:`): dedent and keep the marker. A
+                // `::` opens a SECOND term; it is framed so a lazy line carries
+                // no column (PART 0), and the def-list recognizers strip the
+                // frame to read it at column 0 wherever the container depth put
+                // it - `> > - :: t` / `:: u` keeps the second term inside the
+                // nested item instead of ejecting it (markup-carve/carve-rs#1538).
+                Some(DefHalf::Term) if is_desc => (false, true),
+                Some(DefHalf::Term) => (true, false),
+                // A `::` opens a new term; a `:` is the open description's own
+                // continuation. Both keep their line as-is.
+                Some(DefHalf::Description) => (false, false),
+            }
         } else {
+            (true, false)
+        };
+        // FRAME ONCE. A nested quote folds a line its outer quote ALREADY
+        // folded, and framing it twice leaves a frame behind after the one strip
+        // downstream - `> > - x` with any following line put a literal
+        // `U+0000 L U+0000` on the page. The executable spec carries the same
+        // guard at its own item-fold for the same reason.
+        let (kept, stripped_cols) = if !frame {
+            if dedent {
+                (trimmed.to_string(), leading_ws(line))
+            } else {
+                (line.to_string(), 0)
+            }
+        } else if line.starts_with(LAZY) {
             (line.to_string(), 0)
+        } else {
+            (format!("{LAZY}{}", trimmed), leading_ws(line))
         };
         cur.consume();
         inner.push_at(
@@ -9144,7 +9306,9 @@ fn parse_list(
                         cur,
                         &mut nested,
                         content_col,
-                        |src, below| collected_body_takes_the_lazy_line(src, below, options),
+                        |src, below| {
+                            collected_body_takes_the_lazy_line(&src.source, below, options)
+                        },
                         |cur| {
                             collect_item_continuation_block_mapped(
                                 cur,
@@ -9326,7 +9490,7 @@ fn parse_list(
                     cur,
                     &mut nested,
                     content_col,
-                    |src, below| collected_body_takes_the_lazy_line(src, below, options),
+                    |src, below| collected_body_takes_the_lazy_line(&src.source, below, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
                 if sublist_source_loosens_outer_item(&nested.source) {
@@ -9495,7 +9659,8 @@ fn parse_list(
                 &mut stream,
                 content_col,
                 |src, below| {
-                    !after_blank && nested_ends_with_open_paragraph(src, below, below, options)
+                    !after_blank
+                        && nested_ends_with_open_paragraph_rebased(src, below, below, options)
                 },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
@@ -9670,8 +9835,8 @@ fn parse_list(
                 if nested_lead_is_continuation {
                     break;
                 }
-                if !nested_ends_with_open_paragraph(
-                    &stream.source,
+                if !nested_ends_with_open_paragraph_rebased(
+                    &stream,
                     last_consumed_line_below_column(cur, nested_content_col),
                     // The DEEP half of §24 C3 turns on the OUTER column: a
                     // comment that reached this list's own content column is a
@@ -9800,6 +9965,7 @@ fn parse_list(
                     if swallowed_blank_separator {
                         return false;
                     }
+                    let src = &src.source;
                     if marker_line_was_the_whole_block {
                         return body_ends_with_open_paragraph(src, options);
                     }
@@ -9995,8 +10161,10 @@ fn parse_list(
         // leaves an escaped space on an intermediate list-item line, which the
         // inline parser then turns into NBSP instead of the intended hard break
         // (carve-rs#855, markup-carve/carve#1028).
-        let normalized_para_lines: Vec<&str> =
-            para_lines.iter().map(|line| trim_ascii_end(line)).collect();
+        let normalized_para_lines: Vec<&str> = para_lines
+            .iter()
+            .map(|line| trim_ascii_end(strip_lazy(line)))
+            .collect();
         let para_text = normalized_para_lines.join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
         let children = if let Some(anchors) = anchors {
@@ -10583,6 +10751,37 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 ///
 /// A heading at the sub-item's CONTENT COLUMN is a bounded block too. It leaves
 /// no paragraph open, so the line ends the inner item (carve#1377).
+/// Does the body collected so far end INSIDE a quote's lazy continuation?
+///
+/// A QUOTE IS REACHED BY ITS MARKER, AND A COLUMN NEVER REACHES INTO ONE
+/// (`01-layout.ebnf:330`). A marker line carrying no `>` is in no quote at
+/// whatever column it lands on, so CARVE-P0-020 does not govern it and the only
+/// route by which it touches the quote is PART 0's lazy fold - which is what the
+/// PARAGRAPH twin has always done. This makes the marker twin agree with it
+/// (markup-carve/carve#1905, markup-carve/carve-rs#1537).
+///
+/// Answered on the LINES rather than on a parse: the plain collector carries no
+/// `Options`, and a probe parse there would have to invent one. Walking back
+/// over the trailing non-blank run is also what the rule actually says - a blank
+/// is the only exit, and prose in between stays inside the fold.
+fn collected_body_ends_in_a_quote_fold(lines: &[String]) -> bool {
+    for line in lines.iter().rev() {
+        if is_blank_line(line) {
+            return false;
+        }
+        let rest = trim_ascii_start(line);
+        if rest.starts_with('>') {
+            return true;
+        }
+        // A visible opener ends the fold, so what is below it is not the
+        // quote's any more.
+        if item_block_opener(rest) {
+            return false;
+        }
+    }
+    false
+}
+
 fn collected_body_takes_the_lazy_line(
     src: &str,
     trailing_below_column: bool,
@@ -10653,6 +10852,31 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
 /// block is a paragraph, the dedented line is the quote's own lazy continuation
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
+/// [`nested_ends_with_open_paragraph`] on a collected body that is REBASED first,
+/// exactly as `item_body` rebases before it finalizes the item's children.
+///
+/// The plain probe re-parses the body string verbatim, so an over-indented block
+/// opener an item collected at its content column - `  # h` under `> - x` - reads
+/// as an indented PARAGRAPH while the finalized item, having run
+/// `rebase_overindented_blocks`, reads it as a HEADING. The lazy-fold decision
+/// then folds a following flush line the render leaves top-level
+/// (markup-carve/carve-rs#1538). Rebasing a clone here matches the render.
+fn nested_ends_with_open_paragraph_rebased(
+    nested: &MappedSource,
+    trailing_below_column: bool,
+    below_outer_column: bool,
+    options: &Options<'_>,
+) -> bool {
+    let mut rebased = nested.clone();
+    rebase_overindented_blocks(&mut rebased, false);
+    nested_ends_with_open_paragraph(
+        &rebased.source,
+        trailing_below_column,
+        below_outer_column,
+        options,
+    )
+}
+
 fn nested_ends_with_open_paragraph(
     nested: &str,
     trailing_below_column: bool,
@@ -11125,7 +11349,7 @@ fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
     content_col: usize,
-    mut open: impl FnMut(&str, bool) -> bool,
+    mut open: impl FnMut(&MappedSource, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
     loop {
@@ -11168,7 +11392,7 @@ fn fold_lazy_run_and_resume(
         }
         // The column the run ended at, taken before the fold consumes anything.
         let below = last_consumed_line_below_column(cur, content_col);
-        if !open(&nested.source, below) {
+        if !open(nested, below) {
             break;
         }
         let before = cur.pos;
@@ -11539,6 +11763,7 @@ fn collect_indented_block_mapped_with(
             && fence.is_none()
             && comment_fence.is_none()
             && colon_open.is_empty()
+            && !collected_body_ends_in_a_quote_fold(&lines)
         {
             break;
         }
@@ -11847,7 +12072,11 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // not end in whitespace at all and nothing is dropped in front of it. Carve
     // has no two-space hard break to lose - `a<SP><SP>` + newline + `b` is one
     // paragraph with a soft break in the executable spec.
-    let joined = lines.join("\n");
+    let joined = lines
+        .iter()
+        .map(|l| strip_lazy(l))
+        .collect::<Vec<_>>()
+        .join("\n");
     let joined = joined.as_str();
     let children = if options.positions {
         let anchors = lines
@@ -12140,7 +12369,12 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
     let list_start = cur.pos;
     let mut items = Vec::new();
     while let Some(line) = cur.peek() {
-        let Some(term) = line.strip_prefix(":: ") else {
+        // A LAZY-FRAMED marker line (`LAZY:: u`) reached this open list by the
+        // fold and carries no column (PART 0), so the frame is stripped before
+        // the marker is recognized - at column 0, whatever the container depth
+        // the line was written at (markup-carve/carve-rs#1538). The frame is a
+        // no-op on an ordinary flush-left term, so unframed lists are unchanged.
+        let Some(term) = strip_lazy(line).strip_prefix(":: ") else {
             break;
         };
         if is_blank_line(term) {
@@ -12165,8 +12399,8 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             .then(|| vec![inline_anchor_for_line(cur, term_start, term)]);
         while let Some(next) = cur.peek() {
             if is_blank_line(next)
-                || next.strip_prefix(":: ").is_some()
-                || strip_definition_marker(next).is_some()
+                || strip_lazy(next).strip_prefix(":: ").is_some()
+                || strip_definition_marker(strip_lazy(next)).is_some()
                 || is_list_marker(next)
             {
                 break;
@@ -12184,7 +12418,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // intact: spaces INSIDE a verbatim run are the construct's content
             // and end at its closing delimiter, so an all-space `` `  ` `` term
             // is untouched by a trim that only ever sees the end of a line.
-            term_text.push_str(trim_ascii_end(&owned));
+            term_text.push_str(trim_ascii_end(strip_lazy(&owned)));
             if let Some(term_anchors) = &mut term_anchors {
                 term_anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
             }
@@ -12211,7 +12445,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         // was an internal nobody could see, until the AST became something
         // engines hand each other (PART 12).
         while let Some(next) = cur.peek() {
-            let Some(next_term) = next.strip_prefix(":: ") else {
+            let Some(next_term) = strip_lazy(next).strip_prefix(":: ") else {
                 break;
             };
             if is_blank_line(next_term) {
@@ -12229,8 +12463,8 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 .then(|| vec![inline_anchor_for_line(cur, next_start, next_term)]);
             while let Some(following) = cur.peek() {
                 if is_blank_line(following)
-                    || following.strip_prefix(":: ").is_some()
-                    || strip_definition_marker(following).is_some()
+                    || strip_lazy(following).strip_prefix(":: ").is_some()
+                    || strip_definition_marker(strip_lazy(following)).is_some()
                     || is_list_marker(following)
                 {
                     break;
@@ -12242,7 +12476,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 text.push('\n');
                 // Same rule as the first term's continuation above: a CONSECUTIVE
                 // term folds its lines the same way, so it drops the same run.
-                text.push_str(trim_ascii_end(&owned));
+                text.push_str(trim_ascii_end(strip_lazy(&owned)));
                 if let Some(anchors) = &mut anchors {
                     anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
                 }
@@ -12274,7 +12508,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     look += 1;
                 }
                 match cur.lines.get(cur.pos + look).copied() {
-                    Some(after) if strip_definition_marker(after).is_some() => {
+                    Some(after) if strip_definition_marker(strip_lazy(after)).is_some() => {
                         for _ in 0..look {
                             cur.consume();
                         }
@@ -12285,7 +12519,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let Some(line) = cur.peek() else {
                 break;
             };
-            let Some((def, definition_column)) = strip_definition_marker(line) else {
+            let Some((def, definition_column)) = strip_definition_marker(strip_lazy(line)) else {
                 break;
             };
             if is_blank_line(def) {
@@ -12316,8 +12550,8 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     &mut |a, _| {
                         is_blank_line(a)
                             || is_plus_marker(a)
-                            || a.strip_prefix(":: ").is_some()
-                            || strip_definition_marker(a).is_some()
+                            || strip_lazy(a).strip_prefix(":: ").is_some()
+                            || strip_definition_marker(strip_lazy(a)).is_some()
                     },
                 );
                 while cur.pos < end {
@@ -12395,7 +12629,10 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
             cur.consume();
         }
-        if !cur.peek().is_some_and(is_definition_list_start) {
+        if !cur
+            .peek()
+            .is_some_and(|l| is_definition_list_start(strip_lazy(l)))
+        {
             cur.pos = saved;
             break;
         }
@@ -12735,7 +12972,9 @@ fn collect_definition_body(
             }
             // A new term/definition marker ends the definition (the outer loop
             // picks it up).
-            if line.strip_prefix(":: ").is_some() || strip_definition_marker(line).is_some() {
+            if strip_lazy(line).strip_prefix(":: ").is_some()
+                || strip_definition_marker(strip_lazy(line)).is_some()
+            {
                 break;
             }
             if fence.holds_no_paragraph() {
@@ -12953,7 +13192,7 @@ fn consume_caption_slot(
     // ever shortens a line's END, so it cannot shift any anchor.
     let joined = joined
         .split('\n')
-        .map(trim_ascii_end)
+        .map(|l| trim_ascii_end(strip_lazy(l)))
         .collect::<Vec<_>>()
         .join("\n");
     let text = trim_ascii_end(&joined);
@@ -14904,7 +15143,12 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // See `harden_verse_breaks` for why the test is node kind and
                 // not depth, and why both exemptions need no code.
                 let inlines = harden_verse_breaks(parse_inline_lines_with_anchor(
-                    &lines.lines.join("\n"),
+                    &lines
+                        .lines
+                        .iter()
+                        .map(|l| strip_lazy(l))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
                     options,
                     anchors,
                 ));
@@ -15573,6 +15817,12 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
 /// (`{#id` / ` .foo}`). Consumes the lines and returns the parsed attributes,
 /// or leaves the cursor untouched if it is not a valid attribute block.
 fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
+    // The OPENER is read RAW: a framed first line is a lazily-folded indented
+    // `{...}`, which is paragraph text under the strict column-0 rule and must
+    // NOT be pulled flush-left into a block. Only the CONTINUATION lines below
+    // are unframed, so a wrapped block whose CLOSER folded down from a shallower
+    // quote depth still joins (carve-rs#1538); the opener there arrives unframed
+    // through the quote's own marker.
     let first = cur.peek()?;
     if !trim_ascii_start(first).starts_with('{') {
         return None;
@@ -15597,7 +15847,8 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     let mut joined = String::new();
     let mut count = 0usize;
     let mut quote: Option<char> = None;
-    while let Some(line) = cur.lines.get(cur.pos + count).copied() {
+    while let Some(raw) = cur.lines.get(cur.pos + count).copied() {
+        let line = strip_lazy(raw);
         if is_blank_line(line) {
             return None;
         }
@@ -15638,6 +15889,9 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
 /// FLUSH-LEFT ONLY, like every caller's own guard: an indented `{...}` is lazy
 /// paragraph text under the strict column-0 rule (PART 9 section 24 C3).
 fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
+    // OPENER read RAW (see `parse_standalone_attrs_block`): a framed first line
+    // is lazily-folded indented text, not a block opener. Only the CONTINUATION
+    // lines in the join loop below are unframed.
     let first = *lines.first()?;
     if first.starts_with([' ', '\t']) {
         return None;
@@ -15661,7 +15915,8 @@ fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
     }
     let mut joined = String::new();
     let mut quote: Option<char> = None;
-    for (count, line) in lines.iter().enumerate() {
+    for (count, raw) in lines.iter().enumerate() {
+        let line = strip_lazy(raw);
         if is_blank_line(line) {
             return None;
         }
