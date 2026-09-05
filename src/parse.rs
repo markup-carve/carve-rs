@@ -4260,6 +4260,22 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                     }
                     for def in &mut item.definitions {
                         narrow_to_last_placed_child(&mut def.children, lines);
+                        // END AT THE LAST PLACED CHILD, like every other
+                        // container. A footnote definition authored in the body
+                        // and hoisted out by PART 9 SS7 is a SIBLING, not a
+                        // child (markup-carve/carve#1522), so the description's
+                        // span must not reach over it (carve-rs#1555). The list
+                        // that hosts it derives its own end from this, so both
+                        // narrow together.
+                        let last = def
+                            .children
+                            .iter()
+                            .rev()
+                            .find_map(crate::ast_json::block_pos)
+                            .copied();
+                        if let Some(pos) = def.pos.as_mut() {
+                            narrow_container_end(pos, last, lines, false);
+                        }
                     }
                 }
             }
