@@ -2529,9 +2529,7 @@ fn extract_link_defs_with_guard(
                 // DEFINITION-LIST body still hoists a definition past its column
                 // (corpus 451-2), so the container is tracked for ownership only
                 // when no definition list is open at this level.
-                if indent_columns(line) == content_col
-                    && columns.current().def_list.is_none()
-                {
+                if indent_columns(line) == content_col && columns.current().def_list.is_none() {
                     if let Some(open) = detect_container_open(bare_trim) {
                         colon_fence = Some((content_col, open.fence_len));
                     }
