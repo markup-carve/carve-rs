@@ -1134,14 +1134,13 @@ mod layout_html_tests {
                 path.display()
             );
         }
-        // 51 before the pin moved to carve d0b6c92. The one document added is
-        // corpus 406's base pair, two headings whose marker separators are
-        // multi-space runs; the fast path accepts it and the per-document
-        // assertion above already proves it byte-identical to the
-        // authoritative pipeline. No scanner widened to take it - the corpus
-        // gained a document the existing heading shape already covered.
+        // 52 before the pin moved to carve 1b27b68. The one document added is
+        // corpus 448-6, a plain nested unordered list; the fast path accepts it
+        // and the per-document assertion above already proves it byte-identical
+        // to the authoritative pipeline. No scanner widened to take it - the
+        // corpus gained a document the existing list shape already covered.
         assert_eq!(
-            accepted, 52,
+            accepted, 53,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

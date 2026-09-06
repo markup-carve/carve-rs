@@ -818,8 +818,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // contain. `lossy` holding EXACTLY at 323 is the half that matters - a
     // ceiling that merely fails to rise cannot distinguish ten arrivals from
     // some number leaving, which is what the by-name diff is for.
-    const STRICT: usize = 1241;
-    const LOSSY: usize = 323;
+    // The pin moves on to carve 1b27b68, which adds the 121 documents of the
+    // description-body and marker-folding families (corpus 444-452). Measured
+    // the same way - dumping BOTH buckets at 95fc3a04 and at 1b27b68 with the
+    // same engine and diffing by name: 1241/323 over 1564 becomes 1344/341 over
+    // 1685. No document leaves either bucket in either direction; the 103 strict
+    // and 18 lossy joiners are exactly the 121 files the base corpus does not
+    // contain. All 18 lossy joiners report the same single cause `soft_break` -
+    // the 442 pattern, a folded marker leaving a multi-line paragraph - so no
+    // new KIND of loss appeared.
+    const STRICT: usize = 1344;
+    const LOSSY: usize = 341;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
