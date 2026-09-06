@@ -576,6 +576,26 @@ const IMPLEMENTED: &[&str] = &[
     "a-definition-between-two-open-content-columns-reaches-the-outer-one",
     "a-marker-folds-only-strictly-between-the-item-s-base-and-content-column",
     "an-unterminated-comment-fence-in-a-list-item-is-the-line-form",
+    // Added with the spec bump to carve 1b27b68. Every document in each was
+    // rendered through this engine and matched its committed HTML before being
+    // listed here; 451 registers a link definition only when its list-item host
+    // owns it, and a definition past a colon fence in a list item is the
+    // container's text (carve-rs colon-fence ownership fix).
+    "a-block-opener-past-a-nested-footnote-definition-opens-in-the-item",
+    "a-closed-fence-in-a-description-body-ends-it",
+    "a-comment-below-a-description-body-s-column-ends-the-body",
+    "a-container-closer-closes-its-container-in-a-footnote-body-too",
+    "a-container-in-a-host-body-owns-a-line-past-its-own-content-column",
+    "a-definition-nested-past-a-footnote-body-is-a-note-and-a-reference-below-it-resolves",
+    "a-degraded-comment-fence-at-a-container-s-column-0-keeps-the-follower-in-the-item",
+    "a-degraded-comment-fence-leaves-a-lazy-follower-where-the-line-form-does",
+    "a-marker-folds-into-a-quote-below-it",
+    "a-row-whose-every-cell-is-blank-is-not-a-table",
+    "a-wrapped-attribute-block-ends-at-its-quote-and-reaches-no-line-below-it",
+    "an-empty-unterminated-container-ends-at-a-flush-left-line",
+    "an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
+    "an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body",
+    "the-host-does-not-change-which-column-a-definition-reaches",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

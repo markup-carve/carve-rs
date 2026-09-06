@@ -525,6 +525,25 @@ fn parse_with_options_mode_and_index(
     let mut link_def_probe_budget = probe_budget_for(body.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
+    // These lines index the FOOTNOTE-REDUCED body: a multi-line footnote body
+    // collapses to one placeholder line, so a definition written below it sits
+    // at a lower reduced index than its authored line. Map each back to the
+    // authored line through the footnote line map before it reaches
+    // `append_link_reference_definitions`, which indexes the ORIGINAL source -
+    // otherwise the definition takes an earlier line's span and two collected
+    // definitions can share an offset, which flips their order on re-format
+    // (carve-rs#1559 corpus 456). The nested defs merged below are already in
+    // authored coordinates, so this runs before the merge, not after.
+    for def in link_defs.values_mut() {
+        if let Some(line) = def.line {
+            def.line = body
+                .line_map
+                .get(line)
+                .and_then(|mapped| *mapped)
+                .map(|authored| authored - 1)
+                .or(def.line);
+        }
+    }
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the
@@ -2275,6 +2294,14 @@ fn extract_link_defs_with_guard(
     // still produce a spurious link, not content loss; the sound fix is
     // collecting definitions during block parsing.
     let mut columns = ContentColumns::new();
+    // The innermost `:::` colon-fence container (div / admonition) this pre-pass
+    // is inside, as (content column, fence length). A CONTAINER OWNS A LINE PAST
+    // ITS OWN CONTENT COLUMN: a link definition written DEEPER than the fence's
+    // column is the container's own text, not a hoistable definition (corpus
+    // 451). Only the colon fence changes this - a plain list item still absorbs
+    // an authored-base residual and registers (carve#1705) - and a definition AT
+    // the fence's column still registers, since the div body is parsed normally.
+    let mut colon_fence: Option<(usize, usize)> = None;
     // Collected so an unterminated `%%%` can be told from a real fenced comment
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
@@ -2502,6 +2529,41 @@ fn extract_link_defs_with_guard(
             stripped.structural,
             columns.reached_by(def_indent),
         );
+        let bare_trim = trim_ascii_start(stripped.bare);
+        match colon_fence {
+            Some((fence_col, fence_len)) => {
+                if indent_columns(line) == fence_col
+                    && exact_colon_fence_len(bare_trim).is_some_and(|len| len >= fence_len)
+                {
+                    colon_fence = None;
+                } else if !is_blank_line(line) && indent_columns(line) < fence_col {
+                    // The container's list-item host ends at a line that dedents
+                    // below its content column. An UNTERMINATED colon fence closes
+                    // WITH its host, so its ownership must not reach a later
+                    // sibling item - without this reset a `[r]: /url` in the next
+                    // item was kept as text instead of hoisted (codex review of
+                    // the 451 fix). Clear the state and let this line be processed
+                    // normally, where it may itself hoist or reopen.
+                    colon_fence = None;
+                } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
+                    // Past the container's own content column: it is the
+                    // container's text, kept rather than hoisted (corpus 451).
+                    body.push(std::borrow::Cow::Borrowed(line));
+                    continue;
+                }
+            }
+            None => {
+                // Only a LIST-ITEM host owns the line: a colon fence in a
+                // DEFINITION-LIST body still hoists a definition past its column
+                // (corpus 451-2), so the container is tracked for ownership only
+                // when no definition list is open at this level.
+                if indent_columns(line) == content_col && columns.current().def_list.is_none() {
+                    if let Some(open) = detect_container_open(bare_trim) {
+                        colon_fence = Some((content_col, open.fence_len));
+                    }
+                }
+            }
+        }
         // See the footnote pass: folding and not being able to tell are one
         // condition, and both collect nothing (PART 9R R1a).
         // See the footnote pass: the probe stays inside the filter so the shared
@@ -13048,9 +13110,20 @@ fn collect_definition_body(
             // text too; a blank line ends the fence via the branch below.
             if lead_opens_nested_fence {
                 folded_a_lazy_line = false;
-                lines.push(format!("{LAZY}{}", trim_ascii_start(line)));
+                let framed = format!("{LAZY}{}", trim_ascii_start(line));
+                // The LAZY frame prepends codepoints the source never held, and
+                // trim_ascii_start drops the line's own indent. A column in the
+                // framed line maps back to source by ADDING what was stripped and
+                // SUBTRACTING the frame - without the second term the frame's
+                // width leaked into every span whose end fell on a framed line,
+                // pushing the fence's end past document length (carve-rs#1559).
+                let stripped = line.chars().count() - trim_ascii_start(line).chars().count();
+                col_map.push(
+                    cur.source_col(cur.pos)
+                        .map(|c| c + stripped as isize - LAZY.chars().count() as isize),
+                );
+                lines.push(framed);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
                 reached.push(false);
                 cur.consume();
                 continue;
