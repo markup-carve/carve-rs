@@ -525,6 +525,25 @@ fn parse_with_options_mode_and_index(
     let mut link_def_probe_budget = probe_budget_for(body.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
+    // These lines index the FOOTNOTE-REDUCED body: a multi-line footnote body
+    // collapses to one placeholder line, so a definition written below it sits
+    // at a lower reduced index than its authored line. Map each back to the
+    // authored line through the footnote line map before it reaches
+    // `append_link_reference_definitions`, which indexes the ORIGINAL source -
+    // otherwise the definition takes an earlier line's span and two collected
+    // definitions can share an offset, which flips their order on re-format
+    // (carve-rs#1559 corpus 456). The nested defs merged below are already in
+    // authored coordinates, so this runs before the merge, not after.
+    for def in link_defs.values_mut() {
+        if let Some(line) = def.line {
+            def.line = body
+                .line_map
+                .get(line)
+                .and_then(|mapped| *mapped)
+                .map(|authored| authored - 1)
+                .or(def.line);
+        }
+    }
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the
