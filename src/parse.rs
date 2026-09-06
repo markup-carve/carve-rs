@@ -13118,9 +13118,10 @@ fn collect_definition_body(
                 // width leaked into every span whose end fell on a framed line,
                 // pushing the fence's end past document length (carve-rs#1559).
                 let stripped = line.chars().count() - trim_ascii_start(line).chars().count();
-                col_map.push(cur.source_col(cur.pos).map(|c| {
-                    c + stripped as isize - LAZY.chars().count() as isize
-                }));
+                col_map.push(
+                    cur.source_col(cur.pos)
+                        .map(|c| c + stripped as isize - LAZY.chars().count() as isize),
+                );
                 lines.push(framed);
                 line_map.push(cur.source_line(cur.pos));
                 reached.push(false);
