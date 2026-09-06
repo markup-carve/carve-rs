@@ -494,7 +494,7 @@ fn parse_with_options_mode_and_index(
         + 1;
     let (body, mut footnote_defs_src, mut footnote_def_pos, mut note_link_defs) =
         if body.contains("[^") {
-            extract_footnote_defs(body, body_start_line, options.positions, options)
+            extract_footnote_defs(body, body_start_line, options.positions, false, options)
         } else {
             let body_line_count = body.lines().count();
             (
@@ -736,7 +736,7 @@ fn extract_nested_footnote_defs(
         }
 
         let (body, nested, nested_positions, nested_links) =
-            extract_footnote_defs(&parent.source, 1, options.positions, options);
+            extract_footnote_defs(&parent.source, 1, options.positions, true, options);
         defs.insert(label, compose_mapped_source(body, &parent));
 
         for (nested_label, nested_source) in nested {
@@ -1241,6 +1241,11 @@ fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
     positions: bool,
+    // Inside a NOTE BODY (the recursion), a `[^x]: ` line is a nested definition
+    // at ANY indent - a note's body recognizes them flatly rather than by the
+    // per-level content column the top level uses, so a definition one column
+    // deeper than its parent is still hoisted (carve-rs#1560).
+    nested: bool,
     options: &Options<'_>,
 ) -> FootnoteExtraction {
     let lines: Vec<&str> = source.lines().collect();
@@ -1426,11 +1431,17 @@ fn extract_footnote_defs(
             continue;
         }
         let def_indent = indent_columns(stripped.bare);
-        let def_line = at_content_column(
-            stripped.bare,
-            stripped.structural,
-            columns.reached_by(def_indent),
-        );
+        let def_line =
+            if nested && parse_footnote_def_line(trim_ascii_start(stripped.bare)).is_some() {
+                // A nested note-body definition at any indent (see `nested`).
+                trim_ascii_start(stripped.bare)
+            } else {
+                at_content_column(
+                    stripped.bare,
+                    stripped.structural,
+                    columns.reached_by(def_indent),
+                )
+            };
         // PART 9R R1a: a line that folds into an open paragraph defines nothing,
         // and a probe that cannot afford to say so collects nothing either. The
         // two are one condition here - the fallback is conservative, so it may
