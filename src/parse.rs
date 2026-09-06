@@ -13082,9 +13082,19 @@ fn collect_definition_body(
             // text too; a blank line ends the fence via the branch below.
             if lead_opens_nested_fence {
                 folded_a_lazy_line = false;
-                lines.push(format!("{LAZY}{}", trim_ascii_start(line)));
+                let framed = format!("{LAZY}{}", trim_ascii_start(line));
+                // The LAZY frame prepends codepoints the source never held, and
+                // trim_ascii_start drops the line's own indent. A column in the
+                // framed line maps back to source by ADDING what was stripped and
+                // SUBTRACTING the frame - without the second term the frame's
+                // width leaked into every span whose end fell on a framed line,
+                // pushing the fence's end past document length (carve-rs#1559).
+                let stripped = line.chars().count() - trim_ascii_start(line).chars().count();
+                col_map.push(cur.source_col(cur.pos).map(|c| {
+                    c + stripped as isize - LAZY.chars().count() as isize
+                }));
+                lines.push(framed);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
                 reached.push(false);
                 cur.consume();
                 continue;
