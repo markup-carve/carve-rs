@@ -2275,6 +2275,14 @@ fn extract_link_defs_with_guard(
     // still produce a spurious link, not content loss; the sound fix is
     // collecting definitions during block parsing.
     let mut columns = ContentColumns::new();
+    // The innermost `:::` colon-fence container (div / admonition) this pre-pass
+    // is inside, as (content column, fence length). A CONTAINER OWNS A LINE PAST
+    // ITS OWN CONTENT COLUMN: a link definition written DEEPER than the fence's
+    // column is the container's own text, not a hoistable definition (corpus
+    // 451). Only the colon fence changes this - a plain list item still absorbs
+    // an authored-base residual and registers (carve#1705) - and a definition AT
+    // the fence's column still registers, since the div body is parsed normally.
+    let mut colon_fence: Option<(usize, usize)> = None;
     // Collected so an unterminated `%%%` can be told from a real fenced comment
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
@@ -2502,6 +2510,28 @@ fn extract_link_defs_with_guard(
             stripped.structural,
             columns.reached_by(def_indent),
         );
+        let bare_trim = trim_ascii_start(stripped.bare);
+        match colon_fence {
+            Some((fence_col, fence_len)) => {
+                if indent_columns(line) == fence_col
+                    && exact_colon_fence_len(bare_trim).is_some_and(|len| len >= fence_len)
+                {
+                    colon_fence = None;
+                } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
+                    // Past the container's own content column: it is the
+                    // container's text, kept rather than hoisted (corpus 451).
+                    body.push(std::borrow::Cow::Borrowed(line));
+                    continue;
+                }
+            }
+            None => {
+                if indent_columns(line) == content_col {
+                    if let Some(open) = detect_container_open(bare_trim) {
+                        colon_fence = Some((content_col, open.fence_len));
+                    }
+                }
+            }
+        }
         // See the footnote pass: folding and not being able to tell are one
         // condition, and both collect nothing (PART 9R R1a).
         // See the footnote pass: the probe stays inside the filter so the shared
