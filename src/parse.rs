@@ -5990,6 +5990,41 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
 /// at-column band folds - the same document answered two ways one column apart
 /// (markup-carve/carve-rs#1523). Only the code-fence arm is affected: every
 /// other opener this predicate recognizes stands on its own line.
+/// The body (seed + collected lines) still has an unterminated code fence open
+/// at its end: one opened on the body's LEAD, after its list markers, that no
+/// later line closed at or above the fence's own column. A fence's content is
+/// not re-scanned for structure, so the flush-left lines below such a fence are
+/// its verbatim body (markup-carve/carve#1958, carve-rs#1547/#1559).
+fn body_ends_with_open_code_fence(seed: &str, lines: &[String]) -> bool {
+    let mut open: Option<(FenceOpen, usize)> = None;
+    for raw in seed.lines().chain(lines.iter().map(String::as_str)) {
+        let line = strip_lazy(raw);
+        let indent = indent_columns(line);
+        let content = trim_ascii_start(innermost_marker_content(line));
+        match open {
+            Some((fence, col)) => {
+                if indent >= col && is_fence_close(content, fence) {
+                    open = None;
+                }
+            }
+            None => {
+                // ONLY a fence NESTED past a list marker owns the flush-left body.
+                // A fence at the body's OWN column (`:  ``` ` directly on the
+                // description marker) is the body's own lead fence and closes on a
+                // below-column line, exactly as a single list item's does (corpus
+                // 276); the marker-content column is 0 there and nonzero here.
+                let marker_col = innermost_marker_content_col(line);
+                if marker_col > 0 {
+                    if let Some(fence) = detect_fence_open(content) {
+                        open = Some((fence, indent + marker_col));
+                    }
+                }
+            }
+        }
+    }
+    open.is_some()
+}
+
 fn unterminated_code_fence_folds(cur: &mut LineCursor<'_>, line: &str) -> bool {
     detect_fence_open(line).is_some_and(|open| !code_fence_closer_ahead(cur, open))
 }
@@ -11706,6 +11741,11 @@ fn collect_indented_block_mapped_with(
             continue;
         }
         let indent = indent_columns(line);
+        // A LAZY-framed line has NO column (PART 0), so under an OPEN fence it is
+        // the fence's own verbatim body wherever it sits - a fence's content is
+        // not re-scanned (carve#1958). This is how a flush-left body folded into
+        // a nested item-lead fence reaches it (carve-rs#1547/#1559).
+        let fence_owns_flush_left = fence.is_some() && line.starts_with(LAZY);
         // A MARKER THAT CAN NEVER REACH COLUMN 0 ATTACHES NOTHING (§17 L3,
         // markup-carve/carve#1436). Inside a body this collector is stripping,
         // document column 0 is unreachable by construction, so a lone `+` at the
@@ -11747,7 +11787,7 @@ fn collect_indented_block_mapped_with(
             }
             break;
         }
-        if indent <= parent_indent {
+        if indent <= parent_indent && !fence_owns_flush_left {
             break;
         }
         if definition_ended_paragraph && indent < strip_cols {
@@ -11767,7 +11807,7 @@ fn collect_indented_block_mapped_with(
         if closed_comment_span_above && !cur.line_reached(cur.pos, indent, strip_cols) {
             break;
         }
-        if fence.is_some() && indent < strip_cols {
+        if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
         let is_marker = detect_list_marker_full(line).is_some();
@@ -12874,6 +12914,12 @@ fn collect_definition_body(
     // fence, a table or a container at the end of it, so each of those clears it
     // and the next question is asked in full.
     let mut folded_a_lazy_line = false;
+    // Computed ONCE from the seed (the marker line's own content): does the body's
+    // LEAD open a code fence NESTED past a list marker? Its verbatim body is the
+    // flush-left lines below, which cannot close it, so the state does not change
+    // as they are collected - re-deriving it per line would be quadratic, the
+    // shape `a_definition_bodys_lazy_run_asks_s4_once_per_line` guards (#1547).
+    let lead_opens_nested_fence = body_ends_with_open_code_fence(seed, &[]);
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
     // `lines`. `None` means unknown, and a block starting there gets no
@@ -12981,6 +13027,20 @@ fn collect_definition_body(
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 reached.push(true);
+                cur.consume();
+                continue;
+            }
+            // A fence opened on the body's LEAD owns the flush-left lines below it
+            // as verbatim body (markup-carve/carve#1958). Frame the line so the
+            // re-parse reads it at NO column and the fence takes it, matching the
+            // oracle (carve-rs#1547/#1559). A `:: ` inside the open fence is body
+            // text too; a blank line ends the fence via the branch below.
+            if lead_opens_nested_fence {
+                folded_a_lazy_line = false;
+                lines.push(format!("{LAZY}{}", trim_ascii_start(line)));
+                line_map.push(cur.source_line(cur.pos));
+                col_map.push(cur.source_col(cur.pos));
+                reached.push(false);
                 cur.consume();
                 continue;
             }
