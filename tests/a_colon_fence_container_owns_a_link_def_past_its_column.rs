@@ -43,3 +43,14 @@ fn a_description_body_still_hoists_the_link_def() {
 fn a_plain_item_without_a_fence_still_hoists_past_its_column() {
     assert!(hoisted("- a\n   [r]: /url\n\n[r][]\n"));
 }
+
+/// An UNTERMINATED colon fence closes with its list-item host: its ownership
+/// must not reach a LATER sibling item. Here the fence in the first item never
+/// closes, and the second item's definition is a plain hoist - it registers
+/// exactly as it does when that item stands alone.
+#[test]
+fn an_unterminated_fence_does_not_own_a_later_sibling_s_link_def() {
+    assert!(hoisted(
+        "- a\n  ::: note\n   text\n\noutside\n\n- b\n   [r]: /url\n\n[r][]\n"
+    ));
+}

@@ -2536,6 +2536,15 @@ fn extract_link_defs_with_guard(
                     && exact_colon_fence_len(bare_trim).is_some_and(|len| len >= fence_len)
                 {
                     colon_fence = None;
+                } else if !is_blank_line(line) && indent_columns(line) < fence_col {
+                    // The container's list-item host ends at a line that dedents
+                    // below its content column. An UNTERMINATED colon fence closes
+                    // WITH its host, so its ownership must not reach a later
+                    // sibling item - without this reset a `[r]: /url` in the next
+                    // item was kept as text instead of hoisted (codex review of
+                    // the 451 fix). Clear the state and let this line be processed
+                    // normally, where it may itself hoist or reopen.
+                    colon_fence = None;
                 } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
                     // Past the container's own content column: it is the
                     // container's text, kept rather than hoisted (corpus 451).
