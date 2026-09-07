@@ -9,19 +9,45 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A lone `|` line no longer panics. `carve::to_html("|")` sliced `line[1..0]`
+  and aborted the process, an unauthenticated one-byte denial of service for an
+  embedder rendering untrusted Carve; a lone pipe opens no table row (#1554).
+- An unterminated or over-indented fence on a nested item's lead, or a
+  below-column colon-fence run, takes its flush-left body instead of leaking
+  (#1567, #1559, #1527, #1515).
+- A degraded or closed comment fence is placed by its column and ends the item
+  it was written in, keeping its lazy follower where the line form does (#1552,
+  #1546, #1540, #1536, #1530, #1524, #1521, #1519).
+- A comment leaf span begins at its markup, even one-space-indented (#1549, #1568).
+- A definition or footnote definition nested inside a note body, quoted item,
+  description body or unterminated container is registered against the right
+  column, including across a blank line and in a later sibling (#1560, #1544,
+  #1542, #1541, #1535, #1537, #1507, #1503, #1566).
+- A colon followed by a space and a tab opens no description (#1488).
+- A block opener, list marker or quoted line is placed against the correct
+  content column instead of leaking into or out of a nested quote or item
+  (#1539, #1513, #1509, #1502, #1520).
+- An all-blank standard table row is not a table (#1556).
+- A `definition_description`'s span ends at its last placed child, and an
+  emptied description narrows to its marker line; published `pos` values move
+  (#1555, #1570).
+- Running out of probe budget collects nothing and no longer deletes authored
+  text (#1493, #1494).
 - A link or image destination title occupies the HTML `title` slot instead of
-  being emitted beside a duplicate authored attribute.
+  being emitted beside a duplicate authored attribute (#1481).
 - Djot migration preserves Carve table continuation rows instead of rewriting
-  their `+` marker as a bullet.
+  their `+` marker as a bullet (#1478).
 - An empty `ExternalLinks` target omits the `target` attribute while retaining
-  the configured `rel` policy.
+  the configured `rel` policy (#1479).
 
 ### Added
 
 - Source-preserving UTF-8 patch creation, application, serialization, and
-  canonical-format APIs with stale-source preconditions.
+  canonical-format APIs with stale-source preconditions (#1569).
+- An authored extended task state (beyond `[ ]` and `[x]`) is carried through
+  the tree and named in the rendered HTML (#1485, #1486).
 - A prebuilt `aarch64-unknown-linux-gnu` binary is attached to every release,
-  and the Homebrew tap installs it on ARM64 Linux.
+  and the Homebrew tap installs it on ARM64 Linux (#1465).
 
 ## [0.1.4] - 2026-08-27
 
