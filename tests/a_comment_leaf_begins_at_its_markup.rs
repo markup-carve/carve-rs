@@ -76,3 +76,29 @@ fn a_comment_fence_starts_at_its_percent_run() {
         (5, 14)
     );
 }
+
+// A ONE-SPACE indent is the case a separate offset pass (`include_comment_
+// indentation`) used to pull back to column 1, undoing the leaf rule that
+// `take_comment_block` had already applied. It fired only when the leading run
+// was exactly one space, so the tests above - all 2+ spaces or a marker prefix
+// - could not see it. These lock the corpus shapes it regressed
+// (markup-carve/carve#1963: corpus 183, 189, 187).
+
+#[test]
+fn a_one_space_absorbed_line_comment_starts_at_the_percent() {
+    // corpus 183: the comment sits one column left of the item's content
+    // column and is absorbed; its `%` is column 2, offset 5, not the space.
+    assert_eq!(comment_start("- a\n %% c\nb\n"), (2, 5));
+}
+
+#[test]
+fn a_one_space_comment_under_a_nested_item_starts_at_the_percent() {
+    // corpus 189.
+    assert_eq!(comment_start("- - a\n %% c\n b\n"), (2, 7));
+}
+
+#[test]
+fn a_one_space_comment_fence_starts_at_its_percent_run() {
+    // corpus 187.
+    assert_eq!(comment_start("- a\n %%% n\n x\n %%%\n tail\n"), (2, 5));
+}
