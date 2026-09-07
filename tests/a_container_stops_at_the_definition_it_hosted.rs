@@ -170,6 +170,26 @@ fn a_container_the_definition_emptied_spans_its_own_markup() {
     assert_eq!(end(&node_at(source, "list_item", 1)), (1, 5, 4));
 }
 
+/// AND AN EMPTIED DESCRIPTION, the same ruling one construct over. The footnote
+/// definition on the marker line and the link reference definition on the
+/// continuation line below it both hoist to the root, so the description has no
+/// placed child. Its `:` marker is not one of the list openers the shared
+/// narrowing knows, so it takes its own MARKER LINE and stops - it does not
+/// reach the continuation line the hoisted `[r]: /url` was written on. The
+/// definition list derives its end from the description, so both end on line 2
+/// where they used to read `(3, 13, 27)` (markup-carve/carve#1522, carve#1963).
+/// Corpus 447-...-13.
+#[test]
+fn a_description_the_definitions_emptied_spans_its_own_marker_line() {
+    let source = ":: t\n: [^g]: b\n   [r]: /url\n\nSee [r][] and [^g].\n";
+
+    assert_eq!(
+        end(&node_at(source, "definition_description", 1)),
+        (2, 10, 14)
+    );
+    assert_eq!(end(&node_at(source, "definition_list", 1)), (2, 10, 14));
+}
+
 // ---- a duplicate must not move the definition that was accepted ------------
 
 /// A repeated label keeps the FIRST definition, and the later duplicate must

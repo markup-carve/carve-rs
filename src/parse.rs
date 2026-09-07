@@ -4292,7 +4292,16 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                             .find_map(crate::ast_json::block_pos)
                             .copied();
                         if let Some(pos) = def.pos.as_mut() {
-                            narrow_container_end(pos, last, lines, false);
+                            // A description whose only content hoisted to the
+                            // root has no placed child; its span is then its own
+                            // MARKER LINE and stops there, not the continuation
+                            // lines that carried the hoisted definitions
+                            // (carve#1522, carve#1963). Its `:` marker is not one
+                            // of the list openers `narrow_container_end` knows, so
+                            // the marker-line fallback is spelled here.
+                            if !end_at_last_placed_child(pos, last) {
+                                end_at_marker_line(pos, lines);
+                            }
                         }
                     }
                 }
@@ -4374,6 +4383,27 @@ pub(crate) fn end_at_last_placed_child(pos: &mut Pos, last: Option<Pos>) -> bool
     pos.end_column = last.end_column;
     pos.end_offset = last.end_offset;
     true
+}
+
+/// End a span at its own start line's full width - the reading a
+/// `definition_description` takes when its only content hoisted to the root, so
+/// it has no placed child but its authored marker line is still its own extent
+/// (carve#1963). Matches the width the reference derives from that line: the
+/// span runs from its start column to the end of the line, trailing run and all,
+/// the same bytes `lineRange` covers in carve-js.
+fn end_at_marker_line(pos: &mut Pos, lines: &[&str]) {
+    let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
+        return;
+    };
+    let len = line.chars().count();
+    let start = pos.start_column.saturating_sub(1);
+    if len < start {
+        return;
+    }
+    let width = len - start;
+    pos.end_line = pos.start_line;
+    pos.end_column = pos.start_column + width;
+    pos.end_offset = pos.start_offset + width;
 }
 
 fn narrow_container_end(pos: &mut Pos, last: Option<Pos>, lines: &[&str], quote: bool) {
