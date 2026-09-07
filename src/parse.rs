@@ -578,10 +578,6 @@ fn parse_with_options_mode_and_index(
         for blocks in footnote_defs.values_mut() {
             fill_offsets(blocks, &line_starts);
         }
-        include_comment_indentation(&mut children, original, &line_starts);
-        for blocks in footnote_defs.values_mut() {
-            include_comment_indentation(blocks, original, &line_starts);
-        }
         // A definition whose BODY places something already has an extent, and
         // that extent - not this line - is what reaches the wire. Keeping the
         // line beside it would put a fact in the document that its own
@@ -4237,57 +4233,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             _ => {}
         }
     }
-}
-
-fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_starts: &[usize]) {
-    let source_lines: Vec<&str> = source.lines().collect();
-    fn walk(blocks: &mut [BlockNode], lines: &[&str], starts: &[usize]) {
-        for block in blocks {
-            if let BlockNode::Comment(comment) = block {
-                if let Some(pos) = &mut comment.pos {
-                    let raw = lines
-                        .get(pos.start_line.saturating_sub(1))
-                        .copied()
-                        .unwrap_or("");
-                    if raw.trim_start_matches([' ', '\t']).starts_with('%') && leading_ws(raw) == 1
-                    {
-                        pos.start_column = 1;
-                        pos.start_offset = starts
-                            .get(pos.start_line.saturating_sub(1))
-                            .copied()
-                            .unwrap_or(pos.start_offset);
-                    }
-                }
-            }
-            match block {
-                BlockNode::BlockQuote(n) => walk(&mut n.children, lines, starts),
-                BlockNode::Div(n) => walk(&mut n.children, lines, starts),
-                BlockNode::Admonition(n) => walk(&mut n.children, lines, starts),
-                BlockNode::FigureGroup(n) => walk(&mut n.children, lines, starts),
-                BlockNode::List(n) => {
-                    for item in &mut n.items {
-                        walk(&mut item.children, lines, starts);
-                    }
-                }
-                BlockNode::LineBlock(n) => walk(&mut n.children, lines, starts),
-                BlockNode::DefinitionList(n) => {
-                    for item in &mut n.items {
-                        for def in &mut item.definitions {
-                            walk(&mut def.children, lines, starts);
-                        }
-                    }
-                }
-                BlockNode::Figure(n) => {
-                    if let FigureTarget::BlockQuote(q) = &mut *n.target {
-                        walk(&mut q.children, lines, starts);
-                    }
-                }
-                BlockNode::Extension(n) => walk(&mut n.children, lines, starts),
-                _ => {}
-            }
-        }
-    }
-    walk(blocks, &source_lines, line_starts);
 }
 
 /// Widen a container over the DEFINITION it hosted.
