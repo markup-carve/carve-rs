@@ -48,6 +48,7 @@ mod render_plain;
 mod render_text;
 mod sentinel_run;
 mod source_layout;
+mod source_patch;
 mod stamp;
 pub mod stream;
 mod translit_map;
@@ -141,6 +142,10 @@ pub use render_loss::{
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use source_layout::{parse_with_source_layout, to_source_layout_json};
+pub use source_patch::{
+    apply_source_patch, create_source_patch, source_fingerprint, SourceEdit, SourceEditKind,
+    SourcePatch, SourcePatchError, SourceSuggestion,
+};
 pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
 pub use stream::{try_render_html_streaming, StreamOutcome};
 
@@ -228,6 +233,16 @@ pub fn to_ansi(source: &str) -> String {
 pub fn to_carve(source: &str) -> String {
     try_to_carve_with_options(source, &Options::default())
         .expect("a default `Options` carries no profile, so no violation can be raised")
+}
+
+/// Prepare canonical formatting as a stale-safe patch without changing source.
+pub fn to_carve_patch(source: &str) -> SourcePatch {
+    create_source_patch(
+        source,
+        &to_carve(source),
+        SourceEditKind::Formatting,
+        "canonical-format",
+    )
 }
 
 /// Render HTML and report target-routed raw nodes that were omitted.

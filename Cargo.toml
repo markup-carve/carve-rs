@@ -37,7 +37,7 @@ markup5ever_rcdom = "0.39"
 pulldown-cmark = { version = "0.13", default-features = false }
 unicode-normalization = "0.1"
 regex = "1"
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 # `unbounded_depth` because the corpus holds a document nested to the parser's
 # cap (200 containers), and this crate's own AST JSON is then past serde_json's
 # default 128-level limit. `parse_value` bounds the depth itself, before serde
