@@ -9854,6 +9854,60 @@ fn parse_list(
             let nested_definition_ended_paragraph =
                 is_collected_definition_placeholder(innermost_marker_content(marker.content));
             let mut stream = item_marker_source(cur, marker.content, item_at);
+            // A code fence or a colon container opened on this NESTED lead takes
+            // the flush-left lines below it, exactly as the single-level item
+            // does - but the inner re-parse cannot see those lines unless this
+            // frame hands them over (markup-carve/carve#1900, carve-rs#1547/#1548).
+            // A fence's flush-left body is VERBATIM, so it is framed with the lazy
+            // sentinel and the re-parse's fence owns it; a colon container whose
+            // body sits flush-left is ITEM TEXT, so the lines pass through unframed
+            // and the re-parse folds them into the degraded opener's paragraph.
+            // Only a flush-left (below outer content column) follower is taken:
+            // a line reaching the outer column is the outer item's, a sibling
+            // marker starts a new item, and a blank ends the run - which is where
+            // the single-level readings stop too.
+            let inner_lead = trim_ascii_start(innermost_marker_content(marker.content));
+            if detect_fence_open(inner_lead).is_some() {
+                while let Some((framed, removed)) = cur.peek().and_then(|line| {
+                    (!is_blank_line(line)
+                        && indent_columns(line) < content_col
+                        && detect_list_marker_full(line).is_none())
+                    .then(|| {
+                        let content = trim_ascii_start(strip_lazy(line));
+                        let removed = line.chars().count() - content.chars().count();
+                        (format!("{LAZY}{content}"), removed)
+                    })
+                }) {
+                    let src_line = cur.source_line(cur.pos);
+                    // The LAZY frame prepends codepoints the source never held and
+                    // the trim drops the line's own indent (and any existing frame):
+                    // a column in the framed line maps back to source by ADDING what
+                    // was stripped and SUBTRACTING the new frame's width, exactly as
+                    // the description-body collector does (carve-rs#1559). Without
+                    // the second term the frame's width leaks into every span whose
+                    // end falls on a framed line.
+                    let src_col = cur
+                        .source_col(cur.pos)
+                        .map(|c| c + removed as isize - LAZY.chars().count() as isize);
+                    stream.push_newline_at(framed, src_line, src_col);
+                    cur.consume();
+                }
+            } else if detect_container_open(inner_lead).is_some() {
+                while let Some(line) = cur.peek().and_then(|line| {
+                    (!is_blank_line(line)
+                        && indent_columns(line) < content_col
+                        && detect_list_marker_full(line).is_none())
+                    .then(|| line.to_string())
+                }) {
+                    if interrupts_paragraph(cur, &line) {
+                        break;
+                    }
+                    let src_line = cur.source_line(cur.pos);
+                    let src_col = cur.source_col(cur.pos);
+                    stream.push_newline_at(line, src_line, src_col);
+                    cur.consume();
+                }
+            }
             let before_block = cur.pos;
             let collection_floor = if nested_definition_ended_paragraph {
                 content_col.saturating_sub(1)
