@@ -62,6 +62,10 @@ Set `strict: true` to return `RenderLossError` before a value is published.
 Reports keep the complete count and retain 100 positioned entries by default;
 the existing string-returning functions remain available.
 
+Source-aware tools can prepare canonical formatting with `to_carve_patch` and
+apply it with `apply_source_patch`; see
+[source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md).
+
 
 ## Extensions
 
@@ -168,6 +172,7 @@ Every subcommand and flag is in [docs/cli.md](https://github.com/markup-carve/ca
 | [ProseMirror / Tiptap](https://github.com/markup-carve/carve-rs/blob/main/docs/prosemirror.md) | editor interchange |
 | [Streaming render](https://github.com/markup-carve/carve-rs/blob/main/docs/streaming-render.md) | rendering without buffering |
 | [Reversible patches](https://github.com/markup-carve/carve-rs/blob/main/docs/reversible-patches.md) | editing an AST in place |
+| [Source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md) | stale-safe UTF-8 edits |
 | [Migration results](https://github.com/markup-carve/carve-rs/blob/main/docs/migration-result.md) | the loss report shape |
 | [Parser snapshots](https://github.com/markup-carve/carve-rs/blob/main/docs/parser-snapshots.md) | the snapshot suite |
 | [Engine pin guard](https://github.com/markup-carve/carve-rs/blob/main/docs/engine-pin-guard.md) | for repos pinning this engine |

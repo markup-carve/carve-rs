@@ -18,6 +18,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Source-preserving UTF-8 patch creation, application, serialization, and
+  canonical-format APIs with stale-source preconditions.
 - A prebuilt `aarch64-unknown-linux-gnu` binary is attached to every release,
   and the Homebrew tap installs it on ARM64 Linux.
 
