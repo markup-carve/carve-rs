@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-09-07
+
 ### Fixed
 
 - A lone `|` line no longer panics. `carve::to_html("|")` sliced `line[1..0]`
@@ -2062,7 +2064,9 @@ is still `carve`.
 - Uniform nesting depth cap of 200
 - Char-boundary panic guard in container-prefix stripping (crash-DoS fix)
 
-[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.3...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.5...HEAD
+[0.1.5]: https://github.com/markup-carve/carve-rs/compare/0.1.4...0.1.5
+[0.1.4]: https://github.com/markup-carve/carve-rs/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-rs/compare/0.1.2...0.1.3
 [0.1.2]: https://github.com/markup-carve/carve-rs/compare/0.1.1...0.1.2
 [0.1.1]: https://github.com/markup-carve/carve-rs/compare/0.1.0...0.1.1
