@@ -6030,47 +6030,37 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
     end
 }
 
-/// A code fence with NO closer ahead is paragraph text, past a container's
-/// content column exactly as at it (§10 I4).
-///
-/// `item_block_opener` is a shape test and cannot ask the closer question, so
-/// the over-indented band broke out of the lead paragraph on a fence the
-/// at-column band folds - the same document answered two ways one column apart
-/// (markup-carve/carve-rs#1523). Only the code-fence arm is affected: every
-/// other opener this predicate recognizes stands on its own line.
-/// The body (seed + collected lines) still has an unterminated code fence open
-/// at its end: one opened on the body's LEAD, after its list markers, that no
-/// later line closed at or above the fence's own column. A fence's content is
-/// not re-scanned for structure, so the flush-left lines below such a fence are
-/// its verbatim body (markup-carve/carve#1958, carve-rs#1547/#1559).
-fn body_ends_with_open_code_fence(seed: &str, lines: &[String]) -> bool {
-    let mut open: Option<(FenceOpen, usize)> = None;
-    for raw in seed.lines().chain(lines.iter().map(String::as_str)) {
-        let line = strip_lazy(raw);
-        let indent = indent_columns(line);
-        let content = trim_ascii_start(innermost_marker_content(line));
-        match open {
-            Some((fence, col)) => {
-                if indent >= col && is_fence_close(content, fence) {
-                    open = None;
-                }
+/// Follow the nested lead fence over ONE line, in the body's own coordinates
+/// (the description marker already stripped). `collect_definition_body` keeps
+/// this state alive as it collects rather than deciding it once from the seed:
+/// the verbatim body owns flush-left lines only while the fence is OPEN, and an
+/// indented closer at or past the fence's column closes it (carve#1970). A
+/// flush-left line stays below the fence's column and cannot close it, so the
+/// original blank-terminated form is unaffected.
+fn advance_nested_lead_fence(open: &mut Option<(FenceOpen, usize)>, raw: &str) {
+    let line = strip_lazy(raw);
+    let indent = indent_columns(line);
+    let content = trim_ascii_start(innermost_marker_content(line));
+    match *open {
+        Some((fence, col)) => {
+            if indent >= col && is_fence_close(content, fence) {
+                *open = None;
             }
-            None => {
-                // ONLY a fence NESTED past a list marker owns the flush-left body.
-                // A fence at the body's OWN column (`:  ``` ` directly on the
-                // description marker) is the body's own lead fence and closes on a
-                // below-column line, exactly as a single list item's does (corpus
-                // 276); the marker-content column is 0 there and nonzero here.
-                let marker_col = innermost_marker_content_col(line);
-                if marker_col > 0 {
-                    if let Some(fence) = detect_fence_open(content) {
-                        open = Some((fence, indent + marker_col));
-                    }
+        }
+        None => {
+            // ONLY a fence NESTED past a list marker owns the flush-left body.
+            // A fence at the body's OWN column (`:  ``` ` directly on the
+            // description marker) is the body's own lead fence and closes on a
+            // below-column line, exactly as a single list item's does (corpus
+            // 276); the marker-content column is 0 there and nonzero here.
+            let marker_col = innermost_marker_content_col(line);
+            if marker_col > 0 {
+                if let Some(fence) = detect_fence_open(content) {
+                    *open = Some((fence, indent + marker_col));
                 }
             }
         }
     }
-    open.is_some()
 }
 
 fn unterminated_code_fence_folds(cur: &mut LineCursor<'_>, line: &str) -> bool {
@@ -13016,12 +13006,18 @@ fn collect_definition_body(
     // fence, a table or a container at the end of it, so each of those clears it
     // and the next question is asked in full.
     let mut folded_a_lazy_line = false;
-    // Computed ONCE from the seed (the marker line's own content): does the body's
-    // LEAD open a code fence NESTED past a list marker? Its verbatim body is the
-    // flush-left lines below, which cannot close it, so the state does not change
-    // as they are collected - re-deriving it per line would be quadratic, the
-    // shape `a_definition_bodys_lazy_run_asks_s4_once_per_line` guards (#1547).
-    let lead_opens_nested_fence = body_ends_with_open_code_fence(seed, &[]);
+    // Seeded from the marker line's own content: does the body's LEAD open a
+    // code fence NESTED past a list marker? Its verbatim body is the flush-left
+    // lines below, which cannot close it - but an INDENTED closer written at or
+    // past the fence's column does (the re-emitted, blank-less form of corpus
+    // 455, carve#1970). So the state is kept alive and advanced by
+    // `advance_nested_lead_fence` on each line collected, cheaply: a flush-left
+    // line never closes the fence, so the blank-terminated form still asks the
+    // question effectively once (the shape #1547 guards against).
+    let mut nested_lead_fence: Option<(FenceOpen, usize)> = None;
+    for raw in seed.lines() {
+        advance_nested_lead_fence(&mut nested_lead_fence, raw);
+    }
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
     // `lines`. `None` means unknown, and a block starting there gets no
@@ -13125,6 +13121,14 @@ fn collect_definition_body(
                 {
                     fence.track(&sliced);
                 }
+                // A line collected AT the body's column can be the closer of a
+                // nested lead fence (its content sits at or past the fence's
+                // column). Following it here releases the fence's ownership of
+                // the flush-left lines below, so a `:: ` opener under a closed
+                // nested fence starts a new item instead of being absorbed
+                // (carve#1970). `sliced` is in the body's own coordinates, as
+                // the seed and `advance_nested_lead_fence` both are.
+                advance_nested_lead_fence(&mut nested_lead_fence, &sliced);
                 folded_a_lazy_line = false;
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
@@ -13137,7 +13141,7 @@ fn collect_definition_body(
             // re-parse reads it at NO column and the fence takes it, matching the
             // oracle (carve-rs#1547/#1559). A `:: ` inside the open fence is body
             // text too; a blank line ends the fence via the branch below.
-            if lead_opens_nested_fence {
+            if nested_lead_fence.is_some() {
                 folded_a_lazy_line = false;
                 let framed = format!("{LAZY}{}", trim_ascii_start(line));
                 // The LAZY frame prepends codepoints the source never held, and
