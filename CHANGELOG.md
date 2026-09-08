@@ -7,6 +7,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A description item following a nested closed fence opens a new item instead of
+  being absorbed into the one above, matching the other engines
+  (markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
+  before that item, converging its `carve` output with carve-js and carve-php.
+
 ## [0.1.5] - 2026-09-07
 
 ### Fixed

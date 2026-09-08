@@ -2046,25 +2046,22 @@ fn roman_marker(mut n: usize) -> String {
 /// parsed from, and no term acquires the next entry's description.
 fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
     let mut out: Vec<String> = Vec::new();
-    // An entry whose last definition body spans more than its own `: ` line
-    // leaves block structure that a following term's flush-left `::` folds into
-    // as lazy text: a list whose last item is a code block does exactly that,
-    // and the term lands inside the earlier `<dd>` instead of opening a new
-    // entry (carve-rs#1559, corpus 455-4). A blank line before the next term
-    // detaches it and is HTML-neutral for every entry that did not need one; a
-    // single-line body cannot absorb a marker, so it takes no separator - which
-    // is what keeps corpus 438's pinned `{empty}` entries tight.
-    let mut prev_body_multiline = false;
+    // NO SEPARATING BLANK between entries. This used to emit one before the next
+    // term whenever the previous body spanned more than its own `: ` line, to
+    // stop a following flush-left `::` from folding into the earlier `<dd>` when
+    // that body ended in a nested closed code fence (carve-rs#1559, corpus
+    // 455-4). markup-carve/carve#1970 ruled that shape reads as TWO entries with
+    // no blank - the oracle, carve-js and carve-php all read it that way - and
+    // the parser now agrees (a nested lead fence closed by an indented closer
+    // releases its ownership, so the term below opens a new entry). With the
+    // absorption gone the blank was a workaround for a bug that no longer
+    // exists, and dropping it converges this writer's `carve` output with the
+    // other engines.
     for item in items {
-        if !out.is_empty() && prev_body_multiline {
-            out.push(String::new());
-        }
         for term in &item.terms {
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }
-        prev_body_multiline = false;
         for def in &item.definitions {
-            let before = out.len();
             // An EMPTY description whose line carries a hoisted definition is one
             // the author wrote that definition on: write it back there
             // (markup-carve/carve#805). Without this the line came out as a bare
@@ -2080,14 +2077,12 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                     for written_line in written_lines {
                         out.push(format!("  {written_line}"));
                     }
-                    prev_body_multiline = out.len() - before > 1;
                     continue;
                 }
             }
             let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
             if body.is_empty() {
                 out.push(": {empty}".to_string());
-                prev_body_multiline = false;
                 continue;
             }
             let mut lines = body.split('\n');
@@ -2095,7 +2090,6 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             for line in lines {
                 out.push(format!("  {line}"));
             }
-            prev_body_multiline = out.len() - before > 1;
         }
     }
     out.join("\n")
