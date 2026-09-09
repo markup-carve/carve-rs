@@ -1722,12 +1722,27 @@ fn extract_footnote_defs(
                         // No `residual > 0` on the absorb: at column 0 `flush`
                         // IS `trimmed`, so the arm could never return anything
                         // different there.
-                        let trimmed: &str =
-                            if body_open_below && is_note_def && note_fence.is_none() {
-                                flush
-                            } else {
-                                trimmed
-                            };
+                        //
+                        // ONLY UP TO THE OPEN SIBLING'S BODY FLOOR. `body_open_below`
+                        // is set exactly when a preceding nested note sits at this
+                        // body's own column 0 (residual 0), so its body floor is two.
+                        // A later note that reaches that floor (`residual >= 2`) is
+                        // INSIDE the sibling, not a same-level sibling itself: leaving
+                        // it flush hoisted it to this body's column 0, collapsing the
+                        // two-level dedent into one so a trailing line below the inner
+                        // note's own content column was still claimed by it instead of
+                        // falling to the reachable ancestor (markup-carve/carve#1946,
+                        // carve-php#1895). Keeping the residual nests it, matching the
+                        // per-marker body column carve-js#1664 measures.
+                        let trimmed: &str = if body_open_below
+                            && is_note_def
+                            && note_fence.is_none()
+                            && residual < 2
+                        {
+                            flush
+                        } else {
+                            trimmed
+                        };
                         def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
                         if positions {
@@ -5677,6 +5692,25 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         }
         if let Some(column) = definition_body_content_col(&lines[i]) {
             nested_columns.push(column);
+        }
+        // AN OVER-INDENTED NESTED NOTE DEFINITION KEEPS ITS AUTHORED COLUMN.
+        // A note's body column is measured from its OWN marker (§16, marker plus
+        // two - carve-js#1664), so the recursive note pass needs the residual
+        // indent that says how deep this marker sits. Flattening it to the
+        // container's own column zero collapsed a two-level nesting into one, so
+        // a trailing line below the inner note's own content column was claimed
+        // by it instead of falling to the reachable ancestor note
+        // (markup-carve/carve#1946, carve-php#1895). The floor is NOT registered
+        // as a descendant column here: a note's opaque payload sits BELOW that
+        // floor, and a live column above it would make the rebasing branch read
+        // an indented fence there as a lazy line and strand its payload. A note
+        // at the container's own column zero is left to the base-zero handling
+        // below.
+        if include_sublists && base > 0 && parse_footnote_def_line(&local_at_base).is_some() {
+            after_blank = false;
+            block_at_minimum = false;
+            i += 1;
+            continue;
         }
         if nested_columns.last().is_some_and(|column| base >= *column) {
             block_at_minimum = false;
