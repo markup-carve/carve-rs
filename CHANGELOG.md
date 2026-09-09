@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A trailing line after a consumed definition in a stack of nested notes is
+  placed by column-reach. A note nested one column shy of its host's body column
+  keeps a residual marker indent, so a line below the inner note's own content
+  column falls to the reachable ancestor note instead of the innermost one,
+  matching carve-js (markup-carve/carve#1946, markup-carve/carve-php#1895).
 - A description item following a nested closed fence opens a new item instead of
   being absorbed into the one above, matching the other engines
   (markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
