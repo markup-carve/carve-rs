@@ -9,6 +9,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A nested note ends at a definition below its own body floor, so a trailing
+  line further down belongs to the surviving ancestor rather than reaching a
+  floor that has already closed (markup-carve/carve#1971, carve#1918).
+
 - A trailing line after a consumed definition in a stack of nested notes is
   placed by column-reach. A note nested one column shy of its host's body column
   keeps a residual marker indent, so a line below the inner note's own content
