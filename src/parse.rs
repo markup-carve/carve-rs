@@ -1669,6 +1669,25 @@ fn extract_footnote_defs(
                                 def.line = Some(first_source_line + i - 1);
                                 def.raw_label = Some(label_part.to_string());
                                 note_link_defs.insert(label_key(label_part), def);
+                                // A BLOCK'S EXTENT ENDS AT A DEFINITION IT CAN
+                                // ONLY TAKE AS TEXT (carve#1918). Dropping the
+                                // line erased the column it stood at, so a
+                                // nested note opened above kept its floor live
+                                // and a trailing line further down reached a
+                                // body that had already ended
+                                // (markup-carve/carve#1971). The placeholder
+                                // renders nothing and stands at the definition's
+                                // own column, which is the signal the recursive
+                                // pass reads.
+                                def_lines.push(format!(
+                                    "{}{}",
+                                    " ".repeat(indent_columns(trimmed)),
+                                    definition_placeholder()
+                                ));
+                                def_line_map.push(Some(first_source_line + i));
+                                if positions {
+                                    def_col_map.push(stripped_col(Some(0), line, trimmed));
+                                }
                                 i += 1;
                                 continue;
                             }
