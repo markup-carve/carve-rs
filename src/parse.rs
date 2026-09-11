@@ -1772,6 +1772,64 @@ fn extract_footnote_defs(
                     }
                     break;
                 }
+            } else if !nested {
+                // A BLOCK OPENER AT A DD-HOSTED NOTE'S OWN FLOOR REACHES THE NOTE
+                // BODY (markup-carve/carve#1974). The per-marker note floor that
+                // carve-rs#1575 applies to a note inside another note extends to
+                // one inside a `dd`: the floor is the note MARKER'S column plus
+                // two (§16), which inside a container is the stripped prefix's
+                // width plus `footnote_body_floor` of the bare definition. An
+                // opener at or past that floor opens a block inside the note, so
+                // it is gathered here and removed from the container's body - an
+                // unreferenced note then drops with it. Plain continuation at the
+                // same column is a settled, different question (the container
+                // keeps it), so ONLY an opener triggers the gather.
+                let prefix_cols = raw_def_line.chars().count() - def_line.chars().count();
+                let note_floor = prefix_cols + footnote_body_floor(def_line);
+                let opener_at_floor = |raw: &str| {
+                    if indent_columns(raw) < note_floor {
+                        return false;
+                    }
+                    let flush = trim_ascii_start(raw);
+                    item_block_opener(flush) || detect_list_marker_full(flush).is_some()
+                };
+                if i < lines.len() && opener_at_floor(lines[i]) {
+                    while i < lines.len() {
+                        let line = lines[i];
+                        // The block ends where the container's body reclaims the
+                        // line: a blank, a line below the floor, or a new note.
+                        if is_blank_line(line) {
+                            let mut after = i + 1;
+                            while after < lines.len() && is_blank_line(lines[after]) {
+                                after += 1;
+                            }
+                            if after < lines.len() && indent_columns(lines[after]) >= note_floor {
+                                while i < after {
+                                    def_lines.push(String::new());
+                                    def_line_map.push(Some(first_source_line + i));
+                                    if positions {
+                                        def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                                    }
+                                    i += 1;
+                                }
+                                continue;
+                            }
+                            break;
+                        }
+                        if indent_columns(line) < note_floor
+                            || parse_footnote_def_line(trim_ascii_start(line)).is_some()
+                        {
+                            break;
+                        }
+                        let dedented = strip_leading_columns(line, note_floor);
+                        if positions {
+                            def_col_map.push(stripped_col(Some(0), line, &dedented));
+                        }
+                        def_lines.push(dedented);
+                        def_line_map.push(Some(first_source_line + i));
+                        i += 1;
+                    }
+                }
             }
             // ONLY FOR THE DEFINITION THIS POSITION DESCRIBES. The first
             // definition for a label wins, both here and in `defs` below, so a
