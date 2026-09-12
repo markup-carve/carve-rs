@@ -510,6 +510,7 @@ fn parse_with_options_mode_and_index(
                     },
                     reached: Vec::new(),
                     authored_base_at_start: false,
+                    sublists_carry_authored_base: false,
                 },
                 BTreeMap::new(),
                 BTreeMap::new(),
@@ -924,6 +925,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
             authored_base_at_start: original.authored_base_at_start,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
+            sublists_carry_authored_base: original.sublists_carry_authored_base,
         };
     }
     MappedSource {
@@ -933,6 +935,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
         col_map: vec![Some(0); source_line_count],
         authored_base_at_start: false,
         reached: Vec::new(),
+        sublists_carry_authored_base: false,
         source,
     }
 }
@@ -1874,6 +1877,10 @@ fn extract_footnote_defs(
                     line_map: def_line_map,
                     authored_base_at_start: false,
                     reached: Vec::new(),
+                    // A FOOTNOTE BODY carries authored base for its sublists, so
+                    // a list marker past the body's content column anchors its
+                    // span at the marker (markup-carve/carve#1980).
+                    sublists_carry_authored_base: true,
                 };
                 rebase_overindented_blocks(&mut definition_source, true);
                 defs.insert(label.to_string(), definition_source);
@@ -1934,6 +1941,7 @@ fn extract_footnote_defs(
             source: joined_source(&body),
             authored_base_at_start: false,
             reached: Vec::new(),
+            sublists_carry_authored_base: false,
             line_map: body_line_map,
         },
         defs,
@@ -3716,6 +3724,13 @@ struct LineCursor<'a> {
     /// (markup-carve/carve-rs#1518, the same fact markup-carve/carve#1896 added
     /// `MappedSource::reached` for one layer up).
     reached: Option<&'a [bool]>,
+    /// This cursor reads a FOOTNOTE or DEFINITION body, where an over-indented
+    /// sublist carries its own authored base: a list marker past the body's
+    /// content column anchors its span at the marker instead of at the placing
+    /// indent (see `MappedSource::sublists_carry_authored_base`,
+    /// markup-carve/carve#1980). Never inherited by a nested container body,
+    /// which collects into its own `MappedSource`.
+    sublists_carry_authored_base: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
@@ -3735,6 +3750,7 @@ impl<'a> LineCursor<'a> {
             in_item_body: false,
             invisible_arms: true,
             reached: None,
+            sublists_carry_authored_base: false,
             comment_closer_last_index: None,
             code_closer_last_index: None,
         }
@@ -3879,6 +3895,7 @@ impl LineBuffer {
             line_map: self.line_map,
             authored_base_at_start: false,
             reached: Vec::new(),
+            sublists_carry_authored_base: false,
         }
     }
 }
@@ -3906,6 +3923,21 @@ struct MappedSource {
     /// Recorded by the collectors alone. `false` is the conservative reading
     /// everywhere else, and a short vector reads as `false` beyond its end.
     reached: Vec<bool>,
+    /// Whether an over-indented sublist in this source carries its own authored
+    /// base, so its span begins AT ITS MARKER rather than at the placing indent.
+    ///
+    /// A footnote body and a definition body both rebase over-indented blocks
+    /// with sublists included (`rebase_overindented_blocks(.., true)`), so a
+    /// list marker written past the body's own content column establishes a base
+    /// of its own (PART 9 §24 C3): its span starts on the marker. Everywhere
+    /// else - the document, a block quote, a list item - the run between the
+    /// container's content column and the marker is the indentation that PLACES
+    /// the marker, and PART 12 section 4 puts it INSIDE the span. Anchoring every
+    /// list at its marker instead moved nine corpus documents off carve-js
+    /// (markup-carve/carve#1797); this flag keeps the marker anchor to the two
+    /// bodies that earn it (markup-carve/carve#1980, converging with carve-js's
+    /// `sublistsCarryAuthoredBase`).
+    sublists_carry_authored_base: bool,
 }
 
 impl MappedSource {
@@ -3917,6 +3949,7 @@ impl MappedSource {
             col_map: vec![stripped],
             authored_base_at_start: false,
             reached: vec![false],
+            sublists_carry_authored_base: false,
         }
     }
 
@@ -4809,6 +4842,7 @@ fn parse_positioned_mapped_source(
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     cursor.reached = Some(source.reached.as_slice());
+    cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -10477,7 +10511,12 @@ fn parse_list(
     // Indentation that places a list at this cursor level belongs to each item.
     // `MappedSource` anchors the stripped marker at the content column, so move
     // the start back across that placing indentation before offsets are filled.
-    if base_indent > 0 {
+    //
+    // NOT in a footnote or definition body: there an over-indented marker
+    // carries its own authored base (§24 C3), so its span begins ON the marker
+    // and the run before it is not placing indentation to reclaim
+    // (markup-carve/carve#1980, corpus 461-...-sibling-4).
+    if base_indent > 0 && !cur.sublists_carry_authored_base {
         for item in &mut items {
             if let Some(pos) = &mut item.pos {
                 pos.start_column = pos.start_column.saturating_sub(base_indent);
@@ -10508,7 +10547,7 @@ fn parse_list(
             body.widen_list = true;
         }
     }
-    if base_indent > 0 {
+    if base_indent > 0 && !cur.sublists_carry_authored_base {
         if let Some(pos) = &mut list_pos {
             pos.start_column = pos.start_column.saturating_sub(base_indent);
         }
@@ -12140,6 +12179,7 @@ fn collect_indented_block_mapped_with(
         line_map,
         authored_base_at_start,
         reached,
+        sublists_carry_authored_base: false,
     }
 }
 
@@ -12869,6 +12909,11 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
             rebase_overindented_blocks(&mut body, true);
+            // A DEFINITION BODY carries authored base for its sublists, so a list
+            // marker past the body's content column anchors its span at the
+            // marker rather than at the placing indent (markup-carve/carve#1980,
+            // corpus 461-...-sibling-4).
+            body.sublists_carry_authored_base = true;
             let children = parse_mapped_source(&body, options);
             let mut pos = span_of(cur, def_start, cur.pos, options);
             if let (Some(pos), Some(last)) = (
@@ -12983,6 +13028,7 @@ fn body_as_read(source: String, reached: Vec<bool>) -> String {
         // rebase reads the same document here as it does there.
         authored_base_at_start: false,
         reached,
+        sublists_carry_authored_base: false,
     };
     rebase_overindented_blocks(&mut probe, true);
     probe.source
@@ -13422,6 +13468,7 @@ fn collect_definition_body(
         line_map,
         authored_base_at_start: false,
         reached,
+        sublists_carry_authored_base: false,
     }
 }
 
