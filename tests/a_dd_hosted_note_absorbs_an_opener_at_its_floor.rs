@@ -10,13 +10,22 @@
 //! top-level sibling paragraph (the column-reach model of carve#1946/#1971),
 //! not a lazy continuation of the list item.
 //!
-//! Two bands must stay put: the opener ONE column shy of the floor is an
-//! ordinary description child (the note reaches nothing), and plain continuation
-//! at the floor is a settled, different question that the description keeps.
+//! One band must stay put: the opener ONE column shy of the floor is an ordinary
+//! description child, because the note reaches nothing there.
 //!
-//! ORACLE: the maintainer ruling on carve#1974 (djot confirms the note absorbs
-//! the list; the column-0 top-level placement follows carve-php's Q2 answer and
-//! the column-reach model).
+//! PLAIN CONTINUATION AT THE FLOOR IS THE SAME LINE AS AN OPENER. This file
+//! first pinned the opposite, on the reading that continuation was a separate
+//! settled question. Corpus `359-a-footnote-definition-s-block-runs-to-the-end-
+//! of-its-body` settles it the other way for a container-hosted note - marker at
+//! column 2, plain continuation at 4, and the continuation is the note's - and
+//! this engine passes that row under a LIST-ITEM host. Keeping the carve-out
+//! left one floor for openers and another for prose under a `dd`, which is the
+//! two-answers-at-once state this fix set out to end, and the ruling names
+//! opener-vs-text parity among the goldens to pin.
+//!
+//! ORACLE: the maintainer ruling on carve#1974, plus carve-js `df49fafa` and
+//! carve-php `d3269e08`, both built from source and byte-identical to every
+//! expectation here (carve-rs#1578).
 
 use carve::to_html;
 
@@ -57,13 +66,41 @@ fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
     );
 }
 
-/// Plain continuation at the floor is NOT an opener, so the description keeps it
-/// (a settled question). The note absorbs nothing and renders nothing.
+/// Plain continuation at the floor is the note's, exactly as an opener there is:
+/// the floor is a column, and a line either reaches it or does not. `[^f]` is
+/// unreferenced, so it drops with the line it took, and `tail` at column 0 falls
+/// out of the description to the document.
 #[test]
-fn plain_continuation_at_the_floor_stays_in_the_description() {
+fn plain_continuation_at_the_floor_is_the_note_s_too() {
     let src = ":: t\n:  [^f]: note\n     more\ntail\n";
     assert_eq!(
         html(src),
+        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>tail</p>"
+    );
+}
+
+/// The same continuation one column shy of the floor, the other side of the
+/// boundary: at column 4 against a floor of 5 the description keeps it.
+#[test]
+fn plain_continuation_one_column_shy_of_the_floor_stays_in_the_description() {
+    let src = ":: t\n:  [^f]: note\n    more\ntail\n";
+    assert_eq!(
+        html(src),
         "<dl>\n  <dt>t</dt>\n  <dd>more\ntail</dd>\n</dl>"
+    );
+}
+
+/// AND ACROSS A BLANK LINE, which is the ordinary spelling of a note with more
+/// than one paragraph. §16 allows blank lines between a body's chunks, so the
+/// gather is entered across one - testing only the line directly under the
+/// definition refused every multi-paragraph hosted note.
+#[test]
+fn a_hosted_note_body_resumes_after_a_blank_line() {
+    let src = ":: a\n:  [^f]: t\n\n     more\ntail\n\nx[^f]\n";
+    let out = html(src);
+    assert!(out.contains("<dd></dd>"), "the description kept the note's body: {out}");
+    assert!(
+        out.contains("<p>more<a href=\"#fnref1\""),
+        "the note did not take the resumed body: {out}"
     );
 }
