@@ -31,7 +31,342 @@ use crate::ast::{BlockNode, FigureTarget};
 
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    let source = djot.replace("\r\n", "\n").replace('\r', "\n");
+    let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
+    let (frontmatter, separator, body) = split_frontmatter(&normalized);
+    let converted = rewrite_djot_body(&convert_definition_lists(body));
+
+    if frontmatter.is_empty() {
+        converted
+    } else if converted.is_empty() {
+        format!("{frontmatter}{separator}")
+    } else {
+        format!("{}{}{}", frontmatter, separator, converted)
+    }
+}
+
+/// Site generators conventionally remove a leading YAML envelope before Djot
+/// sees the document. Migration has to do the same: feeding those bytes to a
+/// Djot parser turns the opening line into a rule and `_x_` in a YAML scalar
+/// into emphasis. The envelope is already valid Carve frontmatter, so keep it
+/// byte-for-byte and import only the body.
+fn split_frontmatter(source: &str) -> (&str, &str, &str) {
+    if !source.starts_with("---\n") {
+        return ("", "", source);
+    }
+    let mut end = 4;
+    for line in source[4..].split_inclusive('\n') {
+        end += line.len();
+        if line.trim_end_matches('\n') == "---" {
+            let frontmatter_end = if source.as_bytes().get(end.saturating_sub(1)) == Some(&b'\n') {
+                end - 1
+            } else {
+                end
+            };
+            let rest = &source[frontmatter_end..];
+            let separator_len = if rest.starts_with("\n\n") {
+                2
+            } else if rest.starts_with('\n') {
+                1
+            } else {
+                0
+            };
+            return (
+                &source[..frontmatter_end],
+                &rest[..separator_len],
+                &rest[separator_len..],
+            );
+        }
+    }
+    ("", "", source)
+}
+
+#[derive(Clone, Copy)]
+struct DefinitionFrame {
+    source: usize,
+    target: usize,
+    body: bool,
+    ready: bool,
+}
+
+fn leading_indent(line: &str) -> (usize, usize) {
+    let mut columns = 0;
+    let mut bytes = 0;
+    for byte in line.bytes() {
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - columns % 4,
+            _ => break,
+        }
+        bytes += 1;
+    }
+    (columns, bytes)
+}
+
+fn bytes_through_columns(line: &str, wanted: usize) -> usize {
+    let mut columns = 0;
+    let mut bytes = 0;
+    for byte in line.bytes() {
+        if columns >= wanted {
+            break;
+        }
+        match byte {
+            b' ' => columns += 1,
+            b'\t' => columns += 4 - columns % 4,
+            _ => break,
+        }
+        bytes += 1;
+    }
+    bytes
+}
+
+fn definition_term(line: &str) -> Option<(usize, usize)> {
+    let (columns, mut byte) = leading_indent(line);
+    let bytes = line.as_bytes();
+    if bytes.get(byte) != Some(&b':') {
+        return None;
+    }
+    byte += 1;
+    let whitespace = byte;
+    while matches!(bytes.get(byte), Some(b' ' | b'\t')) {
+        byte += 1;
+    }
+    (byte > whitespace && byte < bytes.len()).then_some((columns, byte))
+}
+
+/// Translate Djot's definition-item shape without canonicalizing unrelated
+/// links, raw blocks, attributes, or author spelling elsewhere in the file.
+fn convert_definition_lists(source: &str) -> String {
+    let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
+    let masked_source = mask_code_and_destinations(source);
+    let masked: Vec<&str> = masked_source.split('\n').collect();
+    let mut stack: Vec<DefinitionFrame> = Vec::new();
+    for index in 0..lines.len() {
+        if let (Some((indent, _)), Some((raw_indent, content))) = (
+            definition_term(masked[index]),
+            definition_term(&lines[index]),
+        ) {
+            if indent != raw_indent {
+                continue;
+            }
+            while stack.last().is_some_and(|frame| indent < frame.source) {
+                stack.pop();
+            }
+            let top = stack.last().copied();
+            let may_start = top.is_some() || index == 0 || lines[index - 1].trim().is_empty();
+            if may_start {
+                let term = lines[index][content..].to_owned();
+                if top.is_none() || top.is_some_and(|frame| indent == frame.source) {
+                    let target = top.map_or(indent, |frame| frame.target);
+                    let starts = top.is_none();
+                    if let Some(frame) = stack.last_mut() {
+                        frame.body = false;
+                        frame.ready = false;
+                    } else {
+                        stack.push(DefinitionFrame {
+                            source: indent,
+                            target,
+                            body: false,
+                            ready: false,
+                        });
+                    }
+                    lines[index] = format!(
+                        "{}{}:: {term}",
+                        if starts {
+                            format!("{}{{loose}}\n", " ".repeat(target))
+                        } else {
+                            String::new()
+                        },
+                        " ".repeat(target)
+                    );
+                    continue;
+                }
+                if top.is_some_and(|frame| frame.ready && indent >= frame.source + 2) {
+                    let frame = top.expect("checked above");
+                    let target = frame.target + 3;
+                    let lead = if frame.body {
+                        " ".repeat(target)
+                    } else {
+                        format!("{}:  ", " ".repeat(frame.target))
+                    };
+                    if let Some(parent) = stack.last_mut() {
+                        parent.body = true;
+                    }
+                    lines[index] = format!("{lead}{{loose}}\n{}:: {term}", " ".repeat(target));
+                    stack.push(DefinitionFrame {
+                        source: indent,
+                        target,
+                        body: false,
+                        ready: false,
+                    });
+                    continue;
+                }
+            }
+        }
+        if stack.is_empty() {
+            continue;
+        }
+        if lines[index].trim().is_empty() {
+            if let Some(frame) = stack.last_mut() {
+                frame.ready = true;
+            }
+            continue;
+        }
+        if !stack.last().is_some_and(|frame| frame.ready) {
+            continue;
+        }
+        let (indent, _) = leading_indent(&lines[index]);
+        while stack.last().is_some_and(|frame| indent < frame.source + 2) {
+            stack.pop();
+        }
+        let Some(frame) = stack.last_mut() else {
+            continue;
+        };
+        let payload =
+            lines[index][bytes_through_columns(&lines[index], frame.source + 2)..].to_owned();
+        let extra = indent.saturating_sub(frame.source + 2);
+        lines[index] = if frame.body {
+            format!("{}{}", " ".repeat(frame.target + 3 + extra), payload)
+        } else {
+            format!(
+                "{}:  {}{}",
+                " ".repeat(frame.target),
+                " ".repeat(extra),
+                payload
+            )
+        };
+        frame.body = true;
+    }
+    lines.join("\n")
+}
+
+fn quote_prefix_len(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut accepted = 0;
+    let mut cursor = 0;
+    loop {
+        let checkpoint = cursor;
+        while matches!(bytes.get(cursor), Some(b' ' | b'\t')) {
+            cursor += 1;
+        }
+        if bytes.get(cursor) != Some(&b'>') {
+            return accepted;
+        }
+        cursor += 1;
+        while matches!(bytes.get(cursor), Some(b' ' | b'\t')) {
+            cursor += 1;
+        }
+        accepted = cursor;
+        if cursor == checkpoint {
+            return accepted;
+        }
+    }
+}
+
+fn list_marker(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let thematic: Vec<_> = trimmed
+        .bytes()
+        .filter(|byte| !matches!(byte, b' ' | b'\t'))
+        .collect();
+    if thematic.len() >= 3
+        && thematic
+            .iter()
+            .all(|byte| *byte == thematic[0] && matches!(*byte, b'*' | b'-'))
+    {
+        return false;
+    }
+    let Some((marker, rest)) = trimmed.split_once([' ', '\t']) else {
+        return false;
+    };
+    if rest.trim().is_empty() {
+        return false;
+    }
+    matches!(marker, "-" | "*" | "+" | ":")
+        || marker.strip_suffix(['.', ')']).is_some_and(|value| {
+            !value.is_empty() && value.chars().all(|ch| ch.is_ascii_alphanumeric())
+        })
+        || (marker.starts_with('(')
+            && marker.ends_with(')')
+            && marker[1..marker.len() - 1]
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric()))
+}
+
+fn nested_block(lines: &[&str], line: usize, quote: &str, columns: usize) -> bool {
+    for candidate in lines[..line].iter().rev() {
+        let Some(candidate) = candidate.strip_prefix(quote) else {
+            break;
+        };
+        if candidate.trim().is_empty() {
+            continue;
+        }
+        let (candidate_columns, _) = leading_indent(candidate);
+        if candidate_columns >= columns {
+            continue;
+        }
+        return list_marker(candidate);
+    }
+    false
+}
+
+fn convert_djot_block_markers(source: &str) -> String {
+    let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
+    let masked_source = mask_code_and_destinations(source);
+    let masked: Vec<&str> = masked_source.split('\n').collect();
+    for index in 0..lines.len() {
+        let prefix = quote_prefix_len(masked[index]);
+        let quote = &masked[index][..prefix];
+        let rest = &masked[index][prefix..];
+        let (columns, indent_bytes) = leading_indent(rest);
+        let content = &rest[indent_bytes..];
+        let nested = nested_block(&masked, index, quote, columns);
+        if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
+            let token = &content[1..close + 1];
+            let tail = &content[close + 2..];
+            if !token.is_empty()
+                && token.chars().all(|ch| ch.is_ascii_alphanumeric())
+                && tail.starts_with([' ', '\t'])
+                && !tail.trim().is_empty()
+            {
+                let authored = &lines[index];
+                let authored_rest = &authored[prefix + indent_bytes..];
+                lines[index] = format!(
+                    "{}{}{}.{}",
+                    quote,
+                    if nested { &rest[..indent_bytes] } else { "" },
+                    token,
+                    &authored_rest[close + 2..]
+                );
+                continue;
+            }
+        }
+        let mut marker = None;
+        let mut count = 0;
+        let mut valid = true;
+        for byte in content.bytes() {
+            if matches!(byte, b' ' | b'\t') {
+                continue;
+            }
+            if !matches!(byte, b'*' | b'-') || marker.is_some_and(|seen| seen != byte) {
+                valid = false;
+                break;
+            }
+            marker = Some(byte);
+            count += 1;
+        }
+        if valid && count >= 3 {
+            lines[index] = format!(
+                "{}{}***",
+                quote,
+                if nested { &rest[..indent_bytes] } else { "" }
+            );
+        }
+    }
+    lines.join("\n")
+}
+
+fn rewrite_djot_body(djot: &str) -> String {
+    let source = convert_djot_block_markers(&djot.replace("\r\n", "\n").replace('\r', "\n"));
     // Before anything else, and deliberately as a same-length rewrite: `+` and
     // `-` are one byte each, so every offset the mask and the rules below
     // compute stays valid. Doing it afterwards would mean re-masking.
@@ -426,6 +761,22 @@ fn mask_code_and_destinations(source: &str) -> String {
             if let Some(close) = bytes[i + 2..].iter().position(|b| *b == b')') {
                 let end = i + 2 + close + 1;
                 blank_out(&mut mask, i + 2, end - 1);
+                i = end;
+                continue;
+            }
+        }
+
+        // A footnote reference is one opaque token. In particular, the two
+        // carets in adjacent references must never pair as superscript.
+        if bytes[i..].starts_with(b"[^") {
+            let line = &bytes[i + 2..];
+            let width = line
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .unwrap_or(line.len());
+            if let Some(close) = line[..width].iter().position(|byte| *byte == b']') {
+                let end = i + 2 + close + 1;
+                blank_out(&mut mask, i, end);
                 i = end;
                 continue;
             }
@@ -1066,6 +1417,68 @@ fn find_bare_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn site_frontmatter_is_preserved_outside_the_djot_reader() {
+        let source = "---\nkey: my_long_value\n---\n\nBody.\n";
+        assert_eq!(djot_to_carve(source), source);
+    }
+
+    #[test]
+    fn multiple_footnotes_are_opaque_to_delimiter_conversion() {
+        let source =
+            "Here's one.[^foo] Here's two.[^bar]\n\n[^foo]: First note.\n\n[^bar]: Second note.\n";
+        let carve = djot_to_carve(source);
+        assert!(carve.contains("[^foo]"), "{carve}");
+        assert!(carve.contains("[^bar]"), "{carve}");
+        assert!(carve.contains("First note."), "{carve}");
+        assert!(carve.contains("Second note."), "{carve}");
+        assert!(!carve.contains("[{^"), "{carve}");
+        assert!(!carve.contains("[^}"), "{carve}");
+    }
+
+    #[test]
+    fn an_unclosed_footnote_token_does_not_mask_later_lines() {
+        assert_eq!(
+            djot_to_carve("Unclosed [^ then _one_.\n\nLater _two_."),
+            "Unclosed [^ then /one/.\n\nLater /two/."
+        );
+    }
+
+    #[test]
+    fn a_definition_document_does_not_rewrite_code_that_looks_like_a_term() {
+        let source = ": term\n\n  Body.\n\n```\n:: code\n```\n";
+        let carve = djot_to_carve(source);
+        assert!(carve.contains("```\n:: code\n```"), "{carve}");
+        assert!(!carve.contains("```\n{loose}"), "{carve}");
+    }
+
+    #[test]
+    fn a_djot_definition_item_becomes_a_carve_definition_item() {
+        let source = ": orange\n\n  A citrus fruit.\n";
+        let carve = djot_to_carve(source);
+        assert!(carve.contains("{loose}"), "{carve}");
+        assert!(carve.contains(":: orange"), "{carve}");
+        assert!(carve.contains(":  A citrus fruit."), "{carve}");
+    }
+
+    #[test]
+    fn definition_conversion_is_local_to_documents_with_links_and_raw_blocks() {
+        let source = ": term\n\n  Body with [a link](/url).\n\n``` =latex\n\\alpha\n```\n";
+        let carve = djot_to_carve(source);
+        assert!(carve.contains(":: term"), "{carve}");
+        assert!(carve.contains("[a link](/url)"), "{carve}");
+        assert!(carve.contains("``` =latex\n\\alpha\n```"), "{carve}");
+    }
+
+    #[test]
+    fn djot_only_block_markers_take_carve_spellings() {
+        assert_eq!(djot_to_carve("* * *"), "***");
+        assert_eq!(djot_to_carve("      - - -"), "***");
+        assert_eq!(djot_to_carve("(1) one\n(2) two"), "1. one\n2. two");
+        assert_eq!(djot_to_carve("(a) one\n(b) two"), "a. one\nb. two");
+        assert_eq!(djot_to_carve("- item\n\n  * * *"), "- item\n\n  ***");
+    }
 
     #[test]
     fn emphasis_becomes_the_carve_spelling() {

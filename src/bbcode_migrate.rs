@@ -125,14 +125,21 @@ fn stash_literals(source: String) -> Result<(String, char, char, Vec<String>), B
     let (open, close) = pick_pair(&source, 0xe010)?;
     let mut stash = Vec::new();
     let mut text = source;
-    for pattern in [
+    for (kind, pattern) in [
         r"(?is)(\[code(?:=[^\]]*)?\])(.*?)(\[/code\])",
         r"(?is)(\[(?:c|icode)\])(.*?)(\[/(?:c|icode)\])",
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         text = re(pattern)
             .replace_all(&text, |caps: &Captures<'_>| {
                 let index = stash.len();
-                stash.push(caps[2].to_string());
+                stash.push(if kind == 0 {
+                    caps[2].trim().to_string()
+                } else {
+                    caps[2].to_string()
+                });
                 format!("{}{open}{index}{close}{}", &caps[1], &caps[3])
             })
             .into_owned();
