@@ -1773,27 +1773,29 @@ fn extract_footnote_defs(
                     break;
                 }
             } else if !nested {
-                // A BLOCK OPENER AT A DD-HOSTED NOTE'S OWN FLOOR REACHES THE NOTE
-                // BODY (markup-carve/carve#1974). The per-marker note floor that
+                // A LINE AT A DD-HOSTED NOTE'S OWN FLOOR REACHES THE NOTE BODY
+                // (markup-carve/carve#1974). The per-marker note floor that
                 // carve-rs#1575 applies to a note inside another note extends to
                 // one inside a `dd`: the floor is the note MARKER'S column plus
                 // two (§16), which inside a container is the stripped prefix's
-                // width plus `footnote_body_floor` of the bare definition. An
-                // opener at or past that floor opens a block inside the note, so
-                // it is gathered here and removed from the container's body - an
-                // unreferenced note then drops with it. Plain continuation at the
-                // same column is a settled, different question (the container
-                // keeps it), so ONLY an opener triggers the gather.
+                // width plus `footnote_body_floor` of the bare definition. A line
+                // at or past that floor - a block opener OR plain continuation
+                // text alike - belongs to the note body, so it is gathered here
+                // and removed from the container's body; an unreferenced note
+                // then drops with it. Text and opener stay in parity (carve#1974,
+                // carve-js/carve-php): both are absorbed at the floor, so a
+                // column-0 tail below the floor falls to the document either way.
                 let prefix_cols = raw_def_line.chars().count() - def_line.chars().count();
                 let note_floor = prefix_cols + footnote_body_floor(def_line);
-                let opener_at_floor = |raw: &str| {
-                    if indent_columns(raw) < note_floor {
+                let reaches_floor = |raw: &str| {
+                    if is_blank_line(raw) || indent_columns(raw) < note_floor {
                         return false;
                     }
-                    let flush = trim_ascii_start(raw);
-                    item_block_opener(flush) || detect_list_marker_full(flush).is_some()
+                    // A new note definition at the floor opens its OWN note, not
+                    // this one's body, so it does not start the gather.
+                    parse_footnote_def_line(trim_ascii_start(raw)).is_none()
                 };
-                if i < lines.len() && opener_at_floor(lines[i]) {
+                if i < lines.len() && reaches_floor(lines[i]) {
                     while i < lines.len() {
                         let line = lines[i];
                         // The block ends where the container's body reclaims the

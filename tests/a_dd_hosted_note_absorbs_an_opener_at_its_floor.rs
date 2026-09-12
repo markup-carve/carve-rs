@@ -10,9 +10,11 @@
 //! top-level sibling paragraph (the column-reach model of carve#1946/#1971),
 //! not a lazy continuation of the list item.
 //!
-//! Two bands must stay put: the opener ONE column shy of the floor is an
-//! ordinary description child (the note reaches nothing), and plain continuation
-//! at the floor is a settled, different question that the description keeps.
+//! Text and opener stay in PARITY: plain continuation at the floor is absorbed
+//! into the note exactly as an opener is (carve-php's own test asserts it,
+//! carve-js does it, and carve#1979 pins it in the corpus). One band must stay
+//! put: the opener ONE column shy of the floor is an ordinary description child
+//! (the note reaches nothing).
 //!
 //! ORACLE: the maintainer ruling on carve#1974 (djot confirms the note absorbs
 //! the list; the column-0 top-level placement follows carve-php's Q2 answer and
@@ -57,13 +59,25 @@ fn an_opener_one_column_shy_of_the_floor_stays_a_description_child() {
     );
 }
 
-/// Plain continuation at the floor is NOT an opener, so the description keeps it
-/// (a settled question). The note absorbs nothing and renders nothing.
+/// Plain continuation at the floor is absorbed into the note exactly as an
+/// opener is (carve#1974 text/opener parity). `more` reaches the floor and joins
+/// the unreferenced note, which then drops; `tail` at column 0 falls to the
+/// document.
 #[test]
-fn plain_continuation_at_the_floor_stays_in_the_description() {
+fn plain_continuation_at_the_floor_is_absorbed_like_an_opener() {
     let src = ":: t\n:  [^f]: note\n     more\ntail\n";
     assert_eq!(
         html(src),
-        "<dl>\n  <dt>t</dt>\n  <dd>more\ntail</dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>tail</p>"
     );
+}
+
+/// Text and opener at the floor produce byte-identical output: the continuation
+/// case and the list-opener case both empty the description and drop `tail` to
+/// the document. This is the parity the ruling requires.
+#[test]
+fn text_at_the_floor_matches_the_opener_at_the_floor() {
+    let text = html(":: t\n:  [^f]: note\n     more\ntail\n");
+    let opener = html(":: t\n:  [^f]: note\n     - nested\ntail\n");
+    assert_eq!(text, opener);
 }
