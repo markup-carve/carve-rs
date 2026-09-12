@@ -1779,21 +1779,37 @@ fn extract_footnote_defs(
                 // one inside a `dd`: the floor is the note MARKER'S column plus
                 // two (§16), which inside a container is the stripped prefix's
                 // width plus `footnote_body_floor` of the bare definition. An
-                // opener at or past that floor opens a block inside the note, so
-                // it is gathered here and removed from the container's body - an
-                // unreferenced note then drops with it. Plain continuation at the
-                // same column is a settled, different question (the container
-                // keeps it), so ONLY an opener triggers the gather.
+                // line at or past that floor is the note's, so it is gathered here
+                // and removed from the container's body - an unreferenced note
+                // then drops with it.
+                //
+                // A BLOCK OPENER AND PLAIN CONTINUATION ARE THE SAME LINE HERE.
+                // This arm first gathered only an opener, on the reading that
+                // continuation at the same column was a separate settled
+                // question. It is not one: corpus 359 pins the per-marker floor
+                // for a container-hosted note with plain continuation text under
+                // a LIST ITEM, and carve-js and carve-php both give the `dd` host
+                // the same answer. Excluding text left this engine reading one
+                // floor for openers and another for prose, which is the
+                // two-answers-at-once state the fix above set out to end.
                 let prefix_cols = raw_def_line.chars().count() - def_line.chars().count();
                 let note_floor = prefix_cols + footnote_body_floor(def_line);
-                let opener_at_floor = |raw: &str| {
-                    if indent_columns(raw) < note_floor {
-                        return false;
+                //
+                // ENTERED ACROSS A BLANK RUN, because the loop below continues
+                // across one: §16 allows blank lines between a note body's
+                // chunks, so a body that resumes after one is still the note's.
+                // Testing only `lines[i]` refused the gather whenever the author
+                // left a blank line under the definition, which is the ordinary
+                // spelling of a multi-paragraph note.
+                let reaches_floor = |raw: &str| indent_columns(raw) >= note_floor;
+                let body_resumes = {
+                    let mut at = i;
+                    while at < lines.len() && is_blank_line(lines[at]) {
+                        at += 1;
                     }
-                    let flush = trim_ascii_start(raw);
-                    item_block_opener(flush) || detect_list_marker_full(flush).is_some()
+                    at < lines.len() && reaches_floor(lines[at])
                 };
-                if i < lines.len() && opener_at_floor(lines[i]) {
+                if body_resumes {
                     while i < lines.len() {
                         let line = lines[i];
                         // The block ends where the container's body reclaims the
