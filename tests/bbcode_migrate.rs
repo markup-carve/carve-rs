@@ -43,6 +43,14 @@ fn common_bbcode_vocabulary_matches_the_other_importers() {
 }
 
 #[test]
+fn a_code_tags_own_boundary_newlines_are_not_code_content() {
+    assert_eq!(
+        bbcode_to_carve("[code=js]\nconst x = 1;\n[/code]").unwrap(),
+        "```js\nconst x = 1;\n```\n"
+    );
+}
+
+#[test]
 fn code_language_cannot_create_a_raw_html_block() {
     assert_eq!(
         bbcode_to_carve("[code==html]<b>x</b>[/code]").unwrap(),
