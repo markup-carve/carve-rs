@@ -98,7 +98,10 @@ fn plain_continuation_one_column_shy_of_the_floor_stays_in_the_description() {
 fn a_hosted_note_body_resumes_after_a_blank_line() {
     let src = ":: a\n:  [^f]: t\n\n     more\ntail\n\nx[^f]\n";
     let out = html(src);
-    assert!(out.contains("<dd></dd>"), "the description kept the note's body: {out}");
+    assert!(
+        out.contains("<dd></dd>"),
+        "the description kept the note's body: {out}"
+    );
     assert!(
         out.contains("<p>more<a href=\"#fnref1\""),
         "the note did not take the resumed body: {out}"
