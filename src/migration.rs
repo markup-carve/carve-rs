@@ -1,6 +1,7 @@
 use crate::{
     bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
-    HtmlImportDiagnosticCode, HtmlImportError, HtmlImportOptions, HtmlImportSeverity,
+    HtmlImportAdapter, HtmlImportDiagnosticCode, HtmlImportError, HtmlImportMode,
+    HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +52,8 @@ pub struct MigrationDiagnostic {
 pub struct MigrationReport {
     pub schema_version: u32,
     pub source_format: SourceFormat,
+    pub mode: Option<HtmlImportMode>,
+    pub adapter: Option<HtmlImportAdapter>,
     pub diagnostics: Vec<MigrationDiagnostic>,
 }
 
@@ -65,11 +68,11 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
         HtmlImportDiagnosticCode::ElementDropped
         | HtmlImportDiagnosticCode::AttributeDropped
         | HtmlImportDiagnosticCode::StructureUnspellable => MigrationFidelity::Dropped,
-        HtmlImportDiagnosticCode::StyleUnmapped
+        HtmlImportDiagnosticCode::ElementUnwrapped
+        | HtmlImportDiagnosticCode::StyleUnmapped
         | HtmlImportDiagnosticCode::TableDegraded
         | HtmlImportDiagnosticCode::EncodingAssumed
         | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
-        HtmlImportDiagnosticCode::ElementUnwrapped => MigrationFidelity::Normalized,
         // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that
         // says an attribute reached the output inside preserved raw bytes, so
         // filing it under `Dropped` beside `AttributeDropped` would reintroduce
@@ -94,10 +97,10 @@ pub fn migrate_html(
             message: diagnostic.message,
             severity: diagnostic.severity,
             fidelity: fidelity(diagnostic.code),
-            confidence: if diagnostic.code == HtmlImportDiagnosticCode::EncodingAssumed {
-                MigrationConfidence::Inferred
-            } else {
-                MigrationConfidence::Exact
+            confidence: match diagnostic.code {
+                HtmlImportDiagnosticCode::EncodingAssumed => MigrationConfidence::Inferred,
+                HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationConfidence::Fallback,
+                _ => MigrationConfidence::Exact,
             },
             path: diagnostic.path,
         })
@@ -107,49 +110,45 @@ pub fn migrate_html(
         report: MigrationReport {
             schema_version: 2,
             source_format: SourceFormat::Html,
+            mode: Some(result.report.mode),
+            adapter: Some(result.report.adapter),
             diagnostics,
         },
     })
 }
 
-fn normalized(source: &str, value: String, source_format: SourceFormat) -> MigrationResult {
-    let diagnostics = if value == source {
-        Vec::new()
-    } else {
-        vec![MigrationDiagnostic {
-            code: "syntax-normalized".to_owned(),
-            message: format!(
-                "Converted {} syntax to canonical Carve source",
-                source_format.as_str()
-            ),
-            severity: HtmlImportSeverity::Info,
-            fidelity: MigrationFidelity::Normalized,
-            confidence: MigrationConfidence::Exact,
-            path: None,
-        }]
-    };
+fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
+    let diagnostics = vec![MigrationDiagnostic {
+        code: "fidelity-unverified".to_owned(),
+        message: format!(
+            "Fidelity was not reported by the {} importer; degraded is a conservative release-gate classification",
+            source_format.as_str()
+        ),
+        severity: HtmlImportSeverity::Warning,
+        fidelity: MigrationFidelity::Degraded,
+        confidence: MigrationConfidence::Fallback,
+        path: None,
+    }];
     MigrationResult {
         value,
         report: MigrationReport {
             schema_version: 2,
             source_format,
+            mode: None,
+            adapter: None,
             diagnostics,
         },
     }
 }
 
 pub fn migrate_markdown(source: &str) -> MigrationResult {
-    normalized(source, markdown_to_carve(source), SourceFormat::Markdown)
+    unverified(markdown_to_carve(source), SourceFormat::Markdown)
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
-    normalized(source, djot_to_carve(source), SourceFormat::Djot)
+    unverified(djot_to_carve(source), SourceFormat::Djot)
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    Ok(normalized(
-        source,
-        bbcode_to_carve(source)?,
-        SourceFormat::Bbcode,
-    ))
+    Ok(unverified(bbcode_to_carve(source)?, SourceFormat::Bbcode))
 }

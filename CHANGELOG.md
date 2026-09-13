@@ -11,7 +11,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Migration reports advance to schema version 2: `Carried` is renamed to
   `Preserved`, `Normalized` distinguishes semantics-preserving rewrites, and
-  Markdown, Djot, and BBCode now emit normalization diagnostics.
+  Markdown, Djot, and BBCode now emit a conservative `Degraded`/`Fallback`
+  finding because those paths do not yet expose construct-level fidelity.
 
 ### Fixed
 
