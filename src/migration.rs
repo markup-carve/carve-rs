@@ -92,6 +92,7 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
         HtmlImportDiagnosticCode::ElementUnwrapped
         | HtmlImportDiagnosticCode::StyleUnmapped
         | HtmlImportDiagnosticCode::TableDegraded
+        | HtmlImportDiagnosticCode::StructureSplit
         | HtmlImportDiagnosticCode::EncodingAssumed
         | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
         // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that

@@ -114,6 +114,7 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// empty `<dd>` is not last: dropping the unspellable description would let
     /// the entry below lend the term above its own, so the list breaks instead
     /// (markup-carve/carve#1638).
+    StructureSplit => "structure-split",
     ///
     /// The source did not declare how to read a value and this importer picked
     /// an encoding anyway, so the node it produced is only correct if that
