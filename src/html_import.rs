@@ -119,11 +119,9 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// an encoding anyway, so the node it produced is only correct if that
     /// guess holds.
     ///
-    /// Deliberately NOT `ElementUnwrapped`: unwrapping is a note about the
-    /// input's structure and loses no meaning, while an assumed encoding is a
-    /// warning about the OUTPUT. A consumer told only that an element is gone
-    /// cannot tell a harmless structural event from content that may be in the
-    /// wrong language entirely, and that is the one signal it could act on.
+    /// Distinct from `ElementUnwrapped`: unwrapping may lose a structural role
+    /// while retaining text, whereas an assumed encoding warns that the output
+    /// text itself is only inferred.
     EncodingAssumed => "encoding-assumed",
     DiagnosticsTruncated => "diagnostics-truncated",
 });

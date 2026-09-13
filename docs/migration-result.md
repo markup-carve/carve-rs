@@ -13,7 +13,7 @@ let result = migrate_html(
 )?;
 
 for diagnostic in &result.report.diagnostics {
-    if diagnostic.fidelity == MigrationFidelity::Dropped {
+    if matches!(diagnostic.fidelity, MigrationFidelity::Degraded | MigrationFidelity::Dropped) {
         eprintln!("{}: {}", diagnostic.code, diagnostic.message);
     }
 }
