@@ -1506,3 +1506,58 @@ fn the_default_cap_is_four_mib_and_applies_without_being_asked_for() {
         result.dependencies
     );
 }
+
+#[test]
+fn an_auto_heading_id_collision_across_an_include_is_silent() {
+    // I5 covers ids the AUTHOR wrote. Two chapters that both open `# Overview`
+    // collide on an id nobody asked for, and inside a single file that
+    // disambiguation happens at stamp time without a word - so warning here
+    // would report a collision the author never created, on one of the most
+    // common shapes a book has.
+    //
+    // The RENAME still has to happen: each child is parsed as its own document
+    // (I4), so each stamps `Overview` independently and nothing re-stamps after
+    // the merge.
+    let result = expand_with(
+        "{{ a.crv }}\n\n{{ b.crv }}\n",
+        &|path: &str, _ctx: &IncludeContext<'_>| match path {
+            "a.crv" => Some(IncludeResolved::from("# Overview\n\nFirst.\n".to_string())),
+            "b.crv" => Some(IncludeResolved::from("# Overview\n\nSecond.\n".to_string())),
+            _ => None,
+        },
+        IncludeOptions::new(),
+    );
+
+    assert!(
+        result.warnings.is_empty(),
+        "an auto id collision warned: {:?}",
+        result.warnings
+    );
+    assert!(result.html.contains("id=\"Overview\""), "{}", result.html);
+    assert!(result.html.contains("id=\"Overview-2\""), "{}", result.html);
+}
+
+#[test]
+fn an_explicit_heading_id_collision_across_an_include_still_warns() {
+    // The other side of the same line: this id WAS written by someone, and it
+    // is a cross-reference target, so the rename has to be visible.
+    let result = expand_with(
+        "{{ a.crv }}\n\n{{ b.crv }}\n",
+        &|path: &str, _ctx: &IncludeContext<'_>| match path {
+            "a.crv" => Some(IncludeResolved::from(
+                "{#intro}\n# A\n\nFirst.\n".to_string(),
+            )),
+            "b.crv" => Some(IncludeResolved::from(
+                "{#intro}\n# B\n\nSecond.\n".to_string(),
+            )),
+            _ => None,
+        },
+        IncludeOptions::new(),
+    );
+
+    assert!(
+        result.rules().contains(&"include-heading-id-rename"),
+        "{:?}",
+        result.warnings
+    );
+}

@@ -964,15 +964,29 @@ fn rename_child_heading_ids(
         if state.reserve_heading_id(&id) {
             return;
         }
+        // WARN ONLY FOR AN ID THE AUTHOR WROTE. I5 covers EXPLICIT ids, and by
+        // this point `attrs.id` also carries the auto id the parser stamps, so
+        // the two are told apart by re-deriving the slug: an id equal to the
+        // heading's own slug is one nobody asked for.
+        //
+        // The RENAME still happens either way, and has to: each child is parsed
+        // as its own document (I4), so two chapters opening `# Overview` each
+        // stamp `Overview` independently and nothing re-stamps them after the
+        // merge. Within a single file that disambiguation happens at stamp time
+        // and is silent - warning here would report a collision the author
+        // never created, on a shape as common as two chapters sharing a heading.
+        let is_auto = heading_slug(&h.children) == id;
         let renamed = next_free(&id, |c| state.used_heading_ids.contains(c));
         if let Some(attrs) = h.attrs.as_mut() {
             attrs.id = Some(renamed.clone());
         }
         state.reserve_heading_id(&renamed);
-        state.warn(
-            "include-heading-id-rename",
-            format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
-        );
+        if !is_auto {
+            state.warn(
+                "include-heading-id-rename",
+                format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
+            );
+        }
         rename.insert(id, renamed);
     });
     if !rename.is_empty() {
