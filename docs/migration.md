@@ -1,6 +1,9 @@
 # Migrating into Carve
 
-HTML, Markdown, Djot and BBCode all convert into Carve. Only the HTML importer drops anything, and only it takes a mode, an adapter and a loss report.
+HTML, Markdown, Djot and BBCode all convert into Carve. Every importer supports
+the shared report and `--check-loss`; HTML additionally takes a mode and an
+adapter. Markdown, Djot, and BBCode report fidelity as unverified and fail a
+loss check until their importers expose construct-level outcomes.
 
 HTML migration is available through `html_to_ast` and `html_to_carve`. Both
 return the value plus ordered loss diagnostics and accept safe, semantic, and
@@ -39,18 +42,19 @@ Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
 `carve migrate --from markdown input.md`. It parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's
 spelling: a setext heading comes back as `#`, an indented code block as a
-fence. There is no mode or report, because nothing is dropped - the
-`--mode`/`--adapter`/`--report` options belong to HTML.
+fence. It has no mode or adapter. `--report` emits a dropped/fallback
+`fidelity-unverified` finding, so `--check-loss` deliberately exits 1.
 
 Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
-rewrites the delimiters that differ between the two languages, and like
-Markdown it has no mode or report.
+rewrites the delimiters that differ between the two languages. Like Markdown,
+it reports unverified fidelity and fails closed under `--check-loss`.
 
 BBCode migration is `bbcode_to_carve`, or
 `carve migrate --from bbcode input.bbcode`. It converts forum formatting,
 links, images, quotes, lists, code, spoilers and tables while keeping ordinary
 Carve-looking source text literal. Inputs above 256 KiB are rejected because
 the compatibility rewrite pipeline makes several bounded passes over a post.
+It also reports unverified fidelity and fails closed under `--check-loss`.
 
 ---
 

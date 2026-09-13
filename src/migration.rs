@@ -92,7 +92,6 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
         HtmlImportDiagnosticCode::ElementUnwrapped
         | HtmlImportDiagnosticCode::StyleUnmapped
         | HtmlImportDiagnosticCode::TableDegraded
-        | HtmlImportDiagnosticCode::StructureSplit
         | HtmlImportDiagnosticCode::EncodingAssumed
         | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
         // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that
@@ -143,11 +142,11 @@ fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
     let diagnostics = vec![MigrationDiagnostic {
         code: "fidelity-unverified".to_owned(),
         message: format!(
-            "Fidelity was not reported by the {} importer; degraded is a conservative release-gate classification",
+            "Fidelity was not reported by the {} importer; dropped is a conservative worst-case release-gate classification",
             source_format.as_str()
         ),
         severity: HtmlImportSeverity::Warning,
-        fidelity: MigrationFidelity::Degraded,
+        fidelity: MigrationFidelity::Dropped,
         confidence: MigrationConfidence::Fallback,
         path: None,
     }];

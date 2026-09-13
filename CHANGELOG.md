@@ -11,10 +11,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Breaking:** Migration reports advance to schema version 2: `Carried` is renamed to
   `Preserved`, `Normalized` distinguishes semantics-preserving rewrites, and
-  Markdown, Djot, and BBCode now emit a conservative `Degraded`/`Fallback`
+  Markdown, Djot, and BBCode now emit a conservative `Dropped`/`Fallback`
   finding because those paths do not yet expose construct-level fidelity.
-  `MigrationReport` also gains `mode` and `adapter`; release this change as
-  0.2.0. The CLI now emits the same report for every importer, and
+  `MigrationReport` also gains `mode` and `adapter`. `ElementUnwrapped` moves
+  from carried to degraded, truncated diagnostics move from exact to fallback,
+  and HTML `--check-loss` now permits preserved-only findings. The CLI emits
+  the same report for every importer, and
   `--check-loss` fails closed on degraded or dropped findings.
 
 ### Fixed

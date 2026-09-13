@@ -12,7 +12,7 @@ fn every_source_format_returns_the_same_result_shape() {
     assert_eq!(markdown.report.diagnostics.len(), 1);
     assert_eq!(
         markdown.report.diagnostics[0].fidelity,
-        MigrationFidelity::Degraded
+        MigrationFidelity::Dropped
     );
     assert_eq!(
         markdown.report.diagnostics[0].confidence,
@@ -33,7 +33,7 @@ fn every_source_format_returns_the_same_result_shape() {
     assert_eq!(bbcode.report.source_format, SourceFormat::Bbcode);
     assert_eq!(
         bbcode.report.diagnostics[0].fidelity,
-        MigrationFidelity::Degraded
+        MigrationFidelity::Dropped
     );
 
     let html = migrate_html("<p><blink>text</blink></p>", &HtmlImportOptions::default())

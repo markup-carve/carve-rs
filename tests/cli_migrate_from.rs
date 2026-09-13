@@ -130,7 +130,7 @@ fn non_html_reports_fail_closed_when_fidelity_is_unverified() {
     assert_eq!(value["sourceFormat"], "djot");
     assert_eq!(value["diagnostics"].as_array().map(Vec::len), Some(1));
     assert_eq!(value["diagnostics"][0]["code"], "fidelity-unverified");
-    assert_eq!(value["diagnostics"][0]["fidelity"], "degraded");
+    assert_eq!(value["diagnostics"][0]["fidelity"], "dropped");
     assert_eq!(value["diagnostics"][0]["confidence"], "fallback");
 }
 

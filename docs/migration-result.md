@@ -24,9 +24,10 @@ std::fs::write("document.crv", result.value)?;
 Version 2 reports use the same `Preserved`, `Normalized`, `Degraded`, and
 `Dropped` fidelity vocabulary as the other Carve engines. HTML retains its
 construct-specific diagnostics. Markdown, Djot, and BBCode currently emit a
-`fidelity-unverified` degraded/fallback warning on every import because those
+`fidelity-unverified` dropped/fallback warning on every import because those
 paths do not yet expose construct-level loss information. This deliberately
-fails closed: byte differences are not evidence of semantic fidelity.
+fails closed at the worst-case outcome: byte differences are not evidence of
+semantic fidelity.
 
 Version 2 renames version 1's `Carried` value to `Preserved` and adds
 `Normalized`. Consumers should inspect `schema_version` before interpreting
