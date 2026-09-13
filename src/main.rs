@@ -1231,7 +1231,18 @@ fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
     if let Some(path) = source_path.as_deref() {
         options = options.with_source_path(path);
     }
-    let result = carve::expand_includes(carve::parse(&source), &source, &options);
+    // POSITIONS ON. The writer orders collected definitions by source position,
+    // and after a merge that ordering is the only thing that keeps a child's
+    // footnote definitions in the order the document reads. Parsed without
+    // them, every merged definition reported no position at all and the order
+    // fell back to the LABEL - so `[^m]` from the second include was published
+    // above `[^n]` from the first.
+    let parse_options = carve::Options::default().with_positions(true);
+    let result = carve::expand_includes(
+        carve::parse_with_options(&source, &parse_options),
+        &source,
+        &options,
+    );
     for warning in &result.warnings {
         eprintln!("carve: {} [{}]", warning.message, warning.rule);
     }

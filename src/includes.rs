@@ -632,6 +632,15 @@ struct State<'a> {
     suppressed_warnings: usize,
     /// Rules already represented in `warnings`, so a cap never hides a class.
     seen_rules: std::collections::BTreeSet<String>,
+    /// Whether the PARENT document carries source positions, and therefore
+    /// whether each child is parsed with them.
+    ///
+    /// A child parsed without them contributes nodes with no position at all,
+    /// and the writer orders collected definitions BY position - so merged
+    /// footnote definitions from two files tied and fell back to the label.
+    /// It also silently drops the source mapping section 19 asks for, since
+    /// there is no `pos` to stamp a file onto.
+    track_positions: bool,
     /// Which whole-expansion total is spent, if either.
     ///
     /// Both only ever grow, so once one is spent no later directive can
@@ -1062,7 +1071,7 @@ fn merge_footnotes(
 // AST walking
 // ---------------------------------------------------------------------------
 
-fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) {
+pub(crate) fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) {
     for block in blocks {
         f(block);
         match block {
@@ -1261,6 +1270,19 @@ fn with_child<T>(
 /// Without it an included span is ambiguous: a child's first paragraph and the
 /// parent's first paragraph both report line 1, and a source-mapped host has no
 /// way to tell them apart.
+/// Whether this document was parsed with position tracking on, read off the
+/// tree rather than passed in: the caller hands over a parsed document, not the
+/// options it was parsed with.
+fn doc_carries_positions(doc: &Document) -> bool {
+    let mut found = false;
+    walk_blocks(&doc.children, &mut |block| {
+        if !found && crate::ast_json::block_pos(block).is_some() {
+            found = true;
+        }
+    });
+    found
+}
+
 fn stamp_source_file(blocks: &mut [BlockNode], file: &str) {
     // One identity for the whole child, handed to every node in it.
     let file = crate::ast::SourceFile::new(file);
@@ -1299,7 +1321,11 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
     // the child closes at child EOF and can never swallow parent content.
-    let child = parse(&source);
+    let child = if state.track_positions {
+        crate::parse_with_options(&source, &crate::Options::default().with_positions(true))
+    } else {
+        parse(&source)
+    };
     let mut children = child.children;
     let mut footnotes = child.footnote_defs;
     // Select BEFORE expanding: nested includes outside the wanted section must
@@ -1377,6 +1403,15 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     shift_blocks(&mut children, shift, state);
     // After the child's own includes, so a grandchild keeps its own identity.
     stamp_source_file(&mut children, &id);
+    // THE FOOTNOTE BODIES TOO. They travel beside the blocks rather than in
+    // them, so stamping only `children` left every merged definition with no
+    // file identity - and the writer orders collected definitions by source
+    // position, which is meaningless across files without one. Two children
+    // each defining a note near their own start then tied, and the order fell
+    // back to the label.
+    for body in footnotes.values_mut() {
+        stamp_source_file(body, &id);
+    }
     state.file = outer_file;
     Some(ExpandedChild {
         children,
@@ -1735,6 +1770,7 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
         max_warnings: options.max_warnings.unwrap_or(DEFAULT_MAX_WARNINGS),
         suppressed_warnings: 0,
         seen_rules: std::collections::BTreeSet::new(),
+        track_positions: doc_carries_positions(&doc),
         spent: None,
         stack: options.source_path.clone().into_iter().collect(),
         depth: 0,

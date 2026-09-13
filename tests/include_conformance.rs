@@ -32,8 +32,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, parse, render_carve, render_html, FileSystemResolver, IncludeContext,
-    IncludeOptions, IncludeResolved, IncludeResolver,
+    expand_includes, render_carve, render_html, FileSystemResolver, IncludeContext, IncludeOptions,
+    IncludeResolved, IncludeResolver,
 };
 
 // The helper lives in a subdirectory so cargo does not compile it as its own
@@ -178,6 +178,11 @@ struct RunResult {
     /// Present only for `checkCarveTarget` vectors (I15): the Carve source this
     /// engine produces WITH the resolver configured.
     carve_target: Option<String>,
+    /// Present only for `checkFlattened` vectors: the EXPANDED document written
+    /// back as Carve, which is what `carve flatten` emits. The html golden
+    /// cannot see the assembled tree's shape - footnotes are collected globally
+    /// at render time either way.
+    flattened: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -310,10 +315,13 @@ fn run_vector(vector: &Value) -> RunResult {
             io = io.with_max_bytes(b as usize);
         }
 
-        let doc = parse(&entry);
+        let doc = parse_vector(&entry);
         let result = expand_includes(doc, &entry, &io);
         let html = fold_text(&render_html(&result.doc).unwrap(), Some(&base_real_str));
-        let fmt = fold_text(&render_carve(&parse(&entry)).unwrap(), Some(&base_real_str));
+        let fmt = fold_text(
+            &render_carve(&parse_vector(&entry)).unwrap(),
+            Some(&base_real_str),
+        );
 
         return RunResult {
             html,
@@ -323,18 +331,19 @@ fn run_vector(vector: &Value) -> RunResult {
             raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
             formatted_run: None, // filesystem vectors never set the equivalence flag
             carve_target: None,  // nor the I15 flag: both are virtual-mode only
+            flattened: None,     // nor `checkFlattened`
         };
         // `tmp` drops here, removing the tree.
     }
 
     // Virtual / none mode.
     let entry = vector["entry"].as_str().expect("entry").to_string();
-    let fmt = render_carve(&parse(&entry)).unwrap();
+    let fmt = render_carve(&parse_vector(&entry)).unwrap();
 
     if resolver_kind == "none" {
         // No resolver configured (I3): every directive stays literal.
         let io = IncludeOptions::new();
-        let result = expand_includes(parse(&entry), &entry, &io);
+        let result = expand_includes(parse_vector(&entry), &entry, &io);
         return RunResult {
             html: render_html(&result.doc).unwrap(),
             fmt,
@@ -343,6 +352,7 @@ fn run_vector(vector: &Value) -> RunResult {
             raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
             formatted_run: None,
             carve_target: None,
+            flattened: None,
         };
     }
 
@@ -358,7 +368,7 @@ fn run_vector(vector: &Value) -> RunResult {
     let resolver = make_virtual_resolver(files, resolver_ids, throws);
     let io = base_options(&opts, &resolver);
 
-    let result = expand_includes(parse(&entry), &entry, &io);
+    let result = expand_includes(parse_vector(&entry), &entry, &io);
     let html = render_html(&result.doc).unwrap();
 
     let formatted_run = if vector
@@ -368,7 +378,7 @@ fn run_vector(vector: &Value) -> RunResult {
     {
         // Expanding the FORMATTED entry must yield the same html + dependency
         // set as expanding the original (I12 stronger invariant).
-        let fres = expand_includes(parse(&fmt), &fmt, &io);
+        let fres = expand_includes(parse_vector(&fmt), &fmt, &io);
         Some((render_html(&fres.doc).unwrap(), norm_deps(&fres, None)))
     } else {
         None
@@ -377,7 +387,7 @@ fn run_vector(vector: &Value) -> RunResult {
     // I15, and routed through `expands_for_target` rather than hard-coded here:
     // what the vector has to catch is this ENGINE deciding to expand before its
     // writer runs, so the test reads the same predicate the CLI reads. Writing
-    // `render_carve(&parse(&entry))` instead would assert the writer twice and
+    // `render_carve(&parse_vector(&entry))` instead would assert the writer twice and
     // never see the pipeline.
     let carve_target = if vector
         .get("checkCarveTarget")
@@ -385,11 +395,21 @@ fn run_vector(vector: &Value) -> RunResult {
         .unwrap_or(false)
     {
         let doc = if carve::expands_for_target(carve::RenderTarget::Carve) {
-            expand_includes(parse(&entry), &entry, &io).doc
+            expand_includes(parse_vector(&entry), &entry, &io).doc
         } else {
-            parse(&entry)
+            parse_vector(&entry)
         };
         Some(render_carve(&doc).unwrap())
+    } else {
+        None
+    };
+
+    let flattened = if vector
+        .get("checkFlattened")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        Some(render_carve(&result.doc).unwrap())
     } else {
         None
     };
@@ -402,6 +422,7 @@ fn run_vector(vector: &Value) -> RunResult {
         raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
         formatted_run,
         carve_target,
+        flattened,
     }
 }
 
@@ -450,6 +471,18 @@ fn expected_deps(expected: &Value) -> Vec<NormDep> {
         .collect()
 }
 
+/// Parse the way the reference runner does: WITH positions.
+///
+/// The goldens are generated from carve-js with `{ positions: true }`, and the
+/// configuration is not cosmetic - the writer orders collected definitions by
+/// source position, so a document parsed without them publishes a merged
+/// child's footnote definitions in label order instead of document order.
+/// Reading the goldens under a different configuration compares two different
+/// questions.
+fn parse_vector(source: &str) -> carve::Document {
+    carve::parse_with_options(source, &carve::Options::default().with_positions(true))
+}
+
 /// Compare one vector's actual run against its goldens, returning a list of
 /// human-readable field mismatches (empty when the vector fully passes).
 fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
@@ -469,6 +502,17 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
             "fmt:\n    expected {exp_fmt:?}\n    actual   {:?}",
             run.fmt
         ));
+    }
+    if let Some(exp_flat) = expected.get("flattened").and_then(Value::as_str) {
+        match run.flattened.as_deref() {
+            Some(actual) if actual == exp_flat => {}
+            Some(actual) => diffs.push(format!(
+                "flattened:\n    expected {exp_flat:?}\n    actual   {actual:?}"
+            )),
+            None => diffs.push(
+                "flattened: the vector carries the golden but the run produced none".to_string(),
+            ),
+        }
     }
     if let Some(exp_carve) = expected.get("carveTarget").and_then(Value::as_str) {
         match run.carve_target.as_deref() {

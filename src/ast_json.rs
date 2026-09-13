@@ -624,16 +624,58 @@ pub(crate) enum DocEntry<'a> {
 }
 
 /// PART 12 §7: "Definitions appear in DOCUMENT ORDER by source position."
+///
+/// AN OFFSET ONLY ORDERS WITHIN ONE FILE. After an include expansion the map
+/// holds definitions from several, each measured in its own coordinate space,
+/// so two children that both define a note near their own start tie on offset
+/// and fall back to the LABEL - which put `[^m]` from the second include above
+/// `[^n]` from the first. The file each definition came from is ordered by
+/// where that file's content first appears in the assembled document, which is
+/// what "document order" means once the tree has more than one source.
 pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Vec<BlockNode>)> {
+    let file_order = file_appearance_order(doc);
     let mut defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
     defs.sort_by_key(|(label, children)| {
+        let pos = doc
+            .footnote_def_pos
+            .get(label.as_str())
+            .or_else(|| first_block_pos(children));
+        let file_rank = match (&file_order, pos.and_then(|p| p.file.as_ref())) {
+            // No includes in this document: every definition is in the one
+            // file, so the offset alone is the whole key, exactly as before.
+            (None, _) => 0,
+            (Some(_), None) => 0,
+            (Some(order), Some(file)) => order.get(file.as_str()).copied().unwrap_or(usize::MAX),
+        };
         (
+            file_rank,
             footnote_def_start(doc, label, children).unwrap_or(usize::MAX),
             label.as_str(),
         )
     });
 
     defs
+}
+
+/// Which file each piece of the assembled document came from, ranked by first
+/// appearance. `None` when nothing carries a file identity, which is every
+/// document that used no includes - the caller then skips the whole question.
+fn file_appearance_order(doc: &Document) -> Option<std::collections::HashMap<String, usize>> {
+    let mut order: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut next = 1usize;
+    crate::includes::walk_blocks(&doc.children, &mut |block| {
+        if let Some(file) = block_pos(block).and_then(|pos| pos.file.as_ref()) {
+            order.entry(file.as_str().to_string()).or_insert_with(|| {
+                let rank = next;
+                next += 1;
+                rank
+            });
+        }
+    });
+    if order.is_empty() {
+        return None;
+    }
+    Some(order)
 }
 
 /// Where a footnote definition starts, for §7's document order.
@@ -679,7 +721,17 @@ pub(crate) fn ordered_document_entries<'a>(
         moved.push(entries.remove(i));
     }
     moved.reverse();
-    moved.sort_by_key(|entry| collected_definition_offset(entry).unwrap_or(usize::MAX));
+    // FILE FIRST, then offset. After an include expansion these entries come
+    // from several files, each measured in its own coordinate space, so two
+    // children defining a note near their own start tie on offset - and the tie
+    // decided the published order. See `file_appearance_order`.
+    let file_order = file_appearance_order(doc);
+    moved.sort_by_key(|entry| {
+        (
+            definition_file_rank(entry, file_order.as_ref()),
+            collected_definition_offset(entry).unwrap_or(usize::MAX),
+        )
+    });
     for (&i, entry) in slots.iter().zip(moved) {
         entries.insert(i, entry);
     }
@@ -689,6 +741,31 @@ pub(crate) fn ordered_document_entries<'a>(
 /// The published start offset of a COLLECTED definition, or `None` for anything
 /// §7 does not collect. A collected definition with no placed position sorts
 /// last rather than being given an invented one.
+/// Where this entry's file sits in the assembled document, for the sort above.
+/// Zero for a document with no includes, and for anything authored in the file
+/// being rendered.
+fn definition_file_rank(
+    entry: &DocEntry<'_>,
+    file_order: Option<&std::collections::HashMap<String, usize>>,
+) -> usize {
+    let Some(order) = file_order else {
+        return 0;
+    };
+    let file = match entry {
+        DocEntry::Block(BlockNode::LinkReferenceDefinition(n)) => {
+            n.pos.as_ref().and_then(|pos| pos.file.as_ref())
+        }
+        DocEntry::FootnoteDef(_, body, pos) => pos
+            .or_else(|| first_block_pos(body))
+            .and_then(|pos| pos.file.as_ref()),
+        DocEntry::Block(_) => None,
+    };
+    match file {
+        None => 0,
+        Some(file) => order.get(file.as_str()).copied().unwrap_or(usize::MAX),
+    }
+}
+
 fn collected_definition_offset(entry: &DocEntry<'_>) -> Option<usize> {
     match entry {
         DocEntry::Block(BlockNode::LinkReferenceDefinition(n)) => {
