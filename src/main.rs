@@ -1071,7 +1071,7 @@ fn print_usage() {
          carve merge [--json] BASE OURS THEIRS\n  \
                                      merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
-         convert html, markdown (md) or djot to Carve.\n                              \
+         convert html, markdown (md), djot or bbcode to Carve.\n                       \
          --mode/--adapter apply to html; --report/--check-loss\n                              \
          apply to all importers and fail closed when fidelity is unknown\n                              \
          (exit 1 only when --check-loss finds loss, 2 on a\n                              \

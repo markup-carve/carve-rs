@@ -56,6 +56,9 @@ Carve-looking source text literal. Inputs above 256 KiB are rejected because
 the compatibility rewrite pipeline makes several bounded passes over a post.
 It also reports unverified fidelity and fails closed under `--check-loss`.
 
+For HTML, `--check-loss` exits 1 only for `degraded` or `dropped` findings;
+diagnostics that explicitly preserve raw source or attributes do not fail the gate.
+
 ---
 
 [Back to the README](../README.md)
