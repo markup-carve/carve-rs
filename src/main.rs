@@ -29,6 +29,23 @@ enum StampMode {
     Check,
 }
 
+/// Stands in for the filesystem resolver when the `fs` feature is off, so the
+/// render path below compiles unchanged while carrying no code that opens a
+/// file. It resolves nothing, which is what leaves the directive literal.
+#[cfg(not(feature = "fs"))]
+struct NoResolver;
+
+#[cfg(not(feature = "fs"))]
+impl carve::IncludeResolver for NoResolver {
+    fn resolve(
+        &self,
+        _path: &str,
+        _ctx: &carve::IncludeContext<'_>,
+    ) -> Option<carve::IncludeResolved> {
+        None
+    }
+}
+
 fn main() -> ExitCode {
     let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
     if raw_args.first().map(String::as_str) == Some("merge") {
@@ -72,6 +89,9 @@ fn main() -> ExitCode {
     let mut report_losses: Option<String> = None;
     let mut allow_render_loss = false;
     let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
+    // `mut` only where the flag can be honoured: without the `fs` feature the
+    // flag is refused at the parse site and this never moves.
+    #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
     let mut include_root: Option<String> = None;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
@@ -209,7 +229,19 @@ fn main() -> ExitCode {
                     eprintln!("carve: --include-root requires a directory");
                     return ExitCode::FAILURE;
                 };
-                include_root = Some(value);
+                // REFUSED, not ignored: a build without the resolver cannot
+                // honour the flag, and silently rendering the directive as
+                // literal text would look like the include simply failed.
+                #[cfg(not(feature = "fs"))]
+                {
+                    let _ = value;
+                    eprintln!("carve: --include-root needs the `fs` feature, which this build does not have");
+                    return ExitCode::FAILURE;
+                }
+                #[cfg(feature = "fs")]
+                {
+                    include_root = Some(value);
+                }
             }
             "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
             "-" if command == Command::Render => input_paths.clear(),
@@ -338,6 +370,10 @@ fn main() -> ExitCode {
         && format != OutputFormat::Carve
         && (include_root.is_some() || source.contains("{{"));
 
+    // The CLI's include path IS the filesystem resolver, so it compiles out with
+    // it. Without the feature the directive stays literal, which is the core
+    // behavior, not a degraded one.
+    #[cfg(feature = "fs")]
     let resolver = if want_includes {
         let root = root.expect("guarded by want_includes");
         match carve::FileSystemResolver::new(&root) {
@@ -354,6 +390,11 @@ fn main() -> ExitCode {
             }
         }
     } else {
+        None
+    };
+    #[cfg(not(feature = "fs"))]
+    let resolver: Option<NoResolver> = {
+        let _ = want_includes;
         None
     };
 

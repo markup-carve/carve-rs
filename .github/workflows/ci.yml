@@ -196,6 +196,24 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --locked --all-targets
 
+  no-fs:
+    name: Builds with no filesystem access (--no-default-features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The `fs` feature is the crate's promise to sandboxed, WASM and
+      # browser-hosted embedders: without it nothing here opens a file. A
+      # `#[cfg]` nobody compiles rots within a release, and every other job
+      # runs WITH the feature, so this is the only place the promise is
+      # checked. The library AND the CLI are built: the CLI's include path
+      # compiles out with the resolver, and it has to still build.
+      - run: cargo build --locked --no-default-features
+      - run: cargo build --locked --no-default-features --bin carve
+
   lints:
     name: rustfmt + clippy
     runs-on: ubuntu-latest

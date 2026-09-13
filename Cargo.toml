@@ -17,6 +17,19 @@ categories = ["parser-implementations", "text-processing"]
 # `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
 include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
+[features]
+# The filesystem resolver, ON by default. Off, the crate carries no code that
+# opens a file: a sandboxed, WASM or browser-hosted build can DROP it rather
+# than rely on the target having no filesystem to make it fail. carve-js states
+# the same property at its module boundary (the resolver is behind a `./node`
+# subpath, absent from the browser bundle); this is the Rust spelling of it.
+#
+# Nothing else in the crate reads a file, so `--no-default-features` is the
+# whole guarantee, and `tests/no_filesystem_without_the_fs_feature.rs` is what
+# keeps it true.
+default = ["fs"]
+fs = []
+
 [dependencies]
 # THESE TWO MOVE TOGETHER OR NOT AT ALL. markup5ever_rcdom is the DOM sink
 # html5ever parses into, and it depends on the exact html5ever it was cut

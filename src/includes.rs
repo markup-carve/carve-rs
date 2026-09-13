@@ -20,6 +20,8 @@
 //! ```
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+// Only the filesystem resolver deals in paths; nothing else in the pass does.
+#[cfg(feature = "fs")]
 use std::path::{Path, PathBuf};
 
 use crate::ast::{BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
@@ -1777,6 +1779,10 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
 // Filesystem resolver (spec I10)
 // ---------------------------------------------------------------------------
 
+/// Default per-target read cap for [`FileSystemResolver`]: 4 MiB.
+#[cfg(feature = "fs")]
+pub const DEFAULT_MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+
 /// Filesystem resolver with canonical root-containment checks, for TRUSTED
 /// hosts (a CLI, a static-site build). Not for untrusted input.
 ///
@@ -1786,18 +1792,28 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
 /// including `../shared/glossary.crv` is a normal book layout whose canonical
 /// target is inside the root) and TOO WEAK (a symlink inside the root pointing
 /// out of it, or an absolute path, escapes with no `..` present at all).
+#[cfg(feature = "fs")]
 pub struct FileSystemResolver {
     root_real: PathBuf,
     allow_absolute: bool,
+    max_file_bytes: Option<u64>,
 }
 
+#[cfg(feature = "fs")]
 impl FileSystemResolver {
     /// Canonicalizes `root` up front; fails if it does not exist.
     pub fn new(root: impl AsRef<Path>) -> std::io::Result<Self> {
         Ok(Self {
             root_real: std::fs::canonicalize(root)?,
             allow_absolute: false,
+            max_file_bytes: Some(DEFAULT_MAX_FILE_BYTES),
         })
+    }
+
+    /// Largest target this resolver will read. `None` removes the cap.
+    pub fn with_max_file_bytes(mut self, bytes: Option<u64>) -> Self {
+        self.max_file_bytes = bytes;
+        self
     }
 
     /// Allow absolute include paths. They are STILL subject to the same
@@ -1818,6 +1834,7 @@ impl FileSystemResolver {
     }
 }
 
+#[cfg(feature = "fs")]
 impl IncludeResolver for FileSystemResolver {
     fn resolve(&self, include_path: &str, ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
         let requested = Path::new(include_path);
@@ -1853,6 +1870,15 @@ impl IncludeResolver for FileSystemResolver {
         let real = std::fs::canonicalize(&candidate).ok()?;
         if !self.contains(&real) {
             return None;
+        }
+        // SIZE IS CHECKED BEFORE THE READ, and the expansion budget cannot
+        // stand in for it: the budget charges a target only once its source is
+        // in hand, so without a cap here one oversized file is read into
+        // memory in full before expansion refuses it.
+        if let Some(limit) = self.max_file_bytes {
+            if std::fs::metadata(&real).ok()?.len() > limit {
+                return None;
+            }
         }
         // Read through the CANONICAL path: it holds no symlink components, so
         // the check that just passed describes the bytes actually read. A

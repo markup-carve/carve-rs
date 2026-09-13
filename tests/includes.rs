@@ -1410,3 +1410,99 @@ mod rejected_directives_have_no_side_effects {
         assert_literal(source, &result);
     }
 }
+
+#[test]
+fn the_filesystem_resolver_refuses_a_target_over_its_size_cap() {
+    // The cap exists because the expansion BUDGET cannot stand in for it: the
+    // budget charges a target once its source is in hand, so an uncapped
+    // resolver reads an oversized file into memory in full and only then
+    // refuses to expand it. Here the read never happens.
+    let tmp = TempDir::new("file-cap");
+    tmp.write("main.crv", "{{ big.crv }}\n");
+    tmp.write("big.crv", &"x".repeat(4096));
+    let source = fs::read_to_string(tmp.path().join("main.crv")).unwrap();
+
+    let resolver = FileSystemResolver::new(tmp.path())
+        .expect("root exists")
+        .with_max_file_bytes(Some(1024));
+    let result = expand_with(&source, &resolver, IncludeOptions::new());
+
+    // Refused the way every other resolution failure is refused: the directive
+    // stays literal and the target is reported as an ATTEMPTED dependency, so a
+    // preview still watches the file it could not read.
+    assert!(result.html.contains("{{ big.crv }}"));
+    assert!(
+        result.rules().contains(&"include-unresolved"),
+        "{:?}",
+        result.warnings
+    );
+    assert!(result
+        .dependencies
+        .iter()
+        .any(|d| d.id == "big.crv" && !d.resolved));
+}
+
+#[test]
+fn the_size_cap_admits_a_target_under_it_and_can_be_removed() {
+    let tmp = TempDir::new("file-cap-ok");
+    tmp.write("main.crv", "{{ child.crv }}\n");
+    tmp.write("child.crv", "Small enough.\n");
+    let source = fs::read_to_string(tmp.path().join("main.crv")).unwrap();
+
+    let capped = FileSystemResolver::new(tmp.path())
+        .expect("root exists")
+        .with_max_file_bytes(Some(1024));
+    let result = expand_with(&source, &capped, IncludeOptions::new());
+    assert!(
+        result.html.contains("<p>Small enough.</p>"),
+        "{}",
+        result.html
+    );
+
+    // `None` is the documented escape hatch, and a host that passes it gets the
+    // pre-cap behavior rather than a silently different one.
+    let uncapped = FileSystemResolver::new(tmp.path())
+        .expect("root exists")
+        .with_max_file_bytes(None);
+    let result = expand_with(&source, &uncapped, IncludeOptions::new());
+    assert!(
+        result.html.contains("<p>Small enough.</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn the_default_cap_is_four_mib_and_applies_without_being_asked_for() {
+    // The DEFAULT is the half that protects a host who never read the docs, so
+    // it is asserted rather than left to the builder above.
+    assert_eq!(carve::DEFAULT_MAX_FILE_BYTES, 4 * 1024 * 1024);
+
+    let tmp = TempDir::new("file-cap-default");
+    tmp.write("main.crv", "{{ huge.crv }}\n");
+    tmp.write(
+        "huge.crv",
+        &"x".repeat(carve::DEFAULT_MAX_FILE_BYTES as usize + 1),
+    );
+    let source = fs::read_to_string(tmp.path().join("main.crv")).unwrap();
+    let result = expand_fs(&source, tmp.path(), IncludeOptions::new());
+    assert!(result.html.contains("{{ huge.crv }}"));
+
+    // THE LITERAL OUTPUT ALONE PROVES NOTHING HERE. A file this size also
+    // exceeds the expansion byte budget, so the directive stays literal with or
+    // without a cap, and asserting only on the HTML passes either way - it was
+    // written that way first and survived deleting the cap.
+    //
+    // The dependency flag is what tells the two refusals apart: `resolved` means
+    // the SOURCE WAS READ. Refused by the cap, the file is never opened and the
+    // flag is false; refused by the budget, it was read first and the flag would
+    // be true.
+    assert!(
+        result
+            .dependencies
+            .iter()
+            .any(|d| d.id == "huge.crv" && !d.resolved),
+        "the target was read before being refused, so the cap did not fire: {:?}",
+        result.dependencies
+    );
+}

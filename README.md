@@ -187,7 +187,7 @@ feature. The parser never touches the filesystem and does not know the directive
 exists, so with no resolver configured `{{ … }}` stays literal text.
 
 The CLI enables inclusion for file inputs, with the containment root defaulting
-to the **directory of the input document** — never the process working
+to the **directory of the input document**, never the process working
 directory. Stdin has no path context and therefore no inferable root, so
 directives stay literal unless `--include-root` names one:
 
@@ -206,8 +206,8 @@ carve --include-root ./book < main.crv    # required to enable includes on stdin
 ```
 
 `#section` and `@lines` are the two selection mechanisms and are mutually
-exclusive. Every failure — a missing file, binary content, both selectors, a
-cycle, the depth limit, the size budget — emits a warning on stderr and leaves
+exclusive. Every failure (a missing file, binary content, both selectors, a
+cycle, the depth limit, the size budget) emits a warning on stderr and leaves
 the directive **literal**; inclusion never silently drops a directive. A
 rejected directive has **no observable side effects**: the output is
 byte-identical to the same document with that directive written as literal text
@@ -240,7 +240,7 @@ let result = expand_includes(parse(&source), &source, &options);
 for warning in &result.warnings {
     eprintln!("{}: {}", warning.rule, warning.message);
 }
-// Every target touched, resolved or not — hosts key file watchers off this.
+// Every target touched, resolved or not: hosts key file watchers off this.
 for dependency in &result.dependencies {
     println!("{} (resolved: {})", dependency.id, dependency.resolved);
 }
@@ -255,6 +255,22 @@ exactly the same sanitization as content the author typed directly.
 
 Source-position remapping for included spans (spec I4) is not implemented in any
 engine yet; warnings carry the identity of the file they arose in instead.
+
+### Turning the filesystem off entirely
+
+`FileSystemResolver` is behind the default-on `fs` feature. Build with
+`--no-default-features` and the crate carries no code that opens a file at all,
+which is what a sandboxed, WASM or browser-hosted embedder wants: the guarantee
+is then structural rather than a matter of not configuring a resolver. The CLI's
+include path compiles out with it, so `--include-root` is refused rather than
+silently ignored. Such a build can still expand includes from a resolver the
+host writes itself (over an in-memory map, a virtual filesystem, `fetch`), since
+a resolver is just a function.
+
+`FileSystemResolver` reads at most 4 MiB per target (`DEFAULT_MAX_FILE_BYTES`),
+adjustable with `with_max_file_bytes`. The expansion byte budget cannot stand in
+for this: it charges a target only once its source is in hand, so without a cap
+one oversized file is read into memory in full before expansion refuses it.
 
 ## Building from source
 

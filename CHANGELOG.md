@@ -29,7 +29,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no file I/O: with no resolver configured the directive stays literal.
   `FileSystemResolver` provides canonicalize-then-contain path checking for
   trusted hosts, and the CLI gains `--include-root`, defaulting to the input
-  file's directory. A rejected directive has no observable side effects: the
+  file's directory, and reads at most 4 MiB per target. The filesystem resolver
+  sits behind the default-on `fs` feature, so `--no-default-features` leaves a
+  build that carries no code opening a file, for sandboxed and WASM embedders.
+  A rejected directive has no observable side effects: the
   output is byte-identical to the same document with that directive written as
   literal text from the start, so identifiers reserved while processing a child
   are released when its content does not merge. `carve fmt` preserves a
