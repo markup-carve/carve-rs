@@ -1,20 +1,31 @@
 use carve::{
-    migrate_djot, migrate_html, migrate_markdown, HtmlImportOptions, MigrationFidelity,
-    SourceFormat,
+    migrate_bbcode, migrate_djot, migrate_html, migrate_markdown, HtmlImportOptions,
+    MigrationFidelity, SourceFormat,
 };
 
 #[test]
 fn every_source_format_returns_the_same_result_shape() {
     let markdown = migrate_markdown("**strong**");
     assert_eq!(markdown.value, "*strong*\n");
-    assert_eq!(markdown.report.schema_version, 1);
+    assert_eq!(markdown.report.schema_version, 2);
     assert_eq!(markdown.report.source_format, SourceFormat::Markdown);
-    assert!(markdown.report.diagnostics.is_empty());
+    assert_eq!(
+        markdown.report.diagnostics[0].fidelity,
+        MigrationFidelity::Normalized
+    );
 
     let djot = migrate_djot("_emphasis_");
     assert_eq!(djot.value, "/emphasis/");
     assert_eq!(djot.report.source_format, SourceFormat::Djot);
-    assert!(djot.report.diagnostics.is_empty());
+    assert_eq!(djot.report.diagnostics[0].code, "syntax-normalized");
+
+    let bbcode = migrate_bbcode("[b]strong[/b]").expect("BBCode import succeeds");
+    assert_eq!(bbcode.report.schema_version, 2);
+    assert_eq!(bbcode.report.source_format, SourceFormat::Bbcode);
+    assert_eq!(
+        bbcode.report.diagnostics[0].fidelity,
+        MigrationFidelity::Normalized
+    );
 
     let html = migrate_html("<p><blink>text</blink></p>", &HtmlImportOptions::default())
         .expect("HTML import succeeds");

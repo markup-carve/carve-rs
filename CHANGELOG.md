@@ -7,6 +7,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Migration reports advance to schema version 2: `Carried` is renamed to
+  `Preserved`, `Normalized` distinguishes semantics-preserving rewrites, and
+  Markdown, Djot, and BBCode now emit normalization diagnostics.
+
 ### Fixed
 
 - A nested note ends at a definition below its own body floor, so a trailing
