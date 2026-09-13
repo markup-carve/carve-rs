@@ -363,11 +363,21 @@ fn main() -> ExitCode {
     });
     // Only pay for the expansion pass when includes could matter: an explicit
     // --include-root is a user request, otherwise the source must actually
-    // contain a directive opener. `carve fmt` / --carve is excluded on
-    // purpose - the formatter round-trips SOURCE, and inlining files into it
-    // would rewrite the author's document rather than format it.
+    // contain a directive opener. `carve fmt` / --carve is excluded by I15 -
+    // the formatter round-trips SOURCE, and inlining files into it would
+    // rewrite the author's document rather than format it.
+    //
+    // NOT `target`, which collapses `--json` onto `RenderTarget::Carve` for
+    // loss-reporting purposes. That collapse answers a different question: the
+    // AST dump publishes a TREE, not Carve source, so it expands (carve-js has
+    // `json` as its own target and expands for it too).
+    let include_target = if format == OutputFormat::Carve {
+        carve::RenderTarget::Carve
+    } else {
+        carve::RenderTarget::Html
+    };
     let want_includes = root.is_some()
-        && format != OutputFormat::Carve
+        && carve::expands_for_target(include_target)
         && (include_root.is_some() || source.contains("{{"));
 
     // The CLI's include path IS the filesystem resolver, so it compiles out with

@@ -175,6 +175,9 @@ struct RunResult {
     raw_messages: Vec<String>,
     /// Present only for `checkFmtExpandEquivalence` vectors.
     formatted_run: Option<(String, Vec<NormDep>)>,
+    /// Present only for `checkCarveTarget` vectors (I15): the Carve source this
+    /// engine produces WITH the resolver configured.
+    carve_target: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +322,7 @@ fn run_vector(vector: &Value) -> RunResult {
             dependencies: norm_deps(&result, Some(&base_real_str)),
             raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
             formatted_run: None, // filesystem vectors never set the equivalence flag
+            carve_target: None,  // nor the I15 flag: both are virtual-mode only
         };
         // `tmp` drops here, removing the tree.
     }
@@ -338,6 +342,7 @@ fn run_vector(vector: &Value) -> RunResult {
             dependencies: norm_deps(&result, None),
             raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
             formatted_run: None,
+            carve_target: None,
         };
     }
 
@@ -369,6 +374,26 @@ fn run_vector(vector: &Value) -> RunResult {
         None
     };
 
+    // I15, and routed through `expands_for_target` rather than hard-coded here:
+    // what the vector has to catch is this ENGINE deciding to expand before its
+    // writer runs, so the test reads the same predicate the CLI reads. Writing
+    // `render_carve(&parse(&entry))` instead would assert the writer twice and
+    // never see the pipeline.
+    let carve_target = if vector
+        .get("checkCarveTarget")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        let doc = if carve::expands_for_target(carve::RenderTarget::Carve) {
+            expand_includes(parse(&entry), &entry, &io).doc
+        } else {
+            parse(&entry)
+        };
+        Some(render_carve(&doc).unwrap())
+    } else {
+        None
+    };
+
     RunResult {
         html,
         fmt,
@@ -376,6 +401,7 @@ fn run_vector(vector: &Value) -> RunResult {
         dependencies: norm_deps(&result, None),
         raw_messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
         formatted_run,
+        carve_target,
     }
 }
 
@@ -443,6 +469,17 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
             "fmt:\n    expected {exp_fmt:?}\n    actual   {:?}",
             run.fmt
         ));
+    }
+    if let Some(exp_carve) = expected.get("carveTarget").and_then(Value::as_str) {
+        match run.carve_target.as_deref() {
+            Some(actual) if actual == exp_carve => {}
+            Some(actual) => diffs.push(format!(
+                "carveTarget (I15 - the carve target expanded):\n    expected {exp_carve:?}\n    actual   {actual:?}"
+            )),
+            None => diffs.push(
+                "carveTarget: the vector carries the golden but the run produced none".to_string(),
+            ),
+        }
     }
     let exp_warnings = expected_warnings(expected);
     if run.warnings != exp_warnings {

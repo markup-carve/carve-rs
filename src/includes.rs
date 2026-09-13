@@ -1775,6 +1775,21 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
     }
 }
 
+/// Whether the include pass runs for a given render target (spec I15).
+///
+/// Only the Carve target opts out, and the reason is not performance: that
+/// target writes the document back as Carve SOURCE, and expanding first returns
+/// a different document, with every child inlined and the directives gone. The
+/// writer already preserves a directive verbatim (I12); expanding before it runs
+/// takes that away by another route.
+///
+/// Lives here rather than in the CLI so the rule has ONE home, read by the CLI
+/// and by the include-conformance suite alike. carve-js kept it inline in its
+/// CLI and inlined every child on `render --carve` as a result.
+pub fn expands_for_target(target: crate::RenderTarget) -> bool {
+    !matches!(target, crate::RenderTarget::Carve)
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem resolver (spec I10)
 // ---------------------------------------------------------------------------

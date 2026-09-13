@@ -120,9 +120,9 @@ pub use html_import::{
     HtmlImportSeverity,
 };
 pub use includes::{
-    expand_includes, IncludeContext, IncludeDependency, IncludeOptions, IncludeResolved,
-    IncludeResolver, IncludeResult, IncludeWarning, DEFAULT_MAX_DEPTH, DEFAULT_MAX_RESOLVER_CALLS,
-    DEFAULT_MAX_WARNINGS,
+    expand_includes, expands_for_target, IncludeContext, IncludeDependency, IncludeOptions,
+    IncludeResolved, IncludeResolver, IncludeResult, IncludeWarning, DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_RESOLVER_CALLS, DEFAULT_MAX_WARNINGS,
 };
 #[cfg(feature = "fs")]
 pub use includes::{FileSystemResolver, DEFAULT_MAX_FILE_BYTES};
