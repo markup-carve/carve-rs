@@ -596,6 +596,9 @@ const IMPLEMENTED: &[&str] = &[
     "an-opener-at-or-past-a-description-body-s-column-closes-its-paragraph",
     "an-unterminated-fence-on-a-nested-lead-in-a-description-body-owns-its-body",
     "the-host-does-not-change-which-column-a-definition-reaches",
+    "a-column-0-line-after-a-description-hosted-note-is-a-document-sibling",
+    "a-nested-note-s-floor-is-two-columns-past-its-own-marker",
+    "a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
