@@ -31,11 +31,32 @@ pub enum MigrationFidelity {
     Dropped,
 }
 
+impl MigrationFidelity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserved => "preserved",
+            Self::Normalized => "normalized",
+            Self::Degraded => "degraded",
+            Self::Dropped => "dropped",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationConfidence {
     Exact,
     Inferred,
     Fallback,
+}
+
+impl MigrationConfidence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Inferred => "inferred",
+            Self::Fallback => "fallback",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
