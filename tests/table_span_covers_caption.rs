@@ -30,9 +30,9 @@ fn table_of(source: &str) -> carve::ast::Table {
 
 fn inline_pos(node: &InlineNode) -> Option<carve::ast::Pos> {
     match node {
-        InlineNode::Text(n) => n.pos,
-        InlineNode::Emphasis(n) => n.pos,
-        InlineNode::CaptionNumber(n) => n.pos,
+        InlineNode::Text(n) => n.pos.clone(),
+        InlineNode::Emphasis(n) => n.pos.clone(),
+        InlineNode::CaptionNumber(n) => n.pos.clone(),
         _ => None,
     }
 }
@@ -41,7 +41,7 @@ fn inline_pos(node: &InlineNode) -> Option<carve::ast::Pos> {
 fn the_table_span_reaches_the_end_of_its_caption() {
     let source = "| a |\n^ cap\n";
     let table = table_of(source);
-    let pos = table.pos.expect("the table carries no position");
+    let pos = table.pos.clone().expect("the table carries no position");
     let caption = table.caption.expect("no caption");
     let last = inline_pos(caption.last().expect("empty caption")).expect("caption inline unplaced");
 
@@ -52,7 +52,7 @@ fn the_table_span_reaches_the_end_of_its_caption() {
 fn every_caption_inline_is_inside_the_table_span() {
     let source = "|= H |\n| a |\n^ a /slanted/ caption\n";
     let table = table_of(source);
-    let pos = table.pos.expect("the table carries no position");
+    let pos = table.pos.clone().expect("the table carries no position");
 
     for inline in table.caption.expect("no caption").iter() {
         let Some(child) = inline_pos(inline) else {
@@ -72,7 +72,7 @@ fn every_caption_inline_is_inside_the_table_span() {
 #[test]
 fn a_table_without_a_caption_is_unchanged() {
     let table = table_of("| a |\n");
-    let pos = table.pos.expect("the table carries no position");
+    let pos = table.pos.clone().expect("the table carries no position");
 
     assert_eq!((pos.start_offset, pos.end_offset), (0, 5));
 }

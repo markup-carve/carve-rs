@@ -423,7 +423,7 @@ fn collect_figure_group_warnings(
                 if a.kind == "figure" {
                     if a.title.is_some() || a.label.is_some() {
                         out.push(warning(
-                            a.pos,
+                            a.pos.clone(),
                             to_byte,
                             "figure-group-opener-metadata",
                             "A `::: figure` opener carrying a quoted title or a [label] stays a \
@@ -434,7 +434,7 @@ fn collect_figure_group_warnings(
                         ));
                     } else if in_group {
                         out.push(warning(
-                            a.pos,
+                            a.pos.clone(),
                             to_byte,
                             "figure-group-nested",
                             "Composite figures do not nest (PART 9 \u{a7}4c): a bare `::: figure` \
@@ -457,7 +457,7 @@ fn collect_figure_group_warnings(
                         for node in caption.iter() {
                             if let InlineNode::CaptionNumber(n) = node {
                                 out.push(warning(
-                                    n.pos,
+                                    n.pos.clone(),
                                     to_byte,
                                     "figure-group-panel-number",
                                     "A `#` placeholder in a panel caption stays literal: panels \
@@ -519,14 +519,14 @@ fn collect_quote_fence_warnings(
         if above.fenced || !fence.fenced {
             continue;
         }
-        let (Some(above_pos), Some(opener)) = (above.pos, fence.pos) else {
+        let (Some(above_pos), Some(opener)) = (above.pos.clone(), fence.pos.clone()) else {
             continue;
         };
         if opener.start_line != above_pos.end_line + 1 {
             continue;
         }
         out.push(warning(
-            fence.pos,
+            fence.pos.clone(),
             to_byte,
             "quote-fence-ends-the-quote-above",
             "A \"::: >\" opener at the column of the quote above it ENDS that quote and opens a \
@@ -618,7 +618,7 @@ fn collect_semantic_attribute_warnings(
                 continue;
             }
             out.push(warning(
-                pos,
+                pos.clone(),
                 to_byte,
                 "semantic-attribute-value-ignored",
                 format!(
@@ -646,7 +646,7 @@ fn collect_semantic_attribute_warnings(
         // reader needs the sentence to describe their own input back to them.
         let emitted = quoted_attribute_value(name, value);
         out.push(warning(
-            pos,
+            pos.clone(),
             to_byte,
             "semantic-attribute-outside-span",
             format!(
@@ -754,66 +754,68 @@ fn walk_blocks(nodes: &[BlockNode], visit: &mut Visit<'_>) {
 fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
     match node {
         BlockNode::Heading(n) => {
-            report("heading", &n.attrs, n.pos, visit);
+            report("heading", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
         BlockNode::CitationDefinition(n) => {
-            report("citation_definition", &n.attrs, n.pos, visit);
+            report("citation_definition", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
         BlockNode::Paragraph(n) => {
-            report("paragraph", &n.attrs, n.pos, visit);
+            report("paragraph", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
-        BlockNode::CodeBlock(n) => report("code_block", &n.attrs, n.pos, visit),
+        BlockNode::CodeBlock(n) => report("code_block", &n.attrs, n.pos.clone(), visit),
         BlockNode::List(n) => {
-            report("list", &n.attrs, n.pos, visit);
+            report("list", &n.attrs, n.pos.clone(), visit);
             for item in &n.items {
-                report("list_item", &item.attrs, item.pos, visit);
+                report("list_item", &item.attrs, item.pos.clone(), visit);
                 walk_blocks(&item.children, visit);
             }
         }
         BlockNode::BlockQuote(n) => walk_block_quote(n, visit),
         BlockNode::Table(n) => walk_table(n, visit),
         BlockNode::Admonition(n) => {
-            report("admonition", &n.attrs, n.pos, visit);
+            report("admonition", &n.attrs, n.pos.clone(), visit);
             if let Some(title) = &n.title {
                 walk_inlines(title, visit);
             }
             walk_blocks(&n.children, visit);
         }
         BlockNode::Div(n) => {
-            report("div", &n.attrs, n.pos, visit);
+            report("div", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
         }
         BlockNode::LineBlock(n) => {
-            report("line_block", &n.attrs, n.pos, visit);
+            report("line_block", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
         }
         BlockNode::DefinitionList(n) => {
-            report("definition_list", &n.attrs, n.pos, visit);
+            report("definition_list", &n.attrs, n.pos.clone(), visit);
             for item in &n.items {
                 for term in &item.terms {
-                    report("definition_term", &term.attrs, term.pos, visit);
+                    report("definition_term", &term.attrs, term.pos.clone(), visit);
                     walk_inlines(&term.children, visit);
                 }
                 for def in &item.definitions {
-                    report("definition_description", &def.attrs, def.pos, visit);
+                    report("definition_description", &def.attrs, def.pos.clone(), visit);
                     walk_blocks(&def.children, visit);
                 }
             }
         }
         BlockNode::Figure(n) => {
-            report("figure", &n.attrs, n.pos, visit);
+            report("figure", &n.attrs, n.pos.clone(), visit);
             match &*n.target {
-                FigureTarget::Image(image) => report("image", &image.attrs, image.pos, visit),
+                FigureTarget::Image(image) => {
+                    report("image", &image.attrs, image.pos.clone(), visit)
+                }
                 FigureTarget::BlockQuote(quote) => walk_block_quote(quote, visit),
                 FigureTarget::Table(table) => walk_table(table, visit),
                 FigureTarget::CodeBlock(block) => {
-                    report("code_block", &block.attrs, block.pos, visit)
+                    report("code_block", &block.attrs, block.pos.clone(), visit)
                 }
                 FigureTarget::Paragraph(para) => {
-                    report("paragraph", &para.attrs, para.pos, visit);
+                    report("paragraph", &para.attrs, para.pos.clone(), visit);
                     walk_inlines(&para.children, visit);
                 }
             }
@@ -823,7 +825,7 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             }
         }
         BlockNode::FigureGroup(n) => {
-            report("figure_group", &n.attrs, n.pos, visit);
+            report("figure_group", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
             if let Some(caption) = &n.caption {
                 walk_inlines(caption, visit);
@@ -832,30 +834,30 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
         // Carries no `attrs` field and no children.
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::LinkReferenceDefinition(n) => {
-            report("link_reference_definition", &n.attrs, n.pos, visit)
+            report("link_reference_definition", &n.attrs, n.pos.clone(), visit)
         }
         // Verbatim: no `attrs` field, and its content is not markup.
         BlockNode::RawBlock(_) => {}
         BlockNode::Comment(_) => {}
         BlockNode::Extension(n) => {
-            report("block_extension", &n.attrs, n.pos, visit);
+            report("block_extension", &n.attrs, n.pos.clone(), visit);
             if let Some(summary) = &n.summary {
                 walk_inlines(summary, visit);
             }
             walk_blocks(&n.children, visit);
         }
-        BlockNode::BlockImage(n) => report("image", &n.attrs, n.pos, visit),
-        BlockNode::ThematicBreak(n) => report("thematic_break", &n.attrs, n.pos, visit),
+        BlockNode::BlockImage(n) => report("image", &n.attrs, n.pos.clone(), visit),
+        BlockNode::ThematicBreak(n) => report("thematic_break", &n.attrs, n.pos.clone(), visit),
     }
 }
 
 fn walk_block_quote(n: &BlockQuote, visit: &mut Visit<'_>) {
-    report("block_quote", &n.attrs, n.pos, visit);
+    report("block_quote", &n.attrs, n.pos.clone(), visit);
     walk_blocks(&n.children, visit);
 }
 
 fn walk_table(n: &Table, visit: &mut Visit<'_>) {
-    report("table", &n.attrs, n.pos, visit);
+    report("table", &n.attrs, n.pos.clone(), visit);
     if let Some(caption) = &n.caption {
         walk_inlines(caption, visit);
     }
@@ -863,9 +865,9 @@ fn walk_table(n: &Table, visit: &mut Visit<'_>) {
         walk_inlines(short, visit);
     }
     for row in &n.rows {
-        report("table_row", &row.attrs, row.pos, visit);
+        report("table_row", &row.attrs, row.pos.clone(), visit);
         for cell in &row.cells {
-            report("table_cell", &cell.attrs, cell.pos, visit);
+            report("table_cell", &cell.attrs, cell.pos.clone(), visit);
             walk_inlines(&cell.children, visit);
         }
     }
@@ -894,25 +896,25 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}
         InlineNode::Emphasis(n) => {
-            report(emphasis_type(n.kind), &n.attrs, n.pos, visit);
+            report(emphasis_type(n.kind), &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
-        InlineNode::Code(n) => report("code", &n.attrs, n.pos, visit),
+        InlineNode::Code(n) => report("code", &n.attrs, n.pos.clone(), visit),
         InlineNode::Link(n) => {
-            report("link", &n.attrs, n.pos, visit);
+            report("link", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
-        InlineNode::Image(n) => report("image", &n.attrs, n.pos, visit),
+        InlineNode::Image(n) => report("image", &n.attrs, n.pos.clone(), visit),
         InlineNode::Span(n) => {
-            report("span", &n.attrs, n.pos, visit);
+            report("span", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
-        InlineNode::Math(n) => report("math", &n.attrs, n.pos, visit),
-        InlineNode::LiteralInline(n) => report("literal_inline", &n.attrs, n.pos, visit),
-        InlineNode::Symbol(n) => report("symbol", &n.attrs, n.pos, visit),
-        InlineNode::AutoLink(n) => report("autolink", &n.attrs, n.pos, visit),
-        InlineNode::Mention(n) => report("mention", &n.attrs, n.pos, visit),
-        InlineNode::Tag(n) => report("tag", &n.attrs, n.pos, visit),
+        InlineNode::Math(n) => report("math", &n.attrs, n.pos.clone(), visit),
+        InlineNode::LiteralInline(n) => report("literal_inline", &n.attrs, n.pos.clone(), visit),
+        InlineNode::Symbol(n) => report("symbol", &n.attrs, n.pos.clone(), visit),
+        InlineNode::AutoLink(n) => report("autolink", &n.attrs, n.pos.clone(), visit),
+        InlineNode::Mention(n) => report("mention", &n.attrs, n.pos.clone(), visit),
+        InlineNode::Tag(n) => report("tag", &n.attrs, n.pos.clone(), visit),
         InlineNode::CitationGroup(n) => {
             for item in &n.items {
                 for part in [&item.prefix, &item.locator, &item.suffix]
@@ -924,7 +926,7 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
             }
         }
         InlineNode::Extension(n) => {
-            report("inline_extension", &n.attrs, n.pos, visit);
+            report("inline_extension", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
         InlineNode::Footnote(n) => {
@@ -933,17 +935,17 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
             } else {
                 "footnote_ref"
             };
-            report(node_type, &n.attrs, n.pos, visit);
+            report(node_type, &n.attrs, n.pos.clone(), visit);
             if let Some(inline) = &n.inline {
                 walk_inlines(inline, visit);
             }
         }
         InlineNode::CriticInsert(n) => {
-            report("insert", &n.attrs, n.pos, visit);
+            report("insert", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
         InlineNode::CriticDelete(n) => {
-            report("delete", &n.attrs, n.pos, visit);
+            report("delete", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
     }

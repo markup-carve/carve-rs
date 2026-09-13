@@ -751,8 +751,8 @@ fn write_footnote_def(
     w.field("label", |out| write_string(out, label));
     w.field("children", |out| write_blocks(out, children));
     let pos = match def_pos
-        .copied()
-        .or_else(|| first_block_pos(children).copied())
+        .cloned()
+        .or_else(|| first_block_pos(children).cloned())
     {
         Some(mut pos) => {
             // THE SAME FUNCTION the parser ends every other closerless
@@ -760,7 +760,7 @@ fn write_footnote_def(
             // This one was a widen and the parser's was a widen, so both agreed
             // and both were half the rule; an ingested definition (§6) reaches
             // only this one, so a copy of it has to end where the parse did.
-            let last = children.iter().rev().find_map(block_pos).copied();
+            let last = children.iter().rev().find_map(block_pos).cloned();
             crate::parse::end_at_last_placed_child(&mut pos, last);
             Some(pos)
         }
@@ -1316,6 +1316,7 @@ fn encode_inline_task<'a>(
                     end_column: p.end_column.saturating_sub(2),
                     start_offset: p.start_offset + 2,
                     end_offset: p.end_offset.saturating_sub(2),
+                    file: None,
                 });
                 tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                     let mut inner = Writer { out, first: false };
@@ -1955,6 +1956,7 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
                     end_column: p.end_column.saturating_sub(2),
                     start_offset: p.start_offset + 2,
                     end_offset: p.end_offset.saturating_sub(2),
+                    file: None,
                 });
                 w.field("children", |out| {
                     out.push('[');
@@ -3314,6 +3316,7 @@ fn optional_pos(obj: &Map<String, Json>, node_type: &str) -> Result<Option<Pos>,
         end_column: required_usize(pos, node_type, "endColumn")?,
         start_offset: required_usize(pos, node_type, "startOffset")?,
         end_offset: required_usize(pos, node_type, "endOffset")?,
+        file: None,
     }))
 }
 

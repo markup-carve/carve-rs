@@ -25,7 +25,7 @@ fn caption_of(source: &str) -> Vec<InlineNode> {
 
 fn text_of(node: &InlineNode) -> Option<(String, Option<carve::ast::Pos>)> {
     match node {
-        InlineNode::Text(t) => Some((t.value.clone(), t.pos)),
+        InlineNode::Text(t) => Some((t.value.clone(), t.pos.clone())),
         _ => None,
     }
 }

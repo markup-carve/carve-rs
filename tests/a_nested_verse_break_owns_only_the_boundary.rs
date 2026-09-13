@@ -52,7 +52,7 @@ fn collect_blocks(blocks: &[BlockNode], out: &mut Vec<Option<Pos>>) {
 fn collect_inlines(inlines: &[InlineNode], out: &mut Vec<Option<Pos>>) {
     for inline in inlines {
         match inline {
-            InlineNode::HardBreak(b) => out.push(b.pos),
+            InlineNode::HardBreak(b) => out.push(b.pos.clone()),
             InlineNode::Emphasis(n) => collect_inlines(&n.children, out),
             InlineNode::Link(n) => collect_inlines(&n.children, out),
             InlineNode::Span(n) => collect_inlines(&n.children, out),
@@ -69,7 +69,9 @@ fn a_nested_break_after_a_comment_line_ends_where_the_comment_does() {
     let spans = breaks("::: |\n*a\n%% secret\nc*\n:::\n");
 
     assert_eq!(spans.len(), 2, "expected two breaks, got {spans:?}");
-    let after = spans[1].expect("break after the comment line placed");
+    let after = spans[1]
+        .clone()
+        .expect("break after the comment line placed");
 
     assert_eq!(after.start_line, 3);
     assert_eq!(after.start_column, 10);
@@ -92,8 +94,10 @@ fn a_nested_break_does_not_reach_into_the_comment_it_follows() {
     let mut walk = |inlines: &[InlineNode]| {
         for inline in inlines {
             match inline {
-                InlineNode::Comment(c) => comment = c.pos,
-                InlineNode::HardBreak(b) if comment.is_some() && after.is_none() => after = b.pos,
+                InlineNode::Comment(c) => comment = c.pos.clone(),
+                InlineNode::HardBreak(b) if comment.is_some() && after.is_none() => {
+                    after = b.pos.clone()
+                }
                 _ => {}
             }
         }
@@ -119,7 +123,7 @@ fn a_nested_break_does_not_reach_into_the_comment_it_follows() {
 #[test]
 fn the_break_before_the_comment_line_is_unchanged() {
     let spans = breaks("::: |\n*a\n%% secret\nc*\n:::\n");
-    let before = spans[0].expect("first break placed");
+    let before = spans[0].clone().expect("first break placed");
 
     assert_eq!(before.start_line, 2);
     assert_eq!(before.start_column, 3);
@@ -135,10 +139,10 @@ fn a_nested_break_on_an_ordinary_line_is_unchanged() {
     let spans = breaks("::: |\n*a\nb\nc*\n:::\n");
 
     assert_eq!(spans.len(), 2, "expected two breaks, got {spans:?}");
-    let first = spans[0].expect("first break placed");
+    let first = spans[0].clone().expect("first break placed");
     assert_eq!((first.start_line, first.start_column), (2, 3));
     assert_eq!((first.end_line, first.end_column), (3, 1));
-    let second = spans[1].expect("second break placed");
+    let second = spans[1].clone().expect("second break placed");
     assert_eq!((second.start_line, second.start_column), (3, 2));
     assert_eq!((second.end_line, second.end_column), (4, 1));
 }
@@ -150,8 +154,12 @@ fn consecutive_emptied_lines_each_end_at_their_own_comment() {
     let spans = breaks("::: |\n*a\n%% one\n%% two\nc*\n:::\n");
 
     assert_eq!(spans.len(), 3, "expected three breaks, got {spans:?}");
-    let after_first = spans[1].expect("break after the first comment placed");
+    let after_first = spans[1]
+        .clone()
+        .expect("break after the first comment placed");
     assert_eq!((after_first.start_line, after_first.start_column), (3, 7));
-    let after_second = spans[2].expect("break after the second comment placed");
+    let after_second = spans[2]
+        .clone()
+        .expect("break after the second comment placed");
     assert_eq!((after_second.start_line, after_second.start_column), (4, 7));
 }

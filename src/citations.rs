@@ -628,6 +628,7 @@ fn definition_pos(line: &[InlineNode], raw: &str) -> Option<Pos> {
         end_column: last.end_column,
         start_offset: start.2,
         end_offset: last.end_offset,
+        file: None,
     })
 }
 

@@ -26,7 +26,7 @@ fn breaks(source: &str) -> Vec<Option<Pos>> {
                     if let BlockNode::Paragraph(p) = child {
                         for inline in &p.children {
                             if let InlineNode::HardBreak(b) = inline {
-                                out.push(b.pos);
+                                out.push(b.pos.clone());
                             }
                         }
                     }
@@ -53,7 +53,7 @@ fn the_break_spans_the_newline_it_stands_for() {
     // `tab\tgap` is 7 characters, so the newline ending it starts at column 8
     // and the next line begins at column 1. Tab expansion must not move either.
     let spans = breaks("::: |\ntab\tgap\nwide\t\tgap\n\tlead\n:::\n");
-    let first = spans[0].expect("first break placed");
+    let first = spans[0].clone().expect("first break placed");
 
     assert_eq!(first.start_line, 2);
     assert_eq!(first.start_column, 8);
@@ -61,7 +61,7 @@ fn the_break_spans_the_newline_it_stands_for() {
     assert_eq!(first.end_column, 1);
 
     // `wide\t\tgap` is 9 characters.
-    let second = spans[1].expect("second break placed");
+    let second = spans[1].clone().expect("second break placed");
     assert_eq!(second.start_line, 3);
     assert_eq!(second.start_column, 10);
     assert_eq!(second.end_line, 4);
@@ -72,7 +72,7 @@ fn the_break_spans_the_newline_it_stands_for() {
 fn a_stanza_without_tabs_is_unchanged() {
     // This one was already placed by the anchors; the fill must not move it.
     let spans = breaks("::: |\nplain gap\nmore gap\n:::\n");
-    let only = spans[0].expect("break placed");
+    let only = spans[0].clone().expect("break placed");
 
     assert_eq!(only.start_line, 2);
     assert_eq!(only.start_column, 10);
@@ -115,7 +115,9 @@ fn a_break_after_a_comment_line_ends_where_the_comment_does() {
     let spans = breaks("::: |\na\n%% secret\nc\n:::\n");
 
     assert_eq!(spans.len(), 2, "expected two breaks, got {spans:?}");
-    let after = spans[1].expect("break after the comment line placed");
+    let after = spans[1]
+        .clone()
+        .expect("break after the comment line placed");
 
     // `%% secret` is 9 characters, so the newline ending it starts at column 10.
     assert_eq!(after.start_line, 3);

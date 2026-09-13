@@ -5923,7 +5923,7 @@ fn take_candidate_marks(blocks: &mut [BlockNode], kept: &mut [bool]) {
 }
 
 fn take_candidate_mark(paragraph: &mut Paragraph, kept: &mut [bool]) {
-    let Some(pos) = paragraph.pos else {
+    let Some(ref pos) = paragraph.pos else {
         return;
     };
     let Some(index) = pos.start_offset.checked_sub(1) else {

@@ -152,12 +152,15 @@ fn a_published_run_beside_a_reference_selects_exactly_its_own_text() {
 
     let selects = |node: &InlineNode| -> (String, String) {
         let (value, pos) = match node {
-            InlineNode::Text(t) => (t.value.clone(), t.pos.expect("a run keeps its span")),
+            InlineNode::Text(t) => (
+                t.value.clone(),
+                t.pos.clone().expect("a run keeps its span"),
+            ),
             InlineNode::Link(l) => (
                 l.raw_ref
                     .clone()
                     .expect("an unresolved reference keeps its source"),
-                l.pos.expect("a link keeps its span"),
+                l.pos.clone().expect("a link keeps its span"),
             ),
             other => panic!("unexpected node {other:?}"),
         };
@@ -171,7 +174,7 @@ fn a_published_run_beside_a_reference_selects_exactly_its_own_text() {
 
     match &inlines[0] {
         InlineNode::Text(t) => {
-            let pos = t.pos.expect("a run keeps its span");
+            let pos = t.pos.clone().expect("a run keeps its span");
             assert_eq!(pos.start_offset, 0);
             assert_eq!(pos.start_column, 1);
         }

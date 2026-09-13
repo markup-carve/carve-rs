@@ -58,7 +58,7 @@ fn description_hosted_list(src: &str) -> carve::ast::List {
 #[test]
 fn a_description_hosted_list_and_item_anchor_on_the_marker() {
     let list = description_hosted_list(SIBLING_4);
-    let list_pos = list.pos.expect("the list carries a position");
+    let list_pos = list.pos.clone().expect("the list carries a position");
     assert_eq!(
         (
             list_pos.start_line,
@@ -74,7 +74,7 @@ fn a_description_hosted_list_and_item_anchor_on_the_marker() {
     );
 
     let item = list.items.first().expect("the list has one item");
-    let item_pos = item.pos.expect("the list item carries a position");
+    let item_pos = item.pos.clone().expect("the list item carries a position");
     assert_eq!(
         (
             item_pos.start_line,

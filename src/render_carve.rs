@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
 use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
+use std::collections::BTreeSet;
 use std::collections::{HashMap, HashSet};
 
 /// A definition the author wrote ON a definition list's description line.
@@ -2291,6 +2292,82 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     def_lines.join("\n")
 }
 
+/// An inline sequence with every include directive isolated into a single text
+/// node, and the indices of those nodes.
+struct PreparedInlines {
+    nodes: Vec<InlineNode>,
+    verbatim: BTreeSet<usize>,
+}
+
+/// Split a run so each shape-well-formed include directive is exactly one node,
+/// or `None` when the sequence holds none - the common case, kept clone-free.
+///
+/// Without this the writer escapes a directive like any other punctuation-
+/// bearing text. That still renders as the same literal text, which is exactly
+/// why the formatter's round-trip invariant never caught it, but it destroys
+/// the include: nothing looks wrong until a resolver runs and the chapters have
+/// silently vanished.
+///
+/// Isolating the directive into its own NODE, rather than overriding a rendered
+/// string, keeps the writer's own escaping in charge of everything that is not
+/// a directive - the prose either side takes the ordinary path, with the
+/// ordinary neighbour context.
+///
+/// The run split itself is `includes::split_run_directives`, so the writer and
+/// the expander cannot disagree about what a directive is.
+fn isolate_directives(nodes: &[InlineNode]) -> Option<PreparedInlines> {
+    if !nodes
+        .iter()
+        .any(|n| matches!(n, InlineNode::Text(t) if t.value.contains("{{")))
+    {
+        return None;
+    }
+
+    let mut out: Vec<InlineNode> = Vec::with_capacity(nodes.len());
+    let mut verbatim = BTreeSet::new();
+    let mut found = false;
+    let mut i = 0usize;
+    while i < nodes.len() {
+        if !crate::includes::is_run_node(&nodes[i]) {
+            out.push(nodes[i].clone());
+            i += 1;
+            continue;
+        }
+        let mut end = i;
+        while end < nodes.len() && crate::includes::is_run_node(&nodes[end]) {
+            end += 1;
+        }
+        match crate::includes::split_run_directives(&nodes[i..end]) {
+            Some(pieces) => {
+                found = true;
+                for piece in pieces {
+                    match piece {
+                        crate::includes::RunPiece::Directive(src) => {
+                            // Carried on a text node so the writer's loop sees
+                            // one shape; the index marks it for verbatim emit.
+                            verbatim.insert(out.len());
+                            out.push(InlineNode::Text(crate::ast::Text {
+                                value: src,
+                                pos: None,
+                            }));
+                        }
+                        crate::includes::RunPiece::Nodes(run) => out.extend(run),
+                    }
+                }
+            }
+            None => out.extend_from_slice(&nodes[i..end]),
+        }
+        i = end;
+    }
+    if !found {
+        return None;
+    }
+    Some(PreparedInlines {
+        nodes: out,
+        verbatim,
+    })
+}
+
 fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
     render_inlines_with_caption(nodes, ctx, false)
 }
@@ -2298,13 +2375,38 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
 fn render_inlines_with_caption(
     nodes: &[InlineNode],
     ctx: &mut CarveContext,
-    mut caption_can_open: bool,
+    caption_can_open: bool,
 ) -> String {
     if ctx.inline_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
         return String::new();
     }
     ctx.inline_depth += 1;
+    // Isolate any include directive into its own node FIRST, so the loop below
+    // needs to know nothing about them: a directive is one node it emits
+    // verbatim, and everything around it takes the ordinary escaping path with
+    // the ordinary neighbour context.
+    let prepared = isolate_directives(nodes);
+    let out = match prepared {
+        Some(prepared) => {
+            render_nodes_with_verbatim(&prepared.nodes, ctx, caption_can_open, &prepared.verbatim)
+        }
+        None => render_nodes(nodes, ctx, caption_can_open),
+    };
+    ctx.inline_depth -= 1;
+    out
+}
+
+fn render_nodes(nodes: &[InlineNode], ctx: &mut CarveContext, caption_can_open: bool) -> String {
+    render_nodes_with_verbatim(nodes, ctx, caption_can_open, &BTreeSet::new())
+}
+
+fn render_nodes_with_verbatim(
+    nodes: &[InlineNode],
+    ctx: &mut CarveContext,
+    mut caption_can_open: bool,
+    verbatim: &BTreeSet<usize>,
+) -> String {
     let mut out = String::new();
     let mut first_line = true;
     let mut line_node_count = 0usize;
@@ -2329,15 +2431,26 @@ fn render_inlines_with_caption(
             ctx.next_unit_escape_mode(),
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
-        let rendered = render_inline(
-            node,
-            ctx,
-            prev,
-            next,
-            caption_can_open,
-            opens_a_note,
-            opens_verbatim,
-        );
+        let rendered = if verbatim.contains(&idx) {
+            // The directive's own source, as the author wrote it: no escaping,
+            // and no smart typography either, so a quoted path keeps its
+            // straight quotes instead of being curled into a path that names a
+            // different file.
+            match node {
+                InlineNode::Text(t) => t.value.clone(),
+                _ => unreachable!("only a text node is marked verbatim"),
+            }
+        } else {
+            render_inline(
+                node,
+                ctx,
+                prev,
+                next,
+                caption_can_open,
+                opens_a_note,
+                opens_verbatim,
+            )
+        };
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -2407,7 +2520,6 @@ fn render_inlines_with_caption(
             caption_can_open = false;
         }
     }
-    ctx.inline_depth -= 1;
     out
 }
 

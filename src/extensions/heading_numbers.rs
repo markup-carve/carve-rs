@@ -364,7 +364,7 @@ fn rewrite_links_inlines(
                         raw_ref: None,
                         from_crossref: true,
                         from_heading_reference: false,
-                        pos: c.pos,
+                        pos: c.pos.clone(),
                     });
                 }
             }

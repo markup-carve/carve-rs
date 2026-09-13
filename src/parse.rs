@@ -614,7 +614,7 @@ fn parse_with_options_mode_and_index(
             let last = footnote_defs
                 .get(label)
                 .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
-                .copied();
+                .cloned();
             end_at_last_placed_child(pos, last);
         }
     }
@@ -1510,6 +1510,7 @@ fn extract_footnote_defs(
                             end_column: raw_def_line.chars().count() + 1,
                             start_offset: 0,
                             end_offset: 0,
+                            file: None,
                         });
                 }
             }
@@ -3372,6 +3373,7 @@ fn append_link_reference_definitions(
                     end_column: text.chars().count() + 1,
                     start_offset: start,
                     end_offset: start + text.chars().count(),
+                    file: None,
                 })
             }
             _ => None,
@@ -3522,6 +3524,7 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
         // Columns and offsets are counted in CODEPOINTS (PART 12 section 4).
         end_column: block[last_line_start..].chars().count() + 1,
         end_offset: block.chars().count(),
+        file: None,
     }
 }
 
@@ -4093,6 +4096,7 @@ fn item_paragraph_span(
         end_column: document_column(cur.source_col(end_at).unwrap_or(0), end_width),
         start_offset: 0,
         end_offset: 0,
+        file: None,
     })
 }
 
@@ -4186,6 +4190,7 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
         end_column: document_column(end_stripped, width),
         start_offset: 0,
         end_offset: 0,
+        file: None,
     })
 }
 
@@ -4293,7 +4298,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                             .iter()
                             .rev()
                             .find_map(crate::ast_json::block_pos)
-                            .copied(),
+                            .cloned(),
                     ) {
                         pos.end_line = last.end_line;
                         pos.end_column = last.end_column;
@@ -4394,7 +4399,7 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                         .iter()
                         .rev()
                         .find_map(crate::ast_json::block_pos)
-                        .copied();
+                        .cloned();
                     if let Some(pos) = q.pos.as_mut() {
                         narrow_container_end(pos, last, lines, true);
                     }
@@ -4431,7 +4436,7 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                             .iter()
                             .rev()
                             .find_map(crate::ast_json::block_pos)
-                            .copied();
+                            .cloned();
                         if let Some(pos) = def.pos.as_mut() {
                             // A description whose only content hoisted to the
                             // root has no placed child; its span is then its own
@@ -4455,7 +4460,7 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                         .iter()
                         .rev()
                         .find_map(crate::ast_json::block_pos)
-                        .copied();
+                        .cloned();
                     if let Some(pos) = item.pos.as_mut() {
                         narrow_container_end(pos, last, lines, false);
                     }
@@ -4470,13 +4475,13 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                     .iter()
                     .rev()
                     .find_map(crate::ast_json::block_pos)
-                    .copied();
+                    .cloned();
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, true);
                 }
             }
             BlockNode::List(n) => {
-                let last = n.items.iter().rev().find_map(|item| item.pos);
+                let last = n.items.iter().rev().find_map(|item| item.pos.clone());
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, false);
                 }
@@ -4502,8 +4507,8 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                     item.definitions
                         .iter()
                         .rev()
-                        .find_map(|def| def.pos)
-                        .or_else(|| item.terms.iter().rev().find_map(|term| term.pos))
+                        .find_map(|def| def.pos.clone())
+                        .or_else(|| item.terms.iter().rev().find_map(|term| term.pos.clone()))
                 });
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, false);
@@ -4710,7 +4715,7 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
 
 fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
     let mut cloned = node.clone();
-    inline_pos_mut(&mut cloned).copied()
+    inline_pos_mut(&mut cloned).cloned()
 }
 
 /// Codepoint offset of the start of each line.
@@ -5011,6 +5016,7 @@ fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) 
         end_column: document_column(end_stripped, width),
         start_offset: 0,
         end_offset: 0,
+        file: None,
     })
 }
 
@@ -5583,7 +5589,7 @@ fn append_item_children(
     if !widen_list || item != last {
         return;
     }
-    let Some(end) = list.items[item].pos else {
+    let Some(ref end) = list.items[item].pos else {
         return;
     };
     if let Some(pos) = list.pos.as_mut() {
@@ -9316,8 +9322,8 @@ fn parse_continuation_block(
 /// range would start or stop somewhere arbitrary - so a list whose first or last
 /// item is unplaced stays unplaced itself rather than reporting a partial span.
 fn span_across_items(items: &[ListItem]) -> Option<Pos> {
-    let first = items.first()?.pos?;
-    let last = items.last()?.pos?;
+    let first = items.first()?.pos.clone()?;
+    let last = items.last()?.pos.clone()?;
     Some(Pos {
         end_line: last.end_line,
         end_column: last.end_column,
@@ -9350,7 +9356,7 @@ fn widen_items_over_children(items: &mut [ListItem]) {
 /// rule over that item is what keeps the span honest without waiting for the
 /// rest of the list.
 fn widen_item_over_children(item: &mut ListItem) {
-    let Some(mut pos) = item.pos else { return };
+    let Some(ref mut pos) = item.pos else { return };
     let mut last_owned: Option<Pos> = None;
     for child in &item.children {
         let Some(child_pos) = crate::ast_json::block_pos(child) else {
@@ -9361,12 +9367,12 @@ fn widen_item_over_children(item: &mut ListItem) {
         // comparing offsets here compares two zeroes and widens nothing.
         let is_later = match last_owned {
             None => true,
-            Some(last) => {
+            Some(ref last) => {
                 (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
             }
         };
         if is_later {
-            last_owned = Some(*child_pos);
+            last_owned = Some(child_pos.clone());
         }
     }
     if let Some(last) = last_owned {
@@ -9374,7 +9380,7 @@ fn widen_item_over_children(item: &mut ListItem) {
         pos.end_column = last.end_column;
         pos.end_offset = last.end_offset;
     }
-    item.pos = Some(pos);
+    item.pos = Some(pos.clone());
 }
 
 fn parse_list(
@@ -14007,6 +14013,7 @@ fn parse_table_row(
                     // Filled from the line table once the document is parsed.
                     start_offset: 0,
                     end_offset: 0,
+                    file: None,
                 });
             }
             cell
@@ -15677,7 +15684,9 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
                     // `hard_break()` here threw it away, and the loss was
                     // invisible: the two render identically in this block, so
                     // only the tree showed it.
-                    *node = InlineNode::HardBreak(Break { pos: brk.pos });
+                    *node = InlineNode::HardBreak(Break {
+                        pos: brk.pos.clone(),
+                    });
                 }
             }
         }
@@ -16554,6 +16563,7 @@ fn mapped_span_of(nested: &MappedSource, start: usize, end: usize, lines: &[&str
         end_column: (end_stripped.max(0) as usize) + width + 1,
         start_offset: 0,
         end_offset: 0,
+        file: None,
     })
 }
 
@@ -17047,6 +17057,7 @@ impl<'a> InlinePositionMap<'a> {
             end_column: document_column(end_stripped, self.byte_column[end]),
             start_offset: 0,
             end_offset: 0,
+            file: None,
         })
     }
 }
@@ -17097,7 +17108,9 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
 /// PART 12 section 4 requires us to omit item positions in that case rather
 /// than inventing offsets. Single-line groups are contiguous by construction.
 fn position_citation_items(group: &mut CitationGroup) {
-    let Some(base) = group.pos else { return };
+    let Some(base) = group.pos.clone() else {
+        return;
+    };
     if base.start_line != base.end_line {
         return;
     }
@@ -17121,6 +17134,7 @@ fn position_citation_items(group: &mut CitationGroup) {
             end_column: base.start_column + end_chars,
             start_offset: base.start_offset + start_chars,
             end_offset: base.start_offset + end_chars,
+            file: None,
         });
         cursor += part.len() + 1;
     }
@@ -20213,7 +20227,9 @@ fn replace_abbreviations_in_text(
     // Chars consumed so far, which is the offset of the NEXT piece.
     let mut chars_done = 0usize;
     let span_from = |start: usize, len: usize| -> Option<Pos> {
-        let p = anchor?;
+        // By reference: `Pos` is no longer `Copy`, and this closure runs
+        // once per piece.
+        let p = anchor.as_ref()?;
         Some(Pos {
             start_line: p.start_line,
             end_line: p.start_line,
@@ -20221,6 +20237,7 @@ fn replace_abbreviations_in_text(
             end_column: p.start_column + start + len,
             start_offset: p.start_offset + start,
             end_offset: p.start_offset + start + len,
+            file: None,
         })
     };
     let mut out = Vec::new();
@@ -20503,14 +20520,14 @@ fn strip_non_authored(nodes: &mut Vec<InlineNode>) {
             InlineNode::Abbreviation(a) => {
                 *node = InlineNode::Text(Text {
                     value: std::mem::take(&mut a.abbr),
-                    pos: a.pos,
+                    pos: a.pos.clone(),
                 });
                 continue;
             }
             InlineNode::CitationGroup(g) => {
                 *node = InlineNode::Text(Text {
                     value: std::mem::take(&mut g.raw),
-                    pos: g.pos,
+                    pos: g.pos.clone(),
                 });
                 continue;
             }
@@ -21841,7 +21858,7 @@ fn coalesce_inlines(nodes: &mut Vec<InlineNode>) {
         let (InlineNode::Text(current), InlineNode::Text(previous)) = (current, previous) else {
             return false;
         };
-        previous.pos = merged_text_pos(previous.pos, current.pos);
+        previous.pos = merged_text_pos(previous.pos.clone(), current.pos.clone());
         previous.value.push_str(&current.value);
         true
     });
@@ -21874,7 +21891,7 @@ fn merged_text_pos(left: Option<Pos>, right: Option<Pos>) -> Option<Pos> {
 /// one delimiter on each side (`<...>`). Anything else - a `mailto:` the author
 /// wrote out, an unusual spelling - yields None rather than a guess.
 fn unwrapped_autolink_pos(link: &AutoLink, display: &str) -> Option<Pos> {
-    let pos = link.pos?;
+    let pos = link.pos.clone()?;
     let width = pos.end_column.checked_sub(pos.start_column)?;
     let shown = display.chars().count();
 

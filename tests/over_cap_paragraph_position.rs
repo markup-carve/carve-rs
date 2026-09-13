@@ -90,8 +90,8 @@ fn deepest_paragraph(doc: &carve::Document) -> carve::Paragraph {
 fn assert_contains(parent: &Pos, children: &[InlineNode]) {
     for child in children {
         let child_pos = match child {
-            InlineNode::Text(t) => t.pos,
-            InlineNode::SoftBreak(b) => b.pos,
+            InlineNode::Text(t) => t.pos.clone(),
+            InlineNode::SoftBreak(b) => b.pos.clone(),
             _ => None,
         };
         if let Some(c) = child_pos {
@@ -159,12 +159,12 @@ fn every_inline_in_the_over_cap_paragraph_is_placed_and_contained() {
         for child in &para.children {
             match child {
                 InlineNode::Text(t) => {
-                    let p = require(t.pos, "a text run in the over-cap paragraph");
+                    let p = require(t.pos.clone(), "a text run in the over-cap paragraph");
                     assert_eq!(slice(&src, &p), t.value, "a text span must slice to itself");
                     texts += 1;
                 }
                 InlineNode::SoftBreak(b) => {
-                    require(b.pos, "a soft break in the over-cap paragraph");
+                    require(b.pos.clone(), "a soft break in the over-cap paragraph");
                     breaks += 1;
                 }
                 other => panic!("unexpected inline in the flattened run: {other:?}"),

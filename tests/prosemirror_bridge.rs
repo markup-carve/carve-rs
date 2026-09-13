@@ -827,10 +827,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // contain. All 18 lossy joiners report the same single cause `soft_break` -
     // the 442 pattern, a folded marker leaving a multi-line paragraph - so no
     // new KIND of loss appeared.
-    // The pin at carve 1dfbd60 adds nine documents across three corpus rulings.
-    // With the same engine, five join the strict bucket and four join the lossy
-    // bucket; no existing document changes buckets: 1344/341 becomes 1349/345.
-    const STRICT: usize = 1349;
+    // The include-directive core pin is strict: without a resolver, the bridge
+    // sees ordinary literal text. It raises the previous 1349 strict floor by one.
+    const STRICT: usize = 1350;
     const LOSSY: usize = 345;
     assert!(
         covered >= STRICT,

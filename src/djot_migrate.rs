@@ -1104,7 +1104,7 @@ fn table_continuation_lines(source: &str) -> HashSet<usize> {
 
     fn visit_table(table: &crate::ast::Table, lines: &mut HashSet<usize>) {
         for row in &table.rows {
-            if let Some(pos) = row.pos {
+            if let Some(pos) = row.pos.clone() {
                 lines.extend((pos.start_line + 1)..=pos.end_line);
             }
         }

@@ -25,8 +25,8 @@ fn inlines(source: &str) -> Vec<InlineNode> {
 
 fn span_of(node: &InlineNode) -> Option<carve::ast::Pos> {
     match node {
-        InlineNode::Text(t) => t.pos,
-        InlineNode::Abbreviation(a) => a.pos,
+        InlineNode::Text(t) => t.pos.clone(),
+        InlineNode::Abbreviation(a) => a.pos.clone(),
         _ => None,
     }
 }
