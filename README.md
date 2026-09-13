@@ -256,6 +256,25 @@ exactly the same sanitization as content the author typed directly.
 Source-position remapping for included spans (spec I4) is not implemented in any
 engine yet; warnings carry the identity of the file they arose in instead.
 
+### One self-contained file
+
+`carve flatten` writes the document back as Carve with every include expanded in
+place - the deliberate opposite of `carve fmt`, which leaves directives alone so
+formatting returns the author's document. Flattening is for handing the document
+to something that has no filesystem behind it: a web editor, a paste box, a
+colleague.
+
+```bash
+carve flatten book/main.crv > one-file.crv
+carve flatten --include-root ./book < main.crv
+```
+
+Two things it changes beyond inlining, both reported on stderr: the output is
+CANONICAL Carve, so formatting is normalized rather than preserved, and
+colliding heading ids and footnote labels are renamed (two files that were never
+in one document together can each define `intro`). The renames are written into
+the source, so the flattened file renders exactly like the expanded original.
+
 ### Turning the filesystem off entirely
 
 `FileSystemResolver` is behind the default-on `fs` feature. Build with

@@ -18,6 +18,7 @@ enum OutputFormat {
 enum Command {
     Render,
     Fmt,
+    Flatten,
 }
 
 /// The stamp modes answer a question about the document rather than rendering
@@ -99,6 +100,10 @@ fn main() -> ExitCode {
         match arg.as_str() {
             "fmt" if command == Command::Render && input_paths.is_empty() => {
                 command = Command::Fmt;
+                format = OutputFormat::Carve;
+            }
+            "flatten" if command == Command::Render && input_paths.is_empty() => {
+                command = Command::Flatten;
                 format = OutputFormat::Carve;
             }
             "-h" | "--help" => {
@@ -262,6 +267,13 @@ fn main() -> ExitCode {
 
     if command == Command::Fmt {
         return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
+    }
+
+    if command == Command::Flatten {
+        return run_flatten(
+            input_paths.first().map(String::as_str),
+            include_root.as_deref(),
+        );
     }
 
     if enable_extensions {
@@ -1149,6 +1161,104 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `carve flatten` - write the document back as ONE self-contained Carve file,
+/// with every include expanded in place.
+///
+/// The deliberate opposite of `carve fmt`, and the reason both exist. Formatting
+/// round-trips the author's document, so it leaves directives alone (I15);
+/// flattening is an explicit request for the OTHER document - the one with the
+/// children merged in - because that is what can be pasted somewhere with no
+/// filesystem behind it.
+///
+/// TWO THINGS THIS CHANGES beyond inlining, both worth reporting rather than
+/// letting someone find them in a published page:
+///
+///   - The output is CANONICAL Carve. Parent and children alike go through the
+///     writer, so formatting is normalized, not preserved.
+///   - Colliding heading ids and footnote labels are RENAMED (I5), because two
+///     files that were never in one document together can each define `intro`.
+///     The rename warnings print like any other.
+///
+/// Requires a containment root, so stdin is refused unless `--include-root`
+/// names one: "flatten this" with nothing to resolve against is a request that
+/// cannot be honoured, and silently writing the document back unchanged would
+/// look like it had no includes.
+#[cfg(feature = "fs")]
+fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
+    let (source, source_path) = match path {
+        Some(path) if path != "-" => match std::fs::read_to_string(path) {
+            Ok(source) => (source, Some(path.to_string())),
+            Err(err) => {
+                eprintln!("carve flatten: cannot read {path}: {err}");
+                return ExitCode::FAILURE;
+            }
+        },
+        _ => {
+            let mut source = String::new();
+            if let Err(err) = io::stdin().read_to_string(&mut source) {
+                eprintln!("carve flatten: cannot read stdin: {err}");
+                return ExitCode::FAILURE;
+            }
+            (source, None)
+        }
+    };
+
+    let root = match include_root.map(str::to_string).or_else(|| {
+        source_path
+            .as_deref()
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+    }) {
+        Some(root) => root,
+        None => {
+            eprintln!(
+                "carve flatten: stdin has no directory to resolve includes against; \
+                 pass --include-root DIR"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let resolver = match carve::FileSystemResolver::new(&root) {
+        Ok(resolver) => resolver,
+        Err(err) => {
+            eprintln!("carve flatten: cannot use include root {root}: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut options = carve::IncludeOptions::new().with_resolver(&resolver);
+    if let Some(path) = source_path.as_deref() {
+        options = options.with_source_path(path);
+    }
+    let result = carve::expand_includes(carve::parse(&source), &source, &options);
+    for warning in &result.warnings {
+        eprintln!("carve: {} [{}]", warning.message, warning.rule);
+    }
+    if result.suppressed_warnings > 0 {
+        eprintln!(
+            "carve: {} further include warning(s) suppressed",
+            result.suppressed_warnings
+        );
+    }
+
+    match carve::render_carve(&result.doc) {
+        Ok(output) => write_stdout(&output),
+        Err(err) => {
+            eprintln!("carve flatten: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Without the filesystem resolver there is nothing to flatten AGAINST, so the
+/// command refuses rather than writing the document back unchanged.
+#[cfg(not(feature = "fs"))]
+fn run_flatten(_path: Option<&str>, _include_root: Option<&str>) -> ExitCode {
+    eprintln!("carve flatten: needs the `fs` feature, which this build does not have");
+    ExitCode::FAILURE
+}
+
 fn run_fmt(
     paths: &[String],
     write: bool,
@@ -1241,6 +1351,9 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve flatten [file]        write the document as ONE self-contained\n                              \
+         file, every include expanded in place (the\n                              \
+         opposite of fmt, which leaves them alone)\n  \
          carve lint [files]          report constructs that render wrong\n                              \
          (exit 1 on findings, 2 if a file cannot be read)\n  \
          carve merge [--json] BASE OURS THEIRS\n  \

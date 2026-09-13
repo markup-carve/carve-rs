@@ -278,3 +278,103 @@ fn included_content_is_subject_to_the_same_sanitization_as_typed_content() {
         out.stdout
     );
 }
+
+// ---------------------------------------------------------------------------
+// `carve flatten` (the deliberate opposite of `carve fmt`)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flatten_inlines_every_include_into_one_document() {
+    let tmp = TempDir::new("flatten");
+    let main = tmp.write("main.crv", "Intro.\n\n{{ chapters/one.crv }}\n");
+    tmp.write("chapters/one.crv", "Chapter body.\n");
+
+    let out = run(&["flatten", main.to_str().unwrap()], None);
+    assert!(out.success, "{}", out.stderr);
+    assert!(out.stdout.contains("Chapter body."), "{}", out.stdout);
+    assert!(!out.stdout.contains("{{"), "{}", out.stdout);
+}
+
+#[test]
+fn flatten_is_the_only_carve_output_that_expands() {
+    // The pair that says why both commands exist: `fmt` round-trips the
+    // author's document (I15), `flatten` asks for the other one.
+    let tmp = TempDir::new("flatten-vs-fmt");
+    let main = tmp.write("main.crv", "{{ child.crv }}\n");
+    tmp.write("child.crv", "Child body.\n");
+
+    let fmt = run(&["fmt", main.to_str().unwrap()], None);
+    assert!(fmt.stdout.contains("{{ child.crv }}"), "{}", fmt.stdout);
+
+    let flat = run(&["flatten", main.to_str().unwrap()], None);
+    assert!(flat.stdout.contains("Child body."), "{}", flat.stdout);
+}
+
+#[test]
+fn a_flattened_document_renders_exactly_like_the_expanded_original() {
+    // THE INVARIANT THAT MAKES FLATTENING SAFE TO PASTE, and it is not free:
+    // expansion RENAMES colliding heading ids and footnote labels (I5), so the
+    // renames have to survive into the SOURCE or the flattened file resolves
+    // its own references differently. Explicit ids and footnote labels are
+    // spelled by the writer, which is what carries them.
+    let tmp = TempDir::new("flatten-fidelity");
+    let main = tmp.write(
+        "main.crv",
+        "Parent [^note].\n\n[^note]: Parent note.\n\n{{ ch/a.crv }}\n\n{{ ch/b.crv }}\n",
+    );
+    tmp.write(
+        "ch/a.crv",
+        "{#intro}\n# A\n\nChild a [^note].\n\n[^note]: A note.\n",
+    );
+    tmp.write(
+        "ch/b.crv",
+        "{#intro}\n# B\n\nChild b [^note].\n\n[^note]: B note.\n",
+    );
+
+    let expanded = run(&[main.to_str().unwrap()], None);
+    assert!(expanded.success, "{}", expanded.stderr);
+
+    let flat = run(&["flatten", main.to_str().unwrap()], None);
+    assert!(flat.success, "{}", flat.stderr);
+    let flattened = tmp.write("flat.crv", &flat.stdout);
+    let rendered = run(&[flattened.to_str().unwrap()], None);
+
+    assert_eq!(
+        rendered.stdout, expanded.stdout,
+        "the flattened document renders differently from the expanded original"
+    );
+    // And the renames are visible in the source rather than implied.
+    assert!(flat.stdout.contains("[^note-2]"), "{}", flat.stdout);
+    assert!(flat.stdout.contains("{#intro-2}"), "{}", flat.stdout);
+}
+
+#[test]
+fn flatten_refuses_stdin_with_no_root_rather_than_writing_it_back_unchanged() {
+    // "Flatten this" with nothing to resolve against cannot be honoured, and
+    // echoing the document back would look like it simply had no includes.
+    let out = run(&["flatten"], Some("{{ child.crv }}\n"));
+    assert!(!out.success);
+    assert!(out.stderr.contains("--include-root"), "{}", out.stderr);
+}
+
+#[test]
+fn flatten_takes_an_explicit_root_for_stdin() {
+    let tmp = TempDir::new("flatten-stdin");
+    tmp.write("child.crv", "Child body.\n");
+    let out = run(
+        &["flatten", "--include-root", tmp.path().to_str().unwrap()],
+        Some("{{ child.crv }}\n"),
+    );
+    assert!(out.success, "{}", out.stderr);
+    assert!(out.stdout.contains("Child body."), "{}", out.stdout);
+}
+
+#[test]
+fn flatten_reports_an_unresolved_target_and_keeps_the_directive() {
+    let tmp = TempDir::new("flatten-missing");
+    let main = tmp.write("main.crv", "x\n\n{{ nope.crv }}\n");
+    let out = run(&["flatten", main.to_str().unwrap()], None);
+    assert!(out.success, "{}", out.stderr);
+    assert!(out.stdout.contains("{{ nope.crv }}"), "{}", out.stdout);
+    assert!(out.stderr.contains("include-unresolved"), "{}", out.stderr);
+}
