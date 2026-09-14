@@ -120,11 +120,77 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     DiagnosticsTruncated => "diagnostics-truncated",
 });
 
+report_vocabulary!(ImportFidelity {
+    Preserved => "preserved",
+    Normalized => "normalized",
+    Degraded => "degraded",
+    Dropped => "dropped",
+});
+
+report_vocabulary!(ImportConfidence {
+    Exact => "exact",
+    Inferred => "inferred",
+    Fallback => "fallback",
+});
+
+impl HtmlImportDiagnosticCode {
+    /// How much of the source survived this decision (importer fidelity v2).
+    ///
+    /// A property of the CODE, so it is answered here and every report layer
+    /// reads it rather than deriving its own. The migration report used to
+    /// carry the only copy, which left `html_to_carve`'s report - the one the
+    /// shared fixtures describe - without a classification the format defines
+    /// and this engine already knew.
+    ///
+    /// The match is exhaustive on purpose: a new code does not compile until
+    /// it is classified, which is this engine's version of failing closed.
+    pub fn fidelity(self) -> ImportFidelity {
+        match self {
+            Self::ElementDropped
+            | Self::AttributeDropped
+            | Self::StructureUnspellable
+            | Self::DiagnosticsTruncated => ImportFidelity::Dropped,
+            Self::ElementUnwrapped
+            | Self::StyleUnmapped
+            | Self::TableDegraded
+            | Self::EncodingAssumed
+            | Self::RawPreserved => ImportFidelity::Degraded,
+            // PRESERVED and not DROPPED: it is the row that says an attribute
+            // reached the output inside preserved raw bytes, so filing it
+            // beside `AttributeDropped` would reintroduce the same false claim
+            // one layer up (markup-carve/carve-js#1468).
+            Self::AttributePreserved => ImportFidelity::Preserved,
+        }
+    }
+
+    /// How sure the importer is that the decision was the right one.
+    pub fn confidence(self) -> ImportConfidence {
+        match self {
+            // The importer assumed an encoding the source never declared.
+            Self::EncodingAssumed => ImportConfidence::Inferred,
+            // The report is a sample and the omitted findings are unknown.
+            Self::DiagnosticsTruncated => ImportConfidence::Fallback,
+            Self::ElementDropped
+            | Self::ElementUnwrapped
+            | Self::AttributeDropped
+            | Self::AttributePreserved
+            | Self::StyleUnmapped
+            | Self::TableDegraded
+            | Self::RawPreserved
+            | Self::StructureUnspellable => ImportConfidence::Exact,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HtmlImportDiagnostic {
     pub code: HtmlImportDiagnosticCode,
     pub message: String,
     pub severity: HtmlImportSeverity,
+    /// Stamped from `code`, so a consumer never has to recompute it and can
+    /// never disagree with the producer about it.
+    pub fidelity: ImportFidelity,
+    pub confidence: ImportConfidence,
     pub path: Option<String>,
 }
 
@@ -474,6 +540,8 @@ impl<'a> Importer<'a> {
                         code: HtmlImportDiagnosticCode::DiagnosticsTruncated,
                         message: "HTML import diagnostics limit reached".into(),
                         severity: HtmlImportSeverity::Error,
+                        fidelity: HtmlImportDiagnosticCode::DiagnosticsTruncated.fidelity(),
+                        confidence: HtmlImportDiagnosticCode::DiagnosticsTruncated.confidence(),
                         path: None,
                     },
                     owner: None,
@@ -489,6 +557,8 @@ impl<'a> Importer<'a> {
                 code,
                 message,
                 severity,
+                fidelity: code.fidelity(),
+                confidence: code.confidence(),
                 path: Some(path.into()),
             },
             owner: None,
@@ -595,6 +665,13 @@ impl<'a> Importer<'a> {
                 entry.diagnostic.code = code;
                 entry.diagnostic.message = message;
                 entry.diagnostic.severity = severity;
+                // The classification follows the code, and this is the one
+                // place a diagnostic's code changes after it was recorded: an
+                // attribute filed as dropped turns out to have reached the
+                // output inside preserved bytes. Leaving the stamp behind
+                // would report a PRESERVED attribute as a drop.
+                entry.diagnostic.fidelity = code.fidelity();
+                entry.diagnostic.confidence = code.confidence();
             }
         }
     }

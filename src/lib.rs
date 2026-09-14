@@ -115,7 +115,7 @@ pub use extensions::{
 pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
     HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
-    HtmlImportSeverity,
+    HtmlImportSeverity, ImportConfidence, ImportFidelity,
 };
 pub use incremental::{
     parse_snapshot, reparse, IncrementalParse, IncrementalParseError, ParserSnapshot, TextChange,

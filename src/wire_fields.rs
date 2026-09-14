@@ -75,7 +75,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
 #[rustfmt::skip]
 pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
     ("attrs", &["classes", "id", "keyValues", "order"]),
-    ("pos", &["endColumn", "endLine", "endOffset", "startColumn", "startLine", "startOffset"]),
+    ("pos", &["endColumn", "endLine", "endOffset", "file", "startColumn", "startLine", "startOffset"]),
     ("rowGroups", &["bodies", "footRows", "headRows"]),
 ];
 
