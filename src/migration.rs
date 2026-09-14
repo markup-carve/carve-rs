@@ -88,19 +88,18 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
     match code {
         HtmlImportDiagnosticCode::ElementDropped
         | HtmlImportDiagnosticCode::AttributeDropped
-        | HtmlImportDiagnosticCode::StructureUnspellable => MigrationFidelity::Dropped,
+        | HtmlImportDiagnosticCode::StructureUnspellable
+        | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Dropped,
         HtmlImportDiagnosticCode::ElementUnwrapped
         | HtmlImportDiagnosticCode::StyleUnmapped
         | HtmlImportDiagnosticCode::TableDegraded
         | HtmlImportDiagnosticCode::EncodingAssumed
-        | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
+        | HtmlImportDiagnosticCode::RawPreserved => MigrationFidelity::Degraded,
         // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that
         // says an attribute reached the output inside preserved raw bytes, so
         // filing it under `Dropped` beside `AttributeDropped` would reintroduce
         // the same false claim one layer up (markup-carve/carve-js#1468).
-        HtmlImportDiagnosticCode::AttributePreserved | HtmlImportDiagnosticCode::RawPreserved => {
-            MigrationFidelity::Preserved
-        }
+        HtmlImportDiagnosticCode::AttributePreserved => MigrationFidelity::Preserved,
     }
 }
 

@@ -54,7 +54,7 @@ fn html_report_pins_degraded_preserved_and_truncated_classifications() {
     }));
 
     let preserved = migrate_html(
-        "<unknown data-x=\"1\">x</unknown>",
+        "<unknown onclick=\"x()\">x</unknown>",
         &HtmlImportOptions {
             mode: HtmlImportMode::Roundtrip,
             ..Default::default()
@@ -62,10 +62,11 @@ fn html_report_pins_degraded_preserved_and_truncated_classifications() {
     )
     .expect("roundtrip HTML import succeeds");
     assert!(preserved.report.diagnostics.iter().any(|diagnostic| {
-        matches!(
-            diagnostic.code.as_str(),
-            "raw-preserved" | "attribute-preserved"
-        ) && diagnostic.fidelity == MigrationFidelity::Preserved
+        diagnostic.code == "raw-preserved" && diagnostic.fidelity == MigrationFidelity::Degraded
+    }));
+    assert!(preserved.report.diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == "attribute-preserved"
+            && diagnostic.fidelity == MigrationFidelity::Preserved
     }));
 
     let truncated = migrate_html(
@@ -78,6 +79,7 @@ fn html_report_pins_degraded_preserved_and_truncated_classifications() {
     .expect("bounded HTML import succeeds");
     assert!(truncated.report.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "diagnostics-truncated"
+            && diagnostic.fidelity == MigrationFidelity::Dropped
             && diagnostic.confidence == MigrationConfidence::Fallback
     }));
 }

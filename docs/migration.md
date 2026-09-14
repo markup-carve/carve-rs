@@ -56,8 +56,10 @@ Carve-looking source text literal. Inputs above 256 KiB are rejected because
 the compatibility rewrite pipeline makes several bounded passes over a post.
 It also reports unverified fidelity and fails closed under `--check-loss`.
 
-For HTML, `--check-loss` exits 1 only for `degraded` or `dropped` findings;
-diagnostics that explicitly preserve raw source or attributes do not fail the gate.
+For HTML, `--check-loss` exits 1 for `degraded` or `dropped` findings. Opaque
+raw HTML is degraded even when its bytes survive because it is not modeled or
+editable. An `attribute-preserved` row is not a failure by itself, but it only
+appears alongside the failing `raw-preserved` row.
 
 ---
 
