@@ -32,9 +32,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, render_carve, render_html, FileSystemResolver, IncludeContext, IncludeOptions,
-    IncludeResolved, IncludeResolver,
+    expand_includes, render_carve, render_html, IncludeContext, IncludeOptions, IncludeResolved,
+    IncludeResolver,
 };
+// Filesystem-mode vectors need the `fs` feature; the other 99 drive the pass
+// through an in-memory resolver, which is the medium a database, object store
+// or browser host is in. Running the suite WITHOUT the feature is what proves
+// that case is conformant rather than merely intended.
+#[cfg(feature = "fs")]
+use carve::FileSystemResolver;
 
 // The helper lives in a subdirectory so cargo does not compile it as its own
 // top-level integration-test binary; `#[path]` points `mod json` at it.
@@ -271,6 +277,10 @@ fn run_vector(vector: &Value) -> RunResult {
     let resolver_kind = vector["resolver"].as_str().expect("resolver");
     let opts = vector.get("options").cloned().unwrap_or(Value::Null);
 
+    // The whole branch needs a filesystem; without the feature the caller has
+    // already skipped these vectors, so it is not merely dead - it cannot be
+    // reached.
+    #[cfg(feature = "fs")]
     if mode == "filesystem" {
         let tree = vector["tree"].clone();
         assert!(tree.is_object(), "filesystem vector needs an object `tree`");
@@ -601,10 +611,21 @@ fn include_conformance_vectors_match_carve_js_goldens() {
     let mut failures: Vec<(String, Vec<String>)> = Vec::new();
     let mut documented: Vec<(String, String)> = Vec::new();
 
+    #[allow(unused_mut)]
+    let mut skipped_filesystem = 0usize;
+
     for path in &entries {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
         let raw = fs::read_to_string(path).expect("read vector");
         let vector = Value::parse(&raw).unwrap_or_else(|e| panic!("{name}: {e}"));
+        #[cfg(not(feature = "fs"))]
+        if vector["mode"].as_str() == Some("filesystem") {
+            // Nothing to run them against, and nothing they could prove here:
+            // they exist to exercise canonical containment, which is the one
+            // part of the model a filesystem owns.
+            skipped_filesystem += 1;
+            continue;
+        }
         let run = run_vector(&vector);
         let diffs = compare(&name, &vector, &run);
 
@@ -618,8 +639,25 @@ fn include_conformance_vectors_match_carve_js_goldens() {
         }
     }
 
+    // A RUN THAT COMPARED NOTHING MUST NOT READ AS A PASS. Without the `fs`
+    // feature the filesystem vectors are skipped, and the count is asserted
+    // rather than printed: a skip rule with a typo would otherwise skip
+    // everything and the suite would go green having checked nothing.
+    let compared = passed + documented.len() + failures.len();
+    assert_eq!(
+        compared + skipped_filesystem,
+        entries.len(),
+        "every vector is either compared or skipped, and nothing else"
+    );
+    assert!(
+        compared >= 90,
+        "only {compared} vector(s) were compared - the corpus is {} strong, so this run checked \
+         almost nothing",
+        entries.len()
+    );
+
     eprintln!(
-        "include-conformance: {passed}/{} vectors match carve-js goldens ({} documented difference(s), {} failure(s))",
+        "include-conformance: {passed}/{} vectors match carve-js goldens ({} documented difference(s), {} failure(s), {skipped_filesystem} skipped for want of a filesystem)",
         entries.len(),
         documented.len(),
         failures.len(),

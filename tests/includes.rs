@@ -9,9 +9,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, parse, render_html, FileSystemResolver, IncludeContext, IncludeDependency,
-    IncludeOptions, IncludeResolved, IncludeResolver,
+    expand_includes, parse, render_html, IncludeContext, IncludeDependency, IncludeOptions,
+    IncludeResolved, IncludeResolver,
 };
+// Only this build has a filesystem resolver; everything else here drives the
+// pass through a HOST-SUPPLIED closure, which is the case a database, object
+// store or in-memory medium is in.
+#[cfg(feature = "fs")]
+use carve::FileSystemResolver;
 
 struct MapResolver {
     files: HashMap<String, String>,
@@ -389,6 +394,7 @@ fn reports_the_same_file_included_twice_only_once() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn reports_no_dependencies_without_a_resolver() {
     let source = "{{ child }}";
     let result = expand_includes(parse(source), source, &IncludeOptions::new());
@@ -399,8 +405,10 @@ fn reports_no_dependencies_without_a_resolver() {
 // FileSystemResolver / containment (I10)
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "fs")]
 struct TempDir(PathBuf);
 
+#[cfg(feature = "fs")]
 impl TempDir {
     fn new(tag: &str) -> Self {
         let mut base = std::env::temp_dir();
@@ -437,18 +445,21 @@ impl TempDir {
     }
 }
 
+#[cfg(feature = "fs")]
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
 
+#[cfg(feature = "fs")]
 fn expand_fs(source: &str, root: &Path, opts: IncludeOptions<'_>) -> Expanded {
     let resolver = FileSystemResolver::new(root).expect("root exists");
     expand_with(source, &resolver, opts)
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_resolves_nested_relative_includes_against_the_parent_directory() {
     let tmp = TempDir::new("nested");
     tmp.write("main.crv", "{{ parts/part.crv }}\n");
@@ -462,6 +473,7 @@ fn filesystem_resolver_resolves_nested_relative_includes_against_the_parent_dire
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_allows_a_dot_dot_path_whose_canonical_target_stays_inside_the_root() {
     let tmp = TempDir::new("dotdot-ok");
     tmp.write("main.crv", "{{ chapters/ch1.crv }}\n");
@@ -482,6 +494,7 @@ fn filesystem_resolver_allows_a_dot_dot_path_whose_canonical_target_stays_inside
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_keeps_the_single_top_level_root_for_nested_includes() {
     // The chapter reaches a sibling folder: only possible if the root does not
     // re-base to the including file's directory.
@@ -496,6 +509,7 @@ fn filesystem_resolver_keeps_the_single_top_level_root_for_nested_includes() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_rejects_a_dot_dot_chain_that_escapes_the_root() {
     let tmp = TempDir::new("dotdot-escape");
     let root = tmp.mkdir("a/b/root");
@@ -527,6 +541,7 @@ fn filesystem_resolver_rejects_a_dot_dot_chain_that_escapes_the_root() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn rejects_a_single_level_dot_dot_escape_written_as_a_directive() {
     let tmp = TempDir::new("single-dotdot");
     let root = tmp.mkdir("root");
@@ -537,6 +552,7 @@ fn rejects_a_single_level_dot_dot_escape_written_as_a_directive() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn reports_a_containment_denied_target_as_an_unresolved_dependency() {
     let tmp = TempDir::new("denied-dep");
     let root = tmp.mkdir("root");
@@ -560,6 +576,7 @@ fn reports_a_containment_denied_target_as_an_unresolved_dependency() {
 
 #[cfg(unix)]
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_rejects_an_escape_through_a_symlinked_directory_component() {
     let tmp = TempDir::new("symlink-dir");
     let root = tmp.mkdir("root");
@@ -573,6 +590,7 @@ fn filesystem_resolver_rejects_an_escape_through_a_symlinked_directory_component
 
 #[cfg(unix)]
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_rejects_symlink_and_dot_dot_escapes_from_the_root() {
     let tmp = TempDir::new("symlink-file");
     let root = tmp.mkdir("root");
@@ -604,6 +622,7 @@ fn filesystem_resolver_rejects_symlink_and_dot_dot_escapes_from_the_root() {
 /// guarantee. This pins the observable rule so adding an error channel later
 /// cannot quietly start leaking through it.
 #[test]
+#[cfg(feature = "fs")]
 fn a_resolver_failure_never_leaks_host_paths_into_the_warning_message() {
     let tmp = TempDir::new("no-leak");
     let root = tmp.mkdir("root");
@@ -640,6 +659,7 @@ fn a_resolver_failure_never_leaks_host_paths_into_the_warning_message() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_rejects_an_absolute_path_outside_the_root_by_default() {
     let tmp = TempDir::new("absolute");
     let root = tmp.mkdir("root");
@@ -651,6 +671,7 @@ fn filesystem_resolver_rejects_an_absolute_path_outside_the_root_by_default() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_denies_a_missing_target_rather_than_skipping_containment() {
     // `canonicalize` fails on a path that does not exist yet. The error path
     // must DENY: a resolver that fell back to the uncanonicalized candidate
@@ -668,6 +689,7 @@ fn filesystem_resolver_denies_a_missing_target_rather_than_skipping_containment(
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_does_not_confuse_a_sibling_directory_with_a_shared_prefix() {
     // A lexical string-prefix containment test would accept "rootother" as
     // being inside "root"; the component-wise check does not.
@@ -684,6 +706,7 @@ fn filesystem_resolver_does_not_confuse_a_sibling_directory_with_a_shared_prefix
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_allows_a_directory_whose_name_merely_starts_with_dots() {
     // A `starts_with("..")` prefix test on the relative path would misread
     // "..foo" as an escape.
@@ -1412,6 +1435,7 @@ mod rejected_directives_have_no_side_effects {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn the_filesystem_resolver_refuses_a_target_over_its_size_cap() {
     // The cap exists because the expansion BUDGET cannot stand in for it: the
     // budget charges a target once its source is in hand, so an uncapped
@@ -1443,6 +1467,7 @@ fn the_filesystem_resolver_refuses_a_target_over_its_size_cap() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn the_size_cap_admits_a_target_under_it_and_can_be_removed() {
     let tmp = TempDir::new("file-cap-ok");
     tmp.write("main.crv", "{{ child.crv }}\n");
@@ -1473,6 +1498,7 @@ fn the_size_cap_admits_a_target_under_it_and_can_be_removed() {
 }
 
 #[test]
+#[cfg(feature = "fs")]
 fn the_default_cap_is_four_mib_and_applies_without_being_asked_for() {
     // The DEFAULT is the half that protects a host who never read the docs, so
     // it is asserted rather than left to the builder above.
