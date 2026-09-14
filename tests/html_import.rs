@@ -274,6 +274,10 @@ fn shared_contract_fixtures_match() {
             .iter()
             .enumerate()
         {
+            // BOTH EXITS, because the fixture is a statement about the
+            // import report and the migration report alike: the classification
+            // now rides the import diagnostic and the migration report copies
+            // it, so reading only one of them would leave the copy unchecked.
             let actual = &migration.report.diagnostics[matched[index]];
             let source_actual = &result.report.diagnostics[matched[index]];
             let at = format!("{name} diagnostic {index}");
@@ -299,19 +303,25 @@ fn shared_contract_fixtures_match() {
                 }
             }
             if let Some(fidelity) = expected_diagnostic["fidelity"].as_str() {
-                if actual.fidelity.as_str() != fidelity {
-                    mismatches.push(format!(
-                        "{at} fidelity: {fidelity:?} != {:?}",
-                        actual.fidelity.as_str()
-                    ));
+                for (exit, seen) in [
+                    ("import", source_actual.fidelity.as_str()),
+                    ("migration", actual.fidelity.as_str()),
+                ] {
+                    if seen != fidelity {
+                        mismatches.push(format!("{at} {exit} fidelity: {fidelity:?} != {seen:?}"));
+                    }
                 }
             }
             if let Some(confidence) = expected_diagnostic["confidence"].as_str() {
-                if actual.confidence.as_str() != confidence {
-                    mismatches.push(format!(
-                        "{at} confidence: {confidence:?} != {:?}",
-                        actual.confidence.as_str()
-                    ));
+                for (exit, seen) in [
+                    ("import", source_actual.confidence.as_str()),
+                    ("migration", actual.confidence.as_str()),
+                ] {
+                    if seen != confidence {
+                        mismatches.push(format!(
+                            "{at} {exit} confidence: {confidence:?} != {seen:?}"
+                        ));
+                    }
                 }
             }
         }
@@ -946,4 +956,66 @@ mod a_derived_endnotes_section {
             ]
         );
     }
+}
+
+/// A diagnostic's classification is a property of its CODE, so the two can
+/// never disagree - including after the one pass that REPLACES a code.
+///
+/// `preserve_own_attributes` rewrites an `attribute-dropped` row into
+/// `attribute-preserved` when the element turns out to be kept whole, and a
+/// stamp taken at construction survived that rewrite as a stale `dropped`.
+/// Nothing in the shared fixtures covered the shape, so the wrong answer
+/// reached the report and only the migration test happened to see it. This
+/// walks both exits over every shape that produces a diagnostic and checks the
+/// invariant directly, so a future code rewrite cannot reintroduce it.
+#[test]
+fn every_diagnostic_carries_its_code_s_classification() {
+    let shapes = [
+        "<ruby>x<rt>y</rt></ruby>",
+        "<unknown onclick=\"x()\">x</unknown>",
+        "<table><colgroup><col></colgroup><tr><td>a</td></tr></table>",
+        "<p style=\"color:red\">x</p>",
+        "<math><mi>x</mi></math>",
+        "<script>x</script><script>y</script>",
+    ];
+    let modes = [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ];
+    let mut seen = 0usize;
+    for html in shapes {
+        for mode in modes {
+            let options = HtmlImportOptions {
+                mode,
+                ..Default::default()
+            };
+            let result = html_to_carve(html, &options).unwrap();
+            for diagnostic in &result.report.diagnostics {
+                seen += 1;
+                assert_eq!(
+                    diagnostic.fidelity,
+                    diagnostic.code.fidelity(),
+                    "{html:?} in {mode:?}: {} carries the wrong fidelity",
+                    diagnostic.code.as_str()
+                );
+                assert_eq!(
+                    diagnostic.confidence,
+                    diagnostic.code.confidence(),
+                    "{html:?} in {mode:?}: {} carries the wrong confidence",
+                    diagnostic.code.as_str()
+                );
+            }
+            let migration = migrate_html(html, &options).unwrap();
+            for diagnostic in &migration.report.diagnostics {
+                let code = HtmlImportDiagnosticCode::from_name(&diagnostic.code)
+                    .expect("the report writes a code the vocabulary knows");
+                assert_eq!(diagnostic.fidelity, code.fidelity());
+                assert_eq!(diagnostic.confidence, code.confidence());
+            }
+        }
+    }
+    // The shapes above must actually produce diagnostics, or the loop asserts
+    // nothing at all.
+    assert!(seen >= shapes.len(), "only {seen} diagnostics walked");
 }

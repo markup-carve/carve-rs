@@ -1,7 +1,6 @@
 use crate::{
     bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
-    HtmlImportAdapter, HtmlImportDiagnosticCode, HtmlImportError, HtmlImportMode,
-    HtmlImportOptions, HtmlImportSeverity,
+    HtmlImportAdapter, HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,41 +22,11 @@ impl SourceFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MigrationFidelity {
-    Preserved,
-    Normalized,
-    Degraded,
-    Dropped,
-}
-
-impl MigrationFidelity {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Preserved => "preserved",
-            Self::Normalized => "normalized",
-            Self::Degraded => "degraded",
-            Self::Dropped => "dropped",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MigrationConfidence {
-    Exact,
-    Inferred,
-    Fallback,
-}
-
-impl MigrationConfidence {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Exact => "exact",
-            Self::Inferred => "inferred",
-            Self::Fallback => "fallback",
-        }
-    }
-}
+/// The report's vocabulary is the IMPORTER's, not a second copy of it: the
+/// classification belongs to the diagnostic code, and a migration report only
+/// repeats what the importer already answered.
+pub type MigrationFidelity = crate::html_import::ImportFidelity;
+pub type MigrationConfidence = crate::html_import::ImportConfidence;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MigrationDiagnostic {
@@ -84,25 +53,6 @@ pub struct MigrationResult {
     pub report: MigrationReport,
 }
 
-fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
-    match code {
-        HtmlImportDiagnosticCode::ElementDropped
-        | HtmlImportDiagnosticCode::AttributeDropped
-        | HtmlImportDiagnosticCode::StructureUnspellable
-        | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Dropped,
-        HtmlImportDiagnosticCode::ElementUnwrapped
-        | HtmlImportDiagnosticCode::StyleUnmapped
-        | HtmlImportDiagnosticCode::TableDegraded
-        | HtmlImportDiagnosticCode::EncodingAssumed
-        | HtmlImportDiagnosticCode::RawPreserved => MigrationFidelity::Degraded,
-        // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that
-        // says an attribute reached the output inside preserved raw bytes, so
-        // filing it under `Dropped` beside `AttributeDropped` would reintroduce
-        // the same false claim one layer up (markup-carve/carve-js#1468).
-        HtmlImportDiagnosticCode::AttributePreserved => MigrationFidelity::Preserved,
-    }
-}
-
 pub fn migrate_html(
     source: &str,
     options: &HtmlImportOptions,
@@ -116,12 +66,8 @@ pub fn migrate_html(
             code: diagnostic.code.as_str().to_owned(),
             message: diagnostic.message,
             severity: diagnostic.severity,
-            fidelity: fidelity(diagnostic.code),
-            confidence: match diagnostic.code {
-                HtmlImportDiagnosticCode::EncodingAssumed => MigrationConfidence::Inferred,
-                HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationConfidence::Fallback,
-                _ => MigrationConfidence::Exact,
-            },
+            fidelity: diagnostic.fidelity,
+            confidence: diagnostic.confidence,
             path: diagnostic.path,
         })
         .collect();
