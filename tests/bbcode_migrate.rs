@@ -65,6 +65,15 @@ fn input_is_normalized_and_bounded() {
         bbcode_to_carve(&"a".repeat(BBCODE_MAX_INPUT_LENGTH + 1)),
         Err(BbcodeImportError::InputTooLarge { .. })
     ));
+    let at_limit = format!("{}😀", "x".repeat(BBCODE_MAX_INPUT_LENGTH - 4));
+    assert!(bbcode_to_carve(&at_limit).is_ok());
+    assert_eq!(
+        bbcode_to_carve(&format!("{at_limit}x")),
+        Err(BbcodeImportError::InputTooLarge {
+            bytes: BBCODE_MAX_INPUT_LENGTH + 1,
+            maximum: BBCODE_MAX_INPUT_LENGTH,
+        })
+    );
 }
 
 #[test]
