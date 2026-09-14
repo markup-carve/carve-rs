@@ -2582,6 +2582,16 @@ fn render_inline_body(
         // §7c's LONE SPACE case looks for, so the writer proposed a backslash
         // for a line that had nothing to protect (PART 11 §7c).
         InlineNode::Comment(c) if c.content.is_empty() => "%%".to_string(),
+        // THE UNIT IS THE OPENER (PART 11 §2, and §2a naming this exact
+        // rewrite): a content that itself opens with `%` JOINS the marker, so
+        // `%%%` is written back whole instead of as an opener plus a stray
+        // character. The separator is what splits it, and it is free for every
+        // other content. Only the INLINE arm does this - the block arm six
+        // hundred lines up must keep its separator unconditionally, because a
+        // run of three at block level is a comment FENCE (PART 9 §28) that
+        // pairs with any later run of the same width and swallows the document
+        // between them (markup-carve/carve-js#1674, declined at carve-js#1675).
+        InlineNode::Comment(c) if c.content.starts_with('%') => format!("%%{}", c.content),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
