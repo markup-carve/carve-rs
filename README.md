@@ -291,28 +291,6 @@ adjustable with `with_max_file_bytes`. The expansion byte budget cannot stand in
 for this: it charges a target only once its source is in hand, so without a cap
 one oversized file is read into memory in full before expansion refuses it.
 
-## Building from source
+## Development
 
-```bash
-git clone https://github.com/markup-carve/carve-rs
-cd carve-rs
-git submodule update --init   # pulls the spec corpus
-cargo test
-```
-
-The spec corpus lives in `tests/spec/` as a git submodule of [`markup-carve/carve`](https://github.com/markup-carve/carve). Running `cargo test` without initializing the submodule will fail with a clear error message.
-
-## Design
-
-- **Linear-time** parsing: block lexer reads line by line, inline scanner does a single linear pass with no backtracking.
-- **Zero dependencies** in the runtime crate. Tests use only `std`.
-- **Conformance via corpus**: every supported construct has a `.crv` / `.html` pair in the upstream spec. The Rust output must match the JS reference byte-for-byte (after trimming).
-
-See `src/parse.rs` for the parser and `src/render.rs` for the renderer. The AST in `src/ast.rs` mirrors the shape of [`carve-js`'s `ast.ts`](https://github.com/markup-carve/carve-js/blob/main/src/ast.ts).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-The language itself is specified at the
-[Carve site](https://markup-carve.github.io/carve/).
+Build, contributor, engine-pin, and design notes are in the [development guide](docs/development.md).
