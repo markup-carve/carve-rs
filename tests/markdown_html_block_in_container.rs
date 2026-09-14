@@ -209,9 +209,12 @@ fn a_list_item_keeps_an_html_comment() {
 
 #[test]
 fn an_item_holding_only_the_element_still_holds_it() {
+    // A block-level element that is a tight item's sole content, inline with the
+    // marker, is an inline raw span in carve-js - not a block. A block element on
+    // its own continuation line (see the tests above) still opens a block.
     assert_eq!(
         carve("- <footer>x</footer>\n\nafter\n"),
-        "- ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
+        "- `<footer>x</footer>`{=html}\n\nafter\n",
     );
 }
 
@@ -305,7 +308,10 @@ fn an_opener_after_prose_is_its_own_block() {
 /// tag as a block.
 #[test]
 fn an_inline_span_in_a_quote_stays_inline() {
-    assert_eq!(carve("> a <span>b</span> c\n"), "> a <span>b</span> c\n");
+    assert_eq!(
+        carve("> a <span>b</span> c\n"),
+        "> a `<span>b</span>`{=html} c\n"
+    );
 }
 
 /// A tight list item is asserted on the tree rather than on the written Carve,
@@ -337,7 +343,10 @@ fn an_inline_span_in_a_list_item_stays_inline() {
 
 #[test]
 fn an_inline_span_at_top_level_stays_inline() {
-    assert_eq!(carve("a <span>b</span> c\n"), "a <span>b</span> c\n");
+    assert_eq!(
+        carve("a <span>b</span> c\n"),
+        "a `<span>b</span>`{=html} c\n"
+    );
 }
 
 /// CONTROL: a table cell holds inline content in CommonMark too, so nothing
@@ -346,7 +355,7 @@ fn an_inline_span_at_top_level_stays_inline() {
 fn an_inline_span_in_a_table_cell_stays_inline() {
     assert_eq!(
         carve("| h |\n|---|\n| a <span>b</span> c |\n"),
-        "|= h |\n| a <span>b</span> c |\n",
+        "|= h |\n| a `<span>b</span>`{=html} c |\n",
     );
 }
 

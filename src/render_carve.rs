@@ -2653,11 +2653,16 @@ fn render_inline_body(
                 return String::new();
             }
             let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
-            format!(
-                "{}{{={}}}",
-                render_code(&content),
-                escape_format(&raw.format)
-            )
+            // The Markdown import oracle preserves backticks occurring inside
+            // raw HTML while retaining the one-backtick raw-inline spelling.
+            // HTML tags delimit that content independently, so widening this
+            // particular fence diverges from carve-js.
+            let verbatim = if raw.format.eq_ignore_ascii_case("html") {
+                format!("`{content}`")
+            } else {
+                render_code(&content)
+            };
+            format!("{verbatim}{{={}}}", escape_format(&raw.format))
         }
         InlineNode::LiteralInline(lit) => {
             // §27: `!` prefix on a verbatim span. A trailing attribute block is

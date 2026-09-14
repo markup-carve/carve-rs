@@ -96,7 +96,7 @@ fn every_inline_construct_stays_in_the_one_paragraph() {
         ("- a **b** c\n", "- a *b* c\n"),
         ("- a `b` c\n", "- a `b` c\n"),
         ("- a [t](u) c\n", "- a [t](u) c\n"),
-        ("- a <span>b</span> c\n", "- a <span>b</span> c\n"),
+        ("- a <span>b</span> c\n", "- a `<span>b</span>`{=html} c\n"),
         ("- a ~~b~~ c\n", "- a ~b~ c\n"),
     ] {
         let doc = carve::markdown_to_ast(markdown);
