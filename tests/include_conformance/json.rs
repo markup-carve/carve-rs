@@ -67,6 +67,7 @@ impl Value {
     }
 
     /// Object members in insertion order, or an empty slice for a non-object.
+    #[cfg(feature = "fs")]
     pub fn entries(&self) -> &[(String, Value)] {
         match self {
             Value::Obj(pairs) => pairs,
@@ -74,6 +75,7 @@ impl Value {
         }
     }
 
+    #[cfg(feature = "fs")]
     pub fn is_object(&self) -> bool {
         matches!(self, Value::Obj(_))
     }

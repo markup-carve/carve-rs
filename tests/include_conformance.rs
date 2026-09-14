@@ -70,8 +70,10 @@ fn vectors_dir() -> PathBuf {
 // Tmp tree for filesystem-mode vectors
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "fs")]
 struct TmpTree(PathBuf);
 
+#[cfg(feature = "fs")]
 impl TmpTree {
     fn new() -> Self {
         let mut base = std::env::temp_dir();
@@ -92,6 +94,7 @@ impl TmpTree {
     }
 }
 
+#[cfg(feature = "fs")]
 impl Drop for TmpTree {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
@@ -102,6 +105,7 @@ impl Drop for TmpTree {
 /// value is file content; a `{ "symlink": target }` object is a symlink whose
 /// target is resolved relative to the tree base (kept machine-independent).
 /// Files first, links second, exactly like the reference driver.
+#[cfg(feature = "fs")]
 fn materialize_tree(base: &Path, tree: &Value) {
     let mut links: Vec<(PathBuf, String)> = Vec::new();
     for (rel, val) in tree.entries() {
@@ -150,6 +154,7 @@ fn fold_path(value: &str, base_real: Option<&str>) -> String {
 
 /// Fold any occurrence of the tree base embedded inside a larger string (the
 /// html and fmt of the absolute-path filesystem vector embed a real path).
+#[cfg(feature = "fs")]
 fn fold_text(text: &str, base_real: Option<&str>) -> String {
     match base_real {
         Some(base) => text.replace(base, "<TMP>"),
@@ -273,7 +278,7 @@ fn norm_deps(result: &carve::IncludeResult, base_real: Option<&str>) -> Vec<Norm
 }
 
 fn run_vector(vector: &Value) -> RunResult {
-    let mode = vector["mode"].as_str().expect("mode");
+    let _mode = vector["mode"].as_str().expect("mode");
     let resolver_kind = vector["resolver"].as_str().expect("resolver");
     let opts = vector.get("options").cloned().unwrap_or(Value::Null);
 
@@ -281,7 +286,7 @@ fn run_vector(vector: &Value) -> RunResult {
     // already skipped these vectors, so it is not merely dead - it cannot be
     // reached.
     #[cfg(feature = "fs")]
-    if mode == "filesystem" {
+    if _mode == "filesystem" {
         let tree = vector["tree"].clone();
         assert!(tree.is_object(), "filesystem vector needs an object `tree`");
         let tmp = TmpTree::new();
@@ -438,6 +443,7 @@ fn run_vector(vector: &Value) -> RunResult {
 
 /// Replace every `<ABS:rel>` sentinel with the canonical absolute path of the
 /// tree file `rel`, mirroring the reference driver.
+#[cfg(feature = "fs")]
 fn bind_abs_sentinels(entry: &str, base_real: &Path) -> String {
     let mut out = String::with_capacity(entry.len());
     let mut rest = entry;

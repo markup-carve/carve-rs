@@ -5,7 +5,9 @@
 //! coverage to the normative rules one by one.
 
 use std::collections::HashMap;
+#[cfg(feature = "fs")]
 use std::fs;
+#[cfg(feature = "fs")]
 use std::path::{Path, PathBuf};
 
 use carve::{
@@ -63,6 +65,7 @@ impl IncludeResolver for MapResolver {
 
 struct Expanded {
     warnings: Vec<(String, Option<String>)>,
+    #[cfg(feature = "fs")]
     messages: Vec<String>,
     dependencies: Vec<IncludeDependency>,
     html: String,
@@ -83,6 +86,7 @@ fn expand_with(source: &str, resolver: &dyn IncludeResolver, opts: IncludeOption
             .iter()
             .map(|w| (w.rule.clone(), w.file.clone()))
             .collect(),
+        #[cfg(feature = "fs")]
         messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
         dependencies: result.dependencies,
         html: render_html(&result.doc).unwrap(),
