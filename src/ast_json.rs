@@ -2406,6 +2406,9 @@ fn write_pos(out: &mut String, pos: &Pos) {
     w.field("endColumn", |out| write_usize(out, pos.end_column));
     w.field("startOffset", |out| write_usize(out, pos.start_offset));
     w.field("endOffset", |out| write_usize(out, pos.end_offset));
+    if let Some(file) = &pos.file {
+        w.field("file", |out| write_string(out, file.as_str()));
+    }
     w.finish();
 }
 
@@ -3393,7 +3396,7 @@ fn optional_pos(obj: &Map<String, Json>, node_type: &str) -> Result<Option<Pos>,
         end_column: required_usize(pos, node_type, "endColumn")?,
         start_offset: required_usize(pos, node_type, "startOffset")?,
         end_offset: required_usize(pos, node_type, "endOffset")?,
-        file: None,
+        file: optional_string(pos, "file")?.map(SourceFile::new),
     }))
 }
 

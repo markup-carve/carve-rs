@@ -506,6 +506,12 @@ fn main() -> ExitCode {
                 warning.rule
             );
         }
+        if prepared.suppressed_warnings > 0 {
+            eprintln!(
+                "carve: {} additional include warning(s) suppressed",
+                prepared.suppressed_warnings
+            );
+        }
         let checked = carve::with_render_loss_report(target, checked_options, || {
             render_document(prepared.doc.clone(), format, &options)
         })
@@ -1229,7 +1235,9 @@ fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
 
     let mut options = carve::IncludeOptions::new().with_resolver(&resolver);
     if let Some(path) = source_path.as_deref() {
-        options = options.with_source_path(path);
+        let absolute =
+            std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
+        options = options.with_source_path(absolute.to_string_lossy().into_owned());
     }
     // POSITIONS ON. The writer orders collected definitions by source position,
     // and after a merge that ordering is the only thing that keeps a child's

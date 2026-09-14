@@ -714,6 +714,7 @@ pub fn prepare_doc_with_includes(
     Ok(PreparedWithIncludes {
         doc,
         warnings: expanded.warnings,
+        suppressed_warnings: expanded.suppressed_warnings,
         dependencies: expanded.dependencies,
     })
 }
@@ -723,6 +724,7 @@ pub fn prepare_doc_with_includes(
 pub struct PreparedWithIncludes {
     pub doc: ast::Document,
     pub warnings: Vec<IncludeWarning>,
+    pub suppressed_warnings: usize,
     pub dependencies: Vec<IncludeDependency>,
 }
 

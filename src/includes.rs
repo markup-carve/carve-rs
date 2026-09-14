@@ -1035,6 +1035,7 @@ fn merge_footnotes(
         return;
     }
     let mut rename: HashMap<String, String> = HashMap::new();
+    let mut inserted: Vec<String> = Vec::new();
     for (label, body) in child_defs {
         let target = state
             .footnotes
@@ -1058,12 +1059,20 @@ fn merge_footnotes(
             rename.insert(label.clone(), final_label.clone());
         }
         if let Some(target) = state.footnotes.last_mut() {
+            inserted.push(final_label.clone());
             target.insert(final_label, body);
         }
     }
     if !rename.is_empty() {
         let empty = HashMap::new();
         rename_in_blocks(child_children, &rename, &empty);
+        if let Some(target) = state.footnotes.last_mut() {
+            for label in inserted {
+                if let Some(body) = target.get_mut(&label) {
+                    rename_in_blocks(body, &rename, &empty);
+                }
+            }
+        }
     }
 }
 
@@ -1378,18 +1387,18 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
         .pop()
         .expect("footnote stack push/pop are balanced");
     // A footnote body is its own container: no heading precedes it.
-    state.footnotes.push(BTreeMap::new());
-    for body in footnotes.values_mut() {
+    state.footnotes.push(footnotes);
+    let labels: Vec<String> = state.footnotes.last().unwrap().keys().cloned().collect();
+    for label in labels {
+        let mut body = state.footnotes.last_mut().unwrap().remove(&label).unwrap();
         state.context_level = 0;
-        expand_blocks(body, state);
+        expand_blocks(&mut body, state);
+        state.footnotes.last_mut().unwrap().insert(label, body);
     }
-    let nested = state
+    footnotes = state
         .footnotes
         .pop()
         .expect("footnote stack push/pop are balanced");
-    for (label, body) in nested {
-        footnotes.entry(label).or_insert(body);
-    }
     state.context_level = outer_context;
     state.depth -= 1;
     state.stack.pop();
@@ -1449,7 +1458,7 @@ fn run_node_text(node: &InlineNode) -> String {
         // quote inside the path arrives as EscapedText without its backslash.
         // Reassembling from the author's spelling is what the grammar matches.
         InlineNode::SmartPunctuation(p) => p.value.clone(),
-        InlineNode::EscapedText(t) => format!("\\\\{}", t.value),
+        InlineNode::EscapedText(t) => format!("\\{}", t.value),
         _ => String::new(),
     }
 }
