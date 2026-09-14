@@ -1,6 +1,6 @@
 # Shared migration results
 
-`migrate_html`, `migrate_markdown`, and `migrate_djot` return the same
+`migrate_html`, `migrate_markdown`, `migrate_djot`, and `migrate_bbcode` return the same
 `MigrationResult` shape. This lets applications build one import workflow
 instead of special-casing HTML reports and treating other formats as strings.
 
@@ -13,7 +13,7 @@ let result = migrate_html(
 )?;
 
 for diagnostic in &result.report.diagnostics {
-    if diagnostic.fidelity == MigrationFidelity::Dropped {
+    if matches!(diagnostic.fidelity, MigrationFidelity::Degraded | MigrationFidelity::Dropped) {
         eprintln!("{}: {}", diagnostic.code, diagnostic.message);
     }
 }
@@ -21,9 +21,17 @@ std::fs::write("document.crv", result.value)?;
 # Ok::<(), carve::HtmlImportError>(())
 ```
 
-Markdown and Djot currently return explicit empty reports. That is useful even
-before those importers gain detailed diagnostics: consumers can depend on one
-versioned envelope and add policy without changing their control flow later.
+Version 2 reports use the same `Preserved`, `Normalized`, `Degraded`, and
+`Dropped` fidelity vocabulary as the other Carve engines. HTML retains its
+construct-specific diagnostics. Markdown, Djot, and BBCode currently emit a
+`fidelity-unverified` dropped/fallback warning on every import because those
+paths do not yet expose construct-level loss information. This deliberately
+fails closed at the worst-case outcome: byte differences are not evidence of
+semantic fidelity.
+
+Version 2 renames version 1's `Carried` value to `Preserved` and adds
+`Normalized`. Consumers should inspect `schema_version` before interpreting
+the fidelity enum.
 
 The immediate value is safer migrations, consistent binding APIs, and a stable
 place for future source ranges, confidence, safe fixes, batch reports, and

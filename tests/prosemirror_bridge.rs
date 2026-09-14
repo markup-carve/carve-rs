@@ -827,8 +827,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // contain. All 18 lossy joiners report the same single cause `soft_break` -
     // the 442 pattern, a folded marker leaving a multi-line paragraph - so no
     // new KIND of loss appeared.
-    const STRICT: usize = 1344;
-    const LOSSY: usize = 341;
+    // The pin at carve 1dfbd60 adds nine documents across three corpus rulings.
+    // With the same engine, five join the strict bucket and four join the lossy
+    // bucket; no existing document changes buckets: 1344/341 becomes 1349/345.
+    const STRICT: usize = 1349;
+    const LOSSY: usize = 345;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

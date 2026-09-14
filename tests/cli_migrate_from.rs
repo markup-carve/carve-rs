@@ -117,17 +117,21 @@ fn names_every_source_format_when_from_is_missing() {
     );
 }
 
-/// The loss report is the HTML importer's alone: Markdown and Djot each parse
-/// their source whole and have nothing to report as dropped, so a migration
-/// from either ignores those options rather than failing on them.
 #[test]
-fn ignores_the_html_only_options_for_other_formats() {
-    let (out, _, ok) = run(
+fn non_html_reports_fail_closed_when_fidelity_is_unverified() {
+    let (out, report, ok) = run(
         &["migrate", "--from", "djot", "--check-loss", "--report", "-"],
         "*bold*\n",
     );
-    assert!(ok, "html-only options should not fail a djot migration");
+    assert!(!ok, "unverified fidelity should fail a loss gate");
     assert_eq!(out, "*bold*\n");
+    let value: serde_json::Value = serde_json::from_str(&report).expect("valid report JSON");
+    assert_eq!(value["schemaVersion"], 2);
+    assert_eq!(value["sourceFormat"], "djot");
+    assert_eq!(value["diagnostics"].as_array().map(Vec::len), Some(1));
+    assert_eq!(value["diagnostics"][0]["code"], "fidelity-unverified");
+    assert_eq!(value["diagnostics"][0]["fidelity"], "dropped");
+    assert_eq!(value["diagnostics"][0]["confidence"], "fallback");
 }
 
 // ------------------------------------------------------- exit codes (#1276)

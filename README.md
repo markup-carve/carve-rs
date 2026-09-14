@@ -23,8 +23,9 @@ let html = carve::to_html("# Hello /Carve/");
 ```
 
 Other formats convert in: HTML, Markdown, Djot and BBCode, in the library
-and as `carve migrate --from <format>`. Only HTML drops anything, and only
-it takes a mode, an adapter and a loss report - see
+and as `carve migrate --from <format>`. Every importer can emit a report and
+participate in `--check-loss`; HTML additionally takes a mode and adapter. The
+other importers fail closed until they expose construct-level fidelity - see
 [docs/migration.md](https://github.com/markup-carve/carve-rs/blob/main/docs/migration.md).
 
 ## Library use

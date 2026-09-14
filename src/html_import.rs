@@ -109,21 +109,13 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
     /// `html_to_ast` keeps the structure and says nothing.
     StructureUnspellable => "structure-unspellable",
-    /// One element became SEVERAL Carve blocks because writing it as one would
-    /// have changed what it says (PART 12 §16). The ruled case is a `<dl>` whose
-    /// empty `<dd>` is not last: dropping the unspellable description would let
-    /// the entry below lend the term above its own, so the list breaks instead
-    /// (markup-carve/carve#1638).
-    ///
     /// The source did not declare how to read a value and this importer picked
     /// an encoding anyway, so the node it produced is only correct if that
     /// guess holds.
     ///
-    /// Deliberately NOT `ElementUnwrapped`: unwrapping is a note about the
-    /// input's structure and loses no meaning, while an assumed encoding is a
-    /// warning about the OUTPUT. A consumer told only that an element is gone
-    /// cannot tell a harmless structural event from content that may be in the
-    /// wrong language entirely, and that is the one signal it could act on.
+    /// Distinct from `ElementUnwrapped`: unwrapping may lose a structural role
+    /// while retaining text, whereas an assumed encoding warns that the output
+    /// text itself is only inferred.
     EncodingAssumed => "encoding-assumed",
     DiagnosticsTruncated => "diagnostics-truncated",
 });

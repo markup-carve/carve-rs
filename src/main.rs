@@ -537,43 +537,33 @@ fn run_migrate(args: &[String]) -> ExitCode {
             }
         },
     };
-    // Markdown and Djot have no import policy to apply and nothing to report
-    // as lost: each parses to a Carve document whole, so the mode/adapter/
-    // report options are HTML's alone and are silently unused here rather than
-    // rejected.
-    if from != "html" {
-        let carve = if from == "djot" {
-            carve::djot_to_carve(&source)
-        } else if from == "bbcode" {
-            match carve::bbcode_to_carve(&source) {
-                Ok(value) => value,
-                Err(error) => {
-                    eprintln!("carve migrate: {error}");
-                    return ExitCode::from(2);
-                }
+    let result = match from.as_str() {
+        "html" => match carve::migrate_html(
+            &source,
+            &carve::HtmlImportOptions {
+                mode,
+                adapter,
+                ..Default::default()
+            },
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("carve migrate: {error:?}");
+                return ExitCode::from(2);
             }
-        } else {
-            carve::markdown_to_carve(&source)
-        };
-        print!("{carve}");
-
-        return ExitCode::SUCCESS;
-    }
-
-    let options = carve::HtmlImportOptions {
-        mode,
-        adapter,
-        ..Default::default()
-    };
-    let result = match carve::html_to_carve(&source, &options) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("carve migrate: {e:?}");
-            return ExitCode::from(2);
-        }
+        },
+        "djot" => carve::migrate_djot(&source),
+        "bbcode" => match carve::migrate_bbcode(&source) {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("carve migrate: {error}");
+                return ExitCode::from(2);
+            }
+        },
+        _ => carve::migrate_markdown(&source),
     };
     print!("{}", result.value);
-    let report = html_report_json(&result.report);
+    let report = migration_report_json(&result.report);
     if let Some(path) = report_path {
         if path == "-" {
             eprintln!("{report}");
@@ -582,47 +572,65 @@ fn run_migrate(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     }
-    if check_loss && !result.report.diagnostics.is_empty() {
+    if check_loss
+        && result.report.diagnostics.iter().any(|diagnostic| {
+            matches!(
+                diagnostic.fidelity,
+                carve::MigrationFidelity::Degraded | carve::MigrationFidelity::Dropped
+            )
+        })
+    {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
     }
 }
 
-/// The HTML import report as JSON (the spec's HTML import contract,
-/// "Result and diagnostics").
+/// The shared migration report as JSON.
 ///
 /// Every spelling comes from the vocabulary's own `as_str`, never from a copy
 /// kept here: `tests/the_report_answers_to_the_published_schema.rs` holds
 /// those to `resources/html-import-schema.json`, and a second table in this
 /// file would be outside what that test can see.
-fn html_report_json(report: &carve::HtmlImportReport) -> String {
-    fn esc(s: &str) -> String {
-        format!("{s:?}")
-    }
+fn migration_report_json(report: &carve::MigrationReport) -> String {
     let diagnostics = report
         .diagnostics
         .iter()
-        .map(|d| {
-            format!(
-                "{{\"code\":\"{}\",\"message\":{},\"severity\":\"{}\"{}}}",
-                d.code.as_str(),
-                esc(&d.message),
-                d.severity.as_str(),
-                d.path
-                    .as_ref()
-                    .map(|p| format!(",\"path\":{}", esc(p)))
-                    .unwrap_or_default()
-            )
+        .map(|diagnostic| {
+            let mut value = serde_json::json!({
+                "code": diagnostic.code,
+                "message": diagnostic.message,
+                "severity": diagnostic.severity.as_str(),
+                "fidelity": diagnostic.fidelity.as_str(),
+                "confidence": diagnostic.confidence.as_str(),
+                "path": diagnostic.path,
+            });
+            if diagnostic.path.is_none() {
+                value
+                    .as_object_mut()
+                    .expect("diagnostic object")
+                    .remove("path");
+            }
+            value
         })
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"mode\":\"{}\",\"adapter\":\"{}\",\"diagnostics\":[{}]}}",
-        report.mode.as_str(),
-        report.adapter.as_str(),
-        diagnostics
-    )
+        .collect::<Vec<_>>();
+    let mut value = serde_json::json!({
+        "schemaVersion": report.schema_version,
+        "sourceFormat": report.source_format.as_str(),
+        "mode": report.mode.map(|value| value.as_str()),
+        "adapter": report.adapter.map(|value| value.as_str()),
+        "diagnostics": diagnostics,
+    });
+    if report.mode.is_none() {
+        value.as_object_mut().expect("report object").remove("mode");
+    }
+    if report.adapter.is_none() {
+        value
+            .as_object_mut()
+            .expect("report object")
+            .remove("adapter");
+    }
+    value.to_string()
 }
 
 fn run_merge(args: &[String]) -> ExitCode {
@@ -1063,9 +1071,9 @@ fn print_usage() {
          carve merge [--json] BASE OURS THEIRS\n  \
                                      merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
-         convert html, markdown (md) or djot to Carve.\n                              \
-         --mode/--adapter/--report/--check-loss are html's\n                              \
-         alone: it is the only importer that drops anything\n                              \
+         convert html, markdown (md), djot or bbcode to Carve.\n                              \
+         --mode/--adapter apply to html; --report/--check-loss\n                              \
+         apply to all importers and fail closed when fidelity is unknown\n                              \
          (exit 1 only when --check-loss finds loss, 2 on a\n                              \
          usage error or an unreadable file)\n  \
          carve -h                    show this help\n\n\

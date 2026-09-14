@@ -1,6 +1,7 @@
 use crate::{
     bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
-    HtmlImportDiagnosticCode, HtmlImportError, HtmlImportOptions, HtmlImportSeverity,
+    HtmlImportAdapter, HtmlImportDiagnosticCode, HtmlImportError, HtmlImportMode,
+    HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,9 +25,21 @@ impl SourceFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationFidelity {
-    Carried,
+    Preserved,
+    Normalized,
     Degraded,
     Dropped,
+}
+
+impl MigrationFidelity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserved => "preserved",
+            Self::Normalized => "normalized",
+            Self::Degraded => "degraded",
+            Self::Dropped => "dropped",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +47,16 @@ pub enum MigrationConfidence {
     Exact,
     Inferred,
     Fallback,
+}
+
+impl MigrationConfidence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Inferred => "inferred",
+            Self::Fallback => "fallback",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +73,8 @@ pub struct MigrationDiagnostic {
 pub struct MigrationReport {
     pub schema_version: u32,
     pub source_format: SourceFormat,
+    pub mode: Option<HtmlImportMode>,
+    pub adapter: Option<HtmlImportAdapter>,
     pub diagnostics: Vec<MigrationDiagnostic>,
 }
 
@@ -63,18 +88,18 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
     match code {
         HtmlImportDiagnosticCode::ElementDropped
         | HtmlImportDiagnosticCode::AttributeDropped
-        | HtmlImportDiagnosticCode::StructureUnspellable => MigrationFidelity::Dropped,
-        HtmlImportDiagnosticCode::StyleUnmapped
+        | HtmlImportDiagnosticCode::StructureUnspellable
+        | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Dropped,
+        HtmlImportDiagnosticCode::ElementUnwrapped
+        | HtmlImportDiagnosticCode::StyleUnmapped
         | HtmlImportDiagnosticCode::TableDegraded
         | HtmlImportDiagnosticCode::EncodingAssumed
-        | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
-        // `AttributePreserved` is CARRIED and not DROPPED: it is the row that
+        | HtmlImportDiagnosticCode::RawPreserved => MigrationFidelity::Degraded,
+        // `AttributePreserved` is PRESERVED and not DROPPED: it is the row that
         // says an attribute reached the output inside preserved raw bytes, so
         // filing it under `Dropped` beside `AttributeDropped` would reintroduce
         // the same false claim one layer up (markup-carve/carve-js#1468).
-        HtmlImportDiagnosticCode::ElementUnwrapped
-        | HtmlImportDiagnosticCode::AttributePreserved
-        | HtmlImportDiagnosticCode::RawPreserved => MigrationFidelity::Carried,
+        HtmlImportDiagnosticCode::AttributePreserved => MigrationFidelity::Preserved,
     }
 }
 
@@ -92,10 +117,10 @@ pub fn migrate_html(
             message: diagnostic.message,
             severity: diagnostic.severity,
             fidelity: fidelity(diagnostic.code),
-            confidence: if diagnostic.code == HtmlImportDiagnosticCode::EncodingAssumed {
-                MigrationConfidence::Inferred
-            } else {
-                MigrationConfidence::Exact
+            confidence: match diagnostic.code {
+                HtmlImportDiagnosticCode::EncodingAssumed => MigrationConfidence::Inferred,
+                HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationConfidence::Fallback,
+                _ => MigrationConfidence::Exact,
             },
             path: diagnostic.path,
         })
@@ -103,32 +128,47 @@ pub fn migrate_html(
     Ok(MigrationResult {
         value: result.value,
         report: MigrationReport {
-            schema_version: 1,
+            schema_version: 2,
             source_format: SourceFormat::Html,
+            mode: Some(result.report.mode),
+            adapter: Some(result.report.adapter),
             diagnostics,
         },
     })
 }
 
-fn exact(value: String, source_format: SourceFormat) -> MigrationResult {
+fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
+    let diagnostics = vec![MigrationDiagnostic {
+        code: "fidelity-unverified".to_owned(),
+        message: format!(
+            "Fidelity was not reported by the {} importer; dropped is a conservative worst-case release-gate classification",
+            source_format.as_str()
+        ),
+        severity: HtmlImportSeverity::Warning,
+        fidelity: MigrationFidelity::Dropped,
+        confidence: MigrationConfidence::Fallback,
+        path: None,
+    }];
     MigrationResult {
         value,
         report: MigrationReport {
-            schema_version: 1,
+            schema_version: 2,
             source_format,
-            diagnostics: Vec::new(),
+            mode: None,
+            adapter: None,
+            diagnostics,
         },
     }
 }
 
 pub fn migrate_markdown(source: &str) -> MigrationResult {
-    exact(markdown_to_carve(source), SourceFormat::Markdown)
+    unverified(markdown_to_carve(source), SourceFormat::Markdown)
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
-    exact(djot_to_carve(source), SourceFormat::Djot)
+    unverified(djot_to_carve(source), SourceFormat::Djot)
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    Ok(exact(bbcode_to_carve(source)?, SourceFormat::Bbcode))
+    Ok(unverified(bbcode_to_carve(source)?, SourceFormat::Bbcode))
 }
