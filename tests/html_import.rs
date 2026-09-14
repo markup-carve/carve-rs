@@ -1,5 +1,6 @@
 use carve::{
-    html_to_ast, html_to_carve, HtmlImportDiagnosticCode, HtmlImportMode, HtmlImportOptions,
+    html_to_ast, html_to_carve, migrate_html, HtmlImportDiagnosticCode, HtmlImportMode,
+    HtmlImportOptions,
 };
 use std::fs;
 use std::path::Path;
@@ -141,6 +142,14 @@ fn shared_contract_fixtures_match() {
             serde_json::from_str(&fs::read_to_string(dir.join("expected.ast.json")).unwrap())
                 .unwrap();
         let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
+        let migration = migrate_html(&html, &HtmlImportOptions::default()).unwrap();
+        if migration.value != result.value {
+            mismatches.push(format!(
+                "{name} migration value\n  expected: {:?}\n  actual:  {:?}",
+                result.value, migration.value
+            ));
+            continue;
+        }
         if let Some((_, reason, current)) =
             AHEAD_OF_PIN.iter().find(|(fixture, _, _)| *fixture == name)
         {
@@ -204,6 +213,18 @@ fn shared_contract_fixtures_match() {
             // unpinned.
             .map(|d| d.code.as_str())
             .collect::<Vec<_>>();
+        let migration_codes = migration
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.code.as_str())
+            .collect::<Vec<_>>();
+        if migration_codes != actual_codes {
+            mismatches.push(format!(
+                "{name} migration diagnostics: {migration_codes:?} != {actual_codes:?}"
+            ));
+            continue;
+        }
         // A FIXTURE'S ROWS ARE A SUBSEQUENCE, NOT AN ARRAY TO MATCH
         // (markup-carve/carve#1884). How many rows one loss takes is
         // engine-defined: a table whose `<thead>` sits between two `<tbody>`
@@ -253,23 +274,43 @@ fn shared_contract_fixtures_match() {
             .iter()
             .enumerate()
         {
-            let actual = &result.report.diagnostics[matched[index]];
+            let actual = &migration.report.diagnostics[matched[index]];
+            let source_actual = &result.report.diagnostics[matched[index]];
             let at = format!("{name} diagnostic {index}");
             if let Some(path) = expected_diagnostic["path"].as_str() {
-                if actual.path.as_deref() != Some(path) {
-                    mismatches.push(format!("{at} path: {path:?} != {:?}", actual.path));
+                if source_actual.path.as_deref() != Some(path) {
+                    mismatches.push(format!("{at} path: {path:?} != {:?}", source_actual.path));
                 }
             }
             if let Some(message) = expected_diagnostic["message"].as_str() {
-                if actual.message != message {
-                    mismatches.push(format!("{at} message: {message:?} != {:?}", actual.message));
+                if source_actual.message != message {
+                    mismatches.push(format!(
+                        "{at} message: {message:?} != {:?}",
+                        source_actual.message
+                    ));
                 }
             }
             if let Some(severity) = expected_diagnostic["severity"].as_str() {
-                if actual.severity.as_str() != severity {
+                if source_actual.severity.as_str() != severity {
                     mismatches.push(format!(
                         "{at} severity: {severity:?} != {:?}",
-                        actual.severity.as_str()
+                        source_actual.severity.as_str()
+                    ));
+                }
+            }
+            if let Some(fidelity) = expected_diagnostic["fidelity"].as_str() {
+                if actual.fidelity.as_str() != fidelity {
+                    mismatches.push(format!(
+                        "{at} fidelity: {fidelity:?} != {:?}",
+                        actual.fidelity.as_str()
+                    ));
+                }
+            }
+            if let Some(confidence) = expected_diagnostic["confidence"].as_str() {
+                if actual.confidence.as_str() != confidence {
+                    mismatches.push(format!(
+                        "{at} confidence: {confidence:?} != {:?}",
+                        actual.confidence.as_str()
                     ));
                 }
             }
