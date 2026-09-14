@@ -1432,6 +1432,27 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             a_sub_list_already_opened = true;
             continue;
         }
+        // A LINE comment written at this item's content column lands ON the
+        // marker column of a sub-list that stands above it, so the re-parse
+        // reads the comment into that list's LAST ITEM rather than into this
+        // one, and the next pass spells it a level deeper (carve-rs#1592,
+        // carve-js#1676). The gate is the SIBLING'S KIND: `needs_a_blank_line_above`
+        // answers the paragraph-folding question and is reachable only from the
+        // list arm, so it can never see a comment.
+        //
+        // A blank line closes the sub-list. It does not loosen the item: a
+        // comment spells no paragraph for the blank to part, so the re-parsed
+        // list stays tight and the HTML is byte-identical.
+        //
+        // Only the `%% text` form. A `%%%` fence opener already closes the
+        // sub-list, and a `{% text %}` delimited comment is not written at a
+        // column that re-attaches - both measured, both left alone.
+        if !separated
+            && matches!(prev, Some(BlockNode::List(_)))
+            && matches!(block, BlockNode::Comment(comment) if !comment.block && !comment.delimited)
+        {
+            out.push('\n');
+        }
         if !separated
             && (continues_a_run_at_the_marker_column
                 || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
