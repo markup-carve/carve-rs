@@ -211,6 +211,7 @@ fn a_node_inside_the_continuation_keeps_its_own_position() {
     };
     let pos = em
         .pos
+        .clone()
         .expect("a node inside one fragment carries a position");
     assert_eq!(pos.start_line, 2, "the anchor came from the row, not the +");
     let slice: String = codepoints[pos.start_offset..pos.end_offset]
@@ -229,7 +230,10 @@ fn a_node_on_the_row_line_keeps_its_own_position() {
     let InlineNode::Emphasis(em) = &cells[1].children[0] else {
         panic!("expected the row's emphasis first");
     };
-    let pos = em.pos.expect("the row line's node carries a position");
+    let pos = em
+        .pos
+        .clone()
+        .expect("the row line's node carries a position");
     assert_eq!(pos.start_line, 1);
     let slice: String = codepoints[pos.start_offset..pos.end_offset]
         .iter()

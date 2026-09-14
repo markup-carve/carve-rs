@@ -10,7 +10,7 @@ fn checked_html_keeps_output_and_reports_every_drop_in_source_order() {
     assert!(!result.truncated);
     assert_eq!(result.losses[0].format, "latex");
     assert_eq!(result.losses[0].target, RenderTarget::Html);
-    assert_eq!(result.losses[0].pos.unwrap().start_column, 1);
+    assert_eq!(result.losses[0].pos.clone().unwrap().start_column, 1);
     assert_eq!(result.losses[1].format, "typst");
 }
 

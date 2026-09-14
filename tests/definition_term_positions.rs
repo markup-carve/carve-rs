@@ -41,7 +41,7 @@ fn a_term_spans_its_marker_and_content() {
 
     let spans: Vec<String> = terms
         .iter()
-        .map(|t| slice(SOURCE, t.pos.expect("a term must carry a position")))
+        .map(|t| slice(SOURCE, t.pos.clone().expect("a term must carry a position")))
         .collect();
     assert_eq!(spans, vec![":: color", ":: colour"]);
 }
@@ -54,7 +54,12 @@ fn a_description_spans_its_marker_and_content() {
 
     let spans: Vec<String> = defs
         .iter()
-        .map(|d| slice(SOURCE, d.pos.expect("a description must carry a position")))
+        .map(|d| {
+            slice(
+                SOURCE,
+                d.pos.clone().expect("a description must carry a position"),
+            )
+        })
         .collect();
     assert_eq!(spans, vec![":  The visual property.", ":  A pigment."]);
 }
@@ -65,14 +70,14 @@ fn a_description_spans_its_marker_and_content() {
 fn neither_publishes_a_zero_length_placeholder() {
     let list = definition_list(SOURCE);
     for term in &list.items[0].terms {
-        let pos = term.pos.expect("a term position");
+        let pos = term.pos.clone().expect("a term position");
         assert_ne!(
             pos.start_offset, pos.end_offset,
             "the term span selects nothing"
         );
     }
     for def in &list.items[0].definitions {
-        let pos = def.pos.expect("a description position");
+        let pos = def.pos.clone().expect("a description position");
         assert_ne!(
             pos.start_offset, pos.end_offset,
             "the description span selects nothing"
@@ -89,6 +94,7 @@ fn a_multi_line_description_spans_every_line_it_folded() {
     let list = definition_list(source);
     let pos = list.items[0].definitions[0]
         .pos
+        .clone()
         .expect("a description position");
 
     let text = slice(source, pos);

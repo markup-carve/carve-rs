@@ -4,7 +4,7 @@
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Html,
     Markdown,
@@ -18,6 +18,7 @@ enum OutputFormat {
 enum Command {
     Render,
     Fmt,
+    Flatten,
 }
 
 /// The stamp modes answer a question about the document rather than rendering
@@ -27,6 +28,23 @@ enum Command {
 enum StampMode {
     Info,
     Check,
+}
+
+/// Stands in for the filesystem resolver when the `fs` feature is off, so the
+/// render path below compiles unchanged while carrying no code that opens a
+/// file. It resolves nothing, which is what leaves the directive literal.
+#[cfg(not(feature = "fs"))]
+struct NoResolver;
+
+#[cfg(not(feature = "fs"))]
+impl carve::IncludeResolver for NoResolver {
+    fn resolve(
+        &self,
+        _path: &str,
+        _ctx: &carve::IncludeContext<'_>,
+    ) -> Option<carve::IncludeResolved> {
+        None
+    }
 }
 
 fn main() -> ExitCode {
@@ -72,12 +90,20 @@ fn main() -> ExitCode {
     let mut report_losses: Option<String> = None;
     let mut allow_render_loss = false;
     let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
+    // `mut` only where the flag can be honoured: without the `fs` feature the
+    // flag is refused at the parse site and this never moves.
+    #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
+    let mut include_root: Option<String> = None;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "fmt" if command == Command::Render && input_paths.is_empty() => {
                 command = Command::Fmt;
+                format = OutputFormat::Carve;
+            }
+            "flatten" if command == Command::Render && input_paths.is_empty() => {
+                command = Command::Flatten;
                 format = OutputFormat::Carve;
             }
             "-h" | "--help" => {
@@ -203,6 +229,25 @@ fn main() -> ExitCode {
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
+            "--include-root" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --include-root requires a directory");
+                    return ExitCode::FAILURE;
+                };
+                // REFUSED, not ignored: a build without the resolver cannot
+                // honour the flag, and silently rendering the directive as
+                // literal text would look like the include simply failed.
+                #[cfg(not(feature = "fs"))]
+                {
+                    let _ = value;
+                    eprintln!("carve: --include-root needs the `fs` feature, which this build does not have");
+                    return ExitCode::FAILURE;
+                }
+                #[cfg(feature = "fs")]
+                {
+                    include_root = Some(value);
+                }
+            }
             "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
             "-" if command == Command::Render => input_paths.clear(),
             "-" if command == Command::Fmt => input_paths.push(arg),
@@ -222,6 +267,13 @@ fn main() -> ExitCode {
 
     if command == Command::Fmt {
         return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
+    }
+
+    if command == Command::Flatten {
+        return run_flatten(
+            input_paths.first().map(String::as_str),
+            include_root.as_deref(),
+        );
     }
 
     if enable_extensions {
@@ -289,6 +341,85 @@ fn main() -> ExitCode {
         OutputFormat::Ansi => carve::RenderTarget::Ansi,
         OutputFormat::Carve | OutputFormat::Json => carve::RenderTarget::Carve,
     };
+
+    // Containment root (spec I10): an explicit --include-root wins, otherwise a
+    // file input defaults to the DIRECTORY OF THE DOCUMENT. Never the process
+    // working directory, which is arbitrary with respect to the document and
+    // may be `/` or a home directory. Stdin has no path context and therefore
+    // no inferable root, so directives stay literal unless --include-root says
+    // otherwise.
+    //
+    // The document path is ABSOLUTIZED first. The resolver looks a nested
+    // relative include up from `root.join(parent)`, so a relative input like
+    // `book/main.crv` (root `book`) would otherwise re-prefix the root and
+    // search `book/book/child.crv`. carve-js absolutizes here for the same
+    // reason.
+    let input_path = input_paths.first().filter(|p| p.as_str() != "-").map(|p| {
+        let path = std::path::Path::new(p);
+        match std::fs::canonicalize(path) {
+            Ok(real) => real,
+            // The file was read successfully above, so this is unreachable
+            // in practice; fall back to cwd-joining rather than to a
+            // relative path, which would reintroduce the re-prefix bug.
+            Err(_) => std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf()),
+        }
+    });
+    let root = include_root.clone().or_else(|| {
+        input_path.as_deref().and_then(|p| {
+            p.parent()
+                .filter(|d| !d.as_os_str().is_empty())
+                .map(|d| d.to_string_lossy().into_owned())
+        })
+    });
+    // Only pay for the expansion pass when includes could matter: an explicit
+    // --include-root is a user request, otherwise the source must actually
+    // contain a directive opener. `carve fmt` / --carve is excluded by I15 -
+    // the formatter round-trips SOURCE, and inlining files into it would
+    // rewrite the author's document rather than format it.
+    //
+    // NOT `target`, which collapses `--json` onto `RenderTarget::Carve` for
+    // loss-reporting purposes. That collapse answers a different question: the
+    // AST dump publishes a TREE, not Carve source, so it expands (carve-js has
+    // `json` as its own target and expands for it too).
+    let include_target = if format == OutputFormat::Carve {
+        carve::RenderTarget::Carve
+    } else {
+        carve::RenderTarget::Html
+    };
+    let want_includes = root.is_some()
+        && carve::expands_for_target(include_target)
+        && (include_root.is_some() || source.contains("{{"));
+
+    // The CLI's include path IS the filesystem resolver, so it compiles out with
+    // it. Without the feature the directive stays literal, which is the core
+    // behavior, not a degraded one.
+    #[cfg(feature = "fs")]
+    let resolver = if want_includes {
+        let root = root.expect("guarded by want_includes");
+        match carve::FileSystemResolver::new(&root) {
+            Ok(resolver) => Some(resolver),
+            Err(err) => {
+                // An explicit root is a user request, so a bad one is fatal; an
+                // inferred one silently falls back to no includes rather than
+                // failing a render the user never asked to change.
+                if include_root.is_some() {
+                    eprintln!("carve: cannot use include root {root}: {err}");
+                    return ExitCode::FAILURE;
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(not(feature = "fs"))]
+    let resolver: Option<NoResolver> = {
+        let _ = want_includes;
+        None
+    };
+
     let checked_options = carve::CheckedRenderOptions {
         strict: false,
         max_losses: max_render_losses,
@@ -322,6 +453,67 @@ fn main() -> ExitCode {
         };
         let checked = carve::with_render_loss_report(target, checked_options, || {
             render_document(doc, format, &options)
+        })
+        .expect("non-strict collection cannot fail");
+        let output = match checked.value {
+            Ok(output) => output,
+            Err(err) => {
+                eprintln!("carve: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        (
+            output,
+            (checked.losses, checked.total_losses, checked.truncated),
+        )
+    } else if let Some(resolver) = &resolver {
+        // INCLUDES TAKE THE DOCUMENT PATH, not the source facades below: the
+        // pass works on a parsed tree, which is also what carries the file
+        // identity each included node keeps.
+        let mut include_options = carve::IncludeOptions::new().with_resolver(resolver);
+        if let Some(path) = &input_path {
+            include_options = include_options.with_source_path(path.to_string_lossy().into_owned());
+        }
+        let target_is_html = matches!(format, OutputFormat::Html);
+        let prepared = match carve::prepare_doc_with_includes(
+            &source,
+            &options,
+            &include_options,
+            // The same mode the HTML target renders under; every other target
+            // is interactive, which is what `render_document` also assumes.
+            if target_is_html {
+                options.mode
+            } else {
+                carve::Mode::Interactive
+            },
+            target_is_html,
+        ) {
+            Ok(prepared) => prepared,
+            Err(err) => {
+                eprintln!("carve: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        for warning in &prepared.warnings {
+            // The rule id is machine-readable and stable across engines, and
+            // the file names the document the reader has to edit. The
+            // resolver's own error text is NOT printed: it routinely carries
+            // absolute host paths, and spec I7 keeps it off the report.
+            eprintln!(
+                "carve: {}: {} [{}]",
+                warning.file.as_deref().unwrap_or("<stdin>"),
+                warning.message,
+                warning.rule
+            );
+        }
+        if prepared.suppressed_warnings > 0 {
+            eprintln!(
+                "carve: {} additional include warning(s) suppressed",
+                prepared.suppressed_warnings
+            );
+        }
+        let checked = carve::with_render_loss_report(target, checked_options, || {
+            render_document(prepared.doc.clone(), format, &options)
         })
         .expect("non-strict collection cannot fail");
         let output = match checked.value {
@@ -389,6 +581,7 @@ fn main() -> ExitCode {
         for loss in &losses {
             let at = loss
                 .pos
+                .as_ref()
                 .map(|pos| format!(":{}:{}", pos.start_line, pos.start_column))
                 .unwrap_or_default();
             eprintln!("{file}{at} {} - {}", loss.code, loss.message);
@@ -768,7 +961,7 @@ fn json_string(value: &str) -> String {
 
 fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool) -> String {
     let rows = losses.iter().map(|loss| {
-        let pos = loss.pos.map(|pos| format!(
+        let pos = loss.pos.as_ref().map(|pos| format!(
             ",\"pos\":{{\"startLine\":{},\"endLine\":{},\"startColumn\":{},\"endColumn\":{},\"startOffset\":{},\"endOffset\":{}}}",
             pos.start_line, pos.end_line, pos.start_column, pos.end_column, pos.start_offset, pos.end_offset,
         )).unwrap_or_default();
@@ -974,6 +1167,117 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `carve flatten` - write the document back as ONE self-contained Carve file,
+/// with every include expanded in place.
+///
+/// The deliberate opposite of `carve fmt`, and the reason both exist. Formatting
+/// round-trips the author's document, so it leaves directives alone (I15);
+/// flattening is an explicit request for the OTHER document - the one with the
+/// children merged in - because that is what can be pasted somewhere with no
+/// filesystem behind it.
+///
+/// TWO THINGS THIS CHANGES beyond inlining, both worth reporting rather than
+/// letting someone find them in a published page:
+///
+///   - The output is CANONICAL Carve. Parent and children alike go through the
+///     writer, so formatting is normalized, not preserved.
+///   - Colliding heading ids and footnote labels are RENAMED (I5), because two
+///     files that were never in one document together can each define `intro`.
+///     The rename warnings print like any other.
+///
+/// Requires a containment root, so stdin is refused unless `--include-root`
+/// names one: "flatten this" with nothing to resolve against is a request that
+/// cannot be honoured, and silently writing the document back unchanged would
+/// look like it had no includes.
+#[cfg(feature = "fs")]
+fn run_flatten(path: Option<&str>, include_root: Option<&str>) -> ExitCode {
+    let (source, source_path) = match path {
+        Some(path) if path != "-" => match std::fs::read_to_string(path) {
+            Ok(source) => (source, Some(path.to_string())),
+            Err(err) => {
+                eprintln!("carve flatten: cannot read {path}: {err}");
+                return ExitCode::FAILURE;
+            }
+        },
+        _ => {
+            let mut source = String::new();
+            if let Err(err) = io::stdin().read_to_string(&mut source) {
+                eprintln!("carve flatten: cannot read stdin: {err}");
+                return ExitCode::FAILURE;
+            }
+            (source, None)
+        }
+    };
+
+    let root = match include_root.map(str::to_string).or_else(|| {
+        source_path
+            .as_deref()
+            .and_then(|p| std::fs::canonicalize(p).ok())
+            .and_then(|p| p.parent().map(|d| d.to_string_lossy().into_owned()))
+    }) {
+        Some(root) => root,
+        None => {
+            eprintln!(
+                "carve flatten: stdin has no directory to resolve includes against; \
+                 pass --include-root DIR"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let resolver = match carve::FileSystemResolver::new(&root) {
+        Ok(resolver) => resolver,
+        Err(err) => {
+            eprintln!("carve flatten: cannot use include root {root}: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut options = carve::IncludeOptions::new().with_resolver(&resolver);
+    if let Some(path) = source_path.as_deref() {
+        let absolute =
+            std::fs::canonicalize(path).unwrap_or_else(|_| std::path::PathBuf::from(path));
+        options = options.with_source_path(absolute.to_string_lossy().into_owned());
+    }
+    // POSITIONS ON. The writer orders collected definitions by source position,
+    // and after a merge that ordering is the only thing that keeps a child's
+    // footnote definitions in the order the document reads. Parsed without
+    // them, every merged definition reported no position at all and the order
+    // fell back to the LABEL - so `[^m]` from the second include was published
+    // above `[^n]` from the first.
+    let parse_options = carve::Options::default().with_positions(true);
+    let result = carve::expand_includes(
+        carve::parse_with_options(&source, &parse_options),
+        &source,
+        &options,
+    );
+    for warning in &result.warnings {
+        eprintln!("carve: {} [{}]", warning.message, warning.rule);
+    }
+    if result.suppressed_warnings > 0 {
+        eprintln!(
+            "carve: {} further include warning(s) suppressed",
+            result.suppressed_warnings
+        );
+    }
+
+    match carve::render_carve(&result.doc) {
+        Ok(output) => write_stdout(&output),
+        Err(err) => {
+            eprintln!("carve flatten: {err}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Without the filesystem resolver there is nothing to flatten AGAINST, so the
+/// command refuses rather than writing the document back unchanged.
+#[cfg(not(feature = "fs"))]
+fn run_flatten(_path: Option<&str>, _include_root: Option<&str>) -> ExitCode {
+    eprintln!("carve flatten: needs the `fs` feature, which this build does not have");
+    ExitCode::FAILURE
+}
+
 fn run_fmt(
     paths: &[String],
     write: bool,
@@ -1066,6 +1370,9 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve flatten [file]        write the document as ONE self-contained\n                              \
+         file, every include expanded in place (the\n                              \
+         opposite of fmt, which leaves them alone)\n  \
          carve lint [files]          report constructs that render wrong\n                              \
          (exit 1 on findings, 2 if a file cannot be read)\n  \
          carve merge [--json] BASE OURS THEIRS\n  \
@@ -1114,6 +1421,9 @@ fn print_usage() {
          --allow-loss raw-format-dropped\n                              \
                                      accept intentional target filtering\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
+         --include-root DIR          containment root for {{ path }} includes.\n                              \
+         Defaults to the input file's directory; pass this to widen\n                              \
+         or narrow it, or to enable includes on stdin\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }

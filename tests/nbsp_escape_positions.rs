@@ -73,7 +73,10 @@ fn a_plain_run_after_an_escaped_one_is_still_exact() {
     let InlineNode::Text(text) = &para.children[0] else {
         panic!("expected a text node");
     };
-    let pos = text.pos.expect("the plain run must carry a position");
+    let pos = text
+        .pos
+        .clone()
+        .expect("the plain run must carry a position");
 
     let slice: String = source
         .chars()

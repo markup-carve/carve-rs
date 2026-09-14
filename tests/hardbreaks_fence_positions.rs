@@ -44,7 +44,7 @@ fn the_fence_carries_a_span_over_both_delimiters() {
         panic!("expected the hardbreaks div, got {:?}", doc.children[0]);
     };
 
-    let pos = div.pos.expect("the fence must carry a position");
+    let pos = div.pos.clone().expect("the fence must carry a position");
     let text = slice(&source, pos);
     assert!(
         text.starts_with(":::"),
@@ -69,6 +69,7 @@ fn a_paragraph_inside_the_fence_is_placed() {
 
     let pos = para
         .pos
+        .clone()
         .expect("a block inside the fence must carry a position");
     assert_eq!(slice(&source, pos), "one\ntwo");
 }
@@ -97,7 +98,10 @@ fn the_converted_hard_break_keeps_its_span() {
     let InlineNode::HardBreak(brk) = breaks[0] else {
         unreachable!()
     };
-    let pos = brk.pos.expect("the converted break must keep its span");
+    let pos = brk
+        .pos
+        .clone()
+        .expect("the converted break must keep its span");
     assert_eq!(slice(&source, pos), "\n");
 }
 
@@ -117,7 +121,10 @@ fn every_inline_in_the_fence_slices_back() {
     let mut checked = 0usize;
     for node in &para.children {
         if let InlineNode::Text(text) = node {
-            let pos = text.pos.expect("a text node in the fence must be placed");
+            let pos = text
+                .pos
+                .clone()
+                .expect("a text node in the fence must be placed");
             assert_eq!(slice(&source, pos), text.value);
             checked += 1;
         }
@@ -145,7 +152,7 @@ fn a_block_nested_in_the_fence_is_placed() {
         panic!("the note is its second child");
     };
     assert_eq!(
-        slice(source, note.pos.expect("the nested note is placed")),
+        slice(source, note.pos.clone().expect("the nested note is placed")),
         "::: note\na\nb\n:::"
     );
 }

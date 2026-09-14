@@ -162,8 +162,8 @@ fn two_definitions_are_two_nodes_in_source_order() {
     assert_eq!(defs.len(), 2);
     assert_eq!(defs[0].key, "smith2020");
     assert_eq!(defs[1].key, "jones2019");
-    let first = defs[0].pos.expect("first definition has no pos");
-    let second = defs[1].pos.expect("second definition has no pos");
+    let first = defs[0].pos.clone().expect("first definition has no pos");
+    let second = defs[1].pos.clone().expect("second definition has no pos");
     assert!(
         first.start_offset < second.start_offset,
         "pos runs backwards: {first:?} then {second:?}"
@@ -178,7 +178,7 @@ fn pos_spans_the_whole_definition_line() {
     // node on the line carries - the citation group is built by the extension.
     let doc = parsed(WITH_METADATA);
     let defs = definitions(&doc);
-    let pos = defs[0].pos.expect("the definition has no pos");
+    let pos = defs[0].pos.clone().expect("the definition has no pos");
     let line = WITH_METADATA.lines().nth(2).expect("no third line");
     assert_eq!(pos.start_line, 3);
     assert_eq!(pos.end_line, 3);

@@ -746,7 +746,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         }
         InlineNode::Math(math) => style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(raw) => {
-            crate::render_loss::record_raw_drop(&raw.format, crate::RawNodeType::Inline, raw.pos);
+            crate::render_loss::record_raw_drop(
+                &raw.format,
+                crate::RawNodeType::Inline,
+                raw.pos.clone(),
+            );
             String::new()
         }
         // §27: always emitted (unlike raw passthrough above). It is prose, not

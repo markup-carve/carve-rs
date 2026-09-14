@@ -50,8 +50,8 @@ fn cell_inlines_carry_spans_that_slice_back() {
     let mut checked = 0usize;
     for node in &children {
         let (value, pos) = match node {
-            InlineNode::Text(t) => (t.value.clone(), t.pos),
-            InlineNode::EscapedText(e) => (format!("\\{}", e.value), e.pos),
+            InlineNode::Text(t) => (t.value.clone(), t.pos.clone()),
+            InlineNode::EscapedText(e) => (format!("\\{}", e.value), e.pos.clone()),
             _ => continue,
         };
         let pos = pos.unwrap_or_else(|| panic!("no position on {value:?}"));
@@ -77,6 +77,7 @@ fn an_ordinary_cell_is_placed_as_well() {
     };
     let pos = text
         .pos
+        .clone()
         .expect("an ordinary cell's text must carry a position");
     let slice: String = codepoints[pos.start_offset..pos.end_offset]
         .iter()
@@ -106,6 +107,7 @@ fn a_later_cell_is_anchored_at_its_own_column() {
     };
     let pos = text
         .pos
+        .clone()
         .expect("the second cell's text must carry a position");
     let slice: String = codepoints[pos.start_offset..pos.end_offset]
         .iter()

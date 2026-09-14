@@ -132,7 +132,7 @@ fn the_comment_is_still_a_node_and_writes_back_at_its_own_column() {
                     continue;
                 };
                 found += 1;
-                let pos = c.pos.expect("the comment is placed");
+                let pos = c.pos.clone().expect("the comment is placed");
                 assert_eq!(pos.start_line, 3);
                 assert_eq!(pos.start_column, 1);
                 assert_eq!(pos.end_line, 3);

@@ -298,7 +298,7 @@ fn check_inline_nodes(
 ) {
     for node in nodes {
         if let InlineNode::Text(text) = node {
-            if let Some(pos) = text.pos {
+            if let Some(pos) = text.pos.clone() {
                 let (start, end) = (pos.start_offset, pos.end_offset);
                 if start > end || end > source.len() {
                     wrong.push(format!(

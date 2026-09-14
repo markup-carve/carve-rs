@@ -1289,7 +1289,11 @@ fn render_block(
                     out.push_str(&escape_text(&r.content));
                 }
             } else {
-                crate::render_loss::record_raw_drop(&r.format, crate::RawNodeType::Block, r.pos);
+                crate::render_loss::record_raw_drop(
+                    &r.format,
+                    crate::RawNodeType::Block,
+                    r.pos.clone(),
+                );
             }
         }
         BlockNode::Comment(_) => {}
@@ -3220,7 +3224,11 @@ fn render_inline_after(
                     out.push_str(&escape_text(&r.content));
                 }
             } else {
-                crate::render_loss::record_raw_drop(&r.format, crate::RawNodeType::Inline, r.pos);
+                crate::render_loss::record_raw_drop(
+                    &r.format,
+                    crate::RawNodeType::Inline,
+                    r.pos.clone(),
+                );
             }
         }
         InlineNode::LiteralInline(lit) => {

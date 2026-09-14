@@ -51,7 +51,11 @@ fn types_and_positions_each_citation_item() {
     let InlineNode::CitationGroup(group) = &paragraph.children[1] else {
         panic!("expected citation group");
     };
-    let positions: Vec<_> = group.items.iter().map(|item| item.pos.unwrap()).collect();
+    let positions: Vec<_> = group
+        .items
+        .iter()
+        .map(|item| item.pos.clone().unwrap())
+        .collect();
 
     assert_eq!(positions[0].start_offset, 5);
     assert_eq!(positions[0].end_offset, 7);
@@ -75,7 +79,11 @@ fn positions_items_across_a_line_boundary() {
     let InlineNode::CitationGroup(group) = &paragraph.children[1] else {
         panic!("expected citation group");
     };
-    let positions: Vec<_> = group.items.iter().map(|item| item.pos.unwrap()).collect();
+    let positions: Vec<_> = group
+        .items
+        .iter()
+        .map(|item| item.pos.clone().unwrap())
+        .collect();
 
     assert_eq!((positions[0].start_offset, positions[0].end_offset), (5, 7));
     assert_eq!(

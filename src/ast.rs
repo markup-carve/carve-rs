@@ -24,7 +24,10 @@ use std::ops::{Deref, DerefMut};
 /// so a column in the text the parser sees is not a column in the document.
 /// `MappedSource` therefore carries the stripped width per line alongside the
 /// line map, and that is what makes the column recoverable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+// NOT `Copy`: the file identity is owned, and a span is cloned explicitly
+// rather than duplicated implicitly - which is what a reader wants anyway, since
+// copying one used to hide that a position was being reused across nodes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Pos {
     pub start_line: usize,
     pub end_line: usize,
@@ -32,6 +35,56 @@ pub struct Pos {
     pub end_column: usize,
     pub start_offset: usize,
     pub end_offset: usize,
+    /// Identity of the file these coordinates are measured in, when that is NOT
+    /// the document being parsed: the canonical id of the file an include
+    /// pulled the node in from (PART 9 §19).
+    ///
+    /// `None` means the top-level document, so a tree with no includes is
+    /// unchanged. Without it an included span is ambiguous - a child's first
+    /// paragraph and the parent's first paragraph both report line 1, and a
+    /// source-mapped host has no way to tell them apart.
+    pub file: Option<SourceFile>,
+}
+
+/// The file a span is measured in, shared by every node one include
+/// contributed.
+///
+/// SHARED on purpose, and behind a THIN pointer. `Pos` is embedded in every
+/// node, so this field's width multiplies across the whole tree: an owned
+/// `String` here put `BlockNode` over the size ceiling that
+/// `no_single_variant_sets_the_size_of_every_block_node` exists to hold, which
+/// PART 9 §25's nesting cap then multiplies again. One `Arc` per FILE rather
+/// than one string per node costs 8 bytes in the node and a refcount bump per
+/// clone.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SourceFile(std::sync::Arc<String>);
+
+impl SourceFile {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(std::sync::Arc::new(id.into()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl std::fmt::Display for SourceFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl From<String> for SourceFile {
+    fn from(id: String) -> Self {
+        Self::new(id)
+    }
+}
+
+impl From<&str> for SourceFile {
+    fn from(id: &str) -> Self {
+        Self::new(id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

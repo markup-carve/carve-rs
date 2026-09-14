@@ -17,14 +17,14 @@ fn parse_with_positions(source: &str) -> Document {
 
 fn pos_of(block: &BlockNode) -> Option<Pos> {
     match block {
-        BlockNode::Heading(h) => h.pos,
-        BlockNode::Paragraph(p) => p.pos,
+        BlockNode::Heading(h) => h.pos.clone(),
+        BlockNode::Paragraph(p) => p.pos.clone(),
         _ => None,
     }
 }
 
 /// Slice the source with a position, so a wrong span shows up as wrong text.
-fn slice(source: &str, pos: Pos) -> String {
+fn slice(source: &str, pos: &Pos) -> String {
     source
         .chars()
         .skip(pos.start_offset)
@@ -41,11 +41,11 @@ fn top_level_blocks_carry_their_span() {
     assert_eq!(heading.start_line, 1);
     assert_eq!(heading.end_line, 1);
     assert_eq!(heading.start_column, 1);
-    assert_eq!(slice(source, heading), "# Title");
+    assert_eq!(slice(source, &heading), "# Title");
 
     let para = pos_of(&doc.children[1]).expect("paragraph position");
     assert_eq!(para.start_line, 3);
-    assert_eq!(slice(source, para), "hello");
+    assert_eq!(slice(source, &para), "hello");
 }
 
 #[test]
@@ -74,12 +74,12 @@ fn a_quoted_block_is_measured_in_the_document_not_in_the_stripped_text() {
         heading.start_column, 3,
         "the quote marker and its space are part of the document column"
     );
-    assert_eq!(slice(source, heading), "# Quoted");
+    assert_eq!(slice(source, &heading), "# Quoted");
 
     let para = pos_of(&quote.children[1]).expect("quoted paragraph position");
     assert_eq!(para.start_line, 3);
     assert_eq!(para.start_column, 3);
-    assert_eq!(slice(source, para), "body text");
+    assert_eq!(slice(source, &para), "body text");
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn a_doubly_quoted_block_accumulates_both_strips() {
         para.start_column, 5,
         "both quote markers count toward the document column"
     );
-    assert_eq!(slice(source, para), "deep");
+    assert_eq!(slice(source, &para), "deep");
 }
 
 #[test]
@@ -111,14 +111,14 @@ fn offsets_count_codepoints_not_bytes() {
 
     let first = pos_of(&doc.children[0]).expect("first paragraph position");
     assert_eq!(first.start_offset, 0);
-    assert_eq!(slice(source, first), "\u{1F600} first");
+    assert_eq!(slice(source, &first), "\u{1F600} first");
 
     let second = pos_of(&doc.children[1]).expect("second paragraph position");
     assert_eq!(
         second.start_offset, 9,
         "8 codepoints on line 1 plus the newline"
     );
-    assert_eq!(slice(source, second), "second");
+    assert_eq!(slice(source, &second), "second");
 }
 
 #[test]
@@ -157,11 +157,11 @@ fn a_list_item_paragraph_starts_at_its_text_not_at_the_bullet() {
         first.start_column, 3,
         "the paragraph is the text, so it starts past the bullet"
     );
-    assert_eq!(slice(source, first), "item one");
+    assert_eq!(slice(source, &first), "item one");
 
     let second = pos_of(&list.items[1].children[0]).expect("second item position");
     assert_eq!(second.start_line, 2);
-    assert_eq!(slice(source, second), "item two");
+    assert_eq!(slice(source, &second), "item two");
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn a_nested_item_accumulates_the_outer_indent() {
         para.start_column, 5,
         "two columns of indent plus the inner bullet"
     );
-    assert_eq!(slice(source, para), "inner");
+    assert_eq!(slice(source, &para), "inner");
 }
 
 #[test]
@@ -200,10 +200,13 @@ fn a_list_item_spans_its_marker_and_body() {
         panic!("expected a list");
     };
 
-    let first = list.items[0].pos.expect("the item carries a position");
+    let first = list.items[0]
+        .pos
+        .as_ref()
+        .expect("the item carries a position");
     assert_eq!(slice(source, first), "- one");
     assert_eq!(
-        slice(source, list.items[1].pos.expect("second item")),
+        slice(source, list.items[1].pos.as_ref().expect("second item")),
         "- two"
     );
 }
@@ -217,11 +220,11 @@ fn a_table_row_spans_its_line() {
     };
 
     assert_eq!(
-        slice(source, table.rows[0].pos.expect("header row")),
+        slice(source, table.rows[0].pos.as_ref().expect("header row")),
         "| a | b |"
     );
     assert_eq!(
-        slice(source, table.rows[1].pos.expect("body row")),
+        slice(source, table.rows[1].pos.as_ref().expect("body row")),
         "| c | d |"
     );
 }
@@ -240,6 +243,7 @@ fn a_continued_row_spans_every_line_it_runs_to() {
 
     let continued = table.rows[1]
         .pos
+        .as_ref()
         .expect("the continued row carries a position");
     assert_eq!(continued.start_line, 2);
     assert_eq!(continued.end_line, 3);
@@ -259,7 +263,12 @@ fn a_table_cell_spans_its_own_columns() {
         .rows
         .iter()
         .flat_map(|r| r.cells.iter())
-        .map(|c| slice(source, c.pos.expect("every cell carries a position")))
+        .map(|c| {
+            slice(
+                source,
+                c.pos.as_ref().expect("every cell carries a position"),
+            )
+        })
         .collect();
 
     assert_eq!(cells, vec![" a ", " b ", " c ", " dd "]);
@@ -277,6 +286,7 @@ fn a_cell_holding_an_escaped_pipe_spans_the_source_not_the_text() {
 
     let cell = table.rows[1].cells[0]
         .pos
+        .as_ref()
         .expect("the cell carries a position");
     assert_eq!(slice(source, cell), " x \\| y ");
 }
@@ -296,6 +306,7 @@ fn a_quoted_table_cell_is_measured_in_the_document() {
 
     let cell = table.rows[0].cells[0]
         .pos
+        .as_ref()
         .expect("the quoted cell carries a position");
     assert_eq!(cell.start_column, 4, "past `> |`");
     assert_eq!(slice(source, cell), " x ");
@@ -313,7 +324,10 @@ fn a_block_image_carries_its_own_span() {
     };
 
     assert_eq!(
-        slice(source, image.pos.expect("the image carries a position")),
+        slice(
+            source,
+            image.pos.as_ref().expect("the image carries a position")
+        ),
         "![alt](/i.png)"
     );
 }
@@ -328,7 +342,10 @@ fn a_captioned_image_places_the_figure_and_its_target() {
 
     // The figure runs from the image through the caption.
     assert_eq!(
-        slice(source, figure.pos.expect("the figure carries a position")),
+        slice(
+            source,
+            figure.pos.as_ref().expect("the figure carries a position")
+        ),
         "![alt](/i.png)\n^ cap"
     );
 
@@ -338,7 +355,10 @@ fn a_captioned_image_places_the_figure_and_its_target() {
     // And the target keeps its own, filled rather than left at 0..0 - a span
     // that reads as present and selects nothing is worse than none.
     assert_eq!(
-        slice(source, image.pos.expect("the target carries a position")),
+        slice(
+            source,
+            image.pos.as_ref().expect("the target carries a position")
+        ),
         "![alt](/i.png)"
     );
 }
@@ -361,8 +381,12 @@ fn an_unresolved_reference_link_keeps_its_span() {
         .children
         .iter()
         .map(|node| match node {
-            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text position")),
-            carve::ast::InlineNode::Link(l) => slice(source, l.pos.expect("link position")),
+            carve::ast::InlineNode::Text(t) => {
+                slice(source, t.pos.as_ref().expect("text position"))
+            }
+            carve::ast::InlineNode::Link(l) => {
+                slice(source, l.pos.as_ref().expect("link position"))
+            }
             other => panic!("unexpected node {other:?}"),
         })
         .collect();
@@ -375,7 +399,7 @@ fn an_unresolved_reference_link_keeps_its_span() {
     };
     assert_eq!(link.raw_ref.as_deref(), Some("[text][missing]"));
     assert_eq!(
-        slice(source, link.pos.expect("link position")),
+        slice(source, link.pos.as_ref().expect("link position")),
         "[text][missing]"
     );
 }
@@ -398,7 +422,7 @@ fn a_resolved_reference_link_is_unaffected() {
         .expect("a link");
 
     assert_eq!(
-        slice(source, link.pos.expect("link position")),
+        slice(source, link.pos.as_ref().expect("link position")),
         "[text][ok]"
     );
 }
@@ -412,7 +436,10 @@ fn a_captioned_quote_figure_spans_the_quote_and_its_caption() {
     };
 
     assert_eq!(
-        slice(source, figure.pos.expect("the figure carries a position")),
+        slice(
+            source,
+            figure.pos.as_ref().expect("the figure carries a position")
+        ),
         "> Stay hungry\n^ Steve Jobs"
     );
 }
@@ -437,7 +464,7 @@ fn a_nested_autolink_in_a_label_keeps_its_own_whole_span() {
         [carve::ast::InlineNode::AutoLink(a)] => {
             assert_eq!(a.href, "http://h");
             assert_eq!(
-                slice(source, a.pos.expect("autolink position")),
+                slice(source, a.pos.as_ref().expect("autolink position")),
                 "<http://h>"
             );
         }
@@ -462,12 +489,18 @@ fn a_nested_autolink_with_neighbours_places_all_three_nodes() {
     match &link.children[..] {
         [carve::ast::InlineNode::Text(pre), carve::ast::InlineNode::AutoLink(a), carve::ast::InlineNode::Text(post)] =>
         {
-            assert_eq!(slice(source, pre.pos.expect("pre position")), "pre ");
             assert_eq!(
-                slice(source, a.pos.expect("autolink position")),
+                slice(source, pre.pos.as_ref().expect("pre position")),
+                "pre "
+            );
+            assert_eq!(
+                slice(source, a.pos.as_ref().expect("autolink position")),
                 "<http://h>"
             );
-            assert_eq!(slice(source, post.pos.expect("post position")), " post");
+            assert_eq!(
+                slice(source, post.pos.as_ref().expect("post position")),
+                " post"
+            );
         }
         other => panic!("expected text, autolink, text, got {other:?}"),
     }
@@ -492,7 +525,7 @@ fn a_mailto_autolink_in_a_label_places_the_source_it_stands_on() {
         [carve::ast::InlineNode::AutoLink(a)] => {
             assert_eq!(a.href, "mailto:x@y.z");
             assert_eq!(
-                slice(source, a.pos.expect("autolink position")),
+                slice(source, a.pos.as_ref().expect("autolink position")),
                 "<mailto:x@y.z>"
             );
         }
@@ -520,7 +553,7 @@ fn a_resolved_cross_reference_keeps_the_span_of_its_source() {
         .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, crossref.pos.expect("crossref position")),
+        slice(source, crossref.pos.as_ref().expect("crossref position")),
         "</#some-title>"
     );
     assert_eq!(crossref.target, "some-title");
@@ -546,7 +579,7 @@ fn an_unresolved_cross_reference_keeps_its_span() {
         .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, crossref.pos.expect("crossref position")),
+        slice(source, crossref.pos.as_ref().expect("crossref position")),
         "</#nope>"
     );
     assert_eq!(crossref.target, "nope");
@@ -577,9 +610,9 @@ fn a_list_in_a_continued_blockquote_spans_its_items() {
         })
         .expect("the list is inside the quote");
 
-    let pos = list.pos.expect("the list is placed by its items");
+    let pos = list.pos.as_ref().expect("the list is placed by its items");
     assert_eq!(slice(source, pos), "- item");
-    assert_eq!(pos, list.items[0].pos.expect("the item is placed"));
+    assert_eq!(pos, list.items[0].pos.as_ref().expect("the item is placed"));
 }
 
 /// A definition list was never placed at all, and its items with it.
@@ -591,7 +624,7 @@ fn a_definition_list_spans_its_terms_and_definitions() {
     let BlockNode::DefinitionList(list) = &doc.children[0] else {
         panic!("the document is a definition list");
     };
-    let pos = list.pos.expect("the list is placed");
+    let pos = list.pos.as_ref().expect("the list is placed");
     assert_eq!(
         slice(source, pos),
         ":: term\n:  A definition can now hold\n\n   more than one paragraph."
@@ -613,7 +646,7 @@ fn a_definition_list_span_excludes_the_gap_after_it() {
     let BlockNode::DefinitionList(list) = &doc.children[0] else {
         panic!("the document opens with a definition list");
     };
-    let pos = list.pos.expect("the list is placed");
+    let pos = list.pos.as_ref().expect("the list is placed");
     assert_eq!(slice(source, pos), ":: term\n:  its definition");
 }
 
@@ -628,7 +661,7 @@ fn a_definition_list_span_has_real_offsets() {
     let BlockNode::DefinitionList(list) = &doc.children[1] else {
         panic!("the definition list follows the paragraph");
     };
-    let pos = list.pos.expect("the list is placed");
+    let pos = list.pos.as_ref().expect("the list is placed");
     assert_ne!(pos.start_offset, 0);
     assert_eq!(slice(source, pos), ":: term\n:  its definition");
 }
@@ -647,7 +680,7 @@ fn each_line_block_stanza_spans_its_own_lines() {
         .iter()
         .map(|child| {
             let pos = pos_of(child).expect("every stanza is placed");
-            slice(source, pos)
+            slice(source, &pos)
         })
         .collect();
     assert_eq!(spans, vec!["Stanza one,\nstill one.", "Stanza two."]);
@@ -664,7 +697,7 @@ fn a_line_block_stanza_span_excludes_the_blank_that_ends_it() {
         panic!("the document is a line block");
     };
     let pos = pos_of(&block.children[0]).expect("the stanza is placed");
-    assert_eq!(slice(source, pos), "verse");
+    assert_eq!(slice(source, &pos), "verse");
 }
 
 /// Frontmatter had no span at all - the struct had no field to put one in.
@@ -676,7 +709,7 @@ fn frontmatter_spans_the_whole_block_including_fences() {
     let doc = parse_with_positions(source);
 
     let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
-    let pos = raw.pos.expect("frontmatter is placed");
+    let pos = raw.pos.as_ref().expect("frontmatter is placed");
     assert_eq!(slice(source, pos), "---\ntitle: x\n---");
     assert_eq!(pos.start_line, 1);
     assert_eq!(pos.start_column, 1);
@@ -689,7 +722,7 @@ fn frontmatter_span_excludes_the_blank_after_the_fence() {
     let doc = parse_with_positions(source);
 
     let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
-    let pos = raw.pos.expect("frontmatter is placed");
+    let pos = raw.pos.as_ref().expect("frontmatter is placed");
     assert_eq!(slice(source, pos), "---\n---");
 }
 
@@ -700,7 +733,7 @@ fn frontmatter_offsets_are_codepoints() {
     let doc = parse_with_positions(source);
 
     let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
-    let pos = raw.pos.expect("frontmatter is placed");
+    let pos = raw.pos.as_ref().expect("frontmatter is placed");
     assert_eq!(slice(source, pos), "---\ntitle: \u{1f600}\n---");
     // 4 + 9 + 3, newlines included - not the 20 a UTF-8 byte count would give.
     assert_eq!(pos.end_offset, 16);
@@ -722,11 +755,15 @@ fn an_admonition_title_places_its_inlines() {
     let spans: Vec<String> = title
         .iter()
         .map(|inline| match inline {
-            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text is placed")),
-            carve::ast::InlineNode::Emphasis(e) => {
-                slice(source, e.pos.expect("emphasis is placed"))
+            carve::ast::InlineNode::Text(t) => {
+                slice(source, t.pos.as_ref().expect("text is placed"))
             }
-            carve::ast::InlineNode::Code(c) => slice(source, c.pos.expect("code is placed")),
+            carve::ast::InlineNode::Emphasis(e) => {
+                slice(source, e.pos.as_ref().expect("emphasis is placed"))
+            }
+            carve::ast::InlineNode::Code(c) => {
+                slice(source, c.pos.as_ref().expect("code is placed"))
+            }
             other => panic!("unexpected inline in the title: {other:?}"),
         })
         .collect();
@@ -777,7 +814,7 @@ fn a_plus_continuation_places_the_block_it_attaches() {
     let BlockNode::CodeBlock(code) = attached else {
         unreachable!("just matched")
     };
-    let pos = code.pos.expect("the attached block is placed");
+    let pos = code.pos.as_ref().expect("the attached block is placed");
     assert_eq!(slice(source, pos), "```sh\ndocker build -t app .\n```");
 }
 
@@ -795,16 +832,19 @@ fn a_plus_continuation_places_a_table_down_to_its_cells() {
         panic!("the first item holds the table");
     };
     assert_eq!(
-        slice(source, table.pos.expect("the table is placed")),
+        slice(source, table.pos.as_ref().expect("the table is placed")),
         "| a | b |\n| c | d |"
     );
     let row = &table.rows[0];
     assert_eq!(
-        slice(source, row.pos.expect("the row is placed")),
+        slice(source, row.pos.as_ref().expect("the row is placed")),
         "| a | b |"
     );
     assert_eq!(
-        slice(source, row.cells[0].pos.expect("the cell is placed")),
+        slice(
+            source,
+            row.cells[0].pos.as_ref().expect("the cell is placed")
+        ),
         " a "
     );
 }
@@ -823,13 +863,19 @@ fn an_item_whose_content_is_only_a_continuation_is_placed() {
     assert_eq!(
         slice(
             source,
-            list.items[0].pos.expect("the bare-plus item is placed")
+            list.items[0]
+                .pos
+                .as_ref()
+                .expect("the bare-plus item is placed")
         ),
         "- +\n| a | b |"
     );
     // Its sibling is unaffected - the span stops at the attached block.
     assert_eq!(
-        slice(source, list.items[1].pos.expect("the next item is placed")),
+        slice(
+            source,
+            list.items[1].pos.as_ref().expect("the next item is placed")
+        ),
         "- next"
     );
 }
@@ -855,7 +901,7 @@ fn a_continued_table_cell_places_the_text_it_adds() {
         .children
         .iter()
         .map(|inline| match inline {
-            carve::ast::InlineNode::Text(t) => t.pos.map(|pos| slice(source, pos)),
+            carve::ast::InlineNode::Text(t) => t.pos.as_ref().map(|pos| slice(source, pos)),
             other => panic!("unexpected inline: {other:?}"),
         })
         .collect();
@@ -886,9 +932,9 @@ fn verse_lines_that_were_not_rewritten_keep_their_columns() {
         .children
         .iter()
         .map(|inline| match inline {
-            carve::ast::InlineNode::Text(t) => t.pos.map(|p| slice(source, p)),
-            carve::ast::InlineNode::Emphasis(e) => e.pos.map(|p| slice(source, p)),
-            carve::ast::InlineNode::HardBreak(b) => b.pos.map(|p| slice(source, p)),
+            carve::ast::InlineNode::Text(t) => t.pos.as_ref().map(|p| slice(source, p)),
+            carve::ast::InlineNode::Emphasis(e) => e.pos.as_ref().map(|p| slice(source, p)),
+            carve::ast::InlineNode::HardBreak(b) => b.pos.as_ref().map(|p| slice(source, p)),
             other => panic!("unexpected inline: {other:?}"),
         })
         .collect();
@@ -923,7 +969,10 @@ fn an_indented_verse_line_loses_only_its_own_span() {
         panic!("the stanza opens with text");
     };
     assert_eq!(
-        slice(source, first.pos.expect("the plain line is placed")),
+        slice(
+            source,
+            first.pos.as_ref().expect("the plain line is placed")
+        ),
         "Roses are red,"
     );
     // The rewritten line IS placed. Its value holds a placeholder where each
@@ -940,7 +989,7 @@ fn an_indented_verse_line_loses_only_its_own_span() {
     let carve::ast::InlineNode::Text(indented) = last else {
         panic!("it ends with text");
     };
-    let pos = indented.pos.expect("the rewritten line is placed");
+    let pos = indented.pos.as_ref().expect("the rewritten line is placed");
     assert_eq!(slice(source, pos), "  Violets are blue.");
     assert_eq!(
         indented.value.replace('\u{e000}', " "),
@@ -990,7 +1039,7 @@ fn text_before_a_trailing_comment_keeps_its_span() {
     let carve::ast::InlineNode::Text(text) = &para.children[0] else {
         panic!("it holds one text node");
     };
-    let pos = text.pos.expect("the text is placed");
+    let pos = text.pos.as_ref().expect("the text is placed");
     assert_eq!(slice(source, pos), "Also visible.");
     // The span must stop at the text, not run into the dropped comment.
     assert_eq!(slice(source, pos), text.value);
@@ -1010,7 +1059,9 @@ fn a_comment_after_a_code_span_leaves_both_texts_placed() {
         .children
         .iter()
         .filter_map(|inline| match inline {
-            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text placed"))),
+            carve::ast::InlineNode::Text(t) => {
+                Some(slice(source, t.pos.as_ref().expect("text placed")))
+            }
             _ => None,
         })
         .collect();
@@ -1034,14 +1085,14 @@ fn a_captioned_code_block_places_the_figure_and_the_block() {
         panic!("a captioned code block is a figure");
     };
     assert_eq!(
-        slice(source, figure.pos.expect("the figure is placed")),
+        slice(source, figure.pos.as_ref().expect("the figure is placed")),
         "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting"
     );
 
     let FigureTarget::CodeBlock(code) = &*figure.target else {
         panic!("its target is the code block");
     };
-    let pos = code.pos.expect("the block is placed");
+    let pos = code.pos.as_ref().expect("the block is placed");
     assert_ne!(pos.start_offset, pos.end_offset, "0..0 selects nothing");
     assert_eq!(
         slice(source, pos),
@@ -1061,7 +1112,7 @@ fn standalone_display_math_places_its_paragraph() {
         panic!("the display math is a paragraph");
     };
     assert_eq!(
-        slice(source, math.pos.expect("it is placed")),
+        slice(source, math.pos.as_ref().expect("it is placed")),
         "$$`\\int_0^1 x\\,dx`"
     );
 }

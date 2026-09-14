@@ -82,7 +82,7 @@ fn a_reference_figure_publishes_a_position() {
     // failure says which of the two went wrong. This is the assertion that was
     // red before the fix.
     let f = figure(REF);
-    require(f.pos, "the reference figure");
+    require(f.pos.clone(), "the reference figure");
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn the_reference_figures_span_covers_the_image_and_the_caption() {
     // written, markup included (markup-carve/carve#913). carve-js and carve-php
     // give the same two numbers.
     let f = figure(REF);
-    let pos = require(f.pos, "the reference figure");
+    let pos = require(f.pos.clone(), "the reference figure");
     assert_eq!(offsets(&pos), (0, 14));
     assert_eq!(slice(REF, &pos), "![a][ok]\n^ cap");
 }
@@ -105,11 +105,11 @@ fn the_reference_figures_span_contains_both_of_its_children() {
     // a parent's span must contain every child's, or the span tree is not a
     // tree.
     let f = figure(REF);
-    let parent = require(f.pos, "the reference figure");
+    let parent = require(f.pos.clone(), "the reference figure");
     let FigureTarget::Image(image) = &*f.target else {
         panic!("the figure's target is not an image");
     };
-    let child = require(image.pos, "the figure's image");
+    let child = require(image.pos.clone(), "the figure's image");
     assert!(
         parent.start_offset <= child.start_offset && child.end_offset <= parent.end_offset,
         "figure {:?} does not contain its image {:?}",
@@ -120,7 +120,7 @@ fn the_reference_figures_span_contains_both_of_its_children() {
         .caption
         .iter()
         .find_map(|n| match n {
-            carve::InlineNode::Text(t) => t.pos,
+            carve::InlineNode::Text(t) => t.pos.clone(),
             _ => None,
         })
         .expect("the caption published no positioned text");
@@ -145,7 +145,7 @@ fn the_caption_text_span_excludes_the_marker() {
         .caption
         .iter()
         .find_map(|n| match n {
-            carve::InlineNode::Text(t) => t.pos,
+            carve::InlineNode::Text(t) => t.pos.clone(),
             _ => None,
         })
         .expect("the caption published no positioned text");
@@ -161,7 +161,7 @@ fn control_the_inline_figure_is_unchanged() {
     // differ from the reference form's only because `![a](/p.png)` is longer
     // than `![a][ok]`.
     let f = figure(INLINE);
-    let pos = require(f.pos, "the inline figure");
+    let pos = require(f.pos.clone(), "the inline figure");
     assert_eq!(offsets(&pos), (0, 18));
     assert_eq!(slice(INLINE, &pos), "![a](/p.png)\n^ cap");
 }
@@ -189,6 +189,9 @@ fn a_multi_line_caption_extends_the_figures_span() {
     // that hard-coded "image line plus one" would stop short here.
     let src = "![a][ok]\n^ cap\n  more\n\n[ok]: /p.png\n";
     let f = figure(src);
-    let pos = require(f.pos, "the reference figure with a two-line caption");
+    let pos = require(
+        f.pos.clone(),
+        "the reference figure with a two-line caption",
+    );
     assert_eq!(slice(src, &pos), "![a][ok]\n^ cap\n  more");
 }

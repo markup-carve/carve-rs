@@ -26,7 +26,10 @@ fn item_and_children(source: &str) -> (Pos, Vec<Pos>) {
     let BlockNode::List(list) = &doc.children[0] else {
         panic!("expected a list first, got {:?}", doc.children[0]);
     };
-    let item = list.items[0].pos.expect("list item carries no position");
+    let item = list.items[0]
+        .pos
+        .clone()
+        .expect("list item carries no position");
     let children = list.items[0]
         .children
         .iter()
@@ -37,14 +40,14 @@ fn item_and_children(source: &str) -> (Pos, Vec<Pos>) {
 
 fn child_pos(node: &BlockNode) -> Option<Pos> {
     match node {
-        BlockNode::Paragraph(n) => n.pos,
-        BlockNode::List(n) => n.pos,
-        BlockNode::BlockQuote(n) => n.pos,
-        BlockNode::Heading(n) => n.pos,
-        BlockNode::CodeBlock(n) => n.pos,
-        BlockNode::Table(n) => n.pos,
-        BlockNode::DefinitionList(n) => n.pos,
-        BlockNode::Admonition(n) => n.pos,
+        BlockNode::Paragraph(n) => n.pos.clone(),
+        BlockNode::List(n) => n.pos.clone(),
+        BlockNode::BlockQuote(n) => n.pos.clone(),
+        BlockNode::Heading(n) => n.pos.clone(),
+        BlockNode::CodeBlock(n) => n.pos.clone(),
+        BlockNode::Table(n) => n.pos.clone(),
+        BlockNode::DefinitionList(n) => n.pos.clone(),
+        BlockNode::Admonition(n) => n.pos.clone(),
         _ => None,
     }
 }
@@ -107,7 +110,7 @@ fn a_captioned_quote_carries_real_offsets() {
     let carve::ast::FigureTarget::BlockQuote(quote) = &*figure.target else {
         panic!("expected a block quote target");
     };
-    let pos = figure.pos.expect("the figure carries no position");
+    let pos = figure.pos.clone().expect("the figure carries no position");
 
     assert!(
         pos.end_offset > pos.start_offset,

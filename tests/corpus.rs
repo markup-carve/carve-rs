@@ -599,6 +599,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-column-0-line-after-a-description-hosted-note-is-a-document-sibling",
     "a-nested-note-s-floor-is-two-columns-past-its-own-marker",
     "a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach",
+    "include-directive-with-no-resolver-renders-literal",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

@@ -32,7 +32,7 @@ fn first_hard_break(doc: &carve::ast::Document) -> carve::ast::Pos {
         if let BlockNode::Paragraph(p) = block {
             for inline in &p.children {
                 if let InlineNode::HardBreak(b) = inline {
-                    return b.pos.expect("hard break carries no position");
+                    return b.pos.clone().expect("hard break carries no position");
                 }
             }
         }
@@ -72,7 +72,7 @@ fn the_text_before_a_hard_break_stops_at_the_backslash() {
     };
 
     assert_eq!(
-        slice(&source, text.pos.expect("text carries no position")),
+        slice(&source, text.pos.clone().expect("text carries no position")),
         "ab"
     );
 }

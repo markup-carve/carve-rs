@@ -249,7 +249,11 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
             )
         }
         BlockNode::RawBlock(raw) => {
-            crate::render_loss::record_raw_drop(&raw.format, crate::RawNodeType::Block, raw.pos);
+            crate::render_loss::record_raw_drop(
+                &raw.format,
+                crate::RawNodeType::Block,
+                raw.pos.clone(),
+            );
             String::new()
         }
         BlockNode::Comment(_) => String::new(),
@@ -537,7 +541,11 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         }
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(raw) => {
-            crate::render_loss::record_raw_drop(&raw.format, crate::RawNodeType::Inline, raw.pos);
+            crate::render_loss::record_raw_drop(
+                &raw.format,
+                crate::RawNodeType::Inline,
+                raw.pos.clone(),
+            );
             String::new()
         }
         // §27: always emitted (unlike raw passthrough above), as plain prose.

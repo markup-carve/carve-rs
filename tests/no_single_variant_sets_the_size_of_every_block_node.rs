@@ -14,14 +14,21 @@
 //! the enum near the second-largest variant instead.
 
 /// A ceiling, not an equality: the point is that no ONE variant may run away
-/// with the size again, not that the number never moves. A field added to
+/// with the size again, not that the number never moves.
+///
+/// Raised from 288 to 296 when `Pos` gained the file identity PART 9 section 19
+/// requires for source mapping across an include. That is 8 bytes on `Pos`,
+/// which every node embeds, rather than one variant running away: the widest
+/// variant is still `Table`, still by the same margin. The identity is a shared
+/// thin pointer for exactly this reason - an owned `String` would have cost 24.
+/// Against section 25's 200 levels the change is 1.6 KiB of stack. A field added to
 /// `Table` may legitimately raise this a little. A whole node embedded in a
 /// variant may not - box it instead.
 #[test]
 fn no_single_variant_sets_the_size_of_every_block_node() {
     let size = std::mem::size_of::<carve::ast::BlockNode>();
     assert!(
-        size <= 288,
+        size <= 296,
         "BlockNode is {size} bytes. Every recursive walk moves these by value, so this is \
          what a nesting level costs before anything else, and PART 9 §25's cap of 200 levels \
          multiplies it. Box the payload of whichever variant grew rather than raising this."

@@ -375,7 +375,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 crate::render_loss::record_raw_drop(
                     &raw.format,
                     crate::RawNodeType::Block,
-                    raw.pos,
+                    raw.pos.clone(),
                 );
                 String::new()
             }
@@ -900,7 +900,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 crate::render_loss::record_raw_drop(
                     &raw.format,
                     crate::RawNodeType::Inline,
-                    raw.pos,
+                    raw.pos.clone(),
                 );
                 String::new()
             }
