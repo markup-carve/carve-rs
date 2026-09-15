@@ -59,7 +59,7 @@ fn re_spells_bold_italic_in_the_same_seam() {
     // is a Strong holding an Italic, and it would pass on the Strong arm alone.
     assert_eq!(
         carve::to_markdown("a /*x!*/b\n"),
-        "a <em><strong>x!</strong></em>b\n"
+        "a <strong><em>x!</em></strong>b\n"
     );
 }
 

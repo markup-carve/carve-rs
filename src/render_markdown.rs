@@ -824,23 +824,38 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
 /// literal asterisk, and `~` is deliberately not escaped because GFM reads
 /// `~x~` as strikethrough.
 fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
-    delimiter == "~~" && (core.starts_with('~') || ends_with_live_tilde(core))
+    let Some(ch) = delimiter.chars().next() else {
+        return false;
+    };
+    if ch == '~' {
+        return core.starts_with('~') || live_run_at_end(core, '~') > 0;
+    }
+    // Nestings of DIFFERENT strengths commute under PART 11's normalization
+    // list, so only a merge into a run of exactly two has to be avoided: that
+    // is one strong, not an emphasis inside an emphasis.
+    let lead = core.chars().take_while(|c| *c == ch).count();
+    let trail = live_run_at_end(core, ch);
+    (lead > 0 && delimiter.len() + lead == 2) || (trail > 0 && delimiter.len() + trail == 2)
 }
 
-/// A backslash escape makes the character it covers a literal, and a literal
-/// breaks a run rather than lengthening it.
-fn ends_with_live_tilde(core: &str) -> bool {
-    if !core.ends_with('~') {
-        return false;
+/// The trailing run of `ch`, minus one where a backslash covers its last
+/// character: an escaped marker is a literal and breaks a run.
+fn live_run_at_end(core: &str, ch: char) -> usize {
+    let run = core.chars().rev().take_while(|c| *c == ch).count();
+    if run == 0 {
+        return 0;
     }
-    let tildes = core.chars().rev().take_while(|c| *c == '~').count();
     let slashes = core
         .chars()
         .rev()
-        .skip(tildes)
+        .skip(run)
         .take_while(|c| *c == '\\')
         .count();
-    slashes % 2 == 0 || tildes > 1
+    if slashes % 2 == 1 {
+        run - 1
+    } else {
+        run
+    }
 }
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -870,7 +885,7 @@ fn delimiter_run(node: &InlineNode) -> Option<(&'static str, &'static str, &'sta
         EmphasisKind::Italic => Some(("*", "<em>", "</em>")),
         EmphasisKind::Strong => Some(("**", "<strong>", "</strong>")),
         EmphasisKind::Strike => Some(("~~", "<del>", "</del>")),
-        EmphasisKind::BoldItalic => Some(("***", "<em><strong>", "</strong></em>")),
+        EmphasisKind::BoldItalic => Some(("***", "<strong><em>", "</em></strong>")),
         _ => None,
     }
 }
@@ -1220,8 +1235,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             EmphasisKind::BoldItalic => pad_outside(
                 render_inlines(&emphasis.children, ctx, depth + 1),
                 "***",
-                "<em><strong>",
-                "</strong></em>",
+                "<strong><em>",
+                "</em></strong>",
             ),
         },
         InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
