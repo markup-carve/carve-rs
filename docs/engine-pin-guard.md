@@ -33,7 +33,7 @@ The inverse failure matters just as much. A gate whose only assertion is about
 the distance stops asserting anything the moment the distance is zero, and a
 healthy pin is the state this is trying to reach. **A gate that stops working
 once its subject is healthy is not a gate** (markup-carve/carve#755). So the
-load-bearing assertions are the ones that hold and can fail with the pin sitting
+assertions that matter are the ones that hold and can fail with the pin sitting
 exactly on the engine's tip:
 
 | check | holds that |
@@ -119,5 +119,4 @@ below for why that is not assumed.
 throwaway git fixtures rather than the live repository, so "a revision that does
 not exist" and "a revision that is not on `main`" are constructed rather than
 waited for. Every case except `pin_age` runs with the pin **exactly on the engine
-tip**, which is the property the ticket asked for: a healthy pin is not what
-silences these checks.
+tip**: a healthy pin is not what silences these checks.

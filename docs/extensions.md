@@ -44,7 +44,8 @@ A CSL-JSON entry renders with the minimal fixed template
 its separator omitted, trailing period). The entry text is plain - HTML-escaped,
 never re-parsed as Carve. In-document `[@key]:` definitions keep their inline
 rendering and win over a pool entry with the same key. Back-links appear only
-when a pool is supplied; plain Tier-2 citations are byte-identical to before.
+when a pool is supplied; without one the output is byte-identical to plain
+Tier-2 citations.
 Resolving an arbitrary `.csl` style is out of scope (a renderer-plugin point).
 
 ### The definition line in the tree
@@ -424,15 +425,12 @@ render context for the mode (`RenderContext::is_static`): **Details, Spoiler,
 Tabs, CodeGroup, FencedRender and MathBlock**. Every other extension in the list
 renders identically in both modes, which is resolution step 2 below.
 
-**Tabs and CodeGroup are two of the six, and each flattens its own group.** This
-paragraph used to say carve-rs had no Tabs or CodeGroup extension, and used that
-to explain the flattening as the work of the core caption floor. Both halves
-were false: `src/extensions/tabs.rs` and `src/extensions/code_group.rs` have
-been on `main` since #906, each carries a static arm of its own, and a
-REGISTERED Tabs or CodeGroup therefore never reaches the floor. What the floor
-covers is a grouping `[label]` no registered extension consumed - resolution
-step 3, not a stand-in for a missing extension. Measured on one document, with
-the extension registered and without it:
+**Tabs and CodeGroup are two of the six, and each flattens its own group.**
+`src/extensions/tabs.rs` and `src/extensions/code_group.rs` each carry a static
+arm of their own, so a REGISTERED Tabs or CodeGroup never reaches the core
+caption floor. What the floor covers is a grouping `[label]` no registered
+extension consumed - resolution step 3, not a stand-in for a missing extension.
+Measured on one document, with the extension registered and without it:
 
 `:::: tabs` with `Tabs` registered, `Mode::Static`:
 
