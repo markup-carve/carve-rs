@@ -66,7 +66,7 @@ rendering untrusted input; it composes with every format and with `--profile`.
 `--profile NAME` (`full` | `article` | `comment` | `minimal`) restricts which
 constructs are allowed at all and caps input length, and `--profile-base-host`
 gives its link policy a host to judge internal vs external links against; see
-[Untrusted input](#untrusted-input). `--static` (vs the default `--interactive`) renders
+[Untrusted input](security.md). `--static` (vs the default `--interactive`) renders
 self-contained HTML: interactive constructs flatten (a `::: details` becomes an
 expanded `<section>`) and client-script visuals (mermaid / chart / math) degrade
 to source. Pass `--extensions` to enable the bundled interactive extensions

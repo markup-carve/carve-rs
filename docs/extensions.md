@@ -478,9 +478,8 @@ for the same registration.
 > Note on cross-impl parity: the Spoiler shapes follow carve-js
 > (`spoiler-revealed`). Details does NOT: carve-rs keeps the
 > `<details>`/`<summary>` disclosure and forces `open`, which is what carve-php
-> does, and it has done so since the static-mode PR (#143) - the sentence that
-> used to claim a `<section class="details">` here was never true of this
-> engine.
+> does, and it has done so since the static-mode PR (#143). It never emits a
+> `<section class="details">`.
 
 ## CodeCallouts
 
@@ -509,9 +508,10 @@ let options = Options::new().with_extension(&ext);
 
 ## Built-in extensions
 
-`ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
+`Autolink`, `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
 `TabNormalize`, `FencedRender` (with a Mermaid preset), `MathBlock`, `Spoiler`,
-`Details`, and `ListTable`.
+`Details`, and `ListTable`, among others. The complete list is the
+registry block under [Per-extension static output](#per-extension-static-output).
 
 #### `Details`
 
