@@ -2025,6 +2025,57 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
     backslashes % 2 == 0
 }
 
+/// M1b's second condition for `_`: which `_` from text could pair with
+/// another on its emitted line, by CommonMark 6.2 read for the underscore.
+///
+/// One scan per line: an opener pairs with any closer after it, a closer with
+/// any opener before it. Only a `_` from text is a candidate, so one the
+/// author escaped is never half of a pair.
+fn underscores_that_could_pair(line: &[char], literal: &[bool]) -> Vec<bool> {
+    let mut escape = vec![false; line.len()];
+    let mut start = 0usize;
+    while start <= line.len() {
+        let end = line[start..]
+            .iter()
+            .position(|c| *c == '\n')
+            .map_or(line.len(), |at| start + at);
+        let flags: Vec<(usize, bool, bool)> = (start..end)
+            .filter(|&i| literal[i])
+            .map(|i| {
+                let before = if i == start { ' ' } else { line[i - 1] };
+                let after = line
+                    .get(i + 1)
+                    .copied()
+                    .filter(|_| i + 1 < end)
+                    .unwrap_or(' ');
+                let left = !flank_space(after)
+                    && (!flank_punct(after) || flank_space(before) || flank_punct(before));
+                let right = !flank_space(before)
+                    && (!flank_punct(before) || flank_space(after) || flank_punct(after));
+                let opens = left && (!right || flank_punct(before));
+                let closes = right && (!left || flank_punct(after));
+                (i, opens, closes)
+            })
+            .collect();
+        let mut opener_before = false;
+        for &(i, opens, closes) in &flags {
+            if closes && opener_before {
+                escape[i] = true;
+            }
+            opener_before |= opens;
+        }
+        let mut closer_after = false;
+        for &(i, opens, closes) in flags.iter().rev() {
+            if opens && closer_after {
+                escape[i] = true;
+            }
+            closer_after |= closes;
+        }
+        start = end + 1;
+    }
+    escape
+}
+
 /// Resolve the narrowed escapes: PART 11 §8a, M1b.
 fn resolve_narrowed_escapes(text: &str) -> String {
     // READ ONCE. The carriers are a property of the render, not of the
@@ -2037,6 +2088,11 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         return text.to_string();
     }
     let line: Vec<char> = text.chars().map(|c| candidate(c).unwrap_or(c)).collect();
+    let literal: Vec<bool> = text
+        .chars()
+        .map(|c| carrier_slot(&carriers, c) == Some(C_UNDERSCORE))
+        .collect();
+    let pairs = underscores_that_could_pair(&line, &literal);
     let mut out = String::with_capacity(text.len());
     // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
     //
@@ -2064,7 +2120,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
             if slot == C_AUTHORED_HASH {
                 (ch, opens_an_atx_heading(&line, i, content_start))
             } else {
-                (ch, adjacent_to_live_delimiter(&line, i, ch))
+                (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
             }
         });
 
