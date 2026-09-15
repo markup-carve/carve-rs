@@ -57,6 +57,20 @@ jobs:
       # clone cannot answer the ancestry question either way.
       - run: ./scripts/check-spec-pin-ancestry.sh tests/spec
 
+  schema-map:
+    name: ProseMirror schema map matches carve-grammars
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Full history: the check asks which commits touched the map since the one
+      # recorded, which a depth-1 clone cannot answer.
+      - uses: actions/checkout@v6
+        with:
+          repository: markup-carve/carve-grammars
+          path: .carve-grammars
+          fetch-depth: 0
+      - run: python3 tools/check-schema-map.py --grammars .carve-grammars --github
+
   test:
     name: Build and test (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
