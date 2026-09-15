@@ -1618,3 +1618,74 @@ fn an_explicit_heading_id_collision_across_an_include_still_warns() {
         result.warnings
     );
 }
+
+// ---------------------------------------------------------------------------
+// PART 6 `include_directive`: THE CLOSER is the first `}}` OUTSIDE any quoted
+// run (carve#2013). What the closer admits is observable here because the span
+// decides where recognition RESUMES: a `{{ … }}` sitting inside a quoted run
+// is inside the first directive's span under the ruling, and is a directive of
+// its own under the first-`}}` reading.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_quoted_option_value_may_contain_the_closer_pair() {
+    let resolver = MapResolver::new(&[("a.crv", "A"), ("b.crv", "B")]);
+    let result = expand_with(
+        "{{ a.crv @label:\"x }} {{ b.crv }} y\" }} end",
+        &resolver,
+        IncludeOptions::new(),
+    );
+
+    // The quoted run carries the pair, so the directive closes at the `}}`
+    // that FOLLOWS the closing quote and ` end` is the only ordinary text.
+    assert_eq!(result.rules(), vec!["include-unknown-option"]);
+    assert!(
+        resolver.calls.borrow().is_empty(),
+        "a target inside the quoted run was resolved: {:?}",
+        resolver.calls.borrow()
+    );
+    assert!(!result.html.contains('B'), "{}", result.html);
+    assert_eq!(
+        result.html,
+        "<p>{{ a.crv <span class=\"mention\"><strong>@label</strong></span>\
+         :“x }} {{ b.crv }} y” }} end</p>",
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_quoted_path_may_contain_the_closer_pair() {
+    let resolver = MapResolver::new(&[("b.crv", "B")]);
+    let result = expand_with(
+        "{{ \"a }} {{ b.crv }} more\" }} end",
+        &resolver,
+        IncludeOptions::new(),
+    );
+
+    // Same clause on the path half, which this scanner already honored: the
+    // whole quoted run is the PATH, so the resolver is asked for it verbatim.
+    assert_eq!(result.rules(), vec!["include-unresolved"]);
+    assert_eq!(
+        *resolver.calls.borrow(),
+        vec!["a }} {{ b.crv }} more".to_string()]
+    );
+    assert!(!result.html.contains('B'), "{}", result.html);
+}
+
+#[test]
+fn an_unterminated_quote_opens_no_run_and_the_first_closer_still_wins() {
+    let resolver = MapResolver::new(&[("a.crv", "A"), ("b.crv", "B")]);
+    let result = expand_with(
+        "{{ a.crv @label:\"x }} {{ b.crv }}",
+        &resolver,
+        IncludeOptions::new(),
+    );
+
+    // No closing quote, so no run opens and the fallback to the first `}}`
+    // stands: the malformed directive warns and stays literal, and the
+    // directive AFTER it is an ordinary directive that expands.
+    assert_eq!(result.rules(), vec!["include-unknown-option"]);
+    assert_eq!(*resolver.calls.borrow(), vec!["b.crv".to_string()]);
+    assert!(result.html.contains('B'), "{}", result.html);
+}
