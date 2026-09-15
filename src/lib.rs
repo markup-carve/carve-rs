@@ -705,7 +705,12 @@ pub fn prepare_doc_with_includes(
             });
         }
     }
-    let expanded = expand_includes(parse_with_options(source, options), source, include_options);
+    let expanded = includes::expand_includes_with_extensions(
+        parse_with_options(source, options),
+        source,
+        include_options,
+        &options.extensions,
+    );
     let doc = doc_with_hooks(expanded.doc, options, effective_mode, target_is_html);
     let doc = match &options.profile {
         Some(profile) => apply_profile(doc, profile, options.profile_base_host.as_deref())?.doc,

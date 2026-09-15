@@ -27,7 +27,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
-use crate::parse::{parse, slugify_parse};
+use crate::extension::CarveExtension;
+use crate::parse::slugify_parse;
 use crate::render::plain_inlines;
 
 /// Default transitive include depth limit (spec I6 recommends at least 16).
@@ -205,6 +206,7 @@ pub struct IncludeOptions<'a> {
     max_bytes: Option<usize>,
     max_resolver_calls: Option<usize>,
     max_warnings: Option<usize>,
+    extensions: Vec<&'a dyn CarveExtension>,
 }
 
 impl<'a> IncludeOptions<'a> {
@@ -252,6 +254,15 @@ impl<'a> IncludeOptions<'a> {
     /// distinct rule always survives, and the result reports how many did not.
     pub fn with_max_warnings(mut self, warnings: usize) -> Self {
         self.max_warnings = Some(warnings);
+        self
+    }
+
+    /// Parse each child with this extension too. Pass the set the PARENT was
+    /// parsed with, so the same text means the same thing in either file.
+    /// [`crate::prepare_doc_with_includes`] forwards its own parse options' set
+    /// and does not read this one.
+    pub fn with_extension(mut self, extension: &'a dyn CarveExtension) -> Self {
+        self.extensions.push(extension);
         self
     }
 }
@@ -726,6 +737,8 @@ fn is_directive_shaped(text: &str) -> bool {
 
 struct State<'a> {
     opts: &'a IncludeOptions<'a>,
+    /// Extensions each child is parsed with.
+    extensions: &'a [&'a dyn CarveExtension],
     warnings: Vec<IncludeWarning>,
     max_depth: usize,
     max_bytes: usize,
@@ -1451,11 +1464,11 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
     // the child closes at child EOF and can never swallow parent content.
-    let child = if state.track_positions {
-        crate::parse_with_options(&source, &crate::Options::default().with_positions(true))
-    } else {
-        parse(&source)
-    };
+    let mut child_options = crate::Options::default().with_positions(state.track_positions);
+    for extension in state.extensions {
+        child_options = child_options.with_extension(*extension);
+    }
+    let child = crate::parse_with_options(&source, &child_options);
     let mut children = child.children;
     let mut footnotes = child.footnote_defs;
     // Select BEFORE expanding: nested includes outside the wanted section must
@@ -1884,9 +1897,21 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
 /// With no resolver configured, directives remain ordinary text and no warnings
 /// are emitted - the pinned core behavior.
 pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>) -> IncludeResult {
+    expand_includes_with_extensions(doc, source, options, &options.extensions)
+}
+
+/// [`expand_includes`], parsing each child with `extensions` rather than the
+/// set on `options`.
+pub(crate) fn expand_includes_with_extensions(
+    doc: Document,
+    source: &str,
+    options: &IncludeOptions<'_>,
+    extensions: &[&dyn CarveExtension],
+) -> IncludeResult {
     let mut doc = doc;
     let mut state = State {
         opts: options,
+        extensions,
         warnings: Vec::new(),
         max_depth: options.max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
         max_bytes: options
