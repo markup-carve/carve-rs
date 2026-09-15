@@ -283,7 +283,7 @@ impl Builder {
                 _ => false,
             };
             if closes_top {
-                self.close();
+                self.close_matched_html();
             } else {
                 self.raw_inline(value.to_string());
             }
@@ -296,6 +296,16 @@ impl Builder {
         }
 
         let name = tag.name.to_ascii_lowercase();
+        // Only a BARE native tag converts to a Carve construct. An attributed
+        // tag (`<b class="x">`) opens a raw-inline run instead, so its
+        // attributes survive verbatim rather than being dropped.
+        if !tag.bare {
+            self.frames.push(Frame::RawInline {
+                tag: name,
+                content: value.to_string(),
+            });
+            return;
+        }
         let frame = match name.as_str() {
             "b" | "strong" => Frame::HtmlEmphasis {
                 tag: name,
@@ -565,23 +575,22 @@ impl Builder {
                     }));
                 }
             }
-            Frame::HtmlEmphasis { kind, children, .. } => {
-                self.inline(InlineNode::Emphasis(Emphasis {
-                    attrs: None,
-                    kind,
-                    children,
-                    pos: None,
-                }))
+            // A native inline-HTML frame reaching close() here was NOT closed by
+            // its own end tag - a paragraph or the document ended first. Its open
+            // tag never paired, so it is not a Carve construct: emit the bare open
+            // tag as a raw-inline span and let its collected content stand, the
+            // way carve-js leaves an unclosed `<b>` as `` `<b>`{=html} `` text.
+            Frame::HtmlEmphasis { tag, children, .. } | Frame::HtmlInsert { tag, children, .. } => {
+                self.raw_inline(format!("<{tag}>"));
+                for child in children {
+                    self.inline(child);
+                }
             }
-            Frame::HtmlCode { content, .. } => {
-                self.inline(InlineNode::code(content, None));
-            }
-            Frame::HtmlInsert { children, .. } => {
-                self.inline(InlineNode::CriticInsert(CriticInsert {
-                    children,
-                    attrs: None,
-                    pos: None,
-                }))
+            Frame::HtmlCode { tag, content, .. } => {
+                self.raw_inline(format!("<{tag}>"));
+                if !content.is_empty() {
+                    self.text(&content);
+                }
             }
             Frame::RawInline { content, .. } => self.raw_inline(content),
             // Markdown emphasis IS Carve emphasis; only the spelling differs,
@@ -683,6 +692,35 @@ impl Builder {
                     pos: None,
                 });
             }
+        }
+    }
+
+    /// Close a native inline-HTML frame that its OWN matching end tag closed,
+    /// building the Carve construct. The caller has confirmed the top frame is
+    /// the one the end tag pairs with; anything reaching the generic `close()`
+    /// was left unpaired and falls back to raw there instead.
+    fn close_matched_html(&mut self) {
+        match self.frames.pop() {
+            Some(Frame::HtmlEmphasis { kind, children, .. }) => {
+                self.inline(InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind,
+                    children,
+                    pos: None,
+                }));
+            }
+            Some(Frame::HtmlCode { content, .. }) => {
+                self.inline(InlineNode::code(content, None));
+            }
+            Some(Frame::HtmlInsert { children, .. }) => {
+                self.inline(InlineNode::CriticInsert(CriticInsert {
+                    children,
+                    attrs: None,
+                    pos: None,
+                }));
+            }
+            Some(other) => self.frames.push(other),
+            None => {}
         }
     }
 
@@ -839,6 +877,7 @@ struct HtmlTag<'a> {
     name: &'a str,
     closing: bool,
     self_closing: bool,
+    bare: bool,
 }
 
 /// Read just enough of an HTML fragment to pair the events pulldown-cmark
@@ -873,6 +912,11 @@ fn html_tag(fragment: &str) -> Option<HtmlTag<'_>> {
         name: &fragment[start..cursor],
         closing,
         self_closing: fragment[..fragment.len() - 1].trim_end().ends_with('/'),
+        // A bare open tag is `<name>` with nothing between the name and `>` - no
+        // attributes, no interior whitespace. Only a bare native tag converts to
+        // a Carve construct; an attributed one is kept verbatim as raw HTML so
+        // the attributes are not silently dropped, matching carve-js.
+        bare: !closing && bytes.get(cursor) == Some(&b'>'),
     })
 }
 
