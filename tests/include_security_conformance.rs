@@ -89,7 +89,7 @@ use carve::parse;
 const CORPUS_VERSION: u32 = 1;
 /// Total vectors in that revision. Raising it is a deliberate act: read the new
 /// vectors first and make sure this adapter answers them.
-const VECTOR_COUNT: usize = 23;
+const VECTOR_COUNT: usize = 25;
 /// Of which `graph`, the kind this adapter drives in memory.
 const GRAPH_VECTOR_COUNT: usize = 6;
 /// Of which name their root as a `rootSpec`, driven through the configuration
@@ -124,13 +124,24 @@ const KNOWN_DENIALS: &[&str] = &[
     "resolver-calls",
 ];
 
-/// The two classes this engine cannot tell apart.
+/// The two classes this engine cannot REPORT apart.
 ///
-/// `FileSystemResolver` answers a refusal and a miss the same way - `None`,
-/// reported as the one canonical rule id `include-unresolved` - so a driven
-/// vector expecting either is compared on `status` alone. Naming them rather
-/// than defaulting to "do not compare" is what makes a THIRD class arriving on
-/// a driven vector fail here instead of passing unobserved.
+/// The limit is the seam, not the arithmetic. `IncludeResolver::resolve`
+/// returns `Option<IncludeResolved>` - one refusal channel, surfaced as the one
+/// canonical rule id `include-unresolved` - so a resolver that worked the class
+/// out correctly would have nowhere to put it, and a driven vector expecting
+/// either is compared on `status` alone. Naming them rather than defaulting to
+/// "do not compare" is what makes a THIRD class arriving on a driven vector
+/// fail here instead of passing unobserved.
+///
+/// It is NOT that the class is unknowable. `canonicalize` needs the whole path
+/// to exist, but the class does not need `canonicalize` on the whole path:
+/// canonicalizing the longest EXISTING prefix and applying the remainder
+/// lexically, with its dot-dot segments collapsed, answers `outside-root` for
+/// BOTH halves of the `out-of-root-through-present-directory` /
+/// `out-of-root-through-absent-directory` pair - measured on carve-rs#1622, and
+/// exactly the rule markup-carve/carve#2021 states. Widening the seam so the
+/// class can be reported is the work; the computation is not the obstacle.
 #[cfg(feature = "fs")]
 const INDISTINGUISHABLE_FILESYSTEM_DENIALS: &[&str] = &["outside-root", "not-found"];
 
