@@ -50,8 +50,22 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
     let mut builder = Builder::default();
-    for event in Parser::new_ext(markdown, options) {
-        builder.push(event);
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        if matches!(&event, Event::Html(_))
+            && !builder
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::ListItem { .. } | Frame::BlockQuote(_)))
+        {
+            let line_start = markdown[..range.start]
+                .rfind('\n')
+                .map_or(0, |newline| newline + 1);
+            let indent = &markdown[line_start..range.start];
+            if !indent.is_empty() && indent.chars().all(|ch| matches!(ch, ' ' | '\t')) {
+                builder.raw_html(indent);
+            }
+        }
+        builder.push(event, &markdown[range]);
     }
 
     builder.finish()
@@ -106,6 +120,27 @@ enum Frame {
     /// finished raw block folds into whatever container the element sits in,
     /// the same way every other block does.
     RawHtml(String),
+    /// A paired HTML tag with a native Carve inline representation.
+    HtmlEmphasis {
+        tag: String,
+        kind: EmphasisKind,
+        children: Vec<InlineNode>,
+    },
+    HtmlCode {
+        tag: String,
+        content: String,
+    },
+    HtmlInsert {
+        tag: String,
+        children: Vec<InlineNode>,
+    },
+    /// An inline HTML run with no native Carve node. `tag` is the outer tag
+    /// whose closing fragment completes the run; standalone fragments have
+    /// already been emitted and never need a frame.
+    RawInline {
+        tag: String,
+        content: String,
+    },
     Emphasis(EmphasisKind, Vec<InlineNode>),
     Link {
         href: String,
@@ -146,7 +181,14 @@ struct Builder {
 }
 
 impl Builder {
-    fn push(&mut self, event: Event<'_>) {
+    fn push(&mut self, event: Event<'_>, source: &str) {
+        // Once a non-native HTML element opens, everything through its closing
+        // tag is one verbatim raw-inline run. pulldown still tokenizes Markdown
+        // inside that run, so reconstruct the few token shapes it can emit.
+        if self.append_to_raw_inline(&event) {
+            return;
+        }
+
         match event {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
@@ -164,10 +206,18 @@ impl Builder {
             // PROFILE decision (`apply_profile` strips it), which is where a
             // policy about untrusted input belongs - not silently inside one
             // engine's importer while the other two keep it.
-            Event::Html(html) => self.raw_html(&html),
-            // Inline HTML stays text: it has no block to become, and Carve has
-            // no inline raw spelling in the 0.1 core.
-            Event::InlineHtml(html) => self.text(&html),
+            Event::Html(html) => {
+                // pulldown normalizes away up to three leading spaces on an
+                // HTML-block line, while carve-js preserves those source
+                // bytes. The offset iterator still exposes them.
+                let value = if source.trim_start() == html.as_ref() {
+                    source
+                } else {
+                    &html
+                };
+                self.raw_html(value)
+            }
+            Event::InlineHtml(html) => self.inline_html(&html),
             Event::FootnoteReference(label) => {
                 let next = self.footnote_numbers.len() + 1;
                 let number = *self
@@ -192,6 +242,116 @@ impl Builder {
         }
     }
 
+    fn append_to_raw_inline(&mut self, event: &Event<'_>) -> bool {
+        let Some(Frame::RawInline { tag, content }) = self.frames.last_mut() else {
+            return false;
+        };
+
+        match event {
+            Event::InlineHtml(html) | Event::Html(html) => {
+                content.push_str(html);
+                if html_tag(html)
+                    .is_some_and(|parsed| parsed.closing && parsed.name.eq_ignore_ascii_case(tag))
+                {
+                    self.close();
+                }
+            }
+            Event::Text(text) => content.push_str(text),
+            Event::Code(code) => {
+                content.push('`');
+                content.push_str(code);
+                content.push('`');
+            }
+            Event::SoftBreak => content.push('\n'),
+            Event::HardBreak => content.push_str("  \n"),
+            _ => {}
+        }
+        true
+    }
+
+    fn inline_html(&mut self, value: &str) {
+        let Some(tag) = html_tag(value) else {
+            self.raw_inline(value.to_string());
+            return;
+        };
+
+        if tag.closing {
+            let closes_top = match self.frames.last() {
+                Some(Frame::HtmlEmphasis { tag: open, .. })
+                | Some(Frame::HtmlCode { tag: open, .. })
+                | Some(Frame::HtmlInsert { tag: open, .. }) => open.eq_ignore_ascii_case(tag.name),
+                _ => false,
+            };
+            if closes_top {
+                self.close();
+            } else {
+                self.raw_inline(value.to_string());
+            }
+            return;
+        }
+
+        if tag.self_closing || is_void_html_tag(tag.name) {
+            self.raw_inline(value.to_string());
+            return;
+        }
+
+        let name = tag.name.to_ascii_lowercase();
+        let frame = match name.as_str() {
+            "b" | "strong" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Strong,
+                children: Vec::new(),
+            },
+            "i" | "em" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Italic,
+                children: Vec::new(),
+            },
+            "mark" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Highlight,
+                children: Vec::new(),
+            },
+            "sup" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Super,
+                children: Vec::new(),
+            },
+            "sub" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Sub,
+                children: Vec::new(),
+            },
+            "del" | "s" => Frame::HtmlEmphasis {
+                tag: name,
+                kind: EmphasisKind::Strike,
+                children: Vec::new(),
+            },
+            "ins" => Frame::HtmlInsert {
+                tag: name,
+                children: Vec::new(),
+            },
+            "code" => Frame::HtmlCode {
+                tag: name,
+                content: String::new(),
+            },
+            _ => Frame::RawInline {
+                tag: name,
+                content: value.to_string(),
+            },
+        };
+        self.frames.push(frame);
+    }
+
+    fn raw_inline(&mut self, content: String) {
+        self.inline(InlineNode::RawInline(RawInline {
+            format: "html".to_string(),
+            content,
+            injected: false,
+            pos: None,
+        }));
+    }
+
     /// Collect one line of a block-level HTML element into the frame the
     /// element opened.
     fn raw_html(&mut self, value: &str) {
@@ -212,6 +372,7 @@ impl Builder {
             Some(Frame::CodeBlock { content, .. }) | Some(Frame::Metadata(content)) => {
                 content.push_str(value)
             }
+            Some(Frame::HtmlCode { content, .. }) => content.push_str(value),
             Some(Frame::Image { alt, .. }) => alt.push_str(value),
             _ => self.inline(InlineNode::text(value)),
         }
@@ -382,11 +543,47 @@ impl Builder {
             // the container the element sits in - a quote, a list item or a
             // footnote definition - instead of landing at the top of the
             // document ahead of the container it was written inside.
-            Frame::RawHtml(content) => self.block(BlockNode::RawBlock(RawBlock {
-                format: "html".to_string(),
-                content: content.trim_end_matches('\n').to_string(),
-                pos: None,
-            })),
+            Frame::RawHtml(content) => {
+                let content = content.trim_end_matches('\n').to_string();
+                // carve-js renders a block-level HTML element inline only when it
+                // is a tight item's SOLE content (right after the marker, nothing
+                // before it); a block element on a continuation line, after the
+                // item's own text, stays a block. Match that: the item must have
+                // collected neither a block nor any pending inline run yet.
+                let inline_in_tight_item = matches!(
+                    self.frames.last(),
+                    Some(Frame::ListItem { loose: false, children, pending, .. })
+                        if children.is_empty() && pending.is_empty()
+                );
+                if inline_in_tight_item {
+                    self.raw_inline(content);
+                } else {
+                    self.block(BlockNode::RawBlock(RawBlock {
+                        format: "html".to_string(),
+                        content,
+                        pos: None,
+                    }));
+                }
+            }
+            Frame::HtmlEmphasis { kind, children, .. } => {
+                self.inline(InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind,
+                    children,
+                    pos: None,
+                }))
+            }
+            Frame::HtmlCode { content, .. } => {
+                self.inline(InlineNode::code(content, None));
+            }
+            Frame::HtmlInsert { children, .. } => {
+                self.inline(InlineNode::CriticInsert(CriticInsert {
+                    children,
+                    attrs: None,
+                    pos: None,
+                }))
+            }
+            Frame::RawInline { content, .. } => self.raw_inline(content),
             // Markdown emphasis IS Carve emphasis; only the spelling differs,
             // and the spelling belongs to the writer.
             Frame::Emphasis(kind, children) => self.inline(InlineNode::Emphasis(Emphasis {
@@ -512,6 +709,8 @@ impl Builder {
             Some(Frame::Paragraph(children))
             | Some(Frame::Heading(_, children))
             | Some(Frame::Emphasis(_, children))
+            | Some(Frame::HtmlEmphasis { children, .. })
+            | Some(Frame::HtmlInsert { children, .. })
             | Some(Frame::Link { children, .. })
             | Some(Frame::TableCell(children)) => children.push(node),
             // A TIGHT item spells its content with no paragraph around it, so
@@ -635,6 +834,68 @@ fn heading_level(level: HeadingLevel) -> u8 {
     }
 }
 
+#[derive(Clone, Copy)]
+struct HtmlTag<'a> {
+    name: &'a str,
+    closing: bool,
+    self_closing: bool,
+}
+
+/// Read just enough of an HTML fragment to pair the events pulldown-cmark
+/// emits. Declarations, comments and processing instructions deliberately do
+/// not look like tags here: each is a complete standalone raw fragment.
+fn html_tag(fragment: &str) -> Option<HtmlTag<'_>> {
+    let bytes = fragment.as_bytes();
+    if bytes.first() != Some(&b'<') || bytes.last() != Some(&b'>') {
+        return None;
+    }
+
+    let mut cursor = 1;
+    let closing = bytes.get(cursor) == Some(&b'/');
+    if closing {
+        cursor += 1;
+    }
+    if matches!(bytes.get(cursor), Some(b'!') | Some(b'?')) {
+        return None;
+    }
+    let start = cursor;
+    while bytes
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b':' | b'_'))
+    {
+        cursor += 1;
+    }
+    if cursor == start {
+        return None;
+    }
+
+    Some(HtmlTag {
+        name: &fragment[start..cursor],
+        closing,
+        self_closing: fragment[..fragment.len() - 1].trim_end().ends_with('/'),
+    })
+}
+
+fn is_void_html_tag(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -755,10 +1016,23 @@ mod tests {
     }
 
     #[test]
-    fn inline_html_stays_text() {
-        // No block to become, and the 0.1 core has no inline raw spelling.
-        let out = markdown_to_carve("a <b>c</b> d");
-        assert!(!out.contains("=html"), "{out}");
+    fn inline_html_uses_native_nodes_or_raw_html() {
+        assert_eq!(markdown_to_carve("a <b>c</b> d"), "a *c* d\n");
+        assert_eq!(
+            markdown_to_carve("a <span>c</span> d"),
+            "a `<span>c</span>`{=html} d\n"
+        );
+        assert_eq!(markdown_to_carve("use <code>x=1</code>"), "use `x=1`\n");
+        assert_eq!(
+            markdown_to_carve("before <!-- c --> after"),
+            "before `<!-- c -->`{=html} after\n"
+        );
+    }
+
+    #[test]
+    fn html_highlight_uses_contextual_bracing() {
+        assert_eq!(markdown_to_carve("a <mark>x</mark> b"), "a =x= b\n");
+        assert_eq!(markdown_to_carve("a<mark>x</mark>b"), "a{=x=}b\n");
     }
 
     #[test]
