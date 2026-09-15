@@ -197,6 +197,14 @@ carve --include-root . book/main.crv      # widen the root to the project
 carve --include-root ./book < main.crv    # required to enable includes on stdin
 ```
 
+`FileSystemResolver::new` refuses a root spec that is not **absolute** (spec
+§19): a relative one has no base the specification names, and every
+canonicalizer resolves it against the process working directory, which is
+exactly what §19 forbids the root defaulting to. The relative spellings above
+keep working because the CLI expands them in its own argument parsing before
+constructing the resolver - an embedder that wants the same convenience does the
+same.
+
 ```
 {{ chapters/intro.crv }}              include a whole file
 {{ chapters/intro.crv #setup }}       include one heading subtree

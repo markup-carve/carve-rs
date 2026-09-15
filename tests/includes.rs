@@ -694,6 +694,33 @@ fn filesystem_resolver_denies_a_missing_target_rather_than_skipping_containment(
 
 #[test]
 #[cfg(feature = "fs")]
+fn filesystem_resolver_refuses_a_root_spec_that_is_not_absolute() {
+    // carve#2004: the configured value is refused for not being ABSOLUTE. The
+    // kind matters as much as the refusal - `InvalidInput` is what says the
+    // RULE produced it, where `NotFound` would mean the spec merely happened
+    // not to exist under the process working directory.
+    fn refusal(spec: &str) -> std::io::Error {
+        match FileSystemResolver::new(spec) {
+            Ok(_) => panic!("{spec:?} is not absolute and must be refused as a root"),
+            Err(err) => err,
+        }
+    }
+
+    // `.` exists and is not blank after trimming, so a trim-and-compare
+    // spelling accepts it and only an absoluteness test refuses it.
+    assert_eq!(refusal(".").kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(refusal("   ").kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(refusal("").kind(), std::io::ErrorKind::InvalidInput);
+
+    // And a directory genuinely named with spaces stays reachable by its
+    // absolute path. That is why the rule is absoluteness and not whitespace.
+    let tmp = TempDir::new("space-named-root");
+    let root = tmp.mkdir("   ");
+    FileSystemResolver::new(&root).expect("an absolute root is honored, spaces and all");
+}
+
+#[test]
+#[cfg(feature = "fs")]
 fn filesystem_resolver_does_not_confuse_a_sibling_directory_with_a_shared_prefix() {
     // A lexical string-prefix containment test would accept "rootother" as
     // being inside "root"; the component-wise check does not.
