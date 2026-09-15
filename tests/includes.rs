@@ -11,8 +11,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, parse, render_html, IncludeContext, IncludeDependency, IncludeOptions,
-    IncludeResolved, IncludeResolver,
+    expand_includes, parse, render_html, IncludeContext, IncludeDenial, IncludeDependency,
+    IncludeOptions, IncludeResolved, IncludeResolver,
 };
 // Only this build has a filesystem resolver; everything else here drives the
 // pass through a HOST-SUPPLIED closure, which is the case a database, object
@@ -48,18 +48,24 @@ impl MapResolver {
 }
 
 impl IncludeResolver for MapResolver {
-    fn resolve(&self, path: &str, _ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
+    fn resolve(
+        &self,
+        path: &str,
+        _ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
         self.calls.borrow_mut().push(path.to_string());
         if self.canonical_ids {
             let id = path.strip_prefix("./").unwrap_or(path);
             return self
                 .files
                 .get(id)
-                .map(|source| IncludeResolved::with_id(source.clone(), id));
+                .map(|source| IncludeResolved::with_id(source.clone(), id))
+                .ok_or(IncludeDenial::NotFound);
         }
         self.files
             .get(path)
             .map(|s| IncludeResolved::from(s.clone()))
+            .ok_or(IncludeDenial::NotFound)
     }
 }
 
@@ -112,6 +118,15 @@ fn dep(id: &str, resolved: bool) -> IncludeDependency {
     IncludeDependency {
         id: id.to_string(),
         resolved,
+        denial: None,
+    }
+}
+
+fn denied(id: &str, denial: IncludeDenial) -> IncludeDependency {
+    IncludeDependency {
+        id: id.to_string(),
+        resolved: false,
+        denial: Some(denial),
     }
 }
 
@@ -386,7 +401,10 @@ fn reports_a_missing_include_target_as_an_unresolved_dependency() {
     assert_eq!(result.rules(), vec!["include-unresolved"]);
     assert_eq!(
         result.dependencies,
-        vec![dep("present", true), dep("absent", false)]
+        vec![
+            dep("present", true),
+            denied("absent", IncludeDenial::NotFound)
+        ]
     );
 }
 
@@ -527,8 +545,14 @@ fn filesystem_resolver_rejects_a_dot_dot_chain_that_escapes_the_root() {
         stack: &[],
         depth: 0,
     };
-    assert!(resolver.resolve("../../../secret.crv", &ctx).is_none());
-    assert!(resolver.resolve("../../../etc/passwd", &ctx).is_none());
+    assert_eq!(
+        resolver.resolve("../../../secret.crv", &ctx),
+        Err(IncludeDenial::OutsideRoot)
+    );
+    assert_eq!(
+        resolver.resolve("../../../etc/passwd", &ctx),
+        Err(IncludeDenial::OutsideRoot)
+    );
 
     // The sibling-directory case stays allowed through the same resolver.
     fs::create_dir_all(root.join("chapters")).unwrap();
@@ -573,7 +597,7 @@ fn reports_a_containment_denied_target_as_an_unresolved_dependency() {
         result.dependencies,
         vec![
             dep(&ok_real.to_string_lossy(), true),
-            dep("../secret.crv", false),
+            denied("../secret.crv", IncludeDenial::OutsideRoot),
         ]
     );
 }
@@ -672,6 +696,9 @@ fn filesystem_resolver_rejects_an_absolute_path_outside_the_root_by_default() {
     let result = expand_fs(&source, &root, IncludeOptions::new());
     assert_eq!(result.rules(), vec!["include-unresolved"]);
     assert!(!result.html.contains("TOP SECRET"));
+    // Refused by policy before containment is asked, so the class is the
+    // policy's rather than `outside-root`.
+    assert_eq!(result.dependencies[0].denial, Some(IncludeDenial::Denied));
 }
 
 #[test]
@@ -688,8 +715,14 @@ fn filesystem_resolver_denies_a_missing_target_rather_than_skipping_containment(
         stack: &[],
         depth: 0,
     };
-    assert!(resolver.resolve("does-not-exist.crv", &ctx).is_none());
-    assert!(resolver.resolve("nested/missing/file.crv", &ctx).is_none());
+    assert_eq!(
+        resolver.resolve("does-not-exist.crv", &ctx),
+        Err(IncludeDenial::NotFound)
+    );
+    assert_eq!(
+        resolver.resolve("nested/missing/file.crv", &ctx),
+        Err(IncludeDenial::NotFound)
+    );
 }
 
 #[test]
@@ -733,7 +766,10 @@ fn filesystem_resolver_does_not_confuse_a_sibling_directory_with_a_shared_prefix
         stack: &[],
         depth: 0,
     };
-    assert!(resolver.resolve("../rootother/secret.crv", &ctx).is_none());
+    assert_eq!(
+        resolver.resolve("../rootother/secret.crv", &ctx),
+        Err(IncludeDenial::OutsideRoot)
+    );
 }
 
 #[test]
@@ -1578,9 +1614,9 @@ fn an_auto_heading_id_collision_across_an_include_is_silent() {
     let result = expand_with(
         "{{ a.crv }}\n\n{{ b.crv }}\n",
         &|path: &str, _ctx: &IncludeContext<'_>| match path {
-            "a.crv" => Some(IncludeResolved::from("# Overview\n\nFirst.\n".to_string())),
-            "b.crv" => Some(IncludeResolved::from("# Overview\n\nSecond.\n".to_string())),
-            _ => None,
+            "a.crv" => Ok(IncludeResolved::from("# Overview\n\nFirst.\n".to_string())),
+            "b.crv" => Ok(IncludeResolved::from("# Overview\n\nSecond.\n".to_string())),
+            _ => Err(IncludeDenial::NotFound),
         },
         IncludeOptions::new(),
     );
@@ -1601,13 +1637,13 @@ fn an_explicit_heading_id_collision_across_an_include_still_warns() {
     let result = expand_with(
         "{{ a.crv }}\n\n{{ b.crv }}\n",
         &|path: &str, _ctx: &IncludeContext<'_>| match path {
-            "a.crv" => Some(IncludeResolved::from(
+            "a.crv" => Ok(IncludeResolved::from(
                 "{#intro}\n# A\n\nFirst.\n".to_string(),
             )),
-            "b.crv" => Some(IncludeResolved::from(
+            "b.crv" => Ok(IncludeResolved::from(
                 "{#intro}\n# B\n\nSecond.\n".to_string(),
             )),
-            _ => None,
+            _ => Err(IncludeDenial::NotFound),
         },
         IncludeOptions::new(),
     );

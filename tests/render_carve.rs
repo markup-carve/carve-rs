@@ -944,6 +944,7 @@ mod include_directives_survive_formatting {
                 .iter()
                 .find(|(name, _)| *name == path)
                 .map(|(_, body)| IncludeResolved::from(*body))
+                .ok_or(carve::IncludeDenial::NotFound)
         };
         let opts = IncludeOptions::new().with_resolver(&resolver);
         let result = expand_includes(parse(source), source, &opts);

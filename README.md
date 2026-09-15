@@ -249,8 +249,10 @@ for warning in &result.warnings {
     eprintln!("{}: {}", warning.rule, warning.message);
 }
 // Every target touched, resolved or not: hosts key file watchers off this.
+// A refused one carries the class the resolver gave, such as `outside-root`.
 for dependency in &result.dependencies {
-    println!("{} (resolved: {})", dependency.id, dependency.resolved);
+    let denial = dependency.denial.map(|d| d.as_str()).unwrap_or("-");
+    println!("{} (resolved: {}, denial: {denial})", dependency.id, dependency.resolved);
 }
 // Bytes charged against the byte budget: every target the resolver handed
 // back, INCLUDING one refused for breaking the budget. A target is resolved
@@ -261,7 +263,28 @@ let html = render_html(&result.doc);
 ```
 
 Implement `IncludeResolver` for a virtual filesystem, an in-memory map, or any
-other source; `FileSystemResolver` is the ready-made one for trusted hosts.
+other source; `FileSystemResolver` is the ready-made one for trusted hosts. A
+resolver returns `Ok(IncludeResolved)` or `Err(IncludeDenial)`, the error naming
+why it refused:
+
+```rust
+use carve::{IncludeContext, IncludeDenial, IncludeResolved, IncludeResolver};
+
+struct MapResolver(std::collections::HashMap<String, String>);
+
+impl IncludeResolver for MapResolver {
+    fn resolve(
+        &self,
+        path: &str,
+        _ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
+        self.0
+            .get(path)
+            .map(|source| IncludeResolved::with_id(source.clone(), path))
+            .ok_or(IncludeDenial::NotFound)
+    }
+}
+```
 `prepare_doc_with_includes` runs expansion and then the same extension-hook and
 profile pipeline the `to_*` entry points use, so included content is subject to
 exactly the same sanitization as content the author typed directly.

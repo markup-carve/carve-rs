@@ -42,8 +42,8 @@ impl carve::IncludeResolver for NoResolver {
         &self,
         _path: &str,
         _ctx: &carve::IncludeContext<'_>,
-    ) -> Option<carve::IncludeResolved> {
-        None
+    ) -> Result<carve::IncludeResolved, carve::IncludeDenial> {
+        Err(carve::IncludeDenial::Unresolved)
     }
 }
 
