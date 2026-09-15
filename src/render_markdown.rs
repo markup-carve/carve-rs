@@ -815,11 +815,164 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
         crate::render_depth::record("markdown");
         return String::new();
     }
-    let mut out = String::new();
+    let mut parts: Vec<String> = Vec::with_capacity(nodes.len());
     for node in nodes {
-        out.push_str(&render_inline(node, ctx, depth));
+        parts.push(render_inline(node, ctx, depth));
     }
-    out
+    if nodes.len() > 1 {
+        reflank_runs(nodes, &mut parts);
+    }
+    parts.concat()
+}
+
+/// The four inlines this writer spells with a delimiter run, and the inline-HTML
+/// form each falls back to. Everything else is inline HTML already and carries
+/// no flanking question.
+fn delimiter_run(node: &InlineNode) -> Option<(&'static str, &'static str, &'static str)> {
+    let InlineNode::Emphasis(emphasis) = node else {
+        return None;
+    };
+    match emphasis.kind {
+        EmphasisKind::Italic => Some(("*", "<em>", "</em>")),
+        EmphasisKind::Strong => Some(("**", "<strong>", "</strong>")),
+        EmphasisKind::Strike => Some(("~~", "<del>", "</del>")),
+        EmphasisKind::BoldItalic => Some(("***", "<em><strong>", "</strong></em>")),
+        _ => None,
+    }
+}
+
+/// CommonMark 0.31 punctuation: ASCII punctuation plus the Unicode P* and S*
+/// categories. The S* half is the reason to spell it rather than reuse
+/// `is_ascii_punctuation` - 0.30 left the symbol categories out, so a reader on
+/// either version agrees about `!` and disagrees about `©`, and taking the WIDER
+/// class is the answer that is right under both: it can only move a construct to
+/// inline HTML, which every reader reads the same way.
+fn flank_punct(ch: char) -> bool {
+    static PUNCT: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PUNCT
+        .get_or_init(|| regex::Regex::new(r"^[\p{P}\p{S}]$").expect("the flanking class is valid"))
+        .is_match(ch.encode_utf8(&mut [0u8; 4]))
+}
+
+/// The space half of the same test. `NBSP_PLACEHOLDER` is this writer's own
+/// carrier for a no-break space and stands for whitespace wherever it survives
+/// into an emitted part.
+fn flank_space(ch: char) -> bool {
+    ch.is_whitespace() || ch == crate::NBSP_PLACEHOLDER
+}
+
+/// A carrier stands for `_`, `#` or `[`, all three of them punctuation, and it
+/// is a private-use code point that no punctuation property matches. The
+/// flanking test therefore has to ask about the character the reader will see,
+/// not the carrier standing in for it until `resolve_narrowed_escapes` runs.
+fn flank_character(ch: char) -> char {
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    match carrier_slot(&carriers, ch) {
+        Some(slot) => carried_character(slot),
+        None => ch,
+    }
+}
+
+/// One side of CommonMark 6.2, and it really is ONE side: left-flanking and
+/// right-flanking are the same test read in opposite directions. A run is
+/// left-flanking if the character INSIDE it is not whitespace and, when that
+/// character is punctuation, the character OUTSIDE is whitespace or punctuation;
+/// right-flanking swaps which end is inside. `pad_outside` has already moved
+/// every space out of the run, so the inside character is never whitespace and
+/// only the punctuation clause is left to decide.
+///
+/// No neighbour at all counts as whitespace: the enclosing text either starts or
+/// ends the line, or it is a delimiter, a bracket or a tag belonging to whatever
+/// encloses the run - punctuation in every case this writer can produce.
+fn flanks(inside: Option<char>, outside: Option<char>) -> bool {
+    let Some(inner) = inside else {
+        return true;
+    };
+    if !flank_punct(flank_character(inner)) {
+        return true;
+    }
+    let Some(outer) = outside else {
+        return true;
+    };
+    let outer = flank_character(outer);
+
+    flank_space(outer) || flank_punct(outer)
+}
+
+/// A rendered part taken back apart into the pieces `pad_outside` built it from.
+struct RunPiece {
+    lead: String,
+    core: String,
+    trail: String,
+}
+
+/// Take a rendered part apart, or `None` when it is not a delimiter run - an
+/// empty render, or the inline-HTML form `pad_outside` falls back to for
+/// whitespace-only content and for a trailing escape.
+fn split_run(part: &str, delimiter: &str) -> Option<RunPiece> {
+    let body = part.trim();
+    if body.len() <= delimiter.len() * 2 {
+        return None;
+    }
+    if !body.starts_with(delimiter) || !body.ends_with(delimiter) {
+        return None;
+    }
+
+    Some(RunPiece {
+        lead: part[..part.len() - part.trim_start().len()].to_string(),
+        core: body[delimiter.len()..body.len() - delimiter.len()].to_string(),
+        trail: part[part.trim_end().len()..].to_string(),
+    })
+}
+
+/// Whether a run can flank is a property of the SEAM, not of the emphasis node,
+/// so it cannot be answered where the run is built: the character that decides
+/// it belongs to the sibling on the other side. Here is the one place both
+/// neighbours are known, so a run that cannot open or cannot close where it
+/// stands is re-spelled as inline HTML - the same fallback every inline this
+/// writer cannot spell with delimiters already takes (carve-rs#1615).
+///
+/// The neighbour is read off the parts as they stand, so a part already
+/// re-spelled on this pass contributes its `>` or `<` rather than its delimiter.
+/// That only ever makes a later run MORE able to flank, so the pass needs no
+/// second round; a run decided against an earlier neighbour can at worst take
+/// inline HTML it would not have needed.
+fn reflank_runs(nodes: &[InlineNode], parts: &mut [String]) {
+    for i in 0..parts.len() {
+        let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
+            continue;
+        };
+        let Some(piece) = split_run(&parts[i], delimiter) else {
+            continue;
+        };
+        let before = piece
+            .lead
+            .chars()
+            .next_back()
+            .or_else(|| neighbour_before(parts, i));
+        let after = piece
+            .trail
+            .chars()
+            .next()
+            .or_else(|| neighbour_after(parts, i));
+        if flanks(piece.core.chars().next(), before)
+            && flanks(piece.core.chars().next_back(), after)
+        {
+            continue;
+        }
+        parts[i] = format!(
+            "{}{open_tag}{}{close_tag}{}",
+            piece.lead, piece.core, piece.trail
+        );
+    }
+}
+
+fn neighbour_before(parts: &[String], i: usize) -> Option<char> {
+    parts[..i].iter().rev().find_map(|p| p.chars().next_back())
+}
+
+fn neighbour_after(parts: &[String], i: usize) -> Option<char> {
+    parts[i + 1..].iter().find_map(|p| p.chars().next())
 }
 
 fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> String {
