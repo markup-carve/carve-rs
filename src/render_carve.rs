@@ -2217,6 +2217,15 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 
 /// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
 /// per-cell `<`/`>`/`~` alignment markers.
+///
+/// A colspan cell is always written plain (`| < |`), so a header row can keep
+/// the native form when its span markers form a TRAILING run of colspans after
+/// at least one real header cell: each `<` absorbs into the `|=` header on its
+/// left, and the row is still promoted by those markers. Everything else needs
+/// a delimiter row: a LEADING span has no `|=` anchor before it; a real cell
+/// AFTER a span would have to be written `|=< K`, read as an aligned header; and
+/// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
+/// first row is not a header cell and the row would fall out of the head.
 fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     let mut rows = Vec::new();
     let header_row = node
@@ -2224,10 +2233,20 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
     let needs_delimiter = header_row
-        && node
-            .rows
-            .first()
-            .is_some_and(|row| row.cells.iter().any(|cell| cell.span.is_some()));
+        && node.rows.first().is_some_and(|row| {
+            let first_span = row.cells.iter().position(|cell| cell.span.is_some());
+            match first_span {
+                None => false,
+                Some(index) => {
+                    // Native only for a trailing run of colspans after a real
+                    // header cell; every other span shape needs the delimiter.
+                    !(index >= 1
+                        && row.cells[index..]
+                            .iter()
+                            .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+                }
+            }
+        });
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
