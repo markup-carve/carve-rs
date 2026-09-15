@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The Carve writer keeps the native `|=` header form for a table whose header
+  spans trail its real header cells (`|= A |= B | < |`), instead of a GFM
+  delimiter row. A leading span, a real cell after a header span, or a trailing
+  rowspan still uses the delimiter row. The HTML importer, which renders through
+  the writer, produces the native form too.
 - **Breaking:** Migration reports advance to schema version 2: `Carried` is renamed to
   `Preserved`, `Normalized` distinguishes semantics-preserving rewrites, and
   Markdown, Djot, and BBCode now emit a conservative `Dropped`/`Fallback`
