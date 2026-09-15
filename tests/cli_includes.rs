@@ -207,6 +207,24 @@ fn a_widened_include_root_admits_the_sibling_directory() {
 }
 
 #[test]
+fn a_relative_include_root_is_absolutized_by_the_flag_not_by_the_resolver() {
+    // The resolver refuses a relative root (carve#2004). The convenience the
+    // spec sanctions lives in the FRONT END, so `--include-root .` still works,
+    // and it means the cwd it was typed in rather than whatever the resolver
+    // would have canonicalized against.
+    let tmp = TempDir::new("relative-root");
+    tmp.write("secret.crv", "SHARED BODY\n");
+    tmp.write("book/main.crv", "{{ ../secret.crv }}\n");
+    let out = run_in(&["--include-root", ".", "book/main.crv"], None, tmp.path());
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(
+        out.stdout.contains("<p>SHARED BODY</p>"),
+        "stdout: {}",
+        out.stdout
+    );
+}
+
+#[test]
 fn a_nonexistent_explicit_include_root_is_a_fatal_error() {
     let tmp = TempDir::new("bad-root");
     let main = tmp.write("main.crv", "{{ child.crv }}\n");

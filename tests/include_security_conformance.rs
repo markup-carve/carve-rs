@@ -81,12 +81,12 @@ use carve::parse;
 const CORPUS_VERSION: u32 = 1;
 /// Total vectors in that revision. Raising it is a deliberate act: read the new
 /// vectors first and make sure this adapter answers them.
-const VECTOR_COUNT: usize = 19;
+const VECTOR_COUNT: usize = 23;
 /// Of which `graph`, the kind this adapter drives in memory.
 const GRAPH_VECTOR_COUNT: usize = 6;
 /// Of which name their root as a `rootSpec`, driven through the configuration
 /// seam rather than through a root the adapter already materialized.
-const ROOT_SPEC_VECTOR_COUNT: usize = 3;
+const ROOT_SPEC_VECTOR_COUNT: usize = 5;
 
 /// Every requirement id the corpus may carry. An id outside this list means the
 /// corpus grew a requirement this adapter has not been read against.

@@ -1875,8 +1875,25 @@ pub struct FileSystemResolver {
 
 #[cfg(feature = "fs")]
 impl FileSystemResolver {
-    /// Canonicalizes `root` up front; fails if it does not exist.
+    /// Canonicalizes `root` up front; fails if it does not exist, and refuses
+    /// a spec that is not ABSOLUTE.
+    ///
+    /// A relative spec names no root: every canonicalizer resolves one against
+    /// the process working directory, the value §19 forbids the root defaulting
+    /// to. The test has to be on the CONFIGURED value - the canonicalized
+    /// result is always absolute. A front end keeps the convenience by
+    /// absolutizing its own flag before constructing this.
     pub fn new(root: impl AsRef<Path>) -> std::io::Result<Self> {
+        let root = root.as_ref();
+        if !root.is_absolute() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "include containment root must be an absolute path, got {}",
+                    root.display()
+                ),
+            ));
+        }
         Ok(Self {
             root_real: std::fs::canonicalize(root)?,
             allow_absolute: false,

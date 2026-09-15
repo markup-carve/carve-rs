@@ -245,7 +245,23 @@ fn main() -> ExitCode {
                 }
                 #[cfg(feature = "fs")]
                 {
-                    include_root = Some(value);
+                    // The resolver refuses a relative root (§19), so the flag is
+                    // absolutized HERE - that is where `--include-root .` stays
+                    // a convenience instead of becoming a cwd-rooted resolver.
+                    let path = std::path::Path::new(&value);
+                    let absolute = (!path.is_absolute()).then(|| {
+                        match std::fs::canonicalize(path) {
+                            Ok(real) => real,
+                            // Keep the cwd-joined spelling so the failure the
+                            // user sees names the directory they meant.
+                            Err(_) => std::env::current_dir()
+                                .map(|cwd| cwd.join(path))
+                                .unwrap_or_else(|_| path.to_path_buf()),
+                        }
+                        .to_string_lossy()
+                        .into_owned()
+                    });
+                    include_root = Some(absolute.unwrap_or(value));
                 }
             }
             "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
