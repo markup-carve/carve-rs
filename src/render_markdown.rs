@@ -799,7 +799,7 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
     // does not, and `**<U+2028>x**` reads back as literal text through
     // pulldown-cmark, whose flanking test counts the wider class.
     let core = inner.trim();
-    if core.is_empty() || ends_escaped(core) {
+    if core.is_empty() || ends_escaped(core) || content_grows_the_run(core, delimiter) {
         if inner.is_empty() {
             return String::new();
         }
@@ -808,6 +808,23 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
     let lead = &inner[..inner.len() - inner.trim_start().len()];
     let trail = &inner[inner.trim_end().len()..];
     format!("{lead}{delimiter}{core}{delimiter}{trail}")
+}
+
+/// Whether the content's own edge would lengthen the delimiter run past what
+/// the reader can read.
+///
+/// GFM strikethrough is a matching pair of ONE OR TWO tildes; three is not a
+/// longer delimiter, it is no delimiter at all - and at the start of a line it
+/// is a FENCED CODE BLOCK opener that swallows the rest of the document. So a
+/// strike whose content begins or ends with a tilde takes the inline-HTML form.
+///
+/// CommonMark emphasis has no such cap: `***x***` is how a strong holding an
+/// italic is spelled and every reader reads it back, so the asterisk runs are
+/// left alone. They could not reach here in any case - `escape_text` escapes a
+/// literal asterisk, and `~` is deliberately not escaped because GFM reads
+/// `~x~` as strikethrough.
+fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
+    delimiter == "~~" && (core.starts_with('~') || core.ends_with('~'))
 }
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -821,6 +838,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
     }
     if nodes.len() > 1 {
         reflank_runs(nodes, &mut parts);
+        unmerge_runs(nodes, &mut parts);
     }
     parts.concat()
 }
@@ -973,6 +991,126 @@ fn neighbour_before(parts: &[String], i: usize) -> Option<char> {
 
 fn neighbour_after(parts: &[String], i: usize) -> Option<char> {
     parts[i + 1..].iter().find_map(|p| p.chars().next())
+}
+
+/// The characters this writer spells a delimiter run with. A run of anything
+/// else cannot merge with a neighbouring run, because there is no neighbouring
+/// run to merge with.
+fn is_run_character(ch: char) -> bool {
+    ch == '*' || ch == '~'
+}
+
+/// CommonMark's rule of three. When a delimiter run can both open and close, a
+/// closer may only match an opener if the sum of the two run lengths is not a
+/// multiple of three, or if both lengths are.
+fn rule_of_three_allows(opener: usize, closer: usize) -> bool {
+    (opener + closer) % 3 != 0 || (opener % 3 == 0 && closer % 3 == 0)
+}
+
+/// Whether the reader still gets both constructs back out of a run that spans a
+/// seam.
+///
+/// `m` is what the part on the left contributed and `n` what the part on the
+/// right did, so the reader sees ONE run of `m + n` with the first construct's
+/// content on its left and the second's on its right. Every question is asked
+/// about that summed run, which is why no flanking test on either piece can see
+/// this: each piece flanks perfectly well against the other's delimiter.
+///
+/// A TILDE seam never survives. GFM strikethrough reads one or two tildes, and
+/// the two readers disagree about a longer run - markdown-it splits `~~~~` into
+/// two pairs, pulldown-cmark reads the whole thing as text. Inline HTML is the
+/// answer both of them agree on.
+fn merged_run_reads_back(
+    ch: char,
+    m: usize,
+    n: usize,
+    inner_left: Option<char>,
+    inner_right: Option<char>,
+) -> bool {
+    if !flanks(inner_left, inner_right) || !flanks(inner_right, inner_left) {
+        return false;
+    }
+    if ch != '*' {
+        return false;
+    }
+    let summed = m + n;
+
+    rule_of_three_allows(m, summed) && rule_of_three_allows(summed, n)
+}
+
+/// The run of `ch` that ends `part`, and the character in front of it.
+fn trailing_run(part: &str, ch: char) -> (usize, Option<char>) {
+    let head = part.trim_end_matches(ch);
+
+    (
+        part.chars().count() - head.chars().count(),
+        head.chars().next_back(),
+    )
+}
+
+/// The run of `ch` that begins `part`, and the character behind it.
+fn leading_run(part: &str, ch: char) -> (usize, Option<char>) {
+    let tail = part.trim_start_matches(ch);
+
+    (
+        part.chars().count() - tail.chars().count(),
+        tail.chars().next(),
+    )
+}
+
+/// Re-spell one part as inline HTML, if it is a delimiter run at all.
+fn respell(nodes: &[InlineNode], parts: &mut [String], at: usize) -> bool {
+    let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[at]) else {
+        return false;
+    };
+    let Some(piece) = split_run(&parts[at], delimiter) else {
+        return false;
+    };
+    parts[at] = format!(
+        "{}{open_tag}{}{close_tag}{}",
+        piece.lead, piece.core, piece.trail
+    );
+
+    true
+}
+
+/// Two adjacent parts whose runs are made of the same character do not reach
+/// the reader as two runs: they reach it as ONE, of the summed length. The
+/// damaging shape is a strike next to a strike, which writes four tildes that
+/// one reader splits and the other does not; the ordinary shape is two
+/// emphases that collapse into a single `<em>` holding the delimiters of the
+/// second (carve-rs#1619).
+///
+/// The seam is the only place the summed length is known, and it is a different
+/// question from `reflank_runs`: each piece IS well-flanked, against the other
+/// piece's delimiter. So this runs after the flanking pass and asks its
+/// questions about the run the reader will actually see.
+///
+/// The later part is the one re-spelled, so the merge is gone before the seam
+/// behind it is reached. Where that part is not a delimiter run at all - a text
+/// node opening with a literal tilde - the earlier part takes the inline HTML
+/// instead.
+fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String]) {
+    let filled: Vec<usize> = (0..parts.len()).filter(|i| !parts[*i].is_empty()).collect();
+    for pair in filled.windows(2) {
+        let (left, right) = (pair[0], pair[1]);
+        let Some(ch) = parts[left].chars().next_back() else {
+            continue;
+        };
+        if !is_run_character(ch) || !parts[right].starts_with(ch) {
+            continue;
+        }
+        let (m, before) = trailing_run(&parts[left], ch);
+        let (n, after) = leading_run(&parts[right], ch);
+        let inner_left = before.or_else(|| neighbour_before(parts, left));
+        let inner_right = after.or_else(|| neighbour_after(parts, right));
+        if merged_run_reads_back(ch, m, n, inner_left, inner_right) {
+            continue;
+        }
+        if !respell(nodes, parts, right) {
+            respell(nodes, parts, left);
+        }
+    }
 }
 
 fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> String {
