@@ -342,11 +342,16 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             let body = prepend_label(body, admonition.label.as_deref());
             match &admonition.title {
                 Some(title) => {
-                    let t = render_title_inlines(title, ctx);
+                    let t = pad_outside(
+                        render_title_inlines(title, ctx),
+                        "**",
+                        "<strong>",
+                        "</strong>",
+                    );
                     if t.is_empty() {
                         body
                     } else {
-                        format!("**{t}**\n\n{body}")
+                        format!("{t}\n\n{body}")
                     }
                 }
                 None => body,
@@ -548,7 +553,13 @@ fn render_definition_list(
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
-            out.push_str(&format!("**{}**\n", render_block_inlines(term, ctx)));
+            out.push_str(&pad_outside(
+                render_block_inlines(term, ctx),
+                "**",
+                "<strong>",
+                "</strong>",
+            ));
+            out.push('\n');
         }
         for definition in &item.definitions {
             // Same rule as the list marker above: a definition whose body was
@@ -685,14 +696,25 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         match child {
             BlockNode::Figure(figure) => {
                 let target = render_figure_target(figure, ctx, depth);
-                let caption = render_block_inlines(&figure.caption, ctx);
-                out.push_str(&format!("{target}\n\n*{caption}*\n\n"));
+                let caption = pad_outside(
+                    render_block_inlines(&figure.caption, ctx),
+                    "*",
+                    "<em>",
+                    "</em>",
+                );
+                out.push_str(&format!("{target}\n\n{caption}\n\n"));
             }
             other => out.push_str(&render_block(other, ctx, depth)),
         }
     }
     if let Some(caption) = &node.caption {
-        out.push_str(&format!("**{}**\n\n", render_block_inlines(caption, ctx)));
+        out.push_str(&pad_outside(
+            render_block_inlines(caption, ctx),
+            "**",
+            "<strong>",
+            "</strong>",
+        ));
+        out.push_str("\n\n");
     }
     out
 }
@@ -756,15 +778,28 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     out
 }
 
+/// Whether a closing delimiter placed here would be eaten by the content's own
+/// trailing escape. An odd run of backslashes leaves one unpaired, and the
+/// character behind it is the first of the delimiter.
+fn ends_escaped(core: &str) -> bool {
+    core.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1
+}
+
 /// A delimiter run only opens emphasis while it is left-flanking, which a run
 /// followed by whitespace never is (CommonMark 6.2), so `** x**` reads back as
 /// literal text. The padding is content, so it moves outside the delimiters
-/// rather than being trimmed away. Content that is only padding has no
-/// delimiter form at all and falls back to inline HTML, the way this renderer
-/// already spells underline, sub, super and highlight.
+/// rather than being trimmed away. Content that has no safe delimiter form at
+/// all - only padding, or a trailing escape that would swallow the closing run,
+/// which is how a hard break at the edge arrives - falls back to inline HTML,
+/// the way this renderer already spells underline, sub, super and highlight.
 fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) -> String {
+    // The class stays Rust's `White_Space` rather than narrowing to
+    // CommonMark 2.1. carve-js and carve-php can state the narrow class
+    // because they strip U+000B, U+2028 and U+2029 as controls; this engine
+    // does not, and `**<U+2028>x**` reads back as literal text through
+    // pulldown-cmark, whose flanking test counts the wider class.
     let core = inner.trim();
-    if core.is_empty() {
+    if core.is_empty() || ends_escaped(core) {
         if inner.is_empty() {
             return String::new();
         }
@@ -1214,11 +1249,11 @@ fn fragment_id(href: &str) -> Option<&str> {
 fn prepend_label(body: String, label: Option<&str>) -> String {
     match label {
         Some(label) if !label.is_empty() => {
-            let l = escape_text(label);
+            let l = pad_outside(escape_text(label), "**", "<strong>", "</strong>");
             if body.is_empty() {
-                format!("**{l}**\n\n")
+                format!("{l}\n\n")
             } else {
-                format!("**{l}**\n\n{body}")
+                format!("{l}\n\n{body}")
             }
         }
         _ => body,
