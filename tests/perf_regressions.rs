@@ -310,16 +310,49 @@ const SCALE_ROUNDS: usize = 3;
 /// above the noisiest healthy shape and a 2x margin below a real regression.
 const SCALE_MAX_PER_BYTE_RATIO: f64 = 2.0;
 
-fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
-    measure_scaling_at(build, SCALE_SMALL_N, SCALE_LARGE_N)
-}
+/// Sizes for the unclosed-construct family below, which `SCALE_SMALL_N` is too
+/// small for.
+///
+/// Those shapes are a two-byte opener repeated, so 50 000 of them is a 100 KB
+/// document that fits in L2 while the 200 KB one at 4x does not. The per-byte
+/// cost therefore RISES with size for a reason that has nothing to do with the
+/// parse's complexity, and the ratio carries a floor. Measured per byte on an
+/// otherwise unloaded machine, best of five, debug build, on `{/` repeated:
+///
+/// | n | us/byte |
+/// | --- | --- |
+/// | 25 000 | 1.18 |
+/// | 50 000 | 1.24 |
+/// | 100 000 | 1.41 |
+/// | 200 000 | 1.43 |
+/// | 400 000 | 1.41 |
+/// | 800 000 | 1.41 |
+///
+/// Flat from 100 000 on. So at 50 000/200 000 the three `{X` opener shapes read
+/// 1.16 to 1.20 with nothing wrong, eating most of the margin before any runner
+/// noise arrives - which is how `flat_unclosed_forced_emphasis` reddened `main`
+/// at 2.06 and then passed on a plain re-run of the same tree (carve-rs#1613).
+/// At 100 000/400 000, with both samples past the knee, six shapes across the
+/// family measure 0.88 to 1.04.
+///
+/// WIDENING THE SPREAD DOWNWARD MAKES IT WORSE, which is worth stating because
+/// it is the obvious move: 25 000/200 000 is an 8x multiple but reads 1.03 to
+/// 1.35, because the smaller sample is deeper inside the cache. The answer is
+/// to raise the small size, not to spread the pair further apart - and not to
+/// raise the threshold, which would buy a few green days and hide a regression
+/// of the size this test exists to catch.
+///
+/// The cost is the parse work in this family roughly doubling. That is the
+/// price of an instrument that is not measuring the cache.
+const BOUNDED_SMALL_N: usize = 100_000;
+const BOUNDED_LARGE_N: usize = 400_000;
 
-/// `measure_scaling` at explicit sizes, keeping the 4x multiple.
+/// Time a build/convert pair at explicit sizes, keeping a 4x multiple.
 ///
 /// A BLOCK-level shape is several LINES per unit, where the inline shapes above
 /// are a few bytes, so the default 50k/200k builds a document two orders of
 /// magnitude larger than such a shape needs to separate linear from quadratic.
-/// Only the sizes move; the interleaving, the rounds and the median are shared,
+/// Only the sizes move; the interleaving, the rounds and the best-of are shared,
 /// because a second spelling of the timing is what this helper exists to avoid.
 fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n: usize) -> Scaling {
     measure_conversion_scaling_at(
@@ -717,15 +750,18 @@ fn deeply_nested_balanced_links_preserve_output() {
 /// fixed shapes parse in microseconds, where any ratio is pure scheduler jitter
 /// (e.g. 1.5ms -> 4.8ms reads as "3x" but is O(1)).
 fn assert_bounded_scan(build: impl Fn(usize) -> String, label: &str) {
-    let scaling = measure_scaling(&build);
+    // BOUNDED_SMALL_N rather than SCALE_SMALL_N: both samples have to sit past
+    // the per-byte knee, or the ratio measures the cache instead of the parse.
+    // The constant carries the measurement.
+    let scaling = measure_scaling_at(&build, BOUNDED_SMALL_N, BOUNDED_LARGE_N);
 
-    // A reintroduced O(n^2) at n=200000 (~0.6-0.8 MB) runs in tens of seconds to
-    // minutes; the fixed parser stays sub-second in release, ~seconds in a debug
-    // CI build (~10-20x slower per byte). A wide 30 s bound tolerates a loaded
-    // debug runner while failing hard on regression.
+    // A reintroduced O(n^2) at n=400000 (~1.2-1.6 MB) runs in minutes; the fixed
+    // parser stays sub-second in release, ~seconds in a debug CI build (~10-20x
+    // slower per byte). A wide 30 s bound tolerates a loaded debug runner while
+    // failing hard on regression.
     assert!(
         scaling.large_secs < 30.0,
-        "{label} parse for n={SCALE_LARGE_N} took {:.4}s (expected near-instant; O(n^2) regression?)",
+        "{label} parse for n={BOUNDED_LARGE_N} took {:.4}s (expected near-instant; O(n^2) regression?)",
         scaling.large_secs
     );
 
@@ -738,8 +774,8 @@ fn assert_bounded_scan(build: impl Fn(usize) -> String, label: &str) {
             ratio < SCALE_MAX_PER_BYTE_RATIO,
             "{label} per-byte cost grew {ratio:.2}x at {}x the input (linear ~1x, quadratic ~{}x): \
              small={:.4}us/byte large={:.4}us/byte",
-            SCALE_LARGE_N / SCALE_SMALL_N,
-            SCALE_LARGE_N / SCALE_SMALL_N,
+            BOUNDED_LARGE_N / BOUNDED_SMALL_N,
+            BOUNDED_LARGE_N / BOUNDED_SMALL_N,
             scaling.small_per_byte * 1e6,
             scaling.large_per_byte * 1e6
         );
@@ -1568,5 +1604,72 @@ fn many_index_blocks_after_a_large_term_cost_nothing_extra() {
          {:.4}s at 200)",
         scaling.small_secs,
         scaling.large_secs
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The instrument itself. A ratio test that cannot fire is worse than no test:
+// it reports green on a regression and nobody looks again. These two drive the
+// SAME helper `assert_bounded_scan` uses, at the SAME sizes, over synthetic
+// conversions whose cost is known by construction (carve-rs#1613).
+// ---------------------------------------------------------------------------
+
+/// Work proportional to `(bytes / STRIDE)^k`, cheap enough to measure at the
+/// bounded-scan sizes. The stride keeps the quadratic arm at a few tens of
+/// millions of operations rather than the 10^11 a real per-byte rescan would
+/// cost.
+fn synthetic_cost(source: &str, quadratic: bool) {
+    const STRIDE: usize = 400;
+    let steps = source.len() / STRIDE;
+    let mut total: u64 = 0;
+    if quadratic {
+        for i in 0..steps {
+            for j in 0..steps {
+                total = total.wrapping_add((i ^ j) as u64);
+            }
+        }
+    } else {
+        for i in 0..steps {
+            total = total.wrapping_add(i as u64);
+        }
+    }
+    std::hint::black_box(total);
+}
+
+#[test]
+fn the_bounded_scan_ratio_fires_on_a_quadratic() {
+    let build = |n: usize| "{/".repeat(n);
+    let scaling = measure_conversion_scaling_at(
+        &|source| synthetic_cost(source, true),
+        &build,
+        BOUNDED_SMALL_N,
+        BOUNDED_LARGE_N,
+    );
+    let ratio = scaling.per_byte_ratio();
+    assert!(
+        ratio >= SCALE_MAX_PER_BYTE_RATIO,
+        "the detector missed a quadratic: ratio {ratio:.2}x is under the \
+         {SCALE_MAX_PER_BYTE_RATIO} threshold at {}x the input",
+        BOUNDED_LARGE_N / BOUNDED_SMALL_N
+    );
+}
+
+#[test]
+fn the_bounded_scan_ratio_stays_quiet_on_a_linear_cost() {
+    // The complement, and the reason the sizes moved: at 50 000/200 000 the
+    // `{X` opener shapes read 1.16 to 1.20 on a LINEAR parse, because the small
+    // sample fits in L2 and the large one does not. A pair that manufactures a
+    // ratio of its own has no margin left for the regression it is watching.
+    let build = |n: usize| "{/".repeat(n);
+    let scaling = measure_conversion_scaling_at(
+        &|source| synthetic_cost(source, false),
+        &build,
+        BOUNDED_SMALL_N,
+        BOUNDED_LARGE_N,
+    );
+    let ratio = scaling.per_byte_ratio();
+    assert!(
+        ratio < SCALE_MAX_PER_BYTE_RATIO,
+        "the detector fired on a linear cost: ratio {ratio:.2}x"
     );
 }
