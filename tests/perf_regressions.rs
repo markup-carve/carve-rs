@@ -111,6 +111,36 @@ fn long_single_paragraph_does_not_rescan_prior_lines() {
     );
 }
 
+/// The bare closing scan hides brace groups (markup-carve/carve#2027).
+fn assert_bare_scan_bounded(label: &str, source: &str) {
+    let _guard = perf_guard();
+    let start = Instant::now();
+    let _ = carve::to_html(source);
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "{label} took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn bare_openers_sharing_one_far_brace_parse_bounded() {
+    let source = format!("{}}}", "~{a ".repeat(40_000));
+    assert_bare_scan_bounded("openers before one far brace", &source);
+}
+
+#[test]
+fn bare_openers_over_nested_brace_groups_parse_bounded() {
+    let source = format!("{}{}", "~{ ".repeat(40_000), "}".repeat(40_000));
+    assert_bare_scan_bounded("nested brace groups", &source);
+}
+
+#[test]
+fn bare_openers_inside_one_plain_brace_group_parse_bounded() {
+    let source = format!("{{ {}}}", "~a ".repeat(40_000));
+    assert_bare_scan_bounded("openers inside one brace group", &source);
+}
+
 #[test]
 fn distinct_fence_length_openers_parse_bounded() {
     // Every line opens an unterminated colon fence of a DISTINCT length. Fence
