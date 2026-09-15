@@ -250,6 +250,16 @@ pub struct IncludeResult {
     /// Every include target touched during the whole recursive expansion,
     /// de-duplicated, in first-encounter order. Empty without a resolver.
     pub dependencies: Vec<IncludeDependency>,
+    /// Bytes CHARGED against the byte budget: the size of every target the
+    /// resolver handed back, whether or not expansion went on to admit it.
+    ///
+    /// Published because the budget's own arithmetic is otherwise unobservable
+    /// from outside, and the conformance corpus pins it. PART 9 section 19 is
+    /// explicit that the budget bounds the expanded OUTPUT and not the WORK -
+    /// a target is resolved before its size is known - so a counter of bytes
+    /// ADMITTED could not tell "read nothing" from "read a file and refused
+    /// it", which is the one thing a reader of this number wants to know.
+    pub charged_bytes: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -911,13 +921,20 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<(String, String
         );
         return None;
     }
-    let bytes = source.len();
-    if state.used_bytes + bytes > state.max_bytes {
+    // CHARGED BEFORE THE COMPARISON. By this line the resolver has already run
+    // and `source` is in hand, so the read has happened whatever the budget
+    // says. PART 9 section 19 names and accepts that: the budget bounds the
+    // expanded OUTPUT, not the WORK, "because a target is resolved before its
+    // size is known". Charging only what expansion ADMITS would make the
+    // counter unable to tell "read nothing" from "read a file and refused it".
+    // Refusing before reading is ruled out by the same clause; what bounds the
+    // I/O is the separate resolver-call bound.
+    state.used_bytes += source.len();
+    if state.used_bytes > state.max_bytes {
         state.spent = Some("include-budget");
         state.warn("include-budget", spent_message("include-budget", &d.path));
         return None;
     }
-    state.used_bytes += bytes;
     let selected = match d.lines {
         Some(range) => slice_lines(&source, range),
         None => source,
@@ -1881,6 +1898,7 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
         warnings: state.warnings,
         suppressed_warnings: state.suppressed_warnings,
         dependencies: state.dependencies,
+        charged_bytes: state.used_bytes,
     }
 }
 

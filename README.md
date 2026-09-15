@@ -252,6 +252,11 @@ for warning in &result.warnings {
 for dependency in &result.dependencies {
     println!("{} (resolved: {})", dependency.id, dependency.resolved);
 }
+// Bytes charged against the byte budget: every target the resolver handed
+// back, INCLUDING one refused for breaking the budget. A target is resolved
+// before its size is known, so the budget bounds the expanded output rather
+// than the work; this is the counter of what was read.
+println!("charged {} bytes", result.charged_bytes);
 let html = render_html(&result.doc);
 ```
 

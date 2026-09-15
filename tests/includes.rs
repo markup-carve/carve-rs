@@ -1689,3 +1689,79 @@ fn an_unterminated_quote_opens_no_run_and_the_first_closer_still_wins() {
     assert_eq!(*resolver.calls.borrow(), vec!["b.crv".to_string()]);
     assert!(result.html.contains('B'), "{}", result.html);
 }
+
+// ---------------------------------------------------------------------------
+// PART 9 section 19: the byte budget bounds the expanded OUTPUT, not the WORK,
+// "because a target is resolved before its size is known". The counter
+// therefore charges what was READ - a target refused for breaking the budget
+// was still read to learn its size, and a counter of bytes ADMITTED cannot
+// tell that apart from having read nothing.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_budget_charges_the_target_that_broke_it() {
+    let resolver = MapResolver::new(&[("large", "12345"), ("must-not-read", "secret")]);
+    let doc = parse("{{ large }} {{ must-not-read }}");
+    let result = expand_includes(
+        doc,
+        "{{ large }} {{ must-not-read }}",
+        &IncludeOptions::new()
+            .with_resolver(&resolver)
+            .with_max_bytes(4)
+            .with_max_depth(8),
+    );
+
+    assert_eq!(result.charged_bytes, 5, "the refused target was read");
+    // The WALK does not move: refusal stays terminal, so the sibling after the
+    // exhausted budget is still refused WITHOUT being resolved.
+    assert_eq!(*resolver.calls.borrow(), vec!["large".to_string()]);
+}
+
+#[test]
+fn the_budget_is_charged_across_the_transitive_graph() {
+    let resolver = MapResolver::new(&[("a", "{{ b }}"), ("b", "12345")]);
+    let doc = parse("{{ a }}");
+    let result = expand_includes(
+        doc,
+        "{{ a }}",
+        &IncludeOptions::new()
+            .with_resolver(&resolver)
+            .with_max_bytes(8)
+            .with_max_depth(8),
+    );
+
+    // 7 for `a`, then 5 for `b` which is what breaks the budget.
+    assert_eq!(result.charged_bytes, 12);
+    assert_eq!(
+        *resolver.calls.borrow(),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+#[test]
+fn an_unresolved_target_charges_no_bytes() {
+    // The other side of the line: nothing came back, so there is nothing to
+    // charge, and the byte budget cannot bound this I/O at all. That is why
+    // the resolver-CALL bound exists (S7), and why charging a refused-before-
+    // reading target would be the wrong repair for it.
+    let resolver = MapResolver::new(&[]);
+    let doc = parse("{{ gone }}");
+    let result = expand_includes(
+        doc,
+        "{{ gone }}",
+        &IncludeOptions::new()
+            .with_resolver(&resolver)
+            .with_max_bytes(1000),
+    );
+
+    assert_eq!(result.charged_bytes, 0);
+    assert_eq!(*resolver.calls.borrow(), vec!["gone".to_string()]);
+    assert_eq!(
+        result
+            .warnings
+            .iter()
+            .map(|w| w.rule.as_str())
+            .collect::<Vec<_>>(),
+        vec!["include-unresolved"]
+    );
+}
