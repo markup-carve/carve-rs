@@ -37,5 +37,6 @@ The immediate value is safer migrations, consistent binding APIs, and a stable
 place for future source ranges, confidence, safe fixes, batch reports, and
 round-trip checks.
 
-This draft does not yet serialize the shared report through the CLI. HTML's
+The CLI serializes the shared report with `carve migrate --report PATH`
+(`--report -` writes it to stderr). HTML's
 existing importer API and report remain available unchanged.

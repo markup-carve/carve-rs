@@ -56,11 +56,11 @@ The composite-figure rules (spec PART 9 §4c):
 | `figure-group-nested` | a bare `::: figure` opener inside an open group's body, which stays a generic container - groups do not nest |
 | `figure-group-panel-number` | a `#` placeholder in a PANEL caption, which stays literal - panels are not sequence units |
 
-Both are tier-aware. `abbr`, `time` and `kbd` are reserved in core; `samp`,
-`var`, `cite` and `dfn` only become elements once the `SemanticSpan` extension
-is registered, and until then they are ordinary attributes whose value reaches
-the output intact. Pass the same `Options` you render with so the diagnostics
-describe the output you will actually get:
+Both semantic span attribute rules are tier-aware. `abbr`, `time` and `kbd` are
+reserved in core; `samp`, `var`, `cite` and `dfn` only become elements once the
+`SemanticSpan` extension is registered, and until then they are ordinary
+attributes whose value reaches the output intact. Pass the same `Options` you
+render with so the diagnostics describe the output you will actually get:
 
 ```rust
 let warnings = carve::lint_carve_with_options(source, &options);

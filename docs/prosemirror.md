@@ -32,8 +32,8 @@ before saving. Going the other way, a ProseMirror name the map does not know is
 an **error**, not a skip: an editor that grew a node type nobody mapped is
 exactly where a quiet skip destroys the most content.
 
-On the shared corpus, 791 documents report nothing lost and round-trip to
-byte-identical HTML; 215 report what they lost. The spec's
+On the shared corpus, 1350 documents report nothing lost and round-trip to
+byte-identical HTML; 345 report what they lost. The spec's
 [format bridges](https://markup-carve.github.io/carve/format-bridges) page has
 the reasoning behind the arrangement.
 
