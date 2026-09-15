@@ -7,12 +7,14 @@
 //! conformance corpus pins.
 //!
 //! ```
-//! use carve::{expand_includes, parse, render_html, IncludeOptions, IncludeResolved};
+//! use carve::{expand_includes, parse, render_html, IncludeDenial, IncludeOptions, IncludeResolved};
 //!
 //! let source = "Before.\n\n{{ child.crv }}\n";
 //! let doc = parse(source);
 //! let resolver = |path: &str, _ctx: &carve::IncludeContext<'_>| {
-//!     (path == "child.crv").then(|| IncludeResolved::from("Included body."))
+//!     (path == "child.crv")
+//!         .then(|| IncludeResolved::from("Included body."))
+//!         .ok_or(IncludeDenial::NotFound)
 //! };
 //! let opts = IncludeOptions::new().with_resolver(&resolver);
 //! let result = expand_includes(doc, source, &opts);
@@ -135,21 +137,60 @@ impl From<&str> for IncludeResolved {
     }
 }
 
+/// Why a resolver refused, in the classes PART 9 section 19 names.
+///
+/// A refusal is still an attempted dependency whatever its class: a host wants
+/// to re-check any of them if the tree changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeDenial {
+    /// The target resolves outside the configured root.
+    OutsideRoot,
+    /// Nothing is there to read.
+    NotFound,
+    /// No root is configured, so containment cannot be decided.
+    NoRoot,
+    /// A policy of the resolver's own refused it: an absolute path where those
+    /// are not allowed, a file past a size cap, an unreadable target.
+    Denied,
+    /// Refused for a reason the resolver does not classify.
+    Unresolved,
+}
+
+impl IncludeDenial {
+    /// The portable class name (spec section 19).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OutsideRoot => "outside-root",
+            Self::NotFound => "not-found",
+            Self::NoRoot => "no-root",
+            Self::Denied => "include-denied",
+            Self::Unresolved => "include-unresolved",
+        }
+    }
+}
+
 /// Host-supplied path resolution (spec I3). The core never touches the
 /// filesystem; a host that wants inclusion supplies one of these.
 ///
-/// Returning `None` means "unresolvable" and covers missing files, unreadable
-/// files, and containment denials alike - a host wants to re-check any of them
-/// if the tree changes, so all three are reported as attempted dependencies.
+/// The error carries the class, which reaches the caller on the attempted
+/// dependency ([`IncludeDependency::denial`]).
 pub trait IncludeResolver {
-    fn resolve(&self, path: &str, ctx: &IncludeContext<'_>) -> Option<IncludeResolved>;
+    fn resolve(
+        &self,
+        path: &str,
+        ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial>;
 }
 
 impl<F> IncludeResolver for F
 where
-    F: Fn(&str, &IncludeContext<'_>) -> Option<IncludeResolved>,
+    F: Fn(&str, &IncludeContext<'_>) -> Result<IncludeResolved, IncludeDenial>,
 {
-    fn resolve(&self, path: &str, ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
+    fn resolve(
+        &self,
+        path: &str,
+        ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
         self(path, ctx)
     }
 }
@@ -236,6 +277,9 @@ pub struct IncludeDependency {
     /// denied by containment, or refused before any read at the depth limit -
     /// is `false`.
     pub resolved: bool,
+    /// Why the resolver refused, when it refused and said so. `None` for a
+    /// dependency that resolved, and for a refusal the engine made itself.
+    pub denial: Option<IncludeDenial>,
 }
 
 /// Outcome of [`expand_includes`].
@@ -766,10 +810,17 @@ impl State<'_> {
     /// first encounter fixes the order, and a later success upgrades an entry
     /// first seen unresolved.
     fn note(&mut self, id: &str, resolved: bool) {
+        self.note_denied(id, resolved, None);
+    }
+
+    fn note_denied(&mut self, id: &str, resolved: bool, denial: Option<IncludeDenial>) {
         match self.dep_index.get(id) {
             Some(&idx) => {
                 if resolved {
                     self.dependencies[idx].resolved = true;
+                    self.dependencies[idx].denial = None;
+                } else if self.dependencies[idx].denial.is_none() {
+                    self.dependencies[idx].denial = denial;
                 }
             }
             None => {
@@ -778,6 +829,7 @@ impl State<'_> {
                 self.dependencies.push(IncludeDependency {
                     id: id.to_string(),
                     resolved,
+                    denial,
                 });
             }
         }
@@ -891,14 +943,16 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<(String, String
         stack: &state.stack,
         depth: state.depth,
     };
-    let Some(resolved) = resolver.resolve(&d.path, &ctx) else {
-        // Covers missing files and containment denials alike.
-        state.note(&d.path, false);
-        state.warn(
-            "include-unresolved",
-            format!("Include \"{}\" could not be resolved.", d.path),
-        );
-        return None;
+    let resolved = match resolver.resolve(&d.path, &ctx) {
+        Ok(resolved) => resolved,
+        Err(denial) => {
+            state.note_denied(&d.path, false, Some(denial));
+            state.warn(
+                "include-unresolved",
+                format!("Include \"{}\" could not be resolved.", d.path),
+            );
+            return None;
+        }
     };
     let id = resolved.id.unwrap_or_else(|| d.path.clone());
     let source = resolved.source;
@@ -1995,10 +2049,14 @@ impl FileSystemResolver {
 
 #[cfg(feature = "fs")]
 impl IncludeResolver for FileSystemResolver {
-    fn resolve(&self, include_path: &str, ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
+    fn resolve(
+        &self,
+        include_path: &str,
+        ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
         let requested = Path::new(include_path);
         if !self.allow_absolute && requested.is_absolute() {
-            return None;
+            return Err(IncludeDenial::Denied);
         }
         // ONE ROOT PER EXPANSION (I10): relative paths resolve against the
         // INCLUDING file, but containment is checked against the single
@@ -2021,22 +2079,32 @@ impl IncludeResolver for FileSystemResolver {
         } else {
             base.join(requested)
         };
-        // CANONICALIZE-THEN-CONTAIN. `canonicalize` requires the path to
-        // EXIST; a missing target therefore lands in the Err arm, which denies.
-        // The failure path must never be able to report "contained" - every
-        // error here returns None, so an unreadable or nonexistent target is
-        // reported unresolved rather than being read through an unchecked path.
-        let real = std::fs::canonicalize(&candidate).ok()?;
+        // CONTAINMENT IS DECIDED FIRST, and lexically, so it does not depend on
+        // the target existing: `mid/../../outside.crv` is outside the root
+        // whether or not `mid` is there (markup-carve/carve#2021).
+        if !self.contains(&lexical_real(&candidate)) {
+            return Err(IncludeDenial::OutsideRoot);
+        }
+        // Checked again on the path actually read, in case a link changed
+        // between the two canonicalizations.
+        let real = std::fs::canonicalize(&candidate).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => IncludeDenial::NotFound,
+            _ => IncludeDenial::Denied,
+        })?;
         if !self.contains(&real) {
-            return None;
+            return Err(IncludeDenial::OutsideRoot);
         }
         // SIZE IS CHECKED BEFORE THE READ, and the expansion budget cannot
         // stand in for it: the budget charges a target only once its source is
         // in hand, so without a cap here one oversized file is read into
         // memory in full before expansion refuses it.
         if let Some(limit) = self.max_file_bytes {
-            if std::fs::metadata(&real).ok()?.len() > limit {
-                return None;
+            if std::fs::metadata(&real)
+                .map_err(|_| IncludeDenial::Denied)?
+                .len()
+                > limit
+            {
+                return Err(IncludeDenial::Denied);
             }
         }
         // Read through the CANONICAL path: it holds no symlink components, so
@@ -2044,10 +2112,42 @@ impl IncludeResolver for FileSystemResolver {
         // residual TOCTOU window remains if a directory component is swapped
         // between the two syscalls, which is why this resolver is for trusted
         // trees only.
-        let source = std::fs::read_to_string(&real).ok()?;
-        Some(IncludeResolved::with_id(
+        let source = std::fs::read_to_string(&real).map_err(|_| IncludeDenial::Denied)?;
+        Ok(IncludeResolved::with_id(
             source,
             real.to_string_lossy().into_owned(),
         ))
     }
+}
+
+/// `candidate` with its existing prefix canonicalized and the rest collapsed
+/// lexically, so containment can be decided for a path that is not there.
+#[cfg(feature = "fs")]
+fn lexical_real(candidate: &Path) -> PathBuf {
+    // The longest prefix that exists is canonicalized, which resolves the
+    // symlinks actually on disk; what remains is pure arithmetic.
+    let parts: Vec<std::ffi::OsString> = candidate
+        .components()
+        .map(|c| c.as_os_str().to_os_string())
+        .collect();
+    let mut split = parts.len();
+    let canonical = loop {
+        let prefix: PathBuf = parts[..split].iter().collect();
+        if split == 0 {
+            break PathBuf::new();
+        }
+        match std::fs::canonicalize(&prefix) {
+            Ok(real) => break real,
+            Err(_) => split -= 1,
+        }
+    };
+    let mut out = canonical;
+    for part in &parts[split..] {
+        if part == ".." {
+            out.pop();
+        } else if part != "." {
+            out.push(part);
+        }
+    }
+    out
 }

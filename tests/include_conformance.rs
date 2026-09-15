@@ -32,8 +32,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, render_carve, render_html, IncludeContext, IncludeOptions, IncludeResolved,
-    IncludeResolver,
+    expand_includes, render_carve, render_html, IncludeContext, IncludeDenial, IncludeOptions,
+    IncludeResolved, IncludeResolver,
 };
 // Filesystem-mode vectors need the `fs` feature; the other 99 drive the pass
 // through an in-memory resolver, which is the medium a database, object store
@@ -214,22 +214,24 @@ fn make_virtual_resolver(
     files: Value,
     resolver_ids: bool,
     throws: bool,
-) -> impl Fn(&str, &IncludeContext<'_>) -> Option<IncludeResolved> {
+) -> impl Fn(&str, &IncludeContext<'_>) -> Result<IncludeResolved, IncludeDenial> {
     move |path: &str, _ctx: &IncludeContext<'_>| {
         if throws {
-            return None;
+            return Err(IncludeDenial::Unresolved);
         }
         if resolver_ids {
             let id = path.strip_prefix("./").unwrap_or(path);
             return files
                 .get(id)
                 .and_then(Value::as_str)
-                .map(|src| IncludeResolved::with_id(src.to_string(), id.to_string()));
+                .map(|src| IncludeResolved::with_id(src.to_string(), id.to_string()))
+                .ok_or(IncludeDenial::NotFound);
         }
         files
             .get(path)
             .and_then(Value::as_str)
             .map(|src| IncludeResolved::from(src.to_string()))
+            .ok_or(IncludeDenial::NotFound)
     }
 }
 

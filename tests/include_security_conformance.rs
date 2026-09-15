@@ -10,10 +10,11 @@
 //! and is about this engine's own bookkeeping - resolver calls, visited depth,
 //! charged bytes. The `S9-root-configuration` vectors are about where the
 //! containment root COMES FROM, so they are driven through the seam this engine
-//! exposes for a configured value, `FileSystemResolver::new`. The remaining
-//! `filesystem` vectors and the `remote` kind are still only ENUMERATED,
-//! because the corpus contract says an adapter must fail on a kind it does not
-//! know rather than pass by ignoring it.
+//! exposes for a configured value, `FileSystemResolver::new`. The containment
+//! vectors, which hand over a root the adapter materialized, are driven through
+//! the same resolver. The `remote` kind is still only ENUMERATED, because the
+//! corpus contract says an adapter must fail on a kind it does not know rather
+//! than pass by ignoring it.
 //!
 //! ## What this adapter pins, and why the count is one of them
 //!
@@ -51,14 +52,9 @@
 //! `denial` CLASS, never as warning text, so that is what is compared. The
 //! engine's own rule ids map onto the classes in `denial_class`.
 //!
-//! This engine raises ONE rule id for every filesystem refusal,
-//! `include-unresolved`, so `outside-root` and `not-found` are a single
-//! observable here - which is why the containment vectors stay enumerated. What
-//! IS observable is whether a configured value became a root at all, and that
-//! is exactly what `S9-root-configuration` pins. Those vectors therefore
-//! compare `status`, `resolverCalls` and `canonicalId`, and compare the
-//! `denial` class only where this engine can tell it apart; a class outside
-//! `INDISTINGUISHABLE_FILESYSTEM_DENIALS` fails rather than falling through.
+//! A filesystem refusal is one rule id, `include-unresolved`, and the class
+//! travels on the dependency instead (`IncludeDependency::denial`), which is
+//! what the `S9-root-configuration` vectors compare.
 //!
 //! `chargedBytes` IS compared, against `IncludeResult::charged_bytes`, and the
 //! number comes from the ENGINE rather than from this adapter. Summing what
@@ -80,8 +76,8 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use carve::includes::{
-    expand_includes, IncludeContext, IncludeOptions, IncludeResolved, IncludeResolver,
-    IncludeWarning,
+    expand_includes, IncludeContext, IncludeDenial, IncludeOptions, IncludeResolved,
+    IncludeResolver, IncludeWarning,
 };
 use carve::parse;
 
@@ -95,6 +91,8 @@ const GRAPH_VECTOR_COUNT: usize = 6;
 /// Of which name their root as a `rootSpec`, driven through the configuration
 /// seam rather than through a root the adapter already materialized.
 const ROOT_SPEC_VECTOR_COUNT: usize = 5;
+/// Of which name a `root` the adapter materializes: the containment vectors.
+const CONTAINMENT_VECTOR_COUNT: usize = 11;
 
 /// Every requirement id the corpus may carry. An id outside this list means the
 /// corpus grew a requirement this adapter has not been read against.
@@ -123,27 +121,6 @@ const KNOWN_DENIALS: &[&str] = &[
     "budget",
     "resolver-calls",
 ];
-
-/// The two classes this engine cannot REPORT apart.
-///
-/// The limit is the seam, not the arithmetic. `IncludeResolver::resolve`
-/// returns `Option<IncludeResolved>` - one refusal channel, surfaced as the one
-/// canonical rule id `include-unresolved` - so a resolver that worked the class
-/// out correctly would have nowhere to put it, and a driven vector expecting
-/// either is compared on `status` alone. Naming them rather than defaulting to
-/// "do not compare" is what makes a THIRD class arriving on a driven vector
-/// fail here instead of passing unobserved.
-///
-/// It is NOT that the class is unknowable. `canonicalize` needs the whole path
-/// to exist, but the class does not need `canonicalize` on the whole path:
-/// canonicalizing the longest EXISTING prefix and applying the remainder
-/// lexically, with its dot-dot segments collapsed, answers `outside-root` for
-/// BOTH halves of the `out-of-root-through-present-directory` /
-/// `out-of-root-through-absent-directory` pair - measured on carve-rs#1622, and
-/// exactly the rule markup-carve/carve#2021 states. Widening the seam so the
-/// class can be reported is the work; the computation is not the obstacle.
-#[cfg(feature = "fs")]
-const INDISTINGUISHABLE_FILESYSTEM_DENIALS: &[&str] = &["outside-root", "not-found"];
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -224,11 +201,16 @@ struct Recording {
 }
 
 impl IncludeResolver for Recording {
-    fn resolve(&self, path: &str, _ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
+    fn resolve(
+        &self,
+        path: &str,
+        _ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
         self.calls.borrow_mut().push(path.to_string());
         self.files
             .get(path)
             .map(|source| IncludeResolved::with_id(source.clone(), path))
+            .ok_or(IncludeDenial::NotFound)
     }
 }
 
@@ -273,6 +255,11 @@ fn the_corpus_shape_is_pinned() {
             .count(),
         ROOT_SPEC_VECTOR_COUNT,
         "the root-spec count moved: this adapter drives exactly these through the seam"
+    );
+    assert_eq!(
+        suite.vectors.iter().filter(|v| v.root.is_some()).count(),
+        CONTAINMENT_VECTOR_COUNT,
+        "the containment count moved: this adapter drives exactly these"
     );
     for vector in &suite.vectors {
         assert!(
@@ -551,6 +538,131 @@ fn bind_abs(spec: &str, base: &std::path::Path) -> String {
     }
 }
 
+/// `materialize_tree`, plus the corpus's `{ "symlink": target }` entries, whose
+/// target is relative to the temporary tree.
+#[cfg(all(feature = "fs", unix))]
+fn materialize_tree_with_links(base: &std::path::Path, tree: &serde_json::Value, name: &str) {
+    let entries = tree
+        .as_object()
+        .unwrap_or_else(|| panic!("{name}: `tree` must be an object"));
+    let mut files = serde_json::Map::new();
+    for (rel, value) in entries {
+        match value.get("symlink").and_then(serde_json::Value::as_str) {
+            Some(target) => {
+                let abs = base.join(rel);
+                if let Some(parent) = abs.parent() {
+                    std::fs::create_dir_all(parent).expect("link parent");
+                }
+                std::os::unix::fs::symlink(base.join(target), &abs).expect("tree symlink");
+            }
+            None => {
+                files.insert(rel.clone(), value.clone());
+            }
+        }
+    }
+    // Real files first would be the same tree; links are made above because a
+    // link's target may be a directory this call creates.
+    materialize_tree(base, &serde_json::Value::Object(files), name);
+}
+
+/// The containment vectors, driven through `FileSystemResolver` with the root
+/// the adapter materialized. The class is compared on the dependency.
+#[cfg(all(feature = "fs", unix))]
+#[test]
+fn the_containment_vectors_hold() {
+    let suite = suite();
+    let mut failures = Vec::new();
+    let mut driven = 0usize;
+
+    for vector in suite.vectors.iter().filter(|v| v.root.is_some()) {
+        let name = &vector.name;
+        driven += 1;
+        let tmp = TmpTree::new(name);
+        materialize_tree_with_links(
+            tmp.base(),
+            vector
+                .tree
+                .as_ref()
+                .expect("a filesystem vector has a tree"),
+            name,
+        );
+        let root_rel = vector
+            .root
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| panic!("{name}: `root` names one directory"));
+        let root = std::fs::canonicalize(tmp.base().join(root_rel)).expect("the root exists");
+        let allow_absolute = vector
+            .allow_absolute
+            .as_ref()
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let resolver = carve::FileSystemResolver::new(&root)
+            .expect("an absolute, existing root is honored")
+            .allow_absolute(allow_absolute);
+
+        let from = vector
+            .from
+            .as_ref()
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| panic!("{name}: `from` names the including file"));
+        let request = bind_abs(
+            vector
+                .request
+                .as_ref()
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| panic!("{name}: `request` names one target")),
+            tmp.base(),
+        );
+        let source_path = std::fs::canonicalize(tmp.base().join(from))
+            .expect("the including file exists in the tree")
+            .to_string_lossy()
+            .into_owned();
+        let entry = format!("{{{{ {request} }}}}\n");
+        let opts = IncludeOptions::new()
+            .with_source_path(source_path)
+            .with_resolver(&resolver);
+        let result = expand_includes(parse(&entry), &entry, &opts);
+
+        let (status, denial, canonical_id) = match result.dependencies.as_slice() {
+            [dep] if dep.resolved => ("allowed", None, Some(dep.id.clone())),
+            [dep] => ("denied", dep.denial.map(IncludeDenial::as_str), None),
+            other => {
+                failures.push(format!(
+                    "{name}: one directive should report one dependency, got {}",
+                    other.len()
+                ));
+                continue;
+            }
+        };
+        if let Some(expected) = &vector.expected.status {
+            if status != expected {
+                failures.push(format!("{name}: status {status:?}, expected {expected:?}"));
+            }
+        }
+        if vector.expected.denial.as_deref() != denial {
+            failures.push(format!(
+                "{name}: denial class {denial:?}, expected {:?}",
+                vector.expected.denial
+            ));
+        }
+        if let Some(want) = &vector.expected.canonical_id {
+            let got = canonical_id
+                .as_deref()
+                .map(|id| id.replace(root.to_string_lossy().as_ref(), "<ROOT>"));
+            if got.as_deref() != Some(want.as_str()) {
+                failures.push(format!("{name}: canonical id {got:?}, expected {want:?}"));
+            }
+        }
+    }
+
+    assert_eq!(
+        driven, CONTAINMENT_VECTOR_COUNT,
+        "a containment vector was read but not driven"
+    );
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
 /// Delegates to the real resolver and records every path it was asked for.
 #[cfg(feature = "fs")]
 struct RecordingFs {
@@ -560,7 +672,11 @@ struct RecordingFs {
 
 #[cfg(feature = "fs")]
 impl IncludeResolver for RecordingFs {
-    fn resolve(&self, path: &str, ctx: &IncludeContext<'_>) -> Option<IncludeResolved> {
+    fn resolve(
+        &self,
+        path: &str,
+        ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
         self.calls.borrow_mut().push(path.to_string());
         self.inner.resolve(path, ctx)
     }
@@ -639,7 +755,7 @@ fn the_root_spec_vectors_hold() {
             None => ("denied", Some("no-root"), None),
             Some(_) => match result.dependencies.as_slice() {
                 [dep] if dep.resolved => ("allowed", None, Some(dep.id.clone())),
-                [_] => ("denied", None, None),
+                [dep] => ("denied", dep.denial.map(IncludeDenial::as_str), None),
                 other => {
                     failures.push(format!(
                         "{name}: one directive should report one dependency, got {}",
@@ -659,11 +775,6 @@ fn the_root_spec_vectors_hold() {
         match (&vector.expected.denial, denial) {
             (None, None) => {}
             (Some(expected), Some(got)) if expected == got => {}
-            // `outside-root` and `not-found` are one observable here (see the
-            // module doc); `status` above is what carries those vectors.
-            (Some(expected), None)
-                if INDISTINGUISHABLE_FILESYSTEM_DENIALS.contains(&expected.as_str())
-                    && status == "denied" => {}
             (expected, got) => {
                 failures.push(format!(
                     "{name}: denial class {got:?}, expected {expected:?}"
