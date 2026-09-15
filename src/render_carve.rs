@@ -2607,6 +2607,13 @@ fn render_nodes_with_verbatim(
         // list to check - the clause WAS a list, and the case it did not reach
         // is the first one under it.
         let mut rendered = rendered;
+        // A BARE OPENER IS DECIDED ON THE EMITTED BYTES too: emphasis, links and
+        // spans report no boundary character, so `{/x/}{/y/}` wrote `/x//y/`
+        // and the second opener, after its own marker, read back as text
+        // (markup-carve/carve-rs#1649). The second span takes the braced form.
+        if let InlineNode::Emphasis(emphasis) = node {
+            rendered = brace_a_refused_bare_opener(rendered, emphasis, out.chars().next_back());
+        }
         if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
             // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
             // boundary between two lines, so nothing hardens there and the
@@ -3053,6 +3060,36 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
 
 fn is_word_boundary(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+/// The braced form of a bare emphasis whose opener the previous emitted
+/// character would refuse (CARVE-P3-013): after a word character, after its
+/// own marker, or for `/` and `_`, after a `/`.
+fn brace_a_refused_bare_opener(
+    rendered: String,
+    emphasis: &crate::ast::Emphasis,
+    before: Option<char>,
+) -> String {
+    let marker = match emphasis.kind {
+        EmphasisKind::Italic => '/',
+        EmphasisKind::Strong => '*',
+        EmphasisKind::Underline => '_',
+        EmphasisKind::Strike => '~',
+        EmphasisKind::Highlight => '=',
+        _ => return rendered,
+    };
+    let Some(before) = before else {
+        return rendered;
+    };
+    let refused = before == marker
+        || is_word_boundary(before)
+        || (matches!(marker, '/' | '_') && before == '/');
+    if !refused || !rendered.starts_with(marker) {
+        return rendered;
+    }
+    let attrs = render_attrs(&emphasis.attrs);
+    let body = &rendered[..rendered.len() - attrs.len()];
+    format!("{{{body}}}{attrs}")
 }
 
 /// Spell an EMPTY LINE inside a verbatim value the one way verse can spell one.
