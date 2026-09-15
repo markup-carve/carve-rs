@@ -695,12 +695,12 @@ impl Profile {
         p = p.deny_block(&["raw_block"]).deny_inline(&["raw_inline"]);
         p.feature_reasons.insert(
             "raw_block".to_string(),
-            "Raw HTML blocks are disabled to prevent XSS attacks. Use djot markup instead."
+            "Raw HTML blocks are disabled to prevent XSS attacks. Use Carve markup instead."
                 .to_string(),
         );
         p.feature_reasons.insert(
             "raw_inline".to_string(),
-            "Raw HTML is disabled to prevent XSS attacks. Use djot markup instead.".to_string(),
+            "Raw HTML is disabled to prevent XSS attacks. Use Carve markup instead.".to_string(),
         );
         p
     }
