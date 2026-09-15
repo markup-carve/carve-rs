@@ -42,6 +42,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
    a document no longer destroys its includes.
 ### Fixed
 
+- The Markdown renderer moves emphasis padding outside the delimiters, so content that begins or ends with whitespace still reads as emphasis rather than literal text; content that is only whitespace falls back to inline HTML (markup-carve/carve-js#1683).
 - A nested note ends at a definition below its own body floor, so a trailing
   line further down belongs to the surviving ancestor rather than reaching a
   floor that has already closed (markup-carve/carve#1971, carve#1918).

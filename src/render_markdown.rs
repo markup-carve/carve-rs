@@ -756,6 +756,25 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     out
 }
 
+/// A delimiter run only opens emphasis while it is left-flanking, which a run
+/// followed by whitespace never is (CommonMark 6.2), so `** x**` reads back as
+/// literal text. The padding is content, so it moves outside the delimiters
+/// rather than being trimmed away. Content that is only padding has no
+/// delimiter form at all and falls back to inline HTML, the way this renderer
+/// already spells underline, sub, super and highlight.
+fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) -> String {
+    let core = inner.trim();
+    if core.is_empty() {
+        if inner.is_empty() {
+            return String::new();
+        }
+        return format!("{open_tag}{inner}{close_tag}");
+    }
+    let lead = &inner[..inner.len() - inner.trim_start().len()];
+    let trail = &inner[inner.trim_end().len()..];
+    format!("{lead}{delimiter}{core}{delimiter}{trail}")
+}
+
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
@@ -814,21 +833,30 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // into `-&gt;` in source mode.
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => {
-                format!("*{}*", render_inlines(&emphasis.children, ctx, depth + 1))
-            }
-            EmphasisKind::Strong => {
-                format!("**{}**", render_inlines(&emphasis.children, ctx, depth + 1))
-            }
+            EmphasisKind::Italic => pad_outside(
+                render_inlines(&emphasis.children, ctx, depth + 1),
+                "*",
+                "<em>",
+                "</em>",
+            ),
+            EmphasisKind::Strong => pad_outside(
+                render_inlines(&emphasis.children, ctx, depth + 1),
+                "**",
+                "<strong>",
+                "</strong>",
+            ),
             EmphasisKind::Underline => {
                 format!(
                     "<u>{}</u>",
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
-            EmphasisKind::Strike => {
-                format!("~~{}~~", render_inlines(&emphasis.children, ctx, depth + 1))
-            }
+            EmphasisKind::Strike => pad_outside(
+                render_inlines(&emphasis.children, ctx, depth + 1),
+                "~~",
+                "<del>",
+                "</del>",
+            ),
             EmphasisKind::Sub => {
                 format!(
                     "<sub>{}</sub>",
@@ -847,12 +875,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
-            EmphasisKind::BoldItalic => {
-                format!(
-                    "***{}***",
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
+            EmphasisKind::BoldItalic => pad_outside(
+                render_inlines(&emphasis.children, ctx, depth + 1),
+                "***",
+                "<em><strong>",
+                "</strong></em>",
+            ),
         },
         InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
