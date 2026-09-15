@@ -2026,28 +2026,23 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 }
 
 /// M1b's second condition for `_`: which `_` from text could pair with
-/// another on its emitted line, by CommonMark 6.2 read for the underscore.
+/// another in its paragraph, heading or table cell, by CommonMark 6.2 read for
+/// the underscore.
 ///
-/// One scan per line: an opener pairs with any closer after it, a closer with
+/// One scan per block: an opener pairs with any closer after it, a closer with
 /// any opener before it. Only a `_` from text is a candidate, so one the
 /// author escaped is never half of a pair.
-fn underscores_that_could_pair(line: &[char], literal: &[bool]) -> Vec<bool> {
-    let mut escape = vec![false; line.len()];
-    let mut start = 0usize;
-    while start <= line.len() {
-        let end = line[start..]
+fn underscores_that_could_pair(text: &[char], raw: &[char], literal: &[bool]) -> Vec<bool> {
+    let mut escape = vec![false; text.len()];
+    for block in inline_blocks(text, raw) {
+        let flags: Vec<(usize, bool, bool)> = block
             .iter()
-            .position(|c| *c == '\n')
-            .map_or(line.len(), |at| start + at);
-        let flags: Vec<(usize, bool, bool)> = (start..end)
-            .filter(|&i| literal[i])
-            .map(|i| {
-                let before = if i == start { ' ' } else { line[i - 1] };
-                let after = line
-                    .get(i + 1)
-                    .copied()
-                    .filter(|_| i + 1 < end)
-                    .unwrap_or(' ');
+            .flat_map(|&(start, end)| (start..end).map(move |i| (start, end, i)))
+            .filter(|&(_, _, i)| literal[i])
+            .map(|(start, end, i)| {
+                // A line or cell boundary is whitespace to the reader.
+                let before = if i == start { ' ' } else { text[i - 1] };
+                let after = if i + 1 < end { text[i + 1] } else { ' ' };
                 let left = !flank_space(after)
                     && (!flank_punct(after) || flank_space(before) || flank_punct(before));
                 let right = !flank_space(before)
@@ -2071,9 +2066,84 @@ fn underscores_that_could_pair(line: &[char], literal: &[bool]) -> Vec<bool> {
             }
             closer_after |= closes;
         }
-        start = end + 1;
     }
     escape
+}
+
+/// The emitted document cut into the blocks M1b reads, each as the content
+/// ranges of its lines: a blank line ends a block, a heading and a new list
+/// item start one, and every table cell is one of its own. `raw` still holds
+/// the carriers, so a `#` the writer will escape is not taken for a heading.
+fn inline_blocks(text: &[char], raw: &[char]) -> Vec<Vec<(usize, usize)>> {
+    let mut blocks = Vec::new();
+    let mut current: Vec<(usize, usize)> = Vec::new();
+    let mut line_start = 0usize;
+    while line_start <= text.len() {
+        let line_end = text[line_start..]
+            .iter()
+            .position(|c| *c == '\n')
+            .map_or(text.len(), |at| line_start + at);
+        let content = content_position(text, line_start).min(line_end);
+        let body = &text[content..line_end];
+        if body.iter().all(|c| *c == ' ') {
+            if !current.is_empty() {
+                blocks.push(std::mem::take(&mut current));
+            }
+        } else if body[0] == '|' {
+            if !current.is_empty() {
+                blocks.push(std::mem::take(&mut current));
+            }
+            let mut cell = content + 1;
+            let mut i = cell;
+            while i < line_end {
+                if text[i] == '\\' {
+                    i += 2;
+                    continue;
+                }
+                if text[i] == '|' {
+                    blocks.push(vec![(cell, i)]);
+                    cell = i + 1;
+                }
+                i += 1;
+            }
+            if cell < line_end {
+                blocks.push(vec![(cell, line_end)]);
+            }
+        } else if raw[content] == '#' || starts_a_list_item(text, line_start) {
+            if !current.is_empty() {
+                blocks.push(std::mem::take(&mut current));
+            }
+            current.push((content, line_end));
+            if raw[content] == '#' {
+                blocks.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push((content, line_end));
+        }
+        line_start = line_end + 1;
+    }
+    if !current.is_empty() {
+        blocks.push(current);
+    }
+    blocks
+}
+
+/// Whether the line opens a list item, past any quote markers in front of it.
+fn starts_a_list_item(text: &[char], line_start: usize) -> bool {
+    let mut at = line_start;
+    loop {
+        while text.get(at) == Some(&' ') {
+            at += 1;
+        }
+        match text.get(at) {
+            Some('>') => match container_prefix_end(text, at) {
+                Some(end) => at = end,
+                None => return false,
+            },
+            Some(_) => return container_prefix_end(text, at).is_some(),
+            None => return false,
+        }
+    }
 }
 
 /// Resolve the narrowed escapes: PART 11 §8a, M1b.
@@ -2092,7 +2162,8 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         .chars()
         .map(|c| carrier_slot(&carriers, c) == Some(C_UNDERSCORE))
         .collect();
-    let pairs = underscores_that_could_pair(&line, &literal);
+    let raw: Vec<char> = text.chars().collect();
+    let pairs = underscores_that_could_pair(&line, &raw, &literal);
     let mut out = String::with_capacity(text.len());
     // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
     //
