@@ -17305,12 +17305,8 @@ fn parse_inline_context(
         last_gt,
         delim_brace,
     };
-    // Per-delimiter memo of the earliest opener position from which the emphasis
-    // closer scan already failed. Once an opener of a given delimiter finds no
-    // valid closer to EOF, every later opener of that delimiter also fails, so
-    // the scan is skipped in O(1). Keeps `_a](`×n / `*a](`×n linear. See
-    // cached_find_emphasis_close.
-    let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
+    // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
+    let mut emphasis_no_close = EmphasisMemo::default();
     let mut out = Vec::with_capacity(4);
     let mut buf = String::with_capacity(text.len());
     let mut buf_start: Option<usize> = None;
@@ -19906,7 +19902,7 @@ fn match_emphasis(
     i: usize,
     options: &Options<'_>,
     in_footnote: bool,
-    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
+    no_close: &mut EmphasisMemo,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
 ) -> Option<(InlineNode, usize)> {
@@ -22365,39 +22361,56 @@ fn emphasis_delim_index(delim: u8) -> usize {
     }
 }
 
-/// `find_emphasis_close` with a per-delimiter failure memo. Once an opener of a
-/// given delimiter finds no valid closer scanning to end-of-text, every later
-/// opener of that delimiter (a larger `from`) also fails: the main loop only
-/// calls `match_emphasis` at positions outside code spans / escapes -- the same
-/// positions `find_emphasis_close` treats as "clean" -- so a suffix scan from a
-/// larger `from` can never expose a closer that the earlier, wider scan missed.
-/// This bounds `_a](`×n / `*a](`×n at O(n) instead of O(n^2) while keeping
-/// output byte-identical (skipping only ever elides a call that would fail).
+/// Per-text memo for the bare closing scan.
+#[derive(Default)]
+struct EmphasisMemo {
+    /// Per delimiter, the scan positions known to reach no closer. A later scan
+    /// stepping onto one fails too, since the scan's only state is its position;
+    /// an opener inside a skipped plain brace group is not a suffix scan.
+    failed: [Option<Vec<bool>>; EMPHASIS_DELIM_SLOTS],
+    last_brace: Option<Option<usize>>,
+    last_comment_close: Option<Option<usize>>,
+}
+
+/// `find_emphasis_close` behind the failure memo, which bounds `_a](`×n and
+/// `*a](`×n at O(n) while keeping output byte-identical.
 fn cached_find_emphasis_close(
     bytes: &[u8],
     from: usize,
     delim: u8,
-    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
+    memo: &mut EmphasisMemo,
 ) -> Option<usize> {
     let idx = emphasis_delim_index(delim);
-    if let Some(first) = no_close[idx] {
-        if from >= first {
-            return None;
+    if memo.failed[idx].as_ref().is_some_and(|f| f[from]) {
+        return None;
+    }
+    let mut failed = memo.failed[idx].take();
+    let mut visited = Vec::new();
+    let close = find_emphasis_close(bytes, from, delim, memo, failed.as_deref(), &mut visited);
+    if close.is_none() {
+        let marks = failed.get_or_insert_with(|| vec![false; bytes.len() + 1]);
+        for j in visited {
+            marks[j] = true;
         }
     }
-    let close = find_emphasis_close(bytes, from, delim);
-    if close.is_none() {
-        no_close[idx] = Some(match no_close[idx] {
-            Some(f) => f.min(from),
-            None => from,
-        });
-    }
+    memo.failed[idx] = failed;
     close
 }
 
-fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
+fn find_emphasis_close(
+    bytes: &[u8],
+    from: usize,
+    delim: u8,
+    memo: &mut EmphasisMemo,
+    failed: Option<&[bool]>,
+    visited: &mut Vec<usize>,
+) -> Option<usize> {
     let mut j = from;
     while j < bytes.len() {
+        if failed.is_some_and(|f| f[j]) {
+            return None;
+        }
+        visited.push(j);
         let ch = bytes[j];
         if ch == b'\\' && j + 1 < bytes.len() {
             j += 2;
@@ -22432,6 +22445,24 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
             }
             continue;
         }
+        if ch == b'{' && bytes.get(j + 1) == Some(&b'%') {
+            let last = *memo
+                .last_comment_close
+                .get_or_insert_with(|| bytes.windows(2).rposition(|w| w == b"%}"));
+            if let Some(end) = last
+                .filter(|&l| l >= j + 2)
+                .and_then(|_| find_seq(bytes, j + 2, b"%}"))
+            {
+                j = end + 2;
+                continue;
+            }
+        }
+        if ch == b'{' {
+            if let Some(end) = braced_inline_end(bytes, j, memo) {
+                j = end + 1;
+                continue;
+            }
+        }
         if ch == delim {
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
             if prev == b' ' || prev == b'\n' {
@@ -22457,6 +22488,42 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+/// The last byte of the braced inline opening at `open`, matched the way the
+/// main loop matches these constructs (E2a, markup-carve/carve#2027).
+fn braced_inline_end(bytes: &[u8], open: usize, memo: &mut EmphasisMemo) -> Option<usize> {
+    let last = *memo
+        .last_brace
+        .get_or_insert_with(|| bytes.iter().rposition(|&b| b == b'}'));
+    if last.map_or(true, |l| l < open) {
+        return None;
+    }
+    braced_inline_scan(bytes, open)
+}
+
+fn braced_inline_scan(bytes: &[u8], open: usize) -> Option<usize> {
+    let delim = bytes.get(open + 1).copied()?;
+    let content = open + 2;
+    // `{~ ~> ~}` is matched before the forced strike, as the main loop does.
+    if delim == b'~' {
+        if let Some(arrow) = find_seq(bytes, content, b"~>") {
+            if let Some(close) = find_seq(bytes, arrow + 2, b"~}") {
+                if !bytes[content..close].contains(&b'}') {
+                    return Some(close + 1);
+                }
+            }
+        }
+    }
+    let pair: [u8; 2] = match delim {
+        b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-' | b'#' => [delim, b'}'],
+        _ => return None,
+    };
+    let close = find_seq(bytes, content, &pair)?;
+    if close == content {
+        return None;
+    }
+    Some(close + 1)
 }
 
 #[cfg(test)]
