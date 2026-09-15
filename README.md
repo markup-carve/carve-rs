@@ -285,9 +285,16 @@ impl IncludeResolver for MapResolver {
     }
 }
 ```
+
+A child is parsed as a document of its own, so hand it the extensions the parent
+was parsed with through `IncludeOptions::with_extension`. Otherwise syntax an
+extension adds, a `[[Page]]` wikilink say, works in the parent and stays literal
+in the child.
+
 `prepare_doc_with_includes` runs expansion and then the same extension-hook and
 profile pipeline the `to_*` entry points use, so included content is subject to
-exactly the same sanitization as content the author typed directly.
+exactly the same sanitization as content the author typed directly. It also
+parses each child with its `Options` extensions, with no second list to pass.
 
 Source-position remapping for included spans (spec I4) is not implemented in any
 engine yet; warnings carry the identity of the file they arose in instead.
