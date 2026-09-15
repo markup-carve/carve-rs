@@ -9,11 +9,12 @@
 //! padding at all - what decides it is the SIBLING across the seam, so it is
 //! answered where the siblings are joined and nowhere else.
 //!
-//! Measured over a sweep of eight inline kinds crossed with twelve content
-//! shapes and twelve seam contexts, read back with markdown-it-py 3.0.0
-//! (`commonmark` preset, `strikethrough` enabled): 170 of 1152 rows read back
-//! wrong before, 56 after, and every row still wrong is the ADJACENCY defect
-//! carve-rs#1619 rather than a flanking one.
+//! Measured over a sweep of nine inline kinds crossed with twelve content
+//! shapes and twelve seam contexts (1296 rows), read back with markdown-it-py
+//! 3.0.0 (`commonmark` preset, `strikethrough` enabled) and compared to this
+//! engine's own HTML: 233 rows read back wrong before, 83 after, and every row
+//! still wrong is the ADJACENCY defect carve-rs#1619 rather than a flanking
+//! one.
 
 /// What a CommonMark reader makes of the Markdown this renderer wrote. The
 /// importer is pulldown-cmark, so this is the ecosystem's own reading, not a
