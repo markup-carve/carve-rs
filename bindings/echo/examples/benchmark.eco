@@ -1,0 +1,19 @@
+$args = std::env::argv();
+
+if ($args->count() != 2) {
+    die('usage: benchmark-echo <input.crv>');
+}
+
+string $source = guard std::io::readfile($args[1]) else {
+    die('could not read Carve input');
+}
+
+usize $total = 0;
+int32 $iteration = 0;
+while ($iteration < 1000) {
+    string $html = carve::to_html($source);
+    $total = $total + $html->size();
+    $iteration = $iteration + 1;
+}
+
+echo $total;

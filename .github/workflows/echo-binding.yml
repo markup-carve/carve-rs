@@ -1,0 +1,49 @@
+name: Echo binding
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  ECHO_VERSION: v0.3.14
+  ECHO_SHA256: 65f29d6727db6357129a4d7dc276253c5277e9e0369dfcdafbb7ce30dd2f741e
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            bindings/echo/native -> target
+      - name: Install Echo
+        run: |
+          curl -fsSLo echo.tar.gz \
+            "https://github.com/echolang/echo/releases/download/${ECHO_VERSION}/echo-linux-x86_64.tar.gz"
+          echo "${ECHO_SHA256}  echo.tar.gz" | sha256sum --check
+          mkdir .echo-bin
+          tar -xzf echo.tar.gz -C .echo-bin
+          echo "$PWD/.echo-bin" >> "$GITHUB_PATH"
+      - name: Build and test native bridge
+        run: |
+          CARGO_TARGET_DIR=bindings/echo/native/target \
+            cargo test --locked --manifest-path bindings/echo/native/Cargo.toml
+          CARGO_TARGET_DIR=bindings/echo/native/target \
+            cargo build --release --locked --manifest-path bindings/echo/native/Cargo.toml
+          cargo build --release --locked --bin carve
+      - name: Build Echo binding examples
+        working-directory: bindings/echo/examples
+        run: |
+          echoc build --release --target render -o render
+          echoc build --release --target carve-echo -o carve-echo
+          echoc build --release --target benchmark-echo -o benchmark-echo
+      - name: Run shared corpus through Echo
+        run: python3 bindings/echo/test_corpus.py

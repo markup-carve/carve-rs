@@ -1,0 +1,16 @@
+[package]
+name = "carve-echo-native"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "carve_ffi"
+crate-type = ["cdylib"]
+
+[dependencies]
+carve-lang = { path = "../../..", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,55 @@
+namespace carve;
+
+extern {
+    function carve_to_html as c_to_html(
+        ptr<const uint8> $input,
+        usize $input_len,
+        ptr<ptr<uint8>> $out_data,
+        ptr<usize> $out_len
+    ) : int32;
+
+    function carve_html_free as c_html_free(ptr<uint8> $data, usize $len) : void;
+}
+
+public enum Error : int32
+{
+    case invalidPointer = 1;
+    case invalidUtf8 = 2;
+    case panic = 3;
+    case other;
+}
+
+/**
+ * Parse Carve source and render it as HTML using the carve-rs engine.
+ */
+public function try_to_html(const string& $source) : result<string, Error>
+{
+    ptr<uint8> $data = null;
+    usize $len = 0;
+    int32 $status = c_to_html($source->data(), $source->size(), &$data, &$len);
+
+    if ($status != 0) {
+        return .error(Error::from($status));
+    }
+
+    if ($len == 0) {
+        return .ok('');
+    }
+
+    string $html = string::from(string::view($data, $len));
+    c_html_free($data, $len);
+
+    return .ok($html);
+}
+
+/**
+ * Parse Carve source and render it as HTML, terminating on invalid input.
+ */
+public function to_html(const string& $source) : string
+{
+    string $html = guard try_to_html($source) else ($error) {
+        die("carve-rs failed with status {$error->value()}");
+    }
+
+    return $html;
+}

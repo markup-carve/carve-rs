@@ -1,0 +1,14 @@
+$args = std::env::argv();
+
+if ($args->count() != 2) {
+    die('usage: carve-echo <input.crv>');
+}
+
+string $source = guard std::io::readfile($args[1]) else {
+    die('could not read Carve input');
+}
+
+string $html = guard carve::try_to_html($source) else ($error) {
+    die("carve-rs failed with status {$error->value()}");
+}
+std::io::stdout->write($html);

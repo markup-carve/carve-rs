@@ -1,4 +1,10 @@
 /target
+/bindings/echo/**/ecobuild/
+/bindings/echo/native/target/
+/bindings/echo/examples/render
+/bindings/echo/examples/carve-echo
+/bindings/echo/examples/benchmark-echo
+/bindings/echo/__pycache__/
 # Cargo.lock is TRACKED, not ignored: this package ships a `carve` binary,
 # CI runs an MSRV leg, and the release workflow builds installable
 # artifacts - all three want one resolved dependency set rather than

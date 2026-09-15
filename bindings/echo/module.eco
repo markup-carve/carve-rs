@@ -1,0 +1,7 @@
+#[module: "carve_echo"]
+#[version: "0.1.0"]
+
+#[link: lib "carve_ffi"]
+#[link: search "native/target/release"]
+
+#[sources: "src/*.eco"]

@@ -1,0 +1,9 @@
+#[module: "carve_echo_example"]
+#[version: "0.1.0"]
+
+#[depends: ".."]
+#[sources: ["render.eco", "cli.eco", "benchmark.eco"]]
+
+#[target: exe { name: "render", entry: "render.eco" }]
+#[target: exe { name: "carve-echo", entry: "cli.eco" }]
+#[target: exe { name: "benchmark-echo", entry: "benchmark.eco" }]
