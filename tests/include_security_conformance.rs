@@ -60,9 +60,17 @@
 //! `denial` class only where this engine can tell it apart; a class outside
 //! `INDISTINGUISHABLE_FILESYSTEM_DENIALS` fails rather than falling through.
 //!
-//! `chargedBytes`, `maxVisitedDepth` and `remoteFetches` are not COMPARED:
-//! `IncludeResult` exposes no byte or depth counter, so this engine cannot
-//! answer them without a new public surface. They are still read, by
+//! `chargedBytes` IS compared, against `IncludeResult::charged_bytes`, and the
+//! number comes from the ENGINE rather than from this adapter. Summing what
+//! the recording resolver handed back would answer the vector from the
+//! adapter's own side of the seam: it would report the same total whatever the
+//! budget arithmetic did, so the vector could not observe the thing it exists
+//! to pin. carve-js#1704 measured exactly that - an adapter-side tally passed
+//! every vector while the engine charged the wrong totals.
+//!
+//! `maxVisitedDepth` and `remoteFetches` are still not COMPARED: `IncludeResult`
+//! exposes no depth or fetch counter, so this engine cannot answer them without
+//! a further public surface. They are still read, by
 //! `the_vector_members_belong_to_their_kind`, which asserts that each member
 //! appears only on the kinds that may carry it. A member declared and never
 //! read would be a field the compiler is entitled to call dead, and a guard
@@ -426,6 +434,14 @@ fn the_graph_vectors_hold() {
                 failures.push(format!(
                     "{}: denial class {denial:?}, expected {expected:?}",
                     vector.name
+                ));
+            }
+        }
+        if let Some(expected) = vector.expected.charged_bytes {
+            if result.charged_bytes != expected {
+                failures.push(format!(
+                    "{}: chargedBytes {}, expected {expected}",
+                    vector.name, result.charged_bytes
                 ));
             }
         }
