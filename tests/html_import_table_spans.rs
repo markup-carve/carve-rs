@@ -75,10 +75,10 @@ fn a_span_survives_the_import_as_a_continuation_cell() {
         (
             "a header cell spanning columns",
             "<table><tr><th colspan=\"2\">Group</th></tr><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table>",
-            // `span_cell` is an ALTERNATIVE to `header_cell` in the grammar, so
-            // a header row carrying one is promoted by the delimiter row
-            // instead of by an `=` on each cell.
-            "| Group | < |\n|---|---|\n|= a |= b |\n| 1 | 2 |\n",
+            // The span is a TRAILING colspan after the real `Group` header, so
+            // the row keeps the native `|=` form: `<` absorbs into `|= Group`
+            // and the `|=` markers promote the row, no delimiter row needed.
+            "|= Group | < |\n|= a |= b |\n| 1 | 2 |\n",
             "<tr><th scope=\"col\" colspan=\"2\">Group</th></tr>",
         ),
         (
