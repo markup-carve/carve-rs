@@ -824,7 +824,23 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
 /// literal asterisk, and `~` is deliberately not escaped because GFM reads
 /// `~x~` as strikethrough.
 fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
-    delimiter == "~~" && (core.starts_with('~') || core.ends_with('~'))
+    delimiter == "~~" && (core.starts_with('~') || ends_with_live_tilde(core))
+}
+
+/// A backslash escape makes the character it covers a literal, and a literal
+/// breaks a run rather than lengthening it.
+fn ends_with_live_tilde(core: &str) -> bool {
+    if !core.ends_with('~') {
+        return false;
+    }
+    let tildes = core.chars().rev().take_while(|c| *c == '~').count();
+    let slashes = core
+        .chars()
+        .rev()
+        .skip(tildes)
+        .take_while(|c| *c == '\\')
+        .count();
+    slashes % 2 == 0 || tildes > 1
 }
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -1614,7 +1630,10 @@ fn escape_text(text: &str) -> String {
             // unescaped to `****`, which a CommonMark reader publishes as a
             // thematic break rather than as emphasis holding two asterisks.
             // `]` and the rest are M1c: nothing else narrows.
-            '\\' | '`' | '*' | ']' => out.push('\\'),
+            // The TILDE is M1 unconditionally too: GFM strikethrough pairs a
+            // run of one or two, so two literal tildes in a paragraph close
+            // over whatever markup stands between them.
+            '\\' | '`' | '*' | '~' | ']' => out.push('\\'),
             _ => {}
         }
         out.push(ch);

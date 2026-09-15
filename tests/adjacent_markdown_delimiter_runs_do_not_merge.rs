@@ -32,7 +32,8 @@ fn readback(source: &str) -> String {
 
 #[test]
 fn a_strike_whose_content_opens_with_a_tilde_writes_no_fence() {
-    assert_eq!(carve::to_markdown("{~~x~}\n"), "<del>~x</del>\n");
+    // The escape, not the inline-HTML form, is what keeps the run at two now.
+    assert_eq!(carve::to_markdown("{~~x~}\n"), "~~\\~x~~\n");
 }
 
 #[test]
@@ -46,7 +47,7 @@ fn the_rest_of_the_document_survives_that_strike() {
 
 #[test]
 fn a_strike_whose_content_closes_with_a_tilde_does_the_same() {
-    assert_eq!(carve::to_markdown("{~x~~}\n"), "<del>x~</del>\n");
+    assert_eq!(carve::to_markdown("{~x~~}\n"), "~~x\\~~~\n");
 }
 
 #[test]
@@ -98,10 +99,10 @@ fn two_adjacent_strikes_do_not_collapse() {
 }
 
 #[test]
-fn a_run_beside_a_literal_tilde_re_spells_the_run_instead() {
-    // The part on the right is a text node, so there is no inline-HTML form for
-    // it. The strike takes the fallback instead.
-    assert_eq!(carve::to_markdown("a {~x~}~y\n"), "a <del>x</del>~y\n");
+fn a_run_beside_a_literal_tilde_keeps_its_delimiters() {
+    // The literal tilde is escaped, so it no longer lengthens the run and the
+    // strike keeps its spelling.
+    assert_eq!(carve::to_markdown("a {~x~}~y\n"), "a ~~x~~\\~y\n");
 }
 
 #[test]
