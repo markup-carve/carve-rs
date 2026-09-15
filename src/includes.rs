@@ -287,10 +287,10 @@ fn is_bare_path_char(c: char) -> bool {
 /// Match a directive starting exactly at `start`, returning the byte index one
 /// past the closing `}}` plus the parsed shape.
 ///
-/// Mirrors carve-js's directive regex: `{{`, whitespace, a bare / straight- or
-/// curly-quoted path, an optional `#section`, a lazily-matched option tail, at
-/// least one whitespace, `}}`. The tail is bounded by the FIRST `}}` that has
-/// whitespace immediately before it, which is what the lazy quantifier picks.
+/// `{{`, whitespace, a bare / straight- or curly-quoted path, an optional
+/// `#section`, an option tail, at least one whitespace, `}}`. THE CLOSER is
+/// the first such `}}` that falls OUTSIDE any quoted run (PART 6): a
+/// `quoted_include_path` or an option's `quoted_value` may carry the pair.
 fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)> {
     let bytes = text.as_bytes();
     if !text[start..].starts_with("{{") {
@@ -389,26 +389,76 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
         }
     }
 
-    // Lazy option tail terminated by `\s+}}`: the first `}}` with whitespace
-    // right before it wins.
+    // Option tail closed by the first `\s+}}` OUTSIDE any quoted run. A
+    // `quoted_value` (PART 4) excludes only its own quote, the backslash and
+    // the newline, so a `}}` between the quotes belongs to the run; an
+    // UNTERMINATED quote opens no run, and the first `}}` wins again.
+    //
+    // One forward pass, never a rewind: the first candidate passed while a run
+    // is PROVISIONALLY open is remembered, so an unterminated run already has
+    // its fallback in hand. Matching the quote to its closer first and then
+    // searching for `}}` is what would rescan the run once per opener.
     let tail = &text[i..];
-    let mut search = 0usize;
-    loop {
-        let hit = tail[search..].find("}}")? + search;
-        let before = &tail[..hit];
-        let trimmed = before.trim_end_matches(|c: char| c.is_whitespace());
-        if trimmed.len() < before.len() {
-            return Some((
-                i + hit + 2,
-                RawDirective {
-                    path,
-                    section,
-                    options: trimmed.to_string(),
-                },
-            ));
+    let tail_bytes = tail.as_bytes();
+    // A `}}` whose preceding character is whitespace, i.e. `whitespace+, "}}"`.
+    let is_closer = |j: usize| {
+        tail_bytes[j] == b'}'
+            && tail_bytes.get(j + 1) == Some(&b'}')
+            && tail[..j]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_whitespace())
+    };
+    let mut j = 0usize;
+    let mut open_quote: Option<u8> = None;
+    let mut fallback: Option<usize> = None;
+    let hit = loop {
+        if j >= tail_bytes.len() {
+            break fallback?;
         }
-        search = hit + 1;
-    }
+        let c = tail_bytes[j];
+        let Some(quote) = open_quote else {
+            if c == b'"' || c == b'\'' {
+                open_quote = Some(c);
+            } else if is_closer(j) {
+                break j;
+            }
+            j += 1;
+            continue;
+        };
+        if c == b'\\' {
+            // `escaped_char`: the next character cannot close the run.
+            j += 2;
+        } else if c == quote {
+            // The run closed, so every candidate inside it belonged to it.
+            open_quote = None;
+            fallback = None;
+            j += 1;
+        } else if c == b'\n' {
+            // A quoted value stops at the newline, so no run ever opened.
+            if let Some(f) = fallback {
+                break f;
+            }
+            open_quote = None;
+        } else {
+            if fallback.is_none() && is_closer(j) {
+                fallback = Some(j);
+            }
+            j += 1;
+        }
+    };
+
+    let before = &tail[..hit];
+    Some((
+        i + hit + 2,
+        RawDirective {
+            path,
+            section,
+            options: before
+                .trim_end_matches(|c: char| c.is_whitespace())
+                .to_string(),
+        },
+    ))
 }
 
 struct RawDirective {
