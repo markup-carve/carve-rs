@@ -616,6 +616,7 @@ fn include_conformance_vectors_match_carve_js_goldens() {
     let mut passed = 0usize;
     let mut failures: Vec<(String, Vec<String>)> = Vec::new();
     let mut documented: Vec<(String, String)> = Vec::new();
+    let mut compared_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     #[allow(unused_mut)]
     let mut skipped_filesystem = 0usize;
@@ -634,6 +635,7 @@ fn include_conformance_vectors_match_carve_js_goldens() {
         }
         let run = run_vector(&vector);
         let diffs = compare(&name, &vector, &run);
+        compared_names.insert(name.clone());
 
         if diffs.is_empty() {
             passed += 1;
@@ -672,6 +674,8 @@ fn include_conformance_vectors_match_carve_js_goldens() {
         eprintln!("  documented difference: {name} - {reason}");
     }
 
+    assert_no_stale_known_difference(&entries, &compared_names, &documented);
+
     if !failures.is_empty() {
         let mut report = String::new();
         for (name, diffs) in &failures {
@@ -688,4 +692,49 @@ fn include_conformance_vectors_match_carve_js_goldens() {
             report
         );
     }
+}
+
+/// THE STALENESS HALF of `KNOWN_DIFFERENCES` (carve-rs#1626).
+///
+/// Without it the list can only ever EXCUSE a difference. A row whose vector
+/// has since been fixed, or whose vector is no longer in the corpus at all,
+/// sits here forever and nothing re-measures it - the check-that-cannot-fail
+/// shape markup-carve/carve#755 names, and the reason the spec repo's
+/// declaration audit reports this list as an UNWIRED guard.
+///
+/// A SKIPPED vector is evidence of nothing. Without the `fs` feature the
+/// filesystem vectors never run, so a row naming one is neither confirmed nor
+/// refuted by that build and is left alone; the `fs` build is what settles it.
+fn assert_no_stale_known_difference(
+    entries: &[PathBuf],
+    compared_names: &std::collections::HashSet<String>,
+    documented: &[(String, String)],
+) {
+    let present: std::collections::HashSet<&str> = entries
+        .iter()
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()))
+        .collect();
+    let diverging: std::collections::HashSet<&str> =
+        documented.iter().map(|(name, _)| name.as_str()).collect();
+
+    let mut stale: Vec<String> = Vec::new();
+    for (name, reason) in KNOWN_DIFFERENCES {
+        if !present.contains(name) {
+            stale.push(format!(
+                "{name}: no such vector in the corpus - the row outlived what it excused \
+                 (reason was {reason:?})"
+            ));
+        } else if compared_names.contains(*name) && !diverging.contains(name) {
+            stale.push(format!(
+                "{name}: no longer diverges - delete the row (reason was {reason:?})"
+            ));
+        }
+    }
+
+    assert!(
+        stale.is_empty(),
+        "{} stale KNOWN_DIFFERENCES row(s):\n  {}",
+        stale.len(),
+        stale.join("\n  ")
+    );
 }
