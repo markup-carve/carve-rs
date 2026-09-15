@@ -1123,6 +1123,74 @@ fn leaves_a_paragraph_open(block: &BlockNode) -> bool {
     )
 }
 
+/// The block a line written BELOW `node` is read against, for the kinds that
+/// host one. `None` for every other kind, and for an EMPTY host - which is the
+/// answer that keeps an emptied last item from costing a marker.
+///
+/// A definition list hands the question to its last description's last block,
+/// the same way a quote and a list hand it to their last child. Answering it by
+/// KIND instead - `DefinitionList` in `leaves_a_paragraph_open` - over-claims: a
+/// description ending in a heading, table or fence leaves nothing open
+/// (markup-carve/carve#1970).
+fn the_last_block_inside(node: &BlockNode) -> Option<&BlockNode> {
+    match node {
+        BlockNode::BlockQuote(quote) => quote.children.last(),
+        BlockNode::List(list) => list.items.last().and_then(|item| item.children.last()),
+        BlockNode::DefinitionList(list) => list
+            .items
+            .last()
+            .and_then(|item| item.definitions.last())
+            .and_then(|body| body.children.last()),
+        _ => None,
+    }
+}
+
+/// Does an open paragraph inside `previous` reach DOWN to the next line written
+/// at the same column?
+///
+/// `leaves_a_paragraph_open` answers this for a block that ends in a bare inline
+/// run of its OWN. Two kinds end in one that is not theirs, and both were missed
+/// because the fold test asked only whether the sibling above was itself a
+/// paragraph: a SUB-LIST hands the question to its last item, whose marker
+/// column IS the hosting item's content column, and a BLOCKQUOTE hands it to its
+/// last child the same way.
+///
+/// Neither answers `true` on its own account, which is why this recurses instead
+/// of naming the container kinds. An emptied last item, an empty quote, and a
+/// quote or item ending in a heading, table, fence or break all leave nothing
+/// open, and those are written at the content column exactly as before - a
+/// marker there would cost the document a construct it did not have.
+///
+/// Ported from carve-js, which settled this shape in carve-js#1682 and
+/// markup-carve/carve#1970; this engine kept the half-question until
+/// carve-rs#1595.
+fn an_open_paragraph_reaches_down(previous: &BlockNode) -> bool {
+    match the_last_block_inside(previous) {
+        Some(tail) => an_open_paragraph_reaches_down(tail),
+        None => leaves_a_paragraph_open(previous),
+    }
+}
+
+/// Whether a block FOLDS INTO an open paragraph written above it at the same
+/// column - the other half of `leaves_a_paragraph_open`'s question. The three
+/// kinds whose canonical source IS a bare inline run on its own line.
+fn folds_into_an_open_paragraph(block: &BlockNode, rendered: &str) -> bool {
+    matches!(
+        block,
+        BlockNode::Paragraph(_) | BlockNode::BlockImage(_) | BlockNode::Figure(_)
+    ) && !opens_with_an_attribute_line(rendered)
+}
+
+/// Whether a block's written form OPENS with a block-attributes line (PART 2) -
+/// `{` to `}` alone on the line. Such a line opens a block of its own, so
+/// nothing above it can reach down past it.
+fn opens_with_an_attribute_line(rendered: &str) -> bool {
+    rendered
+        .split('\n')
+        .next()
+        .is_some_and(|line| line.starts_with('{') && line.ends_with('}'))
+}
+
 /// Whether a sub-list written at the item's content column needs a blank line
 /// above it to open at all.
 fn needs_a_blank_line_above(
@@ -1408,10 +1476,14 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
                 separated = true;
             }
         }
-        let folds_into_the_paragraph_above = rendered
-            .lines()
-            .next()
-            .is_some_and(crate::parse::line_starts_paragraph);
+        // THE QUESTION IS WHETHER THE BLOCK ABOVE LEAVES A PARAGRAPH OPEN, not
+        // whether it IS one. A sub-list, a quote or a definition list ends in an
+        // inline run that is not its own, and a block written at this item's
+        // content column continues it: the image lands INSIDE the sub-list's
+        // last item, not beside it (carve-rs#1595). carve-js settled the same
+        // site in carve-js#1682; this engine asked only the bare-paragraph half.
+        let folds_into_the_paragraph_above = prev.is_some_and(an_open_paragraph_reaches_down)
+            && folds_into_an_open_paragraph(block, &rendered);
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
             if !separated && prev.is_some_and(|previous| adjacent_blocks_merge(previous, block)) {
@@ -1453,11 +1525,33 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         {
             out.push('\n');
         }
+        // TWO BLOCKS THAT MERGE NEED THE MARKER ON THE LOWER ONE, not the upper
+        // one. `at_marker_column` tags each LINE of what it is given and the tag
+        // is undone BY POSITION - a line that starts with it. An item's first
+        // block never starts a line of its own, because the list marker is
+        // there, so tagging it wrote the sentinel mid-line where nothing undoes
+        // it: the item came back spelling a literal `+` and both blocks escaped
+        // to the top level (carve-rs#1595).
+        //
+        // Reading UP puts the marker on the second of the pair, which does start
+        // its own line. Where a block already stands above the pair the old
+        // reading still applies and the written form is unchanged.
+        //
+        // carve-js repairs the same site by stripping the tag off the item's
+        // first line and opening the item with `- +` instead (carve-js#1681).
+        // Measured here and NOT taken: that spelling loses the item inside a
+        // blockquote host - `> - +` / `> > p` re-parses as an EMPTY item with the
+        // quote hoisted out beside the list - on two of the grid's rows. Reading
+        // up holds on all four hosts.
+        let opens_a_merging_run_below = prev.is_some()
+            && next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block));
+        let closes_a_merging_run_above =
+            prev.is_some_and(|previous| adjacent_blocks_merge(previous, block));
         if !separated
             && (continues_a_run_at_the_marker_column
-                || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
-                || (matches!(prev, Some(BlockNode::Paragraph(_)))
-                    && folds_into_the_paragraph_above))
+                || opens_a_merging_run_below
+                || closes_a_merging_run_above
+                || folds_into_the_paragraph_above)
         {
             out.push_str(&at_marker_column("+"));
             out.push('\n');
