@@ -1703,3 +1703,18 @@ fn the_bounded_scan_ratio_stays_quiet_on_a_linear_cost() {
         "the detector fired on a linear cost: ratio {ratio:.2}x"
     );
 }
+
+#[test]
+fn a_line_full_of_underscore_candidates_is_scanned_once() {
+    let _guard = perf_guard();
+    // `a/_x_` stays text in Carve and pairs for a CommonMark reader, so every
+    // underscore on this line is a candidate.
+    let source = format!("{}\n", "a/_x_ ".repeat(40_000));
+    let start = Instant::now();
+    let _ = carve::to_markdown(&source);
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "underscore pairing took {:?}",
+        start.elapsed()
+    );
+}
