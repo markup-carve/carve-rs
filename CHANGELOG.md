@@ -64,6 +64,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `render_carve` returns `SourceUnspellable` for an empty code span its backtick
   run cannot end, and the HTML importer drops such a span with a
   `structure-unspellable` diagnostic (markup-carve/carve-rs#1705).
+- The HTML importer also drops an emphasis, insertion or deletion that held only
+  such a span, which it wrote as bare delimiters (markup-carve/carve-rs#1718).
 - `render_carve` escapes a caret that ends a text node before a link, span, note
   reference or citation, which read back as an inline note
   (markup-carve/carve-rs#1710).
