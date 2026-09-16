@@ -4567,6 +4567,18 @@ impl<'a> Importer<'a> {
                 return Ok(vec![InlineNode::Math(math)]);
             }
         }
+        // An empty pair such as `{**}` reads back as text, and an element the
+        // HTML leaves empty shows a reader nothing, so it goes without a row.
+        if children.is_empty() && is_braced_pair_tag(tag.as_str()) {
+            self.report_unplaceable_attrs(
+                h,
+                attrs,
+                tag.as_str(),
+                "the empty element was dropped and has no node to carry it",
+                path,
+            );
+            return Ok(Vec::new());
+        }
         let emphasis = |kind| {
             InlineNode::Emphasis(Emphasis {
                 attrs: attrs.clone(),
@@ -5759,6 +5771,14 @@ fn names_no_destination(value: Option<&str>) -> bool {
 /// The same boundary `<div>` takes one layer down, and the same question - what
 /// is the element still needed to hold? An empty `Attrs` never reaches here:
 /// `attrs` returns `None` for an element with nothing left to carry.
+/// The elements imported as a node Carve spells as a delimiter pair around its content.
+fn is_braced_pair_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "em" | "i" | "strong" | "b" | "s" | "strike" | "ins" | "del" | "u" | "mark" | "sub" | "sup"
+    )
+}
+
 fn unwrapped_content(attrs: Option<Attrs>, children: Vec<InlineNode>) -> Vec<InlineNode> {
     match attrs {
         Some(attrs) => vec![InlineNode::Span(Span {
