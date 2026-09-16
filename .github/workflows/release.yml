@@ -28,6 +28,8 @@ jobs:
     # it must not re-publish the crate.
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    # A required reviewer approves before this runs (markup-carve/carve#2032).
+    environment: release
     permissions:
       id-token: write # OIDC for crates.io Trusted Publishing
       contents: read
@@ -239,6 +241,8 @@ jobs:
     name: Update the Homebrew tap
     needs: binaries
     runs-on: ubuntu-latest
+    # A required reviewer approves before this runs (markup-carve/carve#2032).
+    environment: release
     steps:
       - name: Resolve the tag
         id: tag
