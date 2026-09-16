@@ -61,6 +61,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The HTML importer drops an inline element the HTML left empty, such as
+  `<strong></strong>`, which it wrote as delimiters that read back as text
+  (markup-carve/carve-rs#1719).
 - `render_carve` returns `SourceUnspellable` for a braced span inside a braced
   span of its own kind, and the HTML importer unwraps the inner one with a
   `structure-unspellable` diagnostic (markup-carve/carve-rs#1725).
