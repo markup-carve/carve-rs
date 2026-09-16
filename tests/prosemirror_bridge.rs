@@ -40,29 +40,105 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
 const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 
 // Documents whose CANONICAL CARVE SOURCE does not survive the bridge round
-// trip, with the cause. Every one of them renders byte-identical HTML - that is
-// precisely why the HTML comparison this gate used to make could not see them,
-// and why the list is this long the first time anybody looked.
+// trip, grouped by cause. Every one of them renders byte-identical HTML.
 //
-// This is a declared ratchet, asserted as an exact set: a document that starts
-// differing fails, and a document that stops differing fails too, so a fix has
-// to delete its entry rather than let the gate quietly cover less.
+// A declared ratchet, asserted as an exact set: a document that starts
+// differing fails, and one that stops differing fails too, so a fix deletes its
+// entry rather than letting the gate quietly cover less.
 //
-// The generated-heading-id defect is gone from this list: the bridge uses the
-// writer's minimal-form calculation to distinguish a derived id from an
-// authored, unslotted id (#1110). The two `title` classes are gone with it:
-// the structural title now has the namespaced `carveLinkTitle` field while
-// `title` and `carveAttrOrder` carry an authored attribute. What remains is two
-// unrelated defects:
-//  - 1 document loses an attribute outright: 108-security-hardening-11 writes
-//    `[safe](https://example.com){href=javascript:steal}` and gets
-//    `[safe](https://example.com)` back.
-//  - 2 documents reflow their emphasis delimiters: `/*x*/` returns as `*/x/*`.
-const SOURCE_LOSSY: &[&str] = &[
-    "108-security-hardening-11.crv",
-    "130-bold-italic-delimiter-needs-content-3.crv",
-    "130-bold-italic-delimiter-needs-content-4.crv",
+// BOTH SIDES GO THROUGH `to_carve`, which is what makes the first four groups
+// visible. `parse` leaves positions off, and the writer orders hoisted
+// definitions by source position (§7, PART 11 §6) - so without them the
+// ORIGINAL writes its definitions in label order at document level too, and the
+// bridge's loss cancels against it. `to_carve` parses through `parse_for_carve`
+// (positions on) and holds the frontmatter block raw, which is the other group.
+// Comparing against the SOURCE instead would report 749 documents whose `.crv`
+// is simply not in canonical form; `tests/corpus_canonical_form.rs` is where
+// that belongs. carve-wasm's gate names the same 40 documents.
+const SOURCE_LOSSY: &[(&str, &[&str])] = &[
+    (
+        "the link definition comes back ahead of the footnote definitions",
+        &[
+            "202-a-definition-on-a-footnote-body-s-continuation-line-is-collected.crv",
+            "220-a-definition-past-a-footnote-body-s-column-registers-from-its-authored-base.crv",
+            "312-a-note-body-s-own-references-resolve-3.crv",
+            "312-a-note-body-s-own-references-resolve.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-10.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-7.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-8.crv",
+            "451-a-container-in-a-host-body-owns-a-line-past-its-own-content-column-3.crv",
+            "456-a-definition-nested-past-a-footnote-body-is-a-note-and-a-reference-below-it-resolves-2.crv",
+            "456-a-definition-nested-past-a-footnote-body-is-a-note-and-a-reference-below-it-resolves.crv",
+            "457-a-container-closer-closes-its-container-in-a-footnote-body-too.crv",
+            "459-a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach-2.crv",
+            "459-a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach.crv",
+            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker-2.crv",
+            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker-3.crv",
+            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker.crv",
+        ],
+    ),
+    (
+        "a definition written inside a container is relocated to document level",
+        &[
+            "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2.crv",
+            "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace.crv",
+            "228-a-line-at-a-footnote-definition-s-own-column-followed-by-non-blank-text-forms-its-own-tight-block.crv",
+            "287-a-column-zero-definition-ends-an-open-list-item-4.crv",
+            "323-a-block-attached-after-an-invisible-line-leaves-the-item-tight-3.crv",
+            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5.crv",
+            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-6.crv",
+            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-8.crv",
+            "442-a-marker-folds-only-strictly-between-the-item-s-base-and-content-column-3.crv",
+            "442-a-marker-folds-only-strictly-between-the-item-s-base-and-content-column-7.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-13.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-20.crv",
+            "447-the-host-does-not-change-which-column-a-definition-reaches-24.crv",
+            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-2.crv",
+            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-4.crv",
+            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item.crv",
+        ],
+    ),
+    (
+        "a nested footnote definition is hoisted above the note whose body held it",
+        &["417-an-authored-base-carries-opaque-payload-captions-and-nested-metadata-4.crv"],
+    ),
+    (
+        "the footnote definitions come back in label order",
+        &["239-a-link-definition-written-before-a-footnote-stays-before-it-2.crv"],
+    ),
+    (
+        "the ProseMirror model holds no frontmatter node, so the writer rebuilds \
+         the block from the parsed map: a JSON or TOML block is gone and a YAML \
+         block comes back key-sorted",
+        &[
+            "14-frontmatter-2.crv",
+            "14-frontmatter-3.crv",
+            "14-frontmatter.crv",
+        ],
+    ),
+    (
+        "the sanitized-away `href` attribute is not carried, so \
+         `[safe](https://example.com){href=javascript:steal}` comes back without it",
+        &["108-security-hardening-11.crv"],
+    ),
+    (
+        "the nested emphasis delimiters reflow: `/*x*/` comes back `*/x/*`",
+        &[
+            "130-bold-italic-delimiter-needs-content-3.crv",
+            "130-bold-italic-delimiter-needs-content-4.crv",
+        ],
+    ),
 ];
+
+/// Every declared source-lossy document, sorted.
+fn source_lossy_names() -> Vec<String> {
+    let mut names: Vec<String> = SOURCE_LOSSY
+        .iter()
+        .flat_map(|(_, names)| names.iter().map(|name| (*name).to_string()))
+        .collect();
+    names.sort();
+    names
+}
 
 fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
     let result = to_prosemirror(&parse(source));
@@ -293,18 +369,24 @@ fn adjacent_equal_marks_merge_on_import() {
 /// The HTML comparison is kept as well. It is not redundant: two documents can
 /// write the same source and still render differently, because resolution
 /// results (footnote and caption numbers) are not spelled in the source.
+///
+/// The canonical source comes from `to_carve` on both sides. See `SOURCE_LOSSY`
+/// for what `render_carve(parse(x))` hid.
 #[test]
 fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let declared = source_lossy_names();
     let mut covered = 0usize;
     let mut lossy = 0usize;
     let mut source_lossy: Vec<String> = Vec::new();
+    let mut undeclared: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
         if path.extension().and_then(|v| v.to_str()) != Some("crv") {
             continue;
         }
-        let original = parse(&fs::read_to_string(&path).expect("corpus source is readable"));
+        let source = fs::read_to_string(&path).expect("corpus source is readable");
+        let original = parse(&source);
         let pm = to_prosemirror(&original);
         if pm.dropped.is_empty() && pm.degraded.is_empty() {
             let returned =
@@ -320,24 +402,35 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
                 .expect("a corpus entry has a file name")
                 .to_string_lossy()
                 .into_owned();
-            let before = render_carve(&original).expect("the corpus document writes back");
-            let after = render_carve(&returned).expect("the returned document writes back");
+            // BOTH SIDES THROUGH `to_carve`, which is the entry point a Carve
+            // target uses. `render_carve(parse(x))` is not: it leaves positions
+            // off, so the ORIGINAL writes its definitions in label order at
+            // document level too and the bridge's loss cancels against it.
+            let before = carve::to_carve(&source);
+            let after =
+                carve::to_carve(&render_carve(&returned).expect("the returned document writes"));
             if before != after {
-                if !SOURCE_LOSSY.contains(&name.as_str()) {
-                    panic!(
-                        "{name}: the round trip changed the canonical source\n  before: {before:?}\n  after : {after:?}"
-                    );
+                source_lossy.push(name.clone());
+                if !declared.contains(&name) {
+                    undeclared.push(format!("{name}\n  before: {before:?}\n  after : {after:?}"));
                 }
-                source_lossy.push(name);
             }
             covered += 1;
         } else {
             lossy += 1;
         }
     }
+    // Reported ahead of the set comparison, because a name alone does not say
+    // what moved and a new divergence is the case that needs the bytes.
+    assert!(
+        undeclared.is_empty(),
+        "the round trip changed the canonical source of {} undeclared document(s):\n{}",
+        undeclared.len(),
+        undeclared.join("\n"),
+    );
     source_lossy.sort();
     assert_eq!(
-        source_lossy, SOURCE_LOSSY,
+        source_lossy, declared,
         "the declared source-lossy set moved - add or delete the entry, do not widen a count"
     );
     eprintln!("ProseMirror corpus: {covered} strict, {lossy} reported lossy");
