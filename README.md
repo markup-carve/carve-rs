@@ -68,6 +68,20 @@ apply it with `apply_source_patch`; see
 [source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md).
 
 
+## Mention and tag resolvers
+
+`Options::with_mention_url` and `with_tag_url` remain available for route
+templates. Application lookups can instead use `with_mention_resolver` and
+`with_tag_resolver`. A resolver receives `SocialLinkResolverInput` with the
+exact parsed name, node kind, attributes, and optional opaque context. It
+returns `Ok(Some(destination))`, `Ok(None)` for unresolved, or `Err`.
+
+A configured resolver is authoritative for its kind. Unresolved values and
+errors render the ordinary inert span and never fall back to a template. A
+denied destination from either a resolver or a URL template also renders the
+inert span. Resolver errors are not otherwise exposed. A returned destination
+is complete and is not encoded a second time.
+
 ## Extensions
 
 Nine semantic inline names are built in and need no registration: `abbr`,

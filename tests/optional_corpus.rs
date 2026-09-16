@@ -421,17 +421,17 @@ fn ahead_of_pin_names_only_cases_the_manifest_states() {
 /// Not a corpus pair: a configured template that resolves to a dangerous scheme
 /// must be sanitized at the href, not merely at the name.
 #[test]
-fn social_link_templates_sanitize_final_href() {
+fn social_link_templates_deny_dangerous_href() {
     let options = Options::new()
         .with_mention_url("javascript:alert({name})")
         .with_tag_url("javascript:alert({name})");
     let html = carve::to_html_with_options("@alice #topic", &options);
     assert!(
-        html.contains("<a class=\"mention\" href=\"\">@alice</a>"),
+        html.contains("<span class=\"mention\"><strong>@alice</strong></span>"),
         "{html}"
     );
     assert!(
-        html.contains("<a class=\"tag\" href=\"\">#topic</a>"),
+        html.contains("<span class=\"tag\"><strong>#topic</strong></span>"),
         "{html}"
     );
 }

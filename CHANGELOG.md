@@ -7,8 +7,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `Options` accepts authoritative mention and tag resolver callbacks with node
+  attributes and opaque host context.
+
 ### Changed
 
+- A mention or tag template that produces a denied URL now renders the inert
+  span instead of an anchor with an empty `href`.
 - The Carve writer keeps the native `|=` header form for a table whose header
   spans trail its real header cells (`|= A |= B | < |`), instead of a GFM
   delimiter row. A leading span, a real cell after a header span, or a trailing
