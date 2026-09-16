@@ -10,7 +10,9 @@ use crate::escape::{
     escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
     sanitize_url, write_escaped_attr, write_escaped_text,
 };
-use crate::extension::{HeadingIdOptions, Options, RenderContext};
+use crate::extension::{
+    HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
+};
 use crate::parse::{label_key, unwrap_nested_anchors};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -3331,20 +3333,32 @@ fn render_inline_after(
             // above makes, and the reason it is made HERE rather than by
             // pruning the node is that only the renderer knows whether a
             // template was configured at all.
-            if let Some(template) = options
-                .mention_url
-                .as_ref()
-                .filter(|_| state.link_depth == 0)
-            {
-                let encoded = percent_encode(&m.user);
-                let href = template
-                    .replace("{name}", &encoded)
-                    .replace("{user}", &encoded);
+            let href = if state.link_depth != 0 {
+                None
+            } else if let Some(resolver) = options.mention_resolver {
+                resolver(&SocialLinkResolverInput {
+                    kind: SocialLinkKind::Mention,
+                    name: &m.user,
+                    attrs: m.attrs.as_ref(),
+                    context: options.social_context,
+                })
+                .ok()
+                .flatten()
+            } else {
+                options.mention_url.as_ref().map(|template| {
+                    let encoded = percent_encode(&m.user);
+                    template
+                        .replace("{name}", &encoded)
+                        .replace("{user}", &encoded)
+                })
+            };
+            let href = href.filter(|href| !href.is_empty() && !sanitize_url(href).is_empty());
+            if let Some(href) = href {
                 let (class, _) = structural_attrs("mention", &m.attrs);
                 out.push_str("<a class=\"");
                 write_escaped_attr(out, &class);
                 out.push_str("\" href=\"");
-                write_escaped_attr(out, &sanitize_url(&href));
+                write_escaped_attr(out, &href);
                 out.push('"');
                 out.push_str(&render_attrs_after_class_without_keys(&m.attrs, &["href"]));
                 out.push_str(">@");
@@ -3363,14 +3377,30 @@ fn render_inline_after(
         }
         InlineNode::Tag(t) => {
             // LINKS NEVER NEST (PART 12 section 3a); see the mention above.
-            if let Some(template) = options.tag_url.as_ref().filter(|_| state.link_depth == 0) {
-                let encoded = percent_encode(&t.name);
-                let href = template.replace("{name}", &encoded);
+            let href = if state.link_depth != 0 {
+                None
+            } else if let Some(resolver) = options.tag_resolver {
+                resolver(&SocialLinkResolverInput {
+                    kind: SocialLinkKind::Tag,
+                    name: &t.name,
+                    attrs: t.attrs.as_ref(),
+                    context: options.social_context,
+                })
+                .ok()
+                .flatten()
+            } else {
+                options.tag_url.as_ref().map(|template| {
+                    let encoded = percent_encode(&t.name);
+                    template.replace("{name}", &encoded)
+                })
+            };
+            let href = href.filter(|href| !href.is_empty() && !sanitize_url(href).is_empty());
+            if let Some(href) = href {
                 let (class, _) = structural_attrs("tag", &t.attrs);
                 out.push_str("<a class=\"");
                 write_escaped_attr(out, &class);
                 out.push_str("\" href=\"");
-                write_escaped_attr(out, &sanitize_url(&href));
+                write_escaped_attr(out, &href);
                 out.push('"');
                 out.push_str(&render_attrs_after_class_without_keys(&t.attrs, &["href"]));
                 out.push_str(">#");

@@ -4,10 +4,11 @@
 //! parse matchers, `after_parse`, `before_render`, then renderer hooks.
 //! Implementations register extensions through [`Options`].
 
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use crate::ast::{BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
+use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
 use crate::profile::Profile;
@@ -274,10 +275,51 @@ pub fn label_default(key: &str) -> &'static str {
     }
 }
 
+/// The two core social-token node kinds accepted by a resolver.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SocialLinkKind {
+    Mention,
+    Tag,
+}
+
+/// Read-only data supplied to one social-link resolver invocation.
+#[non_exhaustive]
+pub struct SocialLinkResolverInput<'a> {
+    pub kind: SocialLinkKind,
+    pub name: &'a str,
+    pub attrs: Option<&'a Attrs>,
+    pub context: Option<&'a dyn Any>,
+}
+
+impl<'a> SocialLinkResolverInput<'a> {
+    pub fn new(
+        kind: SocialLinkKind,
+        name: &'a str,
+        attrs: Option<&'a Attrs>,
+        context: Option<&'a dyn Any>,
+    ) -> Self {
+        Self {
+            kind,
+            name,
+            attrs,
+            context,
+        }
+    }
+}
+
+/// A host lookup that returns one complete destination, no match, or an error.
+/// Errors and unresolved results have the same inert rendered form.
+pub type SocialLinkResolver<'a> =
+    dyn Fn(&SocialLinkResolverInput<'_>) -> Result<Option<String>, String> + 'a;
+
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
+    pub mention_resolver: Option<&'a SocialLinkResolver<'a>>,
+    pub tag_resolver: Option<&'a SocialLinkResolver<'a>>,
+    pub social_context: Option<&'a dyn Any>,
     pub symbols: BTreeMap<String, String>,
     /// The strings the ENGINE writes rather than the author (PART 9 §16a).
     ///
@@ -377,6 +419,9 @@ impl Default for Options<'_> {
             extensions: Vec::new(),
             mention_url: None,
             tag_url: None,
+            mention_resolver: None,
+            tag_resolver: None,
+            social_context: None,
             symbols: BTreeMap::new(),
             labels: BTreeMap::new(),
             allow_raw_html: true,
@@ -438,6 +483,21 @@ impl<'a> Options<'a> {
 
     pub fn with_tag_url(mut self, template: impl Into<String>) -> Self {
         self.tag_url = Some(template.into());
+        self
+    }
+
+    pub fn with_mention_resolver(mut self, resolver: &'a SocialLinkResolver<'a>) -> Self {
+        self.mention_resolver = Some(resolver);
+        self
+    }
+
+    pub fn with_tag_resolver(mut self, resolver: &'a SocialLinkResolver<'a>) -> Self {
+        self.tag_resolver = Some(resolver);
+        self
+    }
+
+    pub fn with_social_context(mut self, context: &'a dyn Any) -> Self {
+        self.social_context = Some(context);
         self
     }
 
