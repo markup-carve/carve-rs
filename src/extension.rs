@@ -320,6 +320,10 @@ pub struct Options<'a> {
     pub mention_resolver: Option<&'a SocialLinkResolver<'a>>,
     pub tag_resolver: Option<&'a SocialLinkResolver<'a>>,
     pub social_context: Option<&'a dyn Any>,
+    /// `:name:` replacements, applied by the HTML renderer ONLY, in all three
+    /// engines. The other targets emit the shortcode as the author wrote it:
+    /// the value is trusted RAW markup, which has no meaning in Markdown,
+    /// plain text or ANSI (markup-carve/carve-rs#1668).
     pub symbols: BTreeMap<String, String>,
     /// The strings the ENGINE writes rather than the author (PART 9 §16a).
     ///

@@ -60,7 +60,11 @@ carve --help
 
 `--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select
 the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
-apply to HTML output only. `--no-raw-html` (alias `--safe`) escapes `=html` raw
+apply to HTML output only, and so does `--symbol`: the other targets write
+`:name:` as the author typed it, since a symbol's value is raw HTML. carve-js
+and carve-php resolve the map on HTML alone too, which is what keeps the three
+non-HTML targets byte-identical across the engines.
+`--no-raw-html` (alias `--safe`) escapes `=html` raw
 blocks and spans instead of emitting them verbatim, which is the safe choice when
 rendering untrusted input; it composes with every format and with `--profile`.
 `--profile NAME` (`full` | `article` | `comment` | `minimal`) restricts which
