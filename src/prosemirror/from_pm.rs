@@ -1140,7 +1140,15 @@ fn merge_same(a: &mut Json, b: &Json) -> bool {
     let (Json::Object(ao), Json::Object(bo)) = (a, b) else {
         return false;
     };
-    if ao.get("type") != bo.get("type") || ao.get("attrs") != bo.get("attrs") {
+    // EVERY field but the content is identity. A link keeps its destination in
+    // `href`, not in `attrs`, so comparing type and attrs alone merged
+    // `[a](u)[b](v)` into one link and deleted the second destination
+    // (markup-carve/carve-rs#1672).
+    if ao.len() != bo.len()
+        || !ao
+            .iter()
+            .all(|(k, v)| k == "children" || bo.get(k) == Some(v))
+    {
         return false;
     }
     if let (Some(Json::Array(ac)), Some(Json::Array(bc))) =
