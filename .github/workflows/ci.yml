@@ -8,6 +8,10 @@ on:
     # the same gates while a child targets its `perf/*` parent; waiting for
     # every parent to merge would leave the widening commits untested.
     branches: [main, "perf/**"]
+  # A lane that proves a mutation through CI pushes the mutated branch and runs
+  # the suite on it here, without opening a pull request for code that must
+  # never merge.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
