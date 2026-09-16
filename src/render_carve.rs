@@ -683,7 +683,10 @@ thread_local! {
 /// when the finished bytes would be.
 fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     let authored = render_with_escapes_once(doc, escape_mode);
-    if !doc.frontmatter.is_empty() || !crate::parse::opens_frontmatter(&authored) {
+    if doc.frontmatter_raw.is_some()
+        || !doc.frontmatter.is_empty()
+        || !crate::parse::opens_frontmatter(&authored)
+    {
         return authored;
     }
     HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.set(true));
@@ -726,7 +729,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         written_in_place: HashSet::new(),
     };
     let mut parts = Vec::new();
-    if !doc.frontmatter.is_empty() {
+    // THE BLOCK AS WRITTEN when the tree has it. The key/value map cannot hold
+    // a JSON or TOML block at all and loses a YAML block's key order, so
+    // rebuilding from it dropped the first two and sorted the third
+    // (markup-carve/carve-rs#1666). The map is the fallback for a document
+    // built without one.
+    if let Some(raw) = &doc.frontmatter_raw {
+        parts.push(render_raw_frontmatter(raw));
+    } else if !doc.frontmatter.is_empty() {
         parts.push(render_frontmatter(&doc.frontmatter));
     }
     // §7 puts hoisted definitions after the body, ordered among themselves by
@@ -3022,6 +3032,10 @@ fn render_image(node: &Image) -> String {
         escape_destination(&node.src),
         render_attrs(&node.attrs)
     )
+}
+
+fn render_raw_frontmatter(raw: &crate::ast::Frontmatter) -> String {
+    format!("---{}\n{}\n---", raw.format, raw.content)
 }
 
 fn render_frontmatter(frontmatter: &std::collections::BTreeMap<String, String>) -> String {

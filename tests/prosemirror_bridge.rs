@@ -107,16 +107,6 @@ const SOURCE_LOSSY: &[(&str, &[&str])] = &[
         &["239-a-link-definition-written-before-a-footnote-stays-before-it-2.crv"],
     ),
     (
-        "the ProseMirror model holds no frontmatter node, so the writer rebuilds \
-         the block from the parsed map: a JSON or TOML block is gone and a YAML \
-         block comes back key-sorted",
-        &[
-            "14-frontmatter-2.crv",
-            "14-frontmatter-3.crv",
-            "14-frontmatter.crv",
-        ],
-    ),
-    (
         "the sanitized-away `href` attribute is not carried, so \
          `[safe](https://example.com){href=javascript:steal}` comes back without it",
         &["108-security-hardening-11.crv"],

@@ -117,7 +117,7 @@ fn a_closer_inside_verbatim_content_still_arms_the_fallback() {
 
 #[test]
 fn a_leading_break_under_the_writers_own_frontmatter_keeps_its_authored_marker() {
-    // `render_carve` writes the frontmatter MAP itself, so the break is not on
+    // `render_carve` writes the frontmatter block itself, so the break is not on
     // line 1 and no fallback is owed even though a later `---` line exists. The
     // opener test only ever sees the body, so without the `parts` emptiness
     // condition this document is rewritten on the strength of a collision that
@@ -127,7 +127,7 @@ fn a_leading_break_under_the_writers_own_frontmatter_keeps_its_authored_marker()
     let doc = carve::parse("---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
     assert_eq!(doc.frontmatter.len(), 1);
     let written = carve::render_carve(&doc).expect("within the render ceiling");
-    assert_eq!(written, "---\nt: 1\n---\n\n***\n\na\n\n---\n");
+    assert_eq!(written, "---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
     // And it means what it said: one frontmatter block, two rules.
     assert_eq!(carve::to_html(&written), "<hr>\n<p>a</p>\n<hr>");
 }
@@ -148,7 +148,7 @@ fn a_real_leading_frontmatter_block_still_opens_with_three_dashes() {
 
 #[test]
 fn the_tree_taking_writer_keeps_the_authored_marker_under_its_own_frontmatter() {
-    // `render_carve` is public and writes the frontmatter MAP itself, so on that
+    // `render_carve` is public and writes the frontmatter block itself, so on that
     // path the break is not the first line and `---` is still right. `to_carve`
     // cannot reach this: it clears the map and prepends the raw block
     // afterwards, so the block list it renders never has frontmatter in front of
@@ -159,7 +159,7 @@ fn the_tree_taking_writer_keeps_the_authored_marker_under_its_own_frontmatter() 
     assert_eq!(doc.frontmatter.len(), 1);
     assert_eq!(
         carve::render_carve(&doc).expect("within the render ceiling"),
-        "---\nt: 1\n---\n\n***\n\na\n"
+        "---yaml\nt: 1\n---\n\n***\n\na\n"
     );
 }
 
