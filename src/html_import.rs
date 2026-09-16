@@ -4366,7 +4366,7 @@ impl<'a> Importer<'a> {
                 boundary_pending = is_block;
             }
         }
-        Ok(coalesce(out))
+        Ok(drop_space_after_hard_break(coalesce(out)))
     }
     /// An HTML comment in an INLINE position, as the delimited Carve comment
     /// (markup-carve/carve#1709).
@@ -5865,6 +5865,26 @@ fn visible(nodes: &[InlineNode]) -> bool {
         .iter()
         .any(|n| !matches!(n, InlineNode::Text(t) if t.value.chars().all(is_layout_space)))
 }
+/// A line's leading LAYOUT whitespace, dropped after a hard break: the parser
+/// drops it from the line the break opens, so writing it breaks `fmt`'s fixed
+/// point (markup-carve/carve-rs#1706).
+fn drop_space_after_hard_break(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    let mut index = 1;
+    while index < nodes.len() {
+        if matches!(nodes[index - 1], InlineNode::HardBreak(_)) {
+            if let InlineNode::Text(text) = &mut nodes[index] {
+                text.value = text.value.trim_start_matches(is_layout_space).to_string();
+                if text.value.is_empty() {
+                    nodes.remove(index);
+                    continue;
+                }
+            }
+        }
+        index += 1;
+    }
+    nodes
+}
+
 fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     let mut out = Vec::new();
     for n in nodes {
