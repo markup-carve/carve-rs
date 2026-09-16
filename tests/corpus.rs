@@ -600,6 +600,19 @@ const IMPLEMENTED: &[&str] = &[
     "a-nested-note-s-floor-is-two-columns-past-its-own-marker",
     "a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach",
     "include-directive-with-no-resolver-renders-literal",
+    // Added with the spec bump to carve 9c84524. Every document in each was
+    // rendered through this engine and matched its committed HTML before being
+    // listed here. Three of the six are behavior this engine gained since the
+    // last bump: the bare closer stops at a braced inline and at a link
+    // destination (carve-rs#1638 and carve-rs#1653, PART 3 E2a), and an
+    // underscore pair in text is escaped where the emitted line would pair it
+    // (carve-rs#1659, PART 11 section 8a M1b).
+    "a-bare-closer-does-not-reach-inside-a-braced-inline",
+    "a-bare-closer-does-not-reach-inside-a-link-destination",
+    "a-block-that-opens-a-tight-item-is-written-on-the-marker-line",
+    "an-underscore-pair-in-text-is-escaped-where-the-line-would-pair-it",
+    "an-underscore-pair-split-across-a-line-break-is-escaped",
+    "the-round-trip-comparison-normalizes-a-named-list",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
