@@ -2676,6 +2676,9 @@ fn render_nodes_with_verbatim(
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
         let braced_before = ctx.braced_spans.len();
+        let opens_bracket = nodes
+            .get(idx + 1)
+            .is_some_and(|next| leading_bracket_run(next).is_some());
         let rendered = if verbatim.contains(&idx) {
             // The directive's own source, as the author wrote it: no escaping,
             // and no smart typography either, so a quoted path keeps its
@@ -2694,6 +2697,7 @@ fn render_nodes_with_verbatim(
                 caption_can_open,
                 opens_a_note,
                 opens_verbatim,
+                opens_bracket,
             )
         };
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
@@ -2786,6 +2790,7 @@ fn inline_hosts_caption(node: &InlineNode) -> bool {
 
 /// Render one inline node, charging what it writes to a unit of its own (see
 /// [`render_block`]).
+#[allow(clippy::too_many_arguments)]
 fn render_inline(
     node: &InlineNode,
     ctx: &mut CarveContext,
@@ -2794,6 +2799,7 @@ fn render_inline(
     caption_can_open: bool,
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
+    next_opens_a_bracket: bool,
 ) -> String {
     let previous = ctx.escape_unit;
     ctx.escape_unit = next_escape_unit();
@@ -2805,6 +2811,7 @@ fn render_inline(
         caption_can_open,
         next_opens_a_note,
         next_opens_a_verbatim_span,
+        next_opens_a_bracket,
     );
     ctx.escape_unit = previous;
     out
@@ -2819,6 +2826,7 @@ fn render_inline_body(
     caption_can_open: bool,
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
+    next_opens_a_bracket: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -2861,6 +2869,7 @@ fn render_inline_body(
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
                 next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
+                next_node_opens_a_bracket: next_opens_a_bracket,
             },
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
@@ -2990,6 +2999,7 @@ fn render_inline_body(
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
                 next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
+                next_node_opens_a_bracket: next_opens_a_bracket,
             },
         ),
         InlineNode::Footnote(footnote) => {
@@ -4045,6 +4055,9 @@ struct NeighbourEscape {
     /// The next node writes [`render_code`]'s backtick fence at byte zero, so a
     /// `$`, `$$` or `!` this node ends on binds to it.
     next_node_opens_a_verbatim_span: bool,
+    /// The next node writes a `[` at byte zero, so a trailing `:name` would
+    /// open an inline extension with it.
+    next_node_opens_a_bracket: bool,
 }
 
 /// Whether the `^` before the `[` at `bracket` needs its escape.
@@ -4150,6 +4163,18 @@ fn note_braced_span(
         .push((delimiter, pos.map(|pos| pos.start_offset)));
 }
 
+/// The offset of a `:` that, with the name after it, ends `text` as an inline
+/// extension opener short only of the next node's `[` (markup-carve/carve#2068).
+fn trailing_extension_colon(text: &str) -> Option<usize> {
+    let name_start = text
+        .trim_end_matches(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        .len();
+    let colon = name_start.checked_sub(1)?;
+    let first = text[name_start..].chars().next()?;
+    (text.as_bytes()[colon] == b':' && (first.is_ascii_alphabetic() || first == '_'))
+        .then_some(colon)
+}
+
 /// The bracket run a node writes at byte zero, with a stand-in label that is
 /// blank exactly when the written label is: `^[](u)` opens no note, `^[n](u)`
 /// does (markup-carve/carve-rs#1710).
@@ -4216,6 +4241,7 @@ fn next_node_opens_a_note(
                 in_note_content,
                 next_node_opens_a_note: false,
                 next_node_opens_a_verbatim_span: false,
+                next_node_opens_a_bracket: false,
             },
             mode,
         ),
@@ -4244,6 +4270,10 @@ fn escape_text(
             }
             text.strip_suffix('!').map(str::len)
         })
+        .flatten();
+    let extension_colon_at = note
+        .next_node_opens_a_bracket
+        .then(|| trailing_extension_colon(text))
         .flatten();
     let mut out = String::new();
     // PART 11 §2's decision is taken per OPENER OCCURRENCE, so every candidate
@@ -4301,6 +4331,7 @@ fn escape_text(
         at_line_start = ch == '\n';
         let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
         let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
+            || extension_colon_at == Some(offset)
             || caret_opens_a_caption
             || caret_opens_inline
             || opens_a_verbatim_construct;
