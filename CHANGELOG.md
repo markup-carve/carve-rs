@@ -61,6 +61,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `render_carve` returns `SourceUnspellable` for a braced span inside a braced
+  span of its own kind, and the HTML importer unwraps the inner one with a
+  `structure-unspellable` diagnostic (markup-carve/carve-rs#1725).
+- `render_carve` returns `SourceUnspellable` for a mention or tag directly
+  against a word character (markup-carve/carve-rs#1729).
+- `render_carve` writes a hard break in a table cell as one space, which kept
+  the row from ending; the HTML importer reports it as `structure-unspellable`
+  (markup-carve/carve-rs#1714).
+- `render_carve` escapes the colon of a trailing `:name` before a link, span,
+  note reference or citation, which read back as an inline extension
+  (markup-carve/carve-rs#1726).
+- The Markdown importer writes a link with an empty destination as its text and
+  such an image as its alt text (markup-carve/carve-rs#1717).
 - `render_carve` returns `SourceUnspellable` for an empty code span its backtick
   run cannot end, and the HTML importer drops such a span with a
   `structure-unspellable` diagnostic (markup-carve/carve-rs#1705).
