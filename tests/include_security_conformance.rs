@@ -85,14 +85,14 @@ use carve::parse;
 const CORPUS_VERSION: u32 = 1;
 /// Total vectors in that revision. Raising it is a deliberate act: read the new
 /// vectors first and make sure this adapter answers them.
-const VECTOR_COUNT: usize = 25;
+const VECTOR_COUNT: usize = 27;
 /// Of which `graph`, the kind this adapter drives in memory.
 const GRAPH_VECTOR_COUNT: usize = 6;
 /// Of which name their root as a `rootSpec`, driven through the configuration
 /// seam rather than through a root the adapter already materialized.
 const ROOT_SPEC_VECTOR_COUNT: usize = 5;
 /// Of which name a `root` the adapter materializes: the containment vectors.
-const CONTAINMENT_VECTOR_COUNT: usize = 11;
+const CONTAINMENT_VECTOR_COUNT: usize = 13;
 
 /// Every requirement id the corpus may carry. An id outside this list means the
 /// corpus grew a requirement this adapter has not been read against.
@@ -191,6 +191,16 @@ struct Expected {
     max_visited_depth: Option<usize>,
     #[serde(rename = "remoteFetches", default)]
     remote_fetches: Option<serde_json::Value>,
+    #[serde(default)]
+    dependencies: Option<Vec<ExpectedDependency>>,
+}
+
+/// One entry of the I11 dependency set, as the corpus spells it.
+#[derive(serde::Deserialize, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct ExpectedDependency {
+    id: String,
+    resolved: bool,
 }
 
 /// Records what it was asked for, which is the whole point: these vectors gate
@@ -376,6 +386,12 @@ fn the_vector_members_belong_to_their_kind() {
         assert!(
             expected.remote_fetches.is_none() || kind == "remote",
             "{name}: `remoteFetches` is a remote observable"
+        );
+        // Only the containment driver compares it, so anywhere else it would
+        // go unread.
+        assert!(
+            expected.dependencies.is_none() || vector.root.is_some(),
+            "{name}: `dependencies` is answered on a containment vector"
         );
         // A configured value that names no root leaves no resolver to call, and
         // the corpus states that emptiness rather than leaving it implied - so
@@ -652,6 +668,19 @@ fn the_containment_vectors_hold() {
                 .map(|id| id.replace(root.to_string_lossy().as_ref(), "<ROOT>"));
             if got.as_deref() != Some(want.as_str()) {
                 failures.push(format!("{name}: canonical id {got:?}, expected {want:?}"));
+            }
+        }
+        if let Some(want) = &vector.expected.dependencies {
+            let got: Vec<ExpectedDependency> = result
+                .dependencies
+                .iter()
+                .map(|dep| ExpectedDependency {
+                    id: dep.id.replace(root.to_string_lossy().as_ref(), "<ROOT>"),
+                    resolved: dep.resolved,
+                })
+                .collect();
+            if &got != want {
+                failures.push(format!("{name}: dependencies {got:?}, expected {want:?}"));
             }
         }
     }
