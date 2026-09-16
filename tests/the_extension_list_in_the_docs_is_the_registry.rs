@@ -15,6 +15,7 @@ use carve::{CarveExtension, CodeGroup, Mode, Options, Tabs};
 
 const DOC: &str = include_str!("../docs/extensions.md");
 const MARKER: &str = "<!-- registry-keys:";
+const DIAGRAM_MARKER: &str = "<!-- diagram-keys:";
 
 const TAB_SOURCE: &str = ":::: tabs\n::: tab [Rust]\nrust body\n:::\n::::\n";
 const GROUP_SOURCE: &str = ":::: code-group\n``` rust [Cargo]\nfn main() {}\n```\n::::\n";
@@ -28,10 +29,10 @@ fn html(source: &str, ext: Option<&dyn CarveExtension>, mode: Mode) -> String {
 }
 
 /// The keys the doc's marked block lists, in the order it lists them.
-fn documented_keys() -> Vec<String> {
+fn documented_keys(marker: &str) -> Vec<String> {
     let after = DOC
-        .split_once(MARKER)
-        .expect("the registry-keys marker is gone from docs/extensions.md")
+        .split_once(marker)
+        .unwrap_or_else(|| panic!("the {marker} marker is gone from docs/extensions.md"))
         .1;
     let fenced = after
         .split_once("```")
@@ -49,13 +50,28 @@ fn documented_keys() -> Vec<String> {
 
 #[test]
 fn the_documented_list_is_exactly_the_registry() {
-    let mut documented = documented_keys();
+    let mut documented = documented_keys(MARKER);
     let mut actual: Vec<String> = registry::keys().map(str::to_string).collect();
     documented.sort();
     actual.sort();
     assert_eq!(
         documented, actual,
         "docs/extensions.md and carve::extensions::registry disagree"
+    );
+}
+
+/// The same gate for the static-renderer keys (carve-rs#1670). A hand-kept list
+/// of these in a binding is the drift the registry exists to stop, so the doc
+/// does not keep one either.
+#[test]
+fn the_documented_diagram_keys_are_exactly_the_registrys() {
+    let mut documented = documented_keys(DIAGRAM_MARKER);
+    let mut actual: Vec<String> = registry::diagram_keys().map(str::to_string).collect();
+    documented.sort();
+    actual.sort();
+    assert_eq!(
+        documented, actual,
+        "docs/extensions.md and carve::extensions::registry::diagram_keys disagree"
     );
 }
 
