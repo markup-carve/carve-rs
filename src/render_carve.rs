@@ -65,6 +65,9 @@ struct CarveContext {
     /// placed - the description emits a bare `:` again and the document-level
     /// arm emits nothing, deleting the definition outright.
     written_in_place: HashSet<usize>,
+    /// Every braced span written so far: its delimiter and its `pos` offset,
+    /// which the HTML importer uses as a mark.
+    braced_spans: Vec<(char, Option<usize>)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -731,6 +734,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
         written_in_place: HashSet::new(),
+        braced_spans: Vec::new(),
     };
     let mut parts = Vec::new();
     // THE BLOCK AS WRITTEN when the tree has it. The key/value map cannot hold
@@ -2671,6 +2675,7 @@ fn render_nodes_with_verbatim(
             ctx.next_unit_escape_mode(),
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
+        let braced_before = ctx.braced_spans.len();
         let rendered = if verbatim.contains(&idx) {
             // The directive's own source, as the author wrote it: no escaping,
             // and no smart typography either, so a quoted path keeps its
@@ -2720,6 +2725,7 @@ fn render_nodes_with_verbatim(
         if let InlineNode::Emphasis(emphasis) = node {
             rendered = brace_a_refused_bare_opener(rendered, emphasis, out.chars().next_back());
         }
+        note_braced_span(node, &rendered, braced_before, ctx);
         if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
             // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
             // boundary between two lines, so nothing hardens there and the
@@ -4097,6 +4103,51 @@ fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
         _ => None,
     }
+}
+
+/// A braced opener is text while a braced span of its kind is open (PART 9 §9
+/// E3), so a braced span inside one of its own kind has no spelling (ruling
+/// markup-carve/carve#2066). `braced_before` is where this node's descendants
+/// start in `ctx.braced_spans`.
+fn note_braced_span(
+    node: &InlineNode,
+    rendered: &str,
+    braced_before: usize,
+    ctx: &mut CarveContext,
+) {
+    let (delimiter, pos) = match node {
+        InlineNode::Emphasis(emphasis) => match emphasis.kind {
+            EmphasisKind::Italic => ('/', emphasis.pos.as_ref()),
+            EmphasisKind::Strong => ('*', emphasis.pos.as_ref()),
+            EmphasisKind::Underline => ('_', emphasis.pos.as_ref()),
+            EmphasisKind::Strike => ('~', emphasis.pos.as_ref()),
+            EmphasisKind::Highlight => ('=', emphasis.pos.as_ref()),
+            EmphasisKind::Super => ('^', emphasis.pos.as_ref()),
+            EmphasisKind::Sub => (',', emphasis.pos.as_ref()),
+            EmphasisKind::BoldItalic => return,
+        },
+        InlineNode::CriticInsert(insert) => ('+', insert.pos.as_ref()),
+        InlineNode::CriticDelete(delete) => ('-', delete.pos.as_ref()),
+        _ => return,
+    };
+    let mut chars = rendered.chars();
+    if chars.next() != Some('{') || chars.next() != Some(delimiter) {
+        return;
+    }
+    let nested: Vec<Option<usize>> = ctx.braced_spans[braced_before..]
+        .iter()
+        .filter(|(inner, _)| *inner == delimiter)
+        .map(|(_, mark)| *mark)
+        .collect();
+    if !nested.is_empty() {
+        crate::render_carve_error::record_unspellable(
+            "emphasis",
+            "a braced span inside a braced span of the same kind has no Carve source spelling",
+        );
+        crate::render_carve_error::record_nested_same_kind(nested.into_iter().flatten().collect());
+    }
+    ctx.braced_spans
+        .push((delimiter, pos.map(|pos| pos.start_offset)));
 }
 
 /// The bracket run a node writes at byte zero, with a stand-in label that is
