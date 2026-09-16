@@ -58,6 +58,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An emphasis ending in a hard break keeps its closer in the Carve writer and the
+  HTML importer (markup-carve/carve-rs#1702).
 - An include directive closes at the first `}}` outside a quoted run, so a quoted
   value may carry the pair (markup-carve/carve-rs#1614).
 - A relative include root is refused rather than resolved against the process
