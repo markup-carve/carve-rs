@@ -61,6 +61,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A link, image or span after a backtick an earlier construct used up is read,
+  where the paragraph's later brackets used to stay literal
+  (markup-carve/carve-rs#1733).
 - The HTML importer drops an inline element the HTML left empty, such as
   `<strong></strong>`, which it wrote as delimiters that read back as text
   (markup-carve/carve-rs#1719).

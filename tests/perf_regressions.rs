@@ -1751,3 +1751,26 @@ fn a_paragraph_of_directives_is_written_without_reslicing_the_run() {
         start.elapsed()
     );
 }
+
+/// `{*`*}[`×n then `](u)`: each forced span uses its backtick up, so every `[`
+/// sits after an unclosed run and inside a span the bracket pass skipped
+/// (carve-rs#1733).
+fn used_up_backticks_before_open_brackets(n: usize) -> String {
+    format!("{}](u)", "{*`*}[".repeat(n))
+}
+
+/// `` `[` ``×n then `](u)`: a `[` inside every closed code span, each rescanned
+/// from itself to the end of the text without the shared budget.
+fn brackets_inside_closed_code_spans(n: usize) -> String {
+    format!("{}](u)", "`[`".repeat(n))
+}
+
+#[test]
+fn used_up_backticks_before_open_brackets_parse_in_near_linear_time() {
+    assert_bounded_scan(used_up_backticks_before_open_brackets, "used-up-backticks");
+}
+
+#[test]
+fn brackets_inside_closed_code_spans_parse_in_near_linear_time() {
+    assert_bounded_scan(brackets_inside_closed_code_spans, "brackets-in-code-spans");
+}

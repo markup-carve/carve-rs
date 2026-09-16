@@ -19668,36 +19668,91 @@ fn skip_editorial_comment(bytes: &[u8], start: usize) -> Option<usize> {
 /// Sentinel in a bracket-match table meaning "this `[` has no matching `]`".
 const NO_BRACKET_MATCH: usize = usize::MAX;
 
-/// Precompute, in a single O(n) pass, the matching `]` index for every `[` in
-/// `bytes`, mirroring `read_bracketed`'s scan rules exactly (backslash escapes
-/// skip two bytes; an unclosed inline-code span is opaque to end of text and
-/// closes no bracket; a `[` increments depth, the first `]` at depth>0
-/// decrements it, and the `]` at depth 0 matches the most recent unmatched
-/// `[`). The returned table lets the per-`[` link/reference/span parsers find
-/// their closing bracket in O(1) instead of re-scanning O(n) at every position,
-/// which removes the O(n^2) blowup on deeply nested balanced links
-/// (`[[[...x]()]()...]`). Output is unchanged: a lookup yields the same close
-/// index `read_bracketed` would return by scanning.
+/// How many bytes the per-bracket rescans in [`compute_bracket_matches`] may
+/// walk in one text, as a multiple of its length. A DoS guard: past it the
+/// bracket stays unmatched, as in carve-js.
+const BRACKET_RESCAN_BUDGET: usize = 8;
+
+/// The start of the last maximal backtick run of each length.
+fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
+    let mut last = HashMap::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && bytes[i] == b'`' {
+            i += 1;
+        }
+        last.insert(i - start, start);
+    }
+    last
+}
+
+/// Precompute the matching `]` index for every `[` in `bytes`, giving the
+/// answer `read_bracketed` gives scanning from that `[` (CARVE-P3-001): backslash
+/// escapes skip two bytes, and a verbatim span or an editorial comment hides
+/// its brackets.
+///
+/// One pass answers every `[` outside a closed verbatim span. A backtick run
+/// with no closer ends only the labels opened before it, so a `[` after a run
+/// an earlier construct used up still closes (carve-rs#1733). A `[` inside a
+/// closed span is reached only when something else used the span's opening run
+/// up, so it is rescanned from itself under a shared budget. Linear either way,
+/// which keeps nested links (`[[[...x]()]()...]`) off the O(n^2) path.
 ///
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
 fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
+    let last_run_start = if bytes.contains(&b'`') {
+        last_backtick_run_starts(bytes)
+    } else {
+        HashMap::new()
+    };
+    let last_comment_close = bytes.windows(2).rposition(|w| w == b"#}");
+    let closed_span_end = |at: usize| -> (usize, Option<usize>) {
+        let len = bytes[at..].iter().take_while(|&&b| b == b'`').count();
+        let closes = last_run_start
+            .get(&len)
+            .is_some_and(|&last| last >= at + len);
+        (
+            len,
+            if closes {
+                skip_code_span(bytes, at)
+            } else {
+                None
+            },
+        )
+    };
+    let comment_end = |at: usize| -> Option<usize> {
+        if last_comment_close.is_some_and(|close| close >= at + 2) {
+            skip_editorial_comment(bytes, at)
+        } else {
+            None
+        }
+    };
+    // Closed verbatim spans the pass skipped, as (content start, end).
+    let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => i += 2,
-            b'`' => match skip_code_span(bytes, i) {
-                // An unclosed code span is opaque to end of text: no later `]`
-                // can close a bracket, so every still-open `[` stays unmatched.
-                Some(next) => i = next,
-                None => break,
+            b'`' => match closed_span_end(i) {
+                (len, Some(end)) => {
+                    spans.push((i + len, end));
+                    i = end;
+                }
+                (len, None) => {
+                    stack.clear();
+                    i += len;
+                }
             },
-            // Mirrors `read_bracketed`: an editorial comment's content is
-            // literal, so brackets inside it are text.
-            b'{' if skip_editorial_comment(bytes, i).is_some() => {
-                i = skip_editorial_comment(bytes, i).unwrap_or(i + 1);
+            b'{' if comment_end(i).is_some() => {
+                i = comment_end(i).unwrap_or(i + 1);
             }
             b'[' => {
                 stack.push(i);
@@ -19710,6 +19765,47 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
                 i += 1;
             }
             _ => i += 1,
+        }
+    }
+    let mut budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
+    let mut scan_from = |open: usize| -> Option<usize> {
+        let mut depth = 0usize;
+        let mut i = open + 1;
+        while i < bytes.len() {
+            budget = budget.checked_sub(1)?;
+            match bytes[i] {
+                b'\\' if i + 1 < bytes.len() => i += 2,
+                b'`' => {
+                    let end = closed_span_end(i).1?;
+                    budget = budget.checked_sub(end - i)?;
+                    i = end;
+                }
+                b'{' if comment_end(i).is_some() => {
+                    let end = comment_end(i)?;
+                    budget = budget.checked_sub(end - i)?;
+                    i = end;
+                }
+                b'[' => {
+                    depth += 1;
+                    i += 1;
+                }
+                b']' if depth > 0 => {
+                    depth -= 1;
+                    i += 1;
+                }
+                b']' => return Some(i),
+                _ => i += 1,
+            }
+        }
+        None
+    };
+    for (content_start, end) in spans {
+        for open in content_start..end {
+            if bytes[open] == b'[' {
+                if let Some(close) = scan_from(open) {
+                    matches[open] = close;
+                }
+            }
         }
     }
     matches

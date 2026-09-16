@@ -965,8 +965,15 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // changes bucket in either direction. The two lossy joiners report kinds
     // this set already holds - `italic`, the adjacent-span merge, and
     // `soft_break` - so no new KIND of loss appeared.
-    const STRICT: usize = 1366;
-    const LOSSY: usize = 347;
+    // The pin moves on to carve 9d093d3, which adds ten documents: corpus 469
+    // and 470 (markup-carve/carve#2070) and `12-inline-code-8` and `-9`
+    // (markup-carve/carve#2074). Measured the same way, both buckets dumped by
+    // name at each pin and diffed: 1366/347 over 1713 becomes 1375/348 over
+    // 1723, and NO document changes bucket in either direction. The one lossy
+    // joiner, 469-3, is `[x]( "t")`, whose quotes degrade as
+    // `smart_punctuation` - a kind this set already holds.
+    const STRICT: usize = 1375;
+    const LOSSY: usize = 348;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
