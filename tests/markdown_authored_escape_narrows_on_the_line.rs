@@ -110,8 +110,12 @@ fn the_content_position_is_measured_past_every_container_prefix() {
         ("- \\# heading", "- \\# heading"),
         ("1. \\# heading", "1. \\# heading"),
         ("1) \\# heading", "1) \\# heading"),
-        ("- [ ] \\# heading", "- [ ] \\# heading"),
-        ("- [x] \\# heading", "- [x] \\# heading"),
+        // A TASK BOX IS NOT A PREFIX. It is content, so the hash after it is
+        // not at a position any reader opens a heading from: markdown-it-py
+        // and pulldown-cmark, with task lists on and off, render both
+        // spellings the same (markup-carve/carve-rs#1674).
+        ("- [ ] \\# heading", "- [ ] # heading"),
+        ("- [x] \\# heading", "- [x] # heading"),
         ("[^a]: \\# heading\n\ntext[^a]", "text[^a]"),
     ] {
         assert!(

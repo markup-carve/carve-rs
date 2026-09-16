@@ -2039,9 +2039,9 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 /// One scan per block: an opener pairs with any closer after it, a closer with
 /// any opener before it. Only a `_` from text is a candidate, so one the
 /// author escaped is never half of a pair.
-fn underscores_that_could_pair(text: &[char], raw: &[char], literal: &[bool]) -> Vec<bool> {
+fn underscores_that_could_pair(text: &[char], literal: &[bool]) -> Vec<bool> {
     let mut escape = vec![false; text.len()];
-    for block in inline_blocks(text, raw) {
+    for block in inline_blocks(text) {
         let flags: Vec<(usize, bool, bool)> = block
             .iter()
             .flat_map(|&(start, end)| (start..end).map(move |i| (start, end, i)))
@@ -2081,7 +2081,7 @@ fn underscores_that_could_pair(text: &[char], raw: &[char], literal: &[bool]) ->
 /// ranges of its lines: a blank line ends a block, a heading and a new list
 /// item start one, and every table cell is one of its own. `raw` still holds
 /// the carriers, so a `#` the writer will escape is not taken for a heading.
-fn inline_blocks(text: &[char], raw: &[char]) -> Vec<Vec<(usize, usize)>> {
+fn inline_blocks(text: &[char]) -> Vec<Vec<(usize, usize)>> {
     let mut blocks = Vec::new();
     let mut current: Vec<(usize, usize)> = Vec::new();
     let mut line_start = 0usize;
@@ -2116,14 +2116,11 @@ fn inline_blocks(text: &[char], raw: &[char]) -> Vec<Vec<(usize, usize)>> {
             if cell < line_end {
                 blocks.push(vec![(cell, line_end)]);
             }
-        } else if raw[content] == '#' || starts_a_list_item(text, line_start) {
+        } else if starts_a_list_item(text, line_start) {
             if !current.is_empty() {
                 blocks.push(std::mem::take(&mut current));
             }
             current.push((content, line_end));
-            if raw[content] == '#' {
-                blocks.push(std::mem::take(&mut current));
-            }
         } else {
             current.push((content, line_end));
         }
@@ -2170,7 +2167,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         .map(|c| carrier_slot(&carriers, c) == Some(C_UNDERSCORE))
         .collect();
     let raw_chars: Vec<char> = text.chars().collect();
-    let pairs = underscores_that_could_pair(&line, &raw_chars, &literal);
+    let pairs = underscores_that_could_pair(&line, &literal);
     let mut out = String::with_capacity(text.len());
     // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
     //
@@ -2298,16 +2295,10 @@ fn container_prefix_end(line: &[char], at: usize) -> Option<usize> {
         });
     }
 
-    // A task marker before the plain bullet it starts with, so `- [ ] ` is read
-    // whole rather than as a bullet followed by a bracket.
+    // A BULLET ENDS AT ITS SEPARATOR, task box included. The box is content:
+    // a reader takes a `#` after it for text, not a heading opener, so
+    // reaching past it escaped a hash no reader reads (markup-carve/carve-rs#1674).
     if matches!(ch, '-' | '*' | '+') && line.get(at + 1) == Some(&' ') {
-        if line.get(at + 2) == Some(&'[')
-            && matches!(line.get(at + 3), Some(' ' | 'x' | 'X'))
-            && line.get(at + 4) == Some(&']')
-            && line.get(at + 5) == Some(&' ')
-        {
-            return Some(at + 6);
-        }
         return Some(at + 2);
     }
 
