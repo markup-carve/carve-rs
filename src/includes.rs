@@ -1685,14 +1685,77 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
     if spans.is_empty() {
         return run.to_vec();
     }
-    let mut out = Vec::new();
+    let mut pieces: Vec<(InlineNode, bool)> = Vec::new();
     let mut at = 0usize;
     for (start, end, replacement) in spans {
-        out.extend(slice_run(run, at, start));
-        out.extend(replacement);
+        pieces.extend(slice_run(run, at, start).into_iter().map(|n| (n, true)));
+        pieces.extend(replacement.into_iter().map(|n| (n, false)));
         at = end;
     }
-    out.extend(slice_run(run, at, full.len()));
+    pieces.extend(
+        slice_run(run, at, full.len())
+            .into_iter()
+            .map(|n| (n, true)),
+    );
+    coalesce_text(pieces)
+}
+
+/// PART 12 §1a: a serialized node's children hold no two adjacent `text` nodes,
+/// and §1a's own POSITIONS paragraph says the coalescing happens in the parsed
+/// tree rather than in the encoder. Splicing an inline include's content into
+/// the host's run is the one place this pass leaves a run split, so it joins it
+/// back here (CARVE-P12-002, markup-carve/carve-rs#1647).
+///
+/// The merged run spans the FILE THAT HOLDS IT, from the first host piece's
+/// start to the last host piece's end. A run with no positioned host piece
+/// publishes none: an included piece's coordinates are measured in another
+/// file and would select the wrong text here.
+fn coalesce_text(pieces: Vec<(InlineNode, bool)>) -> Vec<InlineNode> {
+    let mut out: Vec<InlineNode> = Vec::with_capacity(pieces.len());
+    let mut run: Vec<(InlineNode, bool)> = Vec::new();
+
+    fn flush(run: &mut Vec<(InlineNode, bool)>, out: &mut Vec<InlineNode>) {
+        if run.len() < 2 {
+            out.extend(run.drain(..).map(|(node, _)| node));
+            return;
+        }
+        let mut value = String::new();
+        let mut first: Option<crate::Pos> = None;
+        let mut last: Option<crate::Pos> = None;
+        for (node, from_host) in run.drain(..) {
+            let InlineNode::Text(text) = node else {
+                continue;
+            };
+            value.push_str(&text.value);
+            if !from_host {
+                continue;
+            }
+            if let Some(pos) = text.pos {
+                first.get_or_insert_with(|| pos.clone());
+                last = Some(pos);
+            }
+        }
+        let pos = match (first, last) {
+            (Some(first), Some(last)) => Some(crate::Pos {
+                end_line: last.end_line,
+                end_column: last.end_column,
+                end_offset: last.end_offset,
+                ..first
+            }),
+            _ => None,
+        };
+        out.push(InlineNode::Text(crate::ast::Text { value, pos }));
+    }
+
+    for (node, from_host) in pieces {
+        if matches!(node, InlineNode::Text(_)) {
+            run.push((node, from_host));
+            continue;
+        }
+        flush(&mut run, &mut out);
+        out.push(node);
+    }
+    flush(&mut run, &mut out);
     out
 }
 
