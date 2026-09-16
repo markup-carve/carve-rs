@@ -2169,8 +2169,8 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         .chars()
         .map(|c| carrier_slot(&carriers, c) == Some(C_UNDERSCORE))
         .collect();
-    let raw: Vec<char> = text.chars().collect();
-    let pairs = underscores_that_could_pair(&line, &raw, &literal);
+    let raw_chars: Vec<char> = text.chars().collect();
+    let pairs = underscores_that_could_pair(&line, &raw_chars, &literal);
     let mut out = String::with_capacity(text.len());
     // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
     //
@@ -2193,7 +2193,11 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         let keep = carrier_slot(&carriers, raw).map(|slot| {
             let ch = carried_character(slot);
             if slot == C_POSITIONAL_HASH {
-                (ch, opens_an_atx_heading(&line, i, content_start))
+                (
+                    ch,
+                    opens_an_atx_heading(&line, i, content_start)
+                        || closes_an_atx_heading(&line, &raw_chars, i, content_start),
+                )
             } else {
                 (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
             }
@@ -2209,6 +2213,38 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         }
     }
     out
+}
+
+/// Whether the `#` at `index` opens the TRAILING run of a line emitted as a
+/// heading, which a CommonMark reader takes for the ATX closing sequence and
+/// drops (§8a M1f, amended in markup-carve/carve#2056).
+///
+/// Only the run's FIRST hash: the rest no longer follow a space, so the escape
+/// on the first is what keeps the whole run. `raw` rather than `line` decides
+/// that the line IS a heading, because the marker is emitted bare while every
+/// hash from the document's text arrives as a carrier.
+fn closes_an_atx_heading(line: &[char], raw: &[char], index: usize, content_start: usize) -> bool {
+    if index == 0 || !matches!(line.get(index - 1), Some(' ' | '\t')) {
+        return false;
+    }
+    if !emitted_as_a_heading(raw, content_start) {
+        return false;
+    }
+    line[index..]
+        .iter()
+        .take_while(|c| **c != '\n')
+        .all(|c| *c == '#')
+}
+
+/// Whether the line beginning at `content_start` is one this writer emitted as
+/// an ATX heading: a bare run of one to six hashes and a space.
+fn emitted_as_a_heading(raw: &[char], content_start: usize) -> bool {
+    let run = raw[content_start..]
+        .iter()
+        .take_while(|c| **c == '#')
+        .take(7)
+        .count();
+    (1..=6).contains(&run) && matches!(raw.get(content_start + run), Some(' '))
 }
 
 /// Whether the `#` at `index` would open an ATX heading (§8a M1f, §8b M2b).
