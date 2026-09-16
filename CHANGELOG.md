@@ -10,7 +10,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - `Options` accepts authoritative mention and tag resolver callbacks with node
-  attributes and opaque host context.
+  attributes and opaque host context (markup-carve/carve-rs#1682).
+- `IncludeResolver` gains a defaulted `unresolved_id`, and `FileSystemResolver`
+  answers it with where a missing target would be, so a host watches the file the
+  author meant rather than the directive's spelling (markup-carve/carve-rs#1688).
 - `carve --json` publishes the include dependency list, so a host can watch every
   file a document reads (markup-carve/carve-rs#1678).
 - The extension registry publishes each fenced-render preset's static-renderer
@@ -25,7 +28,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   spans trail its real header cells (`|= A |= B | < |`), instead of a GFM
   delimiter row. A leading span, a real cell after a header span, or a trailing
   rowspan still uses the delimiter row. The HTML importer, which renders through
-  the writer, produces the native form too.
+  the writer, produces the native form too (markup-carve/carve-rs#1658).
 - **Breaking:** Migration reports advance to schema version 2: `Carried` is renamed to
   `Preserved`, `Normalized` distinguishes semantics-preserving rewrites, and
   Markdown, Djot, and BBCode now emit a conservative `Dropped`/`Fallback`
@@ -34,7 +37,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from carried to degraded, opaque `raw-preserved` HTML moves to degraded,
   truncated diagnostics become dropped/fallback, and HTML `--check-loss` now
   passes preserved/normalized findings and fails degraded/dropped ones. The CLI
-  emits the same report for every importer.
+  emits the same report for every importer (markup-carve/carve-rs#1584).
 
 - Add processor-level file inclusion (`{{ path }}`, PART 9 §19 rules I1-I11):
   `expand_includes` expands directives with a host-supplied `IncludeResolver`,
@@ -44,7 +47,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   literal. `FileSystemResolver` sits behind the default-on `fs` feature, so a
   build with that feature off carries no file-opening code. The CLI gains
   `--include-root` and `carve flatten`, which writes the document back with
-  every include expanded (markup-carve/carve-rs#1451).
+  every include expanded (markup-carve/carve-rs#241).
 - **Breaking:** `IncludeResolver::resolve` returns
   `Result<IncludeResolved, IncludeDenial>` instead of `Option<IncludeResolved>`,
   so a refusal says which class it is and `IncludeDependency` carries it. To
@@ -55,6 +58,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An include directive closes at the first `}}` outside a quoted run, so a quoted
+  value may carry the pair (markup-carve/carve-rs#1614).
+- A relative include root is refused rather than resolved against the process
+  working directory, and the byte budget charges a target that breaks it and
+  publishes the total read (markup-carve/carve-rs#1612, markup-carve/carve-rs#1617).
+- The Carve writer keeps a block image, a merged run and a line comment in the
+  tight item that hosts them instead of letting a re-parse pull them into a
+  sub-list (markup-carve/carve-rs#1602, markup-carve/carve-rs#1596).
+- An admonition title, a definition term, a figure caption and a container label
+  move emphasis padding outside the delimiters in Markdown too
+  (markup-carve/carve-rs#1616).
+- `render_carve` writes a frontmatter block as the author wrote it. It rebuilt the
+  block from the parsed key/value map, which dropped a JSON or TOML block and
+  key-sorted a YAML one behind a bare `---` (markup-carve/carve-rs#1695).
+- Writing a paragraph that holds many include directives no longer costs the
+  square of its length (markup-carve/carve-rs#1698).
+- The Markdown writer no longer escapes a hash right after a task box, which no
+  reader takes for a heading (markup-carve/carve-rs#1691).
+- A comment whose content opens with `%` is written back with its full opener run
+  instead of a shorter marker and a stray character (markup-carve/carve-rs#1591).
+- A raw-HTML profile error points the author at Carve markup, not Djot
+  (markup-carve/carve-rs#1637).
+- A footnote written into a description body gets the same per-marker body floor
+  as a nested note: an opener or plain continuation at that floor belongs to the
+  note, a column-0 tail is top-level, and a list in the body starts at its marker
+  (markup-carve/carve-rs#1577, markup-carve/carve-rs#1580,
+  markup-carve/carve-rs#1583).
 - The Markdown writer escapes a hash where the emitted line would read it as a
   heading: one opening a line inside a paragraph, and a heading's own trailing
   run, which a CommonMark reader takes for the closing sequence and drops
@@ -95,18 +125,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and unpaired raw HTML, structural Djot constructs, and fidelity and confidence
   on every diagnostic (markup-carve/carve-rs#1594, markup-carve/carve-rs#1603,
   markup-carve/carve-rs#1582, markup-carve/carve-rs#1588).
-- The Markdown renderer moves emphasis padding outside the delimiters, so content that begins or ends with whitespace still reads as emphasis rather than literal text; content that is only whitespace falls back to inline HTML (markup-carve/carve-js#1683).
+- The Markdown renderer moves emphasis padding outside the delimiters, so content that begins or ends with whitespace still reads as emphasis rather than literal text; content that is only whitespace falls back to inline HTML (markup-carve/carve-rs#1599, markup-carve/carve-js#1683).
 - A nested note ends at a definition below its own body floor, so a trailing
   line further down belongs to the surviving ancestor rather than reaching a
-  floor that has already closed (markup-carve/carve#1971, carve#1918).
+  floor that has already closed (markup-carve/carve-rs#1575, markup-carve/carve#1971,
+  markup-carve/carve#1918).
 - A trailing line after a consumed definition in a stack of nested notes is
   placed by column-reach. A note nested one column shy of its host's body column
   keeps a residual marker indent, so a line below the inner note's own content
   column falls to the reachable ancestor note instead of the innermost one,
-  matching carve-js (markup-carve/carve#1946, markup-carve/carve-php#1895).
+  matching carve-js (markup-carve/carve-rs#1573, markup-carve/carve#1946,
+  markup-carve/carve-php#1895).
 - A description item following a nested closed fence opens a new item instead of
   being absorbed into the one above, matching the other engines
-  (markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
+  (markup-carve/carve-rs#1572, markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
   before that item, converging its `carve` output with carve-js and carve-php.
 
 ## [0.1.5] - 2026-09-07
