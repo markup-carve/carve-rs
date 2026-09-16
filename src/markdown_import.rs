@@ -34,6 +34,12 @@ use crate::render_carve;
 /// `---` fence is a thematic break and the key line beneath it a setext
 /// heading, so `title: T` became an `<h2>`. Both were caught by the
 /// differential against carve-js, not by reasoning.
+fn is_empty_destination(destination: &str) -> bool {
+    destination
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .is_empty()
+}
+
 pub fn markdown_to_carve(markdown: &str) -> String {
     let document = markdown_to_ast(markdown);
 
@@ -601,6 +607,18 @@ impl Builder {
                 children,
                 pos: None,
             })),
+            // Carve has no spelling for an empty destination, so the link is its
+            // content and the image its alt (docs/html-import-contract.md).
+            Frame::Link { href, children, .. } if is_empty_destination(&href) => {
+                for child in children {
+                    self.inline(child);
+                }
+            }
+            Frame::Image { src, alt, .. } if is_empty_destination(&src) => {
+                if !alt.is_empty() {
+                    self.text(&alt);
+                }
+            }
             Frame::Link {
                 href,
                 title,
