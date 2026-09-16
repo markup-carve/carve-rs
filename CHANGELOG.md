@@ -61,6 +61,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `render_carve` returns `SourceUnspellable` for a mention or a tag that carries
+  attributes, where it used to drop them (markup-carve/carve-rs#1737).
 - A link, image or span after a backtick an earlier construct used up is read,
   where the paragraph's later brackets used to stay literal
   (markup-carve/carve-rs#1733).
