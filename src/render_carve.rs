@@ -3044,8 +3044,14 @@ fn render_forced_emphasis(delim: &str, content: &str) -> String {
 }
 
 fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char) -> String {
+    // `/` AROUND A CONTENT THAT OPENS AND CLOSES WITH `*` is the combined
+    // bold-italic spelling, which re-parses with the nesting the other way
+    // round (markup-carve/carve-rs#1660). The test is on the bytes, not the
+    // node shape: `{/{*x*} y {*z*}/}` writes the same hazard.
+    let reads_as_bold_italic = delim == "/" && content.starts_with('*') && content.ends_with('*');
     let needs_forced = is_word_boundary(prev_char)
         || is_word_boundary(next_char)
+        || reads_as_bold_italic
         || content.starts_with(delim)
         || content.ends_with(delim)
         || content.starts_with(' ')

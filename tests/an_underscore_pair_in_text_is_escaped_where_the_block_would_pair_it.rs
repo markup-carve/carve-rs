@@ -1,6 +1,7 @@
 //! PART 11 §8a M1b's second condition for `_` [CARVE-P11-023]: a literal
-//! underscore is escaped when another live one on its emitted line could close
-//! the emphasis it could open, by CommonMark 6.2 read for the underscore.
+//! underscore is escaped when another live one in the same paragraph, heading
+//! or table cell could close the emphasis it could open, by CommonMark 6.2
+//! read for the underscore.
 
 fn md(src: &str) -> String {
     carve::to_markdown(src)
@@ -22,6 +23,45 @@ fn only_the_pair_is_escaped_on_a_line_of_bare_underscores() {
 #[test]
 fn each_line_answers_for_itself() {
     assert_eq!(md("/x/_y_\n/z/_w_\n"), "*x*\\_y\\_\n*z*\\_w\\_\n");
+}
+
+#[test]
+fn a_pair_split_across_a_soft_break_is_escaped() {
+    // Corpus 468: a reader pairs emphasis across a line break, so the block is
+    // the unit rather than the line.
+    assert_eq!(md("/x/_y\nz_ w\n"), "*x*\\_y\nz\\_ w\n");
+}
+
+#[test]
+fn a_pair_split_across_a_blank_line_stays_bare() {
+    // Two paragraphs, and the condition is if and only if.
+    assert_eq!(md("a/_y\n\nz_ w\n"), "a/_y\n\nz_ w\n");
+}
+
+#[test]
+fn a_pair_split_across_two_list_items_stays_bare() {
+    assert_eq!(md("- a/_y\n- z_ w\n"), "- a/_y\n- z_ w\n");
+}
+
+#[test]
+fn a_pair_split_across_two_table_cells_stays_bare() {
+    assert_eq!(
+        md("| a/_y | z_ w |\n|---|---|\n| c | d |\n"),
+        "| a/_y | z_ w |\n| --- | --- |\n| c | d |\n"
+    );
+}
+
+#[test]
+fn a_pair_inside_one_table_cell_is_escaped() {
+    assert_eq!(
+        md("| a/_y z_ w | c |\n|---|---|\n| d | e |\n"),
+        "| a/\\_y z\\_ w | c |\n| --- | --- |\n| d | e |\n"
+    );
+}
+
+#[test]
+fn a_pair_split_across_a_quote_s_own_blank_line_stays_bare() {
+    assert_eq!(md("> a/_y\n>\n> z_ w\n"), "> a/_y\n>\n> z_ w\n");
 }
 
 /// A control: an authored escape is written by M2 and never becomes a

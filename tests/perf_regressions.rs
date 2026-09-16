@@ -1718,3 +1718,18 @@ fn a_line_full_of_underscore_candidates_is_scanned_once() {
         start.elapsed()
     );
 }
+
+#[test]
+fn unclosed_angle_brackets_do_not_rescan_for_an_autolink() {
+    let _guard = perf_guard();
+    // E2a hides an autolink from the closing scan. Without the bail on "no `>`
+    // ahead", every `<` scans to end-of-text looking for one.
+    let source = "~<".repeat(120_000);
+    let start = Instant::now();
+    let _ = carve::to_html(&source);
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "autolink scan took {:?}",
+        start.elapsed()
+    );
+}

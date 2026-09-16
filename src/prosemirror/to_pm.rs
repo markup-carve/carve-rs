@@ -488,10 +488,33 @@ impl Renderer {
 
     fn inlines(&mut self, nodes: &[InlineNode], marks: &[Json]) -> Vec<Json> {
         let mut out = Vec::new();
+        for pair in nodes.windows(2) {
+            self.note_merging_siblings(&pair[0], &pair[1]);
+        }
         for node in nodes {
             self.inline(node, marks, &mut out);
         }
         out
+    }
+
+    /// Two adjacent spans of the same kind come back as ONE mark run: a mark is
+    /// a property of the characters, so the boundary between them has nothing
+    /// to sit on. The trip changes the rendered HTML, so it reports itself
+    /// rather than claiming coverage (markup-carve/carve-rs#1663).
+    fn note_merging_siblings(&mut self, left: &InlineNode, right: &InlineNode) {
+        let (InlineNode::Emphasis(a), InlineNode::Emphasis(b)) = (left, right) else {
+            return;
+        };
+        if a.kind != b.kind || a.attrs != b.attrs {
+            return;
+        }
+        let Some(name) = self.emphasis_name(a.kind) else {
+            return;
+        };
+        self.degraded.insert(
+            name.into(),
+            "two adjacent spans of one kind merge into a single mark run".into(),
+        );
     }
 
     fn inline(&mut self, node: &InlineNode, marks: &[Json], out: &mut Vec<Json>) {
