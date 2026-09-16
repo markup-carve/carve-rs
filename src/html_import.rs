@@ -336,6 +336,9 @@ struct Importer<'a> {
     /// Every empty `<code>`, indexed by the mark on its node, so the writing
     /// exit can drop the ones whose backtick run does not end.
     empty_code_spans: Vec<(Handle, String)>,
+    /// Every emphasis, insertion and deletion, indexed by the mark on its node,
+    /// so the writing exit can unwrap a same-kind nesting the writer refuses.
+    braced_kind_spans: Vec<(Handle, String)>,
     /// The reference sites the adapter footnote pass recognized: the node
     /// `inline` must read as a footnote reference, and the label it carries.
     ///
@@ -4737,6 +4740,14 @@ impl<'a> Importer<'a> {
                 return Ok(children);
             }
         };
+        let mut node = node;
+        if let InlineNode::Emphasis(Emphasis { pos, .. })
+        | InlineNode::CriticInsert(CriticInsert { pos, .. })
+        | InlineNode::CriticDelete(CriticDelete { pos, .. }) = &mut node
+        {
+            *pos = Some(candidate_mark(self.braced_kind_spans.len()));
+            self.braced_kind_spans.push((h.clone(), path.to_owned()));
+        }
         Ok(vec![node])
     }
 
@@ -6061,6 +6072,137 @@ fn settle_empty_code_spans(
     }
 }
 
+const NESTED_SAME_KIND_UNWRAPPED: &str = "Unwrapped an inline element nested in one of its own kind: a braced span inside a braced span of the same kind has no Carve spelling, so its content is written in the outer one";
+
+/// Unwrap each inner span of a same-kind nesting the writer refuses (ruling
+/// markup-carve/carve#2066), one render at a time until none is left.
+fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importer) {
+    let mut nested = false;
+    let mut probe = |nodes: &mut Vec<InlineNode>, _: bool| {
+        nested |= holds_same_kind_nesting(nodes, &mut Vec::new());
+    };
+    for blocks in document.footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut probe);
+    }
+    for_each_inline_run(&mut document.children, &mut probe);
+    if !nested || render_carve(document).is_ok() {
+        return;
+    }
+    let refused: HashSet<usize> = crate::render_carve_error::take_nested_same_kind()
+        .into_iter()
+        .collect();
+    let mut unwrapped = Vec::new();
+    let mut unwrap = |nodes: &mut Vec<InlineNode>, _: bool| {
+        take_span_marks(nodes, &mut |mark| {
+            let hit = refused.contains(&mark);
+            if hit {
+                unwrapped.push(mark - 1);
+            }
+            hit
+        })
+    };
+    for blocks in document.footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut unwrap);
+    }
+    for_each_inline_run(&mut document.children, &mut unwrap);
+    unwrapped.sort_unstable();
+    for index in unwrapped {
+        let (node, path) = importer.braced_kind_spans[index].clone();
+        importer.diag(
+            HtmlImportDiagnosticCode::StructureUnspellable,
+            NESTED_SAME_KIND_UNWRAPPED.into(),
+            HtmlImportSeverity::Warning,
+            &path,
+            &node,
+        );
+    }
+}
+
+/// Whether a span sits anywhere inside a span of its own kind.
+fn holds_same_kind_nesting(nodes: &mut [InlineNode], open: &mut Vec<SpanKind>) -> bool {
+    for node in nodes {
+        let kind = match node {
+            InlineNode::Emphasis(emphasis) => Some(SpanKind::Emphasis(emphasis.kind)),
+            InlineNode::CriticInsert(_) => Some(SpanKind::Insert),
+            InlineNode::CriticDelete(_) => Some(SpanKind::Delete),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            if open.contains(&kind) {
+                return true;
+            }
+            open.push(kind);
+        }
+        let found = crate::render_carve::empty_code_run_children_mut(node)
+            .is_some_and(|(_, children)| holds_same_kind_nesting(children, open));
+        if kind.is_some() {
+            open.pop();
+        }
+        if found {
+            return true;
+        }
+    }
+    false
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum SpanKind {
+    Emphasis(EmphasisKind),
+    Insert,
+    Delete,
+}
+
+fn strip_span_marks(nodes: &mut [InlineNode]) {
+    for node in nodes {
+        if let InlineNode::Emphasis(Emphasis { pos, .. })
+        | InlineNode::CriticInsert(CriticInsert { pos, .. })
+        | InlineNode::CriticDelete(CriticDelete { pos, .. }) = node
+        {
+            *pos = None;
+        }
+        if let Some((_, children)) = crate::render_carve::empty_code_run_children_mut(node) {
+            strip_span_marks(children);
+        }
+    }
+}
+
+/// Replace each marked span under `nodes` that `unwrap` names with its children.
+fn take_span_marks(nodes: &mut Vec<InlineNode>, unwrap: &mut impl FnMut(usize) -> bool) {
+    let mut index = 0;
+    while index < nodes.len() {
+        if let Some((_, children)) =
+            crate::render_carve::empty_code_run_children_mut(&mut nodes[index])
+        {
+            take_span_marks(children, unwrap);
+        }
+        let mark = match &mut nodes[index] {
+            InlineNode::Emphasis(Emphasis { pos, .. })
+            | InlineNode::CriticInsert(CriticInsert { pos, .. })
+            | InlineNode::CriticDelete(CriticDelete { pos, .. }) => {
+                pos.as_ref().map(|pos| pos.start_offset)
+            }
+            _ => None,
+        };
+        if let Some(mark) = mark {
+            if unwrap(mark) {
+                let children = match nodes.remove(index) {
+                    InlineNode::Emphasis(e) => e.children,
+                    InlineNode::CriticInsert(i) => i.children,
+                    InlineNode::CriticDelete(d) => d.children,
+                    _ => unreachable!(),
+                };
+                let count = children.len();
+                nodes.splice(index..index, children);
+                merge_text_at(nodes, index + count);
+                merge_text_at(nodes, index);
+                index = index.saturating_sub(1);
+                continue;
+            }
+        }
+        index += 1;
+    }
+}
+
 /// Join the text runs a removal at `index` left side by side.
 fn merge_text_at(nodes: &mut Vec<InlineNode>, index: usize) {
     if index == 0 || index >= nodes.len() {
@@ -6292,6 +6434,7 @@ fn import(
         displaced_figure_attrs: Vec::new(),
         lone_image_paragraphs: Vec::new(),
         empty_code_spans: Vec::new(),
+        braced_kind_spans: Vec::new(),
         footnote_refs: HashMap::new(),
     };
     // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
@@ -6449,16 +6592,26 @@ the image is written as a block";
             );
         }
     }
+    let mut document = Document {
+        frontmatter: BTreeMap::new(),
+        frontmatter_raw: None,
+        footnote_defs,
+        footnote_def_pos: BTreeMap::new(),
+        children,
+        source_len: 0,
+        ingest_payload_len: 0,
+    };
+    if writing {
+        unwrap_nested_same_kind_spans(&mut document, &mut importer);
+    }
+    for blocks in document.footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut |nodes, _| strip_span_marks(nodes));
+    }
+    for_each_inline_run(&mut document.children, &mut |nodes, _| {
+        strip_span_marks(nodes)
+    });
     Ok(HtmlImportResult {
-        value: Document {
-            frontmatter: BTreeMap::new(),
-            frontmatter_raw: None,
-            footnote_defs,
-            footnote_def_pos: BTreeMap::new(),
-            children,
-            source_len: 0,
-            ingest_payload_len: 0,
-        },
+        value: document,
         report: HtmlImportReport {
             mode: options.mode,
             adapter: options.adapter,

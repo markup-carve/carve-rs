@@ -1,6 +1,6 @@
 //! Typed refusals from the canonical Carve writer.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 
 /// The canonical writer cannot spell an AST node without changing it.
@@ -68,6 +68,16 @@ impl From<crate::RenderDepthError> for RenderCarveError {
 
 thread_local! {
     static UNSPELLABLE: Cell<Option<(&'static str, &'static str)>> = const { Cell::new(None) };
+    static NESTED_SAME_KIND: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The inner spans of an unspellable same-kind nesting, for the HTML importer.
+pub(crate) fn record_nested_same_kind(spans: Vec<usize>) {
+    NESTED_SAME_KIND.with(|cell| cell.borrow_mut().extend(spans));
+}
+
+pub(crate) fn take_nested_same_kind() -> Vec<usize> {
+    NESTED_SAME_KIND.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
 
 pub(crate) fn record_unspellable(node_type: &'static str, reason: &'static str) {
@@ -84,6 +94,7 @@ pub(crate) struct SourceSpellWatch {
 
 impl SourceSpellWatch {
     pub(crate) fn new() -> Self {
+        NESTED_SAME_KIND.with(|cell| cell.borrow_mut().clear());
         Self {
             previous: UNSPELLABLE.with(|cell| cell.replace(None)),
         }
