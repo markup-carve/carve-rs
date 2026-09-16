@@ -35,6 +35,8 @@ struct CarveContext {
     /// Inside a table cell, where a leading `^` cannot open a caption: a
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
+    /// Inside a table cell that is not the last in its row.
+    cell_not_last: bool,
     /// Inside an inline note's content, where PART 9 §16 disables note
     /// recognition at every depth - so a `^[` written there opens nothing and
     /// needs no escape.
@@ -720,6 +722,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         line_block_depth: 0,
         colon_fence_depth: 0,
         table_cell_depth: 0,
+        cell_not_last: false,
         note_content_depth: 0,
         after_caption_host: false,
         paragraph_starts_after_caption_host: false,
@@ -2260,12 +2263,14 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
-        for cell in &row.cells {
+        for (cell_index, cell) in row.cells.iter().enumerate() {
+            ctx.cell_not_last = cell_index + 1 < row.cells.len();
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
             cells.push(render_table_cell(cell, ctx, mark_header));
         }
+        ctx.cell_not_last = false;
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
@@ -2525,6 +2530,13 @@ fn render_inlines_with_caption(
         crate::render_depth::record("carve");
         return String::new();
     }
+    if ctx.inline_depth == 0 && holds_unspellable_empty_code(nodes, false, false, ctx.cell_not_last)
+    {
+        crate::render_carve_error::record_unspellable(
+            "code",
+            "an empty code span has no Carve source spelling where its open run does not end",
+        );
+    }
     ctx.inline_depth += 1;
     // Isolate any include directive into its own node FIRST, so the loop below
     // needs to know nothing about them: a directive is one node it emits
@@ -2539,6 +2551,79 @@ fn render_inlines_with_caption(
     };
     ctx.inline_depth -= 1;
     out
+}
+
+/// An empty code span is an open backtick run, which ends only at the end of a
+/// block or at a braced closer (PART 3, UNCLOSED RUN). `followed` is true when
+/// something after this sequence would be read into the run; `labelled` when a
+/// link, span or note label must close after it.
+fn holds_unspellable_empty_code(
+    nodes: &[InlineNode],
+    followed: bool,
+    labelled: bool,
+    cell_not_last: bool,
+) -> bool {
+    nodes.iter().enumerate().any(|(index, node)| {
+        let after = followed || run_reads_on(&nodes[index + 1..]);
+        match node {
+            InlineNode::Code(code) if code.value.is_empty() => {
+                !empty_code_position_ends_its_run(after, labelled, cell_not_last)
+                    || !render_attrs(&code.attrs).is_empty()
+            }
+            _ => match empty_code_run_children(node) {
+                Some((true, children)) => {
+                    holds_unspellable_empty_code(children, false, labelled, cell_not_last)
+                }
+                Some((false, children)) => {
+                    holds_unspellable_empty_code(children, after, true, cell_not_last)
+                }
+                None => false,
+            },
+        }
+    })
+}
+
+pub(crate) fn empty_code_position_ends_its_run(
+    followed: bool,
+    labelled: bool,
+    cell_not_last: bool,
+) -> bool {
+    !(followed || labelled || cell_not_last)
+}
+
+pub(crate) fn run_reads_on(rest: &[InlineNode]) -> bool {
+    rest.iter()
+        .any(|next| !matches!(next, InlineNode::Text(text) if text.value.is_empty()))
+}
+
+/// The inline children an open run can reach, and whether the container
+/// closes with a braced closer, which ends the run.
+fn empty_code_run_children(node: &InlineNode) -> Option<(bool, &[InlineNode])> {
+    match node {
+        InlineNode::Emphasis(n) => Some((true, &n.children)),
+        InlineNode::CriticInsert(n) => Some((true, &n.children)),
+        InlineNode::CriticDelete(n) => Some((true, &n.children)),
+        InlineNode::Link(n) => Some((false, &n.children)),
+        InlineNode::Span(n) => Some((false, &n.children)),
+        InlineNode::Extension(n) => Some((false, &n.children)),
+        InlineNode::Footnote(n) => n.inline.as_deref().map(|children| (false, children)),
+        _ => None,
+    }
+}
+
+pub(crate) fn empty_code_run_children_mut(
+    node: &mut InlineNode,
+) -> Option<(bool, &mut Vec<InlineNode>)> {
+    match node {
+        InlineNode::Emphasis(n) => Some((true, &mut n.children)),
+        InlineNode::CriticInsert(n) => Some((true, &mut n.children)),
+        InlineNode::CriticDelete(n) => Some((true, &mut n.children)),
+        InlineNode::Link(n) => Some((false, &mut n.children)),
+        InlineNode::Span(n) => Some((false, &mut n.children)),
+        InlineNode::Extension(n) => Some((false, &mut n.children)),
+        InlineNode::Footnote(n) => n.inline.as_mut().map(|children| (false, children)),
+        _ => None,
+    }
 }
 
 fn render_nodes(nodes: &[InlineNode], ctx: &mut CarveContext, caption_can_open: bool) -> String {

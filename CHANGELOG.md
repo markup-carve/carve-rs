@@ -58,6 +58,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `render_carve` returns `SourceUnspellable` for an empty code span its backtick
+  run cannot end, and the HTML importer drops such a span with a
+  `structure-unspellable` diagnostic (markup-carve/carve-rs#1705).
 - An emphasis ending in a hard break keeps its closer in the Carve writer and the
   HTML importer (markup-carve/carve-rs#1702).
 - An include directive closes at the first `}}` outside a quoted run, so a quoted
