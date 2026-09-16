@@ -88,6 +88,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and keeps two links with different destinations apart instead of merging them
   and losing the second (markup-carve/carve-rs#1667,
   markup-carve/carve-rs#1675).
+- An empty code span survives a ProseMirror round trip. A mark cannot span zero
+  characters, so the span used to leave the document with both loss maps empty
+  (markup-carve/carve-rs#1689).
 - Markdown and Djot import keep what they used to drop: inline HTML, attributed
   and unpaired raw HTML, structural Djot constructs, and fidelity and confidence
   on every diagnostic (markup-carve/carve-rs#1594, markup-carve/carve-rs#1603,
