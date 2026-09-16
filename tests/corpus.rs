@@ -613,6 +613,8 @@ const IMPLEMENTED: &[&str] = &[
     "an-underscore-pair-in-text-is-escaped-where-the-line-would-pair-it",
     "an-underscore-pair-split-across-a-line-break-is-escaped",
     "the-round-trip-comparison-normalizes-a-named-list",
+    "a-quote-is-an-ordinary-link-destination-character",
+    "an-empty-link-destination-is-not-a-link",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
