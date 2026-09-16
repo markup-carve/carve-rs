@@ -442,7 +442,11 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
         match delimiter {
             b'*' | b'/' => {
                 let close = text[i + 1..].find(delimiter as char)? + i + 1;
+                // SAME-DELIMITER ADJACENCY (CARVE-P3-013): a marker right after
+                // its own marker does not open, so `/x//y/` is one emphasis and
+                // then text. This path answered two (markup-carve/carve-rs#1655).
                 if close == i + 1
+                    || (i > 0 && bytes[i - 1] == delimiter)
                     || (i > 0 && text.as_bytes()[i - 1].is_ascii_alphanumeric())
                     || text
                         .as_bytes()
