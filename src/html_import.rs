@@ -5967,6 +5967,7 @@ struct LoneImageParagraph {
 /// back off by the same walk that reads it, on BOTH exits, before either returns
 /// - the tree an `html_to_ast` caller receives never carries one.
 const EMPTY_CODE_DROPPED: &str = "Dropped an empty <code>: its backtick run is closed by the end of a block or by a forced span, and here the run would read what follows it as code instead";
+const EMPTY_WRAPPER_DROPPED: &str = "Dropped an inline element that held only a dropped empty <code>: an empty pair of its delimiters reads back as text";
 const EMPTY_CODE_ATTRIBUTES_DROPPED: &str = "Dropped the attributes of an empty <code>: an attribute block attaches to a closing backtick run, which an empty span has not got";
 
 /// Walk one inline sequence as the Carve writer reads an empty code span's run,
@@ -5978,6 +5979,7 @@ fn settle_empty_code_spans(
     cell_not_last: bool,
     writing: bool,
     keep: &mut impl FnMut(&mut Code, bool) -> bool,
+    emptied: &mut impl FnMut(),
 ) {
     let mut index = 0;
     while index < nodes.len() {
@@ -6009,10 +6011,34 @@ fn settle_empty_code_spans(
         } else if let Some((braced, children)) =
             crate::render_carve::empty_code_run_children_mut(&mut nodes[index])
         {
+            let held = !children.is_empty();
             if braced {
-                settle_empty_code_spans(children, false, labelled, cell_not_last, writing, keep);
+                settle_empty_code_spans(
+                    children,
+                    false,
+                    labelled,
+                    cell_not_last,
+                    writing,
+                    keep,
+                    emptied,
+                );
             } else {
-                settle_empty_code_spans(children, after, true, cell_not_last, writing, keep);
+                settle_empty_code_spans(
+                    children,
+                    after,
+                    true,
+                    cell_not_last,
+                    writing,
+                    keep,
+                    emptied,
+                );
+            }
+            // An emptied pair such as `{**}` reads back as its delimiters.
+            if braced && held && children.is_empty() {
+                nodes.remove(index);
+                merge_text_at(nodes, index);
+                emptied();
+                continue;
             }
         }
         index += 1;
@@ -6282,6 +6308,8 @@ fn import(
     }
     take_candidate_marks(&mut children, &mut kept);
     let empty_code_spans = std::mem::take(&mut importer.empty_code_spans);
+    let last_dropped = std::cell::Cell::new(None);
+    let emptied_wrappers = std::cell::RefCell::new(Vec::new());
     let mut settle = |nodes: &mut Vec<InlineNode>, cell_not_last: bool| {
         settle_empty_code_spans(
             nodes,
@@ -6298,6 +6326,7 @@ fn import(
                 }
                 let (node, path) = &empty_code_spans[index];
                 if !ends {
+                    last_dropped.set(Some(index));
                     importer.diag(
                         HtmlImportDiagnosticCode::StructureUnspellable,
                         EMPTY_CODE_DROPPED.into(),
@@ -6318,12 +6347,31 @@ fn import(
                 }
                 true
             },
+            &mut || {
+                if let Some(index) = last_dropped.get() {
+                    emptied_wrappers.borrow_mut().push(index);
+                }
+            },
         );
     };
     for blocks in footnote_defs.values_mut() {
         for_each_inline_run(blocks, &mut settle);
     }
     for_each_inline_run(&mut children, &mut settle);
+    let mut depth_above: HashMap<usize, usize> = HashMap::new();
+    for index in emptied_wrappers.into_inner() {
+        let (node, path) = &empty_code_spans[index];
+        let depth = depth_above.entry(index).or_insert(0);
+        *depth += 1;
+        let wrapper = path.rsplitn(*depth + 1, '/').last().unwrap_or(path);
+        importer.diag(
+            HtmlImportDiagnosticCode::StructureUnspellable,
+            EMPTY_WRAPPER_DROPPED.into(),
+            HtmlImportSeverity::Warning,
+            wrapper,
+            node,
+        );
+    }
     if writing {
         for (node, path, message, code) in std::mem::take(&mut importer.unspellable) {
             importer.diag(code, message, HtmlImportSeverity::Warning, &path, &node);
