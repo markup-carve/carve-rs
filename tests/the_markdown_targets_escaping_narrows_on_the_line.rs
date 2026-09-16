@@ -85,12 +85,39 @@ fn a_line_holding_a_real_delimiter_pair_still_emits_the_lone_one_bare() {
 #[test]
 fn two_adjacent_narrowed_characters_keep_both_escapes() {
     assert_eq!(md("a __ b"), "a \\_\\_ b");
-    assert_eq!(md("a ## b"), "a \\#\\# b");
     assert!(
         md("a [[x]] b").starts_with("a \\[\\[x"),
         "{}",
         md("a [[x]] b")
     );
+}
+
+/// M1f. A hash from a TEXT node is escaped where the emitted line would OPEN
+/// AN ATX HEADING, which is the test §8b M2b already applies to an authored
+/// one. Adjacency does not reach it: a `#` collides with no delimiter of its
+/// own character (markup-carve/carve#2049).
+#[test]
+fn a_text_hash_is_decided_by_its_position() {
+    for (input, want) in [
+        ("a\n   # heading", "a\n\\# heading"),
+        ("a\n   #", "a\n\\#"),
+        ("a\n   ## b", "a\n\\## b"),
+        ("a\n   ### b ###", "a\n\\### b ###"),
+        ("a\n   ###### b", "a\n\\###### b"),
+        ("a\n   ####### b", "a\n####### b"),
+        ("a # b", "a # b"),
+        ("a\n   #b", "a\n#b"),
+    ] {
+        assert_eq!(md(input), want, "input {input:?}");
+    }
+}
+
+/// M1f's position is after the container prefix, exactly as M2b's is: the
+/// quote marker stands in front of the content, so the hash is at the line's
+/// content position without being at column 0.
+#[test]
+fn a_text_hash_is_measured_past_the_container_prefix() {
+    assert_eq!(md("> a\n>    # b"), "> a\n> \\# b");
 }
 
 /// Adjacency is tested on the EMITTED LINE and not on the node. The parser

@@ -502,13 +502,49 @@ impl Renderer {
     /// to sit on. The trip changes the rendered HTML, so it reports itself
     /// rather than claiming coverage (markup-carve/carve-rs#1663).
     fn note_merging_siblings(&mut self, left: &InlineNode, right: &InlineNode) {
-        let (InlineNode::Emphasis(a), InlineNode::Emphasis(b)) = (left, right) else {
-            return;
+        // An EMPTY construct is not half of a run, and the import side refuses
+        // to merge one, so neither does this report.
+        let filled = |c: &Vec<InlineNode>| !c.is_empty();
+        let name = match (left, right) {
+            (InlineNode::Emphasis(a), InlineNode::Emphasis(b))
+                if a.kind == b.kind
+                    && a.attrs == b.attrs
+                    && filled(&a.children)
+                    && filled(&b.children) =>
+            {
+                self.emphasis_name(a.kind)
+            }
+            (InlineNode::CriticInsert(a), InlineNode::CriticInsert(b))
+                if a.attrs == b.attrs && filled(&a.children) && filled(&b.children) =>
+            {
+                self.name("insert")
+            }
+            (InlineNode::CriticDelete(a), InlineNode::CriticDelete(b))
+                if a.attrs == b.attrs && filled(&a.children) && filled(&b.children) =>
+            {
+                self.name("delete")
+            }
+            (InlineNode::Span(a), InlineNode::Span(b))
+                if a.attrs == b.attrs && filled(&a.children) && filled(&b.children) =>
+            {
+                self.name("span")
+            }
+            // A link merges only when its DESTINATION matches too: the import
+            // side keeps two links apart by every field, so a differing href
+            // is no longer a merge to report.
+            (InlineNode::Link(a), InlineNode::Link(b))
+                if a.href == b.href
+                    && a.title == b.title
+                    && a.attrs == b.attrs
+                    && a.ref_label == b.ref_label
+                    && filled(&a.children)
+                    && filled(&b.children) =>
+            {
+                self.name("link")
+            }
+            _ => return,
         };
-        if a.kind != b.kind || a.attrs != b.attrs {
-            return;
-        }
-        let Some(name) = self.emphasis_name(a.kind) else {
+        let Some(name) = name else {
             return;
         };
         self.degraded.insert(
