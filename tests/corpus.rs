@@ -600,17 +600,24 @@ const IMPLEMENTED: &[&str] = &[
     "a-nested-note-s-floor-is-two-columns-past-its-own-marker",
     "a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach",
     "include-directive-with-no-resolver-renders-literal",
+    "a-bare-closer-does-not-reach-inside-a-braced-inline",
+    "a-block-that-opens-a-tight-item-is-written-on-the-marker-line",
+    "an-underscore-pair-in-text-is-escaped-where-the-line-would-pair-it",
+    "an-underscore-pair-split-across-a-line-break-is-escaped",
+    "the-round-trip-comparison-normalizes-a-named-list",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
 // explicit so a new category still trips the completeness gate below.
 //
-// Empty, and an entry earns its place only by FAILING: `a_known_gap_still_fails`
+// An entry earns its place only by FAILING: `a_known_gap_still_fails`
 // renders every document in a declared gap and refuses a category that already
 // matches. The three entries this list used to hold had all been conformant
 // since before the pin they were written against, and nothing noticed, because
 // a gap was only ever read as "skip this".
-const KNOWN_GAPS: &[&str] = &[];
+// #1661: the closer scan pairs across a link destination and an autolink,
+// which PART 9 section 9 E2a now names opaque.
+const KNOWN_GAPS: &[&str] = &["a-bare-closer-does-not-reach-inside-a-link-destination"];
 
 fn corpus_dir() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
