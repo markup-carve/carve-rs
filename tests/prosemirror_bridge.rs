@@ -1652,3 +1652,46 @@ fn a_preservation_node_is_answered_as_what_it_is() {
     assert!(error.to_string().contains(&name), "{error}");
     assert!(error.to_string().contains("preserves"), "{error}");
 }
+
+/// A mark is a property of the characters, so two adjacent spans of one kind
+/// come back as a single run. The bridge reports that rather than claiming the
+/// trip was lossless (markup-carve/carve-rs#1663).
+#[test]
+fn two_adjacent_spans_of_one_kind_report_a_degrade() {
+    let pm = to_prosemirror(&parse("~{/x/}{/y~/}\n"));
+    assert!(
+        pm.dropped.is_empty(),
+        "nothing is dropped: {:?}",
+        pm.dropped
+    );
+    assert!(
+        pm.degraded.contains_key("italic"),
+        "the merge is reported: {:?}",
+        pm.degraded
+    );
+    // And the report is not pessimism: the trip really does change the render.
+    let returned = from_prosemirror(&pm.json).expect("the document returns");
+    assert_ne!(
+        render_html(&returned).unwrap(),
+        render_html(&parse("~{/x/}{/y~/}\n")).unwrap()
+    );
+}
+
+#[test]
+fn two_adjacent_spans_of_different_kinds_report_nothing() {
+    let pm = to_prosemirror(&parse("{/x/}{*y*}\n"));
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_spans_of_one_kind_with_text_between_report_nothing() {
+    let pm = to_prosemirror(&parse("{/x/} and {/y/}\n"));
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_adjacent_spans_whose_attributes_differ_report_nothing() {
+    // Marks with different attributes do not merge, so nothing is lost.
+    let pm = to_prosemirror(&parse("{/x/}{/y/}{.c}\n"));
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
