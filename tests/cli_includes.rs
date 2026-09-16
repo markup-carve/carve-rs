@@ -50,6 +50,7 @@ struct Output {
     stdout: String,
     stderr: String,
     success: bool,
+    code: Option<i32>,
 }
 
 fn run(args: &[&str], input: Option<&str>) -> Output {
@@ -85,6 +86,7 @@ fn run_impl(args: &[&str], input: Option<&str>, cwd: Option<&Path>) -> Output {
         stdout: String::from_utf8(out.stdout).expect("utf8 stdout"),
         stderr: String::from_utf8(out.stderr).expect("utf8 stderr"),
         success: out.status.success(),
+        code: out.status.code(),
     }
 }
 
@@ -395,4 +397,153 @@ fn flatten_reports_an_unresolved_target_and_keeps_the_directive() {
     assert!(out.success, "{}", out.stderr);
     assert!(out.stdout.contains("{{ nope.crv }}"), "{}", out.stdout);
     assert!(out.stderr.contains("include-unresolved"), "{}", out.stderr);
+}
+
+/// `--report-includes` publishes the spec I11 dependency list (carve-rs#1676).
+///
+/// Refusals carry their class here, which the WARNING deliberately does not:
+/// every refusal warns as `include-unresolved` so a rendered page cannot report
+/// "outside the root" apart from "not there" (I7). This file is written only
+/// where the operator asked for it, and it goes to the processor.
+#[test]
+fn the_dependency_list_names_resolved_and_refused_targets_with_their_class() {
+    let tmp = TempDir::new("deps");
+    tmp.write("secret.crv", "TOP SECRET\n");
+    let main = tmp.write(
+        "book/main.crv",
+        "{{ child.crv }}\n\n{{ missing.crv }}\n\n{{ ../secret.crv }}\n",
+    );
+    tmp.write("book/child.crv", "Child body.\n");
+    let report = tmp.path().join("deps.json");
+    let out = run(
+        &[
+            "--report-includes",
+            report.to_str().unwrap(),
+            main.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(out.success, "stderr: {}", out.stderr);
+    let json = fs::read_to_string(&report).expect("dependency report written");
+
+    assert!(
+        json.contains("\"id\":\"") && json.contains("child.crv\",\"resolved\":true"),
+        "resolved child missing: {json}"
+    );
+    assert!(
+        json.contains("{\"id\":\"missing.crv\",\"resolved\":false,\"denial\":\"not-found\"}"),
+        "missing target missing: {json}"
+    );
+    assert!(
+        json.contains("{\"id\":\"../secret.crv\",\"resolved\":false,\"denial\":\"outside-root\"}"),
+        "denied target missing: {json}"
+    );
+    // The contrast: both refusals warn under one rule, and the report separates
+    // them.
+    assert_eq!(
+        out.stderr.matches("include-unresolved").count(),
+        2,
+        "stderr: {}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("outside-root"),
+        "the denial class must stay off the warning channel: {}",
+        out.stderr
+    );
+}
+
+/// The list is what a host needs past the warning cap.
+///
+/// Warnings stop at `DEFAULT_MAX_WARNINGS`, so reconstructing the refused half
+/// from them cannot tell a complete list from a truncated one. That is the
+/// workaround carve-go is stuck with (markup-carve/hugo-carve#27).
+#[test]
+fn the_dependency_list_survives_the_warning_cap() {
+    let tmp = TempDir::new("deps-cap");
+    let directives = (0..120)
+        .map(|n| format!("{{{{ m{n:03}.crv }}}}\n"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let main = tmp.write("main.crv", &directives);
+    let report = tmp.path().join("deps.json");
+    let out = run(
+        &[
+            "--report-includes",
+            report.to_str().unwrap(),
+            main.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(
+        out.stderr.contains("include warning(s) suppressed"),
+        "the warning channel is expected to be capped here: {}",
+        out.stderr
+    );
+    let json = fs::read_to_string(&report).expect("dependency report written");
+    assert_eq!(
+        json.matches("\"resolved\":false").count(),
+        120,
+        "the list is capped with the warnings: {json}"
+    );
+    // Both ends, so a truncation at either one is visible.
+    assert!(json.contains("\"id\":\"m000.crv\""), "{json}");
+    assert!(json.contains("\"id\":\"m119.crv\""), "{json}");
+}
+
+#[test]
+fn a_document_with_no_directives_reports_an_empty_dependency_list() {
+    // A host reads one file per render, so "no includes" has to be a list, not
+    // a missing file.
+    let tmp = TempDir::new("deps-empty");
+    let main = tmp.write("main.crv", "Nothing to include.\n");
+    let report = tmp.path().join("deps.json");
+    let out = run(
+        &[
+            "--report-includes",
+            report.to_str().unwrap(),
+            main.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(out.success, "stderr: {}", out.stderr);
+    let json = fs::read_to_string(&report).expect("dependency report written");
+    assert_eq!(json.trim(), "{\"dependencies\":[]}");
+}
+
+#[test]
+fn stdin_with_no_root_reports_an_empty_dependency_list() {
+    // The directive stays literal here, so there is no dependency - and the
+    // report still has to exist.
+    let tmp = TempDir::new("deps-stdin");
+    let report = tmp.path().join("deps.json");
+    let out = run(
+        &["--report-includes", report.to_str().unwrap()],
+        Some("See {{ child.crv }} here.\n"),
+    );
+    assert!(out.success, "stderr: {}", out.stderr);
+    let json = fs::read_to_string(&report).expect("dependency report written");
+    assert_eq!(json.trim(), "{\"dependencies\":[]}");
+}
+
+#[test]
+fn the_dependency_list_goes_to_stderr_for_a_dash() {
+    let tmp = TempDir::new("deps-dash");
+    let main = tmp.write("main.crv", "{{ child.crv }}\n");
+    tmp.write("child.crv", "Child body.\n");
+    let out = run(&["--report-includes", "-", main.to_str().unwrap()], None);
+    assert!(out.success, "stderr: {}", out.stderr);
+    assert!(out.stderr.contains("{\"dependencies\":["), "{}", out.stderr);
+    assert!(out.stdout.contains("<p>Child body.</p>"), "{}", out.stdout);
+}
+
+#[test]
+fn report_includes_without_a_file_is_a_usage_error() {
+    // Exit 2, like every other bad flag: 1 is reserved for "ran and found
+    // something". No stdin: the usage error exits before reading it, so writing
+    // any would race the exit and break the pipe.
+    let out = run(&["--report-includes"], None);
+    assert_eq!(out.code, Some(2), "stderr: {}", out.stderr);
+    assert!(out.stderr.contains("--report-includes"), "{}", out.stderr);
 }

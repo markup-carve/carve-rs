@@ -88,6 +88,7 @@ fn main() -> ExitCode {
     let mut from_json = false;
     let mut strict_losses = false;
     let mut report_losses: Option<String> = None;
+    let mut report_includes: Option<String> = None;
     let mut allow_render_loss = false;
     let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
     // `mut` only where the flag can be honoured: without the `fs` feature the
@@ -211,6 +212,13 @@ fn main() -> ExitCode {
                     return ExitCode::from(2);
                 };
                 report_losses = Some(value);
+            }
+            "--report-includes" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --report-includes requires a file or -");
+                    return ExitCode::from(2);
+                };
+                report_includes = Some(value);
             }
             "--allow-loss" => match args.next().as_deref() {
                 Some("raw-format-dropped") => allow_render_loss = true,
@@ -443,6 +451,7 @@ fn main() -> ExitCode {
     // Loss diagnostics promise source positions. Position tracking does not
     // alter rendered output, and the CLI is itself a reporting surface.
     options = options.with_positions(true);
+    let mut include_dependencies: Vec<carve::IncludeDependency> = Vec::new();
     let (output, (mut losses, mut total_losses, mut truncated)) = if from_json {
         // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
         // input is the JSON payload: it is what gets parsed, held and walked.
@@ -539,6 +548,7 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
+        include_dependencies = prepared.dependencies;
         (
             output,
             (checked.losses, checked.total_losses, checked.truncated),
@@ -613,6 +623,15 @@ fn main() -> ExitCode {
             eprintln!("{json}");
         } else if let Err(error) = std::fs::write(&path, format!("{json}\n")) {
             eprintln!("carve: cannot write render-loss report {path}: {error}");
+            return ExitCode::from(2);
+        }
+    }
+    if let Some(path) = report_includes {
+        let json = include_dependency_json(&include_dependencies);
+        if path == "-" {
+            eprintln!("{json}");
+        } else if let Err(error) = std::fs::write(&path, format!("{json}\n")) {
+            eprintln!("carve: cannot write include-dependency report {path}: {error}");
             return ExitCode::from(2);
         }
     }
@@ -988,6 +1007,31 @@ fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool)
         )
     }).collect::<Vec<_>>().join(",");
     format!("{{\"losses\":[{rows}],\"totalLosses\":{total},\"truncated\":{truncated}}}")
+}
+
+/// The spec I11 dependency list, in the order expansion first reached each
+/// target.
+///
+/// Unlike the warnings, this list is NOT capped: a host past
+/// `DEFAULT_MAX_WARNINGS` refusals can still tell a complete list from a
+/// truncated one, which reconstructing it from the warnings cannot.
+fn include_dependency_json(dependencies: &[carve::IncludeDependency]) -> String {
+    let rows = dependencies
+        .iter()
+        .map(|dependency| {
+            let denial = dependency
+                .denial
+                .map(|denial| format!(",\"denial\":{}", json_string(denial.as_str())))
+                .unwrap_or_default();
+            format!(
+                "{{\"id\":{},\"resolved\":{}{denial}}}",
+                json_string(&dependency.id),
+                dependency.resolved,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{\"dependencies\":[{rows}]}}")
 }
 
 /// What can stop `--from-json` from producing output.
@@ -1439,7 +1483,9 @@ fn print_usage() {
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \
          Defaults to the input file's directory; pass this to widen\n                              \
-         or narrow it, or to enable includes on stdin\n\n\
+         or narrow it, or to enable includes on stdin\n  \
+         --report-includes FILE      write the JSON include-dependency list\n                              \
+         (`-` for stderr)\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }
