@@ -181,6 +181,14 @@ pub trait IncludeResolver {
         path: &str,
         ctx: &IncludeContext<'_>,
     ) -> Result<IncludeResolved, IncludeDenial>;
+
+    /// Where a refused target WOULD appear, when this resolver can say (spec
+    /// I11). The id reaches the caller on the attempted dependency, so a host
+    /// watches that path and rebuilds when the file arrives. `None` leaves the
+    /// dependency spelled as the directive wrote it.
+    fn unresolved_id(&self, _path: &str, _ctx: &IncludeContext<'_>) -> Option<String> {
+        None
+    }
 }
 
 impl<F> IncludeResolver for F
@@ -959,7 +967,12 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<(String, String
     let resolved = match resolver.resolve(&d.path, &ctx) {
         Ok(resolved) => resolved,
         Err(denial) => {
-            state.note_denied(&d.path, false, Some(denial));
+            // I11: a resolver that can say where the target would be reports
+            // that path; anything else keeps the directive's spelling.
+            let id = resolver
+                .unresolved_id(&d.path, &ctx)
+                .unwrap_or_else(|| d.path.clone());
+            state.note_denied(&id, false, Some(denial));
             state.warn(
                 "include-unresolved",
                 format!("Include \"{}\" could not be resolved.", d.path),
@@ -2133,26 +2146,25 @@ impl FileSystemResolver {
     fn contains(&self, candidate: &Path) -> bool {
         candidate.strip_prefix(&self.root_real).is_ok()
     }
-}
 
-#[cfg(feature = "fs")]
-impl IncludeResolver for FileSystemResolver {
-    fn resolve(
-        &self,
-        include_path: &str,
-        ctx: &IncludeContext<'_>,
-    ) -> Result<IncludeResolved, IncludeDenial> {
+    /// Where `include_path` would land, before containment and before the
+    /// target is looked for. `None` means this resolver will not look there at
+    /// all, which today is an absolute path where those are not allowed.
+    ///
+    /// ONE ROOT PER EXPANSION (I10): relative paths resolve against the
+    /// INCLUDING file, but containment is checked against the single top-level
+    /// root. The root must NOT re-base per child, or a nested document could
+    /// never reach a sibling directory of the project. The stack carries the
+    /// canonical path of each ancestor, so a nested relative include resolves
+    /// against its actual parent directory.
+    fn candidate(&self, include_path: &str, ctx: &IncludeContext<'_>) -> Option<PathBuf> {
         let requested = Path::new(include_path);
-        if !self.allow_absolute && requested.is_absolute() {
-            return Err(IncludeDenial::Denied);
+        if requested.is_absolute() {
+            if !self.allow_absolute {
+                return None;
+            }
+            return Some(requested.to_path_buf());
         }
-        // ONE ROOT PER EXPANSION (I10): relative paths resolve against the
-        // INCLUDING file, but containment is checked against the single
-        // top-level root. The root must NOT re-base per child, or a nested
-        // document could never reach a sibling directory of the project.
-        //
-        // The stack carries the canonical path of each ancestor, so a nested
-        // relative include resolves against its actual parent directory.
         let base = match ctx.stack.last() {
             Some(parent) => self
                 .root_real
@@ -2162,10 +2174,34 @@ impl IncludeResolver for FileSystemResolver {
                 .unwrap_or_else(|| self.root_real.clone()),
             None => self.root_real.clone(),
         };
-        let candidate = if requested.is_absolute() {
-            requested.to_path_buf()
-        } else {
-            base.join(requested)
+        Some(base.join(requested))
+    }
+}
+
+/// Whether `path` opens with a URI scheme, which names no place on this
+/// filesystem for I11 to point at. The refusal itself is unchanged; only the
+/// naming is withheld.
+#[cfg(feature = "fs")]
+fn is_uri(path: &str) -> bool {
+    let Some(colon) = path.find(':') else {
+        return false;
+    };
+    let scheme = &path[..colon];
+    scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+}
+
+#[cfg(feature = "fs")]
+impl IncludeResolver for FileSystemResolver {
+    fn resolve(
+        &self,
+        include_path: &str,
+        ctx: &IncludeContext<'_>,
+    ) -> Result<IncludeResolved, IncludeDenial> {
+        let Some(candidate) = self.candidate(include_path, ctx) else {
+            return Err(IncludeDenial::Denied);
         };
         // CONTAINMENT IS DECIDED FIRST, and lexically, so it does not depend on
         // the target existing: `mid/../../outside.crv` is outside the root
@@ -2205,6 +2241,20 @@ impl IncludeResolver for FileSystemResolver {
             source,
             real.to_string_lossy().into_owned(),
         ))
+    }
+
+    /// I11: a target that is simply not there is named by where it would be,
+    /// the path a host watches. One that would land outside the root is refused
+    /// like any other escape and keeps the directive's spelling.
+    fn unresolved_id(&self, include_path: &str, ctx: &IncludeContext<'_>) -> Option<String> {
+        if is_uri(include_path) {
+            return None;
+        }
+        let would_be = lexical_real(&self.candidate(include_path, ctx)?);
+        if !self.contains(&would_be) || would_be.exists() {
+            return None;
+        }
+        Some(would_be.to_string_lossy().into_owned())
     }
 }
 
