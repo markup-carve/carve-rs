@@ -539,6 +539,17 @@ pub trait CarveExtension {
         &[]
     }
 
+    /// The [`StaticRenderers::diagram`] key this extension is consulted under,
+    /// when it has one. `None` for everything that is not a fenced-render
+    /// preset.
+    ///
+    /// `name()` cannot answer it: every preset answers `fenced-render`, so a
+    /// binding validating a caller's `renderers.diagrams` keys would otherwise
+    /// keep a list of its own.
+    fn diagram_key(&self) -> Option<&str> {
+        None
+    }
+
     fn match_inline(
         &self,
         _text: &str,

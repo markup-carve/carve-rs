@@ -401,6 +401,24 @@ an open `diagrams: HashMap<String, _>` keyed by css class; `math` is
 `Box<dyn Fn(&str, bool) -> String>` (`MathRenderer`), where the `bool` is `true`
 for display math. Renderer output is trusted and emitted verbatim.
 
+The keys the bundled presets are consulted under are published on the registry
+as `Registered::diagram_key`, so a caller validating a `diagrams` map reads them
+from the engine rather than keeping a copy. Every preset answers
+`name() == "fenced-render"`, which is why the name cannot serve.
+`carve::extensions::registry::diagram_keys()` yields them, and
+`tests/the_extension_list_in_the_docs_is_the_registry.rs` fails if this block
+and the registry disagree:
+
+<!-- diagram-keys: derived from carve::extensions::registry::diagram_keys() -->
+
+```
+mermaid, abc, chart, d2, graphviz, plantuml, vega-lite, wavedrom
+```
+
+A key outside that set is a custom `FencedRender`, which is still accepted:
+`StaticRenderers::diagram` takes any key, and a fence word of your own carries
+its own class.
+
 ### Per-extension static output
 
 carve-rs ships **24 extension modules under 32 registry keys**. The list is not
