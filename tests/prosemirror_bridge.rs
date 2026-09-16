@@ -122,11 +122,12 @@ const SOURCE_LOSSY: &[(&str, &[&str])] = &[
         &["108-security-hardening-11.crv"],
     ),
     (
+        // `-3` left this set when the comparison started applying PART 11
+        // §10k's normalization list: its two spellings COMMUTE, so the trip
+        // returning the other one is not a loss. `-4` stays, because there the
+        // delimiters reflow around content the list says nothing about.
         "the nested emphasis delimiters reflow: `/*x*/` comes back `*/x/*`",
-        &[
-            "130-bold-italic-delimiter-needs-content-3.crv",
-            "130-bold-italic-delimiter-needs-content-4.crv",
-        ],
+        &["130-bold-italic-delimiter-needs-content-4.crv"],
     ),
 ];
 
@@ -406,9 +407,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             // target uses. `render_carve(parse(x))` is not: it leaves positions
             // off, so the ORIGINAL writes its definitions in label order at
             // document level too and the bridge's loss cancels against it.
-            let before = carve::to_carve(&source);
-            let after =
-                carve::to_carve(&render_carve(&returned).expect("the returned document writes"));
+            let before = normalized_for_comparison(&carve::to_carve(&source));
+            let after = normalized_for_comparison(&carve::to_carve(
+                &render_carve(&returned).expect("the returned document writes"),
+            ));
             if before != after {
                 source_lossy.push(name.clone());
                 if !declared.contains(&name) {
@@ -922,8 +924,15 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // new KIND of loss appeared.
     // The include-directive core pin is strict: without a resolver, the bridge
     // sees ordinary literal text. It raises the previous 1349 strict floor by one.
-    const STRICT: usize = 1350;
-    const LOSSY: usize = 345;
+    // The pin moves on to carve 9c84524, which adds 18 documents: corpus 463
+    // to 468 plus `12-inline-code-7` and the five `84` heading sidecars.
+    // Measured the same way, both buckets dumped by name at each pin and
+    // diffed: 1350/345 over 1695 becomes 1366/347 over 1713, and NO document
+    // changes bucket in either direction. The two lossy joiners report kinds
+    // this set already holds - `italic`, the adjacent-span merge, and
+    // `soft_break` - so no new KIND of loss appeared.
+    const STRICT: usize = 1366;
+    const LOSSY: usize = 347;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
@@ -1854,4 +1863,54 @@ fn two_insertions_with_text_between_report_nothing() {
     // CONTROL. The pair has to be adjacent to merge at all.
     let pm = to_prosemirror(&parse("{+a+} and {+b+}\n"));
     assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
+/// PART 11 §10k's normalization list, applied to the COMPARISON rather than to
+/// either engine: a nested emphasis of two DIFFERENT strengths commutes, so
+/// `/*x*/` and `*/x/*` are one document written two ways and the bridge
+/// returning the other spelling is not a loss. Corpus 466 pins it.
+///
+/// Nothing else on the list touches the source: the `<del>` and `<s>` entry is
+/// a rendering equivalence, and both spell `~x~` here.
+fn normalized_for_comparison(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut rest = source;
+    while let Some(open) = rest.find("/*") {
+        let after_open = &rest[open + 2..];
+        let Some(close) = after_open.find("*/") else {
+            break;
+        };
+        out.push_str(&rest[..open]);
+        out.push_str("*/");
+        out.push_str(&after_open[..close]);
+        out.push_str("/*");
+        rest = &after_open[close + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// An EMPTY code span has no characters for its mark to sit on, so walking its
+/// children produced nothing and the span left the document in silence. It
+/// takes the same carrier the other empty marks use (corpus 12-inline-code-7,
+/// markup-carve/carve-rs#1674).
+#[test]
+fn an_empty_code_span_survives_the_trip() {
+    let doc = parse("{~` ~}\n");
+    let pm = to_prosemirror(&doc);
+    assert!(pm.dropped.is_empty(), "{:?}", pm.dropped);
+    let returned = from_prosemirror(&pm.json).expect("the document returns");
+    assert_eq!(
+        render_html(&returned).unwrap(),
+        render_html(&doc).unwrap(),
+        "the empty code span comes back"
+    );
+    // CONTROL. A filled span was never at risk and still round trips.
+    let filled = parse("{~`a`~}\n");
+    let pm = to_prosemirror(&filled);
+    let returned = from_prosemirror(&pm.json).expect("the document returns");
+    assert_eq!(
+        render_html(&returned).unwrap(),
+        render_html(&filled).unwrap()
+    );
 }

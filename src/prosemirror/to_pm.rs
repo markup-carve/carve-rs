@@ -601,7 +601,14 @@ impl Renderer {
                     return;
                 };
                 next.push(mark(name, attrs(n.attrs.as_ref())));
-                self.push_text(out, &n.value, &next);
+                // An EMPTY code span has no characters for its mark to sit on,
+                // so it takes the carrier the empty marks already use rather
+                // than leaving the document (markup-carve/carve-rs#1674).
+                if n.value.is_empty() {
+                    self.empty_mark("code", attrs(n.attrs.as_ref()), marks, out);
+                } else {
+                    self.push_text(out, &n.value, &next);
+                }
             }
             InlineNode::Link(n) => {
                 let before = out.len();

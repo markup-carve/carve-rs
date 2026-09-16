@@ -212,7 +212,29 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
     let mut source_typography = Options::new();
     source_typography.smart_typography = SmartTypographyMode::Source;
 
+    // The manifest's resolver case: `alice` and `release` resolve, `missing`
+    // and `private` do not, and `unsafe` resolves to a `javascript:` URL the
+    // renderer refuses. All three unresolved shapes render the inert span.
+    let mention_resolver =
+        |input: &carve::SocialLinkResolverInput<'_>| -> Result<Option<String>, String> {
+            Ok(match input.name {
+                "alice" => Some("/people/42".to_string()),
+                "unsafe" => Some("javascript:alert(1)".to_string()),
+                _ => None,
+            })
+        };
+    let tag_resolver =
+        |input: &carve::SocialLinkResolverInput<'_>| -> Result<Option<String>, String> {
+            Ok((input.name == "release").then(|| "/collections/stable".to_string()))
+        };
+
     let output = match feature {
+        "social-link-resolvers" => target.render(
+            source,
+            &Options::new()
+                .with_mention_resolver(&mention_resolver)
+                .with_tag_resolver(&tag_resolver),
+        ),
         "social-link-templates" => target.render(
             source,
             &Options::new()
