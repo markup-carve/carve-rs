@@ -331,6 +331,9 @@ struct Importer<'a> {
     /// around the same image are equal as values, and only a mark tells them
     /// apart.
     lone_image_paragraphs: Vec<LoneImageParagraph>,
+    /// Every empty `<code>`, indexed by the mark on its node, so the writing
+    /// exit can drop the ones whose backtick run does not end.
+    empty_code_spans: Vec<(Handle, String)>,
     /// The reference sites the adapter footnote pass recognized: the node
     /// `inline` must read as a footnote reference, and the label it carries.
     ///
@@ -4583,7 +4586,15 @@ impl<'a> Importer<'a> {
             "mark" => emphasis(EmphasisKind::Highlight),
             "sub" => emphasis(EmphasisKind::Sub),
             "sup" => emphasis(EmphasisKind::Super),
-            "code" => InlineNode::code(Self::text(h), attrs),
+            "code" => {
+                let value = Self::text(h);
+                if !value.is_empty() {
+                    return Ok(vec![InlineNode::code(value, attrs)]);
+                }
+                let pos = Some(candidate_mark(self.empty_code_spans.len()));
+                self.empty_code_spans.push((h.clone(), path.to_owned()));
+                InlineNode::Code(Code { value, attrs, pos })
+            }
             "a" if names_no_destination(Self::attr(h, "href").as_deref()) => {
                 self.diag(
                     HtmlImportDiagnosticCode::ElementUnwrapped,
@@ -5935,6 +5946,157 @@ struct LoneImageParagraph {
 /// `pos: None`, so a `Some` here is this scan's and nothing else's. It is taken
 /// back off by the same walk that reads it, on BOTH exits, before either returns
 /// - the tree an `html_to_ast` caller receives never carries one.
+const EMPTY_CODE_DROPPED: &str = "Dropped an empty <code>: its backtick run is closed by the end of a block or by a forced span, and here the run would read what follows it as code instead";
+const EMPTY_CODE_ATTRIBUTES_DROPPED: &str = "Dropped the attributes of an empty <code>: an attribute block attaches to a closing backtick run, which an empty span has not got";
+
+/// Walk one inline sequence as the Carve writer reads an empty code span's run,
+/// letting `keep` decide each empty span; `ends` is whether its run ends there.
+fn settle_empty_code_spans(
+    nodes: &mut Vec<InlineNode>,
+    followed: bool,
+    labelled: bool,
+    cell_not_last: bool,
+    writing: bool,
+    keep: &mut impl FnMut(&mut Code, bool) -> bool,
+) {
+    let mut index = 0;
+    while index < nodes.len() {
+        let after = followed || crate::render_carve::run_reads_on(&nodes[index + 1..]);
+        if let InlineNode::Code(code) = &mut nodes[index] {
+            if code.value.is_empty() {
+                // Trailing whitespace is trimmed rather than read into the run,
+                // as carve-php's importer trims it.
+                let blank_rest = nodes[index + 1..].iter().all(
+                    |next| matches!(next, InlineNode::Text(text) if text.value.trim().is_empty()),
+                );
+                let ends = crate::render_carve::empty_code_position_ends_its_run(
+                    followed || (after && !blank_rest),
+                    labelled,
+                    cell_not_last,
+                );
+                let InlineNode::Code(code) = &mut nodes[index] else {
+                    unreachable!();
+                };
+                if !keep(code, ends) {
+                    nodes.remove(index);
+                    merge_text_at(nodes, index);
+                    continue;
+                }
+                if ends && writing {
+                    nodes.truncate(index + 1);
+                }
+            }
+        } else if let Some((braced, children)) =
+            crate::render_carve::empty_code_run_children_mut(&mut nodes[index])
+        {
+            if braced {
+                settle_empty_code_spans(children, false, labelled, cell_not_last, writing, keep);
+            } else {
+                settle_empty_code_spans(children, after, true, cell_not_last, writing, keep);
+            }
+        }
+        index += 1;
+    }
+}
+
+/// Join the text runs a removal at `index` left side by side.
+fn merge_text_at(nodes: &mut Vec<InlineNode>, index: usize) {
+    if index == 0 || index >= nodes.len() {
+        return;
+    }
+    if let (InlineNode::Text(_), InlineNode::Text(_)) = (&nodes[index - 1], &nodes[index]) {
+        let InlineNode::Text(next) = nodes.remove(index) else {
+            unreachable!();
+        };
+        if let InlineNode::Text(previous) = &mut nodes[index - 1] {
+            previous.value.push_str(&next.value);
+        }
+    }
+}
+
+/// Every inline sequence under `blocks`, with whether it is a table cell that
+/// is not the last in its row. EVERY VARIANT, WITH NO WILDCARD ARM, for the
+/// reason `take_candidate_marks` gives.
+fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<InlineNode>, bool)) {
+    fn table(table: &mut Table, f: &mut impl FnMut(&mut Vec<InlineNode>, bool)) {
+        if let Some(caption) = &mut table.caption {
+            f(caption, false);
+        }
+        if let Some(short) = &mut table.short_caption {
+            f(short, false);
+        }
+        for row in &mut table.rows {
+            let cells = row.cells.len();
+            for (index, cell) in row.cells.iter_mut().enumerate() {
+                f(&mut cell.children, index + 1 < cells);
+            }
+        }
+    }
+    for block in blocks {
+        match block {
+            BlockNode::Heading(n) => f(&mut n.children, false),
+            BlockNode::CitationDefinition(n) => f(&mut n.children, false),
+            BlockNode::Paragraph(n) => f(&mut n.children, false),
+            BlockNode::List(n) => {
+                for item in &mut n.items {
+                    for_each_inline_run(&mut item.children, f);
+                }
+            }
+            BlockNode::BlockQuote(n) => for_each_inline_run(&mut n.children, f),
+            BlockNode::Table(n) => table(n, f),
+            BlockNode::Admonition(n) => {
+                if let Some(title) = &mut n.title {
+                    f(title, false);
+                }
+                for_each_inline_run(&mut n.children, f);
+            }
+            BlockNode::Div(n) => for_each_inline_run(&mut n.children, f),
+            BlockNode::LineBlock(n) => for_each_inline_run(&mut n.children, f),
+            BlockNode::DefinitionList(n) => {
+                for item in &mut n.items {
+                    for term in &mut item.terms {
+                        f(&mut term.children, false);
+                    }
+                    for definition in &mut item.definitions {
+                        for_each_inline_run(&mut definition.children, f);
+                    }
+                }
+            }
+            BlockNode::Figure(n) => {
+                match n.target.as_mut() {
+                    FigureTarget::Paragraph(paragraph) => f(&mut paragraph.children, false),
+                    FigureTarget::BlockQuote(quote) => for_each_inline_run(&mut quote.children, f),
+                    FigureTarget::Table(t) => table(t, f),
+                    FigureTarget::CodeBlock(_) | FigureTarget::Image(_) => {}
+                }
+                f(&mut n.caption, false);
+                if let Some(short) = &mut n.short_caption {
+                    f(short, false);
+                }
+            }
+            BlockNode::FigureGroup(n) => {
+                for_each_inline_run(&mut n.children, f);
+                if let Some(caption) = &mut n.caption {
+                    f(caption, false);
+                }
+            }
+            BlockNode::Extension(n) => {
+                if let Some(summary) = &mut n.summary {
+                    f(summary, false);
+                }
+                for_each_inline_run(&mut n.children, f);
+            }
+            BlockNode::CodeBlock(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_)
+            | BlockNode::BlockImage(_)
+            | BlockNode::ThematicBreak(_) => {}
+        }
+    }
+}
+
 fn candidate_mark(index: usize) -> Pos {
     Pos {
         start_offset: index + 1,
@@ -6066,6 +6228,7 @@ fn import(
         unspellable: Vec::new(),
         displaced_figure_attrs: Vec::new(),
         lone_image_paragraphs: Vec::new(),
+        empty_code_spans: Vec::new(),
         footnote_refs: HashMap::new(),
     };
     // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
@@ -6098,6 +6261,49 @@ fn import(
         take_candidate_marks(blocks, &mut kept);
     }
     take_candidate_marks(&mut children, &mut kept);
+    let empty_code_spans = std::mem::take(&mut importer.empty_code_spans);
+    let mut settle = |nodes: &mut Vec<InlineNode>, cell_not_last: bool| {
+        settle_empty_code_spans(
+            nodes,
+            false,
+            false,
+            cell_not_last,
+            writing,
+            &mut |code, ends| {
+                let Some(index) = code.pos.take().map(|pos| pos.start_offset - 1) else {
+                    return true;
+                };
+                if !writing {
+                    return true;
+                }
+                let (node, path) = &empty_code_spans[index];
+                if !ends {
+                    importer.diag(
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                        EMPTY_CODE_DROPPED.into(),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        node,
+                    );
+                    return false;
+                }
+                if code.attrs.take().is_some() {
+                    importer.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        EMPTY_CODE_ATTRIBUTES_DROPPED.into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        node,
+                    );
+                }
+                true
+            },
+        );
+    };
+    for blocks in footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut settle);
+    }
+    for_each_inline_run(&mut children, &mut settle);
     if writing {
         for (node, path, message, code) in std::mem::take(&mut importer.unspellable) {
             importer.diag(code, message, HtmlImportSeverity::Warning, &path, &node);
