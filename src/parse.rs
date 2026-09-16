@@ -18893,8 +18893,12 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
         // Different length closer — keep scanning past it
     }
     // No matching closer: an unclosed verbatim opener is opaque to the end of
-    // the text (matches djot / carve-php / carve-js).
+    // the text (matches djot / carve-php / carve-js). Whatever ends the run
+    // strips its trailing whitespace, a forced-span closer as much as the block
+    // end (markup-carve/carve#2051). Spaces and tabs only: a newline there is
+    // content (corpus 380).
     let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
+    let raw = raw.trim_end_matches([' ', '\t']);
     Some((strip_verbatim_padding(raw).to_string(), bytes.len() - start))
 }
 
