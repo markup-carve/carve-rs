@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
 use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::collections::{HashMap, HashSet};
 
@@ -4074,13 +4075,35 @@ fn caret_needs_its_escape(
 /// writing a backslash, and a mention, a tag and a symbol all write their sigil
 /// first. Only these three put their own value at byte zero.
 ///
-/// The nodes that DO open with a bare `[` - a link, a span, a reference - report
-/// no boundary character at all, so they never reach this decision.
+/// The nodes that open with a bare `[` are [`leading_bracket_run`]'s.
 fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
     match node {
         InlineNode::Text(text) => Some(&text.value),
         InlineNode::SmartPunctuation(punctuation) => Some(&punctuation.value),
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
+        _ => None,
+    }
+}
+
+/// The bracket run a node writes at byte zero, with a stand-in label that is
+/// blank exactly when the written label is: `^[](u)` opens no note, `^[n](u)`
+/// does (markup-carve/carve-rs#1710).
+fn leading_bracket_run(node: &InlineNode) -> Option<Cow<'_, str>> {
+    fn label(children: &[InlineNode]) -> Cow<'static, str> {
+        let blank = children
+            .iter()
+            .all(|child| matches!(child, InlineNode::Text(t) if t.value.trim().is_empty()));
+        Cow::Borrowed(if blank { "[]" } else { "[x]" })
+    }
+    match node {
+        InlineNode::Link(link) if link.ref_label.is_some() && link.raw_ref.is_some() => {
+            link.raw_ref.as_deref().map(Cow::Borrowed)
+        }
+        InlineNode::Link(link) if link.from_crossref && link.href.starts_with('#') => None,
+        InlineNode::Link(link) => Some(label(&link.children)),
+        InlineNode::Span(span) => Some(label(&span.children)),
+        InlineNode::Footnote(note) if note.inline.is_none() => Some(Cow::Borrowed("[^x]")),
+        InlineNode::CitationGroup(group) => Some(Cow::Borrowed(&group.raw)),
         _ => None,
     }
 }
@@ -4114,9 +4137,15 @@ fn next_node_opens_a_note(
     in_note_content: bool,
     mode: EscapeMode,
 ) -> bool {
-    match next.and_then(leading_verbatim_text) {
+    let text = match next {
+        Some(node) => leading_verbatim_text(node)
+            .map(Cow::Borrowed)
+            .or_else(|| leading_bracket_run(node)),
+        None => None,
+    };
+    match text {
         Some(text) => caret_needs_its_escape(
-            text,
+            &text,
             0,
             NeighbourEscape {
                 in_note_content,
@@ -4200,7 +4229,7 @@ fn escape_text(
             && !empty_braced_super
             && (previous == '{'
                 || next == '}'
-                || (next == '['
+                || ((next == '[' || (chars.peek().is_none() && note.next_node_opens_a_note))
                     && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode)));
         let colon_cannot_open =
             ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
