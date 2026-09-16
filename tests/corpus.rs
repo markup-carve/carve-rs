@@ -615,7 +615,7 @@ const IMPLEMENTED: &[&str] = &[
 // matches. The three entries this list used to hold had all been conformant
 // since before the pin they were written against, and nothing noticed, because
 // a gap was only ever read as "skip this".
-// #1661: the closer scan pairs across a link destination and an autolink,
+// #1664: the closer scan pairs across a link destination and an autolink,
 // which PART 9 section 9 E2a now names opaque.
 const KNOWN_GAPS: &[&str] = &["a-bare-closer-does-not-reach-inside-a-link-destination"];
 
