@@ -222,6 +222,20 @@ byte-identical to the same document with that directive written as literal text
 from the start, so a rejected include can never renumber an id or footnote
 label that a later, successful include claims.
 
+`--report-includes FILE` writes the dependency list (spec I11) as JSON, the way
+`--report-losses` writes the render-loss report; `-` sends it to stderr. Each
+entry carries `id`, `resolved`, and `denial` where the resolver named a class.
+The list is **not** capped the way the warnings are, so a host can key file
+watching off it even for a document with hundreds of refused directives:
+
+```bash
+carve --report-includes deps.json book/main.crv > main.html
+```
+
+```json
+{"dependencies":[{"id":"/book/intro.crv","resolved":true},{"id":"gone.crv","resolved":false,"denial":"not-found"}]}
+```
+
 `carve fmt` **preserves** a well-formed directive verbatim rather than escaping
 its braces, so formatting a document never breaks its includes. A run that is
 not a well-formed directive (`{{ oops`, or an unknown `@option`) is ordinary
