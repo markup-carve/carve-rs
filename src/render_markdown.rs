@@ -1171,7 +1171,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             match (chars.next(), chars.next()) {
                 (Some(ch), None) if AUTHORED_INERT.contains(&ch) => ch.to_string(),
                 (Some(ch), None) if authored_defers_to_the_line(ch) => {
-                    authored_sentinel().to_string()
+                    positional_sentinel().to_string()
                 }
                 _ => format!("\\{}", text.value),
             }
@@ -1658,14 +1658,17 @@ fn escape_text(text: &str) -> String {
 
 /// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
 /// CHOSEN PER DOCUMENT from code points it does not contain.
-const CARRIER_DEFAULTS: [char; 4] = ['\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}'];
+const CARRIER_DEFAULTS: [char; 3] = ['\u{E004}', '\u{E005}', '\u{E006}'];
 const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 
 /// Slot indices into [`CARRIER_DEFAULTS`] / [`CARRIERS`].
+///
+/// ONE HASH SLOT SERVES BOTH CLAUSES. §8a M1f and §8b M2b ask the same
+/// positional question, so a `#` from a text node and one from an
+/// `escaped_text` node are decided alike and need no slot of their own.
 const C_UNDERSCORE: usize = 0;
-const C_HASH: usize = 1;
-const C_BRACKET: usize = 2;
-const C_AUTHORED_HASH: usize = 3;
+const C_BRACKET: usize = 1;
+const C_POSITIONAL_HASH: usize = 2;
 
 thread_local! {
     /// The carriers in force for the render running on this thread.
@@ -1761,15 +1764,15 @@ const AUTHORED_INERT: [char; 8] = ['{', '}', '^', ',', '%', ':', '/', '@'];
 ///
 /// A second family rather than a wider first one, because the two are decided
 /// by DIFFERENT tests: M1b asks about an adjacent delimiter of the same
-/// character, M2b asks where on the line the character stands.
+/// character, M1f and M2b ask where on the line the character stands.
 fn authored_defers_to_the_line(ch: char) -> bool {
     ch == '#'
 }
 
-/// The carrier for an authored escape §8b M2b defers, counted as inserted.
-fn authored_sentinel() -> char {
-    note_inserted(C_AUTHORED_HASH);
-    carrier(C_AUTHORED_HASH)
+/// The carrier for an escape the position test decides, counted as inserted.
+fn positional_sentinel() -> char {
+    note_inserted(C_POSITIONAL_HASH);
+    carrier(C_POSITIONAL_HASH)
 }
 
 /// Which slot `ch` is, if it is a carrier at all.
@@ -1781,7 +1784,7 @@ fn carrier_slot(carriers: &[char; CARRIER_COUNT], ch: char) -> Option<usize> {
     carriers.iter().position(|current| *current == ch)
 }
 
-/// The character a carrier stands for. §8a's three, and §8b M2b's hash.
+/// The character a carrier stands for: M1b's two, and the positional hash.
 fn carried_character(slot: usize) -> char {
     match slot {
         C_UNDERSCORE => '_',
@@ -1790,11 +1793,14 @@ fn carried_character(slot: usize) -> char {
     }
 }
 
-/// The carrier for a narrowed character (`_`, `#`, `[`), counted as inserted.
+/// The carrier for a character §8a decides on the line, counted as inserted.
+///
+/// THE HASH TAKES M1f's CARRIER, not M1b's: its test is positional rather than
+/// adjacency, which is the test §8b M2b already applies on the authored side.
 fn narrowed_sentinel(ch: char) -> char {
     let which = match ch {
         '_' => C_UNDERSCORE,
-        '#' => C_HASH,
+        '#' => return positional_sentinel(),
         '[' => C_BRACKET,
         other => return other,
     };
@@ -2181,14 +2187,11 @@ fn resolve_narrowed_escapes(text: &str) -> String {
             continue;
         }
         // TWO FAMILIES, TWO TESTS. M1b asks whether a delimiter of the same
-        // character stands beside the candidate; M2b asks whether the
-        // candidate stands where an ATX heading could open. Dispatched on
-        // which family the sentinel came from, because the character alone
-        // does not say: a `#` in a text node is M1b's and an author-escaped
-        // one is M2b's.
+        // character stands beside the candidate; M1f and M2b ask whether the
+        // candidate stands where an ATX heading could open.
         let keep = carrier_slot(&carriers, raw).map(|slot| {
             let ch = carried_character(slot);
-            if slot == C_AUTHORED_HASH {
+            if slot == C_POSITIONAL_HASH {
                 (ch, opens_an_atx_heading(&line, i, content_start))
             } else {
                 (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
@@ -2207,7 +2210,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     out
 }
 
-/// Whether the `#` at `index` would open an ATX heading (PART 11 §8b M2b).
+/// Whether the `#` at `index` would open an ATX heading (§8a M1f, §8b M2b).
 fn opens_an_atx_heading(line: &[char], index: usize, content_start: usize) -> bool {
     if index != content_start {
         return false;
