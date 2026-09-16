@@ -3084,6 +3084,9 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
         || content.ends_with(delim)
         || content.starts_with(' ')
         || content.ends_with(' ')
+        // A trailing hard break puts the closer at the start of the next line,
+        // where only the braced closer closes (PART 11 §1a).
+        || content.ends_with('\n')
         || content.is_empty();
     if needs_forced {
         format!("{{{delim}{content}{delim}}}")
