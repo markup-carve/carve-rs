@@ -1072,11 +1072,12 @@ fn merged_run_reads_back(
 /// The run of `ch` that ends `part`, and the character in front of it.
 fn trailing_run(part: &str, ch: char) -> (usize, Option<char>) {
     let head = part.trim_end_matches(ch);
-
-    (
-        part.chars().count() - head.chars().count(),
-        head.chars().next_back(),
-    )
+    let run = part.chars().count() - head.chars().count();
+    // A delimiter the writer ESCAPED is text, so the reader counts one less
+    // than the characters do (markup-carve/carve-rs#1654). The one caller asks
+    // only about a part that ends in `ch`, so the run is never empty here.
+    let escaped = head.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1;
+    (run - usize::from(escaped), head.chars().next_back())
 }
 
 /// The run of `ch` that begins `part`, and the character behind it.
