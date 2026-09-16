@@ -216,13 +216,14 @@ fn each_unwrapped_element_is_reported() {
 /// when it blanks a dangerous scheme while keeping the visible text, so this is
 /// the importer reading Carve's own hardened output. What the round trip owes
 /// there is the TEXT and nothing else: the destination MUST NOT be rebuilt -
-/// not from a `title`, not from the anchor's own text.
+/// not from a `title`, not from the anchor's own text. The title itself stays
+/// a title, on the span that replaces the link (carve-rs#1738).
 #[test]
 fn a_blanked_destination_is_never_rebuilt() {
     let written = to_carve("<p><a href=\"\" title=\"javascript:alert(1)\">click</a></p>");
-    assert_eq!(written, "click\n");
-    assert!(!written.contains("javascript"));
-    assert!(!written.contains("("));
+    assert_eq!(written, "[click]{title=javascript:alert(1)}\n");
+    assert!(!written.contains("]("));
+    assert!(!carve::to_html(&written).contains("href"));
 }
 
 /// BOUND: A DESTINATION THAT IS MERELY UNUSUAL IS NOT EMPTY, and is kept. The
