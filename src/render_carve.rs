@@ -3000,8 +3000,14 @@ fn render_inline_body(
                 render_attrs(&link.attrs)
             )
         }
-        InlineNode::Mention(mention) => format!("@{}", escape_name(&mention.user)),
-        InlineNode::Tag(tag) => format!("#{}", escape_name(&tag.name)),
+        InlineNode::Mention(mention) => {
+            refuse_attributes_on_sigil(&mention.attrs, "mention");
+            format!("@{}", escape_name(&mention.user))
+        }
+        InlineNode::Tag(tag) => {
+            refuse_attributes_on_sigil(&tag.attrs, "tag");
+            format!("#{}", escape_name(&tag.name))
+        }
         InlineNode::Extension(extension) => format!(
             ":{}[{}]{}",
             escape_identifier(&extension.name),
@@ -3380,6 +3386,21 @@ fn safe_fence(content: &str, min: usize) -> String {
         }
     }
     "`".repeat(min.max(longest + 1))
+}
+
+/// An attribute block after a mention or a tag stays literal, so a tree that
+/// carries one has no spelling: `[@a]{.c}` is a span holding a mention and
+/// `@a{.c}` leaves the braces as text (ruling markup-carve/carve-php#2083).
+fn refuse_attributes_on_sigil(attrs: &Option<Attrs>, node_type: &'static str) {
+    let carries = attrs.as_ref().is_some_and(|attrs| {
+        attrs.id.is_some() || !attrs.classes.is_empty() || !attrs.key_values.is_empty()
+    });
+    if carries {
+        crate::render_carve_error::record_unspellable(
+            node_type,
+            "an attribute block after a mention or tag reads back as text",
+        );
+    }
 }
 
 fn render_attrs(attrs: &Option<Attrs>) -> String {
