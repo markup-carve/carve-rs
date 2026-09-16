@@ -2765,6 +2765,34 @@ fn render_nodes_with_verbatim(
                 rendered = String::new();
             }
         }
+        // A mention or tag needs a non-word character before its sigil and ends
+        // at its last name character, so a word character against either side
+        // has no spelling (ruling markup-carve/carve-js#1807).
+        let is_sigil_node =
+            |node: &InlineNode| matches!(node, InlineNode::Mention(_) | InlineNode::Tag(_));
+        let word_before = is_sigil_node(node)
+            && out
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+        let word_after = idx
+            .checked_sub(1)
+            .is_some_and(|prev| is_sigil_node(&nodes[prev]))
+            && rendered
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric());
+        if word_before || word_after {
+            let sigil_node = if word_before { node } else { &nodes[idx - 1] };
+            crate::render_carve_error::record_unspellable(
+                if matches!(sigil_node, InlineNode::Tag(_)) {
+                    "tag"
+                } else {
+                    "mention"
+                },
+                "a mention or tag against a word character has no Carve source spelling",
+            );
+        }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
             caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
