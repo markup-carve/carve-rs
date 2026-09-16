@@ -2361,8 +2361,18 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         attrs
     );
     ctx.table_cell_depth += 1;
-    let content = render_inlines(&cell.children, ctx);
+    let mut content = render_inlines(&cell.children, ctx);
     ctx.table_cell_depth -= 1;
+    // A break at the cell's edge separates nothing, so its space is not written.
+    let is_break = |node: &&InlineNode| matches!(node, InlineNode::HardBreak(_));
+    let leading = cell.children.iter().take_while(is_break).count();
+    if leading == cell.children.len() {
+        content.clear();
+    } else {
+        let trailing = cell.children.iter().rev().take_while(is_break).count();
+        content.truncate(content.len() - trailing);
+        content.drain(..leading);
+    }
     // The space `pad_cell` writes after the prefix is what keeps the content's
     // first character content. The header `=` is read glued to the pipe and the
     // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose
@@ -2995,7 +3005,11 @@ fn render_inline_body(
         }
         InlineNode::SoftBreak(_) => "\n".to_string(),
         InlineNode::HardBreak(_) => {
-            if ctx.line_block_depth > 0 {
+            // A cell is one line, so its break flattens to one space (PART 11
+            // §1b, ruling markup-carve/carve#2067).
+            if ctx.table_cell_depth > 0 {
+                " ".to_string()
+            } else if ctx.line_block_depth > 0 {
                 "\n".to_string()
             } else {
                 "\\\n".to_string()

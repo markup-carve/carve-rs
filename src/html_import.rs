@@ -309,6 +309,8 @@ struct Importer<'a> {
     /// leaves the marks to the user agent and every one of them alternates, so
     /// the depth is what chooses between the double and the single pair.
     quote_depth: usize,
+    /// How many table cells the walk is inside.
+    cell_depth: usize,
     /// The losses a WRITER takes, held back until one writes (PART 12 §16).
     /// The rows that belong to the WRITING exit only, each with the code it is
     /// reported under. `html_to_ast` keeps every structure these describe and is
@@ -3991,7 +3993,12 @@ impl<'a> Importer<'a> {
                         align: alignment.align,
                         valign: alignment.valign,
                         attrs: self.attrs(cell, &p),
-                        children: self.inlines(&cell.children.borrow(), &p, depth + 1)?,
+                        children: {
+                            self.cell_depth += 1;
+                            let children = self.inlines(&cell.children.borrow(), &p, depth + 1);
+                            self.cell_depth -= 1;
+                            children?
+                        },
                         pos: None,
                     },
                     colspan,
@@ -4657,6 +4664,14 @@ impl<'a> Importer<'a> {
                     "a hard break carries no attributes",
                     path,
                 );
+                if self.cell_depth > 0 {
+                    self.unspellable.push((
+                        h.clone(),
+                        path.to_owned(),
+                        CELL_BREAK_FLATTENED.into(),
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                    ));
+                }
                 InlineNode::hard_break()
             }
             "span" if attrs.is_some() => InlineNode::Span(Span {
@@ -5967,6 +5982,7 @@ struct LoneImageParagraph {
 /// back off by the same walk that reads it, on BOTH exits, before either returns
 /// - the tree an `html_to_ast` caller receives never carries one.
 const EMPTY_CODE_DROPPED: &str = "Dropped an empty <code>: its backtick run is closed by the end of a block or by a forced span, and here the run would read what follows it as code instead";
+const CELL_BREAK_FLATTENED: &str = "Wrote a <br> in a table cell as a space: a cell is one line, so no Carve spelling keeps the break";
 const EMPTY_WRAPPER_DROPPED: &str = "Dropped an inline element that held only a dropped empty <code>: an empty pair of its delimiters reads back as text";
 const EMPTY_CODE_ATTRIBUTES_DROPPED: &str = "Dropped the attributes of an empty <code>: an attribute block attaches to a closing backtick run, which an empty span has not got";
 
@@ -6271,6 +6287,7 @@ fn import(
         document_order: HashMap::new(),
         nodes: 0,
         quote_depth: 0,
+        cell_depth: 0,
         unspellable: Vec::new(),
         displaced_figure_attrs: Vec::new(),
         lone_image_paragraphs: Vec::new(),
