@@ -237,6 +237,11 @@ impl CarveExtension for FencedRender {
         "fenced-render"
     }
 
+    /// The css class, which is the key `before_render` below looks up.
+    fn diagram_key(&self) -> Option<&str> {
+        Some(&self.opts.css_class)
+    }
+
     fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
         // Only the HTML renderer emits the hydration / static element. For the
         // Markdown / plain / ANSI targets, leave the CodeBlock untouched so the
