@@ -239,15 +239,18 @@ label that a later, successful include claims.
 `--report-includes FILE` writes the dependency list (spec I11) as JSON, the way
 `--report-losses` writes the render-loss report; `-` sends it to stderr. Each
 entry carries `id`, `resolved`, and `denial` where the resolver named a class.
-The list is **not** capped the way the warnings are, so a host can key file
-watching off it even for a document with hundreds of refused directives:
+A target that is simply not there is named by where it WOULD be, so the watch
+lands on the file the author meant; one denied by containment keeps the
+directive's spelling. The list is **not** capped the way the warnings are, so a
+host can key file watching off it even for a document with hundreds of refused
+directives:
 
 ```bash
 carve --report-includes deps.json book/main.crv > main.html
 ```
 
 ```json
-{"dependencies":[{"id":"/book/intro.crv","resolved":true},{"id":"gone.crv","resolved":false,"denial":"not-found"}]}
+{"dependencies":[{"id":"/book/intro.crv","resolved":true},{"id":"/book/gone.crv","resolved":false,"denial":"not-found"}]}
 ```
 
 `carve fmt` **preserves** a well-formed directive verbatim rather than escaping

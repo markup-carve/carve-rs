@@ -430,8 +430,17 @@ fn the_dependency_list_names_resolved_and_refused_targets_with_their_class() {
         json.contains("\"id\":\"") && json.contains("child.crv\",\"resolved\":true"),
         "resolved child missing: {json}"
     );
+    // I11: a missing target inside the root is named by where it WOULD be, so
+    // the host watches the file the author meant. A denied one keeps the
+    // directive's spelling, which is the contrast the next assertion pins.
+    let would_be = fs::canonicalize(tmp.path())
+        .expect("tmp canonical")
+        .join("book/missing.crv");
     assert!(
-        json.contains("{\"id\":\"missing.crv\",\"resolved\":false,\"denial\":\"not-found\"}"),
+        json.contains(&format!(
+            "{{\"id\":\"{}\",\"resolved\":false,\"denial\":\"not-found\"}}",
+            would_be.display()
+        )),
         "missing target missing: {json}"
     );
     assert!(
@@ -487,9 +496,16 @@ fn the_dependency_list_survives_the_warning_cap() {
         120,
         "the list is capped with the warnings: {json}"
     );
-    // Both ends, so a truncation at either one is visible.
-    assert!(json.contains("\"id\":\"m000.crv\""), "{json}");
-    assert!(json.contains("\"id\":\"m119.crv\""), "{json}");
+    // Both ends, so a truncation at either one is visible. The ids are where
+    // each missing target would be (I11), not the directive's spelling.
+    let base = fs::canonicalize(tmp.path()).expect("tmp canonical");
+    for name in ["m000.crv", "m119.crv"] {
+        let would_be = base.join(name);
+        assert!(
+            json.contains(&format!("\"id\":\"{}\"", would_be.display())),
+            "{json}"
+        );
+    }
 }
 
 #[test]
