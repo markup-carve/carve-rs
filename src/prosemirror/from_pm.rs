@@ -94,6 +94,18 @@ impl Reader {
                         "label".into(),
                         string_json(attrs_obj(child_obj), "label", ""),
                     );
+                    if let Some(pos) = position_value(attrs_obj(child_obj)) {
+                        match o.get_mut("children") {
+                            Some(Json::Array(children)) if !children.is_empty() => {
+                                if let Json::Object(first) = &mut children[0] {
+                                    first.insert("pos".into(), pos.clone());
+                                }
+                            }
+                            _ => {
+                                o.insert("pos".into(), pos.clone());
+                            }
+                        }
+                    }
                 }
                 children.push(n);
             } else {
@@ -217,23 +229,29 @@ impl Reader {
             "table" => self.table(obj),
             "definition_list" => self.definition_list(obj),
             "figure" => self.figure(obj),
-            "raw_block" => Ok(node(
-                &ty,
-                [
-                    ("format", string_json(a, "format", "")),
-                    ("content", Json::String(text_content(obj))),
-                ],
+            "raw_block" => Ok(with_attrs(
+                node(
+                    &ty,
+                    [
+                        ("format", string_json(a, "format", "")),
+                        ("content", Json::String(text_content(obj))),
+                    ],
+                ),
+                a,
             )),
-            "comment" => Ok(node(
-                &ty,
-                [
-                    ("block", bool_json(a, "block", true)),
-                    // A payload that does not carry the flag is the `%%`
-                    // spelling, which is what an editor that never saw a
-                    // delimited comment would have produced.
-                    ("delimited", bool_json(a, "delimited", false)),
-                    ("content", Json::String(text_content(obj))),
-                ],
+            "comment" => Ok(with_attrs(
+                node(
+                    &ty,
+                    [
+                        ("block", bool_json(a, "block", true)),
+                        // A payload that does not carry the flag is the `%%`
+                        // spelling, which is what an editor that never saw a
+                        // delimited comment would have produced.
+                        ("delimited", bool_json(a, "delimited", false)),
+                        ("content", Json::String(text_content(obj))),
+                    ],
+                ),
+                a,
             )),
             "link_reference_definition" => {
                 let authored = title_is_authored(a);
@@ -912,6 +930,9 @@ fn text_content(o: &Object) -> String {
         .collect()
 }
 fn with_attrs(mut n: Json, a: &Object) -> Json {
+    if let Some(pos) = position_value(a) {
+        insert(&mut n, "pos", pos.clone());
+    }
     let mut id = None;
     let mut classes = Vec::new();
     let mut kv = Object::new();
@@ -981,6 +1002,36 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
         insert(&mut n, "attrs", Json::Object(ao));
     }
     n
+}
+
+fn position_value(attrs: &Object) -> Option<&Json> {
+    let value = attrs.get("carvePos")?;
+    let Json::Object(pos) = value else {
+        return None;
+    };
+    const REQUIRED: [&str; 6] = [
+        "startLine",
+        "endLine",
+        "startColumn",
+        "endColumn",
+        "startOffset",
+        "endOffset",
+    ];
+    if !REQUIRED.iter().all(|key| {
+        pos.get(*key)
+            .and_then(Json::as_u64)
+            .and_then(|value| usize::try_from(value).ok())
+            .is_some()
+    }) || pos
+        .get("file")
+        .is_some_and(|file| !matches!(file, Json::String(_)))
+        || pos
+            .keys()
+            .any(|key| key != "file" && !REQUIRED.contains(&key.as_str()))
+    {
+        return None;
+    }
+    Some(value)
 }
 /// Whether the attribute run names `title`, which is to say the wire's `title`
 /// holds an AUTHORED `{title=...}` attribute rather than the structural title

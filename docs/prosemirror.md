@@ -5,10 +5,18 @@ The AST converts to a ProseMirror document and back, so a Tiptap editor and this
 engine can share one stored document:
 
 ```rust
-let doc = carve::parse(source);
+let doc = carve::parse_with_options(
+    source,
+    &carve::Options::default().with_positions(true),
+);
 let editor = carve::to_prosemirror(&doc);
 let back = carve::from_prosemirror(&editor.json)?;
 ```
+
+Keep positions enabled when source order matters. The bridge stores block
+positions in the non-rendered `carvePos` attribute. The Carve writer uses them
+to restore collected link and footnote definitions to their authored order and
+to emptied container lines.
 
 Node and mark names come from the map carve-grammars publishes, vendored under
 `resources/` with the commit it was copied from, rather than restated here - the

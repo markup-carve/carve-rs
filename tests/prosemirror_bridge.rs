@@ -1,4 +1,7 @@
-use carve::{from_prosemirror, parse, render_carve, render_html, to_prosemirror};
+use carve::{
+    from_json, from_prosemirror, parse, parse_with_options, render_carve, render_html,
+    to_prosemirror, BlockNode, Options,
+};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::fs;
@@ -46,66 +49,15 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // differing fails, and one that stops differing fails too, so a fix deletes its
 // entry rather than letting the gate quietly cover less.
 //
-// BOTH SIDES GO THROUGH `to_carve`, which is what makes the first four groups
-// visible. `parse` leaves positions off, and the writer orders hoisted
-// definitions by source position (§7, PART 11 §6) - so without them the
-// ORIGINAL writes its definitions in label order at document level too, and the
-// bridge's loss cancels against it. `to_carve` parses through `parse_for_carve`
-// (positions on) and holds the frontmatter block raw, which is the other group.
+// BOTH SIDES GO THROUGH `to_carve`, which makes position-dependent source
+// changes visible. `parse` leaves positions off, so this gate parses the bridge
+// input with positions on as well. The bridge carries those positions through
+// `carvePos`; without them the writer cannot put collected definitions back on
+// emptied marker lines or preserve their relative order.
 // Comparing against the SOURCE instead would report 749 documents whose `.crv`
 // is simply not in canonical form; `tests/corpus_canonical_form.rs` is where
-// that belongs. carve-wasm's gate names the same 40 documents.
+// that belongs.
 const SOURCE_LOSSY: &[(&str, &[&str])] = &[
-    (
-        "the link definition comes back ahead of the footnote definitions",
-        &[
-            "202-a-definition-on-a-footnote-body-s-continuation-line-is-collected.crv",
-            "220-a-definition-past-a-footnote-body-s-column-registers-from-its-authored-base.crv",
-            "312-a-note-body-s-own-references-resolve-3.crv",
-            "312-a-note-body-s-own-references-resolve.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-10.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-7.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-8.crv",
-            "451-a-container-in-a-host-body-owns-a-line-past-its-own-content-column-3.crv",
-            "456-a-definition-nested-past-a-footnote-body-is-a-note-and-a-reference-below-it-resolves-2.crv",
-            "456-a-definition-nested-past-a-footnote-body-is-a-note-and-a-reference-below-it-resolves.crv",
-            "457-a-container-closer-closes-its-container-in-a-footnote-body-too.crv",
-            "459-a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach-2.crv",
-            "459-a-trailing-line-after-a-consumed-definition-is-placed-by-column-reach.crv",
-            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker-2.crv",
-            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker-3.crv",
-            "460-a-nested-note-s-floor-is-two-columns-past-its-own-marker.crv",
-        ],
-    ),
-    (
-        "a definition written inside a container is relocated to document level",
-        &[
-            "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2.crv",
-            "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace.crv",
-            "228-a-line-at-a-footnote-definition-s-own-column-followed-by-non-blank-text-forms-its-own-tight-block.crv",
-            "287-a-column-zero-definition-ends-an-open-list-item-4.crv",
-            "323-a-block-attached-after-an-invisible-line-leaves-the-item-tight-3.crv",
-            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-5.crv",
-            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-6.crv",
-            "381-a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item-8.crv",
-            "442-a-marker-folds-only-strictly-between-the-item-s-base-and-content-column-3.crv",
-            "442-a-marker-folds-only-strictly-between-the-item-s-base-and-content-column-7.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-13.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-20.crv",
-            "447-the-host-does-not-change-which-column-a-definition-reaches-24.crv",
-            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-2.crv",
-            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item-4.crv",
-            "454-a-block-opener-past-a-nested-footnote-definition-opens-in-the-item.crv",
-        ],
-    ),
-    (
-        "a nested footnote definition is hoisted above the note whose body held it",
-        &["417-an-authored-base-carries-opaque-payload-captions-and-nested-metadata-4.crv"],
-    ),
-    (
-        "the footnote definitions come back in label order",
-        &["239-a-link-definition-written-before-a-footnote-stays-before-it-2.crv"],
-    ),
     (
         "the sanitized-away `href` attribute is not carried, so \
          `[safe](https://example.com){href=javascript:steal}` comes back without it",
@@ -135,6 +87,98 @@ fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
     let result = to_prosemirror(&parse(source));
     let value = serde_json::from_str(&result.json).expect("bridge emits JSON");
     (value, result)
+}
+
+#[test]
+fn definitions_carry_their_source_positions_both_ways() {
+    let source = "[^z]: note\n\n[z]: /z\n";
+    let original = parse_with_options(source, &Options::default().with_positions(true));
+    let bridged = to_prosemirror(&original);
+    let value: Value = serde_json::from_str(&bridged.json).expect("bridge emits JSON");
+
+    let footnote = value["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["type"] == "carveFootnoteDefinition")
+        .unwrap();
+    let link = value["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| node["type"] == "carveLinkRefDef")
+        .unwrap();
+    assert_eq!(footnote["attrs"]["carvePos"]["startOffset"], 6);
+    assert_eq!(link["attrs"]["carvePos"]["startOffset"], 12);
+
+    let returned = from_prosemirror(&bridged.json).expect("positioned payload imports");
+    assert_eq!(render_carve(&returned).unwrap(), source);
+}
+
+#[test]
+fn malformed_editor_positions_are_ignored() {
+    for carve_pos in [
+        json!({}),
+        json!("not a position"),
+        json!({
+            "startLine": -1, "endLine": 1, "startColumn": 1,
+            "endColumn": 2, "startOffset": 0, "endOffset": 1
+        }),
+    ] {
+        let payload = json!({"type":"doc","content":[{
+            "type":"paragraph","attrs":{"carvePos":carve_pos},
+            "content":[{"type":"text","text":"ok"}]
+        }]});
+        let doc = from_prosemirror(&payload.to_string()).expect("bad metadata is not fatal");
+        assert!(matches!(&doc.children[0], BlockNode::Paragraph(node) if node.pos.is_none()));
+    }
+}
+
+#[test]
+fn raw_blocks_and_comments_keep_positions() {
+    let source = "```=html\n<b>x</b>\n```\n\n%% note\n";
+    let original = parse_with_options(source, &Options::default().with_positions(true));
+    let returned = from_prosemirror(&to_prosemirror(&original).json).unwrap();
+    assert!(matches!(&returned.children[0], BlockNode::RawBlock(node) if node.pos.is_some()));
+    assert!(matches!(&returned.children[1], BlockNode::Comment(node) if node.pos.is_some()));
+}
+
+#[test]
+fn a_footnote_body_position_wins_over_its_definition_position() {
+    let ast = r#"{"type":"document","children":[{"type":"footnote","label":"f","children":[{"type":"paragraph","children":[{"type":"text","value":"note"}],"pos":{"startLine":2,"endLine":2,"startColumn":3,"endColumn":7,"startOffset":5,"endOffset":9}}],"pos":{"startLine":2,"endLine":2,"startColumn":1,"endColumn":7,"startOffset":3,"endOffset":9}}],"srcByteLength":9}"#;
+    let doc = from_json(ast).expect("the AST payload is valid");
+    let value: Value = serde_json::from_str(&to_prosemirror(&doc).json).unwrap();
+    assert_eq!(value["content"][0]["attrs"]["carvePos"]["startOffset"], 5);
+}
+
+#[test]
+fn structural_block_positions_survive_the_bridge() {
+    let source = "- item\n\n:: term\n: definition\n";
+    let original = parse_with_options(source, &Options::default().with_positions(true));
+    let bridged = to_prosemirror(&original);
+    let value: Value = serde_json::from_str(&bridged.json).unwrap();
+    assert!(value
+        .pointer("/content/0/content/0/attrs/carvePos")
+        .is_some());
+    assert!(value
+        .pointer("/content/1/content/0/attrs/carvePos")
+        .is_some());
+    assert!(value
+        .pointer("/content/1/content/1/attrs/carvePos")
+        .is_some());
+    let returned = from_prosemirror(&bridged.json).unwrap();
+    assert_eq!(render_carve(&returned).unwrap(), source);
+}
+
+#[test]
+fn an_empty_footnote_carries_its_definition_position() {
+    let source = "[^f]: {empty}\n";
+    let original = parse_with_options(source, &Options::default().with_positions(true));
+    let bridged = to_prosemirror(&original);
+    let value: Value = serde_json::from_str(&bridged.json).unwrap();
+    assert_eq!(value["content"][0]["attrs"]["carvePos"]["startOffset"], 0);
+    let returned = from_prosemirror(&bridged.json).unwrap();
+    assert_eq!(render_carve(&returned).unwrap(), source);
 }
 
 #[test]
@@ -361,8 +405,8 @@ fn adjacent_equal_marks_merge_on_import() {
 /// write the same source and still render differently, because resolution
 /// results (footnote and caption numbers) are not spelled in the source.
 ///
-/// The canonical source comes from `to_carve` on both sides. See `SOURCE_LOSSY`
-/// for what `render_carve(parse(x))` hid.
+/// The canonical source comes from `to_carve` on both sides. The comment beside
+/// that comparison explains what `render_carve(parse(x))` hid.
 #[test]
 fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
@@ -377,7 +421,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             continue;
         }
         let source = fs::read_to_string(&path).expect("corpus source is readable");
-        let original = parse(&source);
+        let original = parse_with_options(&source, &Options::default().with_positions(true));
         let pm = to_prosemirror(&original);
         if pm.dropped.is_empty() && pm.degraded.is_empty() {
             let returned =

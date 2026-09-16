@@ -1,6 +1,7 @@
 {
   "version": 1,
   "about": "Carve node type to ProseMirror node/mark name, for engines building a Carve <-> ProseMirror bridge. Carve type names are the normative vocabulary from the spec (docs/profiles.md); the ProseMirror names are this package's CarveKit schema. Consumers read this rather than restating the mapping, which is how carve-php once ended up emitting `citation-group` against everyone else's underscores. `pm` is the name CarveKit registers; an optional `accepts` lists further names a bridge should recognize on the way in, for concepts a stock Tiptap extension already spells differently.",
+  "positionAttribute": "Every block node may carry `carvePos`, the complete Carve `pos` object. Bridges use it to restore source-ordered definitions and definitions collected from emptied container lines. CarveKit retains it as non-rendered metadata.",
   "carveSpecVocabulary": "spec/docs/profiles.md",
   "proseMirrorSchema": "tiptap/carve-kit.js (CarveKit)",
   "types": {
@@ -310,16 +311,14 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
+    "commit": "31eb9603221e9187a40e7c698d9a04ad15b411f7",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergences": {
       "abbreviation_def": "upstream gives it a node; here the definition rides on the doc node's attrs, so taking it is a bridge change",
-      "citation": "carried as a typed item inside carveCitation, per pendingUpstream",
-      "citation_definition": "dropped by the bridge and carried in the sidecar, per pendingUpstream",
-      "figure_group": "local until upstream decides it, per pendingUpstream",
-      "inline_extension": "upstream added a second, primary ProseMirror name, per partialSections"
+      "citation_definition": "upstream gives it a node; this bridge still reports and drops it",
+      "figure_group": "upstream gives it a node; this bridge degrades it to the generic div mapping",
+      "inline_extension": "upstream added a second, primary ProseMirror name; changing the emitted name is a separate bridge change"
     },
-    "pendingUpstream": "the `figure_group`, `citation`, and `citation_definition` entries under unmapped are local: PART 9 section 4c and PART 12 sections 18 and 18a are newer than the schema map, so carve-grammars carries no decision for them yet. `citation` is nested group state rather than a standalone editor node; `citation_definition` records what to_pm.rs already does - it has an explicit arm that drops the type - rather than choosing a mapping the bridge does not implement. Keep all three across the next refresh until upstream does.",
-    "partialSections": "`preservationNodes` and `markCarrierNodes` are copied verbatim from carve-grammars 228f003, ahead of the rest of the file. A whole-file refresh to 228f003 also gives `inline_extension` a second, PRIMARY ProseMirror name, which moves what this engine emits for every inline extension - a change of its own, not a side effect of adding a section. Take the rest of 228f003 in that change and drop this note."
+    "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` remains unmapped because it is nested group state rather than a standalone editor node."
   }
 }
