@@ -701,12 +701,13 @@ pub(crate) fn split_run_directives(run: &[InlineNode]) -> Option<Vec<RunPiece>> 
     if !full.contains("{{") {
         return None;
     }
+    let slicer = RunSlicer::new(run);
     let mut pieces = Vec::new();
     let mut at = 0usize;
     let mut cursor = 0usize;
     while let Some((start, end)) = find_directive(&full, cursor) {
         if start > at {
-            pieces.push(RunPiece::Nodes(slice_run(run, at, start)));
+            pieces.push(RunPiece::Nodes(slicer.slice(at, start)));
         }
         pieces.push(RunPiece::Directive(full[start..end].to_string()));
         at = end;
@@ -716,7 +717,7 @@ pub(crate) fn split_run_directives(run: &[InlineNode]) -> Option<Vec<RunPiece>> 
         return None;
     }
     if at < full.len() {
-        pieces.push(RunPiece::Nodes(slice_run(run, at, full.len())));
+        pieces.push(RunPiece::Nodes(slicer.slice(at, full.len())));
     }
     Some(pieces)
 }
@@ -1610,37 +1611,72 @@ fn run_node_text(node: &InlineNode) -> String {
     }
 }
 
-/// Return the run nodes covering `[from, to)` of the run's reassembled text.
-/// Directive matches start with `{{` and end with `}}`, which the core always
-/// parses as text, so a boundary can only fall inside a text node; mention and
-/// tag nodes are either fully kept or fully consumed by a directive span.
-fn slice_run(run: &[InlineNode], from: usize, to: usize) -> Vec<InlineNode> {
-    let mut out = Vec::new();
-    let mut offset = 0usize;
-    for node in run {
-        let text = run_node_text(node);
-        let start = offset;
-        let end = offset + text.len();
-        offset = end;
-        if end <= from || start >= to {
-            continue;
-        }
-        let InlineNode::Text(value) = node else {
-            out.push(node.clone());
-            continue;
-        };
-        let lo = from.max(start) - start;
-        let hi = to.min(end) - start;
-        let slice = &value.value[lo..hi];
-        if slice == value.value {
-            out.push(node.clone());
-        } else if !slice.is_empty() {
-            let mut cut = value.clone();
-            cut.value = slice.to_string();
-            out.push(InlineNode::Text(cut));
-        }
+/// The byte length `run_node_text` gives a node, without building the string.
+fn run_node_len(node: &InlineNode) -> usize {
+    match node {
+        InlineNode::Text(t) => t.value.len(),
+        InlineNode::Mention(m) => 1 + m.user.len(),
+        InlineNode::Tag(t) => 1 + t.name.len(),
+        InlineNode::SmartPunctuation(p) => p.value.len(),
+        InlineNode::EscapedText(t) => 1 + t.value.len(),
+        _ => 0,
     }
-    out
+}
+
+/// A run's nodes addressed by offsets into its reassembled text.
+///
+/// Built ONCE per run. Slicing used to re-measure every node from the start
+/// and clone each text node whole for every directive, so a paragraph that is
+/// one long text node holding many directives cost the square of its length
+/// (markup-carve/carve-rs#1618).
+struct RunSlicer<'a> {
+    run: &'a [InlineNode],
+    ends: Vec<usize>,
+}
+
+impl<'a> RunSlicer<'a> {
+    fn new(run: &'a [InlineNode]) -> Self {
+        let mut end = 0usize;
+        let ends = run
+            .iter()
+            .map(|node| {
+                end += run_node_len(node);
+                end
+            })
+            .collect();
+        Self { run, ends }
+    }
+
+    /// The run nodes covering `[from, to)` of the reassembled text. Directive
+    /// matches start with `{{` and end with `}}`, which the core always parses
+    /// as text, so a boundary can only fall inside a text node; mention and tag
+    /// nodes are either fully kept or fully consumed by a directive span.
+    fn slice(&self, from: usize, to: usize) -> Vec<InlineNode> {
+        let mut out = Vec::new();
+        let first = self.ends.partition_point(|end| *end <= from);
+        for (i, node) in self.run.iter().enumerate().skip(first) {
+            let end = self.ends[i];
+            let start = end - run_node_len(node);
+            if start >= to {
+                break;
+            }
+            let InlineNode::Text(value) = node else {
+                out.push(node.clone());
+                continue;
+            };
+            let lo = from.max(start) - start;
+            let hi = to.min(end) - start;
+            if lo == 0 && hi == value.value.len() {
+                out.push(node.clone());
+            } else if lo < hi {
+                out.push(InlineNode::Text(crate::ast::Text {
+                    value: value.value[lo..hi].to_string(),
+                    pos: value.pos.clone(),
+                }));
+            }
+        }
+        out
+    }
 }
 
 fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
@@ -1698,18 +1734,15 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
     if spans.is_empty() {
         return run.to_vec();
     }
+    let slicer = RunSlicer::new(run);
     let mut pieces: Vec<(InlineNode, bool)> = Vec::new();
     let mut at = 0usize;
     for (start, end, replacement) in spans {
-        pieces.extend(slice_run(run, at, start).into_iter().map(|n| (n, true)));
+        pieces.extend(slicer.slice(at, start).into_iter().map(|n| (n, true)));
         pieces.extend(replacement.into_iter().map(|n| (n, false)));
         at = end;
     }
-    pieces.extend(
-        slice_run(run, at, full.len())
-            .into_iter()
-            .map(|n| (n, true)),
-    );
+    pieces.extend(slicer.slice(at, full.len()).into_iter().map(|n| (n, true)));
     coalesce_text(pieces)
 }
 
