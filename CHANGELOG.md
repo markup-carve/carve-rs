@@ -11,6 +11,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `Options` accepts authoritative mention and tag resolver callbacks with node
   attributes and opaque host context.
+- `carve --json` publishes the include dependency list, so a host can watch every
+  file a document reads (markup-carve/carve-rs#1678).
+- The extension registry publishes each fenced-render preset's static-renderer
+  key, so a binding can list the diagram classes it will be asked for
+  (markup-carve/carve-rs#1679).
 
 ### Changed
 
@@ -31,34 +36,69 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   passes preserved/normalized findings and fails degraded/dropped ones. The CLI
   emits the same report for every importer.
 
+- Add processor-level file inclusion (`{{ path }}`, PART 9 §19 rules I1-I11):
+  `expand_includes` expands directives with a host-supplied `IncludeResolver`,
+  with section and line-range selection, heading-level shifts, cross-file id and
+  footnote-label renaming, cycle, depth and byte budgets, and dependency
+  reporting. The core parser opens no file: with no resolver the directive stays
+  literal. `FileSystemResolver` sits behind the default-on `fs` feature, so a
+  build with that feature off carries no file-opening code. The CLI gains
+  `--include-root` and `carve flatten`, which writes the document back with
+  every include expanded (markup-carve/carve-rs#1451).
+- **Breaking:** `IncludeResolver::resolve` returns
+  `Result<IncludeResolved, IncludeDenial>` instead of `Option<IncludeResolved>`,
+  so a refusal says which class it is and `IncludeDependency` carries it. To
+  migrate, map `None` to `Err(IncludeDenial::NotFound)` or
+  `Err(IncludeDenial::Unresolved)`, which is what every refusal meant before,
+  and `Some(x)` to `Ok(x)`; a hand-built `IncludeDependency` adds
+  `denial: None` (markup-carve/carve-rs#1648).
 
- - Add processor-level file inclusion (`{{ path }}`, spec section 19 rules
-  I1-I11): `expand_includes` expands directives in a parsed document using a
-  host-supplied `IncludeResolver`, with `#section` / line-range selection,
-  signed and `auto` heading-level shifts, cross-file id and footnote-label
-  rename-on-collision, cycle / depth / byte-budget limits, and dependency
-  reporting for preview invalidation. The core parser is untouched and performs
-  no file I/O: with no resolver configured the directive stays literal.
-  `FileSystemResolver` provides canonicalize-then-contain path checking for
-  trusted hosts, and the CLI gains `--include-root`, defaulting to the input
-  file's directory, and reads at most 4 MiB per target. The filesystem resolver
-  sits behind the default-on `fs` feature, so `--no-default-features` leaves a
-  build that carries no code opening a file, for sandboxed and WASM embedders.
-`carve flatten` writes the document back as
-  one self-contained file with every include expanded, the deliberate opposite
-  of `carve fmt`. A rejected directive has no observable side effects: the
-  output is byte-identical to the same document with that directive written as
-  literal text from the start, so identifiers reserved while processing a child
-  are released when its content does not merge. `carve fmt` preserves a
-  well-formed directive verbatim instead of escaping its braces, so formatting
-   a document no longer destroys its includes.
 ### Fixed
 
+- The Markdown writer escapes a hash where the emitted line would read it as a
+  heading: one opening a line inside a paragraph, and a heading's own trailing
+  run, which a CommonMark reader takes for the closing sequence and drops
+  (markup-carve/carve-rs#1681, markup-carve/carve-rs#1687).
+- Markdown emphasis survives seams it used to lose: two adjacent delimiter runs
+  stay apart, an escaped marker no longer lengthens the run beside it, a run
+  that cannot flank falls back to inline HTML, and a literal tilde is escaped
+  because GFM reads it as a delimiter (markup-carve/carve-rs#1624,
+  markup-carve/carve-rs#1677, markup-carve/carve-rs#1620,
+  markup-carve/carve-rs#1641).
+- A bare emphasis closer no longer reaches inside a braced inline, a link
+  destination or an autolink, and the fast layout path answers as the parser
+  does (markup-carve/carve-rs#1638, markup-carve/carve-rs#1665,
+  markup-carve/carve-rs#1671).
+- The Carve writer braces an emphasis a re-parse would read differently: one
+  whose bare opener the writer had just refused, and an italic whose content
+  opens and closes with a strong marker (markup-carve/carve-rs#1656,
+  markup-carve/carve-rs#1673).
+- An underscore pair in text is escaped where the emitted BLOCK would pair it
+  rather than the line alone, and a same-strength nesting stays readable
+  (markup-carve/carve-rs#1653, markup-carve/carve-rs#1659,
+  markup-carve/carve-rs#1642).
+- A forced-span closer strips the unclosed verbatim run it ends, so a span
+  holding one space renders an empty code element as the other engines do
+  (markup-carve/carve-rs#1684).
+- An inline include leaves ONE text run, spanned in the host file, instead of
+  the adjacent text nodes PART 12 §1a forbids, and an included child is parsed
+  with the caller's extensions (markup-carve/carve-rs#1683,
+  markup-carve/carve-rs#1651).
+- The ProseMirror bridge reports the mark run two adjacent spans come back as,
+  and keeps two links with different destinations apart instead of merging them
+  and losing the second (markup-carve/carve-rs#1667,
+  markup-carve/carve-rs#1675).
+- An empty code span survives a ProseMirror round trip. A mark cannot span zero
+  characters, so the span used to leave the document with both loss maps empty
+  (markup-carve/carve-rs#1689).
+- Markdown and Djot import keep what they used to drop: inline HTML, attributed
+  and unpaired raw HTML, structural Djot constructs, and fidelity and confidence
+  on every diagnostic (markup-carve/carve-rs#1594, markup-carve/carve-rs#1603,
+  markup-carve/carve-rs#1582, markup-carve/carve-rs#1588).
 - The Markdown renderer moves emphasis padding outside the delimiters, so content that begins or ends with whitespace still reads as emphasis rather than literal text; content that is only whitespace falls back to inline HTML (markup-carve/carve-js#1683).
 - A nested note ends at a definition below its own body floor, so a trailing
   line further down belongs to the surviving ancestor rather than reaching a
   floor that has already closed (markup-carve/carve#1971, carve#1918).
-
 - A trailing line after a consumed definition in a stack of nested notes is
   placed by column-reach. A note nested one column shy of its host's body column
   keeps a residual marker indent, so a line below the inner note's own content
