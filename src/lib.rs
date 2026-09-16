@@ -374,6 +374,7 @@ pub fn try_to_carve_with_options(
     let mut doc = parse::parse_for_carve(source);
     if frontmatter.is_some() {
         doc.frontmatter.clear();
+        doc.frontmatter_raw = None;
     }
     if let Some(profile) = &options.profile {
         let base_host = options.profile_base_host.as_deref();
