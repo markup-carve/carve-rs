@@ -1114,6 +1114,26 @@ impl<'a> Importer<'a> {
         order
     }
 
+    /// The element's `title` folded back into its attributes. A link and an
+    /// image carry it in their own slot, so the attribute walk refuses it
+    /// (carve-rs#1060); an element naming no destination has no slot to carry
+    /// it, and the contract keeps the attributes that survive (carve-rs#1738).
+    fn attrs_with_title(handle: &Handle, attrs: Option<Attrs>) -> Option<Attrs> {
+        let Some(title) = Self::attr(handle, "title") else {
+            return attrs;
+        };
+        let mut held = attrs.unwrap_or_default();
+        held.key_values.insert("title".to_string(), title);
+        // An EMPTY order is the writer's own id-classes-keys fallback; a
+        // non-empty one is exhaustive, so the new key has to join it or the
+        // writer drops every attribute the element did spell.
+        let slot = AttrSlot::Key("title".to_string());
+        if !held.order.is_empty() && !held.order.contains(&slot) {
+            held.order.push(slot);
+        }
+        Some(held)
+    }
+
     /// The slot a declaration reaches IN THIS MODE.
     ///
     /// `safe` MAPS NOTHING. It is the conservative mode: a declaration it
@@ -4625,7 +4645,10 @@ impl<'a> Importer<'a> {
                     path,
                     h,
                 );
-                return Ok(unwrapped_content(attrs, children));
+                return Ok(unwrapped_content(
+                    Self::attrs_with_title(h, attrs),
+                    children,
+                ));
             }
             // AN IMAGE'S CONTENT IS ITS ALTERNATIVE TEXT: that is what every
             // target with no image shows for it, and what a browser shows for
@@ -4645,7 +4668,7 @@ impl<'a> Importer<'a> {
                 } else {
                     vec![InlineNode::text(alt)]
                 };
-                return Ok(unwrapped_content(attrs, content));
+                return Ok(unwrapped_content(Self::attrs_with_title(h, attrs), content));
             }
             "a" => InlineNode::Link(Link {
                 attrs,

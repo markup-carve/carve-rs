@@ -61,6 +61,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The HTML and Markdown importers keep the title of a link or image that names
+  no destination, on the span that replaces it, where they used to drop it
+  (markup-carve/carve-rs#1738).
 - `render_carve` returns `SourceUnspellable` for a mention or a tag that carries
   attributes, where it used to drop them (markup-carve/carve-rs#1737).
 - A link, image or span after a backtick an earlier construct used up is read,
