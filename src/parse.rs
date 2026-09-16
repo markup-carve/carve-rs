@@ -12337,8 +12337,10 @@ fn detect_block_image(line: &str) -> Option<Image> {
     let bracket_matches = compute_bracket_matches(bytes);
     // Block-image detection runs once on a single line (not in a per-position
     // loop), so full-slice last-occurrence scans are fine here.
+    let bracket_openers = compute_bracket_openers(&bracket_matches);
     let bounds = InlineBounds {
         matches: &bracket_matches,
+        openers: &bracket_openers,
         last_close_paren: bytes.iter().rposition(|&b| b == b')'),
         last_close_brace: bytes.iter().rposition(|&b| b == b'}'),
         last_close_bracket: bytes.iter().rposition(|&b| b == b']'),
@@ -16943,6 +16945,9 @@ struct InlineBounds<'a> {
     /// Matching `]` index for every `[` (see `compute_bracket_matches`); empty
     /// when the text contains no bracket construct trigger.
     matches: &'a [usize],
+    /// The `[` that each `]` closes, for the scan that hides a link
+    /// destination (E2a). Empty alongside `matches`.
+    openers: &'a [usize],
     /// Index of the last `)` (inline link/image destination closer).
     last_close_paren: Option<usize>,
     /// Index of the last `}` (attribute-block closer).
@@ -17257,6 +17262,7 @@ fn parse_inline_context(
     } else {
         Vec::new()
     };
+    let bracket_openers = compute_bracket_openers(&bracket_matches);
     // Last-occurrence positions of each mandatory closer, precomputed once so the
     // per-position scanners short-circuit in O(1) when their closer cannot lie
     // ahead (see InlineBounds). Each is gated on a cheap presence check; a
@@ -17299,6 +17305,7 @@ fn parse_inline_context(
     }
     let bounds = InlineBounds {
         matches: &bracket_matches,
+        openers: &bracket_openers,
         last_close_paren,
         last_close_brace,
         last_close_bracket,
@@ -18042,6 +18049,7 @@ fn parse_inline_context(
             options,
             in_footnote,
             &mut emphasis_no_close,
+            &bounds,
             positions,
             base,
         ) {
@@ -19703,6 +19711,18 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
     matches
 }
 
+/// The `[` each `]` closes, inverted from [`compute_bracket_matches`] once so
+/// the closing scan can ask about a `]` in O(1).
+fn compute_bracket_openers(matches: &[usize]) -> Vec<usize> {
+    let mut openers = vec![NO_BRACKET_MATCH; matches.len()];
+    for (open, &close) in matches.iter().enumerate() {
+        if close != NO_BRACKET_MATCH {
+            openers[close] = open;
+        }
+    }
+    openers
+}
+
 /// Skip a verbatim (code) span opening at `start` (a backtick run). Returns the
 /// index just past the equal-length closing run, or `None` when the span is
 /// unclosed (opaque to end of text) — mirroring the reference bracket scanner.
@@ -19897,12 +19917,14 @@ fn read_link_target(
     Some((href, title, i + 1))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn match_emphasis(
     bytes: &[u8],
     i: usize,
     options: &Options<'_>,
     in_footnote: bool,
     no_close: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
 ) -> Option<(InlineNode, usize)> {
@@ -19997,7 +20019,7 @@ fn match_emphasis(
             return None;
         }
     }
-    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close)?;
+    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     Some((
         InlineNode::Emphasis(Emphasis {
@@ -22379,6 +22401,7 @@ fn cached_find_emphasis_close(
     from: usize,
     delim: u8,
     memo: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
 ) -> Option<usize> {
     let idx = emphasis_delim_index(delim);
     if memo.failed[idx].as_ref().is_some_and(|f| f[from]) {
@@ -22386,7 +22409,15 @@ fn cached_find_emphasis_close(
     }
     let mut failed = memo.failed[idx].take();
     let mut visited = Vec::new();
-    let close = find_emphasis_close(bytes, from, delim, memo, failed.as_deref(), &mut visited);
+    let close = find_emphasis_close(
+        bytes,
+        from,
+        delim,
+        memo,
+        bounds,
+        failed.as_deref(),
+        &mut visited,
+    );
     if close.is_none() {
         let marks = failed.get_or_insert_with(|| vec![false; bytes.len() + 1]);
         for j in visited {
@@ -22402,6 +22433,7 @@ fn find_emphasis_close(
     from: usize,
     delim: u8,
     memo: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
 ) -> Option<usize> {
@@ -22445,6 +22477,20 @@ fn find_emphasis_close(
             }
             continue;
         }
+        // E2a: a link destination and an autolink are opaque too. A link
+        // LABEL is not, and neither is a plain brace group.
+        if ch == b']' && bytes.get(j + 1) == Some(&b'(') && opens_a_link(bytes, j, bounds) {
+            if let Some(end) = link_destination_end(bytes, j + 1) {
+                j = end + 1;
+                continue;
+            }
+        }
+        if ch == b'<' && bounds.has_gt_from(j) {
+            if let Some(end) = scanned_autolink_end(bytes, j) {
+                j = end + 1;
+                continue;
+            }
+        }
         if ch == b'{' && bytes.get(j + 1) == Some(&b'%') {
             let last = *memo
                 .last_comment_close
@@ -22454,6 +22500,15 @@ fn find_emphasis_close(
                 .and_then(|_| find_seq(bytes, j + 2, b"%}"))
             {
                 j = end + 2;
+                continue;
+            }
+        }
+        // A raw inline's format block is not a braced highlight: the main
+        // loop builds it with the code span in front of it, so only the
+        // token is opaque (markup-carve/carve-rs#1652).
+        if ch == b'{' && j > 0 && bytes[j - 1] == b'`' {
+            if let Some(end) = raw_inline_format_end(bytes, j) {
+                j = end + 1;
                 continue;
             }
         }
@@ -22488,6 +22543,95 @@ fn find_emphasis_close(
         j += 1;
     }
     None
+}
+
+/// Whether the `]` at `close` ends a bracket a link or image could use: it
+/// has an opener, and that opener is not a footnote reference or an inline
+/// note.
+fn opens_a_link(bytes: &[u8], close: usize, bounds: &InlineBounds<'_>) -> bool {
+    let Some(&open) = bounds.openers.get(close) else {
+        return false;
+    };
+    if open == NO_BRACKET_MATCH {
+        return false;
+    }
+    if bytes.get(open + 1) == Some(&b'^') {
+        return false;
+    }
+    open == 0 || bytes[open - 1] != b'^'
+}
+
+/// The `)` closing the destination that opens at `open`, or `None` when what
+/// follows is not one: parentheses balance and escape, the destination is
+/// not empty, not wrapped in angle brackets, and holds no space outside a
+/// title.
+fn link_destination_end(bytes: &[u8], open: usize) -> Option<usize> {
+    if matches!(bytes.get(open + 1), None | Some(b')') | Some(b'<')) {
+        return None;
+    }
+    let mut depth = 1usize;
+    let mut quote = 0u8;
+    let mut space_outside_title = false;
+    let mut i = open + 1;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if b == b'\n' {
+            return None;
+        }
+        if quote != 0 {
+            if b == quote {
+                quote = 0;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => quote = b,
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return (!space_outside_title).then_some(i);
+                }
+            }
+            // The one space a title may sit behind.
+            b' ' | b'\t' if !matches!(bytes.get(i + 1), Some(b'"') | Some(b'\'')) => {
+                space_outside_title = true;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The `>` closing the autolink at `open`, or `None` when the body between
+/// the angle brackets is not a URL or email autolink target.
+fn scanned_autolink_end(bytes: &[u8], open: usize) -> Option<usize> {
+    let close = open + 1 + bytes[open + 1..].iter().position(|&b| b == b'>')?;
+    let target = std::str::from_utf8(&bytes[open + 1..close]).ok()?;
+    (is_url_autolink_target(target) || is_email_autolink_target(target)).then_some(close)
+}
+
+/// The `}` of a raw inline's format token at `open`.
+fn raw_inline_format_end(bytes: &[u8], open: usize) -> Option<usize> {
+    if bytes.get(open + 1) != Some(&b'=') {
+        return None;
+    }
+    let mut i = open + 2;
+    if !bytes.get(i)?.is_ascii_alphabetic() {
+        return None;
+    }
+    while i < bytes.len()
+        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
+    {
+        i += 1;
+    }
+    (bytes.get(i) == Some(&b'}')).then_some(i)
 }
 
 /// The last byte of the braced inline opening at `open`, matched the way the
