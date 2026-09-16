@@ -4116,7 +4116,12 @@ impl<'a> Importer<'a> {
                 &section_nodes[id].0,
             );
         }
-        let caption = match caption_node {
+        let last_dropped = if self.writing {
+            self.drop_blank_rows(&trs, &mut result, path)
+        } else {
+            None
+        };
+        let mut caption = match caption_node {
             Some((index, node)) => Some(self.caption_inlines(
                 &node,
                 &format!("{path}/caption[{}]", index + 1),
@@ -4125,6 +4130,18 @@ impl<'a> Importer<'a> {
             )?),
             None => None,
         };
+        if let Some(r) = last_dropped.filter(|_| result.is_empty()) {
+            // A lone `^ c` line reads as a paragraph, so the caption goes too.
+            if caption.take().is_some() {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    "Dropped a caption whose table has no row left".into(),
+                    HtmlImportSeverity::Warning,
+                    &format!("{path}/tr[{}]", r + 1),
+                    &trs[r].0,
+                );
+            }
+        }
         Ok(Table {
             attrs,
             caption,
@@ -4134,6 +4151,47 @@ impl<'a> Importer<'a> {
             row_groups,
             pos: None,
         })
+    }
+
+    /// Drop every row whose cells are all blank, which Carve reads as text
+    /// (markup-carve/carve#1954). Returns the source index of the last row
+    /// dropped. Writing exit only: the tree renders such a row, and only the
+    /// writer has no spelling for it (carve-rs#1735). The writer does not read
+    /// `row_groups`, so the partition is left as the HTML stated it.
+    fn drop_blank_rows(
+        &mut self,
+        trs: &[(Handle, Option<usize>)],
+        rows: &mut Vec<TableRow>,
+        path: &str,
+    ) -> Option<usize> {
+        let blank = |cell: &TableCell| {
+            cell.children.is_empty()
+                && cell.span.is_none()
+                && cell.align.is_none()
+                && cell.valign.is_none()
+                && cell.attrs.as_ref().map_or(true, |a| *a == Attrs::default())
+        };
+        let mut last = None;
+        let mut index = 0;
+        for r in 0..trs.len() {
+            if index >= rows.len() {
+                break;
+            }
+            if !rows[index].cells.iter().all(blank) {
+                index += 1;
+                continue;
+            }
+            rows.remove(index);
+            self.diag(
+                HtmlImportDiagnosticCode::StructureUnspellable,
+                "Dropped a row whose every cell is empty: Carve reads such a row as text".into(),
+                HtmlImportSeverity::Warning,
+                &format!("{path}/tr[{}]", r + 1),
+                &trs[r].0,
+            );
+            last = Some(r);
+        }
+        last
     }
 
     /// `<thead>` / `<tbody>` / `<tfoot>` to `Table::row_groups`, when the

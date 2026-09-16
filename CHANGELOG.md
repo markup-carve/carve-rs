@@ -61,6 +61,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `render_carve` returns `SourceUnspellable` for a table row whose every cell is
+  blank, and the HTML importer drops such a row with a `structure-unspellable`
+  diagnostic, keeping the rest of the table (markup-carve/carve-rs#1735).
 - `render_carve` returns `SourceUnspellable` for a mention or a tag that carries
   attributes, where it used to drop them (markup-carve/carve-rs#1737).
 - A link, image or span after a backtick an earlier construct used up is read,
