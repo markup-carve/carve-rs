@@ -1563,8 +1563,13 @@ fn an_empty_mark_is_not_absorbed_by_an_equal_neighbour() {
     // not the source is the merge's own pre-existing lossiness, not this
     // guard's - asserting it here is what stops a later `return false` for
     // every neighbour passing as a fix.
-    let (_, after) = round_trip("[a]{.x}[b]{.x}\n");
-    assert_eq!(after, "[ab]{.x}\n");
+    let original = parse("[a]{.x}[b]{.x}\n");
+    let pm = to_prosemirror(&original);
+    let returned = from_prosemirror(&pm.json).expect("the payload converts back");
+    assert_eq!(render_carve(&returned).unwrap(), "[ab]{.x}\n");
+    // And that merge is now REPORTED (markup-carve/carve-rs#1672), which is why
+    // this control cannot go through `round_trip` any more.
+    assert!(pm.degraded.contains_key("carveSpan"), "{:?}", pm.degraded);
 }
 
 /// An admonition's kind is the opener word, not an authored class.
@@ -1693,5 +1698,67 @@ fn two_spans_of_one_kind_with_text_between_report_nothing() {
 fn two_adjacent_spans_whose_attributes_differ_report_nothing() {
     // Marks with different attributes do not merge, so nothing is lost.
     let pm = to_prosemirror(&parse("{/x/}{/y/}{.c}\n"));
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
+/// The other four kinds that merge the same way. They reported nothing until
+/// now, so a host reading `dropped` and `degraded` was told the trip was
+/// lossless while the rendered HTML changed (markup-carve/carve-rs#1672).
+#[test]
+fn two_adjacent_insertions_report_a_degrade() {
+    let pm = to_prosemirror(&parse("{+a+}{+b+}\n"));
+    assert!(pm.degraded.contains_key("carveInsert"), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_adjacent_deletions_report_a_degrade() {
+    let pm = to_prosemirror(&parse("{-a-}{-b-}\n"));
+    assert!(pm.degraded.contains_key("carveDelete"), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_adjacent_attribute_spans_report_a_degrade() {
+    let pm = to_prosemirror(&parse("[a]{.c}[b]{.c}\n"));
+    assert!(pm.degraded.contains_key("carveSpan"), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_adjacent_links_to_one_destination_report_a_degrade() {
+    let pm = to_prosemirror(&parse("[a](u)[b](u)\n"));
+    assert!(pm.degraded.contains_key("link"), "{:?}", pm.degraded);
+}
+
+/// Content loss, not a boundary loss: the second destination was gone, and
+/// nothing said so. Two links that differ are two links on the way back.
+#[test]
+fn two_adjacent_links_to_different_destinations_keep_both() {
+    let src = "[a](u)[b](v)\n";
+    let pm = to_prosemirror(&parse(src));
+    let returned = from_prosemirror(&pm.json).expect("the document returns");
+    assert_eq!(
+        render_html(&returned).unwrap(),
+        render_html(&parse(src)).unwrap()
+    );
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+    assert!(pm.dropped.is_empty(), "{:?}", pm.dropped);
+}
+
+/// A title is identity too, and it lives in a field rather than in `attrs`.
+#[test]
+fn two_adjacent_links_with_different_titles_keep_both() {
+    let src = "[a](u \"t\")[b](u \"z\")\n";
+    let pm = to_prosemirror(&parse(src));
+    let returned = from_prosemirror(&pm.json).expect("the document returns");
+    assert_eq!(
+        render_html(&returned).unwrap(),
+        render_html(&parse(src)).unwrap()
+    );
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+}
+
+#[test]
+fn two_insertions_with_text_between_report_nothing() {
+    // CONTROL. The pair has to be adjacent to merge at all.
+    let pm = to_prosemirror(&parse("{+a+} and {+b+}\n"));
     assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
 }
