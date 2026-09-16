@@ -22,6 +22,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The ProseMirror bridge carries block source positions through `carvePos`, so
+  collected link and footnote definitions retain their authored order and
+  placement (markup-carve/carve-rs#1694).
 - A mention or tag template that produces a denied URL now renders the inert
   span instead of an anchor with an empty `href`.
 - The Carve writer keeps the native `|=` header form for a table whose header

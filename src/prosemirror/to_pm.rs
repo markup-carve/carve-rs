@@ -36,6 +36,18 @@ pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
     for (label, blocks) in &doc.footnote_defs {
         let mut attrs = Object::new();
         attrs.insert("label".into(), Json::String(label.clone()));
+        let pos = blocks
+            .first()
+            .and_then(crate::ast_json::block_pos)
+            .or_else(|| {
+                blocks
+                    .is_empty()
+                    .then(|| doc.footnote_def_pos.get(label))
+                    .flatten()
+            });
+        if let Some(pos) = pos {
+            attrs.insert("carvePos".into(), position(pos));
+        }
         if let Some(name) = renderer.name("footnote") {
             let children = renderer.blocks(blocks);
             content.push(node_with(name, attrs, children));
@@ -62,7 +74,7 @@ impl Renderer {
     }
 
     fn block(&mut self, node: &BlockNode) -> Option<Json> {
-        let (name, attrs, content) = match node {
+        let (name, mut attrs, content) = match node {
             BlockNode::Heading(n) => (
                 self.name("heading")?,
                 structural_attrs(
@@ -153,6 +165,9 @@ impl Renderer {
                             self.nth_name("list_item", 0)?
                         };
                         let mut ia = attrs(item.attrs.as_ref());
+                        if let Some(pos) = &item.pos {
+                            ia.insert("carvePos".into(), position(pos));
+                        }
                         if let Some(checked) = item.checked {
                             ia.insert("checked".into(), Json::Bool(checked));
                         }
@@ -259,16 +274,24 @@ impl Renderer {
                 let mut children = Vec::new();
                 for item in &n.items {
                     for term in &item.terms {
+                        let mut a = attrs(term.attrs.as_ref());
+                        if let Some(pos) = &term.pos {
+                            a.insert("carvePos".into(), position(pos));
+                        }
                         children.push(node_with(
                             self.name("definition_term")?,
-                            attrs(term.attrs.as_ref()),
+                            a,
                             self.inlines(&term.children, &[]),
                         ));
                     }
                     for def in &item.definitions {
+                        let mut a = attrs(def.attrs.as_ref());
+                        if let Some(pos) = &def.pos {
+                            a.insert("carvePos".into(), position(pos));
+                        }
                         children.push(node_with(
                             self.name("definition_description")?,
-                            attrs(def.attrs.as_ref()),
+                            a,
                             self.blocks(&def.children),
                         ));
                     }
@@ -382,6 +405,9 @@ impl Renderer {
                 (self.name("thematic_break")?, a, Vec::new())
             }
         };
+        if let Some(pos) = crate::ast_json::block_pos(node) {
+            attrs.insert("carvePos".into(), position(pos));
+        }
         Some(node_with(name, attrs, content))
     }
 
@@ -979,6 +1005,21 @@ impl Renderer {
             .unwrap_or_else(|| "mapped bridge support is unimplemented".into());
         self.dropped.insert(ty.into(), reason);
     }
+}
+
+fn position(pos: &Pos) -> Json {
+    let mut out = Object::from_iter([
+        ("startLine".into(), Json::from(pos.start_line)),
+        ("endLine".into(), Json::from(pos.end_line)),
+        ("startColumn".into(), Json::from(pos.start_column)),
+        ("endColumn".into(), Json::from(pos.end_column)),
+        ("startOffset".into(), Json::from(pos.start_offset)),
+        ("endOffset".into(), Json::from(pos.end_offset)),
+    ]);
+    if let Some(file) = &pos.file {
+        out.insert("file".into(), Json::String(file.as_str().into()));
+    }
+    Json::Object(out)
 }
 
 fn object(name: &str) -> Object {
