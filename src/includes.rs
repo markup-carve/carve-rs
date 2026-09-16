@@ -2251,7 +2251,7 @@ impl IncludeResolver for FileSystemResolver {
             return None;
         }
         let would_be = lexical_real(&self.candidate(include_path, ctx)?);
-        if !self.contains(&would_be) || would_be.exists() {
+        if self.contains(&would_be) && !would_be.exists() {
             return None;
         }
         Some(would_be.to_string_lossy().into_owned())
