@@ -2755,6 +2755,20 @@ fn render_inline_body(
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);
+            // An EMPTY code span has one spelling, a backtick run that its
+            // container ends, and only the braced closer ends it inside an
+            // emphasis: a bare closer is swallowed by the open run.
+            if let Some(InlineNode::Code(code)) = emphasis.children.last() {
+                if code.value.is_empty() && code.attrs.is_none() {
+                    if let Some(delim) = bare_delimiter(emphasis.kind) {
+                        return format!(
+                            "{}{}",
+                            render_forced_emphasis(delim, &content),
+                            render_attrs(&emphasis.attrs)
+                        );
+                    }
+                }
+            }
             let (delim, body) = match emphasis.kind {
                 EmphasisKind::Italic => ("/", render_emphasis("/", &content, prev_char, next_char)),
                 EmphasisKind::Strong => ("*", render_emphasis("*", &content, prev_char, next_char)),
@@ -3061,6 +3075,17 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
         format!("{{{delim}{content}{delim}}}")
     } else {
         format!("{delim}{content}{delim}")
+    }
+}
+
+fn bare_delimiter(kind: EmphasisKind) -> Option<&'static str> {
+    match kind {
+        EmphasisKind::Italic => Some("/"),
+        EmphasisKind::Strong => Some("*"),
+        EmphasisKind::Underline => Some("_"),
+        EmphasisKind::Strike => Some("~"),
+        EmphasisKind::Highlight => Some("="),
+        _ => None,
     }
 }
 
