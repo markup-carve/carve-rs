@@ -1733,3 +1733,21 @@ fn unclosed_angle_brackets_do_not_rescan_for_an_autolink() {
         start.elapsed()
     );
 }
+
+#[test]
+fn a_paragraph_of_directives_is_written_without_reslicing_the_run() {
+    let _guard = perf_guard();
+    // ONE text node holding every directive. The writer isolates each
+    // directive, and slicing used to clone that whole node once per directive
+    // (markup-carve/carve-rs#1618).
+    let source = format!("{}\n", "a {{ x }} b ".repeat(128_000));
+    let doc = carve::parse(&source);
+    let start = Instant::now();
+    let written = carve::render_carve(&doc).expect("within the render ceiling");
+    assert!(written.contains("{{ x }}"), "expected the directives back");
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "writing a directive-dense paragraph took {:?}",
+        start.elapsed()
+    );
+}
