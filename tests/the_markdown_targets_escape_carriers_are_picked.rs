@@ -26,8 +26,9 @@
 //! private-use character is invisible in a rendered string, which is exactly how
 //! the defect hid.
 
-/// The four the Markdown target reserved.
-const RESERVED: [u32; 4] = [0xE004, 0xE005, 0xE006, 0xE007];
+/// The three the Markdown target reserved. It was four until `#` stopped
+/// needing a carrier of its own (markup-carve/carve#2049).
+const RESERVED: [u32; 3] = [0xE004, 0xE005, 0xE006];
 
 /// Private-use code points NO mechanism in this crate claims, so a difference
 /// against one of these can only be the reservation.
