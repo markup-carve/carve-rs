@@ -615,6 +615,8 @@ const IMPLEMENTED: &[&str] = &[
     "the-round-trip-comparison-normalizes-a-named-list",
     "a-quote-is-an-ordinary-link-destination-character",
     "an-empty-link-destination-is-not-a-link",
+    "a-forced-opener-of-an-open-kind-is-literal",
+    "substitution-content-is-inline-and-only-a-top-level-arrow-splits-it",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

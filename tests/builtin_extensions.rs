@@ -1460,9 +1460,8 @@ fn code_span_trailing_brace_does_not_drop_content() {
     // `{_u_}` a forced underline, `{.c}` an attribute. (Regression: rs parsed
     // `{==h==}` as a bogus raw-inline format and rendered nothing.)
     //
-    // The inner `=` pair is content under E3 (markup-carve/carve#2078). The
-    // three readers split on this shape, which markup-carve/carve#2096 asks a
-    // ruling for; what this test guards is that the code span survives.
+    // The inner `=` pair is content under E3 (markup-carve/carve#2078, corpus
+    // 471-8 from markup-carve/carve#2103).
     assert_eq!(
         carve::to_html("`c`{==h==}").trim(),
         "<p><code>c</code><mark>=h=</mark></p>"
