@@ -2,7 +2,7 @@ use serde_json::Map;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
-use crate::ast_json::{value_to_json, Json};
+use crate::ast_json::{emphasis_type, value_to_json, Json};
 
 use super::{schema_map, ProseMirrorDoc, SchemaMap};
 
@@ -615,6 +615,15 @@ impl Renderer {
                     let Some(name) = self.emphasis_name(n.kind) else {
                         return;
                     };
+                    // A mark cannot nest inside itself, so a span of a kind
+                    // already open (a braced scope makes one spellable,
+                    // markup-carve/carve#2091) merges into the outer mark.
+                    if marks
+                        .iter()
+                        .any(|m| m.get("type").and_then(Json::as_str) == Some(name))
+                    {
+                        self.degrade(emphasis_type(n.kind));
+                    }
                     next.push(mark(name, attrs(n.attrs.as_ref())));
                 }
                 for child in &n.children {

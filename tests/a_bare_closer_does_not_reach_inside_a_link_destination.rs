@@ -101,9 +101,11 @@ fn a_raw_inline_is_opaque_only_as_its_own_token() {
 }
 
 #[test]
-fn a_brace_that_is_not_a_raw_inline_stays_a_braced_inline() {
+fn a_forced_opener_of_the_scanned_kind_hides_nothing() {
+    // E3: `{=` is literal while the highlight it would close is open
+    // (markup-carve/carve#2078), so the closer at `c=` is reachable.
     assert_eq!(
         html("=a {=html} c= d=}\n"),
-        "<p>=a <mark>html} c= d</mark></p>"
+        "<p><mark>a {=html} c</mark> d=}</p>"
     );
 }

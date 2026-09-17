@@ -972,8 +972,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 1723, and NO document changes bucket in either direction. The one lossy
     // joiner, 469-3, is `[x]( "t")`, whose quotes degrade as
     // `smart_punctuation` - a kind this set already holds.
-    const STRICT: usize = 1375;
-    const LOSSY: usize = 348;
+    // The pin moves on to carve 2f99a109, which adds fourteen documents and
+    // changes none: 12-inline-code-11 and -12 (#2088), the eight 471 rows
+    // (#2090, #2103), the two 152 rows (#2085, #2099) and the two 472 rows
+    // (#2092). Diffed by name against 77b2308 with this engine, no existing
+    // document changes bucket; measured here, 1384/354. Six of the joiners are
+    // lossy: the 152 rows degrade `smart_punctuation`, the 472 rows the NEW kind
+    // `substitution` (the editor schema still carries each half as a string,
+    // markup-carve/carve-grammars#466), and 471-5 and -7 the NEW `strong`
+    // report, since a strong inside a strong cannot be two marks.
+    const STRICT: usize = 1384;
+    const LOSSY: usize = 354;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

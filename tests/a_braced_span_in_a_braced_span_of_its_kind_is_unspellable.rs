@@ -56,22 +56,23 @@ imports! {
         ["/p[1]/sup[1]/sup[1]"],
     insertion: "<p><ins><ins>x</ins></ins></p>" => "{+x+}\n",
         ["/p[1]/ins[1]/ins[1]"],
-    through_another_kind: "<p>a<strong>b<em>c<b>x</b></em></strong>d</p>" => "a{*b{/cx/}*}d\n",
-        ["/p[1]/strong[2]/em[2]/b[2]"],
+    bare_inside_braced: "<p>a<strong><b>x</b></strong>b</p>" => "a{*x*}b\n",
+        ["/p[1]/strong[2]/b[1]"],
     three_levels: "<p><sup>a<sup>b<sup>c</sup></sup></sup></p>" => "{^abc^}\n",
         ["/p[1]/sup[1]/sup[2]", "/p[1]/sup[1]/sup[2]/sup[2]"],
 }
 
-/// Control: where one level can be bare, the nesting is written and kept.
+/// Control: a braced span of another kind starts its own scope, so the
+/// nesting through it is written and kept (markup-carve/carve#2091).
 #[test]
-fn a_spellable_nesting_is_kept() {
+fn a_nesting_through_another_braced_kind_is_kept() {
     assert_eq!(
-        imported("<p>a<strong><b>x</b></strong>b</p>"),
-        ("a{**x**}b\n".to_string(), vec![])
+        imported("<p>a<strong>b<em>c<b>x</b></em></strong>d</p>"),
+        ("a{*b{/c{*x*}/}*}d\n".to_string(), vec![])
     );
     assert_eq!(
-        to_html("a{**x**}b\n"),
-        "<p>a<strong><strong>x</strong></strong>b</p>"
+        to_html("a{*b{/c{*x*}/}*}d\n"),
+        "<p>a<strong>b<em>c<strong>x</strong></em></strong>d</p>"
     );
 }
 
