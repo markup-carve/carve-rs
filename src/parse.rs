@@ -15535,6 +15535,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // AT EVERY DEPTH (PART 9 section 23, markup-carve/carve#1351).
                 // See `harden_verse_breaks` for why the test is node kind and
                 // not depth, and why both exemptions need no code.
+                let _verse = InLineBlock::enter();
                 let inlines = harden_verse_breaks(parse_inline_lines_with_anchor(
                     &lines
                         .lines
@@ -18895,10 +18896,15 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // No matching closer: an unclosed verbatim opener is opaque to the end of
     // the text (matches djot / carve-php / carve-js). Whatever ends the run
     // strips its trailing whitespace, a forced-span closer as much as the block
-    // end (markup-carve/carve#2051). Spaces and tabs only: a newline there is
-    // content (corpus 380).
+    // end, line breaks included (markup-carve/carve#2051, markup-carve/carve#2089).
+    // In a line block a break is content, so only spaces and tabs go there
+    // (corpus 380).
     let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
-    let raw = raw.trim_end_matches([' ', '\t']);
+    let raw = if InLineBlock::inside() {
+        raw.trim_end_matches([' ', '\t'])
+    } else {
+        raw.trim_end_matches([' ', '\t', '\n', '\r'])
+    };
     Some((strip_verbatim_padding(raw).to_string(), bytes.len() - start))
 }
 
@@ -22467,6 +22473,34 @@ fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
         }
     }
     None
+}
+
+thread_local! {
+    static IN_LINE_BLOCK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the inline run being read is a line block's, where a line break is
+/// content rather than layout (PART 9 §23).
+struct InLineBlock {
+    outer: bool,
+}
+
+impl InLineBlock {
+    fn inside() -> bool {
+        IN_LINE_BLOCK.with(|flag| flag.get())
+    }
+
+    fn enter() -> Self {
+        Self {
+            outer: IN_LINE_BLOCK.with(|flag| flag.replace(true)),
+        }
+    }
+}
+
+impl Drop for InLineBlock {
+    fn drop(&mut self) {
+        IN_LINE_BLOCK.with(|flag| flag.set(self.outer));
+    }
 }
 
 fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {
