@@ -824,11 +824,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::CriticSubstitute(sub) => format!(
             "{}{}",
             style(
-                &strip_terminal_controls(&sub.old_text),
+                &render_inlines(&sub.old, ctx, depth + 1),
                 &(STRIKE.to_string() + "\x1b[31m")
             ),
             style(
-                &strip_terminal_controls(&sub.new_text),
+                &render_inlines(&sub.new, ctx, depth + 1),
                 &(FG_GREEN.to_string() + UNDERLINE)
             ),
         ),

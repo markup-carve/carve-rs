@@ -189,6 +189,10 @@ impl SmartQuotes {
                 InlineNode::Extension(e) => self.visit_inlines(&mut e.children),
                 InlineNode::CriticInsert(c) => self.visit_inlines(&mut c.children),
                 InlineNode::CriticDelete(c) => self.visit_inlines(&mut c.children),
+                InlineNode::CriticSubstitute(c) => {
+                    self.visit_inlines(&mut c.old);
+                    self.visit_inlines(&mut c.new);
+                }
                 InlineNode::Footnote(f) => {
                     if let Some(i) = &mut f.inline {
                         self.visit_inlines(i);

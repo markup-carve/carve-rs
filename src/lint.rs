@@ -892,7 +892,6 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         | InlineNode::Abbreviation(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
-        | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}
         InlineNode::Emphasis(n) => {
@@ -947,6 +946,10 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         InlineNode::CriticDelete(n) => {
             report("delete", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
+        }
+        InlineNode::CriticSubstitute(n) => {
+            walk_inlines(&n.old, visit);
+            walk_inlines(&n.new, visit);
         }
     }
 }

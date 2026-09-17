@@ -1332,6 +1332,10 @@ fn rename_inlines(
             InlineNode::Extension(e) => rename_inlines(&mut e.children, footnotes, headings),
             InlineNode::CriticInsert(c) => rename_inlines(&mut c.children, footnotes, headings),
             InlineNode::CriticDelete(c) => rename_inlines(&mut c.children, footnotes, headings),
+            InlineNode::CriticSubstitute(c) => {
+                rename_inlines(&mut c.old, footnotes, headings);
+                rename_inlines(&mut c.new, footnotes, headings);
+            }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     for part in [&mut item.prefix, &mut item.locator, &mut item.suffix]
@@ -1830,6 +1834,10 @@ fn expand_inlines(nodes: &mut Vec<InlineNode>, state: &mut State<'_>) {
             InlineNode::Extension(e) => expand_inlines(&mut e.children, state),
             InlineNode::CriticInsert(c) => expand_inlines(&mut c.children, state),
             InlineNode::CriticDelete(c) => expand_inlines(&mut c.children, state),
+            InlineNode::CriticSubstitute(c) => {
+                expand_inlines(&mut c.old, state);
+                expand_inlines(&mut c.new, state);
+            }
             InlineNode::Footnote(f) => {
                 if let Some(inline) = &mut f.inline {
                     expand_inlines(inline, state);

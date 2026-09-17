@@ -989,6 +989,19 @@ fn collect_footnotes_inline_scoped(
                     discarded,
                 );
             }
+            InlineNode::CriticSubstitute(c) => {
+                for half in [&mut c.old, &mut c.new] {
+                    collect_footnotes_inline_scoped(
+                        assign_ref_ids,
+                        half,
+                        def_labels,
+                        label_indices,
+                        seen,
+                        order,
+                        discarded,
+                    );
+                }
+            }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
@@ -3466,9 +3479,9 @@ fn render_inline_after(
         }
         InlineNode::CriticSubstitute(c) => {
             out.push_str("<del>");
-            write_escaped_text(out, &c.old_text);
+            render_inlines_stateful(out, &c.old, options, state);
             out.push_str("</del><ins>");
-            write_escaped_text(out, &c.new_text);
+            render_inlines_stateful(out, &c.new, options, state);
             out.push_str("</ins>");
         }
         InlineNode::CriticComment(c) => out.push_str(&format!(

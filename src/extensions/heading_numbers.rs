@@ -373,6 +373,10 @@ fn rewrite_links_inlines(
             InlineNode::Extension(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
             InlineNode::CriticInsert(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
             InlineNode::CriticDelete(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
+            InlineNode::CriticSubstitute(c) => {
+                rewrite_links_inlines(&mut c.old, by_id, opts);
+                rewrite_links_inlines(&mut c.new, by_id, opts);
+            }
             InlineNode::Footnote(f) => {
                 if let Some(inl) = &mut f.inline {
                     rewrite_links_inlines(inl, by_id, opts);

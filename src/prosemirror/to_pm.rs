@@ -847,11 +847,27 @@ impl Renderer {
                 let Some(name) = self.name("substitution") else {
                     return;
                 };
+                // The editor schema carries the halves as text
+                // (markup-carve/carve-grammars#466 takes them to content), so a
+                // half holding more than text degrades to its plain form.
+                if n.old
+                    .iter()
+                    .chain(n.new.iter())
+                    .any(|node| !matches!(node, InlineNode::Text(_) | InlineNode::EscapedText(_)))
+                {
+                    self.degrade("substitution");
+                }
                 out.push(node_marked(
                     name,
                     Map::from_iter([
-                        ("oldText".into(), Json::String(n.old_text.clone())),
-                        ("newText".into(), Json::String(n.new_text.clone())),
+                        (
+                            "oldText".into(),
+                            Json::String(crate::render::plain_inlines(&n.old)),
+                        ),
+                        (
+                            "newText".into(),
+                            Json::String(crate::render::plain_inlines(&n.new)),
+                        ),
                     ]),
                     Vec::new(),
                     marks,

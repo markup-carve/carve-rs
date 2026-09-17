@@ -445,6 +445,10 @@ impl Seeder {
                 }
                 InlineNode::CriticInsert(c) => self.walk_inlines(&c.children),
                 InlineNode::CriticDelete(c) => self.walk_inlines(&c.children),
+                InlineNode::CriticSubstitute(c) => {
+                    self.walk_inlines(&c.old);
+                    self.walk_inlines(&c.new);
+                }
                 _ => {}
             }
         }

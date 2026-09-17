@@ -319,8 +319,8 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                         pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
-                        old_text: format!("old{c}"),
-                        new_text: format!("new{c}"),
+                        old: vec![carve::InlineNode::text(format!("old{c}"))],
+                        new: vec![carve::InlineNode::text(format!("new{c}"))],
                         pos: None,
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {
@@ -466,8 +466,8 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
                         pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
-                        old_text: format!("old{c}"),
-                        new_text: format!("new{c}"),
+                        old: vec![carve::InlineNode::text(format!("old{c}"))],
+                        new: vec![carve::InlineNode::text(format!("new{c}"))],
                         pos: None,
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {

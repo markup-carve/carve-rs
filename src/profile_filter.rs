@@ -570,6 +570,10 @@ impl ProfileFilter<'_> {
             InlineNode::Extension(e) => self.filter_inlines(&mut e.children, depth)?,
             InlineNode::CriticInsert(c) => self.filter_inlines(&mut c.children, depth)?,
             InlineNode::CriticDelete(c) => self.filter_inlines(&mut c.children, depth)?,
+            InlineNode::CriticSubstitute(c) => {
+                self.filter_inlines(&mut c.old, depth)?;
+                self.filter_inlines(&mut c.new, depth)?;
+            }
             InlineNode::Footnote(f) => {
                 if let Some(inline) = &mut f.inline {
                     self.filter_inlines(inline, depth)?;
@@ -1093,7 +1097,12 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
             .collect(),
         // Both texts, matching carve-php and carve-js. Returning only the new
         // one silently dropped the wording the author replaced.
-        InlineNode::CriticSubstitute(c) => format!("{}{}", c.old_text, c.new_text),
+        InlineNode::CriticSubstitute(c) => c
+            .old
+            .iter()
+            .chain(c.new.iter())
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
         InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(c) => c.target.clone(),
@@ -1192,6 +1201,10 @@ fn cleanup_inline_children(node: &mut InlineNode) {
         InlineNode::Extension(e) => cleanup_inlines(&mut e.children),
         InlineNode::CriticInsert(c) => cleanup_inlines(&mut c.children),
         InlineNode::CriticDelete(c) => cleanup_inlines(&mut c.children),
+        InlineNode::CriticSubstitute(c) => {
+            cleanup_inlines(&mut c.old);
+            cleanup_inlines(&mut c.new);
+        }
         InlineNode::Footnote(f) => {
             if let Some(inline) = &mut f.inline {
                 cleanup_inlines(inline);
@@ -1263,7 +1276,6 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::AutoLink(_)
-        | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_) => false,
         InlineNode::Emphasis(e) => all_inlines_empty(&e.children),
         InlineNode::Link(l) => all_inlines_empty(&l.children),
@@ -1271,6 +1283,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         InlineNode::Extension(e) => all_inlines_empty(&e.children),
         InlineNode::CriticInsert(c) => all_inlines_empty(&c.children),
         InlineNode::CriticDelete(c) => all_inlines_empty(&c.children),
+        InlineNode::CriticSubstitute(c) => all_inlines_empty(&c.old) && all_inlines_empty(&c.new),
         InlineNode::Footnote(f) => match &f.inline {
             Some(inline) => all_inlines_empty(inline),
             None => false,

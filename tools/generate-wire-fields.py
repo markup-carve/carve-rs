@@ -31,7 +31,9 @@ HELPERS = ("attrs", "pos")
 # Engine features whose normative schema change is still on an unmerged spec
 # branch. Keep the pinned corpus revision unchanged; once that pin contains a
 # field, the set insertion below is simply a no-op.
-PENDING_NODE_FIELDS = {"comment": ("delimited",)}
+PENDING_NODE_FIELDS = {"comment": ("delimited",), "substitution": ("new", "old")}
+# Fields the unmerged schema change removes, so ingest refuses them now.
+PENDING_REMOVED_FIELDS = {"substitution": ("newText", "oldText")}
 
 
 def render(schema: dict) -> str:
@@ -51,7 +53,8 @@ def render(schema: dict) -> str:
     for type_const, fields in PENDING_NODE_FIELDS.items():
         if type_const not in by_type:
             raise SystemExit(f"pending field names unknown node type {type_const}")
-        by_type[type_const] = sorted(set(by_type[type_const]).union(fields))
+        removed = set(PENDING_REMOVED_FIELDS.get(type_const, ()))
+        by_type[type_const] = sorted(set(by_type[type_const]).union(fields) - removed)
 
     helpers: dict[str, list[str]] = {}
     for name in HELPERS:

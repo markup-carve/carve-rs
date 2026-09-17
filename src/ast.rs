@@ -1265,8 +1265,11 @@ pub struct CriticDelete {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticSubstitute {
-    pub old_text: String,
-    pub new_text: String,
+    /// The deleted half, as inline content (PART 12, ruling
+    /// markup-carve/carve-js#1827).
+    pub old: Vec<InlineNode>,
+    /// The inserted half.
+    pub new: Vec<InlineNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

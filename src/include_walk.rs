@@ -110,6 +110,10 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         InlineNode::Span(s) => v.inlines(&mut s.children),
         InlineNode::CriticInsert(c) => v.inlines(&mut c.children),
         InlineNode::CriticDelete(c) => v.inlines(&mut c.children),
+        InlineNode::CriticSubstitute(c) => {
+            v.inlines(&mut c.old);
+            v.inlines(&mut c.new);
+        }
         InlineNode::Extension(e) => v.inlines(&mut e.children),
         InlineNode::Footnote(f) => {
             if let Some(inline) = &mut f.inline {
@@ -146,7 +150,6 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         | InlineNode::Abbreviation(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
-        | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}
     }

@@ -1377,8 +1377,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "<del>{}</del><ins>{}</ins>",
-            escape_text(&strip_controls(&sub.old_text)),
-            escape_text(&strip_controls(&sub.new_text))
+            render_inlines(&sub.old, ctx, depth + 1),
+            render_inlines(&sub.new, ctx, depth + 1)
         ),
         // Visible content: the HTML target renders it as
         // `<span class="critic-comment"> note </span>`, so dropping it here made two
@@ -2558,6 +2558,10 @@ where
             }
             InlineNode::CriticDelete(delete) => {
                 walk_inlines(&delete.children, depth + 1, in_link, visit)
+            }
+            InlineNode::CriticSubstitute(sub) => {
+                walk_inlines(&sub.old, depth + 1, in_link, visit);
+                walk_inlines(&sub.new, depth + 1, in_link, visit);
             }
             _ => {}
         }

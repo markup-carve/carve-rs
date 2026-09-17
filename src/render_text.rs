@@ -176,6 +176,10 @@ fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbb
             }
             InlineNode::CriticInsert(c) => collect_inlines(&c.children, suppressed, out),
             InlineNode::CriticDelete(c) => collect_inlines(&c.children, suppressed, out),
+            InlineNode::CriticSubstitute(c) => {
+                collect_inlines(&c.old, suppressed, out);
+                collect_inlines(&c.new, suppressed, out);
+            }
             // A CITATION GROUP is emitted as `raw` on both targets, whether or
             // not its items resolved, so its parsed prefix, locator and suffix
             // never reach the output either. An abbreviation the Citations
