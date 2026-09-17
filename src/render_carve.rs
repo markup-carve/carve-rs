@@ -2793,6 +2793,12 @@ fn render_nodes_with_verbatim(
                 "a mention or tag against a word character has no Carve source spelling",
             );
         }
+        // Two touching backtick runs merge into one, so an empty delimited
+        // comment keeps them apart (PART 11 §10k N3, ruling
+        // markup-carve/carve-js#1818). Padded as the comment writer pads one.
+        if out.ends_with('`') && rendered.starts_with('`') && !ends_in_an_escape(&out) {
+            out.push_str("{%  %}");
+        }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
             caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
@@ -4832,4 +4838,12 @@ fn boundary_text(node: &InlineNode) -> Option<&str> {
         InlineNode::Symbol(symbol) => Some(&symbol.name),
         _ => None,
     }
+}
+
+/// Whether the last character of `written` is escaped: an odd run of
+/// backslashes stands before it.
+fn ends_in_an_escape(written: &str) -> bool {
+    let mut chars = written.chars().rev();
+    chars.next();
+    chars.take_while(|&c| c == '\\').count() % 2 == 1
 }
