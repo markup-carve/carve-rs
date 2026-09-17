@@ -4,6 +4,8 @@
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
+use carve::CarveExtension;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Html,
@@ -85,6 +87,12 @@ fn main() -> ExitCode {
     let mut fmt_stamp = None;
     let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
+    let mut extension_keys: Vec<String> = Vec::new();
+    let mut tabs_mode = carve::TabsMode::Css;
+    let mut tabs_mode_set = false;
+    let mut citation_mode = carve::CitationMode::Numbered;
+    let mut citation_mode_set = false;
+    let mut selective_render_options = false;
     let mut from_json = false;
     let mut strict_losses = false;
     let mut report_losses: Option<String> = None;
@@ -237,6 +245,65 @@ fn main() -> ExitCode {
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
+            "--extension" => {
+                selective_render_options = true;
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --extension requires a registry key");
+                    return ExitCode::FAILURE;
+                };
+                if !carve::extensions::registry::keys().any(|key| key == value) {
+                    let known = carve::extensions::registry::keys()
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    eprintln!("carve: unknown extension: {value} (expected one of: {known})");
+                    return ExitCode::FAILURE;
+                }
+                if !extension_keys.contains(&value) {
+                    extension_keys.push(value);
+                }
+            }
+            "--tabs-mode" => {
+                selective_render_options = true;
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --tabs-mode requires css or aria");
+                    return ExitCode::FAILURE;
+                };
+                tabs_mode = match value.as_str() {
+                    "css" => carve::TabsMode::Css,
+                    "aria" => carve::TabsMode::Aria,
+                    other => {
+                        eprintln!("carve: unknown tabs mode: {other} (expected css|aria)");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                tabs_mode_set = true;
+            }
+            "--citation-mode" => {
+                selective_render_options = true;
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --citation-mode requires numbered or author-date");
+                    return ExitCode::FAILURE;
+                };
+                citation_mode = match value.as_str() {
+                    "numbered" => carve::CitationMode::Numbered,
+                    "author-date" => carve::CitationMode::AuthorDate,
+                    other => {
+                        eprintln!(
+                            "carve: unknown citation mode: {other} (expected numbered|author-date)"
+                        );
+                        return ExitCode::FAILURE;
+                    }
+                };
+                citation_mode_set = true;
+            }
+            "--no-sections" => {
+                selective_render_options = true;
+                options = options.with_sections(false);
+            }
+            "--source-lines" => {
+                selective_render_options = true;
+                options = options.with_source_lines(true);
+            }
             "--include-root" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --include-root requires a directory");
@@ -289,6 +356,11 @@ fn main() -> ExitCode {
         }
     }
 
+    if command != Command::Render && selective_render_options {
+        eprintln!("carve: selective extension and render options apply only to rendering");
+        return ExitCode::FAILURE;
+    }
+
     if command == Command::Fmt {
         return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
     }
@@ -298,6 +370,15 @@ fn main() -> ExitCode {
             input_paths.first().map(String::as_str),
             include_root.as_deref(),
         );
+    }
+
+    if tabs_mode_set && !extension_keys.iter().any(|key| key == "tabs") {
+        eprintln!("carve: --tabs-mode requires --extension tabs");
+        return ExitCode::FAILURE;
+    }
+    if citation_mode_set && !extension_keys.iter().any(|key| key == "citations") {
+        eprintln!("carve: --citation-mode requires --extension citations");
+        return ExitCode::FAILURE;
     }
 
     if enable_extensions {
@@ -310,6 +391,33 @@ fn main() -> ExitCode {
         for preset in &fenced_presets {
             options = options.with_extension(preset);
         }
+    }
+    let named_extensions: Vec<Box<dyn carve::CarveExtension>> = extension_keys
+        .iter()
+        .map(|key| match key.as_str() {
+            "tabs" => Box::new(carve::Tabs::with_options(carve::TabsOptions {
+                mode: tabs_mode,
+                ..carve::TabsOptions::default()
+            })) as Box<dyn carve::CarveExtension>,
+            "citations" => Box::new(carve::Citations::with_mode(citation_mode)),
+            _ => carve::extensions::registry::by_key(key)
+                .expect("extension keys were validated while parsing arguments"),
+        })
+        .filter(|extension| {
+            !enable_extensions
+                || (extension.name() != details.name()
+                    && extension.name() != spoiler.name()
+                    && extension.name() != code_callouts.name()
+                    && extension.name() != color_swatch.name()
+                    && extension.name() != math_block.name()
+                    && !fenced_presets
+                        .iter()
+                        .any(|preset| extension.name() == preset.name()))
+        })
+        .filter(|extension| quote_locale.is_none() || extension.name() != "smart-quotes")
+        .collect();
+    for extension in &named_extensions {
+        options = options.with_extension(extension.as_ref());
     }
     let smart_quotes = quote_locale.as_deref().map(carve::SmartQuotes::new);
     if let Some(extension) = &smart_quotes {
@@ -1466,6 +1574,12 @@ fn print_usage() {
          (details, spoiler, code-callouts, color, math, and every diagram\n                              \
          preset: mermaid, plantuml, d2, graphviz, wavedrom, abc, vega-lite,\n                              \
          chart); needed for --static to flatten/degrade those constructs\n  \
+         --extension KEY             enable a registry extension (repeatable;\n                              \
+                                     an unknown key prints the accepted list)\n  \
+         --tabs-mode MODE            css (default) or aria for --extension tabs\n  \
+         --citation-mode MODE        numbered (default) or author-date\n  \
+         --no-sections               render headings without section wrappers\n  \
+         --source-lines              emit data-source-line annotations\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
          --symbol NAME=VALUE         map :NAME: to VALUE (repeatable)\n  \

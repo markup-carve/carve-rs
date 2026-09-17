@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The CLI accepts repeatable `--extension` registry keys, tabs and citation
+  modes, section-wrapper opt-out, and source-line annotations
+  (markup-carve/carve-rs#1755).
 - `Options` accepts authoritative mention and tag resolver callbacks with node
   attributes and opaque host context (markup-carve/carve-rs#1682).
 - `IncludeResolver` gains a defaulted `unresolved_id`, and `FileSystemResolver`
