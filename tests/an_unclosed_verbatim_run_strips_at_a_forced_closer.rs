@@ -20,14 +20,15 @@ fn a_tab_is_stripped_too() {
 }
 
 #[test]
-fn a_newline_at_the_end_of_the_run_is_content() {
-    // Corpus 380's shape, and the same newline before a forced closer.
+fn a_newline_is_content_only_in_a_line_block() {
+    // Corpus 380's shape. Outside a line block the break goes with the spaces
+    // (ruling B on markup-carve/carve#2089, markup-carve/carve-rs#1748).
     assert!(
         html("::: |\n`\n%%\n:::\n").contains("<code>\n</code>"),
         "{}",
         html("::: |\n`\n%%\n:::\n")
     );
-    assert_eq!(html("{~` a\n~}\n"), "<p><s><code> a\n</code></s></p>");
+    assert_eq!(html("{~` a\n~}\n"), "<p><s><code> a</code></s></p>");
 }
 
 #[test]
