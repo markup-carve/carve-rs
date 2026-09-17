@@ -1,6 +1,6 @@
 use carve::{
-    from_json, from_prosemirror, parse, parse_with_options, render_carve, render_html,
-    to_prosemirror, BlockNode, Options,
+    from_json, from_prosemirror, from_prosemirror_with_report, parse, parse_with_options,
+    render_carve, render_html, to_prosemirror, BlockNode, Options,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -374,6 +374,127 @@ fn inbound_mention_flavor_comes_from_the_arriving_name() {
     assert!(html.contains("class=\"tag\""));
     assert!(html.contains("@alice"));
     assert!(html.contains("#topic"));
+}
+
+/// A mention node after `ping `, read back and written as Carve, with the
+/// import report.
+fn written_mention(ty: &str, attrs: Value) -> (String, Value, Value) {
+    let input = json!({"type":"doc","content":[{"type":"paragraph","content":[
+        {"type":"text","text":"ping "}, {"type":ty,"attrs":attrs}
+    ]}]});
+    let import = from_prosemirror_with_report(&input.to_string()).expect("the mention imports");
+    let carve = render_carve(&import.document).expect("the mention writes");
+    (carve, json!(import.dropped), json!(import.degraded))
+}
+
+const DIFFERENT_LABEL: &str =
+    "the mention name is its id, so a different display label is not carried";
+
+#[test]
+fn a_stock_tiptap_mention_is_named_by_its_id_then_its_label() {
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let cases = [
+        (
+            "mention",
+            json!({"id":"alice","label":null,"mentionSuggestionChar":"@"}),
+            "ping @alice\n",
+            json!({}),
+        ),
+        (
+            "mention",
+            json!({"id":"alice","label":"alice","mentionSuggestionChar":"@"}),
+            "ping @alice\n",
+            json!({}),
+        ),
+        (
+            "mention",
+            json!({"id":"u123","label":"Alice","mentionSuggestionChar":"@"}),
+            "ping @u123\n",
+            json!({"label": DIFFERENT_LABEL}),
+        ),
+        (
+            "mention",
+            json!({"id":null,"label":"Alice","mentionSuggestionChar":"@"}),
+            "ping @Alice\n",
+            json!({}),
+        ),
+        ("mention", json!({"id":"alice"}), "ping @alice\n", json!({})),
+        (
+            "mention",
+            json!({"label":"Alice"}),
+            "ping @Alice\n",
+            json!({}),
+        ),
+        (
+            tag.as_str(),
+            json!({"id":"release","label":null,"mentionSuggestionChar":"#"}),
+            "ping #release\n",
+            json!({}),
+        ),
+        (
+            tag.as_str(),
+            json!({"id":"release","label":"Release","mentionSuggestionChar":"#"}),
+            "ping #release\n",
+            json!({"label": DIFFERENT_LABEL}),
+        ),
+        (
+            "mention",
+            json!({"id":"alice","label":["Alice"]}),
+            "ping @alice\n",
+            json!({"label": "a Carve attribute holds a string, and this value is of type array"}),
+        ),
+    ];
+    for (ty, attrs, expected, degraded) in cases {
+        let (carve, dropped, got_degraded) = written_mention(ty, attrs.clone());
+        assert_eq!(carve, expected, "{ty} {attrs}");
+        assert_eq!(dropped, json!({}), "{ty} {attrs}");
+        assert_eq!(got_degraded, degraded, "{ty} {attrs}");
+        let html = render_html(&parse(&carve)).unwrap();
+        assert!(
+            html.contains("<strong>"),
+            "{ty} {attrs} reads back as a mention: {html}"
+        );
+    }
+}
+
+#[test]
+fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let lost = "the name has no Carve spelling, so it is written as text";
+    let cases = [
+        (
+            "mention",
+            json!({"id":"Lea Thompson","label":null,"mentionSuggestionChar":"@"}),
+            "ping \\@Lea Thompson\n",
+            json!({"mention": lost}),
+            "<p>ping @Lea Thompson</p>",
+        ),
+        (
+            tag.as_str(),
+            json!({"id":"two words","label":null}),
+            "ping \\#two words\n",
+            json!({"tag": lost}),
+            "<p>ping #two words</p>",
+        ),
+        (
+            "mention",
+            json!({"id":null,"label":null,"mentionSuggestionChar":"@"}),
+            "ping @\n",
+            json!({"mention": lost}),
+            "<p>ping @</p>",
+        ),
+    ];
+    for (ty, attrs, expected, dropped, html) in cases {
+        let (carve, got_dropped, degraded) = written_mention(ty, attrs.clone());
+        assert_eq!(carve, expected, "{ty} {attrs}");
+        assert_eq!(got_dropped, dropped, "{ty} {attrs}");
+        assert_eq!(degraded, json!({}), "{ty} {attrs}");
+        assert_eq!(
+            render_html(&parse(&carve)).unwrap().trim(),
+            html,
+            "{ty} {attrs}"
+        );
+    }
 }
 
 #[test]

@@ -19228,7 +19228,7 @@ fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
 /// name_word = (letter | digit | '_' | '-')+ (grammar PART 9 §7). A `.` is
 /// INTERIOR only -- it must sit between two name_words, so `a..b` yields `a`
 /// (the run stops before the doubled dot) and `markus.` yields `markus`.
-fn name_run_len(s: &str) -> usize {
+pub(crate) fn name_run_len(s: &str) -> usize {
     let b = s.as_bytes();
     let is_word = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
     let mut i = 0;
