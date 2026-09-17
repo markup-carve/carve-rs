@@ -122,13 +122,11 @@ fn a_note_s_content_still_recognizes_no_note() {
 }
 
 #[test]
-fn a_critic_substitution_has_no_children_to_resolve() {
-    // Named because the arm this test would justify is deliberately absent.
-    // `CriticSubstitute` carries `old_text` and `new_text` as strings, so its
-    // halves never become nodes and no reference in them can resolve - which is
-    // also what carve-js does, byte for byte.
+fn a_reference_in_a_substitution_half_resolves() {
+    // Both halves are inline content (ruling markup-carve/carve-js#1827), so
+    // resolution reaches a reference inside one.
     assert_eq!(
         html("x {~~a~>[t][r]~~} y\n\n[r]: /u\n"),
-        "<p>x <del>~a</del><ins>[t][r]~</ins> y</p>"
+        "<p>x <del>~a</del><ins><a href=\"/u\">t</a>~</ins> y</p>"
     );
 }

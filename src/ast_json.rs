@@ -1501,6 +1501,23 @@ fn encode_inline_task<'a>(
                 EncodeTask::Citation(citation, depth)
             });
         }
+        InlineNode::CriticSubstitute(n) => {
+            let mut w = typed(out, "substitution");
+            w.field("old", |out| out.push('['));
+            let pos = &n.pos;
+            let new_half = &n.new;
+            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                let mut w = Writer { out, first: false };
+                w.field("new", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    write_pos_field(&mut w, pos);
+                    w.finish();
+                })));
+                push_array(tasks, new_half, |node| EncodeTask::Inline(node, depth + 1));
+            })));
+            push_array(tasks, &n.old, |node| EncodeTask::Inline(node, depth + 1));
+        }
         _ => write_inline_leaf(out, node),
     }
 }
@@ -2212,8 +2229,8 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
         }
         InlineNode::CriticSubstitute(n) => {
             let mut w = typed(out, "substitution");
-            w.field("oldText", |out| write_string(out, &n.old_text));
-            w.field("newText", |out| write_string(out, &n.new_text));
+            w.field("old", |out| write_inlines(out, &n.old));
+            w.field("new", |out| write_inlines(out, &n.new));
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
@@ -3176,8 +3193,8 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "delete")?,
         })),
         "substitution" => Ok(InlineNode::CriticSubstitute(CriticSubstitute {
-            old_text: required_string(obj, "substitution", "oldText")?.to_string(),
-            new_text: required_string(obj, "substitution", "newText")?.to_string(),
+            old: decode_inlines(required_array(obj, "substitution", "old")?)?,
+            new: decode_inlines(required_array(obj, "substitution", "new")?)?,
             pos: optional_pos(obj, "substitution")?,
         })),
         "critic_comment" => Ok(InlineNode::CriticComment(CriticComment {

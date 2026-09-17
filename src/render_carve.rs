@@ -913,6 +913,10 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         // as a literal `+a+` (carve#352, corpus 126).
         InlineNode::CriticInsert(i) => normalize_escapes_inlines(&mut i.children),
         InlineNode::CriticDelete(d) => normalize_escapes_inlines(&mut d.children),
+        InlineNode::CriticSubstitute(s) => {
+            normalize_escapes_inlines(&mut s.old);
+            normalize_escapes_inlines(&mut s.new);
+        }
         InlineNode::Footnote(f) => {
             if let Some(inline) = &mut f.inline {
                 normalize_escapes_inlines(inline);
@@ -941,7 +945,6 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         | InlineNode::Abbreviation(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
-        | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_) => {}
     }
 }
@@ -3133,11 +3136,13 @@ fn render_inline_body(
             )
         }
         InlineNode::CriticSubstitute(sub) => {
-            format!(
-                "{{~{}~>{}~}}",
-                escape_critic_text(&sub.old_text),
-                escape_critic_text(&sub.new_text)
-            )
+            // The halves are inline content. Where one holds an arrow or a
+            // closer of its own, PART 11 §2b's escalation escapes it: the
+            // minimal form re-parses as a different tree and the narrowed unit
+            // is written conservatively.
+            let old = render_inlines(&sub.old, ctx);
+            let new = render_inlines(&sub.new, ctx);
+            format!("{{~{old}~>{new}~}}")
         }
         InlineNode::CriticComment(comment) => {
             format!("{{#{}#}}", escape_critic_text(&comment.text))

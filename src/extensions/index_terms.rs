@@ -310,6 +310,10 @@ fn rewrite_markers_inline(
             InlineNode::Extension(e) => rewrite_markers_inline(&mut e.children, counts, display),
             InlineNode::CriticInsert(c) => rewrite_markers_inline(&mut c.children, counts, display),
             InlineNode::CriticDelete(c) => rewrite_markers_inline(&mut c.children, counts, display),
+            InlineNode::CriticSubstitute(c) => {
+                rewrite_markers_inline(&mut c.old, counts, display);
+                rewrite_markers_inline(&mut c.new, counts, display);
+            }
             _ => {}
         }
     }
@@ -491,6 +495,10 @@ fn inline_text(nodes: &[InlineNode], smart: SmartTypographyMode) -> String {
             InlineNode::Extension(e) => out.push_str(&inline_text(&e.children, smart)),
             InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children, smart)),
             InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children, smart)),
+            InlineNode::CriticSubstitute(c) => {
+                out.push_str(&inline_text(&c.old, smart));
+                out.push_str(&inline_text(&c.new, smart));
+            }
             _ => {}
         }
     }

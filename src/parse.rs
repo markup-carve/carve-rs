@@ -4676,6 +4676,10 @@ fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &[usize]) {
             }
             InlineNode::CriticInsert(c) => apply_inline_offsets(&mut c.children, line_starts),
             InlineNode::CriticDelete(c) => apply_inline_offsets(&mut c.children, line_starts),
+            InlineNode::CriticSubstitute(c) => {
+                apply_inline_offsets(&mut c.old, line_starts);
+                apply_inline_offsets(&mut c.new, line_starts);
+            }
             _ => {}
         }
     }
@@ -15021,6 +15025,11 @@ fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<InlineNode> {
                 n.children = harden_verse_breaks(n.children);
                 InlineNode::CriticDelete(n)
             }
+            InlineNode::CriticSubstitute(mut n) => {
+                n.old = harden_verse_breaks(n.old);
+                n.new = harden_verse_breaks(n.new);
+                InlineNode::CriticSubstitute(n)
+            }
             InlineNode::Footnote(mut n) => {
                 n.inline = n.inline.map(harden_verse_breaks);
                 InlineNode::Footnote(n)
@@ -18273,13 +18282,27 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'~', start) {
                 return None;
             }
-            let pair = find_seq(bytes, content_start, b"~}")?;
-            let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
-            let sep = inner.find("~>")?;
+            let (pair, arrow) = substitution_at(bytes, start)?;
+            let old = std::str::from_utf8(&bytes[content_start..arrow]).ok()?;
+            let new = std::str::from_utf8(&bytes[arrow + 2..pair]).ok()?;
             Some((
                 InlineNode::CriticSubstitute(CriticSubstitute {
-                    old_text: inner[..sep].to_string(),
-                    new_text: inner[sep + 2..].to_string(),
+                    old: parse_inline_context(
+                        old,
+                        options,
+                        false,
+                        in_footnote,
+                        positions,
+                        base + content_start,
+                    ),
+                    new: parse_inline_context(
+                        new,
+                        options,
+                        false,
+                        in_footnote,
+                        positions,
+                        base + arrow + 2,
+                    ),
                     pos: None,
                 }),
                 pair + 2 - start,
@@ -20664,6 +20687,10 @@ fn strip_non_authored(nodes: &mut Vec<InlineNode>) {
             InlineNode::Extension(e) => strip_non_authored(&mut e.children),
             InlineNode::CriticInsert(c) => strip_non_authored(&mut c.children),
             InlineNode::CriticDelete(c) => strip_non_authored(&mut c.children),
+            InlineNode::CriticSubstitute(c) => {
+                strip_non_authored(&mut c.old);
+                strip_non_authored(&mut c.new);
+            }
             _ => {}
         }
     }
@@ -20695,6 +20722,10 @@ fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
             InlineNode::Extension(e) => flatten_nested_crossrefs(&mut e.children),
             InlineNode::CriticInsert(c) => flatten_nested_crossrefs(&mut c.children),
             InlineNode::CriticDelete(c) => flatten_nested_crossrefs(&mut c.children),
+            InlineNode::CriticSubstitute(c) => {
+                flatten_nested_crossrefs(&mut c.old);
+                flatten_nested_crossrefs(&mut c.new);
+            }
             _ => {}
         }
     }
@@ -21064,6 +21095,10 @@ fn resolve_reference_links_inline(
             }
             InlineNode::CriticDelete(c) => {
                 resolve_reference_links_inline(&mut c.children, defs, heading_index);
+            }
+            InlineNode::CriticSubstitute(c) => {
+                resolve_reference_links_inline(&mut c.old, defs, heading_index);
+                resolve_reference_links_inline(&mut c.new, defs, heading_index);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
@@ -21953,6 +21988,10 @@ fn coalesce_inlines(nodes: &mut Vec<InlineNode>) {
             InlineNode::Extension(n) => coalesce_inlines(&mut n.children),
             InlineNode::CriticInsert(n) => coalesce_inlines(&mut n.children),
             InlineNode::CriticDelete(n) => coalesce_inlines(&mut n.children),
+            InlineNode::CriticSubstitute(n) => {
+                coalesce_inlines(&mut n.old);
+                coalesce_inlines(&mut n.new);
+            }
             InlineNode::Footnote(n) => {
                 if let Some(inline) = &mut n.inline {
                     coalesce_inlines(inline);
@@ -22069,6 +22108,9 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         InlineNode::Extension(ext) => holds_nested_anchor(&ext.children),
         InlineNode::CriticInsert(critic) => holds_nested_anchor(&critic.children),
         InlineNode::CriticDelete(critic) => holds_nested_anchor(&critic.children),
+        InlineNode::CriticSubstitute(critic) => {
+            holds_nested_anchor(&critic.old) || holds_nested_anchor(&critic.new)
+        }
         InlineNode::Text(_)
         | InlineNode::EscapedText(_)
         | InlineNode::SmartPunctuation(_)
@@ -22087,7 +22129,6 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         | InlineNode::Footnote(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
-        | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => false,
     })
@@ -22459,6 +22500,34 @@ fn parse_forced_emphasis(
 /// closer inside a closed code span is code (ruling markup-carve/carve#2079).
 /// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
 /// An escaped backtick opens no span; other escapes are left alone.
+/// The `~}` and the top-level `~>` of the substitution opening at `open`.
+///
+/// Only an arrow outside verbatim content and outside a comment splits the pair
+/// (ruling B on markup-carve/carve#2083), and an escaped one never does. A pair
+/// with no such arrow is a forced strike.
+fn substitution_at(bytes: &[u8], open: usize) -> Option<(usize, usize)> {
+    if bytes.get(open + 1) != Some(&b'~') {
+        return None;
+    }
+    let pair = braced_pair_close(bytes, open, b'~')?;
+    let mut j = open + 2;
+    while j + 1 < pair {
+        match bytes[j] {
+            b'\\' => j += 2,
+            b'`' => j = skip_code_span(bytes, j)?,
+            b'{' if matches!(bytes[j + 1], b'%' | b'#') => {
+                match find_seq(bytes, j + 2, &[bytes[j + 1], b'}']) {
+                    Some(close) if close < pair => j = close + 2,
+                    _ => j += 1,
+                }
+            }
+            b'~' if bytes[j + 1] == b'>' => return Some((pair, j)),
+            _ => j += 1,
+        }
+    }
+    None
+}
+
 fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
     let mut j = open + 2;
     while j + 1 < bytes.len() {
@@ -22801,12 +22870,8 @@ fn braced_inline_scan(bytes: &[u8], open: usize) -> Option<usize> {
     let content = open + 2;
     // `{~ ~> ~}` is matched before the forced strike, as the main loop does.
     if delim == b'~' {
-        if let Some(arrow) = find_seq(bytes, content, b"~>") {
-            if let Some(close) = find_seq(bytes, arrow + 2, b"~}") {
-                if !bytes[content..close].contains(&b'}') {
-                    return Some(close + 1);
-                }
-            }
+        if let Some((pair, _)) = substitution_at(bytes, open) {
+            return Some(pair + 1);
         }
     }
     let pair: [u8; 2] = match delim {

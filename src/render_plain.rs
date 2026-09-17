@@ -609,8 +609,8 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "~{}~{}",
-            strip_controls(&sub.old_text),
-            strip_controls(&sub.new_text)
+            render_inlines_stateful(&sub.old, depth + 1),
+            render_inlines_stateful(&sub.new, depth + 1)
         ),
         // A critic comment is VISIBLE content: the HTML target renders it as
         // `<span class="critic-comment"> note </span>`, so dropping it here made

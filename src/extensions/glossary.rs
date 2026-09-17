@@ -269,6 +269,10 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
             InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
             InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
+            InlineNode::CriticSubstitute(c) => {
+                out.push_str(&inline_text(&c.old));
+                out.push_str(&inline_text(&c.new));
+            }
             _ => {}
         }
     }

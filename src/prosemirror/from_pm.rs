@@ -757,8 +757,8 @@ impl Reader {
             "substitution" => node(
                 ty,
                 [
-                    ("oldText", string_json(a, "oldText", "")),
-                    ("newText", string_json(a, "newText", "")),
+                    ("old", text_children(string_opt(a, "oldText").unwrap_or(""))),
+                    ("new", text_children(string_opt(a, "newText").unwrap_or(""))),
                 ],
             ),
             "inline_footnote" => with_attrs(
@@ -888,6 +888,19 @@ fn remove_nulls(n: &mut Json) {
         o.retain(|_, v| !matches!(v, Json::Null));
     }
 }
+/// A half of a substitution, as the AST's inline array. The editor schema
+/// carries it as a string (markup-carve/carve-grammars#466), so it comes back
+/// as one text node, or as nothing when it is empty.
+fn text_children(text: &str) -> Json {
+    if text.is_empty() {
+        return Json::Array(Vec::new());
+    }
+    Json::Array(vec![Json::Object(Object::from_iter([
+        ("type".to_string(), Json::String("text".into())),
+        ("value".to_string(), Json::String(text.into())),
+    ]))])
+}
+
 fn string_json(o: &Object, k: &str, d: &str) -> Json {
     Json::String(string_opt(o, k).unwrap_or(d).into())
 }
