@@ -68,6 +68,8 @@ struct CarveContext {
     /// Every braced span written so far: its delimiter and its `pos` offset,
     /// which the HTML importer uses as a mark.
     braced_spans: Vec<(char, Option<usize>)>,
+    /// The emphasis kinds open around the node being written.
+    open_kinds: Vec<char>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -735,6 +737,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         definitions_by_line: definitions_by_description_line(doc),
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
+        open_kinds: Vec::new(),
     };
     let mut parts = Vec::new();
     // THE BLOCK AS WRITTEN when the tree has it. The key/value map cannot hold
@@ -2773,7 +2776,7 @@ fn render_nodes_with_verbatim(
         if let InlineNode::Emphasis(emphasis) = node {
             rendered = brace_a_refused_bare_opener(rendered, emphasis, out.chars().next_back());
         }
-        note_braced_span(node, &rendered, braced_before, ctx);
+        note_braced_span(node, &mut rendered, braced_before, ctx);
         if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
             // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
             // boundary between two lines, so nothing hardens there and the
@@ -2954,7 +2957,10 @@ fn render_inline_body(
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
+            let kinds = emphasis_delimiters(emphasis.kind);
+            ctx.open_kinds.extend_from_slice(kinds);
             let content = render_inlines(&emphasis.children, ctx);
+            ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
             // An EMPTY code span has one spelling, a backtick run that its
             // container ends, and only the braced closer ends it inside an
             // emphasis: a bare closer is swallowed by the open run.
@@ -3122,18 +3128,24 @@ fn render_inline_body(
             }
         }
         InlineNode::CriticInsert(insert) => {
-            format!(
+            ctx.open_kinds.push('+');
+            let written = format!(
                 "{{+{}+}}{}",
                 render_inlines(&insert.children, ctx),
                 render_attrs(&insert.attrs)
-            )
+            );
+            ctx.open_kinds.pop();
+            written
         }
         InlineNode::CriticDelete(delete) => {
-            format!(
+            ctx.open_kinds.push('-');
+            let written = format!(
                 "{{-{}-}}{}",
                 render_inlines(&delete.children, ctx),
                 render_attrs(&delete.attrs)
-            )
+            );
+            ctx.open_kinds.pop();
+            written
         }
         InlineNode::CriticSubstitute(sub) => {
             // The halves are inline content. Where one holds an arrow or a
@@ -4225,49 +4237,77 @@ fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
     }
 }
 
-/// A braced opener is text while a braced span of its kind is open (PART 9 §9
-/// E3), so a braced span inside one of its own kind has no spelling (ruling
-/// markup-carve/carve#2066). `braced_before` is where this node's descendants
-/// start in `ctx.braced_spans`.
+/// An opener is text while a span of its kind is open (PART 9 §9 E3), and the
+/// forced form shares the stack (markup-carve/carve#2078), so an emphasis span
+/// inside one of its own kind has no spelling. An insertion or deletion keeps
+/// the braced-only rule of markup-carve/carve#2066. `braced_before` is where
+/// this node's descendants start in `ctx.braced_spans`.
 fn note_braced_span(
     node: &InlineNode,
-    rendered: &str,
+    rendered: &mut String,
     braced_before: usize,
     ctx: &mut CarveContext,
 ) {
-    let (delimiter, pos) = match node {
-        InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => ('/', emphasis.pos.as_ref()),
-            EmphasisKind::Strong => ('*', emphasis.pos.as_ref()),
-            EmphasisKind::Underline => ('_', emphasis.pos.as_ref()),
-            EmphasisKind::Strike => ('~', emphasis.pos.as_ref()),
-            EmphasisKind::Highlight => ('=', emphasis.pos.as_ref()),
-            EmphasisKind::Super => ('^', emphasis.pos.as_ref()),
-            EmphasisKind::Sub => (',', emphasis.pos.as_ref()),
-            EmphasisKind::BoldItalic => return,
-        },
-        InlineNode::CriticInsert(insert) => ('+', insert.pos.as_ref()),
-        InlineNode::CriticDelete(delete) => ('-', delete.pos.as_ref()),
+    let (delimiters, pos): (&[char], _) = match node {
+        InlineNode::Emphasis(emphasis) => {
+            (emphasis_delimiters(emphasis.kind), emphasis.pos.as_ref())
+        }
+        InlineNode::CriticInsert(insert) if rendered.starts_with("{+") => {
+            (&['+'], insert.pos.as_ref())
+        }
+        InlineNode::CriticDelete(delete) if rendered.starts_with("{-") => {
+            (&['-'], delete.pos.as_ref())
+        }
         _ => return,
     };
-    let mut chars = rendered.chars();
-    if chars.next() != Some('{') || chars.next() != Some(delimiter) {
-        return;
-    }
     let nested: Vec<Option<usize>> = ctx.braced_spans[braced_before..]
         .iter()
-        .filter(|(inner, _)| *inner == delimiter)
+        .filter(|(inner, _)| delimiters.contains(inner))
         .map(|(_, mark)| *mark)
         .collect();
     if !nested.is_empty() {
         crate::render_carve_error::record_unspellable(
             "emphasis",
-            "a braced span inside a braced span of the same kind has no Carve source spelling",
+            "a span inside a span of the same kind has no Carve source spelling",
         );
         crate::render_carve_error::record_nested_same_kind(nested.into_iter().flatten().collect());
     }
-    ctx.braced_spans
-        .push((delimiter, pos.map(|pos| pos.start_offset)));
+    // A braced inline starts its own scope (ruling markup-carve/carve#2091), so
+    // a bare span holding a kind open outside it takes the braced form.
+    if let InlineNode::Emphasis(emphasis) = node {
+        let holds_an_outer_kind = ctx.braced_spans[braced_before..]
+            .iter()
+            .any(|(inner, _)| ctx.open_kinds.contains(inner));
+        if holds_an_outer_kind {
+            if let Some(delim) = bare_delimiter(emphasis.kind) {
+                if rendered.starts_with(delim) {
+                    let attrs = render_attrs(&emphasis.attrs);
+                    let body = rendered[..rendered.len() - attrs.len()].to_string();
+                    *rendered = format!("{{{body}}}{attrs}");
+                }
+            }
+        }
+    }
+    if rendered.starts_with('{') {
+        ctx.braced_spans.truncate(braced_before);
+    }
+    for delimiter in delimiters {
+        ctx.braced_spans
+            .push((*delimiter, pos.map(|pos| pos.start_offset)));
+    }
+}
+
+fn emphasis_delimiters(kind: EmphasisKind) -> &'static [char] {
+    match kind {
+        EmphasisKind::Italic => &['/'],
+        EmphasisKind::Strong => &['*'],
+        EmphasisKind::Underline => &['_'],
+        EmphasisKind::Strike => &['~'],
+        EmphasisKind::Highlight => &['='],
+        EmphasisKind::Super => &['^'],
+        EmphasisKind::Sub => &[','],
+        EmphasisKind::BoldItalic => &['/', '*'],
+    }
 }
 
 /// The offset of a `:` that, with the name after it, ends `text` as an inline

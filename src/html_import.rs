@@ -6173,7 +6173,7 @@ fn settle_empty_code_spans(
     }
 }
 
-const NESTED_SAME_KIND_UNWRAPPED: &str = "Unwrapped an inline element nested in one of its own kind: a braced span inside a braced span of the same kind has no Carve spelling, so its content is written in the outer one";
+const NESTED_SAME_KIND_UNWRAPPED: &str = "Unwrapped an inline element nested in one of its own kind: a span inside a span of the same kind has no Carve spelling, so its content is written in the outer one";
 
 /// Unwrap each inner span of a same-kind nesting the writer refuses (ruling
 /// markup-carve/carve#2066), one render at a time until none is left.

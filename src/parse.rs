@@ -17251,9 +17251,11 @@ fn parse_inline_context(
     // through here one frame per level; over the cap, keep the remaining text
     // literal rather than recursing further (prevents a stack-overflow abort on
     // input like `[[[[[…x]]]]]`). Shares the depth counter with block parsing.
+    let kinds = OpenKinds::enter();
     let Some(_depth) = DepthGuard::enter() else {
         return vec![InlineNode::text(text.to_string())];
     };
+    let _kinds = kinds;
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
@@ -20075,6 +20077,7 @@ fn match_emphasis(
                 // scanning for a later closer, matching carve-php.
                 if close > start && !bytes[close - 1].is_ascii_whitespace() {
                     let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
+                    OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                     return Some((
                         InlineNode::Emphasis(Emphasis {
                             attrs: None,
@@ -20110,6 +20113,10 @@ fn match_emphasis(
         _ => return None,
     };
     let delim = c;
+    // E3: an opener of a kind already open is content (markup-carve/carve#2078).
+    if OpenKinds::is_open(delim) {
+        return None;
+    }
     // Opener: next char must exist and not be space/newline/delim
     let after = bytes.get(i + 1).copied()?;
     if after == b' ' || after == b'\n' || after == delim {
@@ -20150,6 +20157,7 @@ fn match_emphasis(
     }
     let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
+    OpenKinds::pass_on(OpenKinds::bit(delim));
     Some((
         InlineNode::Emphasis(Emphasis {
             attrs: None,
@@ -22465,6 +22473,11 @@ fn parse_forced_emphasis(
         b'=' => EmphasisKind::Highlight,
         _ => return None,
     };
+    // E3 puts the forced form on the same stack as the bare one, so a forced
+    // opener of an open kind is content (markup-carve/carve#2078).
+    if OpenKinds::is_open(delim) {
+        return None;
+    }
     // The span closes on a `delim}` pair; with no such pair ahead the scan could
     // only walk to end-of-text and fail, so bail in O(1) (keeps `{/`×n linear).
     if !bounds.has_delim_brace_from(delim, i) {
@@ -22476,6 +22489,8 @@ fn parse_forced_emphasis(
         return None; // empty content: `+?` requires at least one byte
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
+    // A braced inline starts its own scope (ruling markup-carve/carve#2091).
+    OpenKinds::pass_only(OpenKinds::bit(delim));
     Some((
         InlineNode::Emphasis(Emphasis {
             attrs: None,
@@ -22529,6 +22544,13 @@ fn substitution_at(bytes: &[u8], open: usize) -> Option<(usize, usize)> {
 }
 
 fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
+    braced_pair_close_at_depth(bytes, open, delim, 0)
+}
+
+/// A braced inline of another kind starts its own scope, so a closer inside it
+/// cannot close this pair (ruling markup-carve/carve#2091). One of this pair's
+/// own kind is literal (E3).
+fn braced_pair_close_at_depth(bytes: &[u8], open: usize, delim: u8, depth: usize) -> Option<usize> {
     let mut j = open + 2;
     while j + 1 < bytes.len() {
         match bytes[j] {
@@ -22538,6 +22560,18 @@ fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
                 None => return find_seq(bytes, j, &[delim, b'}']),
             },
             b if b == delim && bytes[j + 1] == b'}' => return Some(j),
+            b'{' if bytes[j + 1] != delim
+                && matches!(
+                    bytes[j + 1],
+                    b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-'
+                )
+                && depth < MAX_NESTING_DEPTH =>
+            {
+                match braced_pair_close_at_depth(bytes, j, bytes[j + 1], depth + 1) {
+                    Some(close) if close > j + 2 => j = close + 2,
+                    _ => j += 1,
+                }
+            }
             _ => j += 1,
         }
     }
@@ -22569,6 +22603,63 @@ impl InLineBlock {
 impl Drop for InLineBlock {
     fn drop(&mut self) {
         IN_LINE_BLOCK.with(|flag| flag.set(self.outer));
+    }
+}
+
+thread_local! {
+    static OPEN_KINDS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static PASSED_KINDS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+}
+
+/// The emphasis kinds open around the inline run being scanned (PART 9 §9 E3).
+///
+/// An emphasis arm passes its kinds on to the `parse_inline_context` call that
+/// reads its content; every other call starts from none, so a link label or a
+/// table cell opens every kind again.
+struct OpenKinds {
+    outer: u8,
+}
+
+impl OpenKinds {
+    fn bit(delim: u8) -> u8 {
+        match delim {
+            b'/' => 1,
+            b'*' => 2,
+            b'_' => 4,
+            b'^' => 8,
+            b',' => 16,
+            b'~' => 32,
+            b'=' => 64,
+            _ => 0,
+        }
+    }
+
+    fn is_open(delim: u8) -> bool {
+        OPEN_KINDS.with(|kinds| kinds.get() & Self::bit(delim) != 0)
+    }
+
+    /// Hand the open kinds plus `added` to the next `parse_inline_context`.
+    fn pass_on(added: u8) {
+        let open = OPEN_KINDS.with(|kinds| kinds.get());
+        PASSED_KINDS.with(|passed| passed.set(open | added));
+    }
+
+    /// Hand only `kinds` to the next `parse_inline_context`.
+    fn pass_only(kinds: u8) {
+        PASSED_KINDS.with(|passed| passed.set(kinds));
+    }
+
+    fn enter() -> Self {
+        let passed = PASSED_KINDS.with(|passed| passed.replace(0));
+        Self {
+            outer: OPEN_KINDS.with(|kinds| kinds.replace(passed)),
+        }
+    }
+}
+
+impl Drop for OpenKinds {
+    fn drop(&mut self) {
+        OPEN_KINDS.with(|kinds| kinds.set(self.outer));
     }
 }
 
@@ -22732,7 +22823,7 @@ fn find_emphasis_close(
             }
         }
         if ch == b'{' {
-            if let Some(end) = braced_inline_end(bytes, j, memo) {
+            if let Some(end) = braced_inline_end(bytes, j, memo, delim) {
                 j = end + 1;
                 continue;
             }
@@ -22855,17 +22946,22 @@ fn raw_inline_format_end(bytes: &[u8], open: usize) -> Option<usize> {
 
 /// The last byte of the braced inline opening at `open`, matched the way the
 /// main loop matches these constructs (E2a, markup-carve/carve#2027).
-fn braced_inline_end(bytes: &[u8], open: usize, memo: &mut EmphasisMemo) -> Option<usize> {
+fn braced_inline_end(
+    bytes: &[u8],
+    open: usize,
+    memo: &mut EmphasisMemo,
+    scanning: u8,
+) -> Option<usize> {
     let last = *memo
         .last_brace
         .get_or_insert_with(|| bytes.iter().rposition(|&b| b == b'}'));
     if last.map_or(true, |l| l < open) {
         return None;
     }
-    braced_inline_scan(bytes, open)
+    braced_inline_scan(bytes, open, scanning)
 }
 
-fn braced_inline_scan(bytes: &[u8], open: usize) -> Option<usize> {
+fn braced_inline_scan(bytes: &[u8], open: usize, scanning: u8) -> Option<usize> {
     let delim = bytes.get(open + 1).copied()?;
     let content = open + 2;
     // `{~ ~> ~}` is matched before the forced strike, as the main loop does.
@@ -22873,6 +22969,11 @@ fn braced_inline_scan(bytes: &[u8], open: usize) -> Option<usize> {
         if let Some((pair, _)) = substitution_at(bytes, open) {
             return Some(pair + 1);
         }
+    }
+    // A forced opener of an open kind is no span, so it hides nothing; the kind
+    // this scan closes counts as open across its own content.
+    if OpenKinds::bit(delim) != 0 && (delim == scanning || OpenKinds::is_open(delim)) {
+        return None;
     }
     let pair: [u8; 2] = match delim {
         b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-' | b'#' => [delim, b'}'],
