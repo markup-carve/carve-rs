@@ -761,14 +761,34 @@ impl Reader {
                     ("mention", "user", '@')
                 };
                 let name = self.mention_name(a, sigil);
+                // `id` and `label` hold the name; the rest are the node's own
+                // attributes, which the writer refuses (markup-carve/carve-php#2083).
+                let own: Object = a
+                    .iter()
+                    .filter(|(k, _)| {
+                        !matches!(k.as_str(), "id" | "label" | "mentionSuggestionChar")
+                    })
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
                 if crate::parse::name_run_len(&name) != name.len() || name.is_empty() {
                     self.dropped.insert(
                         carve_type.into(),
                         "the name has no Carve spelling, so it is written as text".into(),
                     );
+                    // The keys `with_attrs` would have carried.
+                    for (key, value) in &own {
+                        if matches!(value, Json::String(_))
+                            && (key == "class" || !is_structural_attr(key))
+                        {
+                            self.degraded.insert(
+                                key.clone(),
+                                "the mention is written as text, which holds no attribute".into(),
+                            );
+                        }
+                    }
                     node("text", [("value", Json::String(format!("{sigil}{name}")))])
                 } else {
-                    node(carve_type, [(field, Json::String(name))])
+                    with_attrs(node(carve_type, [(field, Json::String(name))]), &own)
                 }
             }
             "raw_inline" => node(
