@@ -2574,6 +2574,38 @@ fn render_inlines_with_caption(
         None => render_nodes(nodes, ctx, caption_can_open),
     };
     ctx.inline_depth -= 1;
+    if ctx.inline_depth == 0 {
+        spell_empty_code_runs(out)
+    } else {
+        out
+    }
+}
+
+/// Stands in for an empty code span's backtick run until the inline run it
+/// sits in is written. No tree text holds a NUL: every reader replaces one.
+const EMPTY_CODE_MARK: char = '\0';
+
+/// Give each empty code span a run no later run in the block matches.
+///
+/// A backtick run's closer is searched for across the rest of the block (ruling
+/// markup-carve/carve#2079), so the usual two backticks would close on a later
+/// two-backtick run instead of ending at a braced closer. The marks are spelled
+/// from the last to the first, so each sees the lengths chosen after it.
+fn spell_empty_code_runs(mut out: String) -> String {
+    while let Some(at) = out.rfind(EMPTY_CODE_MARK) {
+        let mut later = BTreeSet::new();
+        let mut run = 0usize;
+        for byte in out[at + 1..].bytes().chain(std::iter::once(b' ')) {
+            if byte == b'`' {
+                run += 1;
+            } else if run > 0 {
+                later.insert(run);
+                run = 0;
+            }
+        }
+        let len = (2..).find(|len| !later.contains(len)).unwrap_or(2);
+        out.replace_range(at..at + 1, &"`".repeat(len));
+    }
     out
 }
 
@@ -2805,7 +2837,8 @@ fn render_nodes_with_verbatim(
         // Two touching backtick runs merge into one, so an empty delimited
         // comment keeps them apart (PART 11 §10k N3, ruling
         // markup-carve/carve-js#1818). Padded as the comment writer pads one.
-        if out.ends_with('`') && rendered.starts_with('`') && !ends_in_an_escape(&out) {
+        let run = ['`', EMPTY_CODE_MARK];
+        if out.ends_with(run) && rendered.starts_with(run) && !ends_in_an_escape(&out) {
             out.push_str("{%  %}");
         }
         out.push_str(&rendered);
@@ -2952,7 +2985,12 @@ fn render_inline_body(
         }
         InlineNode::Code(code) => {
             let value = spell_verse_empty_lines(&code.value, ctx.line_block_depth > 0);
-            format!("{}{}", render_code(&value), render_attrs(&code.attrs))
+            if value.is_empty() {
+                // Its run length is chosen once the whole run is written.
+                format!("{EMPTY_CODE_MARK}{}", render_attrs(&code.attrs))
+            } else {
+                format!("{}{}", render_code(&value), render_attrs(&code.attrs))
+            }
         }
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),

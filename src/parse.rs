@@ -18192,7 +18192,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'+', start) {
                 return None;
             }
-            let pair = find_seq(bytes, content_start, b"+}")?;
+            let pair = braced_pair_close(bytes, start, b'+')?;
             // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (markup-carve/carve#1447).
             // `inline_content` is a one-or-more repetition, so an opener that
             // meets its own closer opened nothing and its characters are text.
@@ -18242,7 +18242,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
-            let pair = find_seq(bytes, content_start, b"-}")?;
+            let pair = braced_pair_close(bytes, start, b'-')?;
             // An empty deletion is not a deletion, same rule as the insertion
             // above; the one string it spelled is the en dash just handled.
             if pair == content_start {
@@ -22424,31 +22424,47 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
-    let mut j = content_start;
+    let j = braced_pair_close(bytes, i, delim)?;
+    if j == content_start {
+        return None; // empty content: `+?` requires at least one byte
+    }
+    let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
+    Some((
+        InlineNode::Emphasis(Emphasis {
+            attrs: None,
+            kind,
+            children: parse_inline_context(
+                inner,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + content_start,
+            ),
+            pos: None,
+        }),
+        j + 2 - i,
+    ))
+}
+
+/// Where the `delim}` closing the brace pair opened at `open` starts.
+///
+/// A backtick run's closer is searched for across the rest of the block, so a
+/// closer inside a closed code span is code (ruling markup-carve/carve#2079).
+/// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
+/// An escaped backtick opens no span; other escapes are left alone.
+fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
+    let mut j = open + 2;
     while j + 1 < bytes.len() {
-        if bytes[j] == delim && bytes[j + 1] == b'}' {
-            if j == content_start {
-                return None; // empty content: `+?` requires at least one byte
-            }
-            let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
-            return Some((
-                InlineNode::Emphasis(Emphasis {
-                    attrs: None,
-                    kind,
-                    children: parse_inline_context(
-                        inner,
-                        options,
-                        false,
-                        in_footnote,
-                        positions,
-                        base + content_start,
-                    ),
-                    pos: None,
-                }),
-                j + 2 - i,
-            ));
+        match bytes[j] {
+            b'\\' if bytes[j + 1] == b'`' => j += 2,
+            b'`' => match skip_code_span(bytes, j) {
+                Some(end) => j = end,
+                None => return find_seq(bytes, j, &[delim, b'}']),
+            },
+            b if b == delim && bytes[j + 1] == b'}' => return Some(j),
+            _ => j += 1,
         }
-        j += 1;
     }
     None
 }
@@ -22763,7 +22779,11 @@ fn braced_inline_scan(bytes: &[u8], open: usize) -> Option<usize> {
         b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-' | b'#' => [delim, b'}'],
         _ => return None,
     };
-    let close = find_seq(bytes, content, &pair)?;
+    let close = if matches!(delim, b'#') {
+        find_seq(bytes, content, &pair)?
+    } else {
+        braced_pair_close(bytes, open, delim)?
+    };
     if close == content {
         return None;
     }
