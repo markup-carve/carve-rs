@@ -53,6 +53,10 @@ Other options:
 ```bash
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
 carve --symbol 'rocket=🚀' --symbol 'tada=🎉' symbols.crv
+carve --extension autolink --extension semantic-span page.crv
+carve --extension tabs --tabs-mode aria tabs.crv
+carve --extension citations --citation-mode author-date paper.crv
+carve --no-sections --source-lines page.crv
 carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
 carve --safe --profile comment untrusted.crv   # and restrict which constructs are allowed
 carve --help
@@ -64,6 +68,13 @@ apply to HTML output only, and so does `--symbol`: the other targets write
 `:name:` as the author typed it, since a symbol's value is raw HTML. carve-js
 and carve-php resolve the map on HTML alone too, which is what keeps the three
 non-HTML targets byte-identical across the engines.
+`--extension KEY` enables one built-in extension by its registry key and may be
+repeated. Passing an unknown key prints the accepted registry keys.
+`--tabs-mode` and `--citation-mode` configure their respective named extensions.
+`--no-sections` renders headings without section wrappers, while `--source-lines`
+emits `data-source-line` annotations.
+Host resolver callbacks remain library-only because they cannot be represented
+as command-line values.
 `--no-raw-html` (alias `--safe`) escapes `=html` raw
 blocks and spans instead of emitting them verbatim, which is the safe choice when
 rendering untrusted input; it composes with every format and with `--profile`.
