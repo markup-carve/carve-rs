@@ -22,6 +22,19 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Par
 use crate::ast::*;
 use crate::render_carve;
 
+/// The title of a link or image with no destination, which has no slot left to
+/// carry it, kept on a span the way the HTML importer keeps it (carve-rs#1738).
+fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
+    let mut attrs = Attrs::default();
+    attrs.key_values.insert("title".to_string(), title);
+    InlineNode::Span(Span {
+        attrs: Some(attrs),
+        children,
+        injected: false,
+        pos: None,
+    })
+}
+
 /// Convert Markdown source to Carve source.
 ///
 /// GFM tables, strikethrough and task lists are enabled: they are what real
@@ -609,14 +622,31 @@ impl Builder {
             })),
             // Carve has no spelling for an empty destination, so the link is its
             // content and the image its alt (docs/html-import-contract.md).
-            Frame::Link { href, children, .. } if is_empty_destination(&href) => {
-                for child in children {
-                    self.inline(child);
+            Frame::Link {
+                href,
+                title,
+                children,
+            } if is_empty_destination(&href) => match title {
+                Some(title) => self.inline(titled_span(title, children)),
+                None => {
+                    for child in children {
+                        self.inline(child);
+                    }
                 }
-            }
-            Frame::Image { src, alt, .. } if is_empty_destination(&src) => {
-                if !alt.is_empty() {
-                    self.text(&alt);
+            },
+            Frame::Image { src, title, alt } if is_empty_destination(&src) => {
+                let content = if alt.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![InlineNode::text(alt)]
+                };
+                match title {
+                    Some(title) => self.inline(titled_span(title, content)),
+                    None => {
+                        for child in content {
+                            self.inline(child);
+                        }
+                    }
                 }
             }
             Frame::Link {
