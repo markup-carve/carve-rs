@@ -497,6 +497,57 @@ fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
     }
 }
 
+/// A real attribute on a mention reaches the tree, and the writer refuses it,
+/// as carve-php does (markup-carve/carve-php#2083). It used to vanish with an
+/// empty report.
+#[test]
+fn a_mention_attribute_reaches_the_writer_refusal() {
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let cases = [
+        (
+            "mention",
+            json!({"id":"alice","label":null,"mentionSuggestionChar":"@","data-team":"core"}),
+        ),
+        ("mention", json!({"id":"alice","class":"x"})),
+        (
+            tag.as_str(),
+            json!({"id":"release","label":null,"data-team":"core"}),
+        ),
+    ];
+    for (ty, attrs) in cases {
+        let input = json!({"type":"doc","content":[{"type":"paragraph","content":[
+            {"type":"text","text":"ping "}, {"type":ty,"attrs":attrs}
+        ]}]});
+        let import = from_prosemirror_with_report(&input.to_string()).expect("the mention imports");
+        assert!(
+            matches!(
+                render_carve(&import.document),
+                Err(carve::RenderCarveError::SourceUnspellable(_))
+            ),
+            "{ty} {attrs} wrote {:?}",
+            render_carve(&import.document)
+        );
+    }
+}
+
+/// A mention written as text cannot hold an attribute, so the report names it.
+#[test]
+fn a_mention_written_as_text_reports_its_attribute() {
+    let (carve, dropped, degraded) = written_mention(
+        "mention",
+        json!({"id":"Lea Thompson","label":null,"data-team":"core"}),
+    );
+    assert_eq!(carve, "ping \\@Lea Thompson\n");
+    assert_eq!(
+        dropped,
+        json!({"mention": "the name has no Carve spelling, so it is written as text"})
+    );
+    assert_eq!(
+        degraded,
+        json!({"data-team": "the mention is written as text, which holds no attribute"})
+    );
+}
+
 #[test]
 fn adjacent_equal_marks_merge_on_import() {
     let doc = from_prosemirror(

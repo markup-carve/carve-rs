@@ -3064,11 +3064,13 @@ fn render_inline_body(
         }
         InlineNode::Mention(mention) => {
             refuse_attributes_on_sigil(&mention.attrs, "mention");
-            format!("@{}", escape_name(&mention.user))
+            refuse_unspellable_name(&mention.user, "mention");
+            format!("@{}", mention.user)
         }
         InlineNode::Tag(tag) => {
             refuse_attributes_on_sigil(&tag.attrs, "tag");
-            format!("#{}", escape_name(&tag.name))
+            refuse_unspellable_name(&tag.name, "tag");
+            format!("#{}", tag.name)
         }
         InlineNode::Extension(extension) => format!(
             ":{}[{}]{}",
@@ -4708,12 +4710,15 @@ fn escape_symbol_name(text: &str) -> String {
         .collect()
 }
 
-fn escape_name(text: &str) -> String {
-    let trimmed = text.trim_matches('.');
-    trimmed
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '.' || *ch == '-')
-        .collect()
+/// A name has no escape, so one the parser would not read whole has no
+/// spelling (ruling markup-carve/carve-php#2159).
+fn refuse_unspellable_name(name: &str, node_type: &'static str) {
+    if name.is_empty() || crate::parse::name_run_len(name) != name.len() {
+        crate::render_carve_error::record_unspellable(
+            node_type,
+            "its name has no Carve source spelling",
+        );
+    }
 }
 
 fn escape_format(text: &str) -> String {
