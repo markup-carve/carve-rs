@@ -2276,6 +2276,15 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
             cells.push(render_table_cell(cell, ctx, mark_header));
         }
         ctx.cell_not_last = false;
+        // A row whose every cell is blank is not a table row
+        // (markup-carve/carve#1954); a row attribute does not save it, because
+        // the reader strips that before deciding.
+        if cells.iter().all(|cell| matches!(cell.trim(), "" | "=")) {
+            crate::render_carve_error::record_unspellable(
+                "table_row",
+                "a table row whose every cell is blank has no Carve source spelling",
+            );
+        }
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
