@@ -62,3 +62,17 @@ fn an_empty_span_before_a_later_run_is_written_longer() {
 fn an_empty_span_alone_keeps_two_backticks() {
     assert_eq!(carve::to_carve("{~` ~}\n"), "{~``~}\n");
 }
+
+/// An empty span right after a code span still takes the separator, although
+/// its run is only chosen once the block is written.
+#[test]
+fn an_empty_span_after_a_code_span_is_separated() {
+    let mut doc = carve::parse("`a`{%  %}``\n");
+    let carve::BlockNode::Paragraph(paragraph) = &mut doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+    paragraph
+        .children
+        .retain(|node| !matches!(node, carve::InlineNode::Comment(_)));
+    assert_eq!(carve::render_carve(&doc).unwrap(), "`a`{%  %}``\n");
+}

@@ -2837,7 +2837,8 @@ fn render_nodes_with_verbatim(
         // Two touching backtick runs merge into one, so an empty delimited
         // comment keeps them apart (PART 11 §10k N3, ruling
         // markup-carve/carve-js#1818). Padded as the comment writer pads one.
-        if out.ends_with('`') && rendered.starts_with('`') && !ends_in_an_escape(&out) {
+        let run = ['`', EMPTY_CODE_MARK];
+        if out.ends_with(run) && rendered.starts_with(run) && !ends_in_an_escape(&out) {
             out.push_str("{%  %}");
         }
         out.push_str(&rendered);
