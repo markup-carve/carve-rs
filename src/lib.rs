@@ -138,7 +138,10 @@ pub use migration::{
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
-pub use prosemirror::{from_prosemirror, to_prosemirror, ProseMirrorDoc, ProseMirrorError};
+pub use prosemirror::{
+    from_prosemirror, from_prosemirror_with_report, to_prosemirror, ProseMirrorDoc,
+    ProseMirrorError, ProseMirrorImport,
+};
 pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;

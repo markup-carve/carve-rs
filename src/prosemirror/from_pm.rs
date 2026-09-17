@@ -1,10 +1,11 @@
 use serde_json::Map;
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::ast::Document;
 use crate::ast_json::{from_json, parse_value, value_to_json, Json};
 
-use super::{schema_map, SchemaMap};
+use super::{schema_map, ProseMirrorImport, SchemaMap};
 
 type Object = Map<String, Json>;
 
@@ -30,14 +31,32 @@ impl fmt::Display for ProseMirrorError {
 impl std::error::Error for ProseMirrorError {}
 
 pub fn from_prosemirror(json: &str) -> Result<Document, ProseMirrorError> {
+    from_prosemirror_with_report(json).map(|import| import.document)
+}
+
+/// Like [`from_prosemirror`], and also reports what the Carve document could
+/// not carry from the editor payload.
+pub fn from_prosemirror_with_report(json: &str) -> Result<ProseMirrorImport, ProseMirrorError> {
     let input = parse_value(json).map_err(|e| ProseMirrorError::new(e.to_string()))?;
-    let mut reader = Reader { map: schema_map() };
+    let mut reader = Reader {
+        map: schema_map(),
+        dropped: BTreeMap::new(),
+        degraded: BTreeMap::new(),
+    };
     let wire = reader.document(&input)?;
-    from_json(&value_to_json(&wire)).map_err(|e| ProseMirrorError::new(e.to_string()))
+    let document =
+        from_json(&value_to_json(&wire)).map_err(|e| ProseMirrorError::new(e.to_string()))?;
+    Ok(ProseMirrorImport {
+        document,
+        dropped: reader.dropped,
+        degraded: reader.degraded,
+    })
 }
 
 struct Reader {
     map: &'static SchemaMap,
+    dropped: BTreeMap<String, String>,
+    degraded: BTreeMap<String, String>,
 }
 
 impl Reader {
@@ -736,10 +755,20 @@ impl Reader {
                 a,
             ),
             "mention" => {
-                if flavor == 1 {
-                    node("tag", [("name", string_json(a, "id", ""))])
+                let (carve_type, field, sigil) = if flavor == 1 {
+                    ("tag", "name", '#')
                 } else {
-                    node(ty, [("user", string_json(a, "id", ""))])
+                    ("mention", "user", '@')
+                };
+                let name = self.mention_name(a, sigil);
+                if crate::parse::name_run_len(&name) != name.len() || name.is_empty() {
+                    self.dropped.insert(
+                        carve_type.into(),
+                        "the name has no Carve spelling, so it is written as text".into(),
+                    );
+                    node("text", [("value", Json::String(format!("{sigil}{name}")))])
+                } else {
+                    node(carve_type, [(field, Json::String(name))])
                 }
             }
             "raw_inline" => node(
@@ -805,6 +834,51 @@ impl Reader {
         let mut n = n;
         remove_nulls(&mut n);
         Ok(n)
+    }
+}
+
+impl Reader {
+    /// A stock Tiptap mention keeps its name in `id` and `label`
+    /// (markup-carve/carve-php#2154): `id` is the stable key a resolver needs,
+    /// `label` stands in only when `id` is absent, and `null` or `""` counts as
+    /// absent. `mentionSuggestionChar` is editor state and is never read.
+    fn mention_name(&mut self, a: &Object, sigil: char) -> String {
+        let id = scalar_text(a.get("id")).unwrap_or_default();
+        let label = scalar_text(a.get("label")).unwrap_or_default();
+        let name = if id.is_empty() {
+            label.clone()
+        } else {
+            id.clone()
+        };
+        match a.get("label") {
+            // A JSON object is `array` too: the type name carve-php reports.
+            Some(Json::Array(_) | Json::Object(_)) if !id.is_empty() => {
+                self.degraded.insert(
+                    "label".into(),
+                    "a Carve attribute holds a string, and this value is of type array".into(),
+                );
+            }
+            _ if !id.is_empty() && !label.is_empty() && label != id => {
+                self.degraded.insert(
+                    "label".into(),
+                    "the mention name is its id, so a different display label is not carried"
+                        .into(),
+                );
+            }
+            _ => {}
+        }
+        match name.strip_prefix(sigil) {
+            Some(rest) => rest.to_owned(),
+            None => name,
+        }
+    }
+}
+
+fn scalar_text(value: Option<&Json>) -> Option<String> {
+    match value {
+        Some(Json::String(s)) => Some(s.clone()),
+        Some(Json::Number(n)) => Some(n.to_string()),
+        _ => None,
     }
 }
 

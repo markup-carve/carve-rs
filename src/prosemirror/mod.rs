@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 
 use crate::ast_json::{parse_value, Json};
 
-pub use from_pm::{from_prosemirror, ProseMirrorError};
+pub use from_pm::{from_prosemirror, from_prosemirror_with_report, ProseMirrorError};
 pub use to_pm::to_prosemirror;
 
 /// The result of converting a Carve document for a ProseMirror editor.
@@ -20,6 +20,18 @@ pub struct ProseMirrorDoc {
     /// Carve AST type -> why its content is gone.
     pub dropped: BTreeMap<String, String>,
     /// Carve AST type -> why its node type is gone while its text survives.
+    pub degraded: BTreeMap<String, String>,
+}
+
+/// The result of reading a ProseMirror document back into Carve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProseMirrorImport {
+    /// The Carve document.
+    pub document: crate::ast::Document,
+    /// Carve AST type -> why that node is gone. Its visible text may survive
+    /// as literal text.
+    pub dropped: BTreeMap<String, String>,
+    /// ProseMirror attribute -> why its value is not carried.
     pub degraded: BTreeMap<String, String>,
 }
 

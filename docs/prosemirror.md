@@ -40,6 +40,22 @@ before saving. Going the other way, a ProseMirror name the map does not know is
 an **error**, not a skip: an editor that grew a node type nobody mapped is
 exactly where a quiet skip destroys the most content.
 
+The way back reports too. `from_prosemirror_with_report` returns the document
+beside two maps:
+
+```rust
+let import = carve::from_prosemirror_with_report(&editor.json)?;
+// `import.dropped` - Carve AST type -> why that node is gone.
+// `import.degraded` - ProseMirror attribute -> why its value is not carried.
+```
+
+A stock Tiptap mention keeps its name in `id` and `label`. The name is `id`;
+`label` stands in only when `id` is missing or `null`, and a different `label`
+is reported under `degraded`. `mentionSuggestionChar` is editor state and is
+never written. A name the mention grammar cannot hold, such as `Lea Thompson`,
+is written as escaped literal text (`\@Lea Thompson`) and reported under
+`dropped`, never normalized into a different name.
+
 On the shared corpus, 1350 documents report nothing lost and round-trip to
 byte-identical HTML; 345 report what they lost. The spec's
 [format bridges](https://markup-carve.github.io/carve/format-bridges) page has
