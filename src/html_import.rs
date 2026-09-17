@@ -4173,7 +4173,7 @@ impl<'a> Importer<'a> {
         };
         let mut last = None;
         let mut index = 0;
-        for r in 0..trs.len() {
+        for (r, (tr, _)) in trs.iter().enumerate() {
             if index >= rows.len() {
                 break;
             }
@@ -4187,7 +4187,7 @@ impl<'a> Importer<'a> {
                 "Dropped a row whose every cell is empty: Carve reads such a row as text".into(),
                 HtmlImportSeverity::Warning,
                 &format!("{path}/tr[{}]", r + 1),
-                &trs[r].0,
+                tr,
             );
             last = Some(r);
         }
