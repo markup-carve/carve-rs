@@ -34,7 +34,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   collected link and footnote definitions retain their authored order and
   placement (markup-carve/carve-rs#1694).
 - A mention or tag template that produces a denied URL now renders the inert
-  span instead of an anchor with an empty `href`.
+  span instead of an anchor with an empty `href` (markup-carve/carve-rs#1682).
 - The Carve writer keeps the native `|=` header form for a table whose header
   spans trail its real header cells (`|= A |= B | < |`), instead of a GFM
   delimiter row. A leading span, a real cell after a header span, or a trailing
