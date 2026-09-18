@@ -84,10 +84,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grammar rejects, such as one with a space, an apostrophe, an outer or doubled
   dot, or a non-ASCII letter. It used to delete those characters and write a
   different name (markup-carve/carve-rs#1762).
-- The ProseMirror bridge carries a mention's or tag's own attributes, such as
-  `data-team`, so the writer refuses the tree instead of dropping them with an
-  empty report. On a mention written as text they are reported as degraded
-  (markup-carve/carve-rs#1763).
+- The ProseMirror bridge drops a mention's or tag's own attribute, such as
+  `data-team`, and reports it under `dropped`, instead of losing it with an
+  empty report or handing the writer a tree it refuses. On a mention written as
+  text the attribute is reported as degraded. `render_carve` still refuses such
+  a tree built by an API caller (markup-carve/carve-rs#1763,
+  markup-carve/carve-php#2167).
 - An opener of an emphasis kind already open is content, bare or forced, and a
   braced inline of another kind starts its own scope for that rule and for the
   closer search (markup-carve/carve-rs#1741, markup-carve/carve-rs#1747).
