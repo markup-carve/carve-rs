@@ -91,6 +91,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `render_carve` still refuses such a tree built by an API caller
   (markup-carve/carve-rs#1763, markup-carve/carve-rs#1770,
   markup-carve/carve-php#2167).
+- The ProseMirror bridge drops a mention or tag that carries neither an `id` nor
+  a `label` and reports it under `dropped`, keyed on the node kind, no field
+  having held a name. It used to write a bare `@` or `#`, a character the
+  payload never carried. `render_carve` still refuses such a tree built by an
+  API caller (markup-carve/carve-rs#1773, markup-carve/carve-php#2176).
 - An opener of an emphasis kind already open is content, bare or forced, and a
   braced inline of another kind starts its own scope for that rule and for the
   closer search (markup-carve/carve-rs#1741, markup-carve/carve-rs#1747).
