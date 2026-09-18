@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-17
+
 ### Added
 
 - The CLI accepts repeatable `--extension` registry keys, tabs and citation
@@ -22,6 +24,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The extension registry publishes each fenced-render preset's static-renderer
   key, so a binding can list the diagram classes it will be asked for
   (markup-carve/carve-rs#1679).
+- `from_prosemirror_with_report` returns the document with `dropped` and
+  `degraded` maps, for what the editor payload lost on the way back
+  (markup-carve/carve-rs#1759).
 
 ### Changed
 
@@ -29,7 +34,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   collected link and footnote definitions retain their authored order and
   placement (markup-carve/carve-rs#1694).
 - A mention or tag template that produces a denied URL now renders the inert
-  span instead of an anchor with an empty `href`.
+  span instead of an anchor with an empty `href` (markup-carve/carve-rs#1682).
 - The Carve writer keeps the native `|=` header form for a table whose header
   spans trail its real header cells (`|= A |= B | < |`), instead of a GFM
   delimiter row. A leading span, a real cell after a header span, or a trailing
@@ -61,9 +66,51 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Err(IncludeDenial::Unresolved)`, which is what every refusal meant before,
   and `Some(x)` to `Ok(x)`; a hand-built `IncludeDependency` adds
   `denial: None` (markup-carve/carve-rs#1648).
+- **Breaking:** the `substitution` node carries its halves as `old` and `new`,
+  two arrays of inline nodes, in place of the `oldText` and `newText` strings;
+  `CriticSubstitute` changes the same way. An empty half is an empty array, and
+  ingest refuses the old fields. Resolution and positions now reach both halves
+  (markup-carve/carve-rs#1752, markup-carve/carve#2095).
 
 ### Fixed
 
+- The ProseMirror bridge names a stock Tiptap mention by its `id`, falling back
+  to `label` when `id` is missing or `null`, and never writes
+  `mentionSuggestionChar`. A different `label` is reported as degraded, and a
+  name with no Carve spelling, such as `Lea Thompson`, is written as escaped text
+  and reported as dropped instead of being normalized
+  (markup-carve/carve-rs#1759).
+- `render_carve` returns `SourceUnspellable` for a mention or tag whose name the
+  grammar rejects, such as one with a space, an apostrophe, an outer or doubled
+  dot, or a non-ASCII letter. It used to delete those characters and write a
+  different name (markup-carve/carve-rs#1762).
+- The ProseMirror bridge carries a mention's or tag's own attributes, such as
+  `data-team`, so the writer refuses the tree instead of dropping them with an
+  empty report. On a mention written as text they are reported as degraded
+  (markup-carve/carve-rs#1763).
+- An opener of an emphasis kind already open is content, bare or forced, and a
+  braced inline of another kind starts its own scope for that rule and for the
+  closer search (markup-carve/carve-rs#1741, markup-carve/carve-rs#1747).
+- A substitution splits only at a `~>` outside code, math, an inline literal, a
+  comment or an escape, and each half is inline content
+  (markup-carve/carve-rs#1742).
+- A code span's closer is searched for across the rest of the block, so a
+  forced or editorial closer inside the span is code
+  (markup-carve/carve-rs#1740).
+- An unclosed code span ended at a forced or editorial closer drops the line
+  break before it, except in a line block (markup-carve/carve-rs#1748).
+- `render_carve` writes an empty delimited comment between two touching
+  backtick runs, such as two adjacent code spans, which it used to merge into
+  one span (markup-carve/carve-rs#1743).
+- `render_carve` returns `SourceUnspellable` for a table row whose every cell is
+  blank, and the HTML importer drops such a row with a `structure-unspellable`
+  diagnostic, keeping the rest of the table (markup-carve/carve-rs#1735).
+- The HTML and Markdown importers keep the title of a link or image that names
+  no destination, on the span that replaces it (markup-carve/carve-rs#1738).
+- The ProseMirror bridge reports a substitution whose halves hold more than
+  text, and an emphasis inside one of its own kind, as degraded instead of
+  returning a different tree (markup-carve/carve-rs#1752,
+  markup-carve/carve-rs#1747).
 - `render_carve` returns `SourceUnspellable` for a mention or a tag that carries
   attributes, where it used to drop them (markup-carve/carve-rs#1737).
 - A link, image or span after a backtick an earlier construct used up is read,
@@ -72,9 +119,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The HTML importer drops an inline element the HTML left empty, such as
   `<strong></strong>`, which it wrote as delimiters that read back as text
   (markup-carve/carve-rs#1719).
-- `render_carve` returns `SourceUnspellable` for a braced span inside a braced
-  span of its own kind, and the HTML importer unwraps the inner one with a
-  `structure-unspellable` diagnostic (markup-carve/carve-rs#1725).
+- `render_carve` returns `SourceUnspellable` for an emphasis, insertion or
+  deletion inside one of its own kind in the same scope, and the HTML importer
+  unwraps the inner one with a `structure-unspellable` diagnostic
+  (markup-carve/carve-rs#1725, markup-carve/carve-rs#1741).
 - `render_carve` returns `SourceUnspellable` for a mention or tag directly
   against a word character (markup-carve/carve-rs#1729).
 - `render_carve` writes a hard break in a table cell as one space, which kept
@@ -2237,7 +2285,8 @@ is still `carve`.
 - Uniform nesting depth cap of 200
 - Char-boundary panic guard in container-prefix stripping (crash-DoS fix)
 
-[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.5...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.6...HEAD
+[0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-rs/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-rs/compare/0.1.3...0.1.4
 [0.1.3]: https://github.com/markup-carve/carve-rs/compare/0.1.2...0.1.3
