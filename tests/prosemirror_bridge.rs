@@ -443,6 +443,12 @@ fn a_stock_tiptap_mention_is_named_by_its_id_then_its_label() {
             "ping @alice\n",
             json!({"label": "a Carve attribute holds a string, and this value is of type array"}),
         ),
+        (
+            "mention",
+            json!({"id":"@alice","label":null}),
+            "ping @alice\n",
+            json!({}),
+        ),
     ];
     for (ty, attrs, expected, degraded) in cases {
         let (carve, dropped, got_degraded) = written_mention(ty, attrs.clone());
@@ -460,41 +466,75 @@ fn a_stock_tiptap_mention_is_named_by_its_id_then_its_label() {
 #[test]
 fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
     let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
-    let lost = "the name has no Carve spelling, so it is written as text";
+    let as_text = "the name has no Carve mention spelling, so it is written as literal text";
+    let tag_as_text = "the name has no Carve tag spelling, so it is written as literal text";
     let cases = [
         (
             "mention",
             json!({"id":"Lea Thompson","label":null,"mentionSuggestionChar":"@"}),
             "ping \\@Lea Thompson\n",
-            json!({"mention": lost}),
+            json!({"id": as_text}),
             "<p>ping @Lea Thompson</p>",
         ),
         (
             tag.as_str(),
             json!({"id":"two words","label":null}),
             "ping \\#two words\n",
-            json!({"tag": lost}),
+            json!({"id": tag_as_text}),
             "<p>ping #two words</p>",
         ),
+        // The name lives in `label`, so the report is keyed by `label`.
         (
             "mention",
-            json!({"id":null,"label":null,"mentionSuggestionChar":"@"}),
+            json!({"id":null,"label":"Lea Thompson"}),
+            "ping \\@Lea Thompson\n",
+            json!({"label": as_text}),
+            "<p>ping @Lea Thompson</p>",
+        ),
+        // The text is what the editor showed, which is the label.
+        (
+            "mention",
+            json!({"id":"u 1","label":"Lea"}),
+            "ping \\@Lea\n",
+            json!({"id": as_text}),
+            "<p>ping @Lea</p>",
+        ),
+        // A name of nothing but a sigil is not a name, and not doubled either.
+        (
+            "mention",
+            json!({"id":"@","label":null}),
             "ping @\n",
-            json!({"mention": lost}),
+            json!({"id": as_text}),
             "<p>ping @</p>",
         ),
     ];
-    for (ty, attrs, expected, dropped, html) in cases {
-        let (carve, got_dropped, degraded) = written_mention(ty, attrs.clone());
+    for (ty, attrs, expected, degraded, html) in cases {
+        let (carve, dropped, got_degraded) = written_mention(ty, attrs.clone());
         assert_eq!(carve, expected, "{ty} {attrs}");
-        assert_eq!(got_dropped, dropped, "{ty} {attrs}");
-        assert_eq!(degraded, json!({}), "{ty} {attrs}");
+        assert_eq!(dropped, json!({}), "{ty} {attrs}");
+        assert_eq!(got_degraded, degraded, "{ty} {attrs}");
         assert_eq!(
             render_html(&parse(&carve)).unwrap().trim(),
             html,
             "{ty} {attrs}"
         );
     }
+}
+
+/// A node carrying neither an id nor a label is the one mention shape no
+/// ruling covers, and the three engines still answer it three ways.
+#[test]
+fn a_mention_with_no_name_at_all_keeps_its_own_answer() {
+    let (carve, dropped, degraded) = written_mention(
+        "mention",
+        json!({"id":null,"label":null,"mentionSuggestionChar":"@"}),
+    );
+    assert_eq!(carve, "ping @\n");
+    assert_eq!(
+        dropped,
+        json!({"mention": "the name has no Carve spelling, so it is written as text"})
+    );
+    assert_eq!(degraded, json!({}));
 }
 
 /// A real attribute on a mention is dropped and reported, and the mention is
@@ -553,11 +593,25 @@ fn a_mention_written_as_text_reports_its_attribute() {
     assert_eq!(carve, "ping \\@Lea Thompson\n");
     assert_eq!(
         dropped,
-        json!({"mention": "the name has no Carve spelling, so it is written as text"})
+        json!({"data-team": "the mention is written as text, which holds no attribute"})
     );
     assert_eq!(
         degraded,
-        json!({"data-team": "the mention is written as text, which holds no attribute"})
+        json!({"id": "the name has no Carve mention spelling, so it is written as literal text"})
+    );
+
+    let (carve, dropped, degraded) = written_mention(
+        mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].as_str(),
+        json!({"id":"big release","label":null,"data-team":"core"}),
+    );
+    assert_eq!(carve, "ping \\#big release\n");
+    assert_eq!(
+        dropped,
+        json!({"data-team": "the tag is written as text, which holds no attribute"})
+    );
+    assert_eq!(
+        degraded,
+        json!({"id": "the name has no Carve tag spelling, so it is written as literal text"})
     );
 }
 
