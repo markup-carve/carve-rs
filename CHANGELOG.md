@@ -77,9 +77,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The ProseMirror bridge names a stock Tiptap mention by its `id`, falling back
   to `label` when `id` is missing or `null`, and never writes
   `mentionSuggestionChar`. A different `label` is reported as degraded, and a
-  name with no Carve spelling, such as `Lea Thompson`, is written as escaped text
-  and reported as dropped instead of being normalized
-  (markup-carve/carve-rs#1759).
+  name with no Carve spelling, such as `Lea Thompson`, is written as the escaped
+  text the editor showed and reported as degraded, since the name survives as
+  that text (markup-carve/carve-rs#1759, markup-carve/carve-rs#1770).
 - `render_carve` returns `SourceUnspellable` for a mention or tag whose name the
   grammar rejects, such as one with a space, an apostrophe, an outer or doubled
   dot, or a non-ASCII letter. It used to delete those characters and write a
@@ -87,8 +87,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The ProseMirror bridge drops a mention's or tag's own attribute, such as
   `data-team`, and reports it under `dropped`, instead of losing it with an
   empty report or handing the writer a tree it refuses. On a mention written as
-  text the attribute is reported as degraded. `render_carve` still refuses such
-  a tree built by an API caller (markup-carve/carve-rs#1763,
+  text the attribute is reported as dropped, since nothing carries it.
+  `render_carve` still refuses such a tree built by an API caller
+  (markup-carve/carve-rs#1763, markup-carve/carve-rs#1770,
   markup-carve/carve-php#2167).
 - An opener of an emphasis kind already open is content, bare or forced, and a
   braced inline of another kind starts its own scope for that rule and for the
