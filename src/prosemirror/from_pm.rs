@@ -760,7 +760,8 @@ impl Reader {
                 } else {
                     ("mention", "user", '@')
                 };
-                let name = self.mention_name(a, sigil);
+                let read = self.mention_name(a, sigil);
+                let name = read.name;
                 // `id` and `label` hold the name; the rest are the node's own
                 // attributes, which no mention or tag can spell.
                 let own: Object = a
@@ -771,20 +772,48 @@ impl Reader {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 if crate::parse::name_run_len(&name) != name.len() || name.is_empty() {
-                    self.dropped.insert(
-                        carve_type.into(),
-                        "the name has no Carve spelling, so it is written as text".into(),
-                    );
+                    if !read.has_name {
+                        // No ruling covers a node carrying neither an id nor a
+                        // label, so this row keeps the answer it had.
+                        self.dropped.insert(
+                            carve_type.into(),
+                            "the name has no Carve spelling, so it is written as text".into(),
+                        );
+                    } else {
+                        // Keyed on the field that held the name, and worded as
+                        // carve-php and carve-grammars word it
+                        // (markup-carve/carve-php#2167).
+                        self.degraded.insert(
+                            read.key.into(),
+                            format!(
+                                "the name has no Carve {carve_type} spelling, \
+                                 so it is written as literal text"
+                            ),
+                        );
+                    }
                     for (key, value) in &own {
                         if carried_attr(key, value) {
-                            self.degraded.insert(
+                            self.dropped.insert(
                                 key.clone(),
-                                "the mention is written as text, which holds no attribute".into(),
+                                format!(
+                                    "the {carve_type} is written as text, \
+                                     which holds no attribute"
+                                ),
                             );
                         }
                     }
-                    node("text", [("value", Json::String(format!("{sigil}{name}")))])
+                    node(
+                        "text",
+                        [("value", Json::String(format!("{sigil}{}", read.text)))],
+                    )
                 } else {
+                    if read.label_differs {
+                        self.degraded.insert(
+                            "label".into(),
+                            "the mention name is its id, so a different display label is not carried"
+                                .into(),
+                        );
+                    }
                     // The bridge has a report channel, so it writes the mention
                     // and names the loss; only the writer, which has none,
                     // refuses the tree (markup-carve/carve-php#2167).
@@ -875,35 +904,53 @@ impl Reader {
     /// (markup-carve/carve-php#2154): `id` is the stable key a resolver needs,
     /// `label` stands in only when `id` is absent, and `null` or `""` counts as
     /// absent. `mentionSuggestionChar` is editor state and is never read.
-    fn mention_name(&mut self, a: &Object, sigil: char) -> String {
+    fn mention_name(&mut self, a: &Object, sigil: char) -> MentionName {
         let id = scalar_text(a.get("id")).unwrap_or_default();
         let label = scalar_text(a.get("label")).unwrap_or_default();
-        let name = if id.is_empty() {
-            label.clone()
-        } else {
-            id.clone()
-        };
+        let from_id = !id.is_empty();
+        let mut label_differs = false;
         match a.get("label") {
             // A JSON object is `array` too: the type name carve-php reports.
-            Some(Json::Array(_) | Json::Object(_)) if !id.is_empty() => {
+            Some(Json::Array(_) | Json::Object(_)) if from_id => {
                 self.degraded.insert(
                     "label".into(),
                     "a Carve attribute holds a string, and this value is of type array".into(),
                 );
             }
-            _ if !id.is_empty() && !label.is_empty() && label != id => {
-                self.degraded.insert(
-                    "label".into(),
-                    "the mention name is its id, so a different display label is not carried"
-                        .into(),
-                );
-            }
+            _ if from_id && !label.is_empty() && label != id => label_differs = true,
             _ => {}
         }
-        match name.strip_prefix(sigil) {
-            Some(rest) => rest.to_owned(),
-            None => name,
+        let name = if from_id { id.clone() } else { label.clone() };
+        // What the editor showed, which Tiptap takes from `label` when it has one.
+        let text = if label.is_empty() { id } else { label };
+        MentionName {
+            has_name: !name.is_empty(),
+            name: bare(name, sigil),
+            text: bare(text, sigil),
+            key: if from_id { "id" } else { "label" },
+            label_differs,
         }
+    }
+}
+
+/// What a stock Tiptap mention's `id` and `label` amount to.
+struct MentionName {
+    /// Whether either field held anything. A name of nothing but a sigil did.
+    has_name: bool,
+    /// The name, without a sigil the payload kept in front of it.
+    name: String,
+    /// The text the editor showed, for the path that writes literal text.
+    text: String,
+    /// The field the name came from, which a report on it is keyed by.
+    key: &'static str,
+    /// Whether a display label the mention has no slot for was set.
+    label_differs: bool,
+}
+
+fn bare(name: String, sigil: char) -> String {
+    match name.strip_prefix(sigil) {
+        Some(rest) => rest.to_owned(),
+        None => name,
     }
 }
 
