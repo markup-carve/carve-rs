@@ -762,7 +762,7 @@ impl Reader {
                 };
                 let name = self.mention_name(a, sigil);
                 // `id` and `label` hold the name; the rest are the node's own
-                // attributes, which the writer refuses (markup-carve/carve-php#2083).
+                // attributes, which no mention or tag can spell.
                 let own: Object = a
                     .iter()
                     .filter(|(k, _)| {
@@ -775,11 +775,8 @@ impl Reader {
                         carve_type.into(),
                         "the name has no Carve spelling, so it is written as text".into(),
                     );
-                    // The keys `with_attrs` would have carried.
                     for (key, value) in &own {
-                        if matches!(value, Json::String(_))
-                            && (key == "class" || !is_structural_attr(key))
-                        {
+                        if carried_attr(key, value) {
                             self.degraded.insert(
                                 key.clone(),
                                 "the mention is written as text, which holds no attribute".into(),
@@ -788,7 +785,23 @@ impl Reader {
                     }
                     node("text", [("value", Json::String(format!("{sigil}{name}")))])
                 } else {
-                    with_attrs(node(carve_type, [(field, Json::String(name))]), &own)
+                    // The bridge has a report channel, so it writes the mention
+                    // and names the loss; only the writer, which has none,
+                    // refuses the tree (markup-carve/carve-php#2167).
+                    for (key, value) in &own {
+                        if carried_attr(key, value) {
+                            self.dropped.insert(
+                                key.clone(),
+                                format!("a {carve_type} has no Carve spelling for an attribute"),
+                            );
+                        }
+                    }
+                    let kept: Object = own
+                        .iter()
+                        .filter(|(k, v)| !carried_attr(k, v))
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    with_attrs(node(carve_type, [(field, Json::String(name))]), &kept)
                 }
             }
             "raw_inline" => node(
@@ -1173,6 +1186,11 @@ fn attr_run(a: &Object, authored: bool) -> Object {
     } else {
         without(a, &["carveLinkTitle", "title"])
     }
+}
+
+/// The keys `with_attrs` turns into a Carve attribute run.
+fn carried_attr(key: &str, value: &Json) -> bool {
+    matches!(value, Json::String(_)) && (key == "class" || !is_structural_attr(key))
 }
 
 fn is_structural_attr(k: &str) -> bool {

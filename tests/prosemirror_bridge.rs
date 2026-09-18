@@ -497,35 +497,48 @@ fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
     }
 }
 
-/// A real attribute on a mention reaches the tree, and the writer refuses it,
-/// as carve-php does (markup-carve/carve-php#2083). It used to vanish with an
-/// empty report.
+/// A real attribute on a mention is dropped and reported, and the mention is
+/// still written: the bridge has a report channel, so only the writer refuses
+/// such a tree (ruling markup-carve/carve-php#2167). It used to vanish with an
+/// empty report, and then reach a refusal that lost the whole document.
 #[test]
-fn a_mention_attribute_reaches_the_writer_refusal() {
+fn a_mention_attribute_is_dropped_and_reported() {
     let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let no_spelling = "a mention has no Carve spelling for an attribute";
     let cases = [
         (
             "mention",
             json!({"id":"alice","label":null,"mentionSuggestionChar":"@","data-team":"core"}),
+            "ping @alice\n",
+            json!({"data-team": no_spelling}),
         ),
-        ("mention", json!({"id":"alice","class":"x"})),
+        (
+            "mention",
+            json!({"id":"alice","class":"x"}),
+            "ping @alice\n",
+            json!({"class": no_spelling}),
+        ),
         (
             tag.as_str(),
             json!({"id":"release","label":null,"data-team":"core"}),
+            "ping #release\n",
+            json!({"data-team": "a tag has no Carve spelling for an attribute"}),
+        ),
+        (
+            "mention",
+            json!({"id":"u123","label":"Alice","data-team":"core"}),
+            "ping @u123\n",
+            json!({"data-team": no_spelling}),
         ),
     ];
-    for (ty, attrs) in cases {
-        let input = json!({"type":"doc","content":[{"type":"paragraph","content":[
-            {"type":"text","text":"ping "}, {"type":ty,"attrs":attrs}
-        ]}]});
-        let import = from_prosemirror_with_report(&input.to_string()).expect("the mention imports");
+    for (ty, attrs, expected, dropped) in cases {
+        let (carve, got_dropped, _) = written_mention(ty, attrs.clone());
+        assert_eq!(carve, expected, "{ty} {attrs}");
+        assert_eq!(got_dropped, dropped, "{ty} {attrs}");
+        let html = render_html(&parse(&carve)).unwrap();
         assert!(
-            matches!(
-                render_carve(&import.document),
-                Err(carve::RenderCarveError::SourceUnspellable(_))
-            ),
-            "{ty} {attrs} wrote {:?}",
-            render_carve(&import.document)
+            html.contains("<strong>"),
+            "{ty} {attrs} reads back as a mention: {html}"
         );
     }
 }
