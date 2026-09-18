@@ -607,7 +607,13 @@ impl Reader {
                     )],
                 )]
             } else {
-                vec![self.inline_atom(obj, &ty, flavor)?]
+                // A null is how an atom says it built nothing, which only a
+                // nameless mention or tag does (markup-carve/carve-php#2176).
+                // Its marks go with it rather than wrapping an empty run.
+                match self.inline_atom(obj, &ty, flavor)? {
+                    Json::Null => continue,
+                    built => vec![built],
+                }
             };
             self.apply_marks(obj, built, &mut out)?;
         }
@@ -771,26 +777,36 @@ impl Reader {
                     })
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
-                if crate::parse::name_run_len(&name) != name.len() || name.is_empty() {
-                    if !read.has_name {
-                        // No ruling covers a node carrying neither an id nor a
-                        // label, so this row keeps the answer it had.
-                        self.dropped.insert(
-                            carve_type.into(),
-                            "the name has no Carve spelling, so it is written as text".into(),
-                        );
-                    } else {
-                        // Keyed on the field that held the name, and worded as
-                        // carve-php and carve-grammars word it
-                        // (markup-carve/carve-php#2167).
-                        self.degraded.insert(
-                            read.key.into(),
-                            format!(
-                                "the name has no Carve {carve_type} spelling, \
-                                 so it is written as literal text"
-                            ),
-                        );
+                if !read.has_name {
+                    // Neither field holds a name, so there is nothing to write
+                    // and no field to key the loss on, which leaves the node
+                    // kind (markup-carve/carve-php#2176). A bare sigil would
+                    // invent a character the payload never carried.
+                    self.dropped.insert(
+                        carve_type.into(),
+                        format!("a {carve_type} with no name has nothing to write"),
+                    );
+                    for (key, value) in &own {
+                        if carried_attr(key, value) {
+                            self.dropped.insert(
+                                key.clone(),
+                                format!("a {carve_type} has no Carve spelling for an attribute"),
+                            );
+                        }
                     }
+
+                    Json::Null
+                } else if crate::parse::name_run_len(&name) != name.len() || name.is_empty() {
+                    // Keyed on the field that held the name, and worded as
+                    // carve-php and carve-grammars word it
+                    // (markup-carve/carve-php#2167).
+                    self.degraded.insert(
+                        read.key.into(),
+                        format!(
+                            "the name has no Carve {carve_type} spelling, \
+                             so it is written as literal text"
+                        ),
+                    );
                     for (key, value) in &own {
                         if carried_attr(key, value) {
                             self.dropped.insert(

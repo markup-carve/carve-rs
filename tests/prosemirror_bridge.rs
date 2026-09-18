@@ -521,20 +521,85 @@ fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
     }
 }
 
-/// A node carrying neither an id nor a label is the one mention shape no
-/// ruling covers, and the three engines still answer it three ways.
+/// A node carrying neither an id nor a label has no name, so the bridge leaves
+/// it out and keys the report on the node kind, no field having held a name
+/// (ruling markup-carve/carve-php#2176). It used to write a bare `@`, which is
+/// a character the payload never carried.
 #[test]
-fn a_mention_with_no_name_at_all_keeps_its_own_answer() {
-    let (carve, dropped, degraded) = written_mention(
-        "mention",
-        json!({"id":null,"label":null,"mentionSuggestionChar":"@"}),
-    );
-    assert_eq!(carve, "ping @\n");
-    assert_eq!(
-        dropped,
-        json!({"mention": "the name has no Carve spelling, so it is written as text"})
-    );
-    assert_eq!(degraded, json!({}));
+fn a_mention_with_no_name_at_all_is_dropped_and_reported() {
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let no_name = "a mention with no name has nothing to write";
+    let tag_no_name = "a tag with no name has nothing to write";
+    let cases = [
+        ("mention", json!({}), json!({"mention": no_name})),
+        ("mention", json!({"id":null}), json!({"mention": no_name})),
+        (
+            "mention",
+            json!({"label":null}),
+            json!({"mention": no_name}),
+        ),
+        (
+            "mention",
+            json!({"id":null,"label":null}),
+            json!({"mention": no_name}),
+        ),
+        (
+            "mention",
+            json!({"id":null,"label":null,"mentionSuggestionChar":"@"}),
+            json!({"mention": no_name}),
+        ),
+        (tag.as_str(), json!({}), json!({"tag": tag_no_name})),
+        (
+            tag.as_str(),
+            json!({"id":null}),
+            json!({"tag": tag_no_name}),
+        ),
+        (
+            tag.as_str(),
+            json!({"label":null}),
+            json!({"tag": tag_no_name}),
+        ),
+        (
+            tag.as_str(),
+            json!({"id":null,"label":null}),
+            json!({"tag": tag_no_name}),
+        ),
+        (
+            tag.as_str(),
+            json!({"id":null,"label":null,"mentionSuggestionChar":"#"}),
+            json!({"tag": tag_no_name}),
+        ),
+        // The attribute goes with the node, and is named beside it.
+        (
+            "mention",
+            json!({"id":null,"label":null,"data-team":"core"}),
+            json!({"mention": no_name, "data-team": "a mention has no Carve spelling for an attribute"}),
+        ),
+        (
+            tag.as_str(),
+            json!({"id":null,"label":null,"data-team":"core"}),
+            json!({"tag": tag_no_name, "data-team": "a tag has no Carve spelling for an attribute"}),
+        ),
+    ];
+    for (ty, attrs, dropped) in cases {
+        let (carve, got_dropped, got_degraded) = written_mention(ty, attrs.clone());
+        assert_eq!(carve, "ping\n", "{ty} {attrs}");
+        assert_eq!(got_dropped, dropped, "{ty} {attrs}");
+        assert_eq!(got_degraded, json!({}), "{ty} {attrs}");
+    }
+}
+
+/// CONTROL: the bridge drops the node because it can report the loss; the
+/// writer has no channel, so it refuses (ruling markup-carve/carve-php#2176).
+#[test]
+fn the_writer_still_refuses_a_nameless_mention_a_caller_builds() {
+    let doc = from_json(
+        "{\"type\":\"document\",\"srcByteLength\":0,\"children\":[{\"type\":\"paragraph\",\
+         \"children\":[{\"type\":\"mention\",\"user\":\"\"}]}]}",
+    )
+    .expect("a nameless mention decodes");
+
+    assert!(render_carve(&doc).is_err());
 }
 
 /// A real attribute on a mention is dropped and reported, and the mention is
