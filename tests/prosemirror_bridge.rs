@@ -1285,8 +1285,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // `substitution` (the editor schema still carries each half as a string,
     // markup-carve/carve-grammars#466), and 471-5 and -7 the NEW `strong`
     // report, since a strong inside a strong cannot be two marks.
-    const STRICT: usize = 1384;
-    const LOSSY: usize = 354;
+    // The pin moves on to carve 3a5bebd9, which adds the two 47 caption rows
+    // (markup-carve/carve#2114) and changes none. Diffed by name against
+    // 57ff3a78 with this engine, 1384/354 becomes 1385/355 and no existing
+    // document changes bucket. `-10` is strict; `-11` drops `caption_number`,
+    // a cause fourteen documents already carry, so no new kind appeared.
+    const STRICT: usize = 1385;
+    const LOSSY: usize = 355;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
