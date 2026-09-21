@@ -3000,50 +3000,18 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
 /// mixed-run forms at the title slot and at the trailing-attributes slot
 /// produce the visible failure.
 fn link_def_target_is_anchored(target: &str) -> bool {
-    // THE LINE ENDING IS `whitespace` - a space or a tab, the same terminal
-    // `blank_line` takes (PART 1, carve#890). So `[a]: /u<SP>` is a definition
-    // and `[a]: /u<NBSP>` is not: a no-break space, an en quad, a byte order
-    // mark and a form feed are CONTENT under that ruling, and content after the
-    // destination is what the anchor rejects. Implementing this as a Unicode
-    // whitespace PROPERTY reads all of them as a line ending, and a plain tab
-    // fixture cannot see the difference - a tab is inside the property too.
-    //
-    // THE HEAD OF THE LINE IS DELIBERATELY UNTOUCHED. carve#911 rules what
-    // follows the destination; a run BEFORE the destination is a different
-    // question, and both call sites already hand `parse_link_def_target` a
-    // Unicode-trimmed target. The executable spec agrees with that leniency -
-    // `[a]: <U+202F>javascript:alert(1)` is still a definition there, with the
-    // destination sanitized rather than the line refused - so tightening it
-    // here would decide an unruled question as a side effect of this one, and
-    // would silently change what `ansi_destination_denylist` pins about an
-    // obfuscated scheme.
-    let target = trim_ascii_end(target.trim_start());
-    let (rest, _) = split_trailing_attr_block(target);
-    let rest = trim_ascii_end(rest);
-    // `link_destination` ends at the first whitespace, and that scan IS the
-    // Unicode property (`unicode_url_char` is "non-whitespace, non-ASCII"), the
-    // same reading `parse_link_def_target` applies below.
-    let end = rest
-        .char_indices()
-        .find(|(_, c)| c.is_whitespace())
-        .map_or(rest.len(), |(idx, _)| idx);
-    if end == 0 {
-        // No destination: `[r]:` with nothing after the colon is not a
-        // definition, and never was.
-        return false;
-    }
-    let after = &rest[end..];
-    if after.is_empty() {
-        return true;
-    }
-    // `link_title = space, ('"' … '"' | "'" … "'")`, ONE space (carve#912).
-    let Some(after_pad) = after.strip_prefix(' ') else {
-        return false;
-    };
+    parse_link_def_target_parts(target).is_some()
+}
+
+/// The closing quote of the title run `after_pad` opens, as a byte index.
+///
+/// A backslash escapes the next character, which is the rule `unescape_title`
+/// reads, so `[y]: /u "a\"b"` keeps its escaped quote.
+fn closing_title_quote(after_pad: &str) -> Option<usize> {
     let mut chars = after_pad.char_indices();
     let quote = match chars.next() {
         Some((_, q @ ('"' | '\''))) => q,
-        _ => return false,
+        _ => return None,
     };
     let mut escaped = false;
     for (idx, c) in chars {
@@ -3056,14 +3024,69 @@ fn link_def_target_is_anchored(target: &str) -> bool {
             continue;
         }
         if c == quote {
-            // Only the line ending may follow the closing quote.
-            return after_pad[idx + c.len_utf8()..]
-                .chars()
-                .all(|c| c == ' ' || c == '\t');
+            return Some(idx);
         }
     }
-    // An unterminated title is not a title, and the tail no longer excuses it.
-    false
+    None
+}
+
+/// The parts of a definition's target, read in the production's own order:
+/// `link_destination`, an optional `link_title`, an optional trailing
+/// `attributes` block, and then the line ending.
+///
+/// The block is looked for AFTER the destination and the title rather than
+/// split off the target first (carve#604, reverted by
+/// markup-carve/carve-rs#1791). A scan walking the target from its start cannot
+/// tell a brace or a quote in the DESTINATION from one opening the block, so
+/// `[a]: /u{x} {.c}` and `[a]: it's {.c}` both fell through to prose.
+///
+/// THE HEAD OF THE LINE IS DELIBERATELY UNTOUCHED. carve#911 rules what follows
+/// the destination; a run BEFORE it is a different question, and the executable
+/// spec agrees with the leniency - `[a]: <U+202F>javascript:alert(1)` is still a
+/// definition there, with the destination sanitized rather than the line
+/// refused.
+fn parse_link_def_target_parts(target: &str) -> Option<(String, Option<String>, Option<&str>)> {
+    // THE LINE ENDING IS `whitespace` - a space or a tab, the same terminal
+    // `blank_line` takes (PART 1, carve#890). So `[a]: /u<SP>` is a definition
+    // and `[a]: /u<NBSP>` is not: a no-break space, an en quad, a byte order
+    // mark and a form feed are CONTENT under that ruling, and content after the
+    // destination is what the anchor rejects.
+    let target = trim_ascii_end(target.trim_start());
+    // `link_destination` ends at the first whitespace, and that scan IS the
+    // Unicode property (`unicode_url_char` is "non-whitespace, non-ASCII").
+    let end = target
+        .char_indices()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(target.len(), |(idx, _)| idx);
+    // And the run still has to BE a destination: a parenthesis reaches one only
+    // through `balanced_parens` or `destination_escape`, and the three escapes
+    // resolve. A bare `[r]:` was never a definition and still is not.
+    let href = link_destination_value(&target[..end])?;
+    let mut rest = &target[end..];
+    // `link_title = space, ('"' … '"' | "'" … "'")`, ONE space (carve#912).
+    let mut title = None;
+    if let Some(after_pad) = rest.strip_prefix(' ') {
+        if let Some(close) = closing_title_quote(after_pad) {
+            title = Some(unescape_title(&after_pad[1..close]));
+            rest = &after_pad[close + 1..];
+        }
+    }
+    // `[space, attributes]`, one space again. An invalid block is not
+    // `attributes`, so it is leftover content and the anchor below rejects the
+    // line (CARVE-P3-006).
+    let mut attrs = None;
+    if let Some(after_pad) = rest.strip_prefix(' ') {
+        let block = trim_ascii_end(after_pad);
+        if block.starts_with('{') && block.ends_with('}') && block.len() >= 2 {
+            parse_attrs(&block[1..block.len() - 1])?;
+            attrs = Some(block);
+            rest = &after_pad[block.len()..];
+        }
+    }
+    if !rest.chars().all(|c| c == ' ' || c == '\t') {
+        return None;
+    }
+    Some((href, title, attrs))
 }
 
 /// A line with its blockquote prefixes removed, for CONTENT-COLUMN purposes.
@@ -3283,68 +3306,6 @@ fn strip_blockquote_prefix(line: &str) -> Option<&str> {
     rest.strip_prefix(' ')
 }
 
-fn parse_link_def_target(target: &str) -> LinkDef {
-    // UNICODE whitespace, not just ASCII. `unicode_url_char` is "any
-    // non-whitespace, non-ASCII Unicode character", unqualified, so a narrow
-    // no-break space ends the destination exactly as a plain space does.
-    // Scanning bytes for ASCII whitespace alone left one inside the href
-    // (carve#404).
-    let i = target
-        .char_indices()
-        .find(|(_, c)| c.is_whitespace())
-        .map_or(target.len(), |(idx, _)| idx);
-    let href = target[..i].to_string();
-    // THE TITLE'S PADDING RUN IS SPACES HERE TOO. `reference_definition` reuses
-    // `link_title`, which PART 7 spells `space`: the slot sits after the first
-    // non-whitespace character of the line, where a tab is not syntax
-    // (carve#901, carve-rs#726). This copy was a full Unicode `trim`, so it
-    // admitted a tab in either direction and U+00A0 besides.
-    //
-    // A run holding anything but a space means NO TITLE, not "no definition".
-    // The production tolerates trailing junk after the destination - `[r]: /u x`
-    // is a definition whose `x` is ignored - so the line stays a definition and
-    // only the title is dropped.
-    let after_dest = &target[i..];
-    let run_len = after_dest
-        .find(|c: char| !c.is_whitespace())
-        .unwrap_or(after_dest.len());
-    //
-    // AND IT IS EXACTLY ONE SPACE (carve#912). `reference_definition` reuses
-    // `link_title`, whose slot is one `space`; a wider run means NO TITLE by
-    // the same reading that makes a tab mean no title. A run with nothing after
-    // it is the line ending rather than this slot and answers "no title" too,
-    // so the cardinality test is only reached where a title could follow.
-    let rest = if run_len == 1 && after_dest.starts_with(' ') {
-        after_dest[run_len..].trim_end()
-    } else {
-        ""
-    };
-    // A title needs the opening AND a distinct closing quote: a lone `"` (or
-    // `'`) satisfies both starts_with and ends_with on the same byte, so guard
-    // len >= 2 before `rest[1..len-1]` underflows (begin > end panic).
-    let title = if rest.len() >= 2
-        && ((rest.starts_with('"') && rest.ends_with('"'))
-            || (rest.starts_with('\'') && rest.ends_with('\'')))
-    {
-        // A backslash-escaped quote (or any escaped ASCII punctuation) inside
-        // the title is unescaped, matching inline-link titles and carve-js
-        // `unescapeAttrValue` (`[y]: /u "a\"b\"c"` -> title `a"b"c`).
-        Some(unescape_title(&rest[1..rest.len() - 1]))
-    } else {
-        None
-    };
-    LinkDef {
-        raw_label: None,
-        href,
-        title,
-        attrs: None,
-        line: None,
-    }
-}
-
-/// `parse_link_def_target`, with a trailing attribute block split off first
-/// (carve#604). The block comes off BEFORE the destination/title scan, so
-/// widening the parse cannot change what counts as a definition.
 /// Hoist every authored `[label]: /url` definition into the document as a
 /// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
 fn append_link_reference_definitions(
@@ -3399,91 +3360,19 @@ fn append_link_reference_definitions(
     );
 }
 
+/// The definition a target spells, once `parse_link_def_target_parts` has
+/// read it. Only reached for a target that already answered the shape test.
 fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
-    let (rest, attr_text) = split_trailing_attr_block(target);
-    let mut def = parse_link_def_target(rest);
-    // `parse_attrs` takes the INNER content, not the braces (see the block
-    // attribute-line caller, which strips them the same way).
-    def.attrs = attr_text.and_then(|t| parse_attrs(&t[1..t.len() - 1]));
-    def
-}
-
-/// Split a TRAILING attribute block off a definition's target (carve#604).
-///
-/// Scanned rather than matched: an attribute value may hold a `}` inside
-/// quotes (`{data-x="}"}`), and stopping at the first `}` drops every attribute
-/// on the line silently. Only a `}` outside quotes closes the block.
-///
-/// The block must be preceded by whitespace and end the target, so
-/// `[a]: /u{.x}` keeps the braces in the DESTINATION, matching the
-/// production's `space, attributes`.
-fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
-    // Space and tab, not the Unicode property: a no-break space after the block
-    // is CONTENT, so a line ending in one is not a definition at all once the
-    // production is anchored (carve#890, carve#911).
-    let end = trim_ascii_end(target);
-    if !end.ends_with('}') {
-        return (target, None);
+    let (href, title, attr_text) = parse_link_def_target_parts(target).unwrap_or_default();
+    LinkDef {
+        raw_label: None,
+        href,
+        title,
+        // `parse_attrs` takes the INNER content, not the braces (see the block
+        // attribute-line caller, which strips them the same way).
+        attrs: attr_text.and_then(|t| parse_attrs(&t[1..t.len() - 1])),
+        line: None,
     }
-    let mut quote: Option<char> = None;
-    let mut open: Option<usize> = None;
-    let mut escaped = false;
-    let last = end.len() - '}'.len_utf8();
-    for (i, c) in end.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match quote {
-            Some(q) => {
-                if c == '\\' {
-                    escaped = true;
-                } else if c == q {
-                    quote = None;
-                }
-            }
-            None => match c {
-                '"' | '\'' => quote = Some(c),
-                '{' => {
-                    if open.is_none() {
-                        open = Some(i);
-                    }
-                }
-                '}' if i == last => {
-                    let Some(start) = open else {
-                        return (target, None);
-                    };
-                    // THE WHOLE SEPARATOR RUN, not the character adjacent to the
-                    // `{`. PART 7 names "the reference-definition slot before
-                    // its trailing `attributes`" as a padding slot spelled
-                    // `space`, and this test read only `chars().next_back()` -
-                    // so `[a]: /u<TAB><SP>{.c}` put a space next to the brace
-                    // while the run still held a tab, and the block attached
-                    // anyway. A last-character test standing in for a run test
-                    // is the mirror of the first-character test found in
-                    // carve-rs#722 (carve#901, carve-rs#726).
-                    let sep_len = end[..start].len()
-                        - end[..start].trim_end_matches(char::is_whitespace).len();
-                    let sep = &end[start - sep_len..start];
-                    //
-                    // ONE space, not a run (carve#912): `reference_definition`
-                    // spells the slot `[space, attributes]`. A wider run leaves
-                    // the braces where they are, exactly as a zero-space run
-                    // already leaves them in the destination.
-                    if sep.len() != 1 || !sep.starts_with(' ') {
-                        return (target, None);
-                    }
-                    let block = &end[start..];
-                    if parse_attrs(&block[1..block.len() - 1]).is_none() {
-                        return (target, None);
-                    }
-                    return (end[..start].trim_end(), Some(block));
-                }
-                _ => {}
-            },
-        }
-    }
-    (target, None)
 }
 
 type SplitFrontmatter<'a> = (BTreeMap<String, String>, Option<Frontmatter>, &'a str);
@@ -19950,6 +19839,23 @@ fn scan_balanced_destination(bytes: &[u8], start: usize) -> Option<(String, usiz
         return None;
     }
     Some((href, i))
+}
+
+/// A whole run read as `link_destination`: its value, or None when the run is
+/// not one.
+///
+/// A reference definition is built from the same production as the inline tail,
+/// so `[a]: a(b` is no more a destination than `[t](a(b)` is a link. Read by
+/// `scan_balanced_destination` between a synthetic pair, which is the one place
+/// the production is spelled: a run the scan does not consume whole left a
+/// parenthesis or a whitespace character behind.
+fn link_destination_value(run: &str) -> Option<String> {
+    let probe = format!("({run})");
+    let (href, end) = scan_balanced_destination(probe.as_bytes(), 1)?;
+    if end != run.len() + 1 || href.is_empty() {
+        return None;
+    }
+    Some(href)
 }
 
 fn read_link_target(
