@@ -90,6 +90,39 @@ fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
 }
 
 #[test]
+fn a_degraded_composite_figure_round_trips_through_its_own_bridge() {
+    let source = r#"{#fig-x .columns-2}
+::: figure
+{#fig-x-a}
+![one](a.png)
+^ (a) One
+
+{#fig-x-b}
+![two](b.png)
+^ (b) Two
+:::
+^ Figure #: Group caption
+"#;
+    let (value, bridge) = pm(source);
+
+    assert!(bridge.degraded.contains_key("figure_group"));
+    let children = value["content"][0]["content"]
+        .as_array()
+        .expect("div children");
+    let caption = children.last().expect("trailing caption paragraph");
+    assert_eq!(caption["type"], "paragraph");
+    let caption_text: String = caption["content"]
+        .as_array()
+        .expect("caption inline content")
+        .iter()
+        .filter_map(|node| node["text"].as_str())
+        .collect();
+    assert_eq!(caption_text, "Figure : Group caption");
+    assert!(bridge.dropped.contains_key("caption_number"));
+    from_prosemirror(&bridge.json).expect("bridge accepts its degraded figure group");
+}
+
+#[test]
 fn definitions_carry_their_source_positions_both_ways() {
     let source = "[^z]: note\n\n[z]: /z\n";
     let original = parse_with_options(source, &Options::default().with_positions(true));
