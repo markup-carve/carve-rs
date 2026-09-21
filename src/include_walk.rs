@@ -20,6 +20,15 @@ pub(crate) trait SubtreeVisitor {
     fn position(&mut self, _pos: &mut Pos) {}
 }
 
+/// A position on a part that is not a node of its own: a list item, a table row
+/// or cell, a definition term or body, a citation item. It reaches the wire all
+/// the same.
+fn visit_pos<V: SubtreeVisitor>(pos: &mut Option<Pos>, v: &mut V) {
+    if let Some(pos) = pos.as_mut() {
+        v.position(pos);
+    }
+}
+
 /// Visit the sequences held directly by one block, without revisiting the block
 /// itself. The caller decides whether to recurse further.
 pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: &mut V) {
@@ -40,16 +49,19 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
         BlockNode::Div(d) => v.blocks(&mut d.children),
         BlockNode::List(l) => {
             for item in &mut l.items {
+                visit_pos(&mut item.pos, v);
                 v.blocks(&mut item.children);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    v.inlines(term);
+                    visit_pos(&mut term.pos, v);
+                    v.inlines(&mut term.children);
                 }
-                for blocks in &mut item.definitions {
-                    v.blocks(blocks);
+                for def in &mut item.definitions {
+                    visit_pos(&mut def.pos, v);
+                    v.blocks(&mut def.children);
                 }
             }
         }
@@ -58,7 +70,9 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
                 v.inlines(caption);
             }
             for row in &mut t.rows {
+                visit_pos(&mut row.pos, v);
                 for cell in &mut row.cells {
+                    visit_pos(&mut cell.pos, v);
                     v.inlines(&mut cell.children);
                 }
             }
@@ -122,6 +136,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         }
         InlineNode::CitationGroup(g) => {
             for item in &mut g.items {
+                visit_pos(&mut item.pos, v);
                 if let Some(prefix) = &mut item.prefix {
                     v.inlines(prefix);
                 }
