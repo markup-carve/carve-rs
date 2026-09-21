@@ -7,6 +7,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-09-21
+
+### Fixed
+
+- A node pulled in by a sliced include (`{{ child.crv @lines:N-M }}`) reports
+  positions in its own file's coordinates, as `docs/includes.md` requires,
+  instead of coordinates measured inside the slice under the whole file's id.
+  List items, table rows and cells, definition terms and descriptions, and
+  citation items from any include now carry `pos.file` too
+  (markup-carve/carve-rs#1783, markup-carve/carve-rs#1786).
+- The ProseMirror bridge writes a degraded composite figure's group caption as a
+  trailing paragraph inside the `carveDiv`. It used to emit a `carveCaption` in a
+  block position, which `from_prosemirror` then refused
+  (markup-carve/carve-rs#1785).
+
 ## [0.1.6] - 2026-09-18
 
 ### Added
@@ -2293,7 +2308,8 @@ is still `carve`.
 - Uniform nesting depth cap of 200
 - Char-boundary panic guard in container-prefix stripping (crash-DoS fix)
 
-[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.6...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.7...HEAD
+[0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6
 [0.1.5]: https://github.com/markup-carve/carve-rs/compare/0.1.4...0.1.5
 [0.1.4]: https://github.com/markup-carve/carve-rs/compare/0.1.3...0.1.4
