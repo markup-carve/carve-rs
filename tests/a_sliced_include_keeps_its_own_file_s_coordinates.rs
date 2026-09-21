@@ -148,7 +148,7 @@ fn every_part_an_include_pulled_in_names_its_file() {
     // the slice's coordinates as well.
     let citations = carve::Citations::new();
     let child =
-        "- item\n\n:: term\n:  def\n\n| a | b |\n|---|---|\n| one | two |\n\nSee [@doe, p. 3].\n";
+        "- item\n\n:: term\n:  def\n\n| a | b |\n|---|---|\n| one | two |\n\n![diagram](diagram.png)\n^ Figure caption\n\nSee [@doe, p. 3].\n";
     let resolver = Files(HashMap::from([(
         "child.crv".to_string(),
         child.to_string(),
@@ -174,6 +174,7 @@ fn every_part_an_include_pulled_in_names_its_file() {
         "definition_description",
         "table_row",
         "table_cell",
+        "figure",
         "citation",
     ] {
         assert!(json.contains(&format!("\"{part}\"")), "no {part} in {json}");
