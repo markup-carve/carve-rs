@@ -340,7 +340,10 @@ impl Renderer {
                 let mut children = self.blocks(&n.children);
                 if let Some(caption) = &n.caption {
                     children.push(node_with(
-                        self.name("caption")?,
+                        // A caption belongs inside a figure or table, but this
+                        // degraded group is a generic div. Preserve its text
+                        // in the block position that the div schema accepts.
+                        self.name("paragraph")?,
                         Object::new(),
                         self.inlines(caption, &[]),
                     ));
