@@ -86,16 +86,28 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
         BlockNode::Figure(f) => {
             v.inlines(&mut f.caption);
             match &mut *f.target {
-                FigureTarget::BlockQuote(b) => v.blocks(&mut b.children),
-                FigureTarget::Paragraph(p) => v.inlines(&mut p.children),
+                FigureTarget::BlockQuote(b) => {
+                    visit_pos(&mut b.pos, v);
+                    v.blocks(&mut b.children);
+                }
+                FigureTarget::Paragraph(p) => {
+                    visit_pos(&mut p.pos, v);
+                    v.inlines(&mut p.children);
+                }
                 FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        v.inlines(caption);
+                    }
                     for row in &mut t.rows {
+                        visit_pos(&mut row.pos, v);
                         for cell in &mut row.cells {
+                            visit_pos(&mut cell.pos, v);
                             v.inlines(&mut cell.children);
                         }
                     }
                 }
-                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+                FigureTarget::Image(i) => visit_pos(&mut i.pos, v),
+                FigureTarget::CodeBlock(c) => visit_pos(&mut c.pos, v),
             }
         }
         BlockNode::Extension(e) => v.blocks(&mut e.children),
