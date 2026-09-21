@@ -113,6 +113,32 @@ impl Fixture {
         );
     }
 
+    fn cargo_version(&self, manifest_version: &str, lock_version: &str) {
+        self.write(
+            "Cargo.toml",
+            &format!(
+                "[package]\nname = \"a-binding\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n\
+                 [dependencies]\n\
+                 carve_rs = {{ package = \"carve-lang\", version = \"={manifest_version}\" }}\n"
+            ),
+        );
+        self.write(
+            "Cargo.lock",
+            &format!(
+                "version = 3\n\n[[package]]\nname = \"a-binding\"\nversion = \"0.1.0\"\n\n\
+                 [[package]]\nname = \"carve-lang\"\nversion = \"{lock_version}\"\n\
+                 source = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
+            ),
+        );
+    }
+
+    fn cargo_version_range(&self, manifest_version: &str, lock_version: &str) {
+        self.cargo_version(manifest_version, lock_version);
+        let manifest = self.binding().join("Cargo.toml");
+        let text = std::fs::read_to_string(&manifest).unwrap();
+        std::fs::write(&manifest, text.replace("version = \"=", "version = \"")).unwrap();
+    }
+
     fn run(&self, extra: &[&str]) -> (i32, String) {
         let engine = self.engine();
         let mut args: Vec<String> = vec![
@@ -184,6 +210,39 @@ fn a_pin_on_the_tip_passes() {
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("main is 0 commit(s) ahead of it"), "{text}");
     assert!(text.contains("every assertion holds"), "{text}");
+}
+
+#[test]
+fn a_published_version_resolves_through_its_tag() {
+    let f = Fixture::new("published");
+    f.git(&f.engine(), &["tag", "0.1.6"]);
+    f.cargo_version("0.1.6", "0.1.6");
+    let (code, text) = f.run_cargo(&[]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("main is 0 commit(s) ahead of it"), "{text}");
+}
+
+#[test]
+fn a_version_without_a_source_tag_fails() {
+    let f = Fixture::new("untagged-version");
+    f.cargo_version("0.1.6", "0.1.6");
+    assert_fails_with(f.run_cargo(&[]), "revision_exists");
+}
+
+#[test]
+fn a_locked_version_that_disagrees_fails() {
+    let f = Fixture::new("version-lock-drift");
+    f.git(&f.engine(), &["tag", "0.1.6"]);
+    f.cargo_version("0.1.6", "0.1.5");
+    assert_fails_with(f.run_cargo(&[]), "lock_agrees");
+}
+
+#[test]
+fn a_version_range_is_not_accepted_as_a_pin() {
+    let f = Fixture::new("version-range");
+    f.git(&f.engine(), &["tag", "0.1.6"]);
+    f.cargo_version_range("0.1.6", "0.1.6");
+    assert_fails_with(f.run_cargo(&[]), "pin_well_formed");
 }
 
 // ---------------------------------------------------------------------------

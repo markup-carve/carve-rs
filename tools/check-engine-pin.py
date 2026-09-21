@@ -5,10 +5,10 @@ Every binding pins this engine, and until now only one of them measured its pin
 at all - as a warning that could never fail a job (markup-carve/carve-rs#771).
 The pins come in two shapes and, across the repositories, four spellings:
 
-  - a Cargo git dependency, whose revision lives in `Cargo.toml` and again in
-    `Cargo.lock`. The crate publishes as `carve-lang`, NOT `carve` (the name
-    was taken on crates.io), so a reader grepping a manifest for "carve" finds
-    the binding's own package and concludes there is no pin;
+  - a Cargo dependency on the published `carve-lang` crate, whose version lives
+    in `Cargo.toml` and again in `Cargo.lock`. The matching carve-rs tag names
+    the source revision. Git revision dependencies remain accepted while older
+    bindings migrate;
   - a bare 40-hex revision in a text file beside a prebuilt artifact, the way
     carve-go records `internal/wasm/REV` next to the wasm it describes.
 
@@ -122,8 +122,8 @@ def _is_engine_url(url: str) -> bool:
     return bool(ENGINE_REPO_RE.search(url.rstrip("/")))
 
 
-def manifest_rev(manifest: Path) -> tuple[str, str]:
-    """The engine revision named by a Cargo manifest, plus the dependency key.
+def manifest_pin(manifest: Path) -> tuple[str, str, str]:
+    """The engine pin named by a Cargo manifest: kind, value, dependency key.
 
     Located by its git URL, not by its key: the three Cargo bindings spell the
     key `carve_rs`, `carve_rs` and `carve`, and the package it renames to is
@@ -133,27 +133,21 @@ def manifest_rev(manifest: Path) -> tuple[str, str]:
     found: list[tuple[str, dict]] = []
     for table in ("dependencies", "dev-dependencies", "build-dependencies"):
         for key, spec in (data.get(table) or {}).items():
-            if isinstance(spec, dict) and _is_engine_url(str(spec.get("git", ""))):
+            if not isinstance(spec, dict):
+                continue
+            package = spec.get("package", key)
+            if _is_engine_url(str(spec.get("git", ""))) or package == ENGINE_PACKAGE:
                 found.append((key, spec))
     if not found:
         raise Failure(
             "pin_present",
-            f"{manifest} declares no git dependency on carve-rs. If the engine "
-            f"moved to a published version, this guard has to be told; a reader "
+            f"{manifest} declares no dependency on {ENGINE_PACKAGE}. A reader "
             f"that finds nothing must not report success.",
         )
     if len(found) > 1:
         keys = ", ".join(sorted(k for k, _ in found))
         raise Failure("pin_present", f"{manifest} declares carve-rs more than once: {keys}")
     key, spec = found[0]
-    rev = spec.get("rev")
-    if not rev:
-        raise Failure(
-            "pin_present",
-            f"{manifest} depends on carve-rs at `{key}` with no `rev`, so every "
-            f"build resolves whatever has landed since and the package can carry "
-            f"an engine no CI run here has ever built",
-        )
     package = spec.get("package", key)
     if package != ENGINE_PACKAGE:
         raise Failure(
@@ -161,18 +155,43 @@ def manifest_rev(manifest: Path) -> tuple[str, str]:
             f"{manifest} renames the engine to `{package}`; it publishes as "
             f"`{ENGINE_PACKAGE}` (the name `carve` is taken on crates.io)",
         )
-    return str(rev), key
+    if spec.get("git"):
+        rev = spec.get("rev")
+        if not rev:
+            raise Failure(
+                "pin_present",
+                f"{manifest} depends on carve-rs at `{key}` with no `rev`, so every "
+                f"build resolves whatever has landed since",
+            )
+        return "revision", str(rev), key
+    version = spec.get("version")
+    if not isinstance(version, str) or not version:
+        raise Failure(
+            "pin_present",
+            f"{manifest} depends on `{ENGINE_PACKAGE}` at `{key}` without a version",
+        )
+    if not version.startswith("="):
+        raise Failure(
+            "pin_well_formed",
+            f"{manifest} requires `{version}`, which Cargo treats as a range; "
+            f"pin `{key}` with an exact `={version}` requirement",
+        )
+    return "version", version[1:], key
 
 
-def lock_rev(lock: Path) -> str:
-    """The engine revision the LOCKFILE resolved, from its own `source` line."""
+def lock_pin(lock: Path) -> tuple[str, str]:
+    """The engine pin the lockfile resolved: kind and revision or version."""
     data = _load_toml(lock, "lock_agrees")
     matches = []
     for package in data.get("package") or []:
         source = str(package.get("source", ""))
         m = LOCK_SOURCE_RE.match(source)
+        if package.get("name") != ENGINE_PACKAGE:
+            continue
         if m and _is_engine_url(m.group("url")):
-            matches.append((package.get("name"), m))
+            matches.append(("revision", package, m))
+        elif source == "registry+https://github.com/rust-lang/crates.io-index":
+            matches.append(("version", package, None))
     if not matches:
         raise Failure(
             "lock_agrees",
@@ -181,16 +200,27 @@ def lock_rev(lock: Path) -> str:
         )
     if len(matches) > 1:
         raise Failure("lock_agrees", f"{lock} resolves carve-rs more than once")
-    name, m = matches[0]
-    if name != ENGINE_PACKAGE:
-        raise Failure(
-            "lock_agrees",
-            f"{lock} names the engine package `{name}`; it is `{ENGINE_PACKAGE}`",
-        )
+    kind, package, m = matches[0]
+    if kind == "version":
+        return kind, str(package.get("version", ""))
+    assert m is not None
     rev = m.group("resolved") or m.group("rev")
     if not rev:
         raise Failure("lock_agrees", f"{lock} pins carve-rs to a branch, not a revision")
-    return rev
+    return kind, rev
+
+
+def version_revision(engine: Path, version: str) -> str:
+    """Resolve a published crate version through its immutable release tag."""
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", version):
+        raise Failure("pin_well_formed", f"`{version}` is not an exact crate version")
+    result = git(engine, "rev-parse", "--verify", "--quiet", f"refs/tags/{version}^{{commit}}")
+    if result.returncode != 0:
+        raise Failure(
+            "revision_exists",
+            f"carve-rs has no `{version}` tag; the published version cannot be tied to source",
+        )
+    return result.stdout.strip()
 
 
 def rev_file_rev(path: Path) -> str:
@@ -333,15 +363,20 @@ def main(argv: list[str] | None = None) -> int:
     rev = None
     try:
         if args.form == "cargo":
-            rev, key = manifest_rev(args.manifest)
-            check_well_formed(rev)
-            locked = lock_rev(args.lock)
-            if locked != rev:
+            kind, pin, key = manifest_pin(args.manifest)
+            if kind == "revision":
+                check_well_formed(pin)
+            locked_kind, locked = lock_pin(args.lock)
+            if locked_kind != kind or locked != pin:
                 raise Failure(
                     "lock_agrees",
-                    f"{args.manifest} pins `{key}` at {rev}, {args.lock} resolved "
-                    f"{locked}. One of them was updated without the other.",
+                    f"{args.manifest} pins `{key}` by {kind} at {pin}, {args.lock} "
+                    f"resolved {locked_kind} {locked}. One was updated without the other.",
                 )
+            if kind == "version":
+                rev = version_revision(args.engine, pin)
+            else:
+                rev = pin
         else:
             rev = rev_file_rev(args.file)
             check_well_formed(rev)
