@@ -1636,7 +1636,15 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             } else {
                 format!(" {attrs}")
             };
-            format!("[{}]: {}{title}{attrs}", def.label, def.href)
+            // The href is re-escaped the way the inline tail's is: the reader
+            // resolves the three destination escapes, so writing the resolved
+            // value bare would hand back a line whose parentheses no longer
+            // balance.
+            format!(
+                "[{}]: {}{title}{attrs}",
+                def.label,
+                escape_destination_escapes(&def.href)
+            )
         }
         BlockNode::Heading(heading) => {
             // A heading is SINGLE-LINE (PART 2), so its text must not contain a
@@ -4603,6 +4611,33 @@ fn unbalanced_destination_chars(text: &str) -> std::collections::HashSet<usize> 
     }
     marked.extend(openers);
     marked
+}
+
+/// Backslash-escape exactly what the destination scan would otherwise read
+/// differently: a parenthesis with no partner, and a backslash sitting in front
+/// of one of the three escapable characters. A balanced pair re-parses as
+/// itself, so leaving it bare is the minimal escaping PART 11 section 4 asks
+/// for.
+fn escape_destination_escapes(text: &str) -> String {
+    let needs_marking = text
+        .as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'(' | b')' | b'\\'));
+    if !needs_marking {
+        return text.to_string();
+    }
+    let marked = unbalanced_destination_chars(text);
+    let bytes = text.as_bytes();
+    let mut out = String::new();
+    for (i, ch) in text.char_indices() {
+        let escapable =
+            ch == '\\' && matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'));
+        if marked.contains(&i) || escapable {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn escape_destination(text: &str) -> String {
