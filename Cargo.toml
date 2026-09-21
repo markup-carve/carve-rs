@@ -58,6 +58,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [dev-dependencies]
+sha2 = "0.10"
 
 [lib]
 name = "carve"
