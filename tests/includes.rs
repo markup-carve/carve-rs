@@ -11,8 +11,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use carve::{
-    expand_includes, parse, render_html, IncludeContext, IncludeDenial, IncludeDependency,
-    IncludeOptions, IncludeResolved, IncludeResolver,
+    expand_includes, parse, parse_with_options, render_html, BlockNode, IncludeContext,
+    IncludeDenial, IncludeDependency, IncludeOptions, IncludeResolved, IncludeResolver, Options,
 };
 // Only this build has a filesystem resolver; everything else here drives the
 // pass through a HOST-SUPPLIED closure, which is the case a database, object
@@ -174,6 +174,44 @@ fn inline_include_of_multi_block_child_warns_and_stays_literal() {
     let result = expand("See {{ child }}.", &[("child", "One.\n\nTwo.")]);
     assert_eq!(result.rules(), vec!["include-block-in-inline"]);
     assert_eq!(result.html, "<p>See {{ child }}.</p>");
+}
+
+#[test]
+fn a_line_slice_keeps_the_complete_childs_coordinates() {
+    let child = "é\r\n\r\npad\r\n\r\n## Deep heading\r\n\r\nBody.\r\n";
+    let doc = parse_with_options(
+        "{{ child @lines:5-7 }}\n",
+        &Options::default().with_positions(true),
+    );
+    let resolver = MapResolver::new(&[("child", child)]);
+    let result = expand_includes(
+        doc,
+        "{{ child @lines:5-7 }}\n",
+        &IncludeOptions::new().with_resolver(&resolver),
+    );
+
+    let BlockNode::Heading(heading) = &result.doc.children[0] else {
+        panic!("expected heading");
+    };
+    let BlockNode::Paragraph(paragraph) = &result.doc.children[1] else {
+        panic!("expected paragraph");
+    };
+    let heading_pos = heading.pos.as_ref().expect("heading position");
+    let paragraph_pos = paragraph.pos.as_ref().expect("paragraph position");
+
+    assert_eq!((heading_pos.start_line, heading_pos.start_offset), (5, 12));
+    assert_eq!(
+        (paragraph_pos.start_line, paragraph_pos.start_offset),
+        (7, 31)
+    );
+    assert_eq!(
+        heading_pos.file.as_ref().map(|file| file.as_str()),
+        Some("child")
+    );
+    assert_eq!(
+        paragraph_pos.file.as_ref().map(|file| file.as_str()),
+        Some("child")
+    );
 }
 
 #[test]
