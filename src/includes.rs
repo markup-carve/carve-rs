@@ -914,7 +914,10 @@ fn slice_lines(source: &str, range: (usize, usize)) -> String {
     lines[start..end].join("\n")
 }
 
-fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<(String, String)> {
+fn resolve_child(
+    d: &Directive,
+    state: &mut State<'_>,
+) -> Option<(String, String, Option<(String, usize)>)> {
     let resolver = state.opts.resolver?;
     // I1: the two SELECTION mechanisms are mutually exclusive.
     if d.section.is_some() && d.lines.is_some() {
@@ -1016,11 +1019,14 @@ fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<(String, String
         state.warn("include-budget", spent_message("include-budget", &d.path));
         return None;
     }
-    let selected = match d.lines {
-        Some(range) => slice_lines(&source, range),
-        None => source,
+    let (selected, position_base) = match d.lines {
+        Some(range) => (
+            slice_lines(&source, range),
+            Some((source, range.0.saturating_sub(1))),
+        ),
+        None => (source, None),
     };
-    Some((selected, id))
+    Some((selected, id, position_base))
 }
 
 fn heading_id(h: &Heading) -> String {
@@ -1453,6 +1459,103 @@ fn stamp_source_file(blocks: &mut [BlockNode], file: &str) {
     }
 }
 
+/// Restore positions parsed from an `@lines` slice to the coordinates of the
+/// complete source. This runs before nested includes are expanded, so a parent
+/// slice base cannot be applied to a grandchild.
+fn shift_source_positions(
+    blocks: &mut [BlockNode],
+    complete_source: &str,
+    slice: &str,
+    line_base: usize,
+) {
+    let mut shift = ShiftPositions {
+        complete_source,
+        slice,
+        line_base,
+    };
+    for block in blocks.iter_mut() {
+        crate::include_walk::visit_block_children(block, &mut shift);
+    }
+}
+
+struct ShiftPositions<'a> {
+    complete_source: &'a str,
+    slice: &'a str,
+    line_base: usize,
+}
+
+impl crate::include_walk::SubtreeVisitor for ShiftPositions<'_> {
+    fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+        for block in blocks.iter_mut() {
+            crate::include_walk::visit_block_children(block, self);
+        }
+    }
+
+    fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+        for node in inlines.iter_mut() {
+            crate::include_walk::visit_inline_children(node, self);
+        }
+    }
+
+    fn position(&mut self, pos: &mut crate::ast::Pos) {
+        pos.start_line += self.line_base;
+        pos.end_line += self.line_base;
+        pos.start_offset = source_offset(
+            self.complete_source,
+            self.slice,
+            pos.start_line,
+            pos.start_offset,
+            self.line_base,
+        );
+        pos.end_offset = source_offset(
+            self.complete_source,
+            self.slice,
+            pos.end_line,
+            pos.end_offset,
+            self.line_base,
+        );
+    }
+}
+
+fn source_offset(
+    complete_source: &str,
+    slice: &str,
+    complete_line: usize,
+    offset: usize,
+    line_base: usize,
+) -> usize {
+    let slice_line = complete_line.saturating_sub(line_base);
+    line_start_offset(complete_source, complete_line) + offset
+        - line_start_offset(slice, slice_line)
+}
+
+/// Codepoint offset of the given 1-based physical line in source.
+fn line_start_offset(source: &str, line: usize) -> usize {
+    if line <= 1 {
+        return 0;
+    }
+
+    let mut offset = 0;
+    let mut current_line = 1;
+    let mut chars = source.chars().peekable();
+    while let Some(ch) = chars.next() {
+        offset += 1;
+        if ch == '\r' {
+            if chars.next_if_eq(&'\n').is_some() {
+                offset += 1;
+            }
+        } else if ch != '\n' {
+            continue;
+        }
+        current_line += 1;
+        if current_line == line {
+            return offset;
+        }
+    }
+
+    offset
+}
+
 struct Stamp<'a> {
     file: &'a crate::ast::SourceFile,
 }
@@ -1478,7 +1581,7 @@ impl crate::include_walk::SubtreeVisitor for Stamp<'_> {
 }
 
 fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
-    let (source, id) = resolve_child(d, state)?;
+    let (source, id, position_base) = resolve_child(d, state)?;
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
     // the child closes at child EOF and can never swallow parent content.
@@ -1489,6 +1592,12 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     let child = crate::parse_with_options(&source, &child_options);
     let mut children = child.children;
     let mut footnotes = child.footnote_defs;
+    if let Some((complete_source, line_base)) = position_base {
+        shift_source_positions(&mut children, &complete_source, &source, line_base);
+        for body in footnotes.values_mut() {
+            shift_source_positions(body, &complete_source, &source, line_base);
+        }
+    }
     // Select BEFORE expanding: nested includes outside the wanted section must
     // not be resolved (no budget charge) and must not move section boundaries.
     if let Some(section) = &d.section {
