@@ -914,10 +914,13 @@ fn slice_lines(source: &str, range: (usize, usize)) -> String {
     lines[start..end].join("\n")
 }
 
-fn resolve_child(
-    d: &Directive,
-    state: &mut State<'_>,
-) -> Option<(String, String, Option<(String, usize)>)> {
+struct ResolvedChild {
+    source: String,
+    id: String,
+    position_base: Option<(String, usize)>,
+}
+
+fn resolve_child(d: &Directive, state: &mut State<'_>) -> Option<ResolvedChild> {
     let resolver = state.opts.resolver?;
     // I1: the two SELECTION mechanisms are mutually exclusive.
     if d.section.is_some() && d.lines.is_some() {
@@ -1026,7 +1029,11 @@ fn resolve_child(
         ),
         None => (source, None),
     };
-    Some((selected, id, position_base))
+    Some(ResolvedChild {
+        source: selected,
+        id,
+        position_base,
+    })
 }
 
 fn heading_id(h: &Heading) -> String {
@@ -1581,7 +1588,11 @@ impl crate::include_walk::SubtreeVisitor for Stamp<'_> {
 }
 
 fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
-    let (source, id, position_base) = resolve_child(d, state)?;
+    let ResolvedChild {
+        source,
+        id,
+        position_base,
+    } = resolve_child(d, state)?;
     // I4 fragment containment: the child is PARSED as a self-contained
     // document, never spliced as source. A construct still open at the end of
     // the child closes at child EOF and can never swallow parent content.
