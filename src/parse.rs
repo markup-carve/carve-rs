@@ -5667,6 +5667,17 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         // `MappedSource::reached`. Unknown reads as "below", which is what
         // this scan assumed before markup-carve/carve#1896.
         let reaches_container = source.reached.get(i).copied().unwrap_or(false);
+        // Reaching the outer container does not move a line out of a deeper
+        // item's still-open paragraph. It remains below that item's content
+        // column, and the next line at the column still belongs to that item.
+        if paragraph_open
+            && !after_blank
+            && nested_columns.last().is_some_and(|column| base < *column)
+            && !item_block_opener(&local_at_base)
+        {
+            i += 1;
+            continue;
+        }
         // §10 I5's invisible kinds are lazy paragraph text of THIS container
         // only BELOW its content column (markup-carve/carve#1809, corpus
         // 430-2/430-3). At or past the column the same line is the container's
@@ -5709,6 +5720,16 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         }
         if let Some(column) = marker_content_col(&lines[i]) {
             if !include_sublists || base == 0 || !nested_columns.is_empty() {
+                let marker = detect_list_marker_full(&lines[i]);
+                let colon_folds = marker.as_ref().is_some_and(|marker| {
+                    detect_container_open(marker.content).is_some()
+                        || detect_line_block_open(marker.content).is_some()
+                        || detect_hardbreaks_block_open(marker.content).is_some()
+                        || detect_quote_block_open(marker.content).is_some()
+                }) && lines
+                    .get(i + 1)
+                    .is_some_and(|next| !is_blank_line(next) && indent_columns(next) < column);
+                paragraph_open = colon_folds;
                 nested_columns.push(column);
                 after_blank = false;
                 block_at_minimum = false;
@@ -9490,6 +9511,12 @@ fn parse_list(
                     // waiting for `parse_item_chunk` would drop the attributes
                     // before they can be carried across that boundary.
                     rebase_overindented_blocks(&mut nested, false);
+                    let nested_leaves_paragraph_open = nested_ends_with_open_paragraph_rebased(
+                        &nested,
+                        last_consumed_line_below_column(cur, content_col),
+                        last_consumed_line_below_column(cur, content_col),
+                        options,
+                    );
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -9566,6 +9593,14 @@ fn parse_list(
                         pending_blank = false;
                     }
                     place_item_chunk(deferred, last_item, nested_children, carried);
+                    if !nested_leaves_paragraph_open
+                        && cur.peek().is_some_and(|line| {
+                            let indent = indent_columns(line);
+                            indent > base_indent && indent < content_col
+                        })
+                    {
+                        break;
+                    }
                     // A collected definition is an I5 block, not the comment
                     // exception. If the collector stopped on a nonzero line
                     // below the item's content column, no paragraph remains
@@ -9810,7 +9845,32 @@ fn parse_list(
         // logic (collect_indented_block + recursive parse) -- no separate path.
         if marker.content.starts_with('>') {
             let mut stream = item_marker_source(cur, marker.content, item_at);
-            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // Decide the fence while the outer item still exposes its closer.
+            // If a below-column line ends the item first, the inner reparse
+            // cannot see that closer. The synthetic boundary preserves the
+            // block decision without moving the closer into the item.
+            let fence_after_quote = cur.peek().is_some_and(|line| {
+                let indent = indent_columns(line);
+                if indent < content_col {
+                    return false;
+                }
+                detect_fence_open(&slice_columns(line, content_col, false)).is_some_and(|open| {
+                    item_body_fence_has_closer(
+                        &cur.lines[cur.pos + 1..],
+                        open,
+                        content_col,
+                        |line, _| {
+                            detect_list_marker_full(line)
+                                .is_some_and(|marker| marker.indent <= base_indent)
+                        },
+                    )
+                })
+            });
+            let continuation = collect_indented_block_mapped(cur, base_indent, content_col);
+            if fence_after_quote && !continuation.source.is_empty() {
+                stream.push_newline_at(String::new(), None, None);
+            }
+            stream.append(continuation);
             let after_blank = cur.pos > 0 && is_blank_line(cur.lines[cur.pos - 1]);
             fold_lazy_run_and_resume(
                 cur,
@@ -10341,8 +10401,21 @@ fn parse_list(
                     ContentColumnAttrBlock::No => false,
                 }
             };
+            let fence_open = detect_fence_open(&dedented);
+            let fence_interrupts = fence_open.is_some_and(|open| {
+                item_body_fence_has_closer(
+                    &cur.lines[cur.pos + 1..],
+                    open,
+                    content_col,
+                    |line, _| {
+                        detect_list_marker_full(line)
+                            .is_some_and(|marker| marker.indent <= base_indent)
+                    },
+                )
+            });
             let interrupts = (wrapped_attr_interrupts
-                || interrupts_paragraph_as_container(cur, &dedented))
+                || interrupts_paragraph_as_container(cur, &dedented)
+                || fence_interrupts)
                 && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
             if interrupts {
                 break;
@@ -10355,22 +10428,11 @@ fn parse_list(
             // tracker unless a closer is written in this item's own body:
             // doing so closes the item before the next below-column lazy line
             // (corpus 367).
-            let rejected_fence_has_closer = detect_fence_open(&dedented).is_some_and(|open| {
+            let rejected_fence_has_closer = fence_open.is_some_and(|open| {
                 cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                    && item_body_fence_has_closer(
-                        &cur.lines[cur.pos + 1..],
-                        open,
-                        content_col,
-                        |line, _| {
-                            detect_list_marker_full(line)
-                                .is_some_and(|marker| marker.indent <= base_indent)
-                        },
-                    )
+                    && fence_interrupts
             });
-            if item_open_fence.is_some()
-                || detect_fence_open(&dedented).is_none()
-                || rejected_fence_has_closer
-            {
+            if item_open_fence.is_some() || fence_open.is_none() || rejected_fence_has_closer {
                 track_collected_fence(&mut item_open_fence, &dedented, true);
             } else {
                 item_unopened_fence_span = true;
@@ -11988,6 +12050,9 @@ fn collect_indented_block_mapped_with(
         if fence.is_some() && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
+        if !colon_open.is_empty() && indent < strip_cols {
+            break;
+        }
         let is_marker = detect_list_marker_full(line).is_some();
         if stop_at_content_column_marker
             && is_marker
@@ -12173,12 +12238,7 @@ fn item_body_fence_has_closer(
             return false;
         }
         pending_blank = false;
-        let body = if indent >= content_col {
-            slice_columns(line, content_col, false)
-        } else {
-            trim_ascii_start(line).to_string()
-        };
-        if is_fence_close(&body, open) {
+        if indent >= content_col && is_fence_close(&slice_columns(line, content_col, false), open) {
             return true;
         }
     }
@@ -13229,7 +13289,7 @@ fn collect_definition_body(
                 //
                 // The residual is written back as the spaces the tab bought past
                 // the margin, which is what makes the two spellings agree.
-                let sliced = slice_columns(line, content_column.min(indent), true);
+                let mut sliced = slice_columns(line, content_column.min(indent), true);
                 // Count what was actually removed rather than assuming three:
                 // `slice_columns` works in COLUMNS, and a tab is one codepoint
                 // spanning several of them. The difference in LENGTH is the
@@ -13244,19 +13304,31 @@ fn collect_definition_body(
                 // Tracking one as a real fence would eject the next lazy line
                 // from the `<dd>` (corpus 367). Keep the established behavior
                 // when a closer is written in this body, as for lists.
-                let rejected_fence_has_closer = detect_fence_open(&sliced).is_some_and(|open| {
-                    cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                        && item_body_fence_has_closer(
-                            &cur.lines[cur.pos + 1..],
-                            open,
-                            content_column,
-                            |line, indent| {
-                                indent < content_column
-                                    && (is_definition_list_start(strip_lazy(line))
-                                        || strip_definition_marker(strip_lazy(line)).is_some())
-                            },
-                        )
-                });
+                let rejected_fence_has_closer = fence.open.is_none()
+                    && detect_fence_open(&sliced).is_some_and(|open| {
+                        cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                            && item_body_fence_has_closer(
+                                &cur.lines[cur.pos + 1..],
+                                open,
+                                content_column,
+                                |line, indent| {
+                                    indent < content_column
+                                        && (is_definition_list_start(strip_lazy(line))
+                                            || strip_definition_marker(strip_lazy(line)).is_some())
+                                },
+                            )
+                    });
+                if rejected_fence_has_closer {
+                    lines.push(String::new());
+                    line_map.push(None);
+                    col_map.push(None);
+                    reached.push(true);
+                } else if fence.open.is_none() && detect_fence_open(&sliced).is_some() {
+                    sliced.insert_str(0, LAZY);
+                    if let Some(Some(col)) = col_map.last_mut() {
+                        *col -= LAZY.chars().count() as isize;
+                    }
+                }
                 if fence.open.is_some()
                     || detect_fence_open(&sliced).is_none()
                     || rejected_fence_has_closer
@@ -13385,10 +13457,23 @@ fn collect_definition_body(
             // BULLET, an ordered marker and CAPTION alongside the visible
             // openers, and never asks the fold question about a line that
             // fails it (markup-carve/carve-rs#1534).
+            let fence_interrupts = detect_fence_open(&owned).is_some_and(|open| {
+                open.lang_start < open.lang_end
+                    || item_body_fence_has_closer(
+                        &cur.lines[cur.pos + 1..],
+                        open,
+                        content_column,
+                        |line, indent| {
+                            indent < content_column
+                                && (is_definition_list_start(strip_lazy(line))
+                                    || strip_definition_marker(strip_lazy(line)).is_some())
+                        },
+                    )
+            });
             if !below_the_column
                 && cur.at_document_level
                 && (detect_list_marker_full(&owned).is_some()
-                    || detect_fence_open(&owned).is_some()
+                    || fence_interrupts
                     || caption_content(&owned).is_some())
             {
                 break;
@@ -17836,7 +17921,7 @@ fn parse_inline_context(
         }
 
         if c == b'#' {
-            if caption_number_allowed && !bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
+            if caption_number_allowed && !bytes.get(i + 1).is_some_and(|b| is_attr_ident_part(*b)) {
                 flush_text(
                     &mut out,
                     &mut buf,
@@ -18507,7 +18592,7 @@ fn parse_reference_link(
     if bytes.get(after_text) != Some(&b'[') {
         return None;
     }
-    let label_close = bracketed_close(bytes, after_text, bounds.matches)?;
+    let label_close = reference_label_close(bytes, after_text)?;
     let after_label = label_close + 1;
     // Both brackets are present, so materializing their labels now costs O(1)
     // per accepted reference rather than per candidate `[`.
@@ -18947,7 +19032,7 @@ fn parse_reference_image(
     if bytes.get(after_alt) != Some(&b'[') {
         return None;
     }
-    let label_close = bracketed_close(bytes, after_alt, bounds.matches)?;
+    let label_close = reference_label_close(bytes, after_alt)?;
     let after_label = label_close + 1;
     let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
         .ok()?
@@ -19538,6 +19623,28 @@ fn bracketed_close(bytes: &[u8], start: usize, matches: &[usize]) -> Option<usiz
         return None;
     }
     Some(close)
+}
+
+/// Find the first structural `]` in a reference label. An opening `[` is label
+/// content rather than a nested delimiter, while escapes and opaque spans keep
+/// their closing brackets literal.
+fn reference_label_close(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'[') {
+        return None;
+    }
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'`' => i = skip_code_span(bytes, i)?,
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i)?;
+            }
+            b']' => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the
@@ -20856,7 +20963,11 @@ impl CrossrefIndex {
 /// label and the heading text are "both trimmed, their internal whitespace runs
 /// collapsed to one space, and then compared case-INSENSITIVELY".
 fn normalize_heading_label(s: &str) -> String {
-    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapsed = s
+        .split(|ch| matches!(ch, ' ' | '\t' | '\n' | '\u{000C}' | '\r'))
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     case_fold(&collapsed.nfc().collect::<String>())
 }
 
@@ -22794,6 +22905,13 @@ fn find_emphasis_close(
                 j = end + 2;
                 continue;
             }
+        }
+        if ch == b'%' && bytes.get(j + 1) == Some(&b'%') && (j == 0 || is_carve_ws(bytes[j - 1])) {
+            let Some(newline) = bytes[j + 2..].iter().position(|&byte| byte == b'\n') else {
+                return None;
+            };
+            j += newline + 3;
+            continue;
         }
         // A raw inline's format block is not a braced highlight: the main
         // loop builds it with the code span in front of it, so only the
