@@ -3638,12 +3638,14 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
         EmphasisKind::Super => ("sup", "sup"),
         EmphasisKind::Sub => ("sub", "sub"),
         EmphasisKind::Highlight => ("mark", "mark"),
-        EmphasisKind::BoldItalic => ("<strong><em>", "</em></strong>"),
+        EmphasisKind::BoldItalic => ("strong", "em"),
     };
     if e.kind == EmphasisKind::BoldItalic {
-        out.push_str(open);
+        // The combined token's trailing attribute block is the one
+        // `[attributes]` slot of `bold_italic`, carried by the outer element.
+        out.push_str(&format!("<{open}{}><{close}>", render_attrs(&e.attrs)));
         render_inlines_stateful(out, &e.children, options, state);
-        out.push_str(close);
+        out.push_str(&format!("</{close}></{open}>"));
     } else {
         out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
         render_inlines_stateful(out, &e.children, options, state);
