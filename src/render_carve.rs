@@ -2969,6 +2969,15 @@ fn render_inline_body(
             ctx.open_kinds.extend_from_slice(kinds);
             let content = render_inlines(&emphasis.children, ctx);
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
+            // An empty brace pair is not a construct, and `{--}` is the braced
+            // en dash (markup-carve/carve#1608), so an empty mark has no spelling.
+            if content.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    emphasis_node_type(emphasis.kind),
+                    "an empty mark has no Carve source spelling",
+                );
+                return String::new();
+            }
             // An EMPTY code span has one spelling, a backtick run that its
             // container ends, and only the braced closer ends it inside an
             // emphasis: a bare closer is swallowed by the open run.
@@ -2995,6 +3004,17 @@ fn render_inline_body(
                 EmphasisKind::Highlight => {
                     ("=", render_emphasis("=", &content, prev_char, next_char))
                 }
+                // `/*` needs content that hugs it: `/* x*/` reparses as an
+                // emphasis holding literal stars, so nest it instead.
+                EmphasisKind::BoldItalic if !hugs_its_delimiters(&content) => (
+                    "",
+                    render_emphasis(
+                        "*",
+                        &render_emphasis("/", &content, '*', '*'),
+                        prev_char,
+                        next_char,
+                    ),
+                ),
                 EmphasisKind::BoldItalic => ("", format!("/*{content}*/")),
             };
             let _ = delim;
@@ -3139,23 +3159,29 @@ fn render_inline_body(
         }
         InlineNode::CriticInsert(insert) => {
             ctx.open_kinds.push('+');
-            let written = format!(
-                "{{+{}+}}{}",
-                render_inlines(&insert.children, ctx),
-                render_attrs(&insert.attrs)
-            );
+            let content = render_inlines(&insert.children, ctx);
             ctx.open_kinds.pop();
-            written
+            if content.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    "insert",
+                    "an empty mark has no Carve source spelling",
+                );
+                return String::new();
+            }
+            format!("{{+{content}+}}{}", render_attrs(&insert.attrs))
         }
         InlineNode::CriticDelete(delete) => {
             ctx.open_kinds.push('-');
-            let written = format!(
-                "{{-{}-}}{}",
-                render_inlines(&delete.children, ctx),
-                render_attrs(&delete.attrs)
-            );
+            let content = render_inlines(&delete.children, ctx);
             ctx.open_kinds.pop();
-            written
+            if content.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    "delete",
+                    "an empty mark has no Carve source spelling",
+                );
+                return String::new();
+            }
+            format!("{{-{content}-}}{}", render_attrs(&delete.attrs))
         }
         InlineNode::CriticSubstitute(sub) => {
             // The halves are inline content. Where one holds an arrow or a
@@ -3297,6 +3323,28 @@ fn render_block_comment(content: &str) -> String {
 
 // Superscript and subscript have no bare delimiter form -- always emit the
 // braced `{^x^}` / `{,x,}` form.
+/// Whether content can sit against a bare delimiter: non-empty, and not
+/// starting or ending in one of Carve's four whitespace characters (PART 7).
+fn hugs_its_delimiters(content: &str) -> bool {
+    let ws = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r');
+    match (content.chars().next(), content.chars().next_back()) {
+        (Some(first), Some(last)) => !ws(first) && !ws(last),
+        _ => false,
+    }
+}
+
+fn emphasis_node_type(kind: EmphasisKind) -> &'static str {
+    match kind {
+        EmphasisKind::Italic => "emphasis",
+        EmphasisKind::Strong | EmphasisKind::BoldItalic => "strong",
+        EmphasisKind::Underline => "underline",
+        EmphasisKind::Strike => "strike",
+        EmphasisKind::Highlight => "highlight",
+        EmphasisKind::Super => "superscript",
+        EmphasisKind::Sub => "subscript",
+    }
+}
+
 fn render_forced_emphasis(delim: &str, content: &str) -> String {
     format!("{{{delim}{content}{delim}}}")
 }
@@ -3312,12 +3360,10 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
         || reads_as_bold_italic
         || content.starts_with(delim)
         || content.ends_with(delim)
-        || content.starts_with(' ')
-        || content.ends_with(' ')
-        // A trailing hard break puts the closer at the start of the next line,
-        // where only the braced closer closes (PART 11 §1a).
-        || content.ends_with('\n')
-        || content.is_empty();
+        // A bare opener may not be followed, nor a closer preceded, by `ws`
+        // (CARVE-P3-013; space, tab, CR, LF). A trailing hard break also puts
+        // the closer at the start of the next line (PART 11 §1a).
+        || !hugs_its_delimiters(content);
     if needs_forced {
         format!("{{{delim}{content}{delim}}}")
     } else {

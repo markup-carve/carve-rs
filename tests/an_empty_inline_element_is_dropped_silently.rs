@@ -65,18 +65,13 @@ fn a_paragraph_left_empty_writes_nothing() {
     assert_eq!(rows, Vec::new());
 }
 
-/// The element carried nothing, but its attribute is a loss and keeps its row.
+/// The element carried nothing, but its attribute can still matter (an `id` is
+/// a link target), so it moves onto an empty span and nothing is lost.
 #[test]
-fn an_attribute_on_it_is_reported() {
+fn an_attribute_on_it_moves_onto_an_empty_span() {
     let (carve, rows) = imported("<p>a<sup id=\"x\"></sup>b</p>", HtmlImportMode::Safe);
-    assert_eq!(carve, "ab\n");
-    assert_eq!(
-        rows,
-        vec![(
-            HtmlImportDiagnosticCode::AttributeDropped,
-            "/p[1]/sup[2]".to_string()
-        )]
-    );
+    assert_eq!(carve, "a[]{#x}b\n");
+    assert!(rows.is_empty(), "{rows:?}");
 }
 
 /// Control: a space is content a reader sees, and `{* *}` spells it.
