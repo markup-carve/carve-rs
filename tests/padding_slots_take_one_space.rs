@@ -154,8 +154,10 @@ fn control_a_reference_definition_with_one_space_at_both_slots() {
 
 #[test]
 fn control_a_run_with_nothing_after_it_is_the_line_ending_not_this_slot() {
-    // Nothing is being padded, so these are not the slot and do not narrow.
-    assert_eq!(to_html("[t](/u  )\n").trim(), "<p><a href=\"/u\">t</a></p>");
+    // Nothing is being padded, so these are not the slot. A run before a
+    // link tail's `)` is no slot at all, so the link does not form
+    // (carve-rs#1796); the fence and frontmatter runs are line endings.
+    assert_eq!(to_html("[t](/u  )\n").trim(), "<p>[t](/u  )</p>");
     assert_eq!(
         to_html("```  \nx\n```\n").trim(),
         "<pre><code>x\n</code></pre>"

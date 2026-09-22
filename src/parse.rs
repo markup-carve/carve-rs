@@ -19924,10 +19924,6 @@ fn read_link_target(
     let title_follows = matches!(bytes.get(title_at), Some(&b'"') | Some(&b'\''));
     if title_follows {
         i = title_at;
-    } else {
-        while i < bytes.len() && bytes[i] == b' ' {
-            i += 1;
-        }
     }
     let mut title: Option<String> = None;
     if title_follows {
@@ -19950,10 +19946,9 @@ fn read_link_target(
             std::str::from_utf8(&bytes[title_start..i]).ok()?,
         ));
         i += 1;
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-            i += 1;
-        }
     }
+    // Nothing sits between the destination or the title and the `)`: the
+    // production has no slot for whitespace there.
     if bytes.get(i) != Some(&b')') {
         return None;
     }
