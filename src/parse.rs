@@ -13236,8 +13236,9 @@ fn collect_definition_body(
                 continue;
             }
             // A new term/definition marker ends the definition (the outer loop
-            // picks it up).
-            if strip_lazy(line).strip_prefix(":: ").is_some()
+            // picks it up). An EMPTY term marker opens nothing, whatever
+            // whitespace trails it, so it folds like a bare `::`.
+            if is_definition_list_start(strip_lazy(line))
                 || strip_definition_marker(strip_lazy(line)).is_some()
             {
                 break;
