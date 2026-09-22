@@ -20024,6 +20024,12 @@ fn read_link_target(
     Some((href, title, i + 1))
 }
 
+/// Carve's four whitespace characters (PART 7): a tab guards a bare delimiter
+/// like a space, and a form feed or vertical tab is content.
+fn is_carve_ws(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r')
+}
+
 #[allow(clippy::too_many_arguments)]
 fn match_emphasis(
     bytes: &[u8],
@@ -20046,12 +20052,12 @@ fn match_emphasis(
     if c == b'/' && bytes.get(i + 1) == Some(&b'*') {
         let start = i + 2;
         // Opener guard: the first content byte must exist and not be whitespace.
-        if bytes.get(start).is_some_and(|b| !b.is_ascii_whitespace()) {
+        if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
             let mut search = start;
             while let Some(close) = find_seq(bytes, search, b"*/") {
                 // Reject empty content or content ending in whitespace; keep
                 // scanning for a later closer, matching carve-php.
-                if close > start && !bytes[close - 1].is_ascii_whitespace() {
+                if close > start && !is_carve_ws(bytes[close - 1]) {
                     let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                     OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                     return Some((
@@ -20093,10 +20099,9 @@ fn match_emphasis(
     if OpenKinds::is_open(delim) {
         return None;
     }
-    // Opener: next char must exist and not be `ws` (space, tab, newline) or
-    // the delimiter itself (CARVE-P3-013).
+    // Opener: next char must exist and not be whitespace (CARVE-P3-013) or delim
     let after = bytes.get(i + 1).copied()?;
-    if matches!(after, b' ' | b'\t' | b'\n') || after == delim {
+    if is_carve_ws(after) || after == delim {
         return None;
     }
     // A `=` that is part of a multi-char smart-typography operator is consumed
@@ -22807,7 +22812,7 @@ fn find_emphasis_close(
         }
         if ch == delim {
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
-            if matches!(prev, b' ' | b'\t' | b'\n') {
+            if is_carve_ws(prev) {
                 j += 1;
                 continue;
             }
