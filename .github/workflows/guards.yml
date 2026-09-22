@@ -1,0 +1,196 @@
+name: Guards
+
+# THE TIMING SUITE, ON A RUNNER OF ITS OWN.
+#
+# `tests/perf_regressions.rs` measures wall clock. Until this file existed it
+# ran in the `test` job of ci.yml, as the step after a `cargo build
+# --all-targets` that takes 236 seconds, on a runner shared with six other jobs
+# of this same workflow - which is the least trustworthy place to read a wall
+# clock that there is in this repository.
+#
+# WHY IT NEEDED ISOLATION IN THE FIRST PLACE, kept from ci.yml because it is the
+# reason this job exists. carve-rs#523 fixed a flake in these tests with a
+# `static PERF_LOCK` mutex serializing its 34 timing tests against each other.
+# That lock worked because `cargo test` runs the tests of one binary as THREADS
+# in one process. Nextest runs every test in its OWN PROCESS, so a static mutex
+# cannot be contended across them: the switch to nextest silently turned that
+# lock into a check that cannot fire, the timing tests went back to competing -
+# now against all ~3900 tests rather than only each other - and
+# `a_quoted_run_of_unclosed_braces_is_scanned_once` reported 1.79x, its
+# documented regression signature, on runs with no source change. Main went red
+# intermittently on commits that touch no engine code.
+#
+# Running it last in the same job bought back isolation from the other tests but
+# not from the build, the other jobs, or the runner's neighbours. A job of its
+# own is the rest of that fix.
+#
+# AND IT IS OFF THE PULL-REQUEST PATH, for the reason the numbers give. Measured
+# over the 30 days to 2026-09-22, 130 pull-request runs: `Build and test`
+# averaged 5m50s and the timing step was 49s of it, behind a 236s build. What a
+# review does with a 49-second wall-clock reading taken under contention is
+# nothing, and what it costs is a minute on every review. It runs on every push
+# to main instead, which still names the merge that moved a ratio, plus nightly,
+# plus on demand:
+#
+#   gh workflow run guards.yml -R markup-carve/carve-rs --ref <branch>
+#
+# A performance stack should do exactly that, and `perf/**` branches already run
+# ci.yml on their pull requests.
+#
+# `Build and test (Rust stable)` keeps its name and stays a required check, so
+# branch protection needs no change for this.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 04:45 UTC, after the carve-js and carve-php guards and before the 05:00
+    # drift jobs, so a night's verdicts land in one window.
+    - cron: '45 4 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  # The same optimization settings the `test` job builds with. A timing suite
+  # measured against differently-optimized code would be measuring this file
+  # rather than the engine, and its thresholds come from the shipped settings.
+  #
+  # Those two levels were measured again on 2026-09-22 (runs 35688251376 cold,
+  # 35688971789 warm, three legs in one run so conditions match): at opt-level 1
+  # the build drops from 236s to 160s and the ordinary suite holds at 64s, but
+  # this timing binary goes from 49s to 73s and reported 41s on the cold run -
+  # a spread the thresholds here cannot afford. At opt-level 0 the suite is 186s
+  # and this binary 254s. So 2 stays, and the reason is now written down at the
+  # number rather than inferred from a 40s/13m13s measurement that no longer
+  # describes this crate.
+  CARGO_PROFILE_DEV_OPT_LEVEL: "2"
+  CARGO_PROFILE_TEST_OPT_LEVEL: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guards-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+jobs:
+  timing:
+    name: Timing suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo build --locked --all-targets
+      # Single-threaded and alone, which is the whole point of the job.
+      # `--no-fail-fast` for the reason ci.yml gives: a suite that stops at the
+      # first failure cannot say how big a breakage is.
+      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1 --no-fail-fast
+
+  # A JOB NO PULL REQUEST GATES HAS TO REACH A PERSON BY ITSELF, or this change
+  # trades a minute of review time for a guard going red into an Actions tab
+  # nobody opens. Same shape as the verdict step in markup-carve/carve's
+  # ast-conformance workflow: ONE ticket, edited by each later red run, closed by
+  # the first green one, matched on a body marker rather than on a title so a
+  # rename cannot fork it.
+  verdict:
+    name: The verdict reaches a person
+    runs-on: ubuntu-latest
+    needs: [timing]
+    if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+
+    steps:
+      - name: File the verdict where someone reads it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          MARKER="<!-- timing-verdict ref=$REF_NAME -->"
+
+          failed="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs" --paginate \
+            --jq '.jobs[] | select(.name != "The verdict reaches a person") | .steps[]
+                  | select(.conclusion == "failure") | "- `" + .name + "`"')"
+
+          # Listed rather than searched: the search index lags a fresh issue by
+          # long enough to file a duplicate.
+          issue="$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate \
+            | jq -r --arg m "$MARKER" \
+                '.[] | select(.pull_request == null) | select((.body // "") | contains($m)) | .number' \
+            | head -n1)"
+
+          if [ -z "$failed" ]; then
+            echo "The timing suite is green on $HEAD_SHA."
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$REPO" --body \
+                "Green again: run $RUN_URL on \`$HEAD_SHA\`. Closing. The next red run files a fresh ticket rather than reopening this one, so a closed ticket always means the last run passed."
+              gh issue close "$issue" --repo "$REPO"
+              echo "Closed #$issue."
+            fi
+            echo "Timing suite green on \`$HEAD_SHA\`. Nothing filed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo "$MARKER"
+            echo
+            echo "\`tests/perf_regressions.rs\` is failing on \`$REF_NAME\`. It does not run on"
+            echo "pull requests, so a branch can show a green CI run while this is red."
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| run | $RUN_URL |"
+            echo "| commit | \`$HEAD_SHA\` |"
+            echo "| trigger | \`$EVENT_NAME\` |"
+            echo
+            echo "### Failing steps"
+            echo
+            printf '%s\n' "$failed"
+            echo
+            echo "### Before acting on this"
+            echo
+            echo "These tests assert RATIOS, not absolute times, and the failing one names its"
+            echo "own signature - \`a_quoted_run_of_unclosed_braces_is_scanned_once\` reporting"
+            echo "1.79x is the documented shape of a scan losing its bound. Read the ratio, and"
+            echo "reproduce with"
+            echo "\`cargo nextest run -E 'binary(perf_regressions)' --test-threads 1\` on an idle"
+            echo "machine before concluding the engine moved: this suite has gone red on commits"
+            echo "that touch no engine code, which is why it has a runner to itself now."
+            echo
+            echo "To measure a candidate fix before it merges:"
+            echo "\`gh workflow run guards.yml -R $REPO --ref <branch>\`."
+            echo
+            echo "This ticket is filed and maintained by the workflow. It is EDITED by each"
+            echo "later red run and CLOSED by the first green one. Closing it by hand does not"
+            echo "silence it: the next red run files a new one."
+          } > /tmp/timing-verdict.md
+
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$REPO" --body-file /tmp/timing-verdict.md
+            echo "Updated #$issue."
+          else
+            url="$(gh issue create --repo "$REPO" \
+              --title "The timing suite is failing on $REF_NAME" \
+              --label bug --label area:tooling \
+              --body-file /tmp/timing-verdict.md)"
+            echo "Filed $url."
+          fi
