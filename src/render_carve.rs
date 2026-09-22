@@ -2978,10 +2978,10 @@ fn render_inline_body(
                 );
                 return String::new();
             }
-            if emphasis
-                .children
-                .iter()
-                .any(|child| matches!(child, InlineNode::Comment(comment) if !comment.delimited))
+            if ctx.line_block_depth == 0
+                && emphasis.children.iter().any(
+                    |child| matches!(child, InlineNode::Comment(comment) if !comment.delimited),
+                )
             {
                 if let Some(delim) = bare_delimiter(emphasis.kind) {
                     return format!(
