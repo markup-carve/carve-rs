@@ -55,6 +55,18 @@ fn pick_pair(source: &str, first: u32) -> Result<(char, char), BbcodeImportError
     Err(BbcodeImportError::SentinelSpaceExhausted)
 }
 
+fn pick_mark(source: &str, first: u32) -> Result<char, BbcodeImportError> {
+    let occupied: std::collections::HashSet<char> = source
+        .chars()
+        .filter(|c| ('\u{e000}'..='\u{f8ff}').contains(c))
+        .collect();
+    (first..=0xf8ff)
+        .chain(0xe000..first)
+        .filter_map(char::from_u32)
+        .find(|code| !occupied.contains(code))
+        .ok_or(BbcodeImportError::SentinelSpaceExhausted)
+}
+
 fn stash_matches(
     mut text: String,
     patterns: &[&str],
@@ -154,16 +166,21 @@ fn stash_literals(source: String) -> Result<(String, char, char, Vec<String>), B
     Ok((text, open, close, stash))
 }
 
-fn convert_pairs(mut text: String) -> String {
+fn convert_pairs(mut text: String, link_mark: Option<char>) -> String {
+    // The link and image passes mark each link they write, so the formatting
+    // pass can tell those from a link the post's own brackets formed once a
+    // tag beside them turned literal. The mark is stripped again before it
+    // returns.
+    let mark = link_mark.map(String::from).unwrap_or_default();
     for (pattern, replacement) in [
         (r"(?is)\[url=([^\]]+)\](.*?)\[/url\]", "[$2]($1)"),
         (r"(?is)\[url\](.*?)\[/url\]", "<$1>"),
         (r"(?is)\[email\](.*?)\[/email\]", "<mailto:$1>"),
         (r"(?is)\[img(?:=[^\]]*)?\](.*?)\[/img\]", "![]($1)"),
     ] {
-        text = replace(text, pattern, replacement);
+        text = replace(text, pattern, &format!("{mark}{replacement}"));
     }
-    text = convert_marks(&text);
+    text = convert_marks(&text, link_mark);
     for (pattern, replacement) in [
         (
             r"(?is)\[(?:size|color|font)=[^\]]*\](.*?)\[/(?:size|color|font)\]",
@@ -255,13 +272,10 @@ fn parse_marks(text: &str) -> (Vec<ParsedMark>, Vec<MarkItem>) {
             stack.push(id);
         } else if stack.last().is_some_and(|&top| arena[top].kind == kind) {
             stack.pop();
-        } else {
-            let literal = MarkItem::Text(whole.as_str().to_string());
-            match stack.last() {
-                Some(&top) => arena[top].children.push(literal),
-                None => root.push(literal),
-            }
         }
+        // A close tag that matches no open one is dropped here rather than by
+        // cleanup(): left in, it would be the content of the tag around it, and
+        // that tag written as a pair around nothing once cleanup() took it.
     }
     let tail = MarkItem::Text(text[from..].to_string());
     match stack.last() {
@@ -376,15 +390,22 @@ fn is_word(c: Option<char>) -> bool {
 /// A bare pair the CARVE-P3-013 guards would not read back, or that the writer
 /// would brace, takes the braced form, as does a `/` around content that would
 /// read back as bold-italic.
+/// Written text, with the byte span `[start, end)` of every formatting pair the
+/// writer put there itself.
+struct Written {
+    text: String,
+    marks: Vec<(usize, usize)>,
+}
+
 fn write_marks(
     slots: &[Vec<FlatItem>],
     slot: usize,
     outer_next: Option<char>,
     prev: Option<char>,
-) -> String {
+) -> Written {
     // Chunks rather than one growing string, so escaping the character before
     // an opener rewrites only the text chunk holding it.
-    let mut parts: Vec<String> = Vec::new();
+    let mut parts: Vec<(String, Vec<(usize, usize)>)> = Vec::new();
     let mut last = prev;
     let mut text_part: Option<usize> = None;
     let mut escape_brace = false;
@@ -403,7 +424,7 @@ fn write_marks(
                     text.clone()
                 };
                 last = chunk.chars().next_back();
-                parts.push(chunk);
+                parts.push((chunk, Vec::new()));
                 escape_brace = false;
                 text_part = Some(parts.len() - 1);
             }
@@ -411,7 +432,8 @@ fn write_marks(
                 let delim = mark_delim(mark.kind);
                 // The parent's own delimiters are not text: a child at its edge
                 // has no neighbor there, which is how the writer spells `/_x_/`.
-                let body = write_marks(slots, mark.slot, None, None);
+                let inner = write_marks(slots, mark.slot, None, None);
+                let body = inner.text;
                 if body.is_empty() {
                     continue;
                 }
@@ -422,14 +444,14 @@ fn write_marks(
                     && text_part == parts.len().checked_sub(1)
                     && last.is_some_and(|c| "*/_~=".contains(c))
                 {
-                    let chunk = &parts[parts.len() - 1];
+                    let chunk = &parts[parts.len() - 1].0;
                     let run = chunk[..chunk.len() - 1]
                         .bytes()
                         .rev()
                         .take_while(|b| *b == b'\\')
                         .count();
                     if run % 2 == 0 {
-                        let chunk = parts.last_mut().expect("text_part is the last chunk");
+                        let chunk = &mut parts.last_mut().expect("text_part is the last chunk").0;
                         chunk.insert(chunk.len() - 1, '\\');
                     }
                 }
@@ -441,28 +463,242 @@ fn write_marks(
                     || is_word(before)
                     || before == Some(delim)
                     || (before == Some('/') && (delim == '/' || delim == '_'))
+                    // `#_x_` is a hashtag, `@_x_` a mention, `:_x_:` a symbol.
+                    || (delim == '_' && matches!(before, Some('#' | '@' | ':')))
                     || is_word(next)
                     || body.starts_with(delim)
                     || body.ends_with(delim)
                     || (delim == '/' && body.starts_with('*') && body.ends_with('*'));
-                let chunk = if braced {
-                    format!("{{{delim}{body}{delim}}}")
+                let (open, close) = if braced {
+                    (format!("{{{delim}"), format!("{delim}}}"))
                 } else {
-                    format!("{delim}{body}{delim}")
+                    (delim.to_string(), delim.to_string())
                 };
+                let chunk = format!("{open}{body}{close}");
+                let mut marks = vec![(0, chunk.len())];
+                marks.extend(
+                    inner
+                        .marks
+                        .iter()
+                        .map(|&(from, to)| (open.len() + from, open.len() + to)),
+                );
                 last = chunk.chars().next_back();
-                parts.push(chunk);
+                parts.push((chunk, marks));
                 escape_brace = !braced && before == Some('{');
             }
         }
     }
-    parts.concat()
+    let mut text = String::new();
+    let mut marks = Vec::new();
+    for (chunk, chunk_marks) in parts {
+        marks.extend(
+            chunk_marks
+                .iter()
+                .map(|&(from, to)| (text.len() + from, text.len() + to)),
+        );
+        text.push_str(&chunk);
+    }
+    Written { text, marks }
 }
 
-fn convert_marks(text: &str) -> String {
+const REPAIR_ROUNDS: usize = 16;
+
+/// Inline constructs bbcode has no way to ask for at this stage, by AST-JSON
+/// type. Links, images and autolinks are judged by the written-link mark
+/// instead, and the rest is prose.
+fn is_unwritten(kind: &str) -> bool {
+    !matches!(
+        kind,
+        "text"
+            | "soft_break"
+            | "hard_break"
+            | "escaped_text"
+            | "smart_punctuation"
+            | "link"
+            | "image"
+            | "autolink"
+            | "strong"
+            | "emphasis"
+            | "underline"
+            | "strike"
+            | "document"
+            | "paragraph"
+    )
+}
+
+/// Block tags a later pass turns into structure; `sup` and `sub` become a
+/// braced span, which is just as closed to its neighbors.
+fn is_later_block_tag(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "*" | "quote"
+            | "list"
+            | "code"
+            | "c"
+            | "icode"
+            | "sup"
+            | "sub"
+            | "center"
+            | "left"
+            | "right"
+            | "youtube"
+            | "table"
+            | "tr"
+            | "td"
+            | "th"
+            | "noparse"
+            | "hr"
+    )
+}
+
+/// The text as the later passes will leave it around inline content, so the
+/// repair parse sees the neighbors the reader will: a close tag or a valued
+/// open tag is deleted by cleanup(), which joins the text either side of it,
+/// and a block tag becomes structure, which separates it. A formatting tag left
+/// unclosed, or one this pass does not know, stays the literal text it is.
+/// `origin` maps each byte of the copy, and one past its end, to `text`.
+fn as_later_passes_leave_it(text: &str) -> (String, Vec<usize>) {
+    let mut copy = String::with_capacity(text.len());
+    let mut origin = Vec::with_capacity(text.len() + 1);
+    let mut from = 0;
+    for caps in re(r"(?i)\[(/?)(\*|[a-z][a-z0-9]*)(=[^\]\n]*)?\]").captures_iter(text) {
+        let whole = caps.get(0).expect("group 0 always matches");
+        let at = whole.start();
+        if at > 0 && text.as_bytes()[at - 1] == b'\\' {
+            continue;
+        }
+        let removed = !caps[1].is_empty() || caps.get(3).is_some();
+        if !removed && !is_later_block_tag(&caps[2]) {
+            continue;
+        }
+        origin.extend(from..at);
+        copy.push_str(&text[from..at]);
+        if !removed {
+            origin.extend(at..whole.end());
+            copy.push_str(&"\u{1}".repeat(whole.len()));
+        }
+        from = whole.end();
+    }
+    origin.extend(from..text.len());
+    copy.push_str(&text[from..]);
+    origin.push(text.len());
+    (copy, origin)
+}
+
+/// The post's text was escaped while the tags were still tags, so once they are
+/// delimiters a literal character can combine with them, or with text a dropped
+/// tag brought together, into a construct nobody wrote: `#[/i]x` reads as the
+/// hashtag `#x`, and `~}[s]x[/s]` as a strikethrough of `}`. Rather than predict
+/// every such construct, parse the result and escape the first character of
+/// each one that is not a written pair, until none is left. A written pair that
+/// closes early was closed by a literal delimiter inside it, and that delimiter
+/// is the one escaped. A link without the written-link mark came from the
+/// post's own brackets.
+fn repair_unwritten_constructs(written: Written, link_mark: Option<char>) -> String {
+    let Written {
+        mut text,
+        mut marks,
+    } = written;
+    for _ in 0..REPAIR_ROUNDS {
+        let (copy, origin) = as_later_passes_leave_it(&text);
+        // Codepoint offset in the copy -> byte in `text`.
+        let mut bytes: Vec<usize> = copy.char_indices().map(|(at, _)| at).collect();
+        bytes.push(copy.len());
+        let index = |offset: u64| origin[bytes[(offset as usize).min(bytes.len() - 1)]];
+        let pairs: std::collections::HashMap<usize, usize> = marks.iter().copied().collect();
+        // A written pair's own delimiters are never escaped: when a literal
+        // delimiter closes a pair early, the parse finds a second span starting
+        // at the pair's real closer, and escaping that would hand the following
+        // text to the pair. The early closer is escaped in this same round, so
+        // the next one reads the pair whole.
+        let mut written = std::collections::HashSet::new();
+        for &(from, to) in &marks {
+            let width = if text[from..].starts_with('{') { 2 } else { 1 };
+            for k in 0..width {
+                written.insert(from + k);
+                written.insert(to - 1 - k);
+            }
+        }
+        let mut escape_at = std::collections::BTreeSet::new();
+        // Positions are off by default, and the repair is all offsets.
+        let parsed =
+            crate::parse_with_options(&copy, &crate::Options::default().with_positions(true));
+        let tree: serde_json::Value =
+            serde_json::from_str(&crate::to_json(&parsed)).expect("the AST encodes");
+        let mut stack = vec![&tree];
+        while let Some(node) = stack.pop() {
+            if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+                stack.extend(children.iter());
+            }
+            let Some(kind) = node.get("type").and_then(|t| t.as_str()) else {
+                continue;
+            };
+            let Some(pos) = node.get("pos") else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (
+                pos.get("startOffset").and_then(|v| v.as_u64()),
+                pos.get("endOffset").and_then(|v| v.as_u64()),
+            ) else {
+                continue;
+            };
+            let at = index(start);
+            match kind {
+                "strong" | "emphasis" | "underline" | "strike" => match pairs.get(&at) {
+                    None => {
+                        escape_at.insert(at);
+                    }
+                    Some(&written_end) => {
+                        let end = index(end.saturating_sub(1)) + 1;
+                        if end < written_end {
+                            escape_at.insert(end - 1);
+                        }
+                    }
+                },
+                "link" | "image" | "autolink" => {
+                    let marked = link_mark.is_some_and(|mark| text[..at].ends_with(mark));
+                    if !marked {
+                        escape_at.insert(if kind == "image" { at + 1 } else { at });
+                    }
+                }
+                _ if is_unwritten(kind) => {
+                    escape_at.insert(at);
+                }
+                _ => {}
+            }
+        }
+        escape_at.retain(|at| !written.contains(at));
+        if escape_at.is_empty() {
+            break;
+        }
+        let cuts: Vec<usize> = escape_at.into_iter().collect();
+        let mut out = String::with_capacity(text.len() + cuts.len());
+        let mut copied = 0;
+        for &at in &cuts {
+            out.push_str(&text[copied..at]);
+            out.push('\\');
+            copied = at;
+        }
+        out.push_str(&text[copied..]);
+        text = out;
+        // Each offset moves by the number of escapes inserted before it.
+        let shift = |k: usize| k + cuts.partition_point(|&cut| cut < k);
+        marks = marks
+            .iter()
+            .map(|&(from, to)| (shift(from), shift(to)))
+            .collect();
+    }
+    text
+}
+
+fn convert_marks(text: &str, link_mark: Option<char>) -> String {
     let (arena, root) = parse_marks(text);
     let slots = flatten_same_kind(arena, root);
-    write_marks(&slots, 0, None, None)
+    let repaired = repair_unwritten_constructs(write_marks(&slots, 0, None, None), link_mark);
+    match link_mark {
+        Some(mark) => repaired.replace(mark, ""),
+        None => repaired,
+    }
 }
 
 fn convert_code(mut text: String) -> String {
@@ -803,7 +1039,13 @@ pub fn bbcode_to_carve(source: &str) -> Result<String, BbcodeImportError> {
         .replace('\r', "\n");
     let escaped = escape_text(&normalized)?;
     let (mut text, open, close, stash) = stash_literals(escaped)?;
-    text = convert_pairs(text);
+    // Only a post with a link or image to convert needs the mark.
+    let link_mark = if re(r"(?i)\[(?:url|email|img)\b").is_match(&text) {
+        Some(pick_mark(&text, 0xe020)?)
+    } else {
+        None
+    };
+    text = convert_pairs(text, link_mark);
     text = convert_code(text);
     text = convert_quotes(text);
     text = convert_lists(text);
