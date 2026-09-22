@@ -591,6 +591,26 @@ fn assert_conversion_near_linear_at(
     );
 }
 
+/// The bbcode formatting-tag pass: runs of closed, empty and unclosed tags, and
+/// literal delimiters it escapes, each cost the same per byte at any size.
+#[test]
+fn bbcode_formatting_tags_convert_in_near_linear_time() {
+    for (fragment, small_n) in [
+        ("[b]x[/b] [i][/i]", 3_000),
+        ("[b][/b]", 8_000),
+        ("[b]", 10_000),
+        ("*[b]x[/b] ", 5_000),
+    ] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::bbcode_to_carve(source)),
+            |n| fragment.repeat(n),
+            fragment,
+            small_n,
+            small_n * 4,
+        );
+    }
+}
+
 #[test]
 fn deeply_nested_balanced_links_parse_in_near_linear_time() {
     on_big_stack(|| assert_near_linear(nested_links, "nested-link"));
