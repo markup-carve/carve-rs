@@ -9339,6 +9339,11 @@ fn parse_list(
     // opener may be the MARKER line, which the collectors never see, or a later
     // CONTINUATION line, after the item's paragraph state has reopened.
     let mut item_open_fence: Option<FenceOpen> = None;
+    // A fence line the lead paragraph absorbed because no closer is written in
+    // the item still opens a SPAN that runs to the item's end, so every later
+    // blank in the item is interior to it and loosens nothing (§17; the
+    // reference tracks the span apart from whether the fence opened).
+    let mut item_unopened_fence_span = false;
     // Did the item just built carry a BARE `+` lead - an empty first-block item
     // waiting for a document-column-0 block (§17 L3, markup-carve/carve#1436)?
     // Such an item leaves no open paragraph, so a line below its content column
@@ -9526,7 +9531,10 @@ fn parse_list(
                     let first_visible = nested_children
                         .iter()
                         .find(|block| !matches!(block, BlockNode::Comment(_)));
-                    if pending_blank && first_visible.is_some_and(block_is_paragraph_shaped) {
+                    if pending_blank
+                        && !item_unopened_fence_span
+                        && first_visible.is_some_and(block_is_paragraph_shaped)
+                    {
                         tight = false;
                     }
                     // A blank ABSORBED inside the collected continuation (e.g. a
@@ -9534,7 +9542,9 @@ fn parse_list(
                     // loosens the item when a plain paragraph follows the blank
                     // (§17 L1). The outer `pending_blank` only sees a blank BEFORE
                     // this chunk, so this covers the blank-after / blank-both case.
-                    if continuation_source_loosens(&nested.source, false) {
+                    if !item_unopened_fence_span
+                        && continuation_source_loosens(&nested.source, false)
+                    {
                         tight = false;
                     }
                     // An INVISIBLE continuation is not the item's second block
@@ -9731,6 +9741,7 @@ fn parse_list(
         };
         // A new item carries none of the previous item's fence state.
         item_open_fence = None;
+        item_unopened_fence_span = false;
         let item_source_line = cur.source_line(cur.pos);
         let item_at = cur.pos;
         cur.consume();
@@ -10361,6 +10372,8 @@ fn parse_list(
                 || rejected_fence_has_closer
             {
                 track_collected_fence(&mut item_open_fence, &dedented, true);
+            } else {
+                item_unopened_fence_span = true;
             }
             para_lines.push(dedented);
             cur.consume();
