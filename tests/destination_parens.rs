@@ -52,14 +52,82 @@ fn whitespace_still_ends_the_destination_so_a_title_can_follow() {
     );
 }
 
+/// Record a row that did not render as expected, so one run names every row
+/// that moved instead of stopping at the first.
+fn assert_row(source: &str, expected: &str, rows: &mut Vec<String>) {
+    let actual = carve::to_html(source);
+    let actual = actual.trim_end();
+    if actual != expected {
+        rows.push(format!(
+            "{source:?}\n  expected {expected}\n  actual   {actual}"
+        ));
+    }
+}
+
+/// `balanced_parens` is built from `destination_char` too, so a `(` still open
+/// when whitespace arrives can never be part of a destination and the tail has
+/// none. The scan ended at the space and asked nothing about balance, so the
+/// partial prefix went out as the href `(` with the title `)`
+/// (markup-carve/carve-rs#1793).
+///
+/// Asserted as whole renderings: "no link" also describes an engine that
+/// dropped the run, and the fallback is the author's characters as text.
 #[test]
 fn a_title_does_not_rescue_an_unclosed_destination_parenthesis() {
+    let mut rows = Vec::new();
     for (source, expected) in [
         ("[t](( \")\")\n", "<p>[t](( \u{201c})\u{201d})</p>"),
         ("![t](( \")\")\n", "<p>![t](( \u{201c})\u{201d})</p>"),
+        ("[t](( ')')\n", "<p>[t](( \u{2018})\u{2019})</p>"),
+        // The attribute block belongs to the construct the tail opens, and
+        // there is none.
+        ("[t](( \")\"){.x}\n", "<p>[t](( \u{201c})\u{201d}){.x}</p>"),
+        (
+            "![a](( \")\"){.x}\n",
+            "<p>![a](( \u{201c})\u{201d}){.x}</p>",
+        ),
+        // The pair closes after the quoted run, which leaves a destination
+        // carrying a space and a tail ending later than the scan thought.
+        ("[t](( \"a\") b)\n", "<p>[t](( \u{201c}a\u{201d}) b)</p>"),
+        // No quoted run at all. This row reads the same with the balance check
+        // gone, because what follows the space is neither a title nor the
+        // tail's `)`; it is here for the shape, not as a witness.
+        ("[t](a( b)\n", "<p>[t](a( b)</p>"),
     ] {
-        assert_eq!(carve::to_html(source).trim_end(), expected, "{source:?}");
+        assert_row(source, expected, &mut rows);
     }
+    assert!(rows.is_empty(), "{}", rows.join("\n"));
+}
+
+/// Rows that keep the balance check pointed at the open pair rather than at
+/// the parenthesis.
+#[test]
+fn a_balanced_pair_still_builds_the_construct() {
+    let mut rows = Vec::new();
+    for (source, expected) in [
+        (
+            "[t](a(b) \"c\")\n",
+            "<p><a href=\"a(b)\" title=\"c\">t</a></p>",
+        ),
+        ("[t]((a))\n", "<p><a href=\"(a)\">t</a></p>"),
+        // A quote inside the destination opens no title, so the `)` that ends
+        // the tail is the one after the second quote.
+        (
+            "[t](a\"b \"c\")\n",
+            "<p><a href=\"a&quot;b\" title=\"c\">t</a></p>",
+        ),
+        (
+            "[t](/u \"T)\")\n",
+            "<p><a href=\"/u\" title=\"T)\">t</a></p>",
+        ),
+        (
+            "![a](http://a/b(c))\n",
+            "<img src=\"http://a/b(c)\" alt=\"a\">",
+        ),
+    ] {
+        assert_row(source, expected, &mut rows);
+    }
+    assert!(rows.is_empty(), "{}", rows.join("\n"));
 }
 
 fn round_trips(src: &str) {
