@@ -71,6 +71,15 @@ const SOURCE_LOSSY: &[(&str, &[&str])] = &[
         "the nested emphasis delimiters reflow: `/*x*/` comes back `*/x/*`",
         &["130-bold-italic-delimiter-needs-content-4.crv"],
     ),
+    (
+        "the combined token is not carried, and with asterisks as its content \
+         `*/*/*` would misparse, so the split marks come back braced: `/***/` \
+         comes back `*{/*/}*`",
+        &[
+            "473-a-run-of-asterisks-inside-a-combined-token-is-content-2.crv",
+            "473-a-run-of-asterisks-inside-a-combined-token-is-content.crv",
+        ],
+    ),
 ];
 
 /// Every declared source-lossy document, sorted.

@@ -617,6 +617,9 @@ const IMPLEMENTED: &[&str] = &[
     "an-empty-link-destination-is-not-a-link",
     "a-forced-opener-of-an-open-kind-is-literal",
     "substitution-content-is-inline-and-only-a-top-level-arrow-splits-it",
+    "a-run-of-asterisks-inside-a-combined-token-is-content",
+    "glued-attribute-blocks-on-an-inline-element-merge",
+    "footnote-references-take-an-attribute-run-editorial-substitution-and-comment-take-none",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
