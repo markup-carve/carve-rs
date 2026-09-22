@@ -2905,7 +2905,8 @@ fn render_block_extension(
 
 fn render_image(out: &mut String, img: &Image) {
     if img.ref_label.is_some() && img.src.is_empty() {
-        out.push_str(&escape_text(img.raw_ref.as_deref().unwrap_or_default()));
+        // Same PART 10 SS2 nbsp fold as the link literal above.
+        write_escaped_text_nbsp(out, img.raw_ref.as_deref().unwrap_or_default());
         return;
     }
     out.push_str(&format!(
@@ -3655,7 +3656,9 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
 
 fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut RenderState) {
     if l.ref_label.is_some() && l.href.is_empty() {
-        out.push_str(&escape_text(l.raw_ref.as_deref().unwrap_or_default()));
+        // The literal source is text content (PART 10 SS2), so it gets the
+        // same nbsp fold every other text node does, not a bare `& < >` pass.
+        write_escaped_text_nbsp(out, l.raw_ref.as_deref().unwrap_or_default());
         return;
     }
     // `href`, then the destination title, then the attribute block. A
