@@ -61,24 +61,21 @@ fn the_guard_is_on_the_open_fence_not_on_the_marker_line() {
         squash(&to_html("- ```\n  x\n y\n  ```\n")),
         "<ul> <li> <pre><code>x </code></pre> </li> </ul> <p>y <code></code></p>"
     );
-    // Row 7: the fence is opened on a CONTINUATION line. The item still closes
-    // at the below-column line, and what the truncated item holds is §10 I4's
-    // business - a fence with no closer left inside it does not interrupt, so
-    // the delimiter run is paragraph text.
+    // Row 7: the fence is opened on a continuation line. Its later closer is
+    // considered before the below-column line ends the item.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p>y <code></code></p>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y <code></code></p>"
     );
 }
 
 #[test]
 fn a_closer_below_the_content_column_is_not_this_fences_closer() {
-    // The closer has to be inside the same container. Past the line that closes
-    // the item there is none left, so by §10 I4 the fence does not interrupt
-    // the lead paragraph at all.
+    // The below-column closer does not open a block, but it remains part of the
+    // inline fence-shaped run already folded into the item.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p><code></code></p>"
+        "<ul> <li>a <code> b </code></li> </ul>"
     );
 }
 
@@ -126,7 +123,7 @@ fn a_below_column_marker_is_a_below_column_line() {
     );
     assert_eq!(
         squash(&to_html("- a\n  ```\n  c\n - b\n  ```\n")),
-        "<ul> <li>a <code> c</code></li> </ul> <ul> <li>b <code></code></li> </ul>"
+        "<ul> <li>a <pre><code>c </code></pre> </li> </ul> <ul> <li>b <code></code></li> </ul>"
     );
     // A SIBLING marker at the base column ends the item too, and the list it
     // belongs to carries on - the same answer the item collector's own

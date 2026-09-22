@@ -80,6 +80,14 @@ const SOURCE_LOSSY: &[(&str, &[&str])] = &[
             "473-a-run-of-asterisks-inside-a-combined-token-is-content.crv",
         ],
     ),
+    (
+        "the combined token is not carried, so punctuation can reverse or \
+         split its reconstructed delimiter pair",
+        &[
+            "486-any-character-is-content-of-the-combined-bold-italic-token-2.crv",
+            "490-a-comment-inside-a-forced-span-or-the-combined-token-ends-at-its-closer-3.crv",
+        ],
+    ),
 ];
 
 /// Every declared source-lossy document, sorted.
@@ -1332,8 +1340,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 57ff3a78 with this engine, 1384/354 becomes 1385/355 and no existing
     // document changes bucket. `-10` is strict; `-11` drops `caption_number`,
     // a cause fourteen documents already carry, so no new kind appeared.
-    const STRICT: usize = 1385;
-    const LOSSY: usize = 355;
+    // The pin at 1cbd2c3f adds 115 documents. Fifty-nine are strict and 56
+    // report an existing loss kind, mostly soft breaks and delimiter reflow.
+    const STRICT: usize = 1444;
+    const LOSSY: usize = 411;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

@@ -13,6 +13,22 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-bare-colon-opener-in-a-description-body-is-an-opener",
+    "a-bare-colon-run-interrupts-a-paragraph-whether-or-not-a-line-follows-it",
+    "a-caption-s-placeholder-is-any-that-does-not-begin-a-tag",
+    "a-closer-below-the-container-s-column-does-not-count",
+    "a-closer-does-not-rescue-a-marker-line-colon-opener-whose-body-folded-in",
+    "a-code-span-closes-only-on-a-run-of-its-own-length-whatever-the-length",
+    "a-comment-inside-a-forced-span-or-the-combined-token-ends-at-its-closer",
+    "a-definition-body-s-open-code-fence-ends-at-a-line-below-its-column",
+    "a-delimiter-after-an-underscore-or-slash-opens-only-when-that-one-pairs",
+    "a-form-feed-or-a-no-break-space-is-content-wherever-whitespace-is-tested",
+    "a-quote-after-a-bare-delimiter-follows-what-that-delimiter-does",
+    "a-quote-after-an-escaped-quote-closes",
+    "an-empty-term-marker-in-a-description-body-is-text",
+    "an-item-s-fence-is-read-once-whatever-block-it-follows",
+    "an-unresolved-reference-s-literal-source-is-html-escaped-like-any-other-text",
+    "any-character-is-content-of-the-combined-bold-italic-token",
     "a-floating-attribute-does-not-widen-a-list-item-s-content-column",
     "an-unclosed-bare-colon-fence-opens-a-div",
     "an-item-s-attribute-block-moves-its-content-column-its-checkbox-does-not",

@@ -1407,7 +1407,7 @@ fn merge_same(a: &mut Json, b: &Json) -> bool {
         if ac.is_empty() || bc.is_empty() {
             return false;
         }
-        ac.extend(bc.clone());
+        append_merged(ac, bc.clone());
         true
     } else {
         false

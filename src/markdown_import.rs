@@ -266,6 +266,11 @@ impl Builder {
             return false;
         };
 
+        if matches!(event, Event::End(end) if is_block_end(end)) || matches!(event, Event::Rule) {
+            self.close();
+            return false;
+        }
+
         match event {
             Event::InlineHtml(html) | Event::Html(html) => {
                 content.push_str(html);
@@ -490,6 +495,17 @@ impl Builder {
     }
 
     fn end(&mut self, _tag: TagEnd) {
+        while matches!(
+            self.frames.last(),
+            Some(
+                Frame::HtmlEmphasis { .. }
+                    | Frame::HtmlCode { .. }
+                    | Frame::HtmlInsert { .. }
+                    | Frame::RawInline { .. }
+            )
+        ) {
+            self.close();
+        }
         self.close();
     }
 
@@ -844,6 +860,28 @@ impl Builder {
             ingest_payload_len: 0,
         }
     }
+}
+
+fn is_block_end(end: &TagEnd) -> bool {
+    matches!(
+        end,
+        TagEnd::Paragraph
+            | TagEnd::Heading(_)
+            | TagEnd::BlockQuote(_)
+            | TagEnd::CodeBlock
+            | TagEnd::HtmlBlock
+            | TagEnd::List(_)
+            | TagEnd::Item
+            | TagEnd::FootnoteDefinition
+            | TagEnd::DefinitionList
+            | TagEnd::DefinitionListTitle
+            | TagEnd::DefinitionListDefinition
+            | TagEnd::Table
+            | TagEnd::TableHead
+            | TagEnd::TableRow
+            | TagEnd::TableCell
+            | TagEnd::MetadataBlock(_)
+    )
 }
 
 /// Read the flat `key: value` pairs a Carve document exposes alongside the raw
