@@ -61,24 +61,30 @@ fn the_guard_is_on_the_open_fence_not_on_the_marker_line() {
         squash(&to_html("- ```\n  x\n y\n  ```\n")),
         "<ul> <li> <pre><code>x </code></pre> </li> </ul> <p>y <code></code></p>"
     );
-    // Row 7: the fence is opened on a CONTINUATION line. The item still closes
-    // at the below-column line, and what the truncated item holds is §10 I4's
-    // business - a fence with no closer left inside it does not interrupt, so
-    // the delimiter run is paragraph text.
+    // Row 7: the fence is opened on a CONTINUATION line, and ONE I4 answer
+    // serves both halves (markup-carve/carve#2141). The closer lookahead does
+    // not stop at the below-column line (PART 1, CARVE-P0-014), so it finds the
+    // closer, a real code block opens, and THAT open body is what ends the item
+    // at ` y`. Asking I4 again over the truncated item - where the closer is
+    // gone - would read the run as paragraph text, one line two ways in one
+    // parse.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p>y <code></code></p>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y <code></code></p>"
     );
 }
 
 #[test]
 fn a_closer_below_the_content_column_is_not_this_fences_closer() {
-    // The closer has to be inside the same container. Past the line that closes
-    // the item there is none left, so by §10 I4 the fence does not interrupt
-    // the lead paragraph at all.
+    // The closer has to be written INSIDE the container: a below-column line is
+    // searched past, never matched (CARVE-P0-014, markup-carve/carve#2149). So
+    // the fence has no closer, §10 I4 keeps it from interrupting the lead
+    // paragraph, and the run below it is that paragraph's own lazy text rather
+    // than a line that ends the item. Corpus 479 rows 1-3 pin the spelling with
+    // a line between the run and the closer.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p><code></code></p>"
+        "<ul> <li>a <code> b </code></li> </ul>"
     );
 }
 
@@ -124,9 +130,13 @@ fn a_below_column_marker_is_a_below_column_line() {
         "<ul> <li> <pre><code> </code></pre> </li> </ul> \
          <ol> <li>b <code></code></li> </ol>"
     );
+    // With the closer written back at the content column, the lookahead runs
+    // PAST the below-column marker to find it (CARVE-P0-014), so a real code
+    // block opens and the marker line ends the item - the same two answers row
+    // 7 above gives for a below-column PROSE line (markup-carve/carve#2141).
     assert_eq!(
         squash(&to_html("- a\n  ```\n  c\n - b\n  ```\n")),
-        "<ul> <li>a <code> c</code></li> </ul> <ul> <li>b <code></code></li> </ul>"
+        "<ul> <li>a <pre><code>c </code></pre> </li> </ul> <ul> <li>b <code></code></li> </ul>"
     );
     // A SIBLING marker at the base column ends the item too, and the list it
     // belongs to carries on - the same answer the item collector's own

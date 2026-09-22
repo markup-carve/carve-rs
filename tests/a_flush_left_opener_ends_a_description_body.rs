@@ -10,6 +10,11 @@
 //! ordered marker, FENCE and CAPTION alongside the visible openers, and never
 //! asks the fold question about a line that fails it.
 //!
+//! THE FENCE ROW MOVED (markup-carve/carve#2149). A fence-shaped line is no
+//! longer refused outright: the fold asks §10 I4's own question first, so one
+//! with NO closer ahead is paragraph text and folds. The other kinds are
+//! unchanged, and the rows below pin both halves of the fence.
+//!
 //! AT DOCUMENT LEVEL ONLY. Inside a container the flush-left line is that
 //! container's own lazy continuation - a quote reached by its marker never
 //! reaches this line - and both readers already fold it there. The rows below
@@ -84,13 +89,26 @@ fn a_caption_ends_the_body() {
     );
 }
 
-/// A FENCE ends the body too. The ticket recorded this kind as already right;
-/// measured, it was not - the body swallowed it and the run became INLINE code.
+/// A FENCE ends the body ONLY WHEN IT HAS A CLOSER. §10 I4 reaches this fold
+/// too (markup-carve/carve#2149): a fence-shaped line with no closer ahead is
+/// paragraph text, so it folds like the prose below and the run becomes INLINE
+/// code. An info string does not change that - the closer is what decides.
+/// Corpus 479-6 pins the bare spelling, 479-7 the one with a closer.
 #[test]
 fn a_fence_ends_the_body() {
     assert_html(
+        &format!("{BODY}``` c\nx\n```\n"),
+        "<dl><dt>t</dt><dd>d</dd></dl><pre><code class=\"language-c\">x </code></pre>",
+    );
+}
+
+/// The same run WITHOUT a closer folds instead, which is the half the ruling
+/// moved. This is the `dd` twin of corpus 479-6.
+#[test]
+fn a_fence_with_no_closer_folds_into_the_body() {
+    assert_html(
         &format!("{BODY}``` c\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><pre><code class=\"language-c\"> </code></pre>",
+        "<dl><dt>t</dt><dd>d<code> c</code></dd></dl>",
     );
 }
 

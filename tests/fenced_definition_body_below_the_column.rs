@@ -71,14 +71,28 @@ fn a_collected_line_at_the_column_does_not_reopen_the_fold() {
 /// The fence need not be the body's first block at all. One opened on a
 /// CONTINUATION line closes the definition at the same place, which is the half
 /// the marker-line seed alone cannot reach.
+///
+/// ONE I4 ANSWER SERVES BOTH HALVES (markup-carve/carve#2148, corpus 478). The
+/// closer lookahead does not stop at the below-column line, so it finds the
+/// closer, a real code block opens, and that open body is what ends the
+/// description at `body`. The body's own parse takes the collector's answer
+/// instead of asking again over the truncated text, where the closer is gone.
 #[test]
 fn a_fence_opened_on_a_continuation_line_closes_the_definition_too() {
     let out = html(":: t\n:  a\n   ```\n   b\nbody\n   ```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb</code></dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
     );
-    assert_eq!(out, definition_of(&html("- a\n  ```\n  b\nbody\n  ```\n")));
+    // NOT `definition_of` OF THE LIST TWIN, which every other row here can use.
+    // Both hosts open the code block, and the corpus pins the two bodies with
+    // DIFFERENT looseness: 478-3 wraps the `dd`'s lead in `<p>`, 276-7 leaves
+    // the `li`'s bare. The shared half is the block and where the host ends.
+    let list = html("- a\n  ```\n  b\nbody\n  ```\n");
+    assert_eq!(
+        list,
+        "<ul>\n  <li>a\n    <pre><code>b\n</code></pre>\n  </li>\n</ul>\n<p>body\n<code></code></p>"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -157,30 +171,31 @@ fn control_the_first_block_form_is_untouched() {
 /// classified - in the surviving context, which is the definition LIST, so the
 /// marker opens the next description on the same term.
 ///
-/// THE TWO SPELLINGS DO NOT ANSWER ALIKE, and this test used to say they did.
-/// The trailing flush-left fence is an OPENER for the definition body - the
-/// oracle's `foldablePlain` excludes FENCE, so the body ends there and the run
-/// becomes a code BLOCK - while the list item absorbs it and publishes an inline
-/// code span. Measured against the executable spec at carve `2f654da9`, which
-/// answers the `dd` rows the way they now read and the `li` row the way it
-/// always did (markup-carve/carve-rs#1534). The `li` assertion is unchanged and
-/// is what says the divergence is real rather than a sweep of both.
+/// THE TWO SPELLINGS ANSWER ALIKE AGAIN. They diverged while the body's fold
+/// refused every fence-shaped line: the trailing flush-left run ended the
+/// description and opened a code BLOCK, where the list item absorbed it as an
+/// inline code span. markup-carve/carve#2149 closed that gap - §10 I4 reaches
+/// this fold too, so a run with NO closer is paragraph text and folds, in
+/// either host. Corpus 479-6 pins the `dd` side; the `li` assertion below is
+/// unchanged and is what says the two now agree rather than both having been
+/// swept.
 #[test]
 fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     let out = html(":: t\n:  ```\n:  d\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
     assert_eq!(
         html("- ```\n- d\n```\n"),
         "<ul>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n  <li>d\n<code></code></li>\n</ul>"
     );
 
-    // A TERM marker there opens the next entry, for the same reason.
+    // A TERM marker there opens the next entry, for the same reason - and the
+    // trailing run folds into that entry's body, as it does above.
     assert_eq!(
         html(":: t\n:  ```\n:: u\n:  d\n```\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
 }
 

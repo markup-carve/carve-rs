@@ -1332,8 +1332,16 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 57ff3a78 with this engine, 1384/354 becomes 1385/355 and no existing
     // document changes bucket. `-10` is strict; `-11` drops `caption_number`,
     // a cause fourteen documents already carry, so no new kind appeared.
-    const STRICT: usize = 1385;
-    const LOSSY: usize = 355;
+    // The pin moves on to carve 1cbd2c3f, which adds 115 documents (corpus
+    // 476-490, the sixteen categories the bump brings) and changes none of
+    // the 1740 existing ones: every name in the OLD lossy set of 355 is
+    // still lossy, so no existing document moved bucket in either direction.
+    // Of the 115 joiners, 59 are strict and 56 are lossy; the 56 report only
+    // kinds this set already holds - `soft_break`, `smart_punctuation`,
+    // `escaped_text`, `substitution` and `caption_number` - so no new kind of
+    // loss appeared. 1385/355 becomes 1444/411.
+    const STRICT: usize = 1444;
+    const LOSSY: usize = 411;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
@@ -2278,8 +2286,16 @@ fn normalized_for_comparison(source: &str) -> String {
     let mut rest = source;
     while let Some(open) = rest.find("/*") {
         let after_open = &rest[open + 2..];
-        let Some(close) = after_open.find("*/") else {
-            break;
+        // A CLOSER NEVER CROSSES A BLANK LINE. Restricting the search to
+        // this paragraph keeps two combined-token paragraphs independent -
+        // without it, a document where BOTH already spell `*/x/*` paired the
+        // first paragraph's "/*" close with the second paragraph's "*/"
+        // open and garbled both (corpus 486-2).
+        let window_end = after_open.find("\n\n").unwrap_or(after_open.len());
+        let Some(close) = after_open[..window_end].find("*/") else {
+            out.push_str(&rest[..open + 2]);
+            rest = after_open;
+            continue;
         };
         out.push_str(&rest[..open]);
         out.push_str("*/");

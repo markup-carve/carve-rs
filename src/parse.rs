@@ -10341,21 +10341,17 @@ fn parse_list(
                     ContentColumnAttrBlock::No => false,
                 }
             };
-            let interrupts = (wrapped_attr_interrupts
-                || interrupts_paragraph_as_container(cur, &dedented))
-                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
-            if interrupts {
-                break;
-            }
-            if let Some(anchors) = &mut anchors {
-                anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
-            }
-            // A code-fence-shaped line with no closer is inline paragraph text
-            // (§10 I4), not an open fenced body. Do not seed the layout fence
-            // tracker unless a closer is written in this item's own body:
-            // doing so closes the item before the next below-column lazy line
-            // (corpus 367).
-            let rejected_fence_has_closer = detect_fence_open(&dedented).is_some_and(|open| {
+            // §10 I4 for a fence: a closer written in the item's own body
+            // makes it interrupt, and the search runs past a below-column
+            // line rather than stopping there (PART 1, THE CLOSER LOOKAHEAD
+            // DOES NOT STOP AT A BELOW-COLUMN LINE, CARVE-P0-014). This is
+            // the SAME question `item_body_fence_has_closer` answers for the
+            // item's own extent, and both readers now take one answer
+            // (markup-carve/carve#2141) - a fence whose closer sits past a
+            // below-column line opens a real body instead of folding into
+            // the paragraph as text (corpus 276-7).
+            let fence_open_here = detect_fence_open(&dedented);
+            let item_fence_has_closer = fence_open_here.is_some_and(|open| {
                 cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                     && item_body_fence_has_closer(
                         &cur.lines[cur.pos + 1..],
@@ -10367,10 +10363,23 @@ fn parse_list(
                         },
                     )
             });
-            if item_open_fence.is_some()
-                || detect_fence_open(&dedented).is_none()
-                || rejected_fence_has_closer
-            {
+            let interrupts = (wrapped_attr_interrupts
+                || interrupts_paragraph_as_container(cur, &dedented)
+                || item_fence_has_closer)
+                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
+            if interrupts {
+                break;
+            }
+            if let Some(anchors) = &mut anchors {
+                anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
+            }
+            // A code-fence-shaped line with no closer is inline paragraph text
+            // (§10 I4), not an open fenced body. Do not seed the layout fence
+            // tracker unless a closer is written in this item's own body:
+            // doing so closes the item before the next below-column lazy line
+            // (corpus 367). `item_fence_has_closer` is false here - a true
+            // answer already broke the loop above.
+            if item_open_fence.is_some() || fence_open_here.is_none() {
                 track_collected_fence(&mut item_open_fence, &dedented, true);
             } else {
                 item_unopened_fence_span = true;
@@ -12173,11 +12182,14 @@ fn item_body_fence_has_closer(
             return false;
         }
         pending_blank = false;
-        let body = if indent >= content_col {
-            slice_columns(line, content_col, false)
-        } else {
-            trim_ascii_start(line).to_string()
-        };
+        if indent < content_col {
+            // A BELOW-COLUMN LINE IS SEARCHED PAST, NEVER MATCHED
+            // (CARVE-P0-014): it cannot BE the closer even where it is
+            // fence-shaped once trimmed, only something the search runs
+            // past (corpus 479).
+            continue;
+        }
+        let body = slice_columns(line, content_col, false);
         if is_fence_close(&body, open) {
             return true;
         }
@@ -12863,6 +12875,34 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 definition_column,
                 options,
             ));
+            // The collector ends the body at a below-column line while a
+            // validated fence is still open (§10 I4, PART 1 CARVE-P0-014: the
+            // closer lookahead does not stop at that line). `body.source` is
+            // truncated there too, so its OWN closer never made it in - a
+            // reparse asking the same question locally finds nothing and reads
+            // the fence as paragraph text (corpus 478-3). The reparse gets a
+            // synthetic closer instead of the truncated one, the same answer
+            // `collect_definition_body` already validated when it kept the
+            // fence open rather than folding it as text.
+            if let Some(open) = fence.open {
+                if cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len)
+                    && item_body_fence_has_closer(
+                        &cur.lines[cur.pos..],
+                        open,
+                        definition_column,
+                        |line, indent| {
+                            indent < definition_column
+                                && (is_definition_list_start(strip_lazy(line))
+                                    || strip_definition_marker(strip_lazy(line)).is_some())
+                        },
+                    )
+                {
+                    let closer = char::from(open.fence_char)
+                        .to_string()
+                        .repeat(open.fence_len);
+                    body.push_newline_at(closer, None, None);
+                }
+            }
             // The span covers the `:  ` marker through the last line the body
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
@@ -13385,24 +13425,54 @@ fn collect_definition_body(
             // BULLET, an ordered marker and CAPTION alongside the visible
             // openers, and never asks the fold question about a line that
             // fails it (markup-carve/carve-rs#1534).
+            // §10 I4 REACHES THIS FOLD TOO: a fence line interrupts only when a
+            // closer follows it, so one without is paragraph text and folds
+            // like any other prose. The body's fold used to refuse every
+            // fence-shaped line, which ended the description there and opened a
+            // code block at document level (markup-carve/carve#2149, corpus
+            // 479-6). It is the item collector's own question, asked here.
+            let lazy_fence =
+                detect_fence_open(&owned).is_some_and(|open| !code_fence_closer_ahead(cur, open));
             if !below_the_column
                 && cur.at_document_level
                 && (detect_list_marker_full(&owned).is_some()
-                    || detect_fence_open(&owned).is_some()
+                    || (detect_fence_open(&owned).is_some() && !lazy_fence)
                     || caption_content(&owned).is_some())
             {
                 break;
             }
             if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
-                let keep = if below_the_column {
+                // A FOLDED FENCE RUN IS FRAMED LAZY, and only that one: the
+                // body's own parse re-reads these lines FLATTENED, where the
+                // below-column context that made the run text is gone, and
+                // would otherwise read it back as this body's closer. Ordinary
+                // prose carries no such risk and keeps its line as it was
+                // (markup-carve/carve#2149, corpus 479-4).
+                //
+                // FRAME ONCE, for the reason the quote collector gives at its
+                // own fold: a line an enclosing container ALREADY framed keeps
+                // that frame, and framing it twice leaves one behind after the
+                // single strip downstream - a literal `U+0000 L U+0000` on the
+                // page (`tests/lazy_framing_never_leaks.rs`).
+                let frame = lazy_fence && !line.starts_with(LAZY);
+                let keep = if frame {
+                    format!("{LAZY}{}", trim_ascii_start(line))
+                } else if below_the_column {
                     line.to_string()
                 } else {
                     owned
                 };
+                let shift = if frame {
+                    let trimmed = trim_ascii_start(line);
+                    (line.chars().count() - trimmed.chars().count()) as isize
+                        - LAZY.chars().count() as isize
+                } else {
+                    0
+                };
                 folded_a_lazy_line = true;
                 lines.push(keep);
                 line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
+                col_map.push(cur.source_col(cur.pos).map(|c| c + shift));
                 reached.push(false);
                 cur.consume();
                 continue;
@@ -17836,7 +17906,12 @@ fn parse_inline_context(
         }
 
         if c == b'#' {
-            if caption_number_allowed && !bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
+            // A caption's placeholder is any `#` that does NOT begin a tag
+            // (markup-carve/carve#2169), not only one an ascii letter
+            // follows: `#1` and `#-a` are tag names too (`name_run_len`
+            // accepts alphanumerics, `_` and `-`), so they name a tag rather
+            // than resolving to the figure's own number (corpus 489-5, -6).
+            if caption_number_allowed && name_run_len(&text[i + 1..]) == 0 {
                 flush_text(
                     &mut out,
                     &mut buf,
@@ -20045,13 +20120,20 @@ fn match_emphasis(
     // to ordinary `/` emphasis below.
     if c == b'/' && bytes.get(i + 1) == Some(&b'*') {
         let start = i + 2;
-        // Opener guard: the first content byte must exist and not be whitespace.
-        if bytes.get(start).is_some_and(|b| !b.is_ascii_whitespace()) {
+        // Opener guard: the first content byte must exist and not be
+        // whitespace. PART 7's four characters (CARVE-P7-003), NOT
+        // `is_ascii_whitespace`, which also takes a form feed and a
+        // vertical tab - both CONTENT, so a form feed right after `/*`
+        // refused the combined token and fell through to plain `/` emphasis,
+        // nesting `<em><strong>` instead of the combined form's own
+        // `<strong><em>` (corpus 487-12, markup-carve/carve-rs#1817).
+        let is_ws = |b: u8| matches!(b, b' ' | b'\t' | b'\n' | b'\r');
+        if bytes.get(start).is_some_and(|&b| !is_ws(b)) {
             let mut search = start;
             while let Some(close) = find_seq(bytes, search, b"*/") {
                 // Reject empty content or content ending in whitespace; keep
                 // scanning for a later closer, matching carve-php.
-                if close > start && !bytes[close - 1].is_ascii_whitespace() {
+                if close > start && !is_ws(bytes[close - 1]) {
                     let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                     OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                     return Some((
@@ -20850,8 +20932,15 @@ impl CrossrefIndex {
 /// The comparison PART 11 R1 specifies for the implicit heading fallback: the
 /// label and the heading text are "both trimmed, their internal whitespace runs
 /// collapsed to one space, and then compared case-INSENSITIVELY".
+///
+/// The run is PART 9 R1's five characters (U+0020, tab, LF, form feed, CR),
+/// the same set `label_key` already collapses for a reference definition's
+/// own label - NOT `str::split_whitespace`, which also takes a no-break space
+/// and the other Unicode spaces. PART 7 CARVE-P7-003 names those CONTENT, so
+/// collapsing them here let `[a<NBSP>b][]` resolve to a heading spelled with
+/// an ordinary space (corpus 487-10, markup-carve/carve-rs#1818).
 fn normalize_heading_label(s: &str) -> String {
-    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapsed = label_key(s);
     case_fold(&collapsed.nfc().collect::<String>())
 }
 

@@ -620,6 +620,20 @@ const IMPLEMENTED: &[&str] = &[
     "a-run-of-asterisks-inside-a-combined-token-is-content",
     "glued-attribute-blocks-on-an-inline-element-merge",
     "footnote-references-take-an-attribute-run-editorial-substitution-and-comment-take-none",
+    "a-bare-colon-run-interrupts-a-paragraph-whether-or-not-a-line-follows-it",
+    "a-code-span-closes-only-on-a-run-of-its-own-length-whatever-the-length",
+    "a-comment-inside-a-forced-span-or-the-combined-token-ends-at-its-closer",
+    "a-delimiter-after-an-underscore-or-slash-opens-only-when-that-one-pairs",
+    "a-quote-after-a-bare-delimiter-follows-what-that-delimiter-does",
+    "a-quote-after-an-escaped-quote-closes",
+    "an-empty-term-marker-in-a-description-body-is-text",
+    "an-unresolved-reference-s-literal-source-is-html-escaped-like-any-other-text",
+    "any-character-is-content-of-the-combined-bold-italic-token",
+    "a-bare-colon-opener-in-a-description-body-is-an-opener",
+    "a-caption-s-placeholder-is-any-that-does-not-begin-a-tag",
+    "a-closer-below-the-container-s-column-does-not-count",
+    "a-definition-body-s-open-code-fence-ends-at-a-line-below-its-column",
+    "a-form-feed-or-a-no-break-space-is-content-wherever-whitespace-is-tested",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

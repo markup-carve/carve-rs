@@ -1407,7 +1407,16 @@ fn merge_same(a: &mut Json, b: &Json) -> bool {
         if ac.is_empty() || bc.is_empty() {
             return false;
         }
-        ac.extend(bc.clone());
+        // RECURSE, do not splice. A multi-layer mark stack (strong wrapping
+        // emphasis) rebuilds one wrapper node per PM inline entry, so two
+        // adjacent entries under the same stack produce two separate
+        // emphasis nodes even after their shared strong wrapper merges. A
+        // flat `extend` left both emphasis nodes as siblings inside it - one
+        // holding real content, one holding only a zero-width atom (a
+        // comment) - and the empty one rendered a stray `<em></em>` (corpus
+        // 490-3). Feeding `bc` through `append_merged` asks the same
+        // question one layer down, so the emphasis wrappers merge too.
+        append_merged(ac, bc.clone());
         true
     } else {
         false
