@@ -20024,9 +20024,10 @@ fn match_emphasis(
     if OpenKinds::is_open(delim) {
         return None;
     }
-    // Opener: next char must exist and not be space/newline/delim
+    // Opener: next char must exist and not be `ws` (space, tab, newline) or
+    // the delimiter itself (CARVE-P3-013).
     let after = bytes.get(i + 1).copied()?;
-    if after == b' ' || after == b'\n' || after == delim {
+    if matches!(after, b' ' | b'\t' | b'\n') || after == delim {
         return None;
     }
     // A `=` that is part of a multi-char smart-typography operator is consumed
@@ -22737,7 +22738,7 @@ fn find_emphasis_close(
         }
         if ch == delim {
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
-            if prev == b' ' || prev == b'\n' {
+            if matches!(prev, b' ' | b'\t' | b'\n') {
                 j += 1;
                 continue;
             }
