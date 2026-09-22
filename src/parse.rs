@@ -19823,6 +19823,12 @@ fn scan_balanced_destination(bytes: &[u8], start: usize) -> Option<(String, usiz
         i += 1;
     }
     let href = String::from_utf8(href_bytes).ok()?;
+    // Whitespace ends a destination only after every opener has balanced. A
+    // title after an unclosed `(` must not rescue the partial prefix as an
+    // href: `link_destination` has no bare-parenthesis alternative.
+    if depth != 0 {
+        return None;
+    }
     // The byte loop above breaks on ASCII whitespace only. `unicode_url_char`
     // is "any non-whitespace, non-ASCII Unicode character" with no qualifier,
     // so a destination carrying a narrow no-break space is not a destination -

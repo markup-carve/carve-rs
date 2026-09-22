@@ -52,6 +52,16 @@ fn whitespace_still_ends_the_destination_so_a_title_can_follow() {
     );
 }
 
+#[test]
+fn a_title_does_not_rescue_an_unclosed_destination_parenthesis() {
+    for (source, expected) in [
+        ("[t](( \")\")\n", "<p>[t](( \u{201c})\u{201d})</p>"),
+        ("![t](( \")\")\n", "<p>![t](( \u{201c})\u{201d})</p>"),
+    ] {
+        assert_eq!(carve::to_html(source).trim_end(), expected, "{source:?}");
+    }
+}
+
 fn round_trips(src: &str) {
     let out = carve::to_carve(src);
     assert_eq!(carve::to_html(&out), carve::to_html(src));
