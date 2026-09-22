@@ -20964,7 +20964,7 @@ impl CrossrefIndex {
 /// collapsed to one space, and then compared case-INSENSITIVELY".
 fn normalize_heading_label(s: &str) -> String {
     let collapsed = s
-        .split(|ch| matches!(ch, ' ' | '\t' | '\n' | '\u{000C}' | '\r'))
+        .split([' ', '\t', '\n', '\u{000C}', '\r'])
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
@@ -22907,9 +22907,7 @@ fn find_emphasis_close(
             }
         }
         if ch == b'%' && bytes.get(j + 1) == Some(&b'%') && (j == 0 || is_carve_ws(bytes[j - 1])) {
-            let Some(newline) = bytes[j + 2..].iter().position(|&byte| byte == b'\n') else {
-                return None;
-            };
+            let newline = bytes[j + 2..].iter().position(|&byte| byte == b'\n')?;
             j += newline + 3;
             continue;
         }
