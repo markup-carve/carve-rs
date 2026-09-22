@@ -160,10 +160,11 @@ fn convert_pairs(mut text: String) -> String {
         (r"(?is)\[url\](.*?)\[/url\]", "<$1>"),
         (r"(?is)\[email\](.*?)\[/email\]", "<mailto:$1>"),
         (r"(?is)\[img(?:=[^\]]*)?\](.*?)\[/img\]", "![]($1)"),
-        (r"(?is)\[b\](.*?)\[/b\]", "*$1*"),
-        (r"(?is)\[i\](.*?)\[/i\]", "/$1/"),
-        (r"(?is)\[u\](.*?)\[/u\]", "_${1}_"),
-        (r"(?is)\[s\](.*?)\[/s\]", "~$1~"),
+    ] {
+        text = replace(text, pattern, replacement);
+    }
+    text = convert_marks(&text);
+    for (pattern, replacement) in [
         (
             r"(?is)\[(?:size|color|font)=[^\]]*\](.*?)\[/(?:size|color|font)\]",
             "$1",
@@ -173,8 +174,6 @@ fn convert_pairs(mut text: String) -> String {
             "$1",
         ),
         (r"(?is)\[(?:c|icode)\](.*?)\[/(?:c|icode)\]", "`$1`"),
-        (r"(?is)\[sup\](.*?)\[/sup\]", "{^$1^}"),
-        (r"(?is)\[sub\](.*?)\[/sub\]", "{,$1,}"),
         (
             r"(?i)\[youtube\]([a-z0-9_-]+)\[/youtube\]",
             "![YouTube Video](https://www.youtube.com/watch?v=$1)",
@@ -182,7 +181,288 @@ fn convert_pairs(mut text: String) -> String {
     ] {
         text = replace(text, pattern, replacement);
     }
+    // Forced brace form: a sup/sub is often intraword (E=mc[sup]2[/sup]). An
+    // empty one has no spelling and goes (ruling markup-carve/carve-rs#1719).
+    for (pattern, open, close) in [
+        (r"(?is)\[sup\](.*?)\[/sup\]", "{^", "^}"),
+        (r"(?is)\[sub\](.*?)\[/sub\]", "{,", ",}"),
+    ] {
+        text = re(pattern)
+            .replace_all(&text, |caps: &Captures<'_>| {
+                if caps[1].is_empty() {
+                    String::new()
+                } else {
+                    format!("{open}{}{close}", &caps[1])
+                }
+            })
+            .into_owned();
+    }
     text
+}
+
+/// One piece of a formatting-tag tree: text, or a tag by its arena index.
+enum MarkItem {
+    Text(String),
+    Mark(usize),
+}
+
+struct ParsedMark {
+    kind: u8,
+    open: String,
+    children: Vec<MarkItem>,
+    unclosed: bool,
+}
+
+fn mark_delim(kind: u8) -> char {
+    match kind {
+        b'b' => '*',
+        b'i' => '/',
+        b'u' => '_',
+        _ => '~',
+    }
+}
+
+/// The formatting tags as a tree, kept in an arena so neither building nor
+/// dropping it recurses on the author's nesting depth. A close tag that does
+/// not match the innermost open one stays literal text, and so does an open
+/// tag never closed (marked here, unwound by `flatten_same_kind`).
+fn parse_marks(text: &str) -> (Vec<ParsedMark>, Vec<MarkItem>) {
+    let mut arena: Vec<ParsedMark> = Vec::new();
+    let mut root: Vec<MarkItem> = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut from = 0;
+    for caps in re(r"(?i)\[(/?)(b|i|u|s)\]").captures_iter(text) {
+        let whole = caps.get(0).expect("group 0 always matches");
+        let kind = caps[2].to_ascii_lowercase().as_bytes()[0];
+        let lead = MarkItem::Text(text[from..whole.start()].to_string());
+        match stack.last() {
+            Some(&top) => arena[top].children.push(lead),
+            None => root.push(lead),
+        }
+        from = whole.end();
+        if caps[1].is_empty() {
+            arena.push(ParsedMark {
+                kind,
+                open: whole.as_str().to_string(),
+                children: Vec::new(),
+                unclosed: false,
+            });
+            let id = arena.len() - 1;
+            match stack.last() {
+                Some(&top) => arena[top].children.push(MarkItem::Mark(id)),
+                None => root.push(MarkItem::Mark(id)),
+            }
+            stack.push(id);
+        } else if stack.last().is_some_and(|&top| arena[top].kind == kind) {
+            stack.pop();
+        } else {
+            let literal = MarkItem::Text(whole.as_str().to_string());
+            match stack.last() {
+                Some(&top) => arena[top].children.push(literal),
+                None => root.push(literal),
+            }
+        }
+    }
+    let tail = MarkItem::Text(text[from..].to_string());
+    match stack.last() {
+        Some(&top) => arena[top].children.push(tail),
+        None => root.push(tail),
+    }
+    for id in stack {
+        arena[id].unclosed = true;
+    }
+    (arena, root)
+}
+
+/// A tag after flattening: its kind and the arena slot holding its children.
+struct FlatMark {
+    kind: u8,
+    slot: usize,
+}
+
+enum FlatItem {
+    Text(String),
+    Mark(FlatMark),
+}
+
+/// An unclosed tag becomes its literal text followed by its content. Carve has
+/// no second level of one kind (E3), so a tag inside an open tag of its own
+/// kind adds nothing and is replaced by its content. Iterative, and a
+/// transparent tag writes straight into its parent's slot, so this is linear;
+/// with four kinds the tree left behind is at most four deep, which keeps
+/// `write_marks` recursion bounded.
+fn flatten_same_kind(mut arena: Vec<ParsedMark>, root: Vec<MarkItem>) -> Vec<Vec<FlatItem>> {
+    let mut slots: Vec<Vec<FlatItem>> = vec![Vec::new()];
+    // (items still to place, slot they go to, kinds open around them)
+    let mut frames: Vec<(std::vec::IntoIter<MarkItem>, usize, [bool; 4])> =
+        vec![(root.into_iter(), 0, [false; 4])];
+    let kind_index = |kind: u8| match kind {
+        b'b' => 0,
+        b'i' => 1,
+        b'u' => 2,
+        _ => 3,
+    };
+    while let Some((items, slot, open)) = frames.last_mut() {
+        let Some(item) = items.next() else {
+            frames.pop();
+            continue;
+        };
+        let (slot, open) = (*slot, *open);
+        match item {
+            MarkItem::Text(text) => slots[slot].push(FlatItem::Text(text)),
+            MarkItem::Mark(id) => {
+                let children = std::mem::take(&mut arena[id].children);
+                let kind = arena[id].kind;
+                if arena[id].unclosed {
+                    slots[slot].push(FlatItem::Text(std::mem::take(&mut arena[id].open)));
+                    frames.push((children.into_iter(), slot, open));
+                } else if open[kind_index(kind)] {
+                    frames.push((children.into_iter(), slot, open));
+                } else {
+                    slots.push(Vec::new());
+                    let child_slot = slots.len() - 1;
+                    slots[slot].push(FlatItem::Mark(FlatMark {
+                        kind,
+                        slot: child_slot,
+                    }));
+                    let mut inner = open;
+                    inner[kind_index(kind)] = true;
+                    frames.push((children.into_iter(), child_slot, inner));
+                }
+            }
+        }
+    }
+    slots
+}
+
+// The tree is at most four deep, so this recursion is bounded.
+fn slot_has_content(slots: &[Vec<FlatItem>], slot: usize) -> bool {
+    slots[slot].iter().any(|item| match item {
+        FlatItem::Text(text) => !text.is_empty(),
+        FlatItem::Mark(mark) => slot_has_content(slots, mark.slot),
+    })
+}
+
+/// For each item, the first character written after it, or `None` when nothing
+/// is. One pass from the right, so a run of empty tags costs nothing per tag.
+fn next_chars(slots: &[Vec<FlatItem>], slot: usize) -> Vec<Option<char>> {
+    let items = &slots[slot];
+    let mut next = vec![None; items.len()];
+    let mut after = None;
+    for (k, item) in items.iter().enumerate().rev() {
+        next[k] = after;
+        match item {
+            FlatItem::Text(text) => {
+                if let Some(first) = text.chars().next() {
+                    after = Some(first);
+                }
+            }
+            FlatItem::Mark(mark) => {
+                if slot_has_content(slots, mark.slot) {
+                    after = Some('{');
+                }
+            }
+        }
+    }
+    next
+}
+
+fn is_word(c: Option<char>) -> bool {
+    c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Write the tree the way the Carve writer would. An empty tag holds nothing a
+/// reader sees and has no spelling, so it goes (ruling markup-carve/carve-rs#1719).
+/// A bare pair the CARVE-P3-013 guards would not read back, or that the writer
+/// would brace, takes the braced form, as does a `/` around content that would
+/// read back as bold-italic.
+fn write_marks(
+    slots: &[Vec<FlatItem>],
+    slot: usize,
+    outer_next: Option<char>,
+    prev: Option<char>,
+) -> String {
+    // Chunks rather than one growing string, so escaping the character before
+    // an opener rewrites only the text chunk holding it.
+    let mut parts: Vec<String> = Vec::new();
+    let mut last = prev;
+    let mut text_part: Option<usize> = None;
+    let mut escape_brace = false;
+    let nexts = next_chars(slots, slot);
+    for (index, item) in slots[slot].iter().enumerate() {
+        match item {
+            FlatItem::Text(text) => {
+                if text.is_empty() {
+                    continue;
+                }
+                // A `{` before a bare opener and a `}` after its closer would read
+                // as the braced form, eating both braces; the writer escapes the `}`.
+                let chunk = if escape_brace && text.starts_with('}') {
+                    format!("\\{text}")
+                } else {
+                    text.clone()
+                };
+                last = chunk.chars().next_back();
+                parts.push(chunk);
+                escape_brace = false;
+                text_part = Some(parts.len() - 1);
+            }
+            FlatItem::Mark(mark) => {
+                let delim = mark_delim(mark.kind);
+                // The parent's own delimiters are not text: a child at its edge
+                // has no neighbor there, which is how the writer spells `/_x_/`.
+                let body = write_marks(slots, mark.slot, None, None);
+                if body.is_empty() {
+                    continue;
+                }
+                // The post's own text was escaped while the tags were still tags,
+                // so a literal delimiter now touching an opener was never seen.
+                // Already escaped only behind an ODD run of backslashes.
+                if text_part.is_some()
+                    && text_part == parts.len().checked_sub(1)
+                    && last.is_some_and(|c| "*/_~=".contains(c))
+                {
+                    let chunk = &parts[parts.len() - 1];
+                    let run = chunk[..chunk.len() - 1]
+                        .bytes()
+                        .rev()
+                        .take_while(|b| *b == b'\\')
+                        .count();
+                    if run % 2 == 0 {
+                        let chunk = parts.last_mut().expect("text_part is the last chunk");
+                        chunk.insert(chunk.len() - 1, '\\');
+                    }
+                }
+                let before = last;
+                let next = nexts[index].or(outer_next);
+                let ws = |c: char| matches!(c, ' ' | '\t' | '\r' | '\n');
+                let braced = body.starts_with(ws)
+                    || body.ends_with(ws)
+                    || is_word(before)
+                    || before == Some(delim)
+                    || (before == Some('/') && (delim == '/' || delim == '_'))
+                    || is_word(next)
+                    || body.starts_with(delim)
+                    || body.ends_with(delim)
+                    || (delim == '/' && body.starts_with('*') && body.ends_with('*'));
+                let chunk = if braced {
+                    format!("{{{delim}{body}{delim}}}")
+                } else {
+                    format!("{delim}{body}{delim}")
+                };
+                last = chunk.chars().next_back();
+                parts.push(chunk);
+                escape_brace = !braced && before == Some('{');
+            }
+        }
+    }
+    parts.concat()
+}
+
+fn convert_marks(text: &str) -> String {
+    let (arena, root) = parse_marks(text);
+    let slots = flatten_same_kind(arena, root);
+    write_marks(&slots, 0, None, None)
 }
 
 fn convert_code(mut text: String) -> String {
