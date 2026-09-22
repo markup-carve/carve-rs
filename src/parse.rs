@@ -10341,12 +10341,20 @@ fn parse_list(
             }
             // A code-fence-shaped line with no closer is inline paragraph text
             // (§10 I4), not an open fenced body. Do not seed the layout fence
-            // tracker when no compatible closer exists anywhere ahead: doing
-            // so closes the item before the next below-column lazy line (corpus
-            // 367). A closer outside this item still matters to the established
-            // layout rule (corpus 276), hence the broader suffix-index check.
+            // tracker unless a closer is written in this item's own body:
+            // doing so closes the item before the next below-column lazy line
+            // (corpus 367).
             let rejected_fence_has_closer = detect_fence_open(&dedented).is_some_and(|open| {
                 cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                    && item_body_fence_has_closer(
+                        &cur.lines[cur.pos + 1..],
+                        open,
+                        content_col,
+                        |line, _| {
+                            detect_list_marker_full(line)
+                                .is_some_and(|marker| marker.indent <= base_indent)
+                        },
+                    )
             });
             if item_open_fence.is_some()
                 || detect_fence_open(&dedented).is_none()
@@ -12127,6 +12135,43 @@ fn track_collected_colon_fence(open: &mut Vec<usize>, line: &str, at_content_col
     }
 }
 
+/// §10 I4 for a fence that follows an item's open paragraph: only a closer
+/// written in the item's own body counts. The search stops where the item
+/// ends: at a sibling or outer marker, and at a blank followed by a line below
+/// the content column (carve#1379). A below-column line folds as lazy text, so
+/// the search runs past it, and a closer is read at the content column exactly.
+fn item_body_fence_has_closer(
+    lines: &[&str],
+    open: FenceOpen,
+    content_col: usize,
+    ends_item: impl Fn(&str, usize) -> bool,
+) -> bool {
+    let mut pending_blank = false;
+    for line in lines {
+        if is_blank_line(line) {
+            pending_blank = true;
+            continue;
+        }
+        let indent = indent_columns(line);
+        if ends_item(line, indent) {
+            return false;
+        }
+        if pending_blank && indent < content_col {
+            return false;
+        }
+        pending_blank = false;
+        let body = if indent >= content_col {
+            slice_columns(line, content_col, false)
+        } else {
+            trim_ascii_start(line).to_string()
+        };
+        if is_fence_close(&body, open) {
+            return true;
+        }
+    }
+    false
+}
+
 fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_content_column: bool) {
     if !at_content_column {
         return;
@@ -13185,9 +13230,19 @@ fn collect_definition_body(
                 // body's content column stays in its open paragraph (§10 I4).
                 // Tracking one as a real fence would eject the next lazy line
                 // from the `<dd>` (corpus 367). Keep the established behavior
-                // when any compatible closer does occur later, as for lists.
+                // when a closer is written in this body, as for lists.
                 let rejected_fence_has_closer = detect_fence_open(&sliced).is_some_and(|open| {
                     cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                        && item_body_fence_has_closer(
+                            &cur.lines[cur.pos + 1..],
+                            open,
+                            content_column,
+                            |line, indent| {
+                                indent < content_column
+                                    && (is_definition_list_start(strip_lazy(line))
+                                        || strip_definition_marker(strip_lazy(line)).is_some())
+                            },
+                        )
                 });
                 if fence.open.is_some()
                     || detect_fence_open(&sliced).is_none()
