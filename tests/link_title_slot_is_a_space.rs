@@ -199,29 +199,26 @@ fn every_slot_is_exactly_one_space() {
     );
 }
 
+/// The run between a title and the closing `)` is NOT `link_title` - the
+/// production puts no slot there at all, so neither a space nor a tab is
+/// grammatical and the link does not form (carve-rs#1796).
+#[test]
+fn the_run_after_an_inline_title_is_no_slot_either() {
+    assert!(
+        !html("[t](/u \"T\"\t)\n").contains("<a "),
+        "a tab after the title closed the link"
+    );
+    assert!(
+        !html("[t](/u \"T\" )\n").contains("<a "),
+        "a space after the title closed the link"
+    );
+}
+
 /// CONTROL. The `']' ':'` MARKER SEPARATOR on a definition line already rejected
 /// a tab before this change, and the destination's own leading run is explicitly
 /// whitespace by the production (`resources/grammar.ebnf`, the note at
 /// `link_destination`). Both are watched so that narrowing the title slot is not
 /// quietly extended along the line.
-/// CONTROL, and the one that keeps this change from creeping along the line.
-/// The run between a title and the closing `)` is NOT `link_title` - the
-/// production puts no slot there at all, so neither a space nor a tab is
-/// grammatical - and narrowing it is a separate question this ticket does not
-/// answer. Watched, so that narrowing it later is a deliberate act rather than a
-/// side effect.
-#[test]
-fn the_run_after_an_inline_title_is_left_alone() {
-    assert!(
-        html("[t](/u \"T\"\t)\n").contains("title=\"T\""),
-        "a tab after the title stopped closing the link"
-    );
-    assert!(
-        html("[t](/u \"T\" )\n").contains("title=\"T\""),
-        "a space after the title stopped closing the link"
-    );
-}
-
 #[test]
 fn the_rest_of_the_definition_line_is_unchanged() {
     let out = html("[r]:\t/u\n\n[t][r]\n");

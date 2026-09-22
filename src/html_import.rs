@@ -4647,15 +4647,19 @@ impl<'a> Importer<'a> {
         }
         // An empty pair such as `{**}` reads back as text, and an element the
         // HTML leaves empty shows a reader nothing, so it goes without a row.
+        // Its attributes can still matter (an `id` is a link target), and an
+        // empty span is spellable, so they move onto one.
         if children.is_empty() && is_braced_pair_tag(tag.as_str()) {
-            self.report_unplaceable_attrs(
-                h,
-                attrs,
-                tag.as_str(),
-                "the empty element was dropped and has no node to carry it",
-                path,
-            );
-            return Ok(Vec::new());
+            return Ok(attrs
+                .map(|attrs| {
+                    vec![InlineNode::Span(Span {
+                        attrs: Some(attrs),
+                        children: Vec::new(),
+                        injected: false,
+                        pos: None,
+                    })]
+                })
+                .unwrap_or_default());
         }
         let emphasis = |kind| {
             InlineNode::Emphasis(Emphasis {
