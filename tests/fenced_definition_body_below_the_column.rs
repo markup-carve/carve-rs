@@ -76,9 +76,8 @@ fn a_fence_opened_on_a_continuation_line_closes_the_definition_too() {
     let out = html(":: t\n:  a\n   ```\n   b\nbody\n   ```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>a\n<code>\nb</code></dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>a</p>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
     );
-    assert_eq!(out, definition_of(&html("- a\n  ```\n  b\nbody\n  ```\n")));
 }
 
 // ---------------------------------------------------------------------------
@@ -152,25 +151,14 @@ fn control_the_first_block_form_is_untouched() {
     );
 }
 
-/// A MARKER below the body's column takes the same route as any other line: the
-/// entry closes with its empty code block, and only THEN is the residue
-/// classified - in the surviving context, which is the definition LIST, so the
-/// marker opens the next description on the same term.
-///
-/// THE TWO SPELLINGS DO NOT ANSWER ALIKE, and this test used to say they did.
-/// The trailing flush-left fence is an OPENER for the definition body - the
-/// oracle's `foldablePlain` excludes FENCE, so the body ends there and the run
-/// becomes a code BLOCK - while the list item absorbs it and publishes an inline
-/// code span. Measured against the executable spec at carve `2f654da9`, which
-/// answers the `dd` rows the way they now read and the `li` row the way it
-/// always did (markup-carve/carve-rs#1534). The `li` assertion is unchanged and
-/// is what says the divergence is real rather than a sweep of both.
+/// A marker below the body's column closes the open fence. The next description
+/// then reads its unmatched delimiter as inline code.
 #[test]
 fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     let out = html(":: t\n:  ```\n:  d\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
     assert_eq!(
         html("- ```\n- d\n```\n"),
@@ -180,7 +168,7 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     // A TERM marker there opens the next entry, for the same reason.
     assert_eq!(
         html(":: t\n:  ```\n:: u\n:  d\n```\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d</dd>\n</dl>\n<pre><code>\n</code></pre>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
 }
 

@@ -2978,6 +2978,19 @@ fn render_inline_body(
                 );
                 return String::new();
             }
+            if emphasis
+                .children
+                .iter()
+                .any(|child| matches!(child, InlineNode::Comment(comment) if !comment.delimited))
+            {
+                if let Some(delim) = bare_delimiter(emphasis.kind) {
+                    return format!(
+                        "{}{}",
+                        render_forced_emphasis(delim, &content),
+                        render_attrs(&emphasis.attrs)
+                    );
+                }
+            }
             // An EMPTY code span has one spelling, a backtick run that its
             // container ends, and only the braced closer ends it inside an
             // emphasis: a bare closer is swallowed by the open run.

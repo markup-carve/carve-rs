@@ -1,4 +1,4 @@
-use carve::{parse, to_html, to_json};
+use carve::{parse, to_carve, to_html, to_json};
 
 #[test]
 fn a_caption_tag_is_not_a_number_placeholder() {
@@ -76,6 +76,13 @@ fn a_comment_in_the_combined_token_ends_at_its_closer() {
         to_html("/*a %% b*/ y\n"),
         "<p><strong><em>a</em></strong> y</p>"
     );
+}
+
+#[test]
+fn the_writer_keeps_a_comment_bounded_by_a_forced_span() {
+    for source in ["{*a %% b*} y\n", "{_a %% b_} y\n", "{/a %% b/} y\n"] {
+        assert_eq!(to_carve(source), source);
+    }
 }
 
 #[test]
