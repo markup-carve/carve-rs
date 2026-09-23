@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.7] - 2026-09-21
 
+### Changed
+
+- The HTML importer reads an empty mark that carries attributes as an empty
+  span holding them (`<em id="t"></em>` becomes `[]{#t}`) instead of dropping
+  them with an `attribute-dropped` diagnostic, reversing the choice
+  markup-carve/carve-rs#1734 made and putting the three engines in agreement
+  (markup-carve/carve-rs#1807).
+
 ### Fixed
 
 - A node pulled in by a sliced include (`{{ child.crv @lines:N-M }}`) reports
@@ -21,6 +29,68 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   trailing paragraph inside the `carveDiv`. It used to emit a `carveCaption` in a
   block position, which `from_prosemirror` then refused
   (markup-carve/carve-rs#1785).
+- A reference definition reads its destination through the same
+  `link_destination` production as an inline tail, and its trailing attribute
+  block is read after the destination and the title rather than split off the
+  target first (markup-carve/carve-rs#1792).
+- A link or image destination that reaches whitespace with an unclosed
+  parenthesis is refused, so a quoted run behind it can no longer publish an
+  unbalanced `href` (markup-carve/carve-rs#1794).
+- A link tail holds no whitespace before its closing parenthesis, so `[t](a )`
+  and `[t](/u "T" )` read as prose. Inline links, inline images and the bare
+  image line move together (markup-carve/carve-rs#1809).
+- A reference label holds an opening `[` as content and ignores a `]` that an
+  escape, a code span or a comment keeps literal, so the text behind the
+  reference survives (markup-carve/carve-rs#1827).
+- A bare emphasis delimiter is refused against a tab as it is against a space,
+  on both sides, for `/`, `*`, `_`, `~` and `=` (markup-carve/carve-rs#1811).
+- A form feed is content in the bold-italic guard, so `/*` followed by one opens
+  the combined token (markup-carve/carve-rs#1810).
+- The combined token's trailing attribute block is written on the outer
+  `<strong>`. The parser attached it and the AST JSON carried it, but the HTML
+  renderer spelled the token as two fixed tags and never wrote it
+  (markup-carve/carve-rs#1814).
+- A `%%` comment inside a bare emphasis run consumes the rest of the line, so
+  the run's closer is comment text and the delimiters stay literal. The Carve
+  writer braces such an emphasis, so it reads back
+  (markup-carve/carve-rs#1827).
+- The Carve writer records an empty mark as unspellable instead of writing an
+  empty brace pair, braces a mark whose content is edged by a space, tab, CR or
+  LF, and nests a flagged bold-italic whose content cannot hug `/*`
+  (markup-carve/carve-rs#1807).
+- A caption's number placeholder is the first `#` that does not begin a tag, so
+  `#1`, `#_` and `#-a` stay tags instead of being numbered
+  (markup-carve/carve-rs#1827).
+- A heading reference key keeps a no-break space, so a heading holding one no
+  longer matches a label holding an ordinary space (markup-carve/carve-rs#1827).
+- An unresolved reference's literal source keeps its no-break spaces visible,
+  as every other text node already did (markup-carve/carve-rs#1823).
+- A `::` line with an empty term and trailing whitespace folds into an open
+  description body, as `::` alone already did (markup-carve/carve-rs#1815).
+- A code fence in a list item or a description body interrupts the open
+  paragraph only when a closer is written in that body at the content column. A
+  closer past a sibling marker, past a blank followed by a below-column line, or
+  indented past the column no longer counts (markup-carve/carve-rs#1816).
+- A fence line an item's lead paragraph absorbs still opens a span to the end of
+  the item, so a blank inside that span no longer loosens the item
+  (markup-carve/carve-rs#1821).
+- A flush-left fence with no closer stays paragraph text in a description body,
+  a closer past a below-column line still opens the block in both hosts, and a
+  fence after an item's blockquote keeps that decision
+  (markup-carve/carve-rs#1827).
+- A nested item's bare `:::` run opens its div in that item rather than the
+  outer one, and an opener written after a paragraph leaves an empty div that a
+  below-column line ends (markup-carve/carve-rs#1827).
+- The Markdown importer bounds an unclosed inline HTML opener at the end of its
+  block, so the later blocks and list items survive instead of being swallowed
+  (markup-carve/carve-rs#1827).
+- The BBCode importer spells the four formatting tags the way the Carve writer
+  would: an empty tag is dropped, a tag inside its own kind adds nothing, and a
+  bare pair the CARVE-P3-013 guards would not read back takes the braced form
+  (markup-carve/carve-rs#1813).
+- The BBCode importer escapes the inline constructs a post's own text forms
+  beside the tags it converted, so `q =x== q` and `q [x[b](y) q` stay text
+  (markup-carve/carve-rs#1825).
 
 ## [0.1.6] - 2026-09-18
 
