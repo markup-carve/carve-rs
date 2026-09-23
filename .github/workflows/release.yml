@@ -45,6 +45,9 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
           submodules: recursive
+          # The completeness gate below walks every merge back to the previous
+          # tag, so it needs the tags and the history behind them.
+          fetch-depth: 0
 
       # Guard: the crate version AND the CHANGELOG must match the release tag,
       # so a mistyped tag, a forgotten version bump, or an un-cut changelog
@@ -61,6 +64,16 @@ jobs:
             echo "::error::CHANGELOG.md has no '## [$TAG]' section; cut it from [Unreleased] before releasing."
             exit 1
           fi
+
+      # ...and the section describes ALL of it. The step above passes on a
+      # section covering 3 of 24 merges, which is how the 0.1.7 section came to
+      # document three changes out of twenty-four. Runs before anything
+      # publishes, and names every missing pull request at once.
+      - name: The changelog section accounts for every merge in this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/check-changelog-completeness.py "${{ github.event.release.tag_name }}"
 
       - uses: dtolnay/rust-toolchain@stable
 
