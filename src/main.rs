@@ -50,7 +50,21 @@ impl carve::IncludeResolver for NoResolver {
 }
 
 fn main() -> ExitCode {
-    let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
+    // `std::env::args` panics on an argument that is not valid UTF-8, which
+    // surfaced as exit 101 with a backtrace hint instead of a usage error.
+    let mut raw_args = Vec::new();
+    for arg in std::env::args_os().skip(1) {
+        match arg.into_string() {
+            Ok(arg) => raw_args.push(arg),
+            Err(arg) => {
+                eprintln!(
+                    "carve: argument is not valid UTF-8: {}",
+                    arg.to_string_lossy()
+                );
+                return ExitCode::from(2);
+            }
+        }
+    }
     if raw_args.first().map(String::as_str) == Some("merge") {
         return run_merge(&raw_args[1..]);
     }
@@ -104,7 +118,7 @@ fn main() -> ExitCode {
     #[cfg_attr(not(feature = "fs"), allow(unused_mut))]
     let mut include_root: Option<String> = None;
     let mut input_paths: Vec<String> = Vec::new();
-    let mut args = std::env::args().skip(1);
+    let mut args = raw_args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "fmt" if command == Command::Render && input_paths.is_empty() => {
