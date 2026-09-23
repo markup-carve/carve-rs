@@ -95,6 +95,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   escaped marker, rather than re-spelling it as inline HTML. The escaped marker
   is text, so the live delimiter run in front of the seam is empty and there is
   no merged run to unmerge (markup-carve/carve-rs#1831).
+- A code span opened on an indented continuation line begins at its backtick run
+  rather than at the line's indentation, and the `soft_break` in front of it
+  ends where the span begins (markup-carve/carve-rs#1832).
+- A fenced code block inside a description body carries a position, so the
+  `definition_description` and `definition_list` around it reach the fence's
+  closer instead of stopping at their last placed child
+  (markup-carve/carve-rs#1833).
 
 ## [0.1.6] - 2026-09-18
 

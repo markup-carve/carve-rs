@@ -3753,6 +3753,22 @@ struct LineBuffer {
     last_is_synthetic: bool,
 }
 
+/// Give every line already pushed a slot before `source_line` takes its own.
+///
+/// A buffer that never maps a line keeps an EMPTY map, which is what an
+/// unpositioned parse wants and what the guard at each call site preserves. On
+/// its own that guard also DROPPED an unmapped line written before the first
+/// mapped one, and every later entry then answered for the line above it: a
+/// manufactured blank in front of a container body shifted the block under it
+/// one line down, so a fenced code block reported its own content line as its
+/// whole extent (markup-carve/carve-rs#1833). The column map has been parallel
+/// to the lines all along - this is the line map catching up.
+fn pad_line_map(line_map: &mut Vec<Option<usize>>, lines: usize, source_line: Option<usize>) {
+    if source_line.is_some() && line_map.len() + 1 < lines {
+        line_map.resize(lines - 1, None);
+    }
+}
+
 impl LineBuffer {
     fn push(&mut self, line: String, source_line: Option<usize>) {
         self.push_at(line, source_line, None)
@@ -3763,6 +3779,7 @@ impl LineBuffer {
     fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<isize>) {
         self.last_is_synthetic = false;
         self.lines.push(line);
+        pad_line_map(&mut self.line_map, self.lines.len(), source_line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
         }
@@ -3872,6 +3889,8 @@ impl MappedSource {
             self.source.push('\n');
         }
         self.source.push_str(&line);
+        let lines = self.line_count();
+        pad_line_map(&mut self.line_map, lines, source_line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
         }
@@ -3976,7 +3995,7 @@ fn item_paragraph_span(
     let end_width = cur
         .lines
         .get(end_at)
-        .map(|l| l.chars().count())
+        .map(|l| strip_lazy(l).chars().count())
         .unwrap_or(0);
     Some(Pos {
         start_line,
@@ -3989,6 +4008,18 @@ fn item_paragraph_span(
     })
 }
 
+/// Anchor for the line at `pos`: its source line, and the codepoints in front
+/// of `inline_line` in the document.
+///
+/// THE LAZY FRAME IS NOT SOURCE TEXT, so neither side is measured with it on.
+/// A framed line is `LAZY` plus the line's content, and the inline text a
+/// caller builds holds the content alone, so an anchor taken against the framed
+/// line read the frame's three codepoints as the line's own indentation: a code
+/// span opened there began at the INDENTATION rather than at its backtick run
+/// (markup-carve/carve-rs#1832). Two framing sites had compensated for that by
+/// discounting the frame from the column they recorded, which left the same
+/// line reading one way here and another in `span_of`; the frame is discounted
+/// in the readers now, so every site records the column it actually took.
 fn inline_anchor_for_line(
     cur: &LineCursor<'_>,
     pos: usize,
@@ -3996,7 +4027,11 @@ fn inline_anchor_for_line(
 ) -> Option<(usize, isize)> {
     Some((
         cur.source_line(pos)?,
-        stripped_col(cur.source_col(pos), cur.lines.get(pos)?, inline_line)?,
+        stripped_col(
+            cur.source_col(pos),
+            strip_lazy(cur.lines.get(pos)?),
+            strip_lazy(inline_line),
+        )?,
     ))
 }
 
@@ -4060,9 +4095,14 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     let indent = cur
         .lines
         .get(start)
+        .map(|l| strip_lazy(l))
         .map(|l| l.chars().count() - trim_ascii_start(l).chars().count())
         .unwrap_or(0);
-    let width = cur.lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    let width = cur
+        .lines
+        .get(last)
+        .map(|l| strip_lazy(l).chars().count())
+        .unwrap_or(0);
     // The LAST line may have had a different amount taken off it than the
     // first: a lazily continued paragraph starts inside a blockquote or list
     // item and ends flush left, so reusing the opening line's count runs the
@@ -4899,9 +4939,12 @@ fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) 
     let end_line = line_map.get(last).copied().flatten().unwrap_or(start_line);
     let stripped = *col_map.get(start)?.as_ref()?;
     let end_stripped = *col_map.get(last)?.as_ref()?;
-    let first = lines.get(start)?;
+    let first = strip_lazy(lines.get(start)?);
     let indent = first.chars().count() - trim_ascii_start(first).chars().count();
-    let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    let width = lines
+        .get(last)
+        .map(|l| strip_lazy(l).chars().count())
+        .unwrap_or(0);
     Some(Pos {
         start_line,
         end_line,
@@ -9975,16 +10018,13 @@ fn parse_list(
                     })
                 }) {
                     let src_line = cur.source_line(cur.pos);
-                    // The LAZY frame prepends codepoints the source never held and
-                    // the trim drops the line's own indent (and any existing frame):
-                    // a column in the framed line maps back to source by ADDING what
-                    // was stripped and SUBTRACTING the new frame's width, exactly as
-                    // the description-body collector does (carve-rs#1559). Without
-                    // the second term the frame's width leaks into every span whose
-                    // end falls on a framed line.
-                    let src_col = cur
-                        .source_col(cur.pos)
-                        .map(|c| c + removed as isize - LAZY.chars().count() as isize);
+                    // The trim drops the line's own indent, so the column is
+                    // what was stripped. THE FRAME ITSELF IS NOT COUNTED: every
+                    // position reader takes `strip_lazy` first (`span_of`,
+                    // `flattened_span`, `inline_anchor_for_line`), so a constant
+                    // discounting the frame's width here would subtract it twice
+                    // (carve-rs#1559, carve-rs#1832).
+                    let src_col = cur.source_col(cur.pos).map(|c| c + removed as isize);
                     stream.push_newline_at(framed, src_line, src_col);
                     cur.consume();
                 }
@@ -13296,9 +13336,9 @@ fn collect_definition_body(
                 // right quantity for both cases: with a residual it is
                 // `consumed - synthetic`, which is exactly the base the mapping
                 // in `slice_columns_mapped` documents.
-                col_map.push(cur.source_col(cur.pos).map(|c| {
+                let sliced_col = cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
-                }));
+                });
                 // As in a list item, an unterminated fence at the definition
                 // body's content column stays in its open paragraph (§10 I4).
                 // Tracking one as a real fence would eject the next lazy line
@@ -13319,15 +13359,26 @@ fn collect_definition_body(
                             )
                     });
                 if rejected_fence_has_closer {
+                    // The blank is MANUFACTURED, so it stands for no source
+                    // line and takes no column. Pushing the sliced line's own
+                    // column before the blank gave the blank that column and
+                    // left the fence line with none, and a block that opens on
+                    // a line whose column is unknown is published UNPLACED
+                    // (`span_of`) - which is how a fenced code block in a
+                    // description body lost its position and narrowed the
+                    // `definition_description` around it to its last placed
+                    // child (markup-carve/carve-rs#1833).
                     lines.push(String::new());
                     line_map.push(None);
                     col_map.push(None);
                     reached.push(true);
-                } else if fence.open.is_none() && detect_fence_open(&sliced).is_some() {
+                }
+                col_map.push(sliced_col);
+                if !rejected_fence_has_closer
+                    && fence.open.is_none()
+                    && detect_fence_open(&sliced).is_some()
+                {
                     sliced.insert_str(0, LAZY);
-                    if let Some(Some(col)) = col_map.last_mut() {
-                        *col -= LAZY.chars().count() as isize;
-                    }
                 }
                 if fence.open.is_some()
                     || detect_fence_open(&sliced).is_none()
@@ -13358,17 +13409,12 @@ fn collect_definition_body(
             if nested_lead_fence.is_some() {
                 folded_a_lazy_line = false;
                 let framed = format!("{LAZY}{}", trim_ascii_start(line));
-                // The LAZY frame prepends codepoints the source never held, and
-                // trim_ascii_start drops the line's own indent. A column in the
-                // framed line maps back to source by ADDING what was stripped and
-                // SUBTRACTING the frame - without the second term the frame's
-                // width leaked into every span whose end fell on a framed line,
-                // pushing the fence's end past document length (carve-rs#1559).
+                // `trim_ascii_start` drops the line's own indent, so the column
+                // is what was stripped and nothing more - the frame is not
+                // source text and no position reader counts it (carve-rs#1559,
+                // carve-rs#1832).
                 let stripped = line.chars().count() - trim_ascii_start(line).chars().count();
-                col_map.push(
-                    cur.source_col(cur.pos)
-                        .map(|c| c + stripped as isize - LAZY.chars().count() as isize),
-                );
+                col_map.push(cur.source_col(cur.pos).map(|c| c + stripped as isize));
                 lines.push(framed);
                 line_map.push(cur.source_line(cur.pos));
                 reached.push(false);
