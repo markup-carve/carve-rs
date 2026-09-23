@@ -102,6 +102,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `definition_description` and `definition_list` around it reach the fence's
   closer instead of stopping at their last placed child
   (markup-carve/carve-rs#1833).
+- The CLI rejects an argument that is not valid UTF-8 as a usage error naming
+  the argument, exit 2, instead of panicking with exit 101. A non-UTF-8 path is
+  refused rather than opened, since paths are `String` throughout the CLI
+  (markup-carve/carve-rs#1834).
 
 ## [0.1.6] - 2026-09-18
 
