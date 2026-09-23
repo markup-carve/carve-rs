@@ -1,0 +1,10 @@
+# Pull requests that moved shipped source and deliberately carry no changelog
+# entry. Read by tools/check-changelog-completeness.py.
+#
+# One per line, `<number>: <reason>`. The reason is required: an exemption
+# nobody can audit is how this gate would quietly stop meaning anything, so a
+# bare number is an error rather than a skip. Every exemption that applies is
+# printed on a passing run too, so what was left out stays visible.
+#
+# Empty on purpose. The reconciled 0.1.7 section passes over all 17 of its
+# shipped-source merges without one.
