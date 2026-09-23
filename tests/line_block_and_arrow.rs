@@ -107,6 +107,7 @@ fn flush_colon_fence_in_quote_ends_lazy_continuation() {
             "<blockquote>\n",
             "  <p>a</p>\n",
             "  <div class=\"line-block\">\n",
+            "\n",
             "  </div>\n",
             "</blockquote>\n",
             "<p>lazy</p>"

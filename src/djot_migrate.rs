@@ -1275,7 +1275,7 @@ pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters
             i += 1;
             continue;
         }
-        let before_ok = i == 0 || !(mask[i - 1].is_ascii_alphanumeric() || mask[i - 1] == b'&');
+        let before_ok = i == 0 || !mask[i - 1].is_ascii_alphanumeric();
         let opens_tag = mask
             .get(i + 1)
             .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'-');
@@ -1680,14 +1680,14 @@ mod tests {
         assert_eq!(djot_to_carve("{#y#} x"), "\\{\\#y#} x");
     }
 
-    /// A heading is `#` plus a SPACE and is shared with Djot; `a#y` is not a
-    /// tag either; and `&#8212;` is a numeric character reference whose `#`
-    /// must stay bare or the entity stops decoding.
+    /// A heading is `#` plus a space and is shared with Djot; `a#y` is not a
+    /// tag either. Djot character-reference text freezes before Carve reads it.
     #[test]
     fn the_hash_negatives_stay_bare() {
         assert_eq!(djot_to_carve("# Heading"), "# Heading");
         assert_eq!(djot_to_carve("a#y b"), "a#y b");
-        assert_eq!(djot_to_carve("a &#8212; b"), "a &#8212; b");
+        assert_eq!(djot_to_carve("a &#8212; b"), "a &\\#8212; b");
+        assert_eq!(djot_to_carve("a &#x2014; b"), "a &\\#x2014; b");
     }
 
     #[test]

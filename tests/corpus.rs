@@ -42,6 +42,8 @@ const IMPLEMENTED: &[&str] = &[
     "a-terminal-comment-in-a-quote-leaves-no-paragraph-open",
     "a-terminal-comment-line-still-leaves-an-empty-verse-line",
     "an-empty-brace-pair-is-not-a-construct",
+    "adjacent-strong-spans-use-html-only-where-their-delimiters-merge",
+    "empty-containers-share-one-html-body-shape",
     "an-unclosed-inline-literal-reaches-the-end-of-its-block",
     "pipe-tables-can-state-head-and-foot-row-counts",
     "the-doubled-run-is-the-canonical-arrow-in-both-families",

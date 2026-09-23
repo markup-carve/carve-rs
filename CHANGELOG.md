@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Empty divs, line blocks, local hard-break blocks and figure groups use the
+  same blank HTML body line as admonitions and block quotes (CARVE-P10-001).
+
+### Fixed
+
+- The plain-text escaper freezes a hash after an ampersand, so
+  numeric-reference text cannot become a Carve tag.
+
 ## [0.1.7] - 2026-09-25
 
 ### Changed

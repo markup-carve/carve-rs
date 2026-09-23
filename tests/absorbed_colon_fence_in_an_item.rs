@@ -101,7 +101,7 @@ fn a_heading_between_them_ends_the_absorbing_paragraph() {
     // three lines get at the top level.
     assert_eq!(
         html("- item\n  :::note\n  # h\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\n    <h1 id=\"h\">h</h1>\n    <div>\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>item\n:::note\n    <h1 id=\"h\">h</h1>\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -111,6 +111,6 @@ fn a_blank_line_ends_the_absorption() {
     // so the `:::` below it IS an opener.
     assert_eq!(
         html("- item\n  :::note\n\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\n    <div>\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>item\n:::note\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }

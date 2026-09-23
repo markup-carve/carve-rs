@@ -1342,8 +1342,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // a cause fourteen documents already carry, so no new kind appeared.
     // The pin at 1cbd2c3f adds 115 documents. Fifty-nine are strict and 56
     // report an existing loss kind, mostly soft breaks and delimiter reflow.
-    const STRICT: usize = 1444;
-    const LOSSY: usize = 411;
+    // Spec 493 adds one ordinary strict document and one document whose
+    // comment-only containers report existing bridge losses.
+    const STRICT: usize = 1445;
+    const LOSSY: usize = 413;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

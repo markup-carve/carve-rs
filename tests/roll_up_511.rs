@@ -12,7 +12,7 @@ fn a_bare_colon_fence_on_a_marker_line_opens_a_div() {
     // text unless item-owned content followed it.
     assert_eq!(
         to_html("- :::"),
-        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <div>\n\n    </div>\n  </li>\n</ul>"
     );
 }
 
@@ -20,7 +20,7 @@ fn a_bare_colon_fence_on_a_marker_line_opens_a_div() {
 fn a_sibling_marker_after_it_does_not_close_the_item_first() {
     assert_eq!(
         to_html("- :::\n- b"),
-        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n  <li>b</li>\n</ul>"
+        "<ul>\n  <li>\n    <div>\n\n    </div>\n  </li>\n  <li>b</li>\n</ul>"
     );
 }
 
@@ -28,11 +28,11 @@ fn a_sibling_marker_after_it_does_not_close_the_item_first() {
 fn a_blank_or_a_flush_left_opener_leaves_the_fence_standing() {
     assert_eq!(
         to_html("- :::\n\nx"),
-        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>\n<p>x</p>"
+        "<ul>\n  <li>\n    <div>\n\n    </div>\n  </li>\n</ul>\n<p>x</p>"
     );
     assert_eq!(
         to_html("- :::\n# H"),
-        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
+        "<ul>\n  <li>\n    <div>\n\n    </div>\n  </li>\n</ul>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 

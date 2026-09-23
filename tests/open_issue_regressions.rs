@@ -150,6 +150,6 @@ fn a_nested_items_bare_colon_run_stays_in_that_item() {
     let html = to_html(source);
     assert_eq!(
         html,
-        "<ul>\n  <li>x\n    <ul>\n      <li>::: d\ny\n        <div>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>::: d\ny\n        <div>\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }

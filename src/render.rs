@@ -2561,21 +2561,17 @@ fn render_admonition(
         out.push_str(&escape_text(label));
         out.push_str("</p>");
     }
-    // carve-js renders the body as `>\n${title}${label}${body}\n${pad}</tag>`,
-    // so an admonition with NO title, label, or children still emits one blank
-    // line between the open and close tags (corpus 114-7). Mirror that: when the
-    // body is otherwise empty, the missing content is a single empty line.
     let children = rendered_children(&a.children, level + 1, options, state);
-    if a.title.is_none() && a.label.is_none() && children.is_empty() {
-        out.push('\n');
-    }
     for child in &children {
         out.push('\n');
         out.push_str(child);
     }
-    out.push('\n');
-    indent(out, level);
-    out.push_str(if canonical { "</aside>" } else { "</div>" });
+    close_block_container(
+        out,
+        level,
+        tag,
+        a.title.is_some() || a.label.is_some() || !children.is_empty(),
+    );
 }
 
 /// A line block renders as a div carrying the `line-block` class. The class is
@@ -2600,13 +2596,21 @@ fn render_line_block(
 
     indent(out, level);
     out.push_str(&format!("<div{}>", render_attrs_for(&Some(attrs), "div")));
-    for child in rendered_children(&lb.children, level + 1, options, state) {
+    let children = rendered_children(&lb.children, level + 1, options, state);
+    for child in &children {
         out.push('\n');
-        out.push_str(&child);
+        out.push_str(child);
     }
+    close_block_container(out, level, "div", !children.is_empty());
+}
+
+fn close_block_container(out: &mut String, level: usize, tag: &str, has_visible_body: bool) {
     out.push('\n');
+    if !has_visible_body {
+        out.push('\n');
+    }
     indent(out, level);
-    out.push_str("</div>");
+    write!(out, "</{tag}>").unwrap();
 }
 
 fn render_div(
@@ -2627,13 +2631,12 @@ fn render_div(
         out.push_str(&escape_text(label));
         out.push_str("</p>");
     }
-    for child in rendered_children(&d.children, level + 1, options, state) {
+    let children = rendered_children(&d.children, level + 1, options, state);
+    for child in &children {
         out.push('\n');
-        out.push_str(&child);
+        out.push_str(child);
     }
-    out.push('\n');
-    indent(out, level);
-    out.push_str("</div>");
+    close_block_container(out, level, "div", d.label.is_some() || !children.is_empty());
 }
 
 fn render_definition_list(
@@ -2820,6 +2823,7 @@ fn render_figure_group(
         "<figure{}>",
         class_first_attrs("carve-figure-group", &g.attrs)
     ));
+    let mut visible_children = 0;
     for child in &g.children {
         let mut piece = String::new();
         match child {
@@ -2845,6 +2849,7 @@ fn render_figure_group(
             other => render_block(&mut piece, other, level + 1, options, state),
         }
         if !piece.is_empty() {
+            visible_children += 1;
             out.push('\n');
             out.push_str(&piece);
         }
@@ -2856,9 +2861,12 @@ fn render_figure_group(
         render_inlines(out, caption, options, state);
         out.push_str("</figcaption>");
     }
-    out.push('\n');
-    indent(out, level);
-    out.push_str("</figure>");
+    close_block_container(
+        out,
+        level,
+        "figure",
+        visible_children > 0 || g.caption.is_some(),
+    );
 }
 
 fn render_block_extension(
