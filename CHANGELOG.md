@@ -91,6 +91,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The BBCode importer escapes the inline constructs a post's own text forms
   beside the tags it converted, so `q =x== q` and `q [x[b](y) q` stay text
   (markup-carve/carve-rs#1825).
+- The Markdown writer keeps the `**`/`*` spelling of an emphasis that follows an
+  escaped marker, rather than re-spelling it as inline HTML. The escaped marker
+  is text, so the live delimiter run in front of the seam is empty and there is
+  no merged run to unmerge (markup-carve/carve-rs#1831).
 
 ## [0.1.6] - 2026-09-18
 

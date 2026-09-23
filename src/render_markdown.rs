@@ -1133,6 +1133,13 @@ fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String]) {
             continue;
         }
         let (m, before) = trailing_run(&parts[left], ch);
+        // The marker that ends the left part is ESCAPED, so it is text and the
+        // live run is empty (markup-carve/carve-rs#1654). Nothing merges across
+        // the seam, so there is no summed run to ask about and nothing to
+        // unmerge (markup-carve/carve-rs#1831).
+        if m == 0 {
+            continue;
+        }
         let (n, after) = leading_run(&parts[right], ch);
         let inner_left = before.or_else(|| neighbour_before(parts, left));
         let inner_right = after.or_else(|| neighbour_after(parts, right));
