@@ -74,6 +74,61 @@ fn autolink_http_only_disables_mailto() {
     );
 }
 
+// A backslash escape in a bare URL is decoded the way text is, so the link
+// shows and points at what core renders the same source as.
+fn autolink_html(source: &str) -> String {
+    let ext = Autolink::new();
+    carve::to_html_with_options(source, &Options::new().with_extension(&ext))
+}
+
+#[test]
+fn autolink_decodes_escapes() {
+    // carveToHtml(source, {extensions:[autolink()]})
+    for (source, url) in [
+        (r"See http://e.com/a\-\-b now.", "http://e.com/a--b"),
+        (r"See http://e.com/a\_b\_c now.", "http://e.com/a_b_c"),
+        (r"See http://e.com/a\*b\* now.", "http://e.com/a*b*"),
+    ] {
+        assert_eq!(
+            autolink_html(source),
+            format!("<p>See <a href=\"{url}\">{url}</a> now.</p>"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn autolink_escaped_trailing_period_stays_outside() {
+    assert_eq!(
+        autolink_html(r"See http://e.com/a\."),
+        "<p>See <a href=\"http://e.com/a\">http://e.com/a</a>.</p>"
+    );
+}
+
+#[test]
+fn autolink_text_equals_core_rendering() {
+    let source = r"See http://e.com/a\-\-b\_c now.";
+    let html = autolink_html(source);
+    let open = html.find("<a href=").expect("linked");
+    let text_start = open + html[open..].find('>').unwrap() + 1;
+    let close = html.find("</a>").unwrap();
+    let unlinked = format!(
+        "{}{}{}",
+        &html[..open],
+        &html[text_start..close],
+        &html[close + "</a>".len()..]
+    );
+    assert_eq!(unlinked, carve::to_html(source));
+}
+
+#[test]
+fn autolink_links_a_markdown_bare_url_the_importer_escaped() {
+    assert_eq!(
+        autolink_html(&carve::markdown_to_carve("See http://e.com/a--b now.\n")),
+        "<p>See <a href=\"http://e.com/a--b\">http://e.com/a--b</a> now.</p>"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // wikilinks
 // ---------------------------------------------------------------------------
