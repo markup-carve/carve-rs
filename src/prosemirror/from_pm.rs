@@ -750,16 +750,23 @@ impl Reader {
                     &attr_run(a, authored),
                 )
             }
-            "math" => with_attrs(
-                node(
-                    ty,
-                    [
-                        ("display", bool_json(a, "display", false)),
-                        ("content", string_json(a, "src", "")),
-                    ],
-                ),
-                a,
-            ),
+            "math" => {
+                let mut math = with_attrs(
+                    node(
+                        ty,
+                        [
+                            ("display", bool_json(a, "display", false)),
+                            ("content", string_json(a, "src", "")),
+                        ],
+                    ),
+                    a,
+                );
+                // Absent stays absent: `insert` drops a null, and an empty label
+                // or a zero number is refused at decode rather than smoothed over.
+                insert(&mut math, "label", optional_string(a, "label"));
+                insert(&mut math, "number", optional_number(a, "number"));
+                math
+            }
             "mention" => {
                 let (carve_type, field, sigil) = if flavor == 1 {
                     ("tag", "name", '#')
@@ -1078,6 +1085,12 @@ fn optional_string(o: &Object, k: &str) -> Json {
     string_opt(o, k)
         .map(|s| Json::String(s.into()))
         .unwrap_or(Json::Null)
+}
+fn optional_number(o: &Object, k: &str) -> Json {
+    match o.get(k) {
+        Some(value @ Json::Number(_)) => value.clone(),
+        _ => Json::Null,
+    }
 }
 fn number_json(o: &Object, k: &str, d: i64) -> Json {
     match o.get(k) {

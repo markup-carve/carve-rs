@@ -3052,6 +3052,12 @@ fn render_inline_body(
                 if attrs.is_empty() { "{}" } else { &attrs }
             )
         }
+        // CARVE-P12-051: the writer preserves the formula and loses `label` and
+        // `number`, which Carve source cannot spell. It does not refuse the tree.
+        // The loss goes unreported here because the published render-loss
+        // vocabulary admits only `raw-format-dropped` and `ruby-flattened`
+        // (docs/public/render-loss-report.schema.json); markup-carve/carve#2245
+        // asks for the code.
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },

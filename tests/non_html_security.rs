@@ -273,6 +273,8 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                         attrs: None,
                         display: false,
                         content: format!("math{c}"),
+                        label: None,
+                        number: None,
                         pos: None,
                     }),
                     carve::InlineNode::Link(carve::Link {

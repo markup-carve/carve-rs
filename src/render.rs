@@ -3192,6 +3192,17 @@ fn render_inline_after(
                 _ => format!("{}{}{}", open, escape_text(&m.content), close),
             };
             out.push_str(&format!("<span{}{}>{}</span>", attrs, role, body,));
+            // PART 9 §19: a directly numbered display equation renders its label
+            // and number after the math span, one U+0020 apart and unbracketed.
+            // `attrs.id` stays on the formula, so a resolved cross-reference
+            // lands there rather than on the number.
+            if let (Some(label), Some(number)) = (&m.label, m.number) {
+                out.push_str(" <span class=\"equation-number\">");
+                out.push_str(&escape_text(label));
+                out.push(' ');
+                out.push_str(&number.to_string());
+                out.push_str("</span>");
+            }
         }
         InlineNode::RawInline(r) => {
             if r.format.trim() == "html" {

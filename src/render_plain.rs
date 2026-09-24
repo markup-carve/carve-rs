@@ -539,7 +539,15 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             }
             format!("{inner} ({})", strip_controls(&authored))
         }
-        InlineNode::Math(math) => strip_controls(&math.content),
+        InlineNode::Math(math) => match (&math.label, math.number) {
+            // PART 9 §19: plain text appends the same unbracketed ` LABEL NUMBER`.
+            (Some(label), Some(number)) => format!(
+                "{} {} {number}",
+                strip_controls(&math.content),
+                strip_controls(label)
+            ),
+            _ => strip_controls(&math.content),
+        },
         InlineNode::RawInline(raw) => {
             crate::render_loss::record_raw_drop(
                 &raw.format,

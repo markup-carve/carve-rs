@@ -1280,10 +1280,19 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // renderer sees it, so `a < b` still reaches KaTeX as `a < b` while
             // `<script>` cannot become a tag (carve-rs#807).
             let content = escape_md_html(&strip_controls(&math.content));
-            if math.display {
+            let spelled = if math.display {
                 format!("$${content}$$")
             } else {
                 format!("${content}$")
+            };
+            // PART 9 §19: the same ` LABEL NUMBER` the HTML target appends,
+            // without the wrapping span and under this target's escaping.
+            match (&math.label, math.number) {
+                (Some(label), Some(number)) => format!(
+                    "{spelled} {} {number}",
+                    escape_md_html(&strip_controls(label))
+                ),
+                _ => spelled,
             }
         }
         InlineNode::RawInline(raw) => {

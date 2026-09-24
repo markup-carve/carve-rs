@@ -744,7 +744,17 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 style(&format!(" ({})", strip_terminal_controls(&authored)), DIM)
             )
         }
-        InlineNode::Math(math) => style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA),
+        InlineNode::Math(math) => {
+            let formula = style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA);
+            // PART 9 §19: the number rides outside the formula's color, the way
+            // every other appended marker here does.
+            match (&math.label, math.number) {
+                (Some(label), Some(number)) => {
+                    format!("{formula} {} {number}", strip_terminal_controls(label))
+                }
+                _ => formula,
+            }
+        }
         InlineNode::RawInline(raw) => {
             crate::render_loss::record_raw_drop(
                 &raw.format,

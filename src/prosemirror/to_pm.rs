@@ -711,6 +711,15 @@ impl Renderer {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("src".into(), Json::String(n.content.clone()));
                 a.insert("display".into(), Json::Bool(n.display));
+                // An equation's label and number ride as attributes, the way
+                // a footnote reference's target label does: the schema map is
+                // type-level, so a field needs no entry of its own there.
+                if let Some(label) = &n.label {
+                    a.insert("label".into(), Json::String(label.clone()));
+                }
+                if let Some(number) = n.number {
+                    a.insert("number".into(), Json::from(number));
+                }
                 let Some(name) = self.name("math") else {
                     return;
                 };
