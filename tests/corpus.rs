@@ -638,6 +638,15 @@ const IMPLEMENTED: &[&str] = &[
     "a-run-of-asterisks-inside-a-combined-token-is-content",
     "glued-attribute-blocks-on-an-inline-element-merge",
     "footnote-references-take-an-attribute-run-editorial-substitution-and-comment-take-none",
+    // The two pairs markup-carve/carve#2224 added, arriving with the pin bump to
+    // carve d85b13ae. Listed because the render was COMPARED, not because the
+    // gate was in the way: carve-rs#1854 implemented that rule ahead of the pin,
+    // and its `explicit_head_rowspan_keeps_one_group` and
+    // `footer_rowspan_keeps_one_group` assert the same source and the same HTML
+    // as these two documents, byte for byte. Those tests are green on main, so
+    // this engine already produces what the corpus expects.
+    "an-explicit-table-head-span-keeps-one-row-group",
+    "a-table-foot-span-keeps-one-row-group",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
