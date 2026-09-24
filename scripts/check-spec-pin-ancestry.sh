@@ -14,6 +14,14 @@
 #
 # This is the check that asks the question no other gate asks.
 #
+# WHAT IT DOES NOT ASK. Reachability is not currency. Every commit ever merged
+# is reachable from `main`, including one five hundred behind, so a green run
+# here says the pin is not dangling and says nothing about which spec the pin
+# describes. carve-php shipped an AST ingest divergence under a green copy of
+# this job while pinned seven behind the schema carve-js and carve-rs had. The
+# fleet half - do the three engines pin the SAME commit - lives in the spec
+# repository, in scripts/fleet-spec-pin-check.mjs, and runs at tag time.
+#
 # Usage: check-spec-pin-ancestry.sh [submodule-path]
 # Env:   SPEC_DEFAULT_BRANCH (default: main)
 #
@@ -79,6 +87,9 @@ fi
 
 if git -C "$submodule_path" merge-base --is-ancestor "$pinned" "$tip"; then
   echo "ok: pinned spec $pinned is an ancestor of $default_branch ($tip)"
+  echo "    ancestry only - this does NOT say the pin is current. Whether the"
+  echo "    engines pin the SAME spec commit is markup-carve/carve's"
+  echo "    scripts/fleet-spec-pin-check.mjs, run from pre-tag-check.sh."
   exit 0
 fi
 
