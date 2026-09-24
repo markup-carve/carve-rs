@@ -193,7 +193,8 @@ fn shared_contract_fixtures_match() {
                 }
             }
         }
-        if ahead.is_none_or(|entry| entry.carve.is_none()) && result.value != expected {
+        // `matches!` rather than `is_none_or`, which is newer than this crate's MSRV.
+        if !matches!(ahead, Some(entry) if entry.carve.is_some()) && result.value != expected {
             mismatches.push(format!(
                 "{name}\n  expected: {expected:?}\n  actual:  {:?}",
                 result.value
