@@ -116,6 +116,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the argument, exit 2, instead of panicking with exit 101. A non-UTF-8 path is
   refused rather than opened, since paths are `String` throughout the CLI
   (markup-carve/carve-rs#1834).
+- Every empty block container renders one blank HTML body line: empty divs,
+  line blocks, local hard-break blocks and figure groups, matching the spec
+  ruling in markup-carve/carve#2184. Container closing is centralized and
+  visible-child counting is explicit, and Djot character-reference text is
+  frozen before Carve reads it (markup-carve/carve-rs#1841).
+- The autolink extension decodes backslash escapes in a bare URL, so a URL
+  written with escapes links to the same text core renders, and an escape at
+  the end no longer closes the link inside itself
+  (markup-carve/carve-rs#1842).
 
 ## [0.1.6] - 2026-09-18
 
