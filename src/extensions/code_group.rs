@@ -5,8 +5,8 @@
 //! carve-js keys a block renderer on the `admonition` and `div` node types;
 //! carve-rs has no per-node render hook for an existing node, so this follows
 //! the same shape [`crate::Details`] uses: a `before_render` pass rewrites
-//! every code group into a [`BlockNode::Extension`] carrier, and
-//! [`CarveExtension::render_block_extension`] renders it.
+//! every code group into a [`BlockNode::ExtensionCarrier`] carrier, and
+//! [`CarveExtension::render_extension_carrier`] renders it.
 //!
 //! ```
 //! use carve::{CodeGroup, Options};
@@ -20,7 +20,7 @@
 
 use std::cell::Cell;
 
-use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, CodeBlock, Document};
+use crate::ast::{AttrSlot, Attrs, BlockNode, CodeBlock, Document, ExtensionCarrier};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::extensions::tabs::{apply_single_selection, SingleSelect, TabsMode};
 use crate::render::{render_attrs, render_attrs_for};
@@ -136,9 +136,9 @@ impl CarveExtension for CodeGroup {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -477,7 +477,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             *block = match block {
                 BlockNode::Admonition(admonition) => {
                     rewrite_blocks(&mut admonition.children);
-                    BlockNode::Extension(BlockExtension {
+                    BlockNode::ExtensionCarrier(ExtensionCarrier {
                         attrs: admonition.attrs.take(),
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut admonition.children),
@@ -488,7 +488,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                 }
                 BlockNode::Div(div) => {
                     rewrite_blocks(&mut div.children);
-                    BlockNode::Extension(BlockExtension {
+                    BlockNode::ExtensionCarrier(ExtensionCarrier {
                         attrs: div.attrs.take(),
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut div.children),
@@ -512,7 +512,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(quote) => rewrite_blocks(&mut quote.children),
             BlockNode::Admonition(admonition) => rewrite_blocks(&mut admonition.children),
             BlockNode::Div(div) => rewrite_blocks(&mut div.children),
-            BlockNode::Extension(extension) => rewrite_blocks(&mut extension.children),
+            BlockNode::ExtensionCarrier(extension) => rewrite_blocks(&mut extension.children),
             BlockNode::DefinitionList(definition_list) => {
                 for item in &mut definition_list.items {
                     for definition in &mut item.definitions {

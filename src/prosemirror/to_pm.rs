@@ -388,9 +388,20 @@ impl Renderer {
                 ]),
                 self.text_content(&n.content, &[]),
             ),
-            BlockNode::Extension(_) => {
+            // CARVE-P12-055: the bridge registers no node for this, and §33
+            // already answers what a reader without the extension does - the
+            // fallback takes the node's place. What is lost is the extension's
+            // identity, version and payload, which is what gets reported.
+            BlockNode::BlockExtension(n) => {
+                self.degraded.insert(
+                    "block_extension".into(),
+                    "no mapped node: the declared fallback takes its place, and the extension's name, version and payload are lost".into(),
+                );
+                return self.block(&n.fallback);
+            }
+            BlockNode::ExtensionCarrier(_) => {
                 self.drop_type(
-                    "block_extension",
+                    "inline_extension",
                     Some("mapped bridge support is unimplemented"),
                 );
                 return None;

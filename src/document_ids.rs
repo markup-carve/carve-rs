@@ -378,7 +378,11 @@ impl Seeder {
                     self.walk_inlines(caption);
                 }
             }
-            BlockNode::Extension(e) => {
+            BlockNode::BlockExtension(e) => {
+                self.reserve_attrs(&e.attrs);
+                self.walk_blocks(e.fallback_slice());
+            }
+            BlockNode::ExtensionCarrier(e) => {
                 self.reserve_attrs(&e.attrs);
                 self.walk_blocks(&e.children);
             }

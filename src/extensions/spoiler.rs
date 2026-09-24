@@ -10,8 +10,8 @@
 //!   disclosure (native, keyboard- and screen-reader-accessible). Like the
 //!   `details` extension, carve-rs has no per-node block hook, so this runs as
 //!   a `before_render` transform that rewrites a `spoiler` admonition into a
-//!   [`BlockNode::Extension`] carrier rendered via
-//!   [`CarveExtension::render_block_extension`]. A title-less block falls back
+//!   [`BlockNode::ExtensionCarrier`] carrier rendered via
+//!   [`CarveExtension::render_extension_carrier`]. A title-less block falls back
 //!   to `<summary>Spoiler</summary>`. Without the extension it stays a plain
 //!   `<div class="spoiler">`.
 //!
@@ -22,7 +22,7 @@
 //! `on*` / `srcdoc` / `formaction` and neutralizes dangerous values), so a
 //! `{onclick=...}` can never reach the output.
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension};
+use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension};
 use crate::escape::escape_attr;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs_after_class;
@@ -93,9 +93,9 @@ impl CarveExtension for Spoiler {
         ))
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -180,7 +180,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
         match block {
             BlockNode::Admonition(a) if a.kind == ROLE => {
                 rewrite_blocks(&mut a.children);
-                *block = BlockNode::Extension(BlockExtension {
+                *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
@@ -197,7 +197,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(b) => rewrite_blocks(&mut b.children),
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children),
-            BlockNode::Extension(e) => rewrite_blocks(&mut e.children),
+            BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {

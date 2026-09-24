@@ -363,7 +363,7 @@ fn walk_block<'a>(
             }
             child_blocks.extend(n.children.iter());
         }
-        BlockNode::Extension(n) => {
+        BlockNode::ExtensionCarrier(n) => {
             if let Some(summary) = &n.summary {
                 inline_lists.push(summary);
             }
@@ -437,10 +437,13 @@ fn a_citation_prefix_is_coalesced() {
 }
 
 #[test]
-fn a_block_extension_body_and_summary_are_coalesced() {
-    // An extension that wraps parsed blocks in `BlockNode::Extension` puts them
-    // behind a node the walk has to descend through; its `summary` is a second
-    // inline field beside `children`.
+fn an_admonition_body_and_title_are_coalesced() {
+    // The `details` extension builds its carrier in `before_render`, which
+    // `parse_with_options` does not run - so what this walks is the ADMONITION,
+    // whose `title` is a second inline field beside `children`. It was named
+    // after the carrier and claimed to descend through one (carve-rs#1865); the
+    // carrier path is covered in
+    // `tests/a_block_extension_declares_its_fallback.rs`, which builds one.
     let details = carve::Details::new();
     let options = carve::Options::new()
         .with_extension(&details)
@@ -460,7 +463,7 @@ fn a_block_extension_body_and_summary_are_coalesced() {
     });
     assert_eq!(
         runs, 0,
-        "an extension's wrapped blocks and summary must be coalesced too"
+        "an admonition's blocks and title must be coalesced too"
     );
 }
 

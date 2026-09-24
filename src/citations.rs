@@ -160,9 +160,9 @@ impl CarveExtension for Citations {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name == REFS_BLOCK {
@@ -1018,7 +1018,7 @@ fn annotate_citations_inline(
 }
 
 fn inject_references_block(blocks: &mut Vec<BlockNode>) {
-    let carrier = BlockNode::Extension(BlockExtension {
+    let carrier = BlockNode::ExtensionCarrier(ExtensionCarrier {
         attrs: None,
         name: REFS_BLOCK.to_string(),
         children: Vec::new(),

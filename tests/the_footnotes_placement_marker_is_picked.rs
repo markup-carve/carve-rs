@@ -19,7 +19,7 @@
 //! else moves: the section still renders after the whole body and is spliced
 //! in, it still places at ANY depth, and no id moves.
 
-use carve::ast::{BlockExtension, BlockNode, Document, InlineNode};
+use carve::ast::{BlockNode, Document, ExtensionCarrier, InlineNode};
 use carve::{
     parse, render_html, to_html, to_html_with_options, BeforeRenderContext, CarveExtension,
     Details, Options, RenderContext,
@@ -179,7 +179,7 @@ impl CarveExtension for DiscardsWhatItRenders {
             if admonition.kind != "discards" {
                 continue;
             }
-            *block = BlockNode::Extension(BlockExtension {
+            *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                 attrs: None,
                 name: "discards".to_string(),
                 children: std::mem::take(&mut admonition.children),
@@ -191,9 +191,9 @@ impl CarveExtension for DiscardsWhatItRenders {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != "discards" {

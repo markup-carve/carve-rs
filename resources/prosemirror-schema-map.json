@@ -280,7 +280,7 @@
     "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not",
     "small_caps": "an interchange-only wrapper this engine never produces; carve-grammars names no ProseMirror node or mark for it, and inventing one here would emit a name no downstream editor knows",
     "ruby": "an interchange-only annotation this engine never produces; its paired base and annotation have no Carve 0.1 spelling, and carve-grammars names no ProseMirror node for it",
-    "block_extension": "the block twin of inline_extension, which Carve 0.1 source does not spell, so this engine produces none; carve-grammars names no ProseMirror node for it, and its required core fallback is what an editor would hold anyway",
+    "block_extension": "the block twin of inline_extension, which Carve 0.1 source does not spell, so a parse produces none; carve-grammars names no ProseMirror node for it, so the bridge keeps the required core fallback in its place and reports the lost name, version and payload as a degradation",
     "directive": "this engine publishes no directive node yet - a generated-content ::: kind still classifies as a container here - and carve-grammars names no ProseMirror node for it"
   },
   "preservationNodes": {

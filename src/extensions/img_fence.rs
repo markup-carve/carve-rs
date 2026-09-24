@@ -177,7 +177,7 @@ fn transform_blocks(blocks: &mut [BlockNode], ext: &ImgFence) {
             BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, ext),
             BlockNode::Admonition(a) => transform_blocks(&mut a.children, ext),
             BlockNode::Div(d) => transform_blocks(&mut d.children, ext),
-            BlockNode::Extension(e) => transform_blocks(&mut e.children, ext),
+            BlockNode::ExtensionCarrier(e) => transform_blocks(&mut e.children, ext),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {

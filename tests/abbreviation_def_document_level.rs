@@ -26,7 +26,7 @@ fn contains_abbreviation_def(block: &BlockNode) -> bool {
         BlockNode::BlockQuote(b) => b.children.iter().any(contains_abbreviation_def),
         BlockNode::Div(d) => d.children.iter().any(contains_abbreviation_def),
         BlockNode::Admonition(a) => a.children.iter().any(contains_abbreviation_def),
-        BlockNode::Extension(e) => e.children.iter().any(contains_abbreviation_def),
+        BlockNode::ExtensionCarrier(e) => e.children.iter().any(contains_abbreviation_def),
         BlockNode::List(l) => l
             .items
             .iter()

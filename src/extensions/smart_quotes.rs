@@ -148,7 +148,8 @@ impl SmartQuotes {
                     }
                     self.visit_blocks(&mut g.children);
                 }
-                BlockNode::Extension(e) => self.visit_blocks(&mut e.children),
+                BlockNode::BlockExtension(e) => self.visit_blocks(e.fallback_slice_mut()),
+                BlockNode::ExtensionCarrier(e) => self.visit_blocks(&mut e.children),
                 BlockNode::CodeBlock(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)

@@ -183,7 +183,8 @@ impl ExternalLinks {
                     self.visit_block(child);
                 }
             }
-            BlockNode::Extension(e) => {
+            BlockNode::BlockExtension(e) => self.visit_block(&mut e.fallback),
+            BlockNode::ExtensionCarrier(e) => {
                 for child in &mut e.children {
                     self.visit_block(child);
                 }

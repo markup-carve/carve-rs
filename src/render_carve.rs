@@ -629,7 +629,7 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
                     emptied_marker_lines_at(&item.children, list_depth + 1, into);
                 }
             }
-            BlockNode::Extension(extension) => {
+            BlockNode::ExtensionCarrier(extension) => {
                 emptied_marker_lines_at(&extension.children, list_depth, into);
             }
             _ => {}
@@ -1023,7 +1023,8 @@ fn normalize_escapes_block(block: &mut BlockNode) {
                 normalize_escapes_block(child);
             }
         }
-        BlockNode::Extension(e) => {
+        BlockNode::BlockExtension(e) => normalize_escapes_block(&mut e.fallback),
+        BlockNode::ExtensionCarrier(e) => {
             for child in &mut e.children {
                 normalize_escapes_block(child);
             }
@@ -1909,7 +1910,12 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 format!("%% {}", comment.content)
             }
         }
-        BlockNode::Extension(extension) => {
+        // The canonical writer has no spelling for a block extension - Carve
+        // 0.1 source spells none - so it writes the fallback, which is what the
+        // node MEANS to a reader without the extension. The name, version and
+        // payload are lost, which is the loss PART 12 §33 defines.
+        BlockNode::BlockExtension(n) => with_block_attrs(&n.attrs, &render_block(&n.fallback, ctx)),
+        BlockNode::ExtensionCarrier(extension) => {
             with_block_attrs(&extension.attrs, &render_blocks(&extension.children, ctx))
         }
     }

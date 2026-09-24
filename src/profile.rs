@@ -185,23 +185,35 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         // div) into an extension carrier before profile filtering; gate it as
         // a `div` so a restrictive profile denies it exactly as the original
         // admonition (carve-js gates the un-rewritten admonition as a div).
-        BlockNode::Extension(e) if e.name == crate::extensions::details::CARRIER => Some("div"),
+        BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::details::CARRIER => {
+            Some("div")
+        }
         // The `list-table` extension likewise rewrites a `list-table`
         // admonition (a typed div) into an extension carrier before profile
         // filtering; gate it as a `div` so a restrictive profile denies it
         // exactly as the original admonition.
-        BlockNode::Extension(e) if e.name == crate::extensions::list_table::CARRIER => Some("div"),
+        BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::list_table::CARRIER => {
+            Some("div")
+        }
         // The `glossary` / `index` extensions likewise rewrite a `::: glossary`
         // / `::: index` admonition (a typed div) into a carrier before profile
         // filtering; gate them as `div` so a restrictive profile denies them
         // exactly as the original admonition.
-        BlockNode::Extension(e) if e.name == crate::extensions::glossary::CARRIER => Some("div"),
-        BlockNode::Extension(e) if e.name == crate::extensions::index_terms::LIST_CARRIER => {
+        BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::glossary::CARRIER => {
+            Some("div")
+        }
+        BlockNode::ExtensionCarrier(e)
+            if e.name == crate::extensions::index_terms::LIST_CARRIER =>
+        {
             Some("div")
         }
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.
-        BlockNode::Extension(_) => Some("inline_extension"),
+        BlockNode::BlockExtension(_) => Some("block_extension"),
+        // The render-stage CARRIER, not the schema's `block_extension`: it is
+        // gated under the inline-extension feature, the same name carve-js /
+        // carve-php use for both extension axes.
+        BlockNode::ExtensionCarrier(_) => Some("inline_extension"),
         // Not in profiles.md's vocabulary (a definition renders nothing, so
         // denying it would express nothing), but naming it truthfully beats
         // reporting "unknown": it resolves on its axis like any unmapped type.

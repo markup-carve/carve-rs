@@ -133,7 +133,7 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                 carve::BlockNode::Div(d) => blocks(&mut d.children),
                 carve::BlockNode::Admonition(a) => blocks(&mut a.children),
                 carve::BlockNode::LineBlock(l) => blocks(&mut l.children),
-                carve::BlockNode::Extension(e) => blocks(&mut e.children),
+                carve::BlockNode::ExtensionCarrier(e) => blocks(&mut e.children),
                 carve::BlockNode::List(l) => {
                     // `bare_marker` used to be erased here, on the grounds that
                     // the schema forbade it and no other engine published it.

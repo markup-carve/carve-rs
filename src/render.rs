@@ -796,7 +796,7 @@ fn collect_footnotes_block(
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
         }
-        BlockNode::Extension(e) => {
+        BlockNode::ExtensionCarrier(e) => {
             for child in &mut e.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -1055,7 +1055,8 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
         BlockNode::Figure(n) => n.attrs.as_ref(),
         BlockNode::FigureGroup(n) => n.attrs.as_ref(),
-        BlockNode::Extension(n) => n.attrs.as_ref(),
+        BlockNode::BlockExtension(n) => n.attrs.as_ref(),
+        BlockNode::ExtensionCarrier(n) => n.attrs.as_ref(),
         BlockNode::BlockImage(n) => n.attrs.as_ref(),
         BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
     }?;
@@ -1315,7 +1316,10 @@ fn render_block(
             }
         }
         BlockNode::Comment(_) => {}
-        BlockNode::Extension(e) => render_block_extension(out, e, level, options, state),
+        // CARVE-P12-055: a core target renders the FALLBACK. The payload is not
+        // Carve content and the extension's own renderer is not this engine's.
+        BlockNode::BlockExtension(n) => render_block(out, &n.fallback, level, options, state),
+        BlockNode::ExtensionCarrier(e) => render_extension_carrier(out, e, level, options, state),
         BlockNode::BlockImage(img) => {
             indent(out, level);
             render_image(out, img);
@@ -2823,9 +2827,9 @@ fn render_figure_group(
     );
 }
 
-fn render_block_extension(
+fn render_extension_carrier(
     out: &mut String,
-    node: &BlockExtension,
+    node: &ExtensionCarrier,
     level: usize,
     options: &Options<'_>,
     state: &mut RenderState,
@@ -2838,7 +2842,7 @@ fn render_block_extension(
     {
         let ctx = RenderContext::with_level_and_state(options, level, &shared);
         for ext in &options.extensions {
-            if let Some(html) = ext.render_block_extension(node, &ctx) {
+            if let Some(html) = ext.render_extension_carrier(node, &ctx) {
                 indent(out, level);
                 out.push_str(&html);
                 return;

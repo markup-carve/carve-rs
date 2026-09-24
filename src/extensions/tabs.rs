@@ -17,7 +17,7 @@
 
 use std::cell::Cell;
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineNode};
+use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineNode};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs_for;
 
@@ -170,9 +170,9 @@ impl CarveExtension for Tabs {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -232,7 +232,7 @@ impl CarveExtension for Tabs {
 impl Tabs {
     fn render_css(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         items: &[TabItem],
         set_id: &str,
         ctx: &RenderContext<'_>,
@@ -304,7 +304,7 @@ impl Tabs {
 
     fn render_aria(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         items: &[TabItem],
         set_id: &str,
         ctx: &RenderContext<'_>,
@@ -376,7 +376,7 @@ impl Tabs {
     /// classes, minus the structural `tabs` that selected this renderer.
     fn wrapper_attrs(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         role: Option<&str>,
         ctx: &RenderContext<'_>,
     ) -> Option<Attrs> {
@@ -557,15 +557,17 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         if is_tabs(block) {
             *block = match block {
-                BlockNode::Admonition(admonition) => BlockNode::Extension(BlockExtension {
-                    attrs: admonition.attrs.take(),
-                    name: CARRIER.to_string(),
-                    children: std::mem::take(&mut admonition.children),
-                    summary: None,
-                    label: admonition.label.take(),
-                    pos: None,
-                }),
-                BlockNode::Div(div) => BlockNode::Extension(BlockExtension {
+                BlockNode::Admonition(admonition) => {
+                    BlockNode::ExtensionCarrier(ExtensionCarrier {
+                        attrs: admonition.attrs.take(),
+                        name: CARRIER.to_string(),
+                        children: std::mem::take(&mut admonition.children),
+                        summary: None,
+                        label: admonition.label.take(),
+                        pos: None,
+                    })
+                }
+                BlockNode::Div(div) => BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: div.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut div.children),
@@ -588,7 +590,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(quote) => rewrite_blocks(&mut quote.children),
             BlockNode::Admonition(admonition) => rewrite_blocks(&mut admonition.children),
             BlockNode::Div(div) => rewrite_blocks(&mut div.children),
-            BlockNode::Extension(extension) => rewrite_blocks(&mut extension.children),
+            BlockNode::ExtensionCarrier(extension) => rewrite_blocks(&mut extension.children),
             BlockNode::DefinitionList(definition_list) => {
                 for item in &mut definition_list.items {
                     for definition in &mut item.definitions {

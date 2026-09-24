@@ -152,7 +152,9 @@ fn transform_blocks(
             BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, opts, math_renderer),
             BlockNode::Admonition(a) => transform_blocks(&mut a.children, opts, math_renderer),
             BlockNode::Div(d) => transform_blocks(&mut d.children, opts, math_renderer),
-            BlockNode::Extension(e) => transform_blocks(&mut e.children, opts, math_renderer),
+            BlockNode::ExtensionCarrier(e) => {
+                transform_blocks(&mut e.children, opts, math_renderer)
+            }
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {

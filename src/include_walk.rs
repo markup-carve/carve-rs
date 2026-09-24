@@ -10,7 +10,7 @@
 //! silently skip a container added later, and a directive inside it would stop
 //! expanding with nothing to say why.
 
-use crate::ast::{BlockNode, FigureTarget, InlineNode, Pos};
+use crate::ast::{BlockNode, Div, FigureTarget, InlineNode, Pos};
 
 /// What to do with each sequence the walk reaches.
 pub(crate) trait SubtreeVisitor {
@@ -98,7 +98,23 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
         }
-        BlockNode::Extension(e) => v.blocks(&mut e.children),
+        // The fallback is a single-node field, and the visitor takes a list it
+        // may grow (an include expands one node into several). Wrap it, walk it,
+        // and fold what comes back into the one node the schema requires.
+        BlockNode::BlockExtension(e) => {
+            let mut wrapper = vec![(*e.fallback).clone()];
+            v.blocks(&mut wrapper);
+            *e.fallback = match wrapper.len() {
+                1 => wrapper.pop().expect("length checked"),
+                _ => BlockNode::Div(Div {
+                    attrs: None,
+                    label: None,
+                    children: wrapper,
+                    pos: None,
+                }),
+            };
+        }
+        BlockNode::ExtensionCarrier(e) => v.blocks(&mut e.children),
         // A CODE BLOCK AND A RAW BLOCK HOLD NO NODES, which is also why a
         // directive inside one stays literal (I9): verbatim content is not
         // parsed, so there is nothing here to expand.
@@ -189,7 +205,8 @@ pub(crate) fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
         BlockNode::CitationDefinition(n) => n.pos.as_mut(),
         BlockNode::RawBlock(n) => n.pos.as_mut(),
         BlockNode::Comment(n) => n.pos.as_mut(),
-        BlockNode::Extension(n) => n.pos.as_mut(),
+        BlockNode::BlockExtension(n) => n.pos.as_mut(),
+        BlockNode::ExtensionCarrier(n) => n.pos.as_mut(),
         BlockNode::BlockImage(n) => n.pos.as_mut(),
         BlockNode::ThematicBreak(n) => n.pos.as_mut(),
     }

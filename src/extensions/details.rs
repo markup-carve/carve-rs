@@ -5,20 +5,20 @@
 //! renderer keyed on the `admonition` node type; carve-rs has no per-node
 //! render hook for an existing node, so this runs as a `before_render`
 //! transform that rewrites every `details` admonition into a
-//! [`BlockNode::Extension`] carrier (stashing the parsed title in its
+//! [`BlockNode::ExtensionCarrier`] carrier (stashing the parsed title in its
 //! `summary` field), then renders that carrier via
-//! [`CarveExtension::render_block_extension`]. The inner content is rendered
+//! [`CarveExtension::render_extension_carrier`]. The inner content is rendered
 //! by the core renderer at the correct nesting level
 //! ([`RenderContext::render_blocks_at`]), so a details block behaves
 //! identically wherever it sits - top level, inside a list item, inside a
 //! blockquote.
 
-use crate::ast::{BlockExtension, BlockNode, Document};
+use crate::ast::{BlockNode, Document, ExtensionCarrier};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::{render_attrs, render_attrs_without_keys};
 
 /// Sentinel extension name for the rewritten carrier node. A `details`
-/// admonition is rewritten to a `BlockNode::Extension` with this name; the
+/// admonition is rewritten to a `BlockNode::ExtensionCarrier` with this name; the
 /// profile filter still gates it as a `div` (its origin) via
 /// [`crate::profile::canonical_block_type`], so a restrictive profile that
 /// denies custom containers strips the disclosure exactly as it would the
@@ -75,9 +75,9 @@ impl CarveExtension for Details {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -128,7 +128,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
         match block {
             BlockNode::Admonition(a) if a.kind == "details" => {
                 rewrite_blocks(&mut a.children);
-                *block = BlockNode::Extension(BlockExtension {
+                *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
@@ -145,7 +145,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(b) => rewrite_blocks(&mut b.children),
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children),
-            BlockNode::Extension(e) => rewrite_blocks(&mut e.children),
+            BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
