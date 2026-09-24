@@ -728,13 +728,10 @@ fn expected_corpus_size() -> usize {
 /// regression is caught exactly as the corpus would have caught it, and it must
 /// still DIFFER from the pinned golden, so an entry that went stale when the
 /// submodule bumped fails and has to be deleted in the same commit.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "101-table-header-cell-rowspan",
-        "carve#2224 keeps a crossing rowspan in one tbody",
-        "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"3\">H</th><th scope=\"col\">G</th></tr>\n    <tr><td>b</td></tr>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>",
-    ),
-];
+/// Empty is the normal end state: the pin catching up is what retires an entry,
+/// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
+/// leaving a declaration that no longer declares anything.
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
