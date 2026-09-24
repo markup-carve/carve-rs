@@ -958,6 +958,12 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                             )
                         });
                     }
+                    if let Some(n2) = n.colspan {
+                        w.field("colspan", |out| write_usize(out, n2));
+                    }
+                    if let Some(n2) = n.rowspan {
+                        w.field("rowspan", |out| write_usize(out, n2));
+                    }
                     if let Some(align) = n.align {
                         w.field("align", |out| write_string(out, align_json(align)));
                     }
@@ -1953,6 +1959,12 @@ fn write_table_cell(out: &mut String, n: &TableCell) {
             )
         });
     }
+    if let Some(count) = n.colspan {
+        w.field("colspan", |out| write_usize(out, count));
+    }
+    if let Some(count) = n.rowspan {
+        w.field("rowspan", |out| write_usize(out, count));
+    }
     if let Some(align) = n.align {
         w.field("align", |out| write_string(out, align_json(align)));
     }
@@ -2850,6 +2862,11 @@ fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
     let obj = value.expect_object("table_cell")?;
     expect_type(obj, "table_cell")?;
     Ok(TableCell {
+        // PART 12 §26: an ingested count WINS and is not recomputed. An importer
+        // may have resolved it from markers this engine never saw, which is how
+        // §23 settles the same question for `blockImage`.
+        colspan: optional_usize(obj, "colspan")?,
+        rowspan: optional_usize(obj, "rowspan")?,
         header: required_bool(obj, "table_cell", "header")?,
         span: optional_string(obj, "span")?
             .map(decode_cell_span)

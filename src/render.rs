@@ -14,6 +14,9 @@ use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
 };
 use crate::parse::{label_key, unwrap_nested_anchors};
+use crate::table_spans::{
+    colspan_target, compute_colspans, compute_rowspans, consumed_rowspan_cols,
+};
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
@@ -2359,106 +2362,6 @@ fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
         _ => true,
     });
     render_attrs(&Some(filtered))
-}
-
-fn consumed_rowspan_cols(row_idx: usize, rowspan_cols: &RowspanCols) -> BTreeSet<usize> {
-    rowspan_cols
-        .iter()
-        .filter_map(|(&(origin_row, col), &span)| {
-            (row_idx > origin_row && row_idx < origin_row + span).then_some(col)
-        })
-        .collect()
-}
-
-/// Per-cell colspan counts for a row, keyed by the origin cell index. Computed in
-/// a single left-to-right pass (mirroring `compute_rowspans`) so a row is
-/// O(cells) rather than O(cells^2): each `<` extends the current chain origin
-/// instead of every cell re-scanning the rest of the row.
-type ColspanCounts = BTreeMap<usize, usize>;
-
-/// Resolve every colspan origin in `row` to its total colspan count in one pass.
-/// A real cell (`None` span, not consumed by a rowspan from above) starts a new
-/// chain; each following `<` (Colspan) extends it; a rowspan cell or an orphan
-/// `<` (no preceding real cell) breaks the chain so the next `<` resolves to
-/// nothing. Consumed columns are transparent, matching `colspan_target`.
-fn compute_colspans(row: &TableRow, consumed_cols: &BTreeSet<usize>) -> ColspanCounts {
-    let mut counts: ColspanCounts = BTreeMap::new();
-    let mut current_target: Option<usize> = None;
-    for (i, cell) in row.cells.iter().enumerate() {
-        if consumed_cols.contains(&i) {
-            continue;
-        }
-        match cell.span {
-            Some(TableCellSpan::Colspan) => {
-                if let Some(target) = current_target {
-                    *counts.entry(target).or_insert(1) += 1;
-                }
-            }
-            Some(TableCellSpan::Rowspan) => {
-                current_target = None;
-            }
-            None => {
-                current_target = Some(i);
-            }
-        }
-    }
-    counts
-}
-
-/// Maps the origin cell `(row, col)` of each rowspan to its span count. Resolved
-/// by carrying the current chain origin down per column, so an all-`^` table is
-/// O(cells) rather than O(rows^2) (each `^` previously walked up every prior row
-/// and the result list was scanned linearly per marker).
-/// Rowspan counts keyed by origin cell `(row, col)`.
-type RowspanCols = BTreeMap<(usize, usize), usize>;
-/// Positions `(row, cell-index)` of orphan `^` markers (nothing above to extend).
-type OrphanCarets = BTreeSet<(usize, usize)>;
-
-/// Returns (rowspan counts keyed by origin (row, col), positions of orphan `^`
-/// markers). An orphan `^` has no cell above it to extend, so it renders as an
-/// EMPTY cell rather than being dropped (spec PART 9 §5). Positions are keyed
-/// by (row, cell-index), matching the render loop's cell enumeration.
-fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
-    let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
-    let mut orphan_carets: BTreeSet<(usize, usize)> = BTreeSet::new();
-    // Per column: the origin row of the current rowspan chain (the most recent
-    // non-`^` cell above). A `^` extends that origin; a real cell starts a new
-    // chain.
-    let mut base_for_col: BTreeMap<usize, usize> = BTreeMap::new();
-    for (row_idx, row) in t.rows.iter().enumerate() {
-        for (col, cell) in row.cells.iter().enumerate() {
-            if cell.span == Some(TableCellSpan::Rowspan) {
-                if let Some(&base) = base_for_col.get(&col) {
-                    *spans.entry((base, col)).or_insert(1) += 1;
-                } else {
-                    orphan_carets.insert((row_idx, col));
-                }
-            } else {
-                base_for_col.insert(col, row_idx);
-            }
-        }
-    }
-    (spans, orphan_carets)
-}
-
-/// Resolve a `<` colspan marker by walking left to the nearest real cell that is
-/// not already occupied by a rowspan from above. Contiguous `<` markers are
-/// transparent, as are columns consumed by rowspans. If the scan reaches the
-/// table edge, the marker is orphaned and renders as an empty cell (spec §5).
-fn colspan_target(row: &TableRow, i: usize, consumed_cols: &BTreeSet<usize>) -> Option<usize> {
-    let mut j = i;
-    while j > 0 {
-        j -= 1;
-        if consumed_cols.contains(&j) {
-            continue;
-        }
-        match row.cells[j].span {
-            Some(TableCellSpan::Colspan) => continue,
-            Some(TableCellSpan::Rowspan) => return None,
-            None => return Some(j),
-        }
-    }
-    None
 }
 
 fn render_admonition(

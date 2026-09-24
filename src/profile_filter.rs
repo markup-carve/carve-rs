@@ -844,6 +844,8 @@ fn row_text(row: &TableRow, smart: SmartTypographyMode) -> String {
 /// A plain body table cell holding a single text node.
 fn text_cell(text: &str) -> TableCell {
     TableCell {
+        colspan: None,
+        rowspan: None,
         header: false,
         span: None,
         align: None,

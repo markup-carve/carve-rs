@@ -399,6 +399,12 @@ pub struct TableRow {
 pub struct TableCell {
     pub header: bool,
     pub span: Option<TableCellSpan>,
+    /// Resolved number of columns this cell occupies (spec PART 12 §26).
+    /// `None` means 1. Published beside `span`, never instead of it.
+    pub colspan: Option<usize>,
+    /// Resolved number of rows this cell occupies (spec PART 12 §26).
+    /// `None` means 1.
+    pub rowspan: Option<usize>,
     pub align: Option<TableAlign>,
     pub valign: Option<TableVerticalAlign>,
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
