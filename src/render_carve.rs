@@ -2971,7 +2971,7 @@ fn render_inline_body(
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
             // An empty brace pair is not a construct, and `{--}` is the braced
             // en dash (markup-carve/carve#1608), so an empty mark has no spelling.
-            if content.is_empty() {
+            if content.is_empty() && emphasis.kind != EmphasisKind::SmallCaps {
                 crate::render_carve_error::record_unspellable(
                     emphasis_node_type(emphasis.kind),
                     "an empty mark has no Carve source spelling",
@@ -3029,6 +3029,18 @@ fn render_inline_body(
                     ),
                 ),
                 EmphasisKind::BoldItalic => ("", format!("/*{content}*/")),
+                // CARVE-P12-050: there is no delimiter, because Carve source
+                // has no spelling for the wrapper. It comes off, and any
+                // attributes land on an ordinary attributed span instead - so
+                // this arm settles the whole node rather than a body to which
+                // the shared attribute suffix below would then be appended.
+                EmphasisKind::SmallCaps => {
+                    let flattened = escape_note_reference_label(&content, ctx);
+                    return match render_attrs(&emphasis.attrs) {
+                        attrs if attrs.is_empty() => flattened,
+                        attrs => format!("[{flattened}]{attrs}"),
+                    };
+                }
             };
             let _ = delim;
             format!("{body}{}", render_attrs(&emphasis.attrs))
@@ -3361,6 +3373,7 @@ fn emphasis_node_type(kind: EmphasisKind) -> &'static str {
         EmphasisKind::Highlight => "highlight",
         EmphasisKind::Super => "superscript",
         EmphasisKind::Sub => "subscript",
+        EmphasisKind::SmallCaps => "small_caps",
     }
 }
 
@@ -4382,6 +4395,8 @@ fn emphasis_delimiters(kind: EmphasisKind) -> &'static [char] {
         EmphasisKind::Super => &['^'],
         EmphasisKind::Sub => &[','],
         EmphasisKind::BoldItalic => &['/', '*'],
+        // No delimiter, because no source spelling: the writer flattens it.
+        EmphasisKind::SmallCaps => &[],
     }
 }
 

@@ -682,6 +682,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             EmphasisKind::Strike => {
                 style(&render_inlines(&emphasis.children, ctx, depth + 1), STRIKE)
             }
+            // CARVE-P12-050: plain and ANSI render the children WITHOUT
+            // changing their letter case, so there is nothing to style.
+            EmphasisKind::SmallCaps => render_inlines(&emphasis.children, ctx, depth + 1),
             EmphasisKind::Sub => to_subscript(&render_inlines(&emphasis.children, ctx, depth + 1)),
             EmphasisKind::Super => {
                 to_superscript(&render_inlines(&emphasis.children, ctx, depth + 1))

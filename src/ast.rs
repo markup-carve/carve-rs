@@ -1016,6 +1016,12 @@ pub enum EmphasisKind {
     Sub,
     Highlight,
     BoldItalic,
+    /// Interchange-only (CARVE-P12-050). Carve 0.1 source has no spelling for
+    /// the wrapper, so the parser never produces one and the canonical writer
+    /// writes the children without it. It shares this enum with the kinds that
+    /// DO have a spelling because it is the same node shape - children plus
+    /// attributes - and every walker already reaches it here.
+    SmallCaps,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

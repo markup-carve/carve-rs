@@ -229,6 +229,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
             EmphasisKind::Super => "superscript",
             EmphasisKind::Sub => "subscript",
             EmphasisKind::Highlight => "highlight",
+            EmphasisKind::SmallCaps => "small_caps",
         }),
         InlineNode::Code(_) => Some("code"),
         InlineNode::Link(_) => Some("link"),

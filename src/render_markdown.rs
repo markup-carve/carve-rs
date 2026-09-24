@@ -1216,6 +1216,15 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
+            // PART 11 section 8c: no Markdown delimiter spelling exists, so the
+            // target uses inline HTML. Other attributes go the way an ordinary
+            // span's do on this target, which is nowhere.
+            EmphasisKind::SmallCaps => {
+                format!(
+                    "<span class=\"smallcaps\">{}</span>",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
+            }
             EmphasisKind::Strike => pad_outside(
                 render_inlines(&emphasis.children, ctx, depth + 1),
                 "~~",
