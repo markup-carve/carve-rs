@@ -392,6 +392,31 @@ fn decode_refuses_the_legacy_footnote_id() {
 }
 
 #[test]
+fn decode_refuses_a_footnote_reference_with_no_target() {
+    // Every other reference node names what it points at, and PART 12 §3a
+    // records what the author wrote - nobody writes a footnote reference with
+    // no label, so a bare node is a reference to nothing (carve#2193).
+    let bare = "{\"type\":\"document\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"footnote_ref\"}]}],\"srcByteLength\":0}";
+    let error = carve::from_json(bare).expect_err("a targetless reference is refused");
+    assert!(error.to_string().contains("footnote_ref.id"), "{error}");
+
+    let named = bare.replace(
+        "{\"type\":\"footnote_ref\"}",
+        "{\"type\":\"footnote_ref\",\"id\":\"a\"}",
+    );
+    carve::from_json(&named).expect("a reference carrying its target decodes");
+}
+
+#[test]
+fn decode_accepts_a_citation_without_a_position() {
+    // PART 12 §4 exempts a node the producer could not place, and a citation an
+    // importer or an editing API synthesized is one. Requiring `pos` on this one
+    // node type left such a citation with no conformant encoding (carve#2192).
+    let json = "{\"type\":\"document\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"citation_group\",\"raw\":\"[@k]\",\"items\":[{\"type\":\"citation\",\"key\":\"k\",\"suppressAuthor\":false}]}]}],\"srcByteLength\":0}";
+    carve::from_json(json).expect("an unplaced citation decodes");
+}
+
+#[test]
 fn malformed_trees_return_errors() {
     assert!(carve::from_json("not json").is_err());
     assert!(

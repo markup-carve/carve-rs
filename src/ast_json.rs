@@ -3144,7 +3144,11 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         })),
         "footnote_ref" => Ok(InlineNode::Footnote(Footnote {
             attrs: optional_attrs(obj)?,
-            id: optional_string(obj, "id")?.map(str::to_string),
+            // REQUIRED since carve#2193. Every other reference node names what
+            // it points at, and a `footnote_ref` with no label is a reference
+            // to nothing - a shape PART 12 section 3a cannot have produced,
+            // since a pre-resolve tree records what the author wrote.
+            id: Some(required_string(obj, "footnote_ref", "id")?.to_string()),
             inline: None,
             number: optional_usize(obj, "number")?,
             // NOT read from the wire. `refId` is a rendering convention -
