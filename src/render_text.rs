@@ -154,6 +154,12 @@ fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbb
                     .is_some_and(|a| a.key_values.contains_key("abbr"));
                 collect_inlines(&span.children, suppressed || authored, out);
             }
+            InlineNode::Ruby(r) => {
+                for pair in &r.pairs {
+                    collect_inlines(&pair.base, suppressed, out);
+                    collect_inlines(&pair.annotation, suppressed, out);
+                }
+            }
             InlineNode::Emphasis(e) => collect_inlines(&e.children, suppressed, out),
             InlineNode::Link(l) => {
                 // An UNRESOLVED reference link is emitted as its raw source on

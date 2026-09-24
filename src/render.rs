@@ -961,6 +961,28 @@ fn collect_footnotes_inline_scoped(
                 order,
                 discarded,
             ),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    collect_footnotes_inline_scoped(
+                        assign_ref_ids,
+                        &mut pair.base,
+                        def_labels,
+                        label_indices,
+                        seen,
+                        order,
+                        discarded,
+                    );
+                    collect_footnotes_inline_scoped(
+                        assign_ref_ids,
+                        &mut pair.annotation,
+                        def_labels,
+                        label_indices,
+                        seen,
+                        order,
+                        discarded,
+                    );
+                }
+            }
             InlineNode::Extension(e) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut e.children,
@@ -1532,6 +1554,18 @@ fn plain_inlines_typography_at(
             InlineNode::Link(l) if l.from_crossref => {}
             InlineNode::Link(l) => {
                 out.push_str(&plain_inlines_typography_at(&l.children, smart, depth + 1))
+            }
+            InlineNode::Ruby(r) => {
+                for pair in &r.pairs {
+                    out.push_str(&plain_inlines_typography_at(&pair.base, smart, depth + 1));
+                    out.push('(');
+                    out.push_str(&plain_inlines_typography_at(
+                        &pair.annotation,
+                        smart,
+                        depth + 1,
+                    ));
+                    out.push(')');
+                }
             }
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
@@ -3159,6 +3193,18 @@ fn render_inline_after(
         InlineNode::Span(s) => {
             render_semantic_span(out, s, options, state);
         }
+        InlineNode::Ruby(r) => {
+            out.push_str("<ruby");
+            write_attrs(out, &r.attrs);
+            out.push('>');
+            for pair in &r.pairs {
+                render_inlines_stateful(out, &pair.base, options, state);
+                out.push_str("<rp>(</rp><rt>");
+                render_inlines_stateful(out, &pair.annotation, options, state);
+                out.push_str("</rt><rp>)</rp>");
+            }
+            out.push_str("</ruby>");
+        }
         InlineNode::Math(m) => {
             let base = if m.display {
                 "math display"
@@ -3533,6 +3579,14 @@ fn flatten_text_at(nodes: &[InlineNode], depth: usize) -> String {
             InlineNode::Emphasis(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
             InlineNode::Link(l) => out.push_str(&flatten_text_at(&l.children, depth + 1)),
             InlineNode::Span(s) => out.push_str(&flatten_text_at(&s.children, depth + 1)),
+            InlineNode::Ruby(r) => {
+                for pair in &r.pairs {
+                    out.push_str(&flatten_text_at(&pair.base, depth + 1));
+                    out.push('(');
+                    out.push_str(&flatten_text_at(&pair.annotation, depth + 1));
+                    out.push(')');
+                }
+            }
             InlineNode::Extension(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
             _ => {}
         }

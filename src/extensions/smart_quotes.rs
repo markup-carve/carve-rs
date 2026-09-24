@@ -187,6 +187,12 @@ impl SmartQuotes {
                 InlineNode::Emphasis(e) => self.visit_inlines(&mut e.children),
                 InlineNode::Link(l) => self.visit_inlines(&mut l.children),
                 InlineNode::Span(s) => self.visit_inlines(&mut s.children),
+                InlineNode::Ruby(r) => {
+                    for pair in &mut r.pairs {
+                        self.visit_inlines(&mut pair.base);
+                        self.visit_inlines(&mut pair.annotation);
+                    }
+                }
                 InlineNode::Extension(e) => self.visit_inlines(&mut e.children),
                 InlineNode::CriticInsert(c) => self.visit_inlines(&mut c.children),
                 InlineNode::CriticDelete(c) => self.visit_inlines(&mut c.children),

@@ -1286,6 +1286,17 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             let title = escape_md_html(&strip_controls(&authored)).replace('"', "&quot;");
             format!("<abbr title=\"{title}\">{inner}</abbr>")
         }
+        InlineNode::Ruby(r) => {
+            let mut out = format!("<ruby{}>", crate::render::render_attrs(&r.attrs));
+            for pair in &r.pairs {
+                out.push_str(&render_inlines(&pair.base, ctx, depth + 1));
+                out.push_str("<rp>(</rp><rt>");
+                out.push_str(&render_inlines(&pair.annotation, ctx, depth + 1));
+                out.push_str("</rt><rp>)</rp>");
+            }
+            out.push_str("</ruby>");
+            out
+        }
         InlineNode::Math(math) => {
             // Escaped, exactly as the HTML target escapes the same content: a
             // consumer decodes the entity back to the character before its math
@@ -2446,6 +2457,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // disagree with the one the core assigned before resolution.
             InlineNode::Link(link) if link.from_crossref => {}
             InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),
+            InlineNode::Ruby(r) => out.push_str(&plain_inlines(&r.flattened())),
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::Extension(extension) => out.push_str(&plain_inlines(&extension.children)),
             InlineNode::CitationGroup(group) => out.push_str(&group.raw),
@@ -2575,6 +2587,12 @@ where
             }
             InlineNode::Link(link) => walk_inlines(&link.children, depth + 1, true, visit),
             InlineNode::Span(span) => walk_inlines(&span.children, depth + 1, in_link, visit),
+            InlineNode::Ruby(r) => {
+                for pair in &r.pairs {
+                    walk_inlines(&pair.base, depth + 1, in_link, visit);
+                    walk_inlines(&pair.annotation, depth + 1, in_link, visit);
+                }
+            }
             InlineNode::Extension(extension) => {
                 walk_inlines(&extension.children, depth + 1, in_link, visit)
             }

@@ -293,6 +293,12 @@ fn resolve_inlines(
             }
             InlineNode::Link(link) => resolve_inlines(&mut link.children, targets, counts),
             InlineNode::Span(span) => resolve_inlines(&mut span.children, targets, counts),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    resolve_inlines(&mut pair.base, targets, counts);
+                    resolve_inlines(&mut pair.annotation, targets, counts);
+                }
+            }
             InlineNode::Extension(extension) => {
                 resolve_inlines(&mut extension.children, targets, counts)
             }
@@ -311,6 +317,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             InlineNode::Emphasis(emphasis) => out.push_str(&inline_text(&emphasis.children)),
             InlineNode::Link(link) => out.push_str(&inline_text(&link.children)),
             InlineNode::Span(span) => out.push_str(&inline_text(&span.children)),
+            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened())),
             InlineNode::Extension(extension) => out.push_str(&inline_text(&extension.children)),
             _ => {}
         }

@@ -432,6 +432,13 @@ impl Seeder {
                     self.reserve_attrs(&s.attrs);
                     self.walk_inlines(&s.children);
                 }
+                InlineNode::Ruby(r) => {
+                    self.reserve_attrs(&r.attrs);
+                    for pair in &r.pairs {
+                        self.walk_inlines(&pair.base);
+                        self.walk_inlines(&pair.annotation);
+                    }
+                }
                 InlineNode::Math(m) => self.reserve_attrs(&m.attrs),
                 InlineNode::AutoLink(a) => self.reserve_attrs(&a.attrs),
                 InlineNode::CitationGroup(g) if !self.collect_explicit_only => {

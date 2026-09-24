@@ -540,6 +540,19 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             }
             format!("{inner} ({})", strip_controls(&authored))
         }
+        InlineNode::Ruby(r) => {
+            crate::render_loss::record_ruby_flattened(r);
+            r.pairs
+                .iter()
+                .map(|pair| {
+                    format!(
+                        "{}({})",
+                        render_inlines_stateful(&pair.base, depth + 1),
+                        render_inlines_stateful(&pair.annotation, depth + 1)
+                    )
+                })
+                .collect()
+        }
         InlineNode::Math(math) => match (&math.label, math.number) {
             // PART 9 §19: plain text appends the same unbracketed ` LABEL NUMBER`.
             (Some(label), Some(number)) => format!(

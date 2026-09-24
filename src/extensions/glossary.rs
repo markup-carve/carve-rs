@@ -266,6 +266,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
             InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
+            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened())),
             InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
             InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
             InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),

@@ -589,6 +589,12 @@ impl ProfileFilter<'_> {
             InlineNode::Emphasis(e) => self.filter_inlines(&mut e.children, depth)?,
             InlineNode::Link(l) => self.filter_inlines(&mut l.children, depth)?,
             InlineNode::Span(s) => self.filter_inlines(&mut s.children, depth)?,
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    self.filter_inlines(&mut pair.base, depth)?;
+                    self.filter_inlines(&mut pair.annotation, depth)?;
+                }
+            }
             InlineNode::Extension(e) => self.filter_inlines(&mut e.children, depth)?,
             InlineNode::CriticInsert(c) => self.filter_inlines(&mut c.children, depth)?,
             InlineNode::CriticDelete(c) => self.filter_inlines(&mut c.children, depth)?,
@@ -1105,6 +1111,23 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
             .iter()
             .map(|n| extract_inline_text(n, smart))
             .collect(),
+        InlineNode::Ruby(r) => r
+            .pairs
+            .iter()
+            .map(|pair| {
+                let base: String = pair
+                    .base
+                    .iter()
+                    .map(|n| extract_inline_text(n, smart))
+                    .collect();
+                let annotation: String = pair
+                    .annotation
+                    .iter()
+                    .map(|n| extract_inline_text(n, smart))
+                    .collect();
+                format!("{base}({annotation})")
+            })
+            .collect(),
         InlineNode::Extension(e) => e
             .children
             .iter()
@@ -1223,6 +1246,15 @@ fn cleanup_inline_children(node: &mut InlineNode) {
         InlineNode::Emphasis(e) => cleanup_inlines(&mut e.children),
         InlineNode::Link(l) => cleanup_inlines(&mut l.children),
         InlineNode::Span(s) => cleanup_inlines(&mut s.children),
+        InlineNode::Ruby(r) => {
+            for pair in &mut r.pairs {
+                cleanup_inlines(&mut pair.base);
+                cleanup_inlines(&mut pair.annotation);
+                if pair.base.is_empty() {
+                    pair.base.push(InlineNode::text(""));
+                }
+            }
+        }
         InlineNode::Extension(e) => cleanup_inlines(&mut e.children),
         InlineNode::CriticInsert(c) => cleanup_inlines(&mut c.children),
         InlineNode::CriticDelete(c) => cleanup_inlines(&mut c.children),
@@ -1301,6 +1333,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::CitationGroup(_)
+        | InlineNode::Ruby(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::AutoLink(_)

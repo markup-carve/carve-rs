@@ -80,6 +80,7 @@ enum EscapeMode {
 
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
+    crate::render_loss::record_ruby_in_document(doc);
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
     let output = protect_leading_bom(render_carve_unguarded(doc));
@@ -905,6 +906,12 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         InlineNode::Emphasis(e) => normalize_escapes_inlines(&mut e.children),
         InlineNode::Link(l) => normalize_escapes_inlines(&mut l.children),
         InlineNode::Span(s) => normalize_escapes_inlines(&mut s.children),
+        InlineNode::Ruby(r) => {
+            for pair in &mut r.pairs {
+                normalize_escapes_inlines(&mut pair.base);
+                normalize_escapes_inlines(&mut pair.annotation);
+            }
+        }
         // An inline extension carries inline children too, and omitting it meant
         // an escape inside one made the two renders differ and escalated the
         // WHOLE document: `Press :kbd[Ctrl+C] to copy.` came back
@@ -2574,6 +2581,29 @@ fn render_inlines_with_caption(
         crate::render_depth::record("carve");
         return String::new();
     }
+    // Flatten before the writer checks neighboring nodes. A ruby base can
+    // start with `[` or a code fence, which changes how preceding text escapes.
+    let flattened;
+    let nodes = if nodes.iter().any(|node| matches!(node, InlineNode::Ruby(_))) {
+        flattened = nodes
+            .iter()
+            .flat_map(|node| match node {
+                InlineNode::Ruby(ruby) if ruby.attrs.is_some() => {
+                    vec![InlineNode::Span(Span {
+                        attrs: ruby.attrs.clone(),
+                        children: ruby.flattened(),
+                        injected: false,
+                        pos: ruby.pos.clone(),
+                    })]
+                }
+                InlineNode::Ruby(ruby) => ruby.flattened(),
+                other => vec![other.clone()],
+            })
+            .collect::<Vec<_>>();
+        flattened.as_slice()
+    } else {
+        nodes
+    };
     if ctx.inline_depth == 0 && holds_unspellable_empty_code(nodes, false, false, ctx.cell_not_last)
     {
         crate::render_carve_error::record_unspellable(
@@ -3069,6 +3099,22 @@ fn render_inline_body(
                 escape_note_reference_label(&render_inlines(&span.children, ctx), ctx),
                 if attrs.is_empty() { "{}" } else { &attrs }
             )
+        }
+        InlineNode::Ruby(r) => {
+            let flattened = r.flattened();
+            if r.attrs.is_some() {
+                render_inlines(
+                    &[InlineNode::Span(Span {
+                        attrs: r.attrs.clone(),
+                        children: flattened,
+                        injected: false,
+                        pos: r.pos.clone(),
+                    })],
+                    ctx,
+                )
+            } else {
+                render_inlines(&flattened, ctx)
+            }
         }
         // CARVE-P12-051: the writer preserves the formula and loses `label` and
         // `number`, which Carve source cannot spell. It does not refuse the tree.

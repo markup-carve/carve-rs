@@ -9,6 +9,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- JSON AST interchange preserves the optional line-end ranges on line blocks
+  (CARVE-P12-058, #1859).
+- JSON AST interchange carries ruby base and annotation pairs through rendering,
+  profiles and canonical source output. Flattened targets report `ruby-flattened`
+  (CARVE-P12-054, #1859). `--allow-loss ruby-flattened` accepts that loss.
+  The public `RenderLoss.format` field is now optional, and checked render
+  results include totals by loss code.
 - Empty divs, line blocks, local hard-break blocks and figure groups use the
   same blank HTML body line as admonitions and block quotes (CARVE-P10-001).
 

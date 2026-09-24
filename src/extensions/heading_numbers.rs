@@ -370,6 +370,12 @@ fn rewrite_links_inlines(
             }
             InlineNode::Emphasis(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
             InlineNode::Span(s) => rewrite_links_inlines(&mut s.children, by_id, opts),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    rewrite_links_inlines(&mut pair.base, by_id, opts);
+                    rewrite_links_inlines(&mut pair.annotation, by_id, opts);
+                }
+            }
             InlineNode::Extension(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
             InlineNode::CriticInsert(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
             InlineNode::CriticDelete(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
