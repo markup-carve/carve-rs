@@ -245,7 +245,10 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
                 DIM
             )
         ),
-        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
+        BlockNode::BlockExtension(n) => render_block(&n.fallback, ctx, depth),
+        BlockNode::ExtensionCarrier(extension) => {
+            render_blocks(&extension.children, ctx, depth + 1)
+        }
         // PART 11 §10a keeps the UNUSED definition here - see the note in
         // render_markdown. §10f then splits the CONSUMED one by target: this
         // one drops the line, because it already writes `TERM (expansion)` at

@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{
-    smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, FigureTarget,
+    smart_punctuation_glyph, Attrs, BlockNode, Document, ExtensionCarrier, FigureTarget,
     InlineExtension, InlineNode,
 };
 use crate::extension::HeadingIdOptions;
@@ -134,9 +134,9 @@ impl CarveExtension for Index {
         }
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != LIST_CARRIER {
@@ -220,7 +220,7 @@ fn rewrite_markers_block(
                 rewrite_markers_block(child, counts, display);
             }
         }
-        BlockNode::Extension(e) => {
+        BlockNode::ExtensionCarrier(e) => {
             for child in &mut e.children {
                 rewrite_markers_block(child, counts, display);
             }
@@ -326,7 +326,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
         match block {
             BlockNode::Admonition(a) if a.kind == "index" => {
                 rewrite_containers(&mut a.children);
-                *block = BlockNode::Extension(BlockExtension {
+                *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
                     name: LIST_CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
@@ -343,7 +343,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(b) => rewrite_containers(&mut b.children),
             BlockNode::Admonition(a) => rewrite_containers(&mut a.children),
             BlockNode::Div(d) => rewrite_containers(&mut d.children),
-            BlockNode::Extension(e) => rewrite_containers(&mut e.children),
+            BlockNode::ExtensionCarrier(e) => rewrite_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
@@ -359,7 +359,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
 // ----- render --------------------------------------------------------------
 
 fn render_index_list(
-    node: &BlockExtension,
+    node: &ExtensionCarrier,
     ctx: &RenderContext<'_>,
     counts: &BTreeMap<String, usize>,
     display: &BTreeMap<String, Vec<InlineNode>>,
@@ -442,7 +442,7 @@ fn render_index_list(
         items.push(entry);
     }
     // The framework indents the FIRST line of the returned HTML by `level`
-    // (see render_block_extension), so the opening `<ul>` must NOT carry its own
+    // (see render_extension_carrier), so the opening `<ul>` must NOT carry its own
     // leading pad or it double-indents inside a container (`    <ul>` instead of
     // `  <ul>`, diverging from carve-js / carve-php). Interior lines still
     // self-indent: `<li>` at level+1, `</ul>` at level.

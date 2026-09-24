@@ -8,7 +8,7 @@ use std::any::Any;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
+use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
 use crate::profile::Profile;
@@ -659,9 +659,9 @@ pub trait CarveExtension {
         None
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        _node: &BlockExtension,
+        _node: &ExtensionCarrier,
         _ctx: &RenderContext<'_>,
     ) -> Option<String> {
         None

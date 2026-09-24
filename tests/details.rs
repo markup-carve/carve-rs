@@ -244,9 +244,9 @@ fn keeps_attrs_with_stale_order_list() {
             walk(&mut doc.children);
             doc
         }
-        fn render_block_extension(
+        fn render_extension_carrier(
             &self,
-            _node: &carve::ast::BlockExtension,
+            _node: &carve::ast::ExtensionCarrier,
             _ctx: &RenderContext<'_>,
         ) -> Option<String> {
             None

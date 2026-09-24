@@ -385,7 +385,10 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 String::new()
             }
         }
-        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
+        BlockNode::BlockExtension(n) => render_block(&n.fallback, ctx, depth),
+        BlockNode::ExtensionCarrier(extension) => {
+            render_blocks(&extension.children, ctx, depth + 1)
+        }
         // PART 11 §10a: a definition NOTHING references still reaches this
         // target. HTML drops it because it has nowhere to put one; Markdown,
         // plain text and the terminal do not get to drop content the author
@@ -2543,7 +2546,9 @@ where
                 }
                 walk_blocks(&group.children, depth + 1, visit);
             }
-            BlockNode::Extension(extension) => walk_blocks(&extension.children, depth + 1, visit),
+            BlockNode::ExtensionCarrier(extension) => {
+                walk_blocks(&extension.children, depth + 1, visit)
+            }
             _ => {}
         }
     }

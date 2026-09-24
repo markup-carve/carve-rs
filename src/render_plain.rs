@@ -228,7 +228,8 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::FigureGroup(group) => render_figure_group(group, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
-        BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
+        BlockNode::BlockExtension(n) => render_block(&n.fallback, depth),
+        BlockNode::ExtensionCarrier(extension) => render_blocks(&extension.children, depth + 1),
         // PART 11 §10a keeps the UNUSED definition here - see the note in
         // render_markdown. §10f then splits the CONSUMED one by target: this one
         // drops the line, because the `Abbreviation` arm now writes

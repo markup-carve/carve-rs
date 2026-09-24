@@ -328,7 +328,19 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                     }
                 }
             }
+            // A block extension's payload is the extension's OWN data, opaque to
+            // this schema and to every core renderer. The helper loop above
+            // already closed the payload object itself at `format` / `value`;
+            // descending into `value` applied the node rules to something that
+            // is not a node, so an ordinary diagram spec carrying a `type` of
+            // its own - `{"type":"swimlane","lanes":3}` - was refused as a node
+            // with unnamed fields. carve-php hit the same trap in its #2324.
+            let opaque_payload =
+                matches!(obj.get("type"), Some(Json::String(ty)) if ty == "block_extension");
             for (key, value) in obj {
+                if opaque_payload && key == "payload" {
+                    continue;
+                }
                 let child = if path.is_empty() {
                     key.clone()
                 } else {
@@ -802,7 +814,8 @@ pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),
-        BlockNode::Extension(n) => n.pos.as_ref(),
+        BlockNode::BlockExtension(n) => n.pos.as_ref(),
+        BlockNode::ExtensionCarrier(n) => n.pos.as_ref(),
         BlockNode::BlockImage(n) => n.pos.as_ref(),
         BlockNode::ThematicBreak(n) => n.pos.as_ref(),
     }
@@ -1270,32 +1283,39 @@ fn encode_block_task<'a>(
                 EncodeTask::Inline(node, depth + 1)
             });
         }
-        BlockNode::Extension(n) => {
+        BlockNode::BlockExtension(n) => {
             let mut w = typed(out, "block_extension");
             w.field("name", |out| write_string(out, &n.name));
-            w.field("children", |out| out.push('['));
-            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+            if let Some(version) = &n.version {
+                w.field("version", |out| write_string(out, version));
+            }
+            w.field("fallback", |_| {});
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                 let mut w = Writer { out, first: false };
-                if let Some(summary) = &n.summary {
-                    w.field("summary", |out| out.push('['));
-                    tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
-                        let mut w = Writer { out, first: false };
-                        if let Some(label) = &n.label {
-                            w.field("label", |out| write_string(out, label));
-                        }
-                        write_attrs_field(&mut w, &n.attrs);
-                        write_pos_field(&mut w, &n.pos);
-                        w.finish();
-                    })));
-                    push_array(tasks, summary, |node| EncodeTask::Inline(node, depth + 1));
-                } else {
-                    if let Some(label) = &n.label {
-                        w.field("label", |out| write_string(out, label));
-                    }
-                    write_attrs_field(&mut w, &n.attrs);
-                    write_pos_field(&mut w, &n.pos);
-                    w.finish();
+                write_payload_field(&mut w, &n.payload);
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            tasks.push(EncodeTask::Block(n.fallback.as_ref(), depth + 1));
+        }
+        // The render-stage carrier is published as the `div` it degrades to on
+        // every other target, NOT under the schema's `block_extension` - that
+        // name belongs to CARVE-P12-055, and sharing it meant the engine could
+        // read back neither node (carve-rs#1865). Its `name` and `summary` have
+        // no home on a div, which is the same loss the canonical Carve writer
+        // already takes.
+        BlockNode::ExtensionCarrier(n) => {
+            let mut w = typed(out, "div");
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(label) = &n.label {
+                    w.field("label", |out| write_string(out, label));
                 }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
             })));
             push_array(tasks, &n.children, |node| {
                 EncodeTask::Block(node, depth + 1)
@@ -1754,13 +1774,22 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
-        BlockNode::Extension(n) => {
+        BlockNode::BlockExtension(n) => {
             let mut w = typed(out, "block_extension");
             w.field("name", |out| write_string(out, &n.name));
-            w.field("children", |out| write_blocks(out, &n.children));
-            if let Some(summary) = &n.summary {
-                w.field("summary", |out| write_inlines(out, summary));
+            if let Some(version) = &n.version {
+                w.field("version", |out| write_string(out, version));
             }
+            w.field("fallback", |out| write_block(out, &n.fallback));
+            write_payload_field(&mut w, &n.payload);
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        // See the arm in `encode_block_task`: the carrier publishes as a div.
+        BlockNode::ExtensionCarrier(n) => {
+            let mut w = typed(out, "div");
+            w.field("children", |out| write_blocks(out, &n.children));
             if let Some(label) = &n.label {
                 w.field("label", |out| write_string(out, label));
             }
@@ -2455,6 +2484,23 @@ fn write_pos(out: &mut String, pos: &Pos) {
     w.finish();
 }
 
+/// A [`BlockExtension`]'s payload. `value` is held as the JSON text it arrived
+/// as and written back verbatim: the schema calls it opaque, and nothing in this
+/// crate reads inside one.
+fn write_payload_field(w: &mut Writer<'_>, payload: &Option<ExtensionPayload>) {
+    let Some(payload) = payload else {
+        return;
+    };
+    w.field("payload", |out| {
+        let mut inner = Writer::new(out);
+        inner.field("format", |out| write_string(out, &payload.format));
+        if let Some(value) = &payload.value {
+            inner.field("value", |out| out.push_str(value));
+        }
+        inner.finish();
+    });
+}
+
 fn write_blocks(out: &mut String, blocks: &[BlockNode]) {
     write_array(out, blocks, write_block);
 }
@@ -2720,12 +2766,16 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             content: required_string(obj, "comment", "content")?.to_string(),
             pos: optional_pos(obj, "comment")?,
         })),
-        "block_extension" => Ok(BlockNode::Extension(BlockExtension {
-            attrs: optional_attrs(obj)?,
+        "block_extension" => Ok(BlockNode::BlockExtension(BlockExtension {
             name: required_string(obj, "block_extension", "name")?.to_string(),
-            children: decode_blocks(required_array(obj, "block_extension", "children")?)?,
-            summary: optional_inlines(obj, "summary")?,
-            label: optional_string(obj, "label")?.map(str::to_string),
+            version: optional_string(obj, "version")?.map(str::to_string),
+            fallback: Box::new(decode_block(required_value(
+                obj,
+                "block_extension",
+                "fallback",
+            )?)?),
+            payload: optional_payload(obj)?,
+            attrs: optional_attrs(obj)?,
             pos: optional_pos(obj, "block_extension")?,
         })),
         "image" => Ok(BlockNode::BlockImage(decode_image(obj)?)),
@@ -2739,6 +2789,23 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             "unknown block node type {other:?}"
         ))),
     }
+}
+
+/// A block extension's payload.
+///
+/// `format` is REQUIRED even though the payload itself is optional: a reader
+/// cannot tell whether it can parse `value` at all without it. `value` is kept as
+/// JSON text - opaque, and never walked. See `refuse_unknown_fields`, which does
+/// not descend into it for the same reason.
+fn optional_payload(obj: &Map<String, Json>) -> Result<Option<ExtensionPayload>, AstJsonError> {
+    let Some(value) = obj.get("payload") else {
+        return Ok(None);
+    };
+    let payload = value.expect_object("block_extension.payload")?;
+    Ok(Some(ExtensionPayload {
+        format: required_string(payload, "block_extension.payload", "format")?.to_string(),
+        value: payload.get("value").map(Json::to_string),
+    }))
 }
 
 fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {

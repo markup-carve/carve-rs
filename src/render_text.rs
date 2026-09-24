@@ -104,7 +104,8 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
                 collect_inlines(caption, suppressed, out);
             }
         }
-        BlockNode::Extension(e) => collect_blocks(&e.children, suppressed, out),
+        BlockNode::BlockExtension(e) => collect_blocks(e.fallback_slice(), suppressed, out),
+        BlockNode::ExtensionCarrier(e) => collect_blocks(&e.children, suppressed, out),
         // A code block's text is never abbreviation-expanded, and the remaining
         // block kinds carry no inline children at all.
         BlockNode::CodeBlock(_)

@@ -14,7 +14,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, InlineNode, RawBlock};
+use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, Heading, InlineNode, RawBlock};
 use crate::escape::escape_attr;
 use crate::extension::{
     AsciiHeadingIds, BeforeRenderContext, CarveExtension, HeadingIdOptions, RenderContext,
@@ -23,7 +23,7 @@ use crate::extension::{
 use crate::render::render_attrs_without_keys;
 
 /// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
-/// then rendered by [`TocPlacement::render_block_extension`].
+/// then rendered by [`TocPlacement::render_extension_carrier`].
 const TOC_CARRIER: &str = "toc-placement";
 
 /// List element for the TOC entries.
@@ -280,7 +280,9 @@ fn collect_entries(
             BlockNode::BlockQuote(b) => collect_entries(&b.children, counts, opts, entries, false),
             BlockNode::Admonition(a) => collect_entries(&a.children, counts, opts, entries, false),
             BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false),
-            BlockNode::Extension(e) => collect_entries(&e.children, counts, opts, entries, false),
+            BlockNode::ExtensionCarrier(e) => {
+                collect_entries(&e.children, counts, opts, entries, false)
+            }
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
@@ -321,7 +323,9 @@ fn collect_all_entries(
             BlockNode::BlockQuote(b) => collect_all_entries(&b.children, counts, id_opts, entries),
             BlockNode::Admonition(a) => collect_all_entries(&a.children, counts, id_opts, entries),
             BlockNode::Div(d) => collect_all_entries(&d.children, counts, id_opts, entries),
-            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, id_opts, entries),
+            BlockNode::ExtensionCarrier(e) => {
+                collect_all_entries(&e.children, counts, id_opts, entries)
+            }
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
@@ -494,9 +498,9 @@ impl CarveExtension for TocPlacement {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != TOC_CARRIER {
@@ -512,13 +516,13 @@ impl CarveExtension for TocPlacement {
 }
 
 /// Rewrite every `::: toc` admonition into a [`TOC_CARRIER`] block extension so
-/// `render_block_extension` renders it in place. Recurses into containers.
+/// `render_extension_carrier` renders it in place. Recurses into containers.
 fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::Admonition(a) if a.kind == "toc" => {
                 rewrite_toc_containers(&mut a.children);
-                *block = BlockNode::Extension(BlockExtension {
+                *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
                     name: TOC_CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
@@ -535,7 +539,7 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(b) => rewrite_toc_containers(&mut b.children),
             BlockNode::Admonition(a) => rewrite_toc_containers(&mut a.children),
             BlockNode::Div(d) => rewrite_toc_containers(&mut d.children),
-            BlockNode::Extension(e) => rewrite_toc_containers(&mut e.children),
+            BlockNode::ExtensionCarrier(e) => rewrite_toc_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
@@ -549,7 +553,7 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
 }
 
 fn render_toc_nav(
-    node: &BlockExtension,
+    node: &ExtensionCarrier,
     ctx: &RenderContext<'_>,
     entries: &[TocEntry],
     budget: &RefCell<usize>,

@@ -6,15 +6,15 @@
 //! Port of the carve-js `glossary.ts`, byte-identical in HTML output. carve-rs
 //! has no per-node block render hook, so (like `details` / `list-table`) this
 //! runs as a `before_render` transform that rewrites each renderable
-//! `::: glossary` admonition into a [`BlockNode::Extension`] carrier rendered by
-//! [`CarveExtension::render_block_extension`]. `:term[word]` is an inline
+//! `::: glossary` admonition into a [`BlockNode::ExtensionCarrier`] carrier rendered by
+//! [`CarveExtension::render_extension_carrier`]. `:term[word]` is an inline
 //! extension rendered by [`CarveExtension::render_inline_extension`].
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use crate::ast::{
-    smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, InlineExtension,
+    smart_punctuation_glyph, Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension,
     InlineNode,
 };
 use crate::extension::HeadingIdOptions;
@@ -79,9 +79,9 @@ impl CarveExtension for Glossary {
         Some(render_term(node, ctx, &self.defined.borrow()))
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -125,7 +125,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
                         }
                     }
                 }
-                *block = BlockNode::Extension(BlockExtension {
+                *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
@@ -142,7 +142,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
             BlockNode::BlockQuote(b) => rewrite_blocks(&mut b.children, defined),
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children, defined),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children, defined),
-            BlockNode::Extension(e) => rewrite_blocks(&mut e.children, defined),
+            BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children, defined),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
@@ -180,7 +180,7 @@ fn render_term(
 }
 
 fn render_glossary(
-    node: &BlockExtension,
+    node: &ExtensionCarrier,
     ctx: &RenderContext<'_>,
     id_seen: &mut BTreeSet<String>,
 ) -> String {

@@ -2181,7 +2181,8 @@ fn probe_children(block: &BlockNode) -> ProbeChildren<'_> {
         BlockNode::Admonition(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::FigureGroup(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::LineBlock(b) => ProbeChildren::Blocks(&b.children),
-        BlockNode::Extension(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::BlockExtension(b) => ProbeChildren::Blocks(b.fallback_slice()),
+        BlockNode::ExtensionCarrier(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::List(b) => ProbeChildren::ListItems(&b.items),
         BlockNode::DefinitionList(b) => ProbeChildren::DefinitionItems(&b.items),
         BlockNode::Heading(_)
@@ -4158,7 +4159,8 @@ fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
         // that pass has already converted - so there is nothing there to
         // convert, and an arm is still required rather than a `_`.
         BlockNode::CitationDefinition(d) => d.pos.as_mut(),
-        BlockNode::Extension(e) => e.pos.as_mut(),
+        BlockNode::BlockExtension(e) => e.pos.as_mut(),
+        BlockNode::ExtensionCarrier(e) => e.pos.as_mut(),
     }
 }
 
@@ -4319,7 +4321,7 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             BlockNode::Admonition(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::FigureGroup(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::LineBlock(n) => narrow_to_last_placed_child(&mut n.children, lines),
-            BlockNode::Extension(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::ExtensionCarrier(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::Figure(n) => {
                 if let FigureTarget::BlockQuote(q) = &mut *n.target {
                     narrow_to_last_placed_child(&mut q.children, lines);
@@ -16739,7 +16741,8 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
         BlockNode::Figure(n) => Some(&mut n.attrs),
         BlockNode::FigureGroup(n) => Some(&mut n.attrs),
-        BlockNode::Extension(n) => Some(&mut n.attrs),
+        BlockNode::BlockExtension(n) => Some(&mut n.attrs),
+        BlockNode::ExtensionCarrier(n) => Some(&mut n.attrs),
         BlockNode::BlockImage(n) => Some(&mut n.attrs),
         // A citation definition's attributes are the metadata block on its own
         // line, not a preceding block-attribute line - same as the link
@@ -16899,7 +16902,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         // The bare opener carries nothing of its own (§4c), so the preceding
         // block-attribute line is the group's only attribute source.
         BlockNode::FigureGroup(n) => n.attrs = Some(attrs),
-        BlockNode::Extension(n) => n.attrs = Some(attrs),
+        BlockNode::ExtensionCarrier(n) => n.attrs = Some(attrs),
         // A direct block image (`{#id}\n![…](…)`) carries the leading attrs on
         // the `<img>` itself; the image's own inline attrs win on conflict (§15).
         BlockNode::BlockImage(img) => merge_leading_attrs(&mut img.attrs, attrs),
@@ -20422,7 +20425,7 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
                 apply_abbreviations_block(child, index);
             }
         }
-        BlockNode::Extension(e) => {
+        BlockNode::ExtensionCarrier(e) => {
             for child in &mut e.children {
                 apply_abbreviations_block(child, index);
             }
@@ -22105,7 +22108,7 @@ fn coalesce_block(block: &mut BlockNode) {
                 }
             }
         }
-        BlockNode::Extension(e) => {
+        BlockNode::ExtensionCarrier(e) => {
             // Inline content does not only live in `children`: a `before_render`
             // rewrite stashes a parsed title in `summary`, and an extension can
             // wrap already-parsed blocks. A walk that stops at the carrier node

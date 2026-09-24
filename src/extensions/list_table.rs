@@ -8,8 +8,8 @@
 //! `details` extension keys on), so this extension claims that admonition kind.
 //!
 //! Like `details`, this runs as a `before_render` transform: a renderable
-//! `list-table` admonition is rewritten into a [`BlockNode::Extension`] carrier
-//! whose `render_block_extension` builds the `<table>`. A `list-table` that
+//! `list-table` admonition is rewritten into a [`BlockNode::ExtensionCarrier`] carrier
+//! whose `render_extension_carrier` builds the `<table>`. A `list-table` that
 //! cannot be rendered as a table (no usable nested list, or a row that yields
 //! no cells) is LEFT UNTOUCHED, so the core renderer emits the default
 //! `<div class="list-table">` holding the literal nested list and no content is
@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{
-    Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
+    Admonition, AttrSlot, Attrs, BlockNode, Document, ExtensionCarrier, InlineNode, ListItem,
 };
 use crate::escape::{is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
@@ -85,9 +85,9 @@ impl CarveExtension for ListTable {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != CARRIER {
@@ -107,7 +107,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::Admonition(a) if a.kind == KIND => {
                 rewrite_blocks(&mut a.children);
                 if is_renderable(a) {
-                    *block = BlockNode::Extension(BlockExtension {
+                    *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                         attrs: a.attrs.take(),
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut a.children),
@@ -125,7 +125,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::BlockQuote(b) => rewrite_blocks(&mut b.children),
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children),
-            BlockNode::Extension(e) => rewrite_blocks(&mut e.children),
+            BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
@@ -251,7 +251,7 @@ struct Placement {
 }
 
 /// Build the `<table>` markup for a `list-table` carrier.
-fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
+fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
     // The carrier's sole child is the table list (guaranteed by is_renderable).
     let Some(BlockNode::List(outer)) = node.children.first() else {
         // Should not happen (only renderable tables are rewritten); emit an

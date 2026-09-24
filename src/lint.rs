@@ -496,7 +496,7 @@ fn collect_figure_group_warnings(
                     collect_figure_group_warnings(&b.children, in_group, to_byte, out);
                 }
             }
-            BlockNode::Extension(e) => {
+            BlockNode::ExtensionCarrier(e) => {
                 collect_figure_group_warnings(&e.children, in_group, to_byte, out)
             }
             _ => {}
@@ -546,7 +546,9 @@ fn collect_quote_fence_warnings(
             BlockNode::Div(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
             BlockNode::LineBlock(lb) => collect_quote_fence_warnings(&lb.children, to_byte, out),
             BlockNode::FigureGroup(g) => collect_quote_fence_warnings(&g.children, to_byte, out),
-            BlockNode::Extension(e) => collect_quote_fence_warnings(&e.children, to_byte, out),
+            BlockNode::ExtensionCarrier(e) => {
+                collect_quote_fence_warnings(&e.children, to_byte, out)
+            }
             BlockNode::List(l) => {
                 for item in &l.items {
                     collect_quote_fence_warnings(&item.children, to_byte, out);
@@ -839,8 +841,15 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
         // Verbatim: no `attrs` field, and its content is not markup.
         BlockNode::RawBlock(_) => {}
         BlockNode::Comment(_) => {}
-        BlockNode::Extension(n) => {
+        BlockNode::BlockExtension(n) => {
             report("block_extension", &n.attrs, n.pos.clone(), visit);
+            walk_blocks(n.fallback_slice(), visit);
+        }
+        // Reported under the feature that gates it - see
+        // `profile::canonical_block_type`. The carrier is not the schema's
+        // `block_extension`; it never reaches the wire under that name.
+        BlockNode::ExtensionCarrier(n) => {
+            report("inline_extension", &n.attrs, n.pos.clone(), visit);
             if let Some(summary) = &n.summary {
                 walk_inlines(summary, visit);
             }

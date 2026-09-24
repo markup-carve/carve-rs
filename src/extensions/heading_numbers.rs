@@ -190,7 +190,7 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
             // before this one) wraps rendered block content; descend so its
             // headings are numbered, matching how carve-js descends the
             // admonition those map to.
-            BlockNode::Extension(e) => number_blocks(&mut e.children, in_blockquote, state),
+            BlockNode::ExtensionCarrier(e) => number_blocks(&mut e.children, in_blockquote, state),
             _ => {}
         }
     }
@@ -324,7 +324,7 @@ fn rewrite_links_blocks(
                 }
                 rewrite_links_blocks(&mut g.children, by_id, opts);
             }
-            BlockNode::Extension(e) => rewrite_links_blocks(&mut e.children, by_id, opts),
+            BlockNode::ExtensionCarrier(e) => rewrite_links_blocks(&mut e.children, by_id, opts),
             _ => {}
         }
     }

@@ -3,11 +3,11 @@
 //! paragraph of `<n> text` lines binds as `<ol class="callouts">`. carve-rs has
 //! no per-node block render hook, so (like `glossary` / `list-table`) a
 //! `before_render` transform rewrites a code-block-with-markers into a
-//! [`BlockNode::Extension`] carrier and the bound paragraph into another, both
-//! rendered by [`CarveExtension::render_block_extension`]. Off by default;
+//! [`BlockNode::ExtensionCarrier`] carrier and the bound paragraph into another, both
+//! rendered by [`CarveExtension::render_extension_carrier`]. Off by default;
 //! optional-corpus pinned when enabled. See docs/extensions.md §10.
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, CodeBlock, Document, InlineNode, Paragraph};
+use crate::ast::{Attrs, BlockNode, CodeBlock, Document, ExtensionCarrier, InlineNode, Paragraph};
 use crate::escape::escape_attr;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs;
@@ -35,9 +35,9 @@ impl CarveExtension for CodeCallouts {
         doc
     }
 
-    fn render_block_extension(
+    fn render_extension_carrier(
         &self,
-        node: &BlockExtension,
+        node: &ExtensionCarrier,
         ctx: &RenderContext<'_>,
     ) -> Option<String> {
         match node.name.as_str() {
@@ -77,7 +77,7 @@ fn descend(b: &mut BlockNode) {
         BlockNode::BlockQuote(q) => bind_blocks(&mut q.children),
         BlockNode::Div(d) => bind_blocks(&mut d.children),
         BlockNode::Admonition(a) => bind_blocks(&mut a.children),
-        BlockNode::Extension(e) => bind_blocks(&mut e.children),
+        BlockNode::ExtensionCarrier(e) => bind_blocks(&mut e.children),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 bind_blocks(&mut item.children);
@@ -103,7 +103,7 @@ fn placeholder() -> BlockNode {
 }
 
 fn carrier(name: &str, inner: BlockNode) -> BlockNode {
-    BlockNode::Extension(BlockExtension {
+    BlockNode::ExtensionCarrier(ExtensionCarrier {
         attrs: None,
         name: name.to_string(),
         children: vec![inner],
@@ -159,7 +159,7 @@ fn is_callout_candidate(p: &Paragraph) -> bool {
 
 // ----- render -----------------------------------------------------------------
 
-fn render_code(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
+fn render_code(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
     let Some(BlockNode::CodeBlock(c)) = node.children.first() else {
         // Another code-block transformer (MathBlock / FencedRender) registered
         // before us may have replaced the carrier's inner CodeBlock; render
@@ -210,7 +210,7 @@ fn code_title_attr(c: &CodeBlock) -> String {
     }
 }
 
-fn render_list(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
+fn render_list(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
     let Some(BlockNode::Paragraph(p)) = node.children.first() else {
         return String::new();
     };

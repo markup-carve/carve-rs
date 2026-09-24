@@ -216,7 +216,13 @@ pub enum BlockNode {
     CitationDefinition(CitationDefinition),
     RawBlock(RawBlock),
     Comment(Comment),
-    Extension(BlockExtension),
+    /// A block construct an extension owns, carried with a core FALLBACK
+    /// (CARVE-P12-055). Interchange-only: Carve 0.1 source spells none, so a
+    /// parse never produces one.
+    BlockExtension(BlockExtension),
+    /// The render-stage carrier a `before_render` rewrite leaves behind. NOT the
+    /// schema's `block_extension`, which is [`BlockNode::BlockExtension`].
+    ExtensionCarrier(ExtensionCarrier),
     BlockImage(Image),
     ThematicBreak(ThematicBreak),
 }
@@ -719,8 +725,70 @@ pub struct Comment {
     pub pos: Option<Pos>,
 }
 
+/// The schema's `block_extension` (CARVE-P12-055): a block an extension owns,
+/// carried with a core `fallback` so a reader that does not implement the
+/// extension still has something real to render, write and count.
+///
+/// Interchange-only. Carve 0.1 source spells no block extension, so a parse
+/// never produces one; a tree reaches this shape from a format bridge, an
+/// importer or an editing API. Distinct from [`ExtensionCarrier`], which is this
+/// crate's own render-stage rewrite artifact and is NOT this wire type - the two
+/// shared the name `block_extension` and the engine could read back neither
+/// (carve-rs#1865).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExtension {
+    /// Globally qualified, so two extensions cannot collide:
+    /// `org.example.diagram`, not `diagram`.
+    pub name: String,
+    /// The extension's own version, opaque here.
+    pub version: Option<String>,
+    /// REQUIRED. The core block a reader that does not implement this extension
+    /// renders, writes and counts instead. Every walk that reaches children
+    /// reaches this, so the renderers need no per-target special case.
+    pub fallback: Box<BlockNode>,
+    pub payload: Option<ExtensionPayload>,
+    pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+/// A [`BlockExtension`]'s own data. NOT Carve content, and never rendered by a
+/// core target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionPayload {
+    /// A media type naming how `value` is encoded, so a reader can tell whether
+    /// it can parse it at all. REQUIRED: a payload without one is refused.
+    pub format: String,
+    /// The extension's own data as JSON text, held verbatim and opaque. A
+    /// `serde_json::Value` here would cost [`BlockNode`]'s `Eq`, and nothing in
+    /// this crate reads inside a payload: the schema calls it opaque and no core
+    /// renderer touches it.
+    pub value: Option<String>,
+}
+
+impl BlockExtension {
+    /// The fallback as a one-element slice, for the walks that take a block
+    /// list. The fallback IS this node's children, so a walk that reaches it
+    /// needs no knowledge that this type exists.
+    pub fn fallback_slice(&self) -> &[BlockNode] {
+        std::slice::from_ref(&*self.fallback)
+    }
+
+    /// [`BlockExtension::fallback_slice`], mutably.
+    pub fn fallback_slice_mut(&mut self) -> &mut [BlockNode] {
+        std::slice::from_mut(&mut *self.fallback)
+    }
+}
+
+/// The render-stage carrier a `before_render` rewrite leaves behind, so an
+/// extension's own renderer gets its content back.
+///
+/// NOT the schema's `block_extension` - that is [`BlockExtension`]. This node
+/// never reaches the wire under its own identity: the canonical writer degrades
+/// it to its children the way every non-HTML renderer already does, and the AST
+/// writer publishes it as a `div` (carve-rs#1865).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionCarrier {
     pub attrs: Option<Attrs>,
     pub name: String,
     pub children: Vec<BlockNode>,

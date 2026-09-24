@@ -402,8 +402,30 @@ impl ProfileFilter<'_> {
                 }
                 self.filter_blocks(&mut group.children, depth)?;
             }
-            BlockNode::Extension(ext) => self.filter_blocks(&mut ext.children, depth)?,
+            BlockNode::BlockExtension(ext) => self.recurse_extension_fallback(ext, depth)?,
+            BlockNode::ExtensionCarrier(ext) => self.filter_blocks(&mut ext.children, depth)?,
         }
+        Ok(())
+    }
+
+    /// The fallback is a single-node field the schema REQUIRES, so it is
+    /// filtered like an ordinary child but cannot be left absent. Same shape as
+    /// [`Self::recurse_figure_target`].
+    fn recurse_extension_fallback(
+        &mut self,
+        ext: &mut BlockExtension,
+        depth: usize,
+    ) -> Result<(), ProfileViolationError> {
+        let mut wrapper = vec![(*ext.fallback).clone()];
+        self.filter_blocks(&mut wrapper, depth)?;
+        *ext.fallback = wrapper
+            .into_iter()
+            .next()
+            .unwrap_or(BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: Vec::new(),
+                ..Default::default()
+            }));
         Ok(())
     }
 
@@ -971,7 +993,8 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
         BlockNode::Admonition(adm) => block_children_join(&adm.children, smart),
         BlockNode::Div(div) => block_children_join(&div.children, smart),
         BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
-        BlockNode::Extension(ext) => block_children_join(&ext.children, smart),
+        BlockNode::BlockExtension(ext) => extract_block_text(&ext.fallback, smart),
+        BlockNode::ExtensionCarrier(ext) => block_children_join(&ext.children, smart),
         BlockNode::FigureGroup(group) => {
             let mut parts: Vec<String> = group
                 .children
@@ -1190,7 +1213,7 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
             cleanup_blocks(&mut group.children);
         }
-        BlockNode::Extension(ext) => cleanup_blocks(&mut ext.children),
+        BlockNode::ExtensionCarrier(ext) => cleanup_blocks(&mut ext.children),
         _ => {}
     }
 }
@@ -1252,7 +1275,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
         // still renders a coherent shell only when it truly has nothing left:
         // no children and no caption.
         BlockNode::FigureGroup(group) => group.children.is_empty() && group.caption.is_none(),
-        BlockNode::Extension(ext) => ext.children.is_empty(),
+        // The fallback is what a reader without the extension sees, so the node
+        // is empty exactly when the fallback is.
+        BlockNode::BlockExtension(ext) => is_empty_block(&ext.fallback),
+        BlockNode::ExtensionCarrier(ext) => ext.children.is_empty(),
     }
 }
 

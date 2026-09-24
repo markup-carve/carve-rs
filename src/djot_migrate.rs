@@ -1096,7 +1096,7 @@ fn table_continuation_lines(source: &str) -> HashSet<usize> {
                     _ => {}
                 },
                 BlockNode::FigureGroup(group) => visit(&group.children, lines),
-                BlockNode::Extension(extension) => visit(&extension.children, lines),
+                BlockNode::ExtensionCarrier(extension) => visit(&extension.children, lines),
                 _ => {}
             }
         }

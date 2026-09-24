@@ -209,7 +209,7 @@ fn resolve_blocks(
             BlockNode::Admonition(admonition) => {
                 resolve_blocks(&mut admonition.children, targets, counts)
             }
-            BlockNode::Extension(extension) => {
+            BlockNode::ExtensionCarrier(extension) => {
                 resolve_blocks(&mut extension.children, targets, counts)
             }
             BlockNode::List(list) => {

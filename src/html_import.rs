@@ -6399,7 +6399,8 @@ fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<Inl
                     f(caption, false);
                 }
             }
-            BlockNode::Extension(n) => {
+            BlockNode::BlockExtension(n) => for_each_inline_run(n.fallback_slice_mut(), f),
+            BlockNode::ExtensionCarrier(n) => {
                 if let Some(summary) = &mut n.summary {
                     f(summary, false);
                 }
@@ -6463,7 +6464,10 @@ fn take_candidate_marks(blocks: &mut [BlockNode], kept: &mut [bool]) {
                 FigureTarget::Table(_) | FigureTarget::CodeBlock(_) | FigureTarget::Image(_) => {}
             },
             BlockNode::FigureGroup(group) => take_candidate_marks(&mut group.children, kept),
-            BlockNode::Extension(extension) => take_candidate_marks(&mut extension.children, kept),
+            BlockNode::BlockExtension(n) => take_candidate_marks(n.fallback_slice_mut(), kept),
+            BlockNode::ExtensionCarrier(extension) => {
+                take_candidate_marks(&mut extension.children, kept)
+            }
             // A table cell holds INLINES, so no paragraph is ever built inside
             // one - which is also why a `<td><p><img></p></td>` owes no row.
             BlockNode::Table(_)
