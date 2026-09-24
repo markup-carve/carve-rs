@@ -270,28 +270,31 @@ fn a_citation_inside_a_directive_is_numbered() {
 }
 
 #[test]
-fn a_denied_directive_stays_denied_once_an_extension_rewrites_it() {
-    // The placement extensions replace the directive with their own carrier in
-    // `before_render`, which runs BEFORE profile filtering - so the carrier is
-    // what a profile sees. Gated as anything but `directive`, a deny list would
-    // depend on which extensions the caller registered.
+fn a_rewritten_placement_still_classifies_as_a_directive() {
+    // The toc-placement, glossary and index extensions replace the directive
+    // with their own carrier in `before_render`, and `prepare_document_for_render`
+    // filters AFTER that - so the carrier is what a profile can see on the ingest
+    // path. Classified as anything but `directive`, the answer for the same
+    // authored container would depend on which extensions the caller registered.
+    //
+    // Asserted on `canonical_block_type` rather than on rendered HTML: both entry
+    // points already strip a denied `::: toc` before the hook rewrites it, so no
+    // rendered output can tell the two classifications apart, and an HTML
+    // assertion here passed whichever way the arm was written.
     let toc = carve::TocPlacement::new();
-    let glossary = carve::Glossary::new();
-    let index = carve::Index::new();
-    for denied in ["div", "directive"] {
-        let profile = carve::Profile::full().deny_block(&[denied]);
-        let options = carve::Options::new()
-            .with_extension(&toc)
-            .with_extension(&glossary)
-            .with_extension(&index)
-            .with_profile(profile);
-        let html = carve::to_html_with_options(
-            "::: toc\n:::\n\n::: index\n:::\n\n# One\n\nA :index[term] here.\n",
-            &options,
-        );
-        assert!(
-            !html.contains("class=\"toc\"") && !html.contains("class=\"index\""),
-            "denying {denied:?} strips the rewritten placement too: {html}"
-        );
-    }
+    let options = carve::Options::new().with_extension(&toc);
+    let doc = carve::parse_with_options("::: toc\n:::\n\n# One\n", &options);
+    let prepared =
+        carve::prepare_document_for_render(doc, &options, carve::Mode::Interactive, true)
+            .expect("no profile, so no violation");
+    let first = prepared.children.first().expect("the rewritten container");
+    assert!(
+        matches!(first, BlockNode::ExtensionCarrier(_)),
+        "the fixture has to hold the carrier, or it pins nothing: {first:?}"
+    );
+    assert_eq!(
+        carve::profile::canonical_block_type(first),
+        Some("directive"),
+        "the carrier keeps the family of the node it replaced"
+    );
 }
