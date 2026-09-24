@@ -354,12 +354,13 @@ fn local_body_group_rowspan_keeps_one_tbody() {
 #[test]
 fn crossing_header_colspan_absorbs_both_carets() {
     assert_eq!(
-        h("{header-rows=1}\n::: list-table\n- - A\n  - <\n  - C\n- - ^\n  - ^\n  - Y\n:::"),
+        h("{header-rows=1}\n::: list-table\n- - A\n  - <\n  - C\n- - ^\n  - ^\n  - Y\n- - ^\n  - ^\n  - Z\n:::"),
         [
             "<table>",
             "  <tbody>",
-            "    <tr><th scope=\"col\" rowspan=\"2\" colspan=\"2\">A</th><th scope=\"col\">C</th></tr>",
+            "    <tr><th scope=\"col\" rowspan=\"3\" colspan=\"2\">A</th><th scope=\"col\">C</th></tr>",
             "    <tr><td>Y</td></tr>",
+            "    <tr><td>Z</td></tr>",
             "  </tbody>",
             "</table>",
         ]

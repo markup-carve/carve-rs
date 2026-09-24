@@ -802,6 +802,9 @@ fn render_layout_table(
     if headers.is_empty() || headers.len() != delimiter.len() {
         return None;
     }
+    if headers.iter().any(|cell| *cell == "^" || *cell == "<") {
+        return None;
+    }
     let alignments: Vec<Option<&str>> = delimiter
         .iter()
         .map(|cell| layout_alignment(cell))
@@ -1084,6 +1087,13 @@ mod layout_html_tests {
             let source = format!("| H | G |\n| --- | --- |\n| a | {marker} |\n");
             assert!(try_layout_html(&source, &Options::default()).is_none());
             assert_eq!(crate::to_html(&source), authoritative(&source));
+
+            let header_source = format!("| A | {marker} |\n| --- | --- |\n| a | b |\n");
+            assert!(try_layout_html(&header_source, &Options::default()).is_none());
+            assert_eq!(
+                crate::to_html(&header_source),
+                authoritative(&header_source)
+            );
         }
     }
 

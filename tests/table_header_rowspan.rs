@@ -26,3 +26,19 @@ fn header_rowspan_and_body_rowspan_coexist() {
         "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"2\">H</th><th scope=\"col\">G</th></tr>\n    <tr><td rowspan=\"2\">b</td></tr>\n    <tr><td>x</td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn explicit_head_rowspan_keeps_one_group() {
+    assert_eq!(
+        carve::to_html("{header-rows=1}\n| H | G |\n| ^ | b |"),
+        "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"2\">H</th><th scope=\"col\">G</th></tr>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn footer_rowspan_keeps_one_group() {
+    assert_eq!(
+        carve::to_html("{footer-rows=1}\n| a | b |\n| ^ | c |"),
+        "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a</td><td>b</td></tr>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>"
+    );
+}
