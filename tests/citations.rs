@@ -525,13 +525,13 @@ fn parse_locator_section_symbol() {
 #[test]
 fn integral_group_marker() {
     let g = group("[+@k]").unwrap();
-    assert!(g.integral);
+    assert!(g.integral());
 }
 
 #[test]
 fn non_integral_group() {
     let g = group("[@k]").unwrap();
-    assert!(!g.integral);
+    assert!(!g.integral());
 }
 
 #[test]

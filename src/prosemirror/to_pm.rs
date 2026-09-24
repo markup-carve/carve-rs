@@ -777,7 +777,7 @@ impl Renderer {
             InlineNode::CitationGroup(n) => {
                 let mut a = Object::new();
                 a.insert("raw".into(), Json::String(n.raw.clone()));
-                a.insert("integral".into(), Json::Bool(n.integral));
+                a.insert("integral".into(), Json::Bool(n.integral()));
                 let items = n
                     .items
                     .iter()
@@ -785,6 +785,9 @@ impl Renderer {
                         let mut i = Object::new();
                         i.insert("key".into(), Json::String(item.key.clone()));
                         i.insert("suppressAuthor".into(), Json::Bool(item.suppress_author));
+                        if item.mode == Some(CitationItemMode::Integral) {
+                            i.insert("mode".into(), Json::String("integral".into()));
+                        }
                         for (key, value) in [
                             ("prefix", &item.prefix),
                             ("locator", &item.locator),
