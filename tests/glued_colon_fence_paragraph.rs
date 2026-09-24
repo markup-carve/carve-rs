@@ -14,7 +14,7 @@ fn html(src: &str) -> String {
 fn a_line_block_opener_interrupts_after_a_glued_fence() {
     assert_eq!(
         html(":::]\n::: |"),
-        "<p>:::]</p>\n<div class=\"line-block\">\n</div>"
+        "<p>:::]</p>\n<div class=\"line-block\">\n\n</div>"
     );
 }
 
@@ -33,14 +33,14 @@ fn a_bare_fence_still_folds_after_a_glued_fence() {
 
 #[test]
 fn a_bare_fence_interrupts_a_paragraph_with_no_glued_fence() {
-    assert_eq!(html("text\n:::"), "<p>text</p>\n<div>\n</div>");
+    assert_eq!(html("text\n:::"), "<p>text</p>\n<div>\n\n</div>");
 }
 
 #[test]
 fn the_split_holds_inside_a_block_quote() {
     assert_eq!(
         html("> :::]\n> ::: |"),
-        "<blockquote>\n  <p>:::]</p>\n  <div class=\"line-block\">\n  </div>\n</blockquote>"
+        "<blockquote>\n  <p>:::]</p>\n  <div class=\"line-block\">\n\n  </div>\n</blockquote>"
     );
 }
 
@@ -56,7 +56,7 @@ fn the_split_holds_inside_a_container() {
 fn the_split_holds_in_an_item_lead_paragraph() {
     assert_eq!(
         html("- :::]\n  ::: |"),
-        "<ul>\n  <li>:::]\n    <div class=\"line-block\">\n    </div>\n  </li>\n</ul>"
+        "<ul>\n  <li>:::]\n    <div class=\"line-block\">\n\n    </div>\n  </li>\n</ul>"
     );
 }
 

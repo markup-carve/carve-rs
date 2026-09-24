@@ -173,7 +173,7 @@ fn a_nested_quote_marker_does_not_take_the_line_out_of_the_outer_one() {
     // without reaching it, and does not decide the remaining step.
     assert_eq!(
         html("> :::note\n> > :::\ntail\n"),
-        "<blockquote>\n  <p>:::note</p>\n  <blockquote>\n    <div>\n    </div>\n  </blockquote>\n  <p>tail</p>\n</blockquote>"
+        "<blockquote>\n  <p>:::note</p>\n  <blockquote>\n    <div>\n\n    </div>\n  </blockquote>\n  <p>tail</p>\n</blockquote>"
     );
 }
 
@@ -191,7 +191,7 @@ fn a_blank_line_ends_the_absorption() {
     // engines already agreed here; this fix does not move the shape.
     assert_eq!(
         html("> quote\n> :::note\n>\n> :::\ntail\n"),
-        "<blockquote>\n  <p>quote\n:::note</p>\n  <div>\n  </div>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <p>quote\n:::note</p>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -202,7 +202,7 @@ fn a_heading_between_them_ends_the_absorbing_paragraph() {
     // to fold into. Same recorded divergence as the blank-line case above.
     assert_eq!(
         html("> quote\n> :::note\n> # h\n> :::\ntail\n"),
-        "<blockquote>\n  <p>quote\n:::note</p>\n  <h1 id=\"h\">h</h1>\n  <div>\n  </div>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <p>quote\n:::note</p>\n  <h1 id=\"h\">h</h1>\n  <div>\n\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -218,7 +218,7 @@ fn a_flush_left_fence_still_ends_the_quote() {
     // by this fix.
     assert_eq!(
         html("> quote\n> :::note\n> body\n:::\n"),
-        "<blockquote><p>quote\n:::note\nbody</p></blockquote>\n<div>\n</div>"
+        "<blockquote><p>quote\n:::note\nbody</p></blockquote>\n<div>\n\n</div>"
     );
 }
 

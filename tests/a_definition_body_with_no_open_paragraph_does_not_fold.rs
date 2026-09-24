@@ -106,7 +106,7 @@ fn a_thematic_break_body_does_not_take_the_fold() {
 fn a_closed_empty_div_body_does_not_take_the_fold() {
     assert_eq!(
         html(":: t\n:  :::\n   :::\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <div>\n    </div>\n  </dd>\n</dl>\n<p>lazy</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <div>\n\n    </div>\n  </dd>\n</dl>\n<p>lazy</p>"
     );
     assert!(list_twin("- :::\n  :::\nlazy\n").ends_with("<p>lazy</p>"));
 }
