@@ -24,7 +24,7 @@ use crate::render::render_attrs_without_keys;
 
 /// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
 /// then rendered by [`TocPlacement::render_extension_carrier`].
-const TOC_CARRIER: &str = "toc-placement";
+pub(crate) const TOC_CARRIER: &str = "toc-placement";
 
 /// List element for the TOC entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

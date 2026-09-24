@@ -202,17 +202,27 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::list_table::CARRIER => {
             Some("div")
         }
-        // The `glossary` / `index` extensions likewise rewrite a `::: glossary`
-        // / `::: index` admonition (a typed div) into a carrier before profile
-        // filtering; gate them as `div` so a restrictive profile denies them
-        // exactly as the original admonition.
+        // The `glossary`, `index` and toc-placement extensions rewrite the
+        // `::: glossary` / `::: index` / `::: toc` DIRECTIVE into a carrier
+        // before profile filtering, so the carrier is what a profile sees. Gate
+        // them as `directive`, which `with_supertype` keeps covered by `div`:
+        // a profile denying `div` strips them exactly as it stripped the typed
+        // div these kinds used to parse as, and one denying `directive` strips
+        // them too. Left at `div`, denying `directive` worked only while the
+        // extension was off - the deny list would have depended on which
+        // extensions the caller registered.
         BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::glossary::CARRIER => {
-            Some("div")
+            Some("directive")
         }
         BlockNode::ExtensionCarrier(e)
             if e.name == crate::extensions::index_terms::LIST_CARRIER =>
         {
-            Some("div")
+            Some("directive")
+        }
+        BlockNode::ExtensionCarrier(e)
+            if e.name == crate::extensions::table_of_contents::TOC_CARRIER =>
+        {
+            Some("directive")
         }
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.

@@ -268,3 +268,30 @@ fn a_citation_inside_a_directive_is_numbered() {
         "and the reference list lands in the ::: references directive: {html}"
     );
 }
+
+#[test]
+fn a_denied_directive_stays_denied_once_an_extension_rewrites_it() {
+    // The placement extensions replace the directive with their own carrier in
+    // `before_render`, which runs BEFORE profile filtering - so the carrier is
+    // what a profile sees. Gated as anything but `directive`, a deny list would
+    // depend on which extensions the caller registered.
+    let toc = carve::TocPlacement::new();
+    let glossary = carve::Glossary::new();
+    let index = carve::Index::new();
+    for denied in ["div", "directive"] {
+        let profile = carve::Profile::full().deny_block(&[denied]);
+        let options = carve::Options::new()
+            .with_extension(&toc)
+            .with_extension(&glossary)
+            .with_extension(&index)
+            .with_profile(profile);
+        let html = carve::to_html_with_options(
+            "::: toc\n:::\n\n::: index\n:::\n\n# One\n\nA :index[term] here.\n",
+            &options,
+        );
+        assert!(
+            !html.contains("class=\"toc\"") && !html.contains("class=\"index\""),
+            "denying {denied:?} strips the rewritten placement too: {html}"
+        );
+    }
+}
