@@ -70,3 +70,12 @@ path = "src/main.rs"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Full debug info makes every test binary carry a copy of it, and a day of test
+# runs filled 95 GB of build cache. Line tables keep file and line numbers in a
+# backtrace, which is what the panic output actually uses.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
