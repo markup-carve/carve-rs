@@ -89,7 +89,7 @@ fn the_footnotes_placement_sentinel_cannot_be_forged() {
     // end. The marker is now ordinary text and the section stays where it
     // belongs.
     let payload = format!(
-        r#"{{"type":"document","srcByteLength":30,"children":[{{"type":"paragraph","children":[{{"type":"text","value":"{NUL_ESCAPE}carve:footnotes-placement{NUL_ESCAPE}"}},{{"type":"footnote_ref","id":"a"}}]}},{{"type":"footnote","label":"a","children":[{{"type":"paragraph","children":[{{"type":"text","value":"note"}}]}}]}}]}}"#
+        r#"{{"type":"document","srcByteLength":30,"children":[{{"type":"paragraph","children":[{{"type":"text","value":"{NUL_ESCAPE}carve:footnotes-placement{NUL_ESCAPE}"}},{{"type":"footnote_ref","label":"a"}}]}},{{"type":"footnote","label":"a","children":[{{"type":"paragraph","children":[{{"type":"text","value":"note"}}]}}]}}]}}"#
     );
 
     let html = render_html(&from_json(&payload).expect("decodes")).unwrap();

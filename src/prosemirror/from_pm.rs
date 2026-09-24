@@ -878,7 +878,7 @@ impl Reader {
                 ),
                 a,
             ),
-            "footnote_ref" => with_attrs(node(ty, [("id", optional_string(a, "label"))]), a),
+            "footnote_ref" => with_attrs(node(ty, [("label", optional_string(a, "label"))]), a),
             "comment" => node(
                 "comment",
                 [
