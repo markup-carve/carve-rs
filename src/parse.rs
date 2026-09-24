@@ -10972,7 +10972,7 @@ pub(crate) fn line_starts_paragraph(line: &str) -> bool {
 /// continuation branch applies via `pending_blank`).
 fn sublist_source_loosens_outer_item(source: &str) -> bool {
     let lines: Vec<&str> = source.split('\n').collect();
-    let Some(inner_content_col) = lines
+    let Some(mut inner_content_col) = lines
         .iter()
         .find(|l| !is_blank_line(l))
         .and_then(|l| marker_content_col(l))
@@ -10984,6 +10984,15 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
         if is_blank_line(line) {
             prev_blank = true;
             continue;
+        }
+        // A marker at the sub-list's own column opens a sibling item or a
+        // sibling sub-list, whose content column then applies (carve-rs#1846).
+        if indent_columns(line) == 0 {
+            if let Some(col) = marker_content_col(line) {
+                inner_content_col = col;
+                prev_blank = false;
+                continue;
+            }
         }
         if prev_blank
             && indent_columns(line) < inner_content_col
