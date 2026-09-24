@@ -108,7 +108,7 @@ fn cli_allows_only_named_losses_even_when_report_is_truncated() {
     assert_eq!(allowed.stdout, "漢(かん)字()\n".as_bytes());
 
     let mixed = RUBY.replace(
-        r#""type":"ruby""#,
+        r#"{"type":"ruby""#,
         r#"{"type":"raw_inline","format":"latex","content":"x"},{"type":"ruby""#,
     );
     let refused_mixed = cli(
@@ -123,6 +123,9 @@ fn cli_allows_only_named_losses_even_when_report_is_truncated() {
     );
     assert!(!refused_mixed.status.success());
     assert!(refused_mixed.stdout.is_empty());
+    let report = String::from_utf8_lossy(&refused_mixed.stderr);
+    assert!(report.contains("raw-format-dropped"), "{report}");
+    assert!(report.contains("ruby-flattened"), "{report}");
 }
 
 #[test]
