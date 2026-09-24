@@ -12,9 +12,10 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("abbreviation_def", &["abbr", "attrs", "expansion", "pos", "type"]),
     ("admonition", &["attrs", "children", "kind", "label", "pos", "title", "type"]),
     ("autolink", &["attrs", "href", "pos", "text", "type"]),
+    ("block_extension", &["attrs", "fallback", "name", "payload", "pos", "type", "version"]),
     ("block_quote", &["attrs", "children", "fenced", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
-    ("citation", &["key", "locator", "locatorLabel", "locatorValue", "number", "pos", "prefix", "suffix", "suppressAuthor", "type", "useIndex"]),
+    ("citation", &["key", "locator", "locatorLabel", "locatorValue", "mode", "number", "pos", "prefix", "suffix", "suppressAuthor", "type", "useIndex"]),
     ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),
     ("code", &["attrs", "pos", "type", "value"]),
@@ -25,6 +26,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("definition_list", &["attrs", "items", "loose", "pos", "type"]),
     ("definition_term", &["attrs", "children", "pos", "type"]),
     ("delete", &["attrs", "children", "pos", "type"]),
+    ("directive", &["attrs", "children", "kind", "label", "pos", "type"]),
     ("div", &["attrs", "children", "label", "pos", "type"]),
     ("document", &["children", "srcByteLength", "type"]),
     ("emphasis", &["attrs", "children", "pos", "type"]),
@@ -42,7 +44,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("inline_extension", &["attrs", "content", "name", "pos", "type"]),
     ("inline_footnote", &["attrs", "inline", "number", "pos", "type"]),
     ("insert", &["attrs", "children", "pos", "type"]),
-    ("line_block", &["attrs", "children", "pos", "type"]),
+    ("line_block", &["attrs", "children", "lines", "pos", "type"]),
     ("link", &["attrs", "children", "href", "pos", "rawRef", "ref", "title", "type"]),
     ("link_reference_definition", &["attrs", "href", "label", "pos", "title", "type"]),
     ("list", &["attrs", "bareMarker", "bulletChar", "delim", "items", "olType", "ordered", "pos", "start", "tight", "type"]),
@@ -53,6 +55,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("paragraph", &["attrs", "blockImage", "children", "pos", "type"]),
     ("raw_block", &["attrs", "content", "format", "pos", "type"]),
     ("raw_inline", &["attrs", "content", "format", "pos", "type"]),
+    ("ruby", &["attrs", "pairs", "pos", "type"]),
     ("section", &["attrs", "children", "level", "pos", "type"]),
     ("small_caps", &["attrs", "children", "pos", "type"]),
     ("smart_punctuation", &["attrs", "glyph", "kind", "pos", "type", "value"]),
@@ -77,6 +80,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
 #[rustfmt::skip]
 pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
     ("attrs", &["classes", "id", "keyValues", "order"]),
+    ("payload", &["format", "value"]),
     ("pos", &["endColumn", "endLine", "endOffset", "file", "startColumn", "startLine", "startOffset"]),
     ("rowGroups", &["bodies", "footRows", "headRows"]),
 ];
@@ -85,6 +89,7 @@ pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
 /// keyed by the `type.property` that holds it.
 #[rustfmt::skip]
 pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
+    ("ruby.pairs", &["annotation", "base"]),
     ("table.rowGroups.bodies", &["attrs", "bodyRows", "headRows", "rowHeadColumns"]),
 ];
 
@@ -93,6 +98,7 @@ pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
 #[rustfmt::skip]
 pub(crate) const WIRE_CONST_FIELDS: &[(&str, &[(&str, &str)])] = &[
     ("block_quote", &[("fenced", "true")]),
+    ("citation", &[("mode", "\"integral\"")]),
     ("citation_group", &[("mode", "\"integral\"")]),
     ("definition_list", &[("loose", "true")]),
     ("list", &[("bareMarker", "true")]),

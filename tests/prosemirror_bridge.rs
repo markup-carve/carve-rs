@@ -1344,8 +1344,23 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // report an existing loss kind, mostly soft breaks and delimiter reflow.
     // Spec 493 adds one ordinary strict document and one document whose
     // comment-only containers report existing bridge losses.
+    // The pin moves on to carve e2b7087f, which adds corpus 494 and 495
+    // (markup-carve/carve#2224) and changes no existing document. Measured the
+    // same way - both buckets dumped by name at 41a070b1 and at e2b7087f with
+    // the same engine and diffed: 1445/413 over 1858 documents becomes 1445/415
+    // over 1860. NO document changes bucket in either direction, there are no
+    // leavers, and the two joiners are files the base corpus does not contain.
+    //
+    // Both joiners are lossy, both with `dropped` EMPTY and the single cause
+    // `table_row_groups` - the degrade `to_pm` reports for a table carrying
+    // explicit row groups. That is not a new kind and not a consequence of the
+    // three types this bump adds to the vocabulary: no corpus document reaches
+    // `block_extension`, `directive` or `ruby`, because Carve 0.1 source spells
+    // none of them. 494 is `{header-rows=1}` and 495 is `{footer-rows=1}`, and
+    // 376-pipe-tables-can-state-head-and-foot-row-counts already carried the
+    // same cause at the old pin - it was the only such document until now.
     const STRICT: usize = 1445;
-    const LOSSY: usize = 413;
+    const LOSSY: usize = 415;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

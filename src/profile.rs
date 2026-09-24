@@ -75,6 +75,19 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     // (markup-carve/carve#1279). Tier-2: only a parse with the Citations
     // extension on can produce it.
     "citation_definition",
+    // Interchange-only block types, listed the same way `small_caps` is on the
+    // inline axis: profiles.md names them as deniable, so the string API has to
+    // answer for the name even though no parse produces one.
+    //
+    // `block_extension` is the block twin of `inline_extension`, and Carve 0.1
+    // source spells none (markup-carve/carve#2223). `directive` is the
+    // generated-content half of `admonition` - toc, footnotes, glossary, index,
+    // references, bibliography - split out so a consumer does not need a list of
+    // kinds that are not callouts (markup-carve/carve#2225); the spec defers
+    // REFUSING those kinds on `admonition.kind` to the pin that moves to a build
+    // emitting `directive`, so classifying them is a separate change.
+    "block_extension",
+    "directive",
 ];
 
 /// Canonical inline node-type vocabulary (snake_case).
@@ -117,6 +130,10 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     // never produces one, but profiles.md lists it as deniable, so the string
     // API has to answer for the name (markup-carve/carve#2210).
     "small_caps",
+    // Interchange-only too, for the same reason: a ruby annotation's paired base
+    // and annotation have no Carve 0.1 spelling, so the type exists for a bridge
+    // to carry rather than for a parser to produce (markup-carve/carve#2221).
+    "ruby",
 ];
 
 /// Map a [`BlockNode`] to its canonical snake_case name.
