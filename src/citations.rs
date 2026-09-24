@@ -1009,6 +1009,28 @@ fn annotate_citations_inline(
             InlineNode::Span(s) => {
                 annotate_citations_inline(&mut s.children, defs, mode, has_bib, seen, order, uses)
             }
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    annotate_citations_inline(
+                        &mut pair.base,
+                        defs,
+                        mode,
+                        has_bib,
+                        seen,
+                        order,
+                        uses,
+                    );
+                    annotate_citations_inline(
+                        &mut pair.annotation,
+                        defs,
+                        mode,
+                        has_bib,
+                        seen,
+                        order,
+                        uses,
+                    );
+                }
+            }
             InlineNode::Extension(e) => {
                 annotate_citations_inline(&mut e.children, defs, mode, has_bib, seen, order, uses);
             }

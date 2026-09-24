@@ -747,6 +747,19 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 style(&format!(" ({})", strip_terminal_controls(&authored)), DIM)
             )
         }
+        InlineNode::Ruby(r) => {
+            crate::render_loss::record_ruby_flattened(r);
+            r.pairs
+                .iter()
+                .map(|pair| {
+                    format!(
+                        "{}({})",
+                        render_inlines(&pair.base, ctx, depth + 1),
+                        render_inlines(&pair.annotation, ctx, depth + 1)
+                    )
+                })
+                .collect()
+        }
         InlineNode::Math(math) => {
             let formula = style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA);
             // PART 9 §19: the number rides outside the formula's color, the way

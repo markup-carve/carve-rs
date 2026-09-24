@@ -476,6 +476,8 @@ pub struct Div {
 pub struct LineBlock {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
+    /// Optional line-end pointers for each stanza, relative to its child block.
+    pub lines: Option<Vec<Vec<String>>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -747,6 +749,7 @@ pub enum InlineNode {
     Link(Link),
     Image(Image),
     Span(Span),
+    Ruby(Ruby),
     Math(Math),
     RawInline(RawInline),
     LiteralInline(LiteralInline),
@@ -789,6 +792,7 @@ impl InlineNode {
             Self::Link(n) => n.pos.as_ref(),
             Self::Image(n) => n.pos.as_ref(),
             Self::Span(n) => n.pos.as_ref(),
+            Self::Ruby(n) => n.pos.as_ref(),
             Self::Math(n) => n.pos.as_ref(),
             Self::RawInline(n) => n.pos.as_ref(),
             Self::LiteralInline(n) => n.pos.as_ref(),
@@ -954,6 +958,14 @@ pub(crate) fn inline_nodes_without_strong(nodes: &[InlineNode]) -> Vec<InlineNod
                 s.children = inline_nodes_without_strong(&s.children);
                 out.push(InlineNode::Span(s));
             }
+            InlineNode::Ruby(r) => {
+                let mut r = r.clone();
+                for pair in &mut r.pairs {
+                    pair.base = inline_nodes_without_strong(&pair.base);
+                    pair.annotation = inline_nodes_without_strong(&pair.annotation);
+                }
+                out.push(InlineNode::Ruby(r));
+            }
             InlineNode::Extension(e) => {
                 let mut e = e.clone();
                 e.children = inline_nodes_without_strong(&e.children);
@@ -1098,6 +1110,32 @@ pub struct Span {
     pub injected: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ruby {
+    pub attrs: Option<Attrs>,
+    pub pairs: Vec<RubyPair>,
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RubyPair {
+    pub base: Vec<InlineNode>,
+    pub annotation: Vec<InlineNode>,
+}
+
+impl Ruby {
+    pub fn flattened(&self) -> Vec<InlineNode> {
+        let mut out = Vec::new();
+        for pair in &self.pairs {
+            out.extend(pair.base.iter().cloned());
+            out.push(InlineNode::text("("));
+            out.extend(pair.annotation.iter().cloned());
+            out.push(InlineNode::text(")"));
+        }
+        out
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,5 +1,6 @@
-use crate::ast::Pos;
+use crate::ast::{BlockNode, Document, InlineNode, Pos, Ruby};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 pub const DEFAULT_MAX_RENDER_LOSSES: usize = 100;
 
@@ -42,7 +43,7 @@ impl RawNodeType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderLoss {
     pub code: &'static str,
-    pub format: String,
+    pub format: Option<String>,
     pub target: RenderTarget,
     pub node_type: RawNodeType,
     pub pos: Option<Pos>,
@@ -54,6 +55,7 @@ pub struct RenderResult<T> {
     pub value: T,
     pub losses: Vec<RenderLoss>,
     pub total_losses: usize,
+    pub totals_by_code: BTreeMap<&'static str, usize>,
     pub truncated: bool,
 }
 
@@ -76,6 +78,7 @@ impl Default for CheckedRenderOptions {
 pub struct RenderLossError {
     pub losses: Vec<RenderLoss>,
     pub total_losses: usize,
+    pub totals_by_code: BTreeMap<&'static str, usize>,
     pub truncated: bool,
 }
 
@@ -96,6 +99,7 @@ struct Collector {
     max: usize,
     total: usize,
     losses: Vec<RenderLoss>,
+    totals_by_code: BTreeMap<&'static str, usize>,
 }
 thread_local! { static COLLECTOR: RefCell<Option<Collector>> = const { RefCell::new(None) }; }
 
@@ -104,10 +108,11 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
         let mut slot = slot.borrow_mut();
         let Some(c) = slot.as_mut() else { return };
         c.total += 1;
+        *c.totals_by_code.entry("raw-format-dropped").or_default() += 1;
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
                 code: "raw-format-dropped",
-                format: format.to_string(),
+                format: Some(format.to_string()),
                 target: c.target,
                 node_type,
                 pos,
@@ -120,6 +125,61 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
             });
         }
     });
+}
+
+pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code.entry("ruby-flattened").or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "ruby-flattened",
+                format: None,
+                target: c.target,
+                node_type: RawNodeType::Inline,
+                pos: ruby.pos.clone(),
+                message: "Flattened ruby annotation".to_string(),
+            });
+        }
+    });
+}
+
+pub(crate) fn record_ruby_in_document(doc: &Document) {
+    if !COLLECTOR.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|c| c.target == RenderTarget::Carve)
+    }) {
+        return;
+    }
+    struct RubyVisitor;
+    impl crate::include_walk::SubtreeVisitor for RubyVisitor {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                crate::include_walk::visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if matches!(inline, InlineNode::CitationGroup(_)) {
+                    continue; // The Carve writer emits group.raw, not its item fields.
+                }
+                if let InlineNode::Ruby(ruby) = inline {
+                    record_ruby_flattened(ruby);
+                }
+                crate::include_walk::visit_inline_children(inline, self);
+            }
+        }
+    }
+    use crate::include_walk::SubtreeVisitor as _;
+    let mut copy = doc.clone();
+    let mut visitor = RubyVisitor;
+    visitor.blocks(&mut copy.children);
+    for blocks in copy.footnote_defs.values_mut() {
+        visitor.blocks(blocks);
+    }
 }
 
 /// Collect actual losses produced while `render` runs. This is the checked
@@ -139,6 +199,7 @@ pub fn with_render_loss_report<T>(
             max: options.max_losses,
             total: 0,
             losses: Vec::new(),
+            totals_by_code: BTreeMap::new(),
         });
     });
     let value = render();
@@ -148,6 +209,7 @@ pub fn with_render_loss_report<T>(
         Err(RenderLossError {
             losses: collector.losses,
             total_losses: collector.total,
+            totals_by_code: collector.totals_by_code,
             truncated,
         })
     } else {
@@ -155,6 +217,7 @@ pub fn with_render_loss_report<T>(
             value,
             losses: collector.losses,
             total_losses: collector.total,
+            totals_by_code: collector.totals_by_code,
             truncated,
         })
     }

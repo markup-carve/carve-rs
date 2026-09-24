@@ -852,6 +852,7 @@ type EncodeFinish<'a> = Box<dyn FnOnce(&mut String, &mut Vec<EncodeTask<'a>>) + 
 enum EncodeTask<'a> {
     Block(&'a BlockNode, usize),
     Inline(&'a InlineNode, usize),
+    RubyPair(&'a RubyPair, usize),
     ListItem(&'a ListItem, usize),
     TableRow(&'a TableRow, usize),
     TableCell(&'a TableCell, usize),
@@ -908,6 +909,22 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                     continue;
                 }
                 encode_inline_task(out, &mut tasks, node, depth);
+            }
+            EncodeTask::RubyPair(pair, depth) => {
+                out.push('{');
+                let mut w = Writer { out, first: true };
+                w.field("base", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                    let mut w = Writer { out, first: false };
+                    w.field("annotation", |out| out.push('['));
+                    tasks.push(EncodeTask::Char('}'));
+                    push_array(tasks, &pair.annotation, |node| {
+                        EncodeTask::Inline(node, depth)
+                    });
+                })));
+                push_array(&mut tasks, &pair.base, |node| {
+                    EncodeTask::Inline(node, depth)
+                });
             }
             EncodeTask::ListItem(n, depth) => {
                 let mut w = typed(out, "list_item");
@@ -1171,7 +1188,17 @@ fn encode_block_task<'a>(
         BlockNode::LineBlock(n) => {
             let mut w = typed(out, "line_block");
             w.field("children", |out| out.push('['));
-            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(lines) = &n.lines {
+                    w.field("lines", |out| {
+                        write_array(out, lines, |out, line| write_string_array(out, line))
+                    });
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
             push_array(tasks, &n.children, |node| {
                 EncodeTask::Block(node, depth + 1)
             });
@@ -1451,6 +1478,14 @@ fn encode_inline_task<'a>(
                 EncodeTask::Inline(node, depth + 1)
             });
         }
+        InlineNode::Ruby(n) => {
+            let mut w = typed(out, "ruby");
+            w.field("pairs", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.pairs, |pair| {
+                EncodeTask::RubyPair(pair, depth + 1)
+            });
+        }
         InlineNode::Extension(n) => {
             let mut w = typed(out, "inline_extension");
             w.field("name", |out| write_string(out, &n.name));
@@ -1664,6 +1699,11 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
         BlockNode::LineBlock(n) => {
             let mut w = typed(out, "line_block");
             w.field("children", |out| write_blocks(out, &n.children));
+            if let Some(lines) = &n.lines {
+                w.field("lines", |out| {
+                    write_array(out, lines, |out, line| write_string_array(out, line))
+                });
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -2273,6 +2313,7 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
+        InlineNode::Ruby(_) => unreachable!("ruby is handled by the streaming encoder"),
     }
 }
 
@@ -2662,6 +2703,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "line_block" => Ok(BlockNode::LineBlock(LineBlock {
             attrs: optional_attrs(obj)?,
             children: decode_blocks(required_array(obj, "line_block", "children")?)?,
+            lines: decode_line_block_lines(obj)?,
             pos: optional_pos(obj, "line_block")?,
         })),
         "definition_list" => Ok(BlockNode::DefinitionList(DefinitionList {
@@ -3101,6 +3143,35 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             children: decode_inlines(required_array(obj, "span", "children")?)?,
             pos: optional_pos(obj, "span")?,
         })),
+        "ruby" => {
+            let pairs = required_array(obj, "ruby", "pairs")?;
+            if pairs.is_empty() {
+                return Err(AstJsonError::new("ruby.pairs must not be empty"));
+            }
+            let pairs = pairs
+                .iter()
+                .map(|value| {
+                    let pair = value.expect_object("ruby.pairs[]")?;
+                    let base = decode_inlines(required_array(pair, "ruby.pairs[]", "base")?)?;
+                    if base.is_empty() {
+                        return Err(AstJsonError::new("ruby.pairs[].base must not be empty"));
+                    }
+                    Ok(RubyPair {
+                        base,
+                        annotation: decode_inlines(required_array(
+                            pair,
+                            "ruby.pairs[]",
+                            "annotation",
+                        )?)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, AstJsonError>>()?;
+            Ok(InlineNode::Ruby(Ruby {
+                attrs: optional_attrs(obj)?,
+                pairs,
+                pos: optional_pos(obj, "ruby")?,
+            }))
+        }
         "math" => {
             let display = required_bool(obj, "math", "display")?;
             let label = optional_string(obj, "label")?.map(str::to_string);
@@ -3593,6 +3664,61 @@ fn optional_usize(obj: &Map<String, Json>, field: &str) -> Result<Option<usize>,
     obj.get(field)
         .map(|value| value.expect_usize(field))
         .transpose()
+}
+
+fn decode_line_block_lines(
+    obj: &Map<String, Json>,
+) -> Result<Option<Vec<Vec<String>>>, AstJsonError> {
+    let Some(value) = obj.get("lines") else {
+        return Ok(None);
+    };
+    let stanzas = value.expect_array("line_block.lines")?;
+    let children = required_array(obj, "line_block", "children")?;
+    if stanzas.len() != children.len() {
+        return Err(AstJsonError::new(
+            "line_block.lines must have one entry per child stanza",
+        ));
+    }
+    let mut lines = Vec::with_capacity(stanzas.len());
+    for (index, stanza) in stanzas.iter().enumerate() {
+        let pointers = stanza.expect_array(&format!("line_block.lines[{index}]"))?;
+        if pointers.is_empty() {
+            return Err(AstJsonError::new(format!(
+                "line_block.lines[{index}] must contain a line end"
+            )));
+        }
+        let mut ends = Vec::with_capacity(pointers.len());
+        let mut terminators = 0;
+        for pointer in pointers {
+            let pointer = pointer.expect_string("line_block.lines pointer")?;
+            let valid = pointer.starts_with('/')
+                && !pointer[1..].split('/').any(|segment| {
+                    let mut chars = segment.chars();
+                    while let Some(ch) = chars.next() {
+                        if ch == '~' && !matches!(chars.next(), Some('0' | '1')) {
+                            return true;
+                        }
+                    }
+                    false
+                });
+            if !valid {
+                return Err(AstJsonError::new(format!(
+                    "line_block.lines[{index}] contains an invalid JSON Pointer"
+                )));
+            }
+            if pointer == "/children/-" {
+                terminators += 1;
+            }
+            ends.push(pointer.to_string());
+        }
+        if terminators != 1 || ends.last().map_or(true, |end| end != "/children/-") {
+            return Err(AstJsonError::new(format!(
+                "line_block.lines[{index}] must end once at /children/-"
+            )));
+        }
+        lines.push(ends);
+    }
+    Ok(Some(lines))
 }
 
 /// Reading a wire value as the shape the schema pins, with the field path in

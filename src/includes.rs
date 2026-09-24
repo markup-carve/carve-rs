@@ -1342,6 +1342,12 @@ fn rename_inlines(
                 rename_inlines(&mut l.children, footnotes, headings);
             }
             InlineNode::Span(s) => rename_inlines(&mut s.children, footnotes, headings),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    rename_inlines(&mut pair.base, footnotes, headings);
+                    rename_inlines(&mut pair.annotation, footnotes, headings);
+                }
+            }
             InlineNode::Extension(e) => rename_inlines(&mut e.children, footnotes, headings),
             InlineNode::CriticInsert(c) => rename_inlines(&mut c.children, footnotes, headings),
             InlineNode::CriticDelete(c) => rename_inlines(&mut c.children, footnotes, headings),
@@ -1951,6 +1957,12 @@ fn expand_inlines(nodes: &mut Vec<InlineNode>, state: &mut State<'_>) {
             InlineNode::Emphasis(e) => expand_inlines(&mut e.children, state),
             InlineNode::Link(l) => expand_inlines(&mut l.children, state),
             InlineNode::Span(s) => expand_inlines(&mut s.children, state),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    expand_inlines(&mut pair.base, state);
+                    expand_inlines(&mut pair.annotation, state);
+                }
+            }
             InlineNode::Extension(e) => expand_inlines(&mut e.children, state),
             InlineNode::CriticInsert(c) => expand_inlines(&mut c.children, state),
             InlineNode::CriticDelete(c) => expand_inlines(&mut c.children, state),

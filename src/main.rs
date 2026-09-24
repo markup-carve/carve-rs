@@ -111,7 +111,7 @@ fn main() -> ExitCode {
     let mut strict_losses = false;
     let mut report_losses: Option<String> = None;
     let mut report_includes: Option<String> = None;
-    let mut allow_render_loss = false;
+    let mut allowed_render_losses: Vec<&'static str> = Vec::new();
     let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
     // `mut` only where the flag can be honoured: without the `fs` feature the
     // flag is refused at the parse site and this never moves.
@@ -243,9 +243,10 @@ fn main() -> ExitCode {
                 report_includes = Some(value);
             }
             "--allow-loss" => match args.next().as_deref() {
-                Some("raw-format-dropped") => allow_render_loss = true,
+                Some("raw-format-dropped") => allowed_render_losses.push("raw-format-dropped"),
+                Some("ruby-flattened") => allowed_render_losses.push("ruby-flattened"),
                 _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped");
+                    eprintln!("carve: --allow-loss expects raw-format-dropped or ruby-flattened");
                     return ExitCode::from(2);
                 }
             },
@@ -574,7 +575,7 @@ fn main() -> ExitCode {
     // alter rendered output, and the CLI is itself a reporting surface.
     options = options.with_positions(true);
     let mut include_dependencies: Vec<carve::IncludeDependency> = Vec::new();
-    let (output, (mut losses, mut total_losses, mut truncated)) = if from_json {
+    let (output, (mut losses, mut total_losses, mut truncated, totals_by_code)) = if from_json {
         // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
         // input is the JSON payload: it is what gets parsed, held and walked.
         // The document's own `srcByteLength` cannot stand in for it - that number
@@ -611,7 +612,12 @@ fn main() -> ExitCode {
         };
         (
             output,
-            (checked.losses, checked.total_losses, checked.truncated),
+            (
+                checked.losses,
+                checked.total_losses,
+                checked.truncated,
+                checked.totals_by_code,
+            ),
         )
     } else if let Some(resolver) = &resolver {
         // INCLUDES TAKE THE DOCUMENT PATH, not the source facades below: the
@@ -673,7 +679,12 @@ fn main() -> ExitCode {
         include_dependencies = prepared.dependencies;
         (
             output,
-            (checked.losses, checked.total_losses, checked.truncated),
+            (
+                checked.losses,
+                checked.total_losses,
+                checked.truncated,
+                checked.totals_by_code,
+            ),
         )
     } else {
         let checked = carve::with_render_loss_report(target, checked_options, || match format {
@@ -716,10 +727,19 @@ fn main() -> ExitCode {
         };
         (
             output,
-            (checked.losses, checked.total_losses, checked.truncated),
+            (
+                checked.losses,
+                checked.total_losses,
+                checked.truncated,
+                checked.totals_by_code,
+            ),
         )
     };
-    if allow_render_loss {
+    if total_losses > 0
+        && totals_by_code
+            .keys()
+            .all(|code| allowed_render_losses.contains(code))
+    {
         losses.clear();
         total_losses = 0;
         truncated = false;
@@ -1122,9 +1142,10 @@ fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool)
             ",\"pos\":{{\"startLine\":{},\"endLine\":{},\"startColumn\":{},\"endColumn\":{},\"startOffset\":{},\"endOffset\":{}}}",
             pos.start_line, pos.end_line, pos.start_column, pos.end_column, pos.start_offset, pos.end_offset,
         )).unwrap_or_default();
+        let format_field = loss.format.as_ref().map(|format| format!(",\"format\":{}", json_string(format))).unwrap_or_default();
         format!(
-            "{{\"code\":{},\"format\":{},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
-            json_string(loss.code), json_string(&loss.format), json_string(loss.target.as_str()),
+            "{{\"code\":{}{format_field},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
+            json_string(loss.code), json_string(loss.target.as_str()),
             json_string(loss.node_type.as_str()), json_string(&loss.message),
         )
     }).collect::<Vec<_>>().join(",");
@@ -1604,10 +1625,9 @@ fn print_usage() {
          --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
          the author typed instead of the resolved glyphs\n  \
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
-         --strict-losses             refuse output when raw formats are dropped\n  \
+         --strict-losses             refuse output when rendering loses content or structure\n  \
          --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
-         --allow-loss raw-format-dropped\n                              \
-                                     accept intentional target filtering\n  \
+         --allow-loss CODE          accept raw-format-dropped or ruby-flattened\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \
          Defaults to the input file's directory; pass this to widen\n                              \

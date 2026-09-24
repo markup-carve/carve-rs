@@ -236,6 +236,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         InlineNode::AutoLink(_) => Some("autolink"),
         InlineNode::Image(_) => Some("image"),
         InlineNode::Span(_) => Some("span"),
+        InlineNode::Ruby(_) => Some("ruby"),
         InlineNode::Math(_) => Some("math"),
         InlineNode::RawInline(_) => Some("raw_inline"),
         // An inline literal is a code span with the `<code>` wrapper dropped:

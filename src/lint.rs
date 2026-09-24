@@ -908,6 +908,13 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
             report("span", &n.attrs, n.pos.clone(), visit);
             walk_inlines(&n.children, visit);
         }
+        InlineNode::Ruby(n) => {
+            report("ruby", &n.attrs, n.pos.clone(), visit);
+            for pair in &n.pairs {
+                walk_inlines(&pair.base, visit);
+                walk_inlines(&pair.annotation, visit);
+            }
+        }
         InlineNode::Math(n) => report("math", &n.attrs, n.pos.clone(), visit),
         InlineNode::LiteralInline(n) => report("literal_inline", &n.attrs, n.pos.clone(), visit),
         InlineNode::Symbol(n) => report("symbol", &n.attrs, n.pos.clone(), visit),

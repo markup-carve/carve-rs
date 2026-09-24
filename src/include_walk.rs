@@ -122,6 +122,12 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         InlineNode::Emphasis(e) => v.inlines(&mut e.children),
         InlineNode::Link(l) => v.inlines(&mut l.children),
         InlineNode::Span(s) => v.inlines(&mut s.children),
+        InlineNode::Ruby(r) => {
+            for pair in &mut r.pairs {
+                v.inlines(&mut pair.base);
+                v.inlines(&mut pair.annotation);
+            }
+        }
         InlineNode::CriticInsert(c) => v.inlines(&mut c.children),
         InlineNode::CriticDelete(c) => v.inlines(&mut c.children),
         InlineNode::CriticSubstitute(c) => {
@@ -205,6 +211,7 @@ pub(crate) fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::Link(n) => n.pos.as_mut(),
         InlineNode::Image(n) => n.pos.as_mut(),
         InlineNode::Span(n) => n.pos.as_mut(),
+        InlineNode::Ruby(n) => n.pos.as_mut(),
         InlineNode::Math(n) => n.pos.as_mut(),
         InlineNode::RawInline(n) => n.pos.as_mut(),
         InlineNode::LiteralInline(n) => n.pos.as_mut(),

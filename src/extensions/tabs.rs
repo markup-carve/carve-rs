@@ -611,6 +611,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             InlineNode::Emphasis(emphasis) => out.push_str(&inline_text(&emphasis.children)),
             InlineNode::Link(link) => out.push_str(&inline_text(&link.children)),
             InlineNode::Span(span) => out.push_str(&inline_text(&span.children)),
+            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened())),
             InlineNode::Extension(extension) => out.push_str(&inline_text(&extension.children)),
             _ => {}
         }

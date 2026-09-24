@@ -8,10 +8,10 @@ fn checked_html_keeps_output_and_reports_every_drop_in_source_order() {
     assert_eq!(result.value, carve::to_html(SOURCE));
     assert_eq!(result.total_losses, 2);
     assert!(!result.truncated);
-    assert_eq!(result.losses[0].format, "latex");
+    assert_eq!(result.losses[0].format.as_deref(), Some("latex"));
     assert_eq!(result.losses[0].target, RenderTarget::Html);
     assert_eq!(result.losses[0].pos.clone().unwrap().start_column, 1);
-    assert_eq!(result.losses[1].format, "typst");
+    assert_eq!(result.losses[1].format.as_deref(), Some("typst"));
 }
 
 #[test]

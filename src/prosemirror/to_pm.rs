@@ -718,6 +718,19 @@ impl Renderer {
                     self.empty_mark("span", attrs(n.attrs.as_ref()), marks, out);
                 }
             }
+            InlineNode::Ruby(n) => {
+                self.degrade("ruby");
+                for pair in &n.pairs {
+                    for child in &pair.base {
+                        self.inline(child, marks, out);
+                    }
+                    self.push_text(out, "(", marks);
+                    for child in &pair.annotation {
+                        self.inline(child, marks, out);
+                    }
+                    self.push_text(out, ")", marks);
+                }
+            }
             InlineNode::Math(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("src".into(), Json::String(n.content.clone()));

@@ -307,6 +307,12 @@ fn rewrite_markers_inline(
             InlineNode::Emphasis(e) => rewrite_markers_inline(&mut e.children, counts, display),
             InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display),
             InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display),
+            InlineNode::Ruby(r) => {
+                for pair in &mut r.pairs {
+                    rewrite_markers_inline(&mut pair.base, counts, display);
+                    rewrite_markers_inline(&mut pair.annotation, counts, display);
+                }
+            }
             InlineNode::Extension(e) => rewrite_markers_inline(&mut e.children, counts, display),
             InlineNode::CriticInsert(c) => rewrite_markers_inline(&mut c.children, counts, display),
             InlineNode::CriticDelete(c) => rewrite_markers_inline(&mut c.children, counts, display),
@@ -492,6 +498,7 @@ fn inline_text(nodes: &[InlineNode], smart: SmartTypographyMode) -> String {
             InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children, smart)),
             InlineNode::Link(l) => out.push_str(&inline_text(&l.children, smart)),
             InlineNode::Span(s) => out.push_str(&inline_text(&s.children, smart)),
+            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened(), smart)),
             InlineNode::Extension(e) => out.push_str(&inline_text(&e.children, smart)),
             InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children, smart)),
             InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children, smart)),

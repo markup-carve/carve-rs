@@ -4624,6 +4624,7 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::Link(n) => n.pos.as_mut(),
         InlineNode::Image(n) => n.pos.as_mut(),
         InlineNode::Span(n) => n.pos.as_mut(),
+        InlineNode::Ruby(n) => n.pos.as_mut(),
         InlineNode::Math(n) => n.pos.as_mut(),
         InlineNode::RawInline(n) => n.pos.as_mut(),
         InlineNode::LiteralInline(n) => n.pos.as_mut(),
@@ -15691,6 +15692,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         children,
+        lines: None,
     })
 }
 
@@ -17195,6 +17197,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::Link(n) => n.pos = pos,
         InlineNode::Image(n) => n.pos = pos,
         InlineNode::Span(n) => n.pos = pos,
+        InlineNode::Ruby(n) => n.pos = pos,
         InlineNode::Math(n) => n.pos = pos,
         InlineNode::RawInline(n) => n.pos = pos,
         InlineNode::LiteralInline(n) => n.pos = pos,
@@ -22269,6 +22272,10 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         }
         InlineNode::Emphasis(emphasis) => holds_nested_anchor(&emphasis.children),
         InlineNode::Span(span) => holds_nested_anchor(&span.children),
+        InlineNode::Ruby(r) => r
+            .pairs
+            .iter()
+            .any(|pair| holds_nested_anchor(&pair.base) || holds_nested_anchor(&pair.annotation)),
         InlineNode::Extension(ext) => holds_nested_anchor(&ext.children),
         InlineNode::CriticInsert(critic) => holds_nested_anchor(&critic.children),
         InlineNode::CriticDelete(critic) => holds_nested_anchor(&critic.children),
@@ -22344,6 +22351,20 @@ fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<I
             InlineNode::Span(mut s) => {
                 s.children = enforce_no_nesting_inline(s.children, inside_link);
                 out.push(InlineNode::Span(s));
+            }
+            InlineNode::Ruby(mut r) => {
+                for pair in &mut r.pairs {
+                    pair.base =
+                        enforce_no_nesting_inline(std::mem::take(&mut pair.base), inside_link);
+                    pair.annotation = enforce_no_nesting_inline(
+                        std::mem::take(&mut pair.annotation),
+                        inside_link,
+                    );
+                    if pair.base.is_empty() {
+                        pair.base.push(InlineNode::text(""));
+                    }
+                }
+                out.push(InlineNode::Ruby(r));
             }
             InlineNode::Extension(mut ext) => {
                 ext.children = enforce_no_nesting_inline(ext.children, inside_link);
