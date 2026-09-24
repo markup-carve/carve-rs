@@ -5,6 +5,8 @@
 //! this opt-in extension linkifies plain `https://…`, `mailto:…`, and bare
 //! `a@b.com` text via the inline matcher contract.
 
+use std::borrow::Cow;
+
 use crate::ast::{InlineNode, Link};
 use crate::extension::{CarveExtension, InlineMatch, MatcherContext};
 
@@ -64,10 +66,11 @@ impl Autolink {
         }
     }
 
-    /// Try to match a scheme URL at `rest`. Mirrors the js regex
-    /// `^(?:scheme|…)://[^\s<>\[\](){}]*[^\s<>\[\](){}.,;:!?'"]`: consume the
-    /// scheme, `://`, then a run of "url" chars, dropping a single trailing
-    /// terminator so `https://x.com.` links `https://x.com`.
+    /// Try to match a scheme URL at `rest`: the scheme, `://`, then a run of
+    /// "url" chars, dropping a trailing terminator so `https://x.com.` links
+    /// `https://x.com`. A backslash escape (`\` + ASCII punctuation) is one
+    /// unit, so the match never ends inside one and an escaped sentence mark
+    /// is not the URL's last character, matching carve-js.
     fn match_url(&self, rest: &str) -> Option<usize> {
         let scheme = self
             .url_schemes
@@ -77,7 +80,16 @@ impl Autolink {
         let body = &rest[after_scheme..];
         // Need at least one url char after `://`.
         let mut last_kept: Option<usize> = None;
-        for (idx, ch) in body.char_indices() {
+        let mut chars = body.char_indices().peekable();
+        while let Some((idx, ch)) = chars.next() {
+            if ch == '\\' {
+                match chars.next_if(|&(_, c)| c.is_ascii_punctuation()) {
+                    Some((_, next)) if is_url_trailing_stop(next) => {}
+                    Some(_) => last_kept = Some(idx + 2),
+                    None => last_kept = Some(idx + 1),
+                }
+                continue;
+            }
             if is_url_stop(ch) {
                 break;
             }
@@ -113,9 +125,9 @@ impl CarveExtension for Autolink {
         let rest = text.get(pos..)?;
 
         if let Some(len) = self.match_url(rest) {
-            let url = &rest[..len];
+            let url = decode_escapes(&rest[..len]);
             return Some(InlineMatch {
-                node: link_node(url, url),
+                node: link_node(&url, &url),
                 end: pos + len,
             });
         }
@@ -155,6 +167,25 @@ fn is_url_stop(ch: char) -> bool {
 
 fn is_url_trailing_stop(ch: char) -> bool {
     matches!(ch, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"')
+}
+
+/// Decode `\` + ASCII punctuation to the punctuation, as core does in text.
+fn decode_escapes(url: &str) -> Cow<'_, str> {
+    if !url.contains('\\') {
+        return Cow::Borrowed(url);
+    }
+    let mut out = String::with_capacity(url.len());
+    let mut chars = url.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next_if(char::is_ascii_punctuation) {
+                out.push(next);
+                continue;
+            }
+        }
+        out.push(ch);
+    }
+    Cow::Owned(out)
 }
 
 fn link_node(href: &str, text: &str) -> InlineNode {
