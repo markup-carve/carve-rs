@@ -318,17 +318,121 @@ fn row_with_no_cell_list_defers_to_plain_div() {
 }
 
 #[test]
-fn header_rowspan_clamped_at_thead_tbody_boundary() {
-    // A `^` in a body row whose origin sits in the header rows finds no valid
-    // origin (an HTML cell cannot span <thead> into <tbody>) and degrades to an
-    // empty cell.
+fn header_rowspan_keeps_one_body_group() {
     assert_eq!(
         h("{header-rows=1}\n::: list-table\n- - H1\n  - H2\n- - ^\n  - B2\n:::"),
         [
             "<table>",
-            "  <thead>\n    <tr><th scope=\"col\">H1</th><th scope=\"col\">H2</th></tr>\n  </thead>",
             "  <tbody>",
-            "    <tr><td></td><td>B2</td></tr>",
+            "    <tr><th scope=\"col\" rowspan=\"2\">H1</th><th scope=\"col\">H2</th></tr>",
+            "    <tr><td>B2</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn local_body_group_rowspan_keeps_one_tbody() {
+    assert_eq!(
+        h("::: list-table\n- -{header-row} Name\n  - Value\n- - Alpha\n  - 1\n- -{header-row} Next\n  - ^\n- - Beta\n  - 2\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><th scope=\"col\">Name</th><th scope=\"col\">Value</th></tr>",
+            "    <tr><td>Alpha</td><td rowspan=\"2\">1</td></tr>",
+            "    <tr><th scope=\"col\">Next</th></tr>",
+            "    <tr><td>Beta</td><td>2</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn crossing_header_colspan_absorbs_both_carets() {
+    assert_eq!(
+        h("{header-rows=1}\n::: list-table\n- - A\n  - <\n  - C\n- - ^\n  - ^\n  - Y\n- - ^\n  - ^\n  - Z\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><th scope=\"col\" rowspan=\"3\" colspan=\"2\">A</th><th scope=\"col\">C</th></tr>",
+            "    <tr><td>Y</td></tr>",
+            "    <tr><td>Z</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn uncovered_caret_in_one_body_group_stays_empty() {
+    assert_eq!(
+        h("::: list-table\n- - A\n  - <\n  - X\n- - B\n  - ^\n  - Y\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><td colspan=\"2\">A</td><td>X</td></tr>",
+            "    <tr><td>B</td><td></td><td>Y</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn blocked_caret_across_local_body_groups_stays_empty() {
+    assert_eq!(
+        h("::: list-table\n- -{header-row} H0\n  - H1\n  - H2\n- - A\n  - <\n  - R\n- -{header-row} H\n  - ^\n  - z\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><th scope=\"col\">H0</th><th scope=\"col\">H1</th><th scope=\"col\">H2</th></tr>",
+            "    <tr><td colspan=\"2\">A</td><td>R</td></tr>",
+            "  </tbody>",
+            "  <tbody>",
+            "    <tr><th scope=\"col\">H</th><th scope=\"col\"></th><th scope=\"col\">z</th></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn blocked_caret_at_body_foot_boundary_stays_empty() {
+    assert_eq!(
+        h("{header-rows=1 footer-rows=1}\n::: list-table\n- - A\n  - B\n  - Q\n- - C\n  - <\n  - R\n- - x\n  - ^\n  - z\n:::"),
+        [
+            "<table>",
+            "  <thead>",
+            "    <tr><th scope=\"col\">A</th><th scope=\"col\">B</th><th scope=\"col\">Q</th></tr>",
+            "  </thead>",
+            "  <tbody>",
+            "    <tr><td colspan=\"2\">C</td><td>R</td></tr>",
+            "  </tbody>",
+            "  <tfoot>",
+            "    <tr><td>x</td><td></td><td>z</td></tr>",
+            "  </tfoot>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn body_to_foot_rowspan_keeps_one_tbody() {
+    assert_eq!(
+        h("{footer-rows=1}\n::: list-table\n- - A\n  - B\n- - ^\n  - C\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><td rowspan=\"2\">A</td><td>B</td></tr>",
+            "    <tr><td>C</td></tr>",
             "  </tbody>",
             "</table>",
         ]

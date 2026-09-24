@@ -228,9 +228,9 @@ fn valid_cell_alignment(attrs: Option<&Attrs>) -> bool {
 /// One source cell in the resolved grid (one entry per authored cell). Mirrors
 /// carve-js's `GridEntry`: a `^`/`<` that found a source to merge into is
 /// flagged `skip` and emits nothing; an unmergeable marker (first-row `^`,
-/// leading `<`, or one clamped at the header/body boundary) keeps `skip = false`
-/// and renders as an EMPTY cell occupying its grid position. The marker is never
-/// rendered as literal text.
+/// leading `<`, or a caret below a consumed colspan position
+/// that is not covered by a span) keeps `skip = false` and renders as an EMPTY
+/// cell occupying its grid position. The marker is never rendered as literal text.
 struct GridEntry<'a> {
     cell: &'a ListItem,
     marker: Option<char>,
@@ -306,7 +306,7 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     // Resolve `^`/`<` span markers into a positional grid, mirroring the
     // pipe-table span model so the output matches an equivalent pipe table, then
     // flow each rendered cell into an output column past any rowspan from above.
-    let grid = resolve_spans(&rows, &row_groups);
+    let grid = resolve_spans(&rows);
     let placement = place_columns(&grid);
     let column_count = placement.column_count;
 
@@ -345,6 +345,37 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     }
 
     let head_rows = grid.len().min(header_rows);
+    let crosses_group = grid.iter().enumerate().any(|(row, cells)| {
+        cells.iter().any(|cell| {
+            cell.rowspan > 1 && !cell.skip && row_groups[row] != row_groups[row + cell.rowspan - 1]
+        })
+    });
+    if crosses_group {
+        let body = grid
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| {
+                format!(
+                    "    {}",
+                    render_row(
+                        cells,
+                        row,
+                        header_rows,
+                        &local_headers,
+                        header_cols,
+                        column_count,
+                        &placement,
+                        ctx,
+                        &columns,
+                    )
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        lines.push(format!("  <tbody>\n{body}\n  </tbody>"));
+        let attrs = table_attrs(node.attrs.as_ref(), ctx);
+        return format!("<table{attrs}>\n{}\n</table>", lines.join("\n"));
+    }
 
     // One row per line, as in every other section (PART 10 §7,
     // markup-carve/carve#1459).
@@ -557,15 +588,13 @@ fn render_cell(cell: &ListItem, ctx: &RenderContext<'_>) -> String {
 /// - A `<` cell grows the colspan of the nearest non-skipped cell to its LEFT in
 ///   the same row and is flagged `skip`.
 /// - A marker that finds no source to merge into (a first-row `^`, a leading `<`,
-///   a `^` clamped at the header/body boundary, or a `<` whose only left neighbor
+///   or a `<` whose only left neighbor
 ///   is a skipped continuation) keeps `skip = false` and renders as an EMPTY
 ///   cell occupying its grid position - never dropped, never literal.
 /// - A cell carrying its own attributes is never a bare marker (its `^`/`<` is
 ///   literal).
-/// - `header_rows` clamps rowspans at the header/body boundary: a `^` in a body
-///   row whose source sits in the header rows finds no valid source and degrades
-///   to an empty cell (an HTML cell cannot span row groups reliably).
-fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], row_groups: &[usize]) -> Vec<Vec<GridEntry<'a>>> {
+/// - The renderer puts every row in one tbody if a visible span crosses groups.
+fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>]) -> Vec<Vec<GridEntry<'a>>> {
     let mut grid: Vec<Vec<GridEntry<'a>>> = rows
         .iter()
         .map(|cells| {
@@ -595,13 +624,24 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], row_groups: &[usize]) -> Vec<Ve
 
             if marker == Some('^') && r > 0 {
                 let up = last_non_skip.get(c).copied().flatten();
-                // Clamp at the header/body boundary: a `^` in a body row must not
-                // extend a cell that originated in the header rows. Leave it
-                // unmerged (it then renders as an empty cell) so no `th rowspan`
-                // crosses into the body group.
-                let crosses_header = matches!(up, Some(u) if row_groups[u] != row_groups[r]);
                 let has_source = matches!(up, Some(u) if u < grid.len() && c < grid[u].len());
-                if has_source && !crosses_header {
+                let consumed_source = matches!(up, Some(u) if grid[u][c].skip);
+                let covered_by_visible_span = if let Some(u) = up {
+                    let mut left = c;
+                    while left > 0 {
+                        left -= 1;
+                        if !grid[u][left].skip {
+                            break;
+                        }
+                    }
+                    left < c
+                        && !grid[u][left].skip
+                        && left + grid[u][left].colspan > c
+                        && u + grid[u][left].rowspan > r
+                } else {
+                    false
+                };
+                if has_source && (!consumed_source || covered_by_visible_span) {
                     let u = up.unwrap();
                     grid[u][c].rowspan += 1;
                     grid[r][c].skip = true;
@@ -617,9 +657,9 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], row_groups: &[usize]) -> Vec<Ve
                 }
             }
 
-            // A cell that ends up non-skipped becomes the nearest source for the
-            // cells below it in this source column.
-            if !grid[r][c].skip {
+            // A consumed colspan position still covers this source column.
+            // A caret below it is absorbed into that invisible position.
+            if !grid[r][c].skip || marker == Some('<') {
                 if c >= last_non_skip.len() {
                     last_non_skip.resize(c + 1, None);
                 }
