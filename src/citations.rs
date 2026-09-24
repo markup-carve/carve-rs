@@ -566,6 +566,10 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
                 a.children = collect_defs(a.children, defs);
                 out.push(BlockNode::Admonition(a));
             }
+            BlockNode::Directive(mut d) => {
+                d.children = collect_defs(d.children, defs);
+                out.push(BlockNode::Directive(d));
+            }
             BlockNode::Div(mut d) => {
                 d.children = collect_defs(d.children, defs);
                 out.push(BlockNode::Div(d));
@@ -875,6 +879,11 @@ fn annotate_citations_block(
                 annotate_citations_inline(title, defs, mode, has_bib, seen, order, uses);
             }
             for child in &mut a.children {
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
+            }
+        }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
         }

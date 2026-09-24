@@ -11407,6 +11407,11 @@ fn block_ends_with_open_paragraph(
         // about: the fence closes the paragraph inside it, and a dedented line
         // after it ends the item (like code/table). One line of body decides it
         // two ways, which is why `colon_open` is read from the SOURCE.
+        Some(BlockNode::Directive(d)) if colon_open > 0 => block_ends_with_open_paragraph(
+            last_open_child(&d.children, skip_comments),
+            colon_open - 1,
+            skip_comments,
+        ),
         Some(BlockNode::Div(d)) if colon_open > 0 => block_ends_with_open_paragraph(
             last_open_child(&d.children, skip_comments),
             colon_open - 1,
@@ -20458,6 +20463,11 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
         // A `:::` div and a block extension were missing, so an abbreviation
         // never expanded inside one -- even with the definition at the top
         // level, where collection was never in doubt. carve-js expands it.
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                apply_abbreviations_block(child, index);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 apply_abbreviations_block(child, index);
@@ -21147,6 +21157,11 @@ fn resolve_reference_links_block(
             }
             if let Some(caption) = &mut g.caption {
                 resolve_reference_links_inline(caption, defs, heading_index);
+            }
+        }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::Div(d) => {
@@ -22116,6 +22131,11 @@ fn coalesce_block(block: &mut BlockNode) {
                 coalesce_inlines(caption);
             }
             for child in &mut g.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
                 coalesce_block(child);
             }
         }

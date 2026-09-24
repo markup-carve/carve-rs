@@ -215,6 +215,11 @@ fn rewrite_markers_block(
                 rewrite_markers_block(child, counts, display);
             }
         }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 rewrite_markers_block(child, counts, display);

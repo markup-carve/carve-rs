@@ -699,6 +699,18 @@ fn collect_footnotes_block(
                 );
             }
         }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 collect_footnotes_block(

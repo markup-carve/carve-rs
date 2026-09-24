@@ -210,3 +210,61 @@ fn the_placement_extension_still_fills_it() {
         "the extension keys on the directive now: {html}"
     );
 }
+
+// --- the passes that reach a container's children --------------------------
+//
+// A directive is a container, so every pass that descends into an admonition's
+// or a div's children descends into a directive's. These four do not go through
+// the renderer's own dispatch, so the compiler could not name them: each match
+// carried a catch-all, and a review pass found them (footnote collection,
+// reference-link resolution, abbreviation expansion, citation numbering). Each
+// case below fails if its arm is removed.
+
+#[test]
+fn a_footnote_inside_a_directive_is_numbered_and_reaches_the_endnotes() {
+    let html =
+        carve::render_html(&parse("::: toc\nbody[^1]\n:::\n\n[^1]: n\n")).expect("renderable");
+    assert!(
+        html.contains("doc-endnotes") && html.contains(">n<"),
+        "the reference is collected from inside the container: {html}"
+    );
+}
+
+#[test]
+fn a_reference_link_inside_a_directive_resolves() {
+    let html = carve::render_html(&parse(
+        "::: index\n[text][ref]\n:::\n\n[ref]: https://example.com\n",
+    ))
+    .expect("renderable");
+    assert!(
+        html.contains("href=\"https://example.com\""),
+        "the definition reaches the link inside the container: {html}"
+    );
+}
+
+#[test]
+fn an_abbreviation_expands_inside_a_directive() {
+    let html = carve::to_html("*[HTML]: Long Form\n\n::: glossary\nThe HTML key.\n:::\n");
+    assert!(
+        html.contains("<abbr title=\"Long Form\">HTML</abbr>"),
+        "the expansion reaches the container's text: {html}"
+    );
+}
+
+#[test]
+fn a_citation_inside_a_directive_is_numbered() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    let html = carve::to_html_with_options(
+        "::: references\n[@doe2020]\n:::\n\n[@doe2020]: {author=Doe year=2020} A Paper\n",
+        &options,
+    );
+    assert!(
+        html.contains(r##"href="#ref-doe2020">1</a>"##),
+        "the definition is collected and the use numbered inside the container: {html}"
+    );
+    assert!(
+        html.contains(r#"<li id="ref-doe2020">A Paper</li>"#),
+        "and the reference list lands in the ::: references directive: {html}"
+    );
+}
