@@ -265,6 +265,7 @@ fn block_pos(block: &BlockNode) -> Option<&Pos> {
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),
+        BlockNode::BlockExtension(n) => n.pos.as_ref(),
         BlockNode::ExtensionCarrier(n) => n.pos.as_ref(),
         BlockNode::BlockImage(n) => n.pos.as_ref(),
         BlockNode::ThematicBreak(n) => n.pos.as_ref(),
