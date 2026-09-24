@@ -331,8 +331,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                     carve::InlineNode::CitationGroup(carve::CitationGroup {
                         items: Vec::new(),
                         raw: format!("[@key{c}]"),
-                        mode: None,
-                        integral: false,
+                        render_mode: None,
                         pos: None,
                     }),
                 ],
@@ -399,8 +398,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
             children: vec![carve::InlineNode::CitationGroup(carve::CitationGroup {
                 items: Vec::new(),
                 raw: format!("[@key{c}]"),
-                mode: None,
-                integral: false,
+                render_mode: None,
                 pos: None,
             })],
         })],

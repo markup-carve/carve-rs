@@ -1204,10 +1204,25 @@ pub struct Tag {
 pub struct CitationGroup {
     pub items: Vec<Citation>,
     pub raw: String,
-    pub mode: Option<CitationRenderMode>,
-    pub integral: bool,
+    /// Which built-in formatter the Citations extension picked for this group.
+    /// Annotation only: the wire `mode` field is [`Citation::mode`], which is a
+    /// different fact entirely.
+    pub render_mode: Option<CitationRenderMode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+impl CitationGroup {
+    /// The group's `mode` on the wire: the summary of a per-item fact, not a
+    /// fact of its own (carve-rs#1858). A source-spelled `[+@a; @b]` marks
+    /// every item, so this is true exactly when the `+` was there.
+    pub fn integral(&self) -> bool {
+        !self.items.is_empty()
+            && self
+                .items
+                .iter()
+                .all(|item| item.mode == Some(CitationItemMode::Integral))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1216,9 +1231,19 @@ pub enum CitationRenderMode {
     AuthorDate,
 }
 
+/// `citation.mode`. The schema admits one value, so the absent case is
+/// parenthetical; it is an enum rather than a bool because the field names the
+/// CSL citation-mode vocabulary and is expected to grow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CitationItemMode {
+    Integral,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Citation {
     pub key: String,
+    /// This item's citation mode. Absent means parenthetical.
+    pub mode: Option<CitationItemMode>,
     pub prefix: Option<Vec<InlineNode>>,
     pub locator: Option<Vec<InlineNode>>,
     pub locator_label: Option<String>,

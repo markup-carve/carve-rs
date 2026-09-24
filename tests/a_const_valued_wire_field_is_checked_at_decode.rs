@@ -21,11 +21,12 @@
 //! `const: true` because absent means each description derives its own wrapper
 //! from its block count, so there is no `false` to write and `loose: false`
 //! states the OPPOSITE of what the field means. `strong.boldItalic`,
-//! `list.bareMarker` and `citation_group.mode` are the same arrangement.
+//! `list.bareMarker`, `citation_group.mode` and `citation.mode` are the same
+//! arrangement.
 //!
-//! ALL FOUR are covered, not just the one the defect was noticed on. They share
+//! ALL FIVE are covered, not just the one the defect was noticed on. They share
 //! one generated table and one runtime check, so a fixture covering
-//! `definition_list.loose` alone would pass while the other three stayed
+//! `definition_list.loose` alone would pass while the other four stayed
 //! unchecked.
 
 use carve::{from_json, to_json};
@@ -39,9 +40,9 @@ fn decode(nodes: &str) -> Result<carve::Document, carve::AstJsonError> {
 /// EVERY case is evaluated before anything fails.
 ///
 /// A loop that asserts per iteration stops at the first field, leaving the
-/// other three unmeasured - they did not pass, they never ran. Four fields
-/// share one table and one check here, so that is exactly the coverage this
-/// file exists to prove.
+/// rest unmeasured - they did not pass, they never ran. Five fields share one
+/// table and one check here, so that is exactly the coverage this file exists
+/// to prove.
 fn all_of(checks: impl IntoIterator<Item = Option<String>>) {
     let failures: Vec<String> = checks.into_iter().flatten().collect();
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
@@ -51,7 +52,7 @@ fn accepts(nodes: &str) -> carve::Document {
     decode(nodes).unwrap_or_else(|error| panic!("refused {nodes}: {error}"))
 }
 
-// The four `const`-pinned properties, each as a node the schema admits.
+// The `const`-pinned properties under test, each as a node the schema admits.
 // `VALUE` is substituted, so the legal spelling and every illegal one run
 // through the identical shape and nothing else can explain a difference.
 
@@ -60,6 +61,11 @@ const STRONG: &str = r#"{"type":"paragraph","children":[{"type":"strong","boldIt
 const LIST: &str = r#"{"type":"list","ordered":true,"bareMarker":VALUE,"tight":true,"items":[{"type":"list_item","children":[{"type":"paragraph","children":[{"type":"text","value":"x"}]}]}]}"#;
 
 const DEFINITION_LIST: &str = r#"{"type":"definition_list","loose":VALUE,"items":[{"type":"definition_term","children":[{"type":"text","value":"t"}]},{"type":"definition_description","children":[{"type":"paragraph","children":[{"type":"text","value":"d"}]}]}]}"#;
+
+// `citation.mode` sits on an item inside `citation_group.items`, which is a
+// record the schema closes without giving it a `type` of its own on the way in
+// - so this case also proves the type-keyed const walk reaches it.
+const CITATION: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","raw":"[+@a]","items":[{"type":"citation","key":"a","mode":VALUE,"suppressAuthor":false}]}]}"#;
 
 const CITATION_GROUP: &str = r#"{"type":"paragraph","children":[{"type":"citation_group","mode":VALUE,"raw":"[@a]","items":[{"type":"citation","key":"a","suppressAuthor":false,"pos":{"startLine":1,"endLine":1,"startColumn":1,"endColumn":3,"startOffset":0,"endOffset":2}}]}]}"#;
 
@@ -70,6 +76,7 @@ const CASES: &[(&str, &str, &str, &str)] = &[
     ("list", "bareMarker", "true", LIST),
     ("definition_list", "loose", "true", DEFINITION_LIST),
     ("citation_group", "mode", "\"integral\"", CITATION_GROUP),
+    ("citation", "mode", "\"integral\"", CITATION),
 ];
 
 /// The wrong value of the RIGHT type - `false` for a `const: true`, another
@@ -193,7 +200,7 @@ fn the_legal_value_still_rides_the_wire() {
 /// already rules on a node's type with its own error. Two producers of one rule
 /// is the hazard, not the gap.
 #[test]
-fn the_generated_table_pins_four_properties_and_never_type() {
+fn the_generated_table_pins_every_property_and_never_type() {
     let generated = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/wire_fields.rs"),
     )

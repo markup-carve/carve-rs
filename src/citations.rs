@@ -192,16 +192,18 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
     if !inner.contains('@') {
         return None;
     }
-    let mut integral = false;
+    let mut mode = None;
     let inner_str = if let Some(stripped) = inner.strip_prefix('+') {
-        integral = true;
+        mode = Some(CitationItemMode::Integral);
         stripped
     } else {
         inner
     };
     let mut items = Vec::new();
     for part in inner_str.split(';') {
-        items.push(parse_item(part, ctx)?);
+        let mut item = parse_item(part, ctx)?;
+        item.mode = mode;
+        items.push(item);
     }
     if items.is_empty() {
         return None;
@@ -210,8 +212,7 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
         node: InlineNode::CitationGroup(CitationGroup {
             items,
             raw: text[pos..close + 1].to_string(),
-            mode: None,
-            integral,
+            render_mode: None,
             pos: None,
         }),
         end: close + 1,
@@ -274,6 +275,7 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
         let prefix = (!prefix_text.is_empty()).then(|| ctx.parse_inlines(prefix_text));
         return Some(Citation {
             key: key.to_string(),
+            mode: None,
             prefix,
             locator,
             locator_label,
@@ -955,7 +957,7 @@ fn annotate_citations_inline(
     for node in nodes {
         match node {
             InlineNode::CitationGroup(g) => {
-                g.mode = Some(mode.into());
+                g.render_mode = Some(mode.into());
                 // A group with any unresolved key renders verbatim (§6.4): its
                 // keys are literal text, not citations, so they are neither
                 // numbered, listed, nor a back-link use site. Skip the whole

@@ -3454,6 +3454,8 @@ fn render_inline_after(
     }
 }
 
+const INTEGRAL_OPEN: &str = "<span class=\"citation\" data-cite-mode=\"integral\">";
+
 fn render_citation_group(
     out: &mut String,
     g: &CitationGroup,
@@ -3465,34 +3467,35 @@ fn render_citation_group(
         return;
     }
 
-    if g.integral {
-        out.push_str("<span class=\"citation\" data-cite-mode=\"integral\">");
+    // Whole-group wrapper when every item is integral; otherwise the marking
+    // sits on the items that carry it, which is the only way a mixed group
+    // renders its two halves differently (carve-rs#1858).
+    let all_integral = g.integral();
+    if all_integral {
+        out.push_str(INTEGRAL_OPEN);
     }
 
-    match g.mode.unwrap_or(CitationRenderMode::Numbered) {
-        CitationRenderMode::Numbered => {
-            out.push('[');
-            for (idx, item) in g.items.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str(", ");
-                }
-                render_citation_item(out, item, options, state);
-            }
-            out.push(']');
+    let (open, close, separator) = match g.render_mode.unwrap_or(CitationRenderMode::Numbered) {
+        CitationRenderMode::Numbered => ('[', ']', ", "),
+        CitationRenderMode::AuthorDate => ('(', ')', "; "),
+    };
+    out.push(open);
+    for (idx, item) in g.items.iter().enumerate() {
+        if idx > 0 {
+            out.push_str(separator);
         }
-        CitationRenderMode::AuthorDate => {
-            out.push('(');
-            for (idx, item) in g.items.iter().enumerate() {
-                if idx > 0 {
-                    out.push_str("; ");
-                }
-                render_citation_item(out, item, options, state);
-            }
-            out.push(')');
+        let wrap_item = !all_integral && item.mode == Some(CitationItemMode::Integral);
+        if wrap_item {
+            out.push_str(INTEGRAL_OPEN);
+        }
+        render_citation_item(out, item, options, state);
+        if wrap_item {
+            out.push_str("</span>");
         }
     }
+    out.push(close);
 
-    if g.integral {
+    if all_integral {
         out.push_str("</span>");
     }
 }

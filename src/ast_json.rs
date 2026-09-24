@@ -1497,7 +1497,7 @@ fn encode_inline_task<'a>(
             tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                 let mut w = Writer { out, first: false };
                 w.field("raw", |out| write_string(out, &n.raw));
-                if n.integral {
+                if n.integral() {
                     w.field("mode", |out| write_string(out, "integral"));
                 }
                 write_pos_field(&mut w, &n.pos);
@@ -1568,6 +1568,9 @@ fn encode_citation_inline_fields<'a>(
             }
             if let Some(index) = n.use_index {
                 w.field("useIndex", |out| write_usize(out, index));
+            }
+            if n.mode == Some(CitationItemMode::Integral) {
+                w.field("mode", |out| write_string(out, "integral"));
             }
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -2171,7 +2174,7 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             let mut w = typed(out, "citation_group");
             w.field("items", |out| write_array(out, &n.items, write_citation));
             w.field("raw", |out| write_string(out, &n.raw));
-            if n.integral {
+            if n.integral() {
                 w.field("mode", |out| write_string(out, "integral"));
             }
             write_pos_field(&mut w, &n.pos);
@@ -2332,6 +2335,9 @@ fn write_citation(out: &mut String, n: &Citation) {
     }
     if let Some(use_index) = n.use_index {
         w.field("useIndex", |out| write_usize(out, use_index));
+    }
+    if n.mode == Some(CitationItemMode::Integral) {
+        w.field("mode", |out| write_string(out, "integral"));
     }
     w.finish();
 }
@@ -3147,13 +3153,12 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "tag")?,
         })),
         "citation_group" => Ok(InlineNode::CitationGroup(CitationGroup {
-            items: required_array(obj, "citation_group", "items")?
-                .iter()
-                .map(decode_citation)
-                .collect::<Result<_, _>>()?,
+            items: decode_citation_items(
+                required_array(obj, "citation_group", "items")?,
+                optional_string(obj, "mode")? == Some("integral"),
+            )?,
             raw: required_string(obj, "citation_group", "raw")?.to_string(),
-            mode: None,
-            integral: optional_string(obj, "mode")? == Some("integral"),
+            render_mode: None,
             pos: optional_pos(obj, "citation_group")?,
         })),
         "inline_extension" => Ok(InlineNode::Extension(InlineExtension {
@@ -3262,11 +3267,34 @@ fn decode_image(obj: &Map<String, Json>) -> Result<Image, AstJsonError> {
     })
 }
 
+/// A group's items, with the group's own `mode` honored when NO item spells
+/// one. The schema calls the group flag the shorthand every item of a
+/// source-spelled group carries, so a tree that only has the summary - which
+/// is every tree this engine wrote before carve-rs#1858 - still round-trips.
+/// A tree whose items do spell a mode is taken at its word, mixed or not.
+fn decode_citation_items(
+    values: &[Json],
+    group_integral: bool,
+) -> Result<Vec<Citation>, AstJsonError> {
+    let mut items = values
+        .iter()
+        .map(decode_citation)
+        .collect::<Result<Vec<_>, _>>()?;
+    if group_integral && items.iter().all(|item| item.mode.is_none()) {
+        for item in &mut items {
+            item.mode = Some(CitationItemMode::Integral);
+        }
+    }
+    Ok(items)
+}
+
 fn decode_citation(value: &Json) -> Result<Citation, AstJsonError> {
     let obj = value.expect_object("citation")?;
     expect_type(obj, "citation")?;
     Ok(Citation {
         key: required_string(obj, "citation", "key")?.to_string(),
+        mode: (optional_string(obj, "mode")? == Some("integral"))
+            .then_some(CitationItemMode::Integral),
         prefix: optional_inlines(obj, "prefix")?,
         locator: optional_inlines(obj, "locator")?,
         locator_label: optional_string(obj, "locatorLabel")?.map(str::to_string),

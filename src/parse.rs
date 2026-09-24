@@ -17233,7 +17233,7 @@ fn position_citation_items(group: &mut CitationGroup) {
     if base.start_line != base.end_line {
         return;
     }
-    let inner_start = if group.integral { 2 } else { 1 };
+    let inner_start = if group.integral() { 2 } else { 1 };
     if group.raw.len() <= inner_start || !group.raw.ends_with(']') {
         return;
     }
@@ -17264,7 +17264,7 @@ fn position_citation_items_from_map(
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
 ) {
-    let inner_start = if group.integral { 2 } else { 1 };
+    let inner_start = if group.integral() { 2 } else { 1 };
     if group.raw.len() <= inner_start || !group.raw.ends_with(']') {
         return;
     }
