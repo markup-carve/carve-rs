@@ -472,6 +472,9 @@ fn collect_figure_group_warnings(
                 }
                 collect_figure_group_warnings(&g.children, true, to_byte, out);
             }
+            BlockNode::Directive(d) => {
+                collect_figure_group_warnings(&d.children, in_group, to_byte, out)
+            }
             BlockNode::Div(d) => collect_figure_group_warnings(&d.children, in_group, to_byte, out),
             BlockNode::BlockQuote(b) => {
                 collect_figure_group_warnings(&b.children, in_group, to_byte, out)
@@ -543,6 +546,7 @@ fn collect_quote_fence_warnings(
         match block {
             BlockNode::BlockQuote(b) => collect_quote_fence_warnings(&b.children, to_byte, out),
             BlockNode::Admonition(a) => collect_quote_fence_warnings(&a.children, to_byte, out),
+            BlockNode::Directive(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
             BlockNode::Div(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
             BlockNode::LineBlock(lb) => collect_quote_fence_warnings(&lb.children, to_byte, out),
             BlockNode::FigureGroup(g) => collect_quote_fence_warnings(&g.children, to_byte, out),
@@ -782,6 +786,10 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             if let Some(title) = &n.title {
                 walk_inlines(title, visit);
             }
+            walk_blocks(&n.children, visit);
+        }
+        BlockNode::Directive(n) => {
+            report("directive", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
         }
         BlockNode::Div(n) => {

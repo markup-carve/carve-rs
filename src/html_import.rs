@@ -1926,10 +1926,9 @@ impl<'a> Importer<'a> {
         let attrs = self.attrs(h, path);
         let children = h.children.borrow();
         if tag == FOOTNOTE_PLACEMENT_TAG {
-            return Ok(vec![BlockNode::Admonition(Admonition {
+            return Ok(vec![BlockNode::Directive(Directive {
                 attrs: None,
                 kind: "footnotes".to_string(),
-                title: None,
                 label: None,
                 children: Vec::new(),
                 pos: None,
@@ -2300,14 +2299,32 @@ impl<'a> Importer<'a> {
                 // A Tier-2 container carries a title the same way a callout
                 // does, and renders it with no generated id - so the lift has to
                 // reach this arm as well, not only the `<aside>` one below.
-                let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+                //
+                // A DIRECTIVE HAS NO TITLE SLOT (CARVE-P12-057 closes the node
+                // without one), so nothing is lifted out of a generated-content
+                // container: a `<p class="admonition-title">` inside one stays
+                // the ordinary paragraph it reads as, rather than being lifted
+                // into a field that does not exist and dropped on the way.
+                let generated = crate::ast::is_generated_content_kind(&kind);
+                let (title, body, body_paths) =
+                    self.admonition_title(&children, path, depth, !generated)?;
                 let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
+                let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+                if generated {
+                    return Ok(vec![BlockNode::Directive(Directive {
+                        attrs,
+                        kind,
+                        label,
+                        children,
+                        pos: None,
+                    })]);
+                }
                 return Ok(vec![BlockNode::Admonition(Admonition {
                     attrs,
                     kind,
                     title,
                     label,
-                    children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
+                    children,
                     pos: None,
                 })]);
             }
@@ -2479,14 +2496,27 @@ impl<'a> Importer<'a> {
                 Self::without_structural_class(attrs, "admonition"),
                 &kind,
             );
-            let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+            // See the other container arm: a directive has no title slot.
+            let generated = crate::ast::is_generated_content_kind(&kind);
+            let (title, body, body_paths) =
+                self.admonition_title(&children, path, depth, !generated)?;
             let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
+            let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+            if generated {
+                return Ok(vec![BlockNode::Directive(Directive {
+                    attrs,
+                    kind,
+                    label,
+                    children,
+                    pos: None,
+                })]);
+            }
             return Ok(vec![BlockNode::Admonition(Admonition {
                 attrs,
                 kind,
                 title,
                 label,
-                children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
+                children,
                 pos: None,
             })]);
         }
@@ -2576,13 +2606,20 @@ impl<'a> Importer<'a> {
     }
     /// `<details>/<summary>` to a `details` admonition.
     #[allow(clippy::type_complexity)]
+    /// `lift_title` is false for a generated-content container: `directive` has
+    /// no title field, so the paragraph stays an ordinary block rather than being
+    /// lifted into a slot that does not exist (CARVE-P12-057).
     fn admonition_title(
         &mut self,
         children: &[Handle],
         path: &str,
         depth: usize,
+        lift_title: bool,
     ) -> Lifted<Vec<InlineNode>> {
-        let at = children.iter().position(is_admonition_title);
+        let at = children
+            .iter()
+            .position(is_admonition_title)
+            .filter(|_| lift_title);
         let mut title = None;
         if let Some(i) = at {
             let title_path = Self::child_path(path, &children[i], i);
@@ -6405,6 +6442,7 @@ fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<Inl
                 }
                 for_each_inline_run(&mut n.children, f);
             }
+            BlockNode::Directive(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::Div(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::LineBlock(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::DefinitionList(n) => {
@@ -6481,6 +6519,7 @@ fn take_candidate_marks(blocks: &mut [BlockNode], kept: &mut [bool]) {
             BlockNode::Admonition(admonition) => {
                 take_candidate_marks(&mut admonition.children, kept)
             }
+            BlockNode::Directive(div) => take_candidate_marks(&mut div.children, kept),
             BlockNode::Div(div) => take_candidate_marks(&mut div.children, kept),
             BlockNode::LineBlock(line_block) => {
                 take_candidate_marks(&mut line_block.children, kept)

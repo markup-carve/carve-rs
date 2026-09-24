@@ -77,6 +77,7 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
             }
             collect_blocks(&a.children, suppressed, out);
         }
+        BlockNode::Directive(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::Div(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::LineBlock(lb) => collect_blocks(&lb.children, suppressed, out),
         BlockNode::DefinitionList(d) => {

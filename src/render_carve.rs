@@ -186,6 +186,7 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
         }
         match block {
             BlockNode::BlockQuote(b) => strip_generated_ids(&mut b.children, had_any),
+            BlockNode::Directive(d) => strip_generated_ids(&mut d.children, had_any),
             BlockNode::Div(d) => strip_generated_ids(&mut d.children, had_any),
             BlockNode::Admonition(a) => strip_generated_ids(&mut a.children, had_any),
             BlockNode::List(l) => {
@@ -218,6 +219,7 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
         }
         match block {
             BlockNode::BlockQuote(b) => collect_heading_ids(&b.children, out),
+            BlockNode::Directive(d) => collect_heading_ids(&d.children, out),
             BlockNode::Div(d) => collect_heading_ids(&d.children, out),
             BlockNode::Admonition(a) => collect_heading_ids(&a.children, out),
             BlockNode::List(l) => {
@@ -583,6 +585,7 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
             BlockNode::Admonition(admonition) => {
                 emptied_marker_lines_at(&admonition.children, list_depth, into);
             }
+            BlockNode::Directive(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             BlockNode::Div(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             // The two other walks over this tree (`normalize_escapes_block` and
             // `redundant_heading_ids`) both descend into a figure's block-quote
@@ -998,6 +1001,11 @@ fn normalize_escapes_block(block: &mut BlockNode) {
         }
         BlockNode::LineBlock(lb) => {
             for child in &mut lb.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
                 normalize_escapes_block(child);
             }
         }
@@ -1826,6 +1834,22 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             with_block_attrs(
                 &admonition.attrs,
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", admonition.kind),
+            )
+        }
+        // The same opener as an admonition, minus the title slot the node does
+        // not have (CARVE-P12-057). `parse(fmt(x)) == parse(x)` holds because the
+        // kind goes back where it came from and re-parses to a directive again.
+        BlockNode::Directive(directive) => {
+            let label = directive
+                .label
+                .as_ref()
+                .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
+                .unwrap_or_default();
+            let fence = colon_fence_for(ctx);
+            let body = render_inside_colon_container(&directive.children, ctx);
+            with_block_attrs(
+                &directive.attrs,
+                &format!("{fence} {}{label}\n{body}\n{fence}", directive.kind),
             )
         }
         BlockNode::LineBlock(lb) => {

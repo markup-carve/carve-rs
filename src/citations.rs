@@ -1054,7 +1054,9 @@ fn inject_references_block(blocks: &mut Vec<BlockNode>) {
                 d.children.push(carrier);
                 return;
             }
-            BlockNode::Admonition(a) if a.kind == "references" => {
+            // A `.references` div above, or the `references` DIRECTIVE
+            // CARVE-P12-057 makes of `::: references`.
+            BlockNode::Directive(a) if a.kind == "references" => {
                 a.children.push(carrier);
                 return;
             }

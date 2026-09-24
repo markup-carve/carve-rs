@@ -867,6 +867,7 @@ fn fill_crossref_hrefs(doc: &mut Document, id_opts: HeadingIdOptions) -> Crossre
                 BlockNode::BlockQuote(b) => {
                     blocks(&mut b.children, index);
                 }
+                BlockNode::Directive(d) => blocks(&mut d.children, index),
                 BlockNode::Div(d) => blocks(&mut d.children, index),
                 BlockNode::Figure(f) => inlines(&mut f.caption, index),
                 BlockNode::FigureGroup(g) => {
@@ -2177,6 +2178,7 @@ enum ProbeChildren<'a> {
 fn probe_children(block: &BlockNode) -> ProbeChildren<'_> {
     match block {
         BlockNode::BlockQuote(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Directive(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::Div(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::Admonition(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::FigureGroup(b) => ProbeChildren::Blocks(&b.children),
@@ -4143,6 +4145,7 @@ fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
         BlockNode::CodeBlock(c) => c.pos.as_mut(),
         BlockNode::RawBlock(r) => r.pos.as_mut(),
         BlockNode::Comment(c) => c.pos.as_mut(),
+        BlockNode::Directive(d) => d.pos.as_mut(),
         BlockNode::Div(d) => d.pos.as_mut(),
         BlockNode::Admonition(a) => a.pos.as_mut(),
         BlockNode::BlockQuote(b) => b.pos.as_mut(),
@@ -4207,6 +4210,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::BlockQuote(b) => {
                 fill_offsets(&mut b.children, line_starts);
             }
+            BlockNode::Directive(d) => fill_offsets(&mut d.children, line_starts),
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
             BlockNode::Admonition(a) => {
                 if let Some(title) = &mut a.title {
@@ -4317,6 +4321,7 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::BlockQuote(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::Directive(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::Div(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::Admonition(n) => narrow_to_last_placed_child(&mut n.children, lines),
             BlockNode::FigureGroup(n) => narrow_to_last_placed_child(&mut n.children, lines),
@@ -4864,16 +4869,29 @@ fn parse_eof_closed_colon_ladder(
             continue;
         }
         children = vec![if let Some(kind) = open.kind {
-            BlockNode::Admonition(Admonition {
-                attrs: open.attrs,
-                kind,
-                title: open
-                    .title
-                    .map(|title| parse_inline_with_options(&title, options)),
-                label: open.label,
-                children,
-                pos: None,
-            })
+            // CARVE-P12-057: a named container whose kind names GENERATED
+            // CONTENT is a `directive`. The list is CLOSED, so `::: endnotes`
+            // and `::: contents` take the admonition branch below.
+            if crate::ast::is_generated_content_kind(&kind) {
+                BlockNode::Directive(Directive {
+                    attrs: open.attrs,
+                    kind,
+                    label: open.label,
+                    children,
+                    pos: None,
+                })
+            } else {
+                BlockNode::Admonition(Admonition {
+                    attrs: open.attrs,
+                    kind,
+                    title: open
+                        .title
+                        .map(|title| parse_inline_with_options(&title, options)),
+                    label: open.label,
+                    children,
+                    pos: None,
+                })
+            }
         } else {
             BlockNode::Div(Div {
                 attrs: open.attrs,
@@ -5481,6 +5499,7 @@ struct ResolvedBody {
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
     match node {
         BlockNode::Admonition(n) => n.children = children,
+        BlockNode::Directive(n) => n.children = children,
         BlockNode::Div(n) => n.children = children,
         BlockNode::FigureGroup(n) => n.children = children,
         // `open_container` builds nothing else, and the index came from it.
@@ -14805,6 +14824,20 @@ fn boxed_container_node(
     options: &Options<'_>,
 ) -> Box<BlockNode> {
     if let Some(kind) = open.kind {
+        // CARVE-P12-057, the same dispatch as the flatten path above. A
+        // directive has NO title slot - the schema closes the node without one -
+        // so an opener's quoted title on one of the six kinds is not carried.
+        // No corpus document or example spells one; where it should go is
+        // markup-carve/carve#2247.
+        if crate::ast::is_generated_content_kind(&kind) {
+            return Box::new(BlockNode::Directive(Directive {
+                attrs: open.attrs,
+                kind,
+                label: open.label,
+                children,
+                pos,
+            }));
+        }
         Box::new(BlockNode::Admonition(Admonition {
             attrs: open.attrs,
             kind,
@@ -16738,6 +16771,7 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::BlockQuote(n) => Some(&mut n.attrs),
         BlockNode::Table(n) => Some(&mut n.attrs),
         BlockNode::Admonition(n) => Some(&mut n.attrs),
+        BlockNode::Directive(n) => Some(&mut n.attrs),
         BlockNode::Div(n) => Some(&mut n.attrs),
         BlockNode::LineBlock(n) => Some(&mut n.attrs),
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
@@ -16879,6 +16913,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         // in source, so its classes come first and the opener's win on
         // id/key conflict (§15) -- merge instead of clobbering.
         BlockNode::Admonition(n) => merge_leading_attrs(&mut n.attrs, attrs),
+        BlockNode::Directive(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::Div(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::LineBlock(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::DefinitionList(n) => {
@@ -21525,6 +21560,7 @@ fn promote_block_images(
                 // Descend into the group so an image-with-caption paragraph built
                 // from a resolved reference image still becomes a panel (§4c).
                 BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
+                BlockNode::Directive(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::List(l) => {
                     for item in &mut l.items {
@@ -21613,6 +21649,7 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
             BlockNode::BlockQuote(b) => worklist.push(&b.children),
             BlockNode::Admonition(a) => worklist.push(&a.children),
             BlockNode::FigureGroup(g) => worklist.push(&g.children),
+            BlockNode::Directive(d) => worklist.push(&d.children),
             BlockNode::Div(d) => worklist.push(&d.children),
             BlockNode::DefinitionList(d) => {
                 for item in d.items.iter().rev() {
@@ -21737,6 +21774,7 @@ fn collect_heading_titles(
                 BlockNode::BlockQuote(b) => worklist.push((&b.children, true)),
                 BlockNode::Admonition(a) => worklist.push((&a.children, in_blockquote)),
                 BlockNode::FigureGroup(g) => worklist.push((&g.children, in_blockquote)),
+                BlockNode::Directive(d) => worklist.push((&d.children, in_blockquote)),
                 BlockNode::Div(d) => worklist.push((&d.children, in_blockquote)),
                 BlockNode::DefinitionList(d) => {
                     for item in d.items.iter().rev() {
@@ -21814,6 +21852,7 @@ fn number_captioned_blocks(
             }
             BlockNode::BlockQuote(b) => number_captioned_blocks(&mut b.children, counts, titles),
             BlockNode::Admonition(a) => number_captioned_blocks(&mut a.children, counts, titles),
+            BlockNode::Directive(d) => number_captioned_blocks(&mut d.children, counts, titles),
             BlockNode::Div(d) => number_captioned_blocks(&mut d.children, counts, titles),
             BlockNode::DefinitionList(d) => {
                 for item in &mut d.items {
@@ -21950,6 +21989,7 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
             }
             BlockNode::BlockQuote(b) => collect_caption_titles(&b.children, titles),
             BlockNode::Admonition(a) => collect_caption_titles(&a.children, titles),
+            BlockNode::Directive(d) => collect_caption_titles(&d.children, titles),
             BlockNode::Div(d) => collect_caption_titles(&d.children, titles),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
@@ -22539,6 +22579,7 @@ fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item 
                 }
             }
             BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next),
+            BlockNode::Directive(d) => stamp_heading_ids_in(&mut d.children, next),
             BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next),
             BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next),
             BlockNode::FigureGroup(g) => stamp_heading_ids_in(&mut g.children, next),

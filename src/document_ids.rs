@@ -338,6 +338,10 @@ impl Seeder {
                 }
                 self.walk_blocks(&a.children);
             }
+            BlockNode::Directive(d) => {
+                self.reserve_attrs(&d.attrs);
+                self.walk_blocks(&d.children);
+            }
             BlockNode::Div(d) => {
                 self.reserve_attrs(&d.attrs);
                 self.walk_blocks(&d.children);

@@ -107,7 +107,9 @@ fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
 fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
     for block in blocks.iter_mut() {
         match block {
-            BlockNode::Admonition(a) if a.kind == "glossary" => {
+            // CARVE-P12-057: `::: glossary` parses to a `directive`
+            // (markup-carve/carve#2243).
+            BlockNode::Directive(a) if a.kind == "glossary" => {
                 rewrite_blocks(&mut a.children, defined);
                 let has_list = a
                     .children
@@ -141,6 +143,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
             }
             BlockNode::BlockQuote(b) => rewrite_blocks(&mut b.children, defined),
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children, defined),
+            BlockNode::Directive(d) => rewrite_blocks(&mut d.children, defined),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children, defined),
             BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children, defined),
             BlockNode::DefinitionList(dl) => {

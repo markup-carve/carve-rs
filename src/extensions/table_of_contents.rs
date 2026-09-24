@@ -279,6 +279,7 @@ fn collect_entries(
             }
             BlockNode::BlockQuote(b) => collect_entries(&b.children, counts, opts, entries, false),
             BlockNode::Admonition(a) => collect_entries(&a.children, counts, opts, entries, false),
+            BlockNode::Directive(d) => collect_entries(&d.children, counts, opts, entries, false),
             BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false),
             BlockNode::ExtensionCarrier(e) => {
                 collect_entries(&e.children, counts, opts, entries, false)
@@ -322,6 +323,7 @@ fn collect_all_entries(
             }
             BlockNode::BlockQuote(b) => collect_all_entries(&b.children, counts, id_opts, entries),
             BlockNode::Admonition(a) => collect_all_entries(&a.children, counts, id_opts, entries),
+            BlockNode::Directive(d) => collect_all_entries(&d.children, counts, id_opts, entries),
             BlockNode::Div(d) => collect_all_entries(&d.children, counts, id_opts, entries),
             BlockNode::ExtensionCarrier(e) => {
                 collect_all_entries(&e.children, counts, id_opts, entries)
@@ -520,7 +522,9 @@ impl CarveExtension for TocPlacement {
 fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         match block {
-            BlockNode::Admonition(a) if a.kind == "toc" => {
+            // CARVE-P12-057: `::: toc` parses to a `directive`, not an
+            // admonition (markup-carve/carve#2243).
+            BlockNode::Directive(a) if a.kind == "toc" => {
                 rewrite_toc_containers(&mut a.children);
                 *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
@@ -538,6 +542,7 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
             }
             BlockNode::BlockQuote(b) => rewrite_toc_containers(&mut b.children),
             BlockNode::Admonition(a) => rewrite_toc_containers(&mut a.children),
+            BlockNode::Directive(d) => rewrite_toc_containers(&mut d.children),
             BlockNode::Div(d) => rewrite_toc_containers(&mut d.children),
             BlockNode::ExtensionCarrier(e) => rewrite_toc_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {

@@ -380,6 +380,7 @@ impl ProfileFilter<'_> {
                 }
                 self.filter_blocks(&mut adm.children, depth)?;
             }
+            BlockNode::Directive(div) => self.filter_blocks(&mut div.children, depth)?,
             BlockNode::Div(div) => self.filter_blocks(&mut div.children, depth)?,
             BlockNode::LineBlock(lb) => self.filter_blocks(&mut lb.children, depth)?,
             BlockNode::DefinitionList(dl) => {
@@ -997,6 +998,7 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
             .map(|n| extract_inline_text(n, smart))
             .collect(),
         BlockNode::Admonition(adm) => block_children_join(&adm.children, smart),
+        BlockNode::Directive(div) => block_children_join(&div.children, smart),
         BlockNode::Div(div) => block_children_join(&div.children, smart),
         BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
         BlockNode::BlockExtension(ext) => extract_block_text(&ext.fallback, smart),
@@ -1220,6 +1222,7 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
             cleanup_blocks(&mut adm.children);
         }
+        BlockNode::Directive(div) => cleanup_blocks(&mut div.children),
         BlockNode::Div(div) => cleanup_blocks(&mut div.children),
         BlockNode::LineBlock(lb) => cleanup_blocks(&mut lb.children),
         BlockNode::DefinitionList(dl) => {
@@ -1299,6 +1302,7 @@ fn is_empty_block(node: &BlockNode) -> bool {
             t.rows.is_empty()
         }
         BlockNode::Admonition(adm) => adm.children.is_empty(),
+        BlockNode::Directive(div) => div.children.is_empty(),
         BlockNode::Div(div) => div.children.is_empty(),
         BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),

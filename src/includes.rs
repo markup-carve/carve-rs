@@ -1246,6 +1246,7 @@ pub(crate) fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) 
         f(block);
         match block {
             BlockNode::BlockQuote(b) => walk_blocks(&b.children, f),
+            BlockNode::Directive(d) => walk_blocks(&d.children, f),
             BlockNode::Div(d) => walk_blocks(&d.children, f),
             BlockNode::Admonition(a) => walk_blocks(&a.children, f),
             BlockNode::List(l) => {
@@ -1275,6 +1276,7 @@ fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode))
         f(block);
         match block {
             BlockNode::BlockQuote(b) => walk_blocks_mut(&mut b.children, f),
+            BlockNode::Directive(d) => walk_blocks_mut(&mut d.children, f),
             BlockNode::Div(d) => walk_blocks_mut(&mut d.children, f),
             BlockNode::Admonition(a) => walk_blocks_mut(&mut a.children, f),
             BlockNode::List(l) => {
@@ -2060,6 +2062,7 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
         match &mut blocks[i] {
             BlockNode::Paragraph(p) => replacement = expand_paragraph(p, state),
             BlockNode::BlockQuote(b) => expand_blocks(&mut b.children, state),
+            BlockNode::Directive(d) => expand_blocks(&mut d.children, state),
             BlockNode::Div(d) => expand_blocks(&mut d.children, state),
             BlockNode::Admonition(a) => expand_blocks(&mut a.children, state),
             BlockNode::List(l) => {

@@ -206,6 +206,10 @@ pub enum BlockNode {
     BlockQuote(BlockQuote),
     Table(Table),
     Admonition(Admonition),
+    /// A named container whose kind names GENERATED CONTENT (CARVE-P12-057).
+    /// Everything else named is an [`BlockNode::Admonition`]; anonymous or
+    /// attribute-only is a [`BlockNode::Div`].
+    Directive(Directive),
     Div(Div),
     LineBlock(LineBlock),
     DefinitionList(DefinitionList),
@@ -466,6 +470,54 @@ pub struct Admonition {
 pub struct Div {
     pub attrs: Option<Attrs>,
     pub label: Option<String>,
+    pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+/// The six kinds a `:::` container names to PLACE generated content
+/// (CARVE-P12-057). A named container carrying one of these is a [`Directive`];
+/// every other named container is an [`Admonition`].
+///
+/// The list is CLOSED. The clause names six kinds and rules that "every other
+/// named container is an `admonition`", so a seventh generated-looking word -
+/// `endnotes`, `contents`, `bibliographies` - is an admonition. The schema's
+/// `directive.kind` enum carries the same six.
+pub const GENERATED_CONTENT_KINDS: &[&str] = &[
+    "bibliography",
+    "footnotes",
+    "glossary",
+    "index",
+    "references",
+    "toc",
+];
+
+/// Whether `kind` names generated content, and so opens a [`Directive`] rather
+/// than an [`Admonition`].
+pub fn is_generated_content_kind(kind: &str) -> bool {
+    GENERATED_CONTENT_KINDS.contains(&kind)
+}
+
+/// Generated-content placement (CARVE-P12-057): a named `:::` container whose
+/// kind asks the renderer to place something the document already holds, rather
+/// than to present the blocks written inside it.
+///
+/// Its own type rather than an [`Admonition`] carrying one of six kinds, because
+/// a consumer dispatching on the node type to decide whether to draw a callout
+/// otherwise has to carry the not-a-callout list itself.
+///
+/// No `title`: the schema names `kind`, `label`, `children`, `attrs` and `pos`
+/// and closes the node, so an opener's quoted title has no slot here. Where one
+/// should go is markup-carve/carve#2247.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Directive {
+    pub attrs: Option<Attrs>,
+    /// One of [`GENERATED_CONTENT_KINDS`].
+    pub kind: String,
+    /// Opener `[label]` grouping id. Inert in core, like [`Admonition::label`].
+    pub label: Option<String>,
+    /// Blocks written inside the opener. Usually empty: the content is
+    /// generated, not authored.
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
