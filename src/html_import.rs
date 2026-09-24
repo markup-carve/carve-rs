@@ -3681,6 +3681,8 @@ impl<'a> Importer<'a> {
     ) -> Result<Vec<TableRow>, HtmlImportError> {
         fn continuation(span: TableCellSpan, header: bool) -> TableCell {
             TableCell {
+                colspan: None,
+                rowspan: None,
                 header,
                 span: Some(span),
                 align: None,
@@ -3745,6 +3747,8 @@ impl<'a> Importer<'a> {
                         cells.push(continuation(TableCellSpan::Rowspan, false));
                     } else {
                         cells.push(TableCell {
+                            colspan: None,
+                            rowspan: None,
                             header: false,
                             span: None,
                             align: None,
@@ -4011,6 +4015,8 @@ impl<'a> Importer<'a> {
                 let alignment = self.cell_style_alignment(cell);
                 row.push(BuiltCell {
                     cell: TableCell {
+                        colspan: None,
+                        rowspan: None,
                         header: Self::tag(cell).as_deref() == Some("th"),
                         span: None,
                         align: alignment.align,

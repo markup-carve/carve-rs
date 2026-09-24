@@ -53,6 +53,7 @@ mod source_layout;
 mod source_patch;
 mod stamp;
 pub mod stream;
+mod table_spans;
 mod translit_map;
 mod wire_fields;
 

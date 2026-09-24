@@ -731,6 +731,8 @@ impl Builder {
                         _ => None,
                     });
                 let cell = TableCell {
+                    colspan: None,
+                    rowspan: None,
                     header,
                     span: None,
                     align,

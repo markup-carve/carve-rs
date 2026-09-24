@@ -13841,7 +13841,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // and fell through to `BlockNode::Table`: two arms, one behavior, no way to
     // fail. Removed rather than corrected, since the two are now genuinely the
     // same.
-    BlockNode::Table(Table {
+    let mut table = Table {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         caption,
@@ -13849,7 +13849,11 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         columns: Vec::new(),
         rows,
         row_groups: None,
-    })
+    };
+    // PART 12 §26: the resolved extent is published beside the markers, so it is
+    // filled in here rather than recomputed by each consumer of the tree.
+    crate::table_spans::resolve_table_spans(&mut table);
+    BlockNode::Table(table)
 }
 
 /// The table a line-based scan is currently inside, mirrored from the row loop
@@ -14578,6 +14582,8 @@ fn parse_table_cell(
         _ => None,
     };
     TableCell {
+        colspan: None,
+        rowspan: None,
         header,
         span,
         align,
