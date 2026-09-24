@@ -348,27 +348,33 @@ fn normalize_css_for_dangerous_check(value: &str) -> String {
 /// and a URL that passes is returned with its original bytes. The returned
 /// value is still passed through `escape_attr` by the caller.
 pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
+    if has_denied_url_scheme(url) {
+        return std::borrow::Cow::Borrowed("");
+    }
+    std::borrow::Cow::Borrowed(url)
+}
+
+/// Whether `sanitize_url` blanks `url`. The HTML importer asks the same
+/// question so it never writes a destination the sink would blank.
+pub(crate) fn has_denied_url_scheme(url: &str) -> bool {
     let probe: String = url
         .chars()
         .filter(|c| !is_url_probe_skippable(*c))
         .collect();
-    if let Some(colon) = probe.find(':') {
-        // A scheme is letters/digits/+/-/. before the colon; if the prefix
-        // contains anything else it is not a URL scheme (e.g. a path segment).
-        let prefix = &probe[..colon];
-        let is_scheme = !prefix.is_empty()
-            && prefix
-                .chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic())
-            && prefix
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
-        if is_scheme && DANGEROUS_VALUE_SCHEMES.contains(&prefix.to_ascii_lowercase().as_str()) {
-            return std::borrow::Cow::Borrowed("");
-        }
-    }
-    std::borrow::Cow::Borrowed(url)
+    let Some(colon) = probe.find(':') else {
+        return false;
+    };
+    // A scheme is letters/digits/+/-/. before the colon; if the prefix
+    // contains anything else it is not a URL scheme (e.g. a path segment).
+    let prefix = &probe[..colon];
+    let is_scheme = prefix
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+        && prefix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
+    is_scheme && DANGEROUS_VALUE_SCHEMES.contains(&prefix.to_ascii_lowercase().as_str())
 }
 
 /// Characters dropped before probing a URL's scheme: every control character

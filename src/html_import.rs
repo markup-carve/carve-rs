@@ -1,7 +1,7 @@
 //! HTML5-to-Carve migration boundary.
 
 use crate::ast::*;
-use crate::escape::{is_dangerous_attr_name, sanitize_attr_value};
+use crate::escape::{has_denied_url_scheme, is_dangerous_attr_name, sanitize_attr_value};
 use crate::extension::{
     label_default, HeadingIdOptions, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF,
     LABEL_TABS_GROUP,
@@ -4709,6 +4709,35 @@ impl<'a> Importer<'a> {
                 self.empty_code_spans.push((h.clone(), path.to_owned()));
                 InlineNode::Code(Code { value, attrs, pos })
             }
+            // PART 9 §25's sink would blank this destination, so it is one
+            // Carve cannot carry: imported like an empty one, reported as a
+            // dropped attribute (markup-carve/carve#2254).
+            "a" if Self::attr(h, "href").is_some_and(|v| has_denied_url_scheme(&v)) => {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    "Dropped href with a denied URL scheme on <a>".into(),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(unwrapped_content(
+                    Self::attrs_with_title(h, attrs),
+                    children,
+                ));
+            }
+            "img" if Self::attr(h, "src").is_some_and(|v| has_denied_url_scheme(&v)) => {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    "Dropped src with a denied URL scheme on <img>".into(),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(unwrapped_content(
+                    Self::attrs_with_title(h, attrs),
+                    image_alt_content(h),
+                ));
+            }
             "a" if names_no_destination(Self::attr(h, "href").as_deref()) => {
                 self.diag(
                     HtmlImportDiagnosticCode::ElementUnwrapped,
@@ -4734,13 +4763,10 @@ impl<'a> Importer<'a> {
                     path,
                     h,
                 );
-                let alt = Self::attr(h, "alt").unwrap_or_default();
-                let content = if alt.is_empty() {
-                    Vec::new()
-                } else {
-                    vec![InlineNode::text(alt)]
-                };
-                return Ok(unwrapped_content(Self::attrs_with_title(h, attrs), content));
+                return Ok(unwrapped_content(
+                    Self::attrs_with_title(h, attrs),
+                    image_alt_content(h),
+                ));
             }
             "a" => InlineNode::Link(Link {
                 attrs,
@@ -5853,6 +5879,16 @@ fn footnote_content_follows(parent: &Handle, index: usize) -> bool {
 /// A value that is merely unusual is not empty and is kept. `None` - the
 /// attribute absent altogether - is the same shape as the empty one, since the
 /// rule is over the destination rather than over the reason it is missing.
+/// An image's alternative text as the content it unwraps to.
+fn image_alt_content(h: &Handle) -> Vec<InlineNode> {
+    let alt = Importer::attr(h, "alt").unwrap_or_default();
+    if alt.is_empty() {
+        Vec::new()
+    } else {
+        vec![InlineNode::text(alt)]
+    }
+}
+
 fn names_no_destination(value: Option<&str>) -> bool {
     match value {
         None => true,
