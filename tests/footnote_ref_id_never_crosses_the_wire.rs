@@ -69,7 +69,7 @@ fn a_tree_without_one_still_round_trips() {
     let out = carve::ast_json::to_json(&back);
 
     assert!(out.contains("\"footnote_ref\""), "{out}");
-    assert!(out.contains("\"id\":\"a\""), "{out}");
+    assert!(out.contains("\"label\":\"a\""), "{out}");
     assert!(out.contains("\"number\":1"), "{out}");
     assert!(!out.contains("refId"), "{out}");
 }

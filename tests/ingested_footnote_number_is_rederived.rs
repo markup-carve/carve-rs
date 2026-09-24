@@ -112,7 +112,7 @@ fn the_reference_itself_survives() {
     let out = carve::ast_json::to_json(&doc);
 
     assert!(out.contains("\"footnote_ref\""), "{out}");
-    assert!(out.contains("\"id\":\"a\""), "{out}");
+    assert!(out.contains("\"label\":\"a\""), "{out}");
 }
 
 #[test]

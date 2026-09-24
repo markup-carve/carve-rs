@@ -398,13 +398,33 @@ fn decode_refuses_a_footnote_reference_with_no_target() {
     // no label, so a bare node is a reference to nothing (carve#2193).
     let bare = "{\"type\":\"document\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"footnote_ref\"}]}],\"srcByteLength\":0}";
     let error = carve::from_json(bare).expect_err("a targetless reference is refused");
-    assert!(error.to_string().contains("footnote_ref.id"), "{error}");
+    assert!(error.to_string().contains("footnote_ref.label"), "{error}");
 
     let named = bare.replace(
         "{\"type\":\"footnote_ref\"}",
-        "{\"type\":\"footnote_ref\",\"id\":\"a\"}",
+        "{\"type\":\"footnote_ref\",\"label\":\"a\"}",
     );
     carve::from_json(&named).expect("a reference carrying its target decodes");
+}
+
+#[test]
+fn decode_refuses_a_schema_field_this_engine_does_not_implement() {
+    // PART 12 §9(b): accepting a tree and rendering only part of it tells the
+    // caller nothing. The pinned schema names math.label and math.number
+    // (carve#2214); this engine renders neither, so a labelled equation would
+    // have decoded and come out unlabelled and unnumbered, in silence. The
+    // generated wire-fields table cannot catch it - the schema DOES name them.
+    let with_label = "{\"type\":\"document\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"math\",\"display\":true,\"content\":\"x\",\"label\":\"eq\"}]}],\"srcByteLength\":0}";
+    let error = carve::from_json(with_label).expect_err("an unimplemented field is refused");
+    assert!(error.to_string().contains("math.label"), "{error}");
+
+    let with_number = with_label.replace("\"label\":\"eq\"", "\"number\":1");
+    let error = carve::from_json(&with_number).expect_err("and so is the other one");
+    assert!(error.to_string().contains("math.number"), "{error}");
+
+    // The ordinary shape still decodes.
+    let plain = with_label.replace(",\"label\":\"eq\"", "");
+    carve::from_json(&plain).expect("a math node without them decodes");
 }
 
 #[test]

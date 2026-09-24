@@ -65,7 +65,6 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "comment",
     "figure",
     "figure_group",
-    "caption",
     // Both definition kinds are in the normative Block vocabulary
     // (markup-carve/carve#771, ruled by markup-carve/carve#826). Without them
     // here, the string API takes its "outside the vocabulary" branch and
@@ -114,6 +113,10 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     "caption_number",
     "substitution",
     "critic_comment",
+    // An interchange-only wrapper: no Carve source spells it and this engine
+    // never produces one, but profiles.md lists it as deniable, so the string
+    // API has to answer for the name (markup-carve/carve#2210).
+    "small_caps",
 ];
 
 /// Map a [`BlockNode`] to its canonical snake_case name.

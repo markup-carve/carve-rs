@@ -2205,7 +2205,9 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             } else {
                 let mut w = typed(out, "footnote_ref");
                 if let Some(id) = &n.id {
-                    w.field("id", |out| write_string(out, id));
+                    // `label` on the wire, the name the definition already uses
+                    // (PART 12 §25, carve#2193). The runtime field stays `id`.
+                    w.field("label", |out| write_string(out, id));
                 }
                 if let Some(number) = n.number {
                     w.field("number", |out| write_usize(out, number));
@@ -3086,12 +3088,21 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             children: decode_inlines(required_array(obj, "span", "children")?)?,
             pos: optional_pos(obj, "span")?,
         })),
-        "math" => Ok(InlineNode::Math(Math {
-            attrs: optional_attrs(obj)?,
-            display: required_bool(obj, "math", "display")?,
-            content: required_string(obj, "math", "content")?.to_string(),
-            pos: optional_pos(obj, "math")?,
-        })),
+        "math" => {
+            // PART 12 §9(b): an ingest that accepts a tree and then renders only
+            // part of it tells the caller nothing. The spec pin this commit moves
+            // to names `label` and `number` (carve#2214) and this engine renders
+            // neither, so accepting them would drop a labelled equation's identity
+            // and its number in silence. Refused until they are implemented; the
+            // wire-fields table cannot say this, because the schema DOES name them.
+            refuse_unimplemented(obj, "math", &["label", "number"])?;
+            Ok(InlineNode::Math(Math {
+                attrs: optional_attrs(obj)?,
+                display: required_bool(obj, "math", "display")?,
+                content: required_string(obj, "math", "content")?.to_string(),
+                pos: optional_pos(obj, "math")?,
+            }))
+        }
         "raw_inline" => Ok(InlineNode::RawInline(RawInline {
             format: required_string(obj, "raw_inline", "format")?.to_string(),
             content: required_string(obj, "raw_inline", "content")?.to_string(),
@@ -3165,7 +3176,10 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             // it points at, and a `footnote_ref` with no label is a reference
             // to nothing - a shape PART 12 section 3a cannot have produced,
             // since a pre-resolve tree records what the author wrote.
-            id: Some(required_string(obj, "footnote_ref", "id")?.to_string()),
+            // `id` is REFUSED rather than aliased: §11's narrow exception is a MAY,
+            // and this engine already refuses `footnote.id` on the definition half
+            // of the same pair. Two spellings of one field is what §3 prevents.
+            id: Some(required_string(obj, "footnote_ref", "label")?.to_string()),
             inline: None,
             number: optional_usize(obj, "number")?,
             // NOT read from the wire. `refId` is a rendering convention -
@@ -3473,6 +3487,28 @@ fn required_array<'a>(
     field: &str,
 ) -> Result<&'a [Json], AstJsonError> {
     required_value(obj, node_type, field)?.expect_array(&format!("{node_type}.{field}"))
+}
+
+/// A field the schema names and this engine does not implement.
+///
+/// The generated wire-fields table answers "does the schema name this?", which is
+/// the wrong question once the pin moves ahead of the renderers: a field the
+/// schema names and no renderer reads is accepted and then silently dropped, and
+/// PART 12 §9(b) calls that the worst of the three outcomes because the caller is
+/// told nothing. This says so instead, with the field named.
+fn refuse_unimplemented(
+    obj: &Map<String, Json>,
+    node_type: &str,
+    fields: &[&str],
+) -> Result<(), AstJsonError> {
+    for field in fields {
+        if obj.contains_key(*field) {
+            return Err(AstJsonError::new(format!(
+                "{node_type}.{field} is named by the schema but not implemented by this engine"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn required_string<'a>(
