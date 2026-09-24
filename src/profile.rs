@@ -419,6 +419,12 @@ impl LinkPolicy {
         if url.is_empty() {
             return true;
         }
+        // A URL parser deletes every tab, CR and LF anywhere before reading
+        // the URL, so `ht<LF>tps://` and `/<TAB>/host` must classify without them.
+        let stripped_storage = url
+            .contains(['\t', '\n', '\r'])
+            .then(|| url.replace(['\t', '\n', '\r'], ""));
+        let url = stripped_storage.as_deref().unwrap_or(url);
 
         // WHATWG special URLs treat a backslash as a slash. Normalize only the
         // prefix classifier's view: scheme/allowlist checks and renderers keep
@@ -482,19 +488,23 @@ impl LinkPolicy {
             }
 
             if scheme == "http" || scheme == "https" {
-                if let Some(host) = parse_host(url) {
-                    if self.is_domain_denied(&host) {
-                        return false;
-                    }
-                    if self.allowed_domains.is_some() && !self.is_domain_allowed(&host) {
-                        return false;
-                    }
-                    if !self.allow_external {
-                        match base_host {
-                            Some(bh) if !is_same_host(&host, bh) => return false,
-                            None => return false,
-                            _ => {}
-                        }
+                let Some(host) = special_url_host(&url[colon_pos + 1..]) else {
+                    // A host rule cannot be satisfied without a host.
+                    return self.denied_domains.is_empty()
+                        && self.allowed_domains.is_none()
+                        && self.allow_external;
+                };
+                if self.is_domain_denied(&host) {
+                    return false;
+                }
+                if self.allowed_domains.is_some() && !self.is_domain_allowed(&host) {
+                    return false;
+                }
+                if !self.allow_external {
+                    match base_host {
+                        Some(bh) if !is_same_host(&host, bh) => return false,
+                        None => return false,
+                        _ => {}
                     }
                 }
             }
@@ -511,7 +521,7 @@ impl LinkPolicy {
             }
         }
 
-        let Some(host) = parse_host(&format!("https:{url}")) else {
+        let Some(host) = special_url_host(url) else {
             return false;
         };
         if self.is_domain_denied(&host) {
@@ -531,9 +541,9 @@ impl LinkPolicy {
     }
 
     fn is_domain_denied(&self, host: &str) -> bool {
-        let host = host.to_lowercase();
+        let host = normalize_host(host);
         self.denied_domains.iter().any(|d| {
-            let d = d.to_lowercase();
+            let d = normalize_host(d);
             host == d || host.ends_with(&format!(".{d}"))
         })
     }
@@ -542,51 +552,79 @@ impl LinkPolicy {
         let Some(allowed) = &self.allowed_domains else {
             return true;
         };
-        let host = host.to_lowercase();
+        let host = normalize_host(host);
         allowed.iter().any(|d| {
-            let d = d.to_lowercase();
+            let d = normalize_host(d);
             host == d || host.ends_with(&format!(".{d}"))
         })
     }
 }
 
 fn is_same_host(a: &str, b: &str) -> bool {
-    a.to_lowercase() == b.to_lowercase()
+    normalize_host(a) == normalize_host(b)
 }
 
-/// Extract the host of an http(s) URL the way PHP's `parse_url` does for the
-/// cases [`LinkPolicy`] needs (host only). Returns `None` when no host can be
-/// determined.
-///
-/// It finds the authority by splitting on `://` and never looks at the scheme,
-/// which is why the caller hands it the URL unchanged. carve-js' spelling
-/// matches `^[a-zA-Z][a-zA-Z0-9+.-]*://` instead, so a scheme split by a
-/// probe-class character makes it return `None` there and skip the domain
-/// denylist and the `allow_external` check with it; that engine repairs the
-/// scheme before this call and this one has nothing to repair
-/// (markup-carve/carve-rs#835). Do NOT port the repair here to match: it would
-/// be a step that cannot change an answer, and a check that cannot fail is the
-/// thing this repo keeps finding at the bottom of its defects.
-fn parse_host(url: &str) -> Option<String> {
-    // scheme://authority/...; authority ends at /, ?, or #.
-    let rest = url.split_once("://")?.1;
-    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let mut authority = &rest[..authority_end];
-    // Strip userinfo.
-    if let Some(at) = authority.rfind('@') {
-        authority = &authority[at + 1..];
-    }
-    // Strip port. IPv6 literals are in [..]; keep brackets out of scope (rare).
-    if !authority.contains(']') {
-        if let Some(colon) = authority.rfind(':') {
-            authority = &authority[..colon];
-        }
-    }
-    if authority.is_empty() {
-        None
+/// Fold a host to the form a URL parser compares: ideographic full stops to
+/// `.`, lowercase, no trailing dot. Applied to configured hosts too, so both
+/// sides of a comparison agree.
+fn normalize_host(host: &str) -> String {
+    let host: String = host
+        .chars()
+        .map(|c| match c {
+            '\u{3002}' | '\u{FF0E}' | '\u{FF61}' => '.',
+            c => c,
+        })
+        .collect::<String>()
+        .to_lowercase();
+    host.trim_end_matches('.').to_string()
+}
+
+/// Read the host of an http(s) URL the way a WHATWG parser does. `after_scheme`
+/// is everything after the scheme colon, or a whole `//...` URL. `None` when
+/// there is no host.
+fn special_url_host(after_scheme: &str) -> Option<String> {
+    // Any run of `/` and `\` may precede the authority, and a backslash ends
+    // it like a slash does, so `evil\@good` has the host `evil`.
+    let rest = after_scheme.trim_start_matches(['/', '\\']);
+    let authority = &rest[..rest.find(['/', '\\', '?', '#']).unwrap_or(rest.len())];
+    let authority = authority
+        .rfind('@')
+        .map_or(authority, |at| &authority[at + 1..]);
+    let host = if authority.starts_with('[') {
+        authority
+            .find(']')
+            .map_or(authority, |end| &authority[..=end])
     } else {
-        Some(authority.to_string())
+        authority
+            .find(':')
+            .map_or(authority, |colon| &authority[..colon])
+    };
+    // The parser percent-decodes the host before it normalizes it.
+    let host = normalize_host(&percent_decode_lossy(host));
+    (!host.is_empty()).then_some(host)
+}
+
+/// Percent-decode `s`, leaving a malformed `%` escape literal.
+fn percent_decode_lossy(s: &str) -> String {
+    if !s.contains('%') {
+        return s.to_string();
     }
+    let bytes = s.as_bytes();
+    let hex = |b: u8| (b as char).to_digit(16);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A recorded profile violation (surfaced when action is [`DisallowedAction::Error`]).

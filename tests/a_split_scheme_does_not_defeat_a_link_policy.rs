@@ -151,7 +151,7 @@ fn every_default_denied_scheme_is_refused_in_its_split_spelling() {
 fn a_split_scheme_no_longer_skips_the_domain_denylist() {
     // The scheme read GATES the host checks: `htt<DEL>ps` was neither `http`
     // nor `https`, so a denied domain was never consulted. This engine's
-    // `parse_host` splits on `://` and never looks at the scheme, so filtering
+    // host read never looks at the scheme, so filtering
     // the scheme is the whole fix here; carve-js also had to repair the scheme
     // before its own host parse, whose pattern rejects the split spelling.
     let p = LinkPolicy::default().set_denied_domains(vec!["evil.com".to_string()]);
