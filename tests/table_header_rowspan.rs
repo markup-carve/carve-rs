@@ -42,3 +42,19 @@ fn footer_rowspan_keeps_one_group() {
         "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a</td><td>b</td></tr>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn uncovered_caret_below_colspan_stays_empty() {
+    assert_eq!(
+        carve::to_html("| A | < | X |\n| B | ^ | Y |"),
+        "<table>\n  <tbody>\n    <tr><td colspan=\"2\">A</td><td>X</td></tr>\n    <tr><td>B</td><td></td><td>Y</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn carets_under_visible_row_and_colspan_are_absorbed() {
+    assert_eq!(
+        carve::to_html("{header-rows=1}\n| A | < | C |\n| ^ | ^ | Y |\n| ^ | ^ | Z |"),
+        "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"3\" colspan=\"2\">A</th><th scope=\"col\">C</th></tr>\n    <tr><td>Y</td></tr>\n    <tr><td>Z</td></tr>\n  </tbody>\n</table>"
+    );
+}

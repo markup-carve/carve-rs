@@ -79,7 +79,23 @@ pub(crate) fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
         for (col, cell) in row.cells.iter().enumerate() {
             if cell.span == Some(TableCellSpan::Rowspan) {
                 if let Some(&base) = base_for_col.get(&col) {
-                    *spans.entry((base, col)).or_insert(1) += 1;
+                    let source = &t.rows[base].cells;
+                    let covered_by_visible_span =
+                        if source[col].span == Some(TableCellSpan::Colspan) {
+                            let mut left = col;
+                            while left > 0 && source[left].span == Some(TableCellSpan::Colspan) {
+                                left -= 1;
+                            }
+                            source[left].span.is_none()
+                                && base + spans.get(&(base, left)).copied().unwrap_or(1) > row_idx
+                        } else {
+                            true
+                        };
+                    if covered_by_visible_span {
+                        *spans.entry((base, col)).or_insert(1) += 1;
+                    } else {
+                        orphan_carets.insert((row_idx, col));
+                    }
                 } else {
                     orphan_carets.insert((row_idx, col));
                 }
