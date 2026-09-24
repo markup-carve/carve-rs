@@ -802,6 +802,9 @@ fn render_layout_table(
     if headers.is_empty() || headers.len() != delimiter.len() {
         return None;
     }
+    if headers.iter().any(|cell| *cell == "^" || *cell == "<") {
+        return None;
+    }
     let alignments: Vec<Option<&str>> = delimiter
         .iter()
         .map(|cell| layout_alignment(cell))
@@ -840,6 +843,9 @@ fn render_layout_table(
     while i < lines.len() && lines[i].trim_start().starts_with('|') {
         let cells = layout_pipe_cells(lines[i])?;
         if cells.len() != headers.len() {
+            return None;
+        }
+        if cells.iter().any(|cell| *cell == "^" || *cell == "<") {
             return None;
         }
         rows.push(cells);
@@ -1072,6 +1078,22 @@ mod layout_html_tests {
             let fast = try_layout_html(source, &Options::default())
                 .expect("the parity fixture is part of the accepted layout subset");
             assert_eq!(fast, authoritative(source), "source:\n{source}");
+        }
+    }
+
+    #[test]
+    fn gfm_tables_with_span_markers_use_the_authoritative_pipeline() {
+        for marker in ["^", "<"] {
+            let source = format!("| H | G |\n| --- | --- |\n| a | {marker} |\n");
+            assert!(try_layout_html(&source, &Options::default()).is_none());
+            assert_eq!(crate::to_html(&source), authoritative(&source));
+
+            let header_source = format!("| A | {marker} |\n| --- | --- |\n| a | b |\n");
+            assert!(try_layout_html(&header_source, &Options::default()).is_none());
+            assert_eq!(
+                crate::to_html(&header_source),
+                authoritative(&header_source)
+            );
         }
     }
 
