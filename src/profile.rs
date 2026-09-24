@@ -80,13 +80,13 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     // answer for the name even though no parse produces one.
     //
     // `block_extension` is the block twin of `inline_extension`, and Carve 0.1
-    // source spells none (markup-carve/carve#2223). `directive` is the
-    // generated-content half of `admonition` - toc, footnotes, glossary, index,
-    // references, bibliography - split out so a consumer does not need a list of
-    // kinds that are not callouts (markup-carve/carve#2225); the spec defers
-    // REFUSING those kinds on `admonition.kind` to the pin that moves to a build
-    // emitting `directive`, so classifying them is a separate change.
+    // source spells none (markup-carve/carve#2223).
     "block_extension",
+    // NOT interchange-only, unlike the entry above: `:::` with a
+    // generated-content kind - toc, footnotes, glossary, index, references,
+    // bibliography - parses to this type, split out of `admonition` so a
+    // consumer does not need a list of kinds that are not callouts
+    // (CARVE-P12-057, markup-carve/carve#2243).
     "directive",
 ];
 
@@ -172,6 +172,13 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
             Some("admonition")
         }
         BlockNode::Admonition(_) => Some("div"),
+        // A directive gates under its OWN name, which the vocabulary already
+        // promised, and `with_supertype` keeps `div` covering it: it renders
+        // `<div class="{kind}">` exactly as the non-Tier-1 admonition it used to
+        // parse as, and that classified as `div`. Without the supertype,
+        // splitting the type would quietly WIDEN every profile that denies
+        // `div` - `::: toc` would start surviving a deny list it never survived.
+        BlockNode::Directive(_) => Some("directive"),
         BlockNode::Div(_) => Some("div"),
         BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
@@ -195,17 +202,27 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::list_table::CARRIER => {
             Some("div")
         }
-        // The `glossary` / `index` extensions likewise rewrite a `::: glossary`
-        // / `::: index` admonition (a typed div) into a carrier before profile
-        // filtering; gate them as `div` so a restrictive profile denies them
-        // exactly as the original admonition.
+        // The `glossary`, `index` and toc-placement extensions rewrite the
+        // `::: glossary` / `::: index` / `::: toc` DIRECTIVE into a carrier
+        // before profile filtering, so the carrier is what a profile sees. Gate
+        // them as `directive`, which `with_supertype` keeps covered by `div`:
+        // a profile denying `div` strips them exactly as it stripped the typed
+        // div these kinds used to parse as, and one denying `directive` strips
+        // them too. Left at `div`, denying `directive` worked only while the
+        // extension was off - the deny list would have depended on which
+        // extensions the caller registered.
         BlockNode::ExtensionCarrier(e) if e.name == crate::extensions::glossary::CARRIER => {
-            Some("div")
+            Some("directive")
         }
         BlockNode::ExtensionCarrier(e)
             if e.name == crate::extensions::index_terms::LIST_CARRIER =>
         {
-            Some("div")
+            Some("directive")
+        }
+        BlockNode::ExtensionCarrier(e)
+            if e.name == crate::extensions::table_of_contents::TOC_CARRIER =>
+        {
+            Some("directive")
         }
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.
@@ -735,6 +752,7 @@ fn with_supertype(ty: &str) -> Vec<&str> {
     match ty {
         "autolink" => vec!["autolink", "link"],
         "admonition" => vec!["admonition", "div"],
+        "directive" => vec!["directive", "div"],
         other => vec![other],
     }
 }

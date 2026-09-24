@@ -81,17 +81,42 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
 /// not a skip: a skip would go green whether or not the output moved, which is
 /// how a gate stops being able to fail.
 ///
-/// AN ENTRY SKIPS THE TREE AND THE REPORT TOO, and the third column pins only
-/// the source exit. A clause that moves the written source usually moves the
-/// rows that describe it, and a second and third recorded value would be two
-/// more things to keep current; the engine tests for the ruling pin those
-/// directly instead.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    // EMPTY. The two entries that stood here described the empty-description
-    // fixtures while the pinned spec still recorded the dropped body. Upstream
-    // records the `{empty}` sentinel now (markup-carve/carve#1827), each entry
-    // failed its own staleness assertion on this pin, and both are deleted
-    // rather than left describing a window that has closed.
+/// AN ENTRY IS PER EXIT. `carve` and `ast` are each recorded only when THAT
+/// exit differs from the fixture, and an exit the entry leaves out is compared
+/// against the fixture as usual. A ruling that moves only the published tree -
+/// a node type split, where the written source is unchanged - was otherwise
+/// unrecordable: the one string covered the source exit, and skipping the tree
+/// with it left the half that moved unchecked. Same shape as carve-js's
+/// optional `carve` / `ast` / `report` fields in
+/// `test/html-import-conformance.test.ts`.
+///
+/// The report is not recordable here. A clause that moves the rows moves the
+/// source they describe in every case so far, so no entry has needed it, and the
+/// engine tests for the ruling pin the rows directly.
+struct AheadOfPin {
+    fixture: &'static str,
+    reason: &'static str,
+    /// What this engine writes TODAY at the source exit.
+    carve: Option<&'static str>,
+    /// The tree this engine publishes TODAY, as JSON, with `pos` and
+    /// `srcByteLength` left out the way the comparison leaves them out.
+    ast: Option<&'static str>,
+}
+
+const AHEAD_OF_PIN: &[AheadOfPin] = &[
+    // CARVE-P12-057 makes `::: footnotes` a `directive`; the fixture still
+    // records the `admonition` every engine wrote before the split
+    // (markup-carve/carve#2243). The written source is unchanged - the opener is
+    // the same `::: footnotes` either way - so only the tree is recorded, and the
+    // source exit keeps comparing against the fixture.
+    AheadOfPin {
+        fixture: "endnotes-section-not-last",
+        reason: "CARVE-P12-057 makes `::: footnotes` a directive (markup-carve/carve#2243)",
+        carve: None,
+        ast: Some(
+            r#"{"children":[{"children":[{"type":"text","value":"a"},{"label":"1","type":"footnote_ref"}],"type":"paragraph"},{"children":[],"kind":"footnotes","type":"directive"},{"children":[{"type":"text","value":"after"}],"type":"paragraph"},{"children":[{"children":[{"type":"text","value":"n"}],"type":"paragraph"}],"label":"1","type":"footnote"}],"type":"document"}"#,
+        ),
+    },
 ];
 
 /// The two fields that record WHERE a node was written rather than what it is.
@@ -150,24 +175,26 @@ fn shared_contract_fixtures_match() {
             ));
             continue;
         }
-        if let Some((_, reason, current)) =
-            AHEAD_OF_PIN.iter().find(|(fixture, _, _)| *fixture == name)
-        {
-            if result.value != *current {
-                mismatches.push(format!(
-                    "{name}: AHEAD_OF_PIN says this engine writes {current:?} ({reason}), \
-                     and it writes {:?} - update the entry or delete it",
-                    result.value
-                ));
+        let ahead = AHEAD_OF_PIN.iter().find(|entry| entry.fixture == name);
+        if let Some(entry) = ahead {
+            if let Some(current) = entry.carve {
+                if result.value != current {
+                    mismatches.push(format!(
+                        "{name}: AHEAD_OF_PIN says this engine writes {current:?} ({}), \
+                         and it writes {:?} - update the entry or delete it",
+                        entry.reason, result.value
+                    ));
+                }
+                if result.value == expected {
+                    mismatches.push(format!(
+                        "{name}: the source exit matches the fixture now - drop `carve` from its \
+                         AHEAD_OF_PIN entry"
+                    ));
+                }
             }
-            if result.value == expected {
-                mismatches.push(format!(
-                    "{name}: matches the fixture now - delete its AHEAD_OF_PIN entry"
-                ));
-            }
-            continue;
         }
-        if result.value != expected {
+        // `matches!` rather than `is_none_or`, which is newer than this crate's MSRV.
+        if !matches!(ahead, Some(entry) if entry.carve.is_some()) && result.value != expected {
             mismatches.push(format!(
                 "{name}\n  expected: {expected:?}\n  actual:  {:?}",
                 result.value
@@ -189,13 +216,37 @@ fn shared_contract_fixtures_match() {
         let published = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
         let actual_ast: serde_json::Value =
             serde_json::from_str(&carve::ast_json::to_json(&published.value)).unwrap();
-        if without_locations(&actual_ast) != without_locations(&expected_ast) {
-            mismatches.push(format!(
-                "{name} tree\n  expected: {}\n  actual:  {}",
-                serde_json::to_string(&without_locations(&expected_ast)).unwrap(),
-                serde_json::to_string(&without_locations(&actual_ast)).unwrap()
-            ));
-            continue;
+        let actual_ast = without_locations(&actual_ast);
+        match ahead.and_then(|entry| entry.ast) {
+            Some(current) => {
+                let recorded: serde_json::Value =
+                    serde_json::from_str(current).expect("an AHEAD_OF_PIN tree is JSON");
+                if actual_ast != recorded {
+                    mismatches.push(format!(
+                        "{name} tree: AHEAD_OF_PIN records {} ({}), and this engine publishes {} \
+                         - update the entry or delete it",
+                        serde_json::to_string(&recorded).unwrap(),
+                        ahead.map(|entry| entry.reason).unwrap_or_default(),
+                        serde_json::to_string(&actual_ast).unwrap()
+                    ));
+                }
+                if actual_ast == without_locations(&expected_ast) {
+                    mismatches.push(format!(
+                        "{name}: the tree matches the fixture now - drop `ast` from its \
+                         AHEAD_OF_PIN entry"
+                    ));
+                }
+            }
+            None => {
+                if actual_ast != without_locations(&expected_ast) {
+                    mismatches.push(format!(
+                        "{name} tree\n  expected: {}\n  actual:  {}",
+                        serde_json::to_string(&without_locations(&expected_ast)).unwrap(),
+                        serde_json::to_string(&actual_ast).unwrap()
+                    ));
+                    continue;
+                }
+            }
         }
         let expected_codes = expected_report["diagnostics"]
             .as_array()
@@ -346,7 +397,7 @@ fn behind_the_ruling_names_only_fixtures_that_exist() {
         .collect();
     let orphaned: Vec<&str> = AHEAD_OF_PIN
         .iter()
-        .map(|(fixture, _, _)| *fixture)
+        .map(|entry| entry.fixture)
         .filter(|fixture| !present.iter().any(|name| name == fixture))
         .collect();
     assert!(

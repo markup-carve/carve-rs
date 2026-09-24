@@ -188,6 +188,7 @@ fn walk_blocks(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Heading)) {
             }
             BlockNode::BlockQuote(b) => walk_blocks(&mut b.children, f),
             BlockNode::Admonition(a) => walk_blocks(&mut a.children, f),
+            BlockNode::Directive(d) => walk_blocks(&mut d.children, f),
             BlockNode::Div(d) => walk_blocks(&mut d.children, f),
             BlockNode::ExtensionCarrier(e) => walk_blocks(&mut e.children, f),
             BlockNode::DefinitionList(dl) => {

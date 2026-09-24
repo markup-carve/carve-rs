@@ -163,6 +163,7 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
         match block {
             BlockNode::Heading(h) => number_heading(h, in_blockquote, state),
             BlockNode::BlockQuote(b) => number_blocks(&mut b.children, true, state),
+            BlockNode::Directive(d) => number_blocks(&mut d.children, in_blockquote, state),
             BlockNode::Div(d) => number_blocks(&mut d.children, in_blockquote, state),
             BlockNode::Admonition(a) => number_blocks(&mut a.children, in_blockquote, state),
             BlockNode::FigureGroup(g) => number_blocks(&mut g.children, in_blockquote, state),
@@ -280,6 +281,7 @@ fn rewrite_links_blocks(
             BlockNode::BlockQuote(b) => {
                 rewrite_links_blocks(&mut b.children, by_id, opts);
             }
+            BlockNode::Directive(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
             BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
             BlockNode::Admonition(a) => {
                 if let Some(t) = &mut a.title {

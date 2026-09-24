@@ -112,6 +112,7 @@ impl SmartQuotes {
                     }
                     self.visit_blocks(&mut a.children);
                 }
+                BlockNode::Directive(d) => self.visit_blocks(&mut d.children),
                 BlockNode::Div(d) => self.visit_blocks(&mut d.children),
                 BlockNode::LineBlock(l) => self.visit_blocks(&mut l.children),
                 BlockNode::DefinitionList(d) => {

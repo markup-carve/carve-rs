@@ -125,9 +125,12 @@ fn the_ast_exit_gets_the_placement_node_in_the_same_slot() {
     .expect("import")
     .value;
     assert_eq!(document.children.len(), 3);
-    let carve::BlockNode::Admonition(placement) = &document.children[1] else {
+    // A `directive`, not an admonition: CARVE-P12-057 makes `::: footnotes` one
+    // (markup-carve/carve#2243), and the importer builds the node the writing
+    // exit's `::: footnotes` parses back to.
+    let carve::BlockNode::Directive(placement) = &document.children[1] else {
         panic!(
-            "expected a placement admonition, got {:?}",
+            "expected a placement directive, got {:?}",
             document.children
         );
     };

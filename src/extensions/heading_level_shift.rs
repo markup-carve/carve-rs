@@ -83,6 +83,7 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
         // invent one. Matches carve-php's `Heading::setLevel` clamp.
         BlockNode::Heading(heading) => heading.level = (heading.level + shift).min(6),
         BlockNode::BlockQuote(quote) => shift_blocks(&mut quote.children, shift),
+        BlockNode::Directive(div) => shift_blocks(&mut div.children, shift),
         BlockNode::Div(div) => shift_blocks(&mut div.children, shift),
         BlockNode::Admonition(admonition) => shift_blocks(&mut admonition.children, shift),
         BlockNode::List(list) => {

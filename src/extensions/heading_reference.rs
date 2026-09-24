@@ -205,6 +205,7 @@ fn resolve_blocks(
                 resolve_inlines(&mut paragraph.children, targets, counts)
             }
             BlockNode::BlockQuote(quote) => resolve_blocks(&mut quote.children, targets, counts),
+            BlockNode::Directive(div) => resolve_blocks(&mut div.children, targets, counts),
             BlockNode::Div(div) => resolve_blocks(&mut div.children, targets, counts),
             BlockNode::Admonition(admonition) => {
                 resolve_blocks(&mut admonition.children, targets, counts)

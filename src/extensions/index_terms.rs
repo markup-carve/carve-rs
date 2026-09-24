@@ -215,6 +215,11 @@ fn rewrite_markers_block(
                 rewrite_markers_block(child, counts, display);
             }
         }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 rewrite_markers_block(child, counts, display);
@@ -330,7 +335,9 @@ fn rewrite_markers_inline(
 fn rewrite_containers(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         match block {
-            BlockNode::Admonition(a) if a.kind == "index" => {
+            // CARVE-P12-057: `::: index` parses to a `directive`
+            // (markup-carve/carve#2243).
+            BlockNode::Directive(a) if a.kind == "index" => {
                 rewrite_containers(&mut a.children);
                 *block = BlockNode::ExtensionCarrier(ExtensionCarrier {
                     attrs: a.attrs.take(),
@@ -348,6 +355,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
             }
             BlockNode::BlockQuote(b) => rewrite_containers(&mut b.children),
             BlockNode::Admonition(a) => rewrite_containers(&mut a.children),
+            BlockNode::Directive(d) => rewrite_containers(&mut d.children),
             BlockNode::Div(d) => rewrite_containers(&mut d.children),
             BlockNode::ExtensionCarrier(e) => rewrite_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {

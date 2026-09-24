@@ -589,6 +589,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             }
             BlockNode::BlockQuote(quote) => rewrite_blocks(&mut quote.children),
             BlockNode::Admonition(admonition) => rewrite_blocks(&mut admonition.children),
+            BlockNode::Directive(div) => rewrite_blocks(&mut div.children),
             BlockNode::Div(div) => rewrite_blocks(&mut div.children),
             BlockNode::ExtensionCarrier(extension) => rewrite_blocks(&mut extension.children),
             BlockNode::DefinitionList(definition_list) => {

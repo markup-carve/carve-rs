@@ -241,6 +241,35 @@ impl Renderer {
                 }
                 (self.name("admonition")?, a, self.blocks(&n.children))
             }
+            // carve-grammars names no ProseMirror node for `directive`, so it
+            // rides the admonition node with its kind explicit, exactly as
+            // `::: toc` did while it still parsed as an admonition. That keeps
+            // the round trip strict rather than degrading a shape the editor
+            // model already carries; `from_pm` reads the kind back and rebuilds
+            // the directive.
+            BlockNode::Directive(n) => {
+                let mut a = attrs(n.attrs.as_ref());
+                let mut classes = a
+                    .remove("class")
+                    .and_then(|v| {
+                        if let Json::String(s) = v {
+                            Some(s)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_default();
+                if !classes.is_empty() {
+                    classes.push(' ');
+                }
+                classes.push_str(&n.kind);
+                a.insert("class".into(), Json::String(classes));
+                a.insert("carveAdmonitionKind".into(), Json::String(n.kind.clone()));
+                if let Some(label) = &n.label {
+                    a.insert("label".into(), Json::String(label.clone()));
+                }
+                (self.name("admonition")?, a, self.blocks(&n.children))
+            }
             BlockNode::Div(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 // The label is the div's visible heading, and nothing else

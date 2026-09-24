@@ -524,6 +524,7 @@ fn promote_ingested_block_images(doc: &mut Document) {
                 BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
                 BlockNode::Admonition(a) => worklist.push(a.children.as_mut_slice()),
                 BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
+                BlockNode::Directive(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::List(l) => {
                     for item in &mut l.items {
@@ -806,6 +807,7 @@ pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
         BlockNode::BlockQuote(n) => n.pos.as_ref(),
         BlockNode::Table(n) => n.pos.as_ref(),
         BlockNode::Admonition(n) => n.pos.as_ref(),
+        BlockNode::Directive(n) => n.pos.as_ref(),
         BlockNode::Div(n) => n.pos.as_ref(),
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
@@ -1181,6 +1183,23 @@ fn encode_block_task<'a>(
                     EncodeTask::Block(node, depth + 1)
                 });
             }
+        }
+        BlockNode::Directive(n) => {
+            let mut w = typed(out, "directive");
+            w.field("kind", |out| write_string(out, &n.kind));
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(label) = &n.label {
+                    w.field("label", |out| write_string(out, label));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
         }
         BlockNode::Div(n) => {
             let mut w = typed(out, "div");
@@ -1698,6 +1717,17 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             if let Some(title) = &n.title {
                 w.field("title", |out| write_inlines(out, title));
             }
+            if let Some(label) = &n.label {
+                w.field("label", |out| write_string(out, label));
+            }
+            w.field("children", |out| write_blocks(out, &n.children));
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::Directive(n) => {
+            let mut w = typed(out, "directive");
+            w.field("kind", |out| write_string(out, &n.kind));
             if let Some(label) = &n.label {
                 w.field("label", |out| write_string(out, label));
             }
@@ -2739,6 +2769,16 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             label: optional_string(obj, "label")?.map(str::to_string),
             children: decode_blocks(required_array(obj, "admonition", "children")?)?,
             pos: optional_pos(obj, "admonition")?,
+        })),
+        // CARVE-P12-057. The `kind` is NOT re-checked against the six here: the
+        // schema's enum is what refuses one outside them, and an engine that
+        // second-guessed it would refuse a tree a later clause admits.
+        "directive" => Ok(BlockNode::Directive(Directive {
+            attrs: optional_attrs(obj)?,
+            kind: required_string(obj, "directive", "kind")?.to_string(),
+            label: optional_string(obj, "label")?.map(str::to_string),
+            children: decode_blocks(required_array(obj, "directive", "children")?)?,
+            pos: optional_pos(obj, "directive")?,
         })),
         "div" => Ok(BlockNode::Div(Div {
             attrs: optional_attrs(obj)?,

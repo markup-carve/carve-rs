@@ -566,6 +566,10 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
                 a.children = collect_defs(a.children, defs);
                 out.push(BlockNode::Admonition(a));
             }
+            BlockNode::Directive(mut d) => {
+                d.children = collect_defs(d.children, defs);
+                out.push(BlockNode::Directive(d));
+            }
             BlockNode::Div(mut d) => {
                 d.children = collect_defs(d.children, defs);
                 out.push(BlockNode::Div(d));
@@ -878,6 +882,11 @@ fn annotate_citations_block(
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
         }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
@@ -1054,7 +1063,9 @@ fn inject_references_block(blocks: &mut Vec<BlockNode>) {
                 d.children.push(carrier);
                 return;
             }
-            BlockNode::Admonition(a) if a.kind == "references" => {
+            // A `.references` div above, or the `references` DIRECTIVE
+            // CARVE-P12-057 makes of `::: references`.
+            BlockNode::Directive(a) if a.kind == "references" => {
                 a.children.push(carrier);
                 return;
             }

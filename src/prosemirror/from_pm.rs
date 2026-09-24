@@ -308,6 +308,32 @@ impl Reader {
             .iter()
             .map(|v| self.block(v))
             .collect::<Result<Vec<_>, _>>()?;
+        // CARVE-P12-057: one of the six generated-content kinds is a `directive`,
+        // whatever node carried it here. The bridge has one node for both named
+        // containers - carve-grammars names none for `directive` - so the kind is
+        // what decides, exactly as it does on the parse path.
+        //
+        // An `admonition` that arrived from an ingest carrying one of the six
+        // therefore comes back as a directive. That is the same answer the parser
+        // gives for the same kind, and the bridge cannot tell the two apart.
+        if crate::ast::is_generated_content_kind(kind) {
+            let mut n = with_attrs(
+                node(
+                    "directive",
+                    [
+                        ("kind", Json::String(kind.into())),
+                        ("label", optional_string(a, "label")),
+                        ("children", Json::Array(children)),
+                    ],
+                ),
+                &without(
+                    &without_class_word(a, kind),
+                    &["carveAdmonitionKind", "carveAdmonitionTitle"],
+                ),
+            );
+            remove_nulls(&mut n);
+            return Ok(n);
+        }
         // The stamped opener title first; a payload from an editor that does
         // not stamp it falls back to `title`, which is also where an authored
         // title attribute lives - the ambiguity the stamp exists to remove.

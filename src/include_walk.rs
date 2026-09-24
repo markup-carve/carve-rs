@@ -46,6 +46,7 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
             }
             v.blocks(&mut a.children);
         }
+        BlockNode::Directive(d) => v.blocks(&mut d.children),
         BlockNode::Div(d) => v.blocks(&mut d.children),
         BlockNode::List(l) => {
             for item in &mut l.items {
@@ -201,6 +202,7 @@ pub(crate) fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
         BlockNode::BlockQuote(n) => n.pos.as_mut(),
         BlockNode::Table(n) => n.pos.as_mut(),
         BlockNode::Admonition(n) => n.pos.as_mut(),
+        BlockNode::Directive(n) => n.pos.as_mut(),
         BlockNode::Div(n) => n.pos.as_mut(),
         BlockNode::LineBlock(n) => n.pos.as_mut(),
         BlockNode::DefinitionList(n) => n.pos.as_mut(),

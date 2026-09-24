@@ -75,6 +75,7 @@ fn bind_blocks(blocks: &mut [BlockNode]) {
 fn descend(b: &mut BlockNode) {
     match b {
         BlockNode::BlockQuote(q) => bind_blocks(&mut q.children),
+        BlockNode::Directive(d) => bind_blocks(&mut d.children),
         BlockNode::Div(d) => bind_blocks(&mut d.children),
         BlockNode::Admonition(a) => bind_blocks(&mut a.children),
         BlockNode::ExtensionCarrier(e) => bind_blocks(&mut e.children),

@@ -699,6 +699,18 @@ fn collect_footnotes_block(
                 );
             }
         }
+        BlockNode::Directive(d) => {
+            for child in &mut d.children {
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 collect_footnotes_block(
@@ -1072,6 +1084,7 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::BlockQuote(n) => n.attrs.as_ref(),
         BlockNode::Table(n) => n.attrs.as_ref(),
         BlockNode::Admonition(n) => n.attrs.as_ref(),
+        BlockNode::Directive(n) => n.attrs.as_ref(),
         BlockNode::Div(n) => n.attrs.as_ref(),
         BlockNode::LineBlock(n) => n.attrs.as_ref(),
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
@@ -1314,6 +1327,7 @@ fn render_block(
         BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
         BlockNode::Table(t) => render_table(out, t, level, options, state),
         BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
+        BlockNode::Directive(d) => render_directive(out, d, level, options, state),
         BlockNode::Div(d) => render_div(out, d, level, options, state),
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
@@ -2453,20 +2467,22 @@ fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
     render_attrs(&Some(filtered))
 }
 
-fn render_admonition(
+/// A `::: footnotes` placement directive, or any other generated-content
+/// container (CARVE-P12-057).
+fn render_directive(
     out: &mut String,
-    a: &Admonition,
+    d: &Directive,
     level: usize,
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    // `::: footnotes` placement directive: emit the marker that the top-level
-    // render replaces with the endnotes section, relocating it from the
-    // document end. A document without this block is byte-identical to before.
-    if a.kind == "footnotes" && !state.rendering_footnotes {
+    // Emit the marker that the top-level render replaces with the endnotes
+    // section, relocating it from the document end. A document without this
+    // block is byte-identical to before.
+    if d.kind == "footnotes" && !state.rendering_footnotes {
         // Preserve any blocks authored inside the placeholder before the
         // relocated endnotes (matching carve-js), then the marker.
-        let body = render_blocks(&a.children, level, options, state);
+        let body = render_blocks(&d.children, level, options, state);
         let body = body.trim_end_matches('\n');
         if !body.is_empty() {
             out.push_str(body);
@@ -2475,19 +2491,70 @@ fn render_admonition(
         push_footnotes_placement_marker(out);
         return;
     }
-    let canonical = crate::profile::ADMONITION_TIER1_KINDS.contains(&a.kind.as_str());
+    // No title: the schema closes `directive` without one, so the slot is empty
+    // for every one of them (markup-carve/carve#2247).
+    render_named_container(
+        out,
+        &d.attrs,
+        &d.kind,
+        None,
+        &d.label,
+        &d.children,
+        level,
+        options,
+        state,
+    );
+}
+
+fn render_admonition(
+    out: &mut String,
+    a: &Admonition,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    render_named_container(
+        out,
+        &a.attrs,
+        &a.kind,
+        a.title.as_deref(),
+        &a.label,
+        &a.children,
+        level,
+        options,
+        state,
+    );
+}
+
+/// One renderer for both named containers. A directive's kind is never Tier-1,
+/// so it takes the same generic `<div class="{kind}">` shape a non-canonical
+/// admonition takes and has no title to place; two copies of that shape would
+/// drift.
+#[allow(clippy::too_many_arguments)]
+fn render_named_container(
+    out: &mut String,
+    attrs: &Option<Attrs>,
+    kind: &str,
+    title: Option<&[InlineNode]>,
+    label: &Option<String>,
+    children: &[BlockNode],
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    let canonical = crate::profile::ADMONITION_TIER1_KINDS.contains(&kind);
     indent(out, level);
     // The type class is structural (`admonition {kind}` for Tier 1, the bare
     // `{kind}` for a Tier-2 div) and emitted first; the opener's own
     // attribute block merges its classes into it and contributes id /
     // key-values after (never a second class).
     let base = if canonical {
-        format!("admonition {}", a.kind)
+        format!("admonition {kind}")
     } else {
-        a.kind.clone()
+        kind.to_string()
     };
     let tag = if canonical { "aside" } else { "div" };
-    let (class, rest) = match &a.attrs {
+    let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
             dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
             render_attrs_after_class_for(at, tag),
@@ -2495,21 +2562,21 @@ fn render_admonition(
         Some(at) => (base, render_attrs_after_class_for(at, tag)),
         None => (base, String::new()),
     };
-    let authored_name = a.attrs.as_ref().is_some_and(|attrs| {
+    let authored_name = attrs.as_ref().is_some_and(|attrs| {
         attrs.key_values.keys().any(|key| {
             key.eq_ignore_ascii_case("aria-label") || key.eq_ignore_ascii_case("aria-labelledby")
         })
     });
     let mut title_id = None;
     let accessible_name = if canonical && !authored_name {
-        if a.title.is_some() {
+        if title.is_some() {
             state.admonition_count += 1;
             let id = crate::document_ids::unique_id(&format!("adm-{}", state.admonition_count));
             let attr = format!(" aria-labelledby=\"{}\"", escape_attr(&id));
             title_id = Some(id);
             attr
         } else {
-            let mut chars = a.kind.chars();
+            let mut chars = kind.chars();
             let key = format!(
                 "admonition{}{}",
                 chars.next().unwrap_or_default().to_ascii_uppercase(),
@@ -2532,7 +2599,7 @@ fn render_admonition(
         rest,
         accessible_name
     ));
-    if let Some(title) = &a.title {
+    if let Some(title) = title {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"admonition-title\"");
@@ -2546,15 +2613,15 @@ fn render_admonition(
     // Graceful degradation: when no extension consumed the grouping `[label]`,
     // surface it as a visible caption so the authored label is never silently
     // dropped in static output. Title (when present) renders first.
-    if let Some(label) = &a.label {
+    if let Some(label) = label {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"div-label\">");
         out.push_str(&escape_text(label));
         out.push_str("</p>");
     }
-    let children = rendered_children(&a.children, level + 1, options, state);
-    for child in &children {
+    let rendered = rendered_children(children, level + 1, options, state);
+    for child in &rendered {
         out.push('\n');
         out.push_str(child);
     }
@@ -2562,7 +2629,7 @@ fn render_admonition(
         out,
         level,
         tag,
-        a.title.is_some() || a.label.is_some() || !children.is_empty(),
+        title.is_some() || label.is_some() || !rendered.is_empty(),
     );
 }
 

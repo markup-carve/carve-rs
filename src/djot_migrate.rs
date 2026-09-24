@@ -1081,6 +1081,7 @@ fn table_continuation_lines(source: &str) -> HashSet<usize> {
                 }
                 BlockNode::BlockQuote(node) => visit(&node.children, lines),
                 BlockNode::Admonition(node) => visit(&node.children, lines),
+                BlockNode::Directive(node) => visit(&node.children, lines),
                 BlockNode::Div(node) => visit(&node.children, lines),
                 BlockNode::LineBlock(node) => visit(&node.children, lines),
                 BlockNode::DefinitionList(list) => {

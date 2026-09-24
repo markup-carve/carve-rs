@@ -115,6 +115,11 @@ impl TabNormalize {
                     self.visit_block(child);
                 }
             }
+            BlockNode::Directive(d) => {
+                for child in &mut d.children {
+                    self.visit_block(child);
+                }
+            }
             BlockNode::Div(d) => {
                 for child in &mut d.children {
                     self.visit_block(child);

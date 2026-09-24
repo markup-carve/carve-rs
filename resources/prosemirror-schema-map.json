@@ -281,7 +281,7 @@
     "small_caps": "an interchange-only wrapper this engine never produces; carve-grammars names no ProseMirror node or mark for it, and inventing one here would emit a name no downstream editor knows",
     "ruby": "an interchange-only annotation this engine never produces; its paired base and annotation have no Carve 0.1 spelling, and carve-grammars names no ProseMirror node for it",
     "block_extension": "the block twin of inline_extension, which Carve 0.1 source does not spell, so a parse produces none; carve-grammars names no ProseMirror node for it, so the bridge keeps the required core fallback in its place and reports the lost name, version and payload as a degradation",
-    "directive": "this engine publishes no directive node yet - a generated-content ::: kind still classifies as a container here - and carve-grammars names no ProseMirror node for it"
+    "directive": "carve-grammars names no ProseMirror node for it, so a directive rides the admonition node with its kind explicit, exactly as a generated-content ::: kind did while it still parsed as an admonition; from_prosemirror reads the kind back and rebuilds the directive"
   },
   "preservationNodes": {
     "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
