@@ -18633,6 +18633,8 @@ fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(
             attrs,
             display,
             content,
+            label: None,
+            number: None,
             pos: None,
         },
         after - start,

@@ -969,6 +969,8 @@ impl<'a> Importer<'a> {
             attrs: Self::math_attrs(attrs, display),
             display,
             content,
+            label: None,
+            number: None,
             pos: None,
         })
     }
@@ -4619,6 +4621,8 @@ impl<'a> Importer<'a> {
                     attrs,
                     display: Self::attr(h, "display").as_deref() == Some("block"),
                     content,
+                    label: None,
+                    number: None,
                     pos: None,
                 })]);
             }

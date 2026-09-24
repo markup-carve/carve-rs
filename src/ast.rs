@@ -1099,6 +1099,13 @@ pub struct Math {
     pub attrs: Option<Attrs>,
     pub display: bool,
     pub content: String,
+    /// Authored equation-number label: the visible numbering prefix and the
+    /// counter bucket (CARVE-P12-051). Carve 0.1 source has no spelling for
+    /// one, so the parser never sets it; it arrives on ingest.
+    pub label: Option<String>,
+    /// Equation number assigned by resolution (PART 9R R5a). Only a display
+    /// node carrying a `label` may carry one.
+    pub number: Option<usize>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

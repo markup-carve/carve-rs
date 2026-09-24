@@ -2103,6 +2103,12 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
             let mut w = typed(out, "math");
             w.field("display", |out| write_bool(out, n.display));
             w.field("content", |out| write_string(out, &n.content));
+            if let Some(label) = &n.label {
+                w.field("label", |out| write_string(out, label));
+            }
+            if let Some(number) = n.number {
+                w.field("number", |out| write_usize(out, number));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -3095,17 +3101,42 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "span")?,
         })),
         "math" => {
-            // PART 12 §9(b): an ingest that accepts a tree and then renders only
-            // part of it tells the caller nothing. The spec pin this commit moves
-            // to names `label` and `number` (carve#2214) and this engine renders
-            // neither, so accepting them would drop a labelled equation's identity
-            // and its number in silence. Refused until they are implemented; the
-            // wire-fields table cannot say this, because the schema DOES name them.
-            refuse_unimplemented(obj, "math", &["label", "number"])?;
+            let display = required_bool(obj, "math", "display")?;
+            let label = optional_string(obj, "label")?.map(str::to_string);
+            if let Some(label) = &label {
+                // CARVE-P12-051 pins the label's shape in the schema itself:
+                // non-empty, and no leading or trailing whitespace, so it is the
+                // same plain-text counter key PART 2 derives from a caption label.
+                if label.is_empty() || label.trim() != label.as_str() {
+                    return Err(AstJsonError::new(
+                        "math.label is a non-empty string with no leading or trailing whitespace",
+                    ));
+                }
+            }
+            let number = optional_usize(obj, "number")?;
+            if let Some(number) = number {
+                // A number without a label has no counter bucket and no visible
+                // prefix, and inline math never draws one (CARVE-P12-051).
+                if number == 0 {
+                    return Err(AstJsonError::new("math.number is a positive integer"));
+                }
+                if label.is_none() {
+                    return Err(AstJsonError::new(
+                        "math.number needs math.label: the label is the counter bucket and the visible prefix",
+                    ));
+                }
+                if !display {
+                    return Err(AstJsonError::new(
+                        "math.number is only valid on display math: inline math draws no number",
+                    ));
+                }
+            }
             Ok(InlineNode::Math(Math {
                 attrs: optional_attrs(obj)?,
-                display: required_bool(obj, "math", "display")?,
+                display,
                 content: required_string(obj, "math", "content")?.to_string(),
+                label,
+                number,
                 pos: optional_pos(obj, "math")?,
             }))
         }
@@ -3515,28 +3546,6 @@ fn required_array<'a>(
     field: &str,
 ) -> Result<&'a [Json], AstJsonError> {
     required_value(obj, node_type, field)?.expect_array(&format!("{node_type}.{field}"))
-}
-
-/// A field the schema names and this engine does not implement.
-///
-/// The generated wire-fields table answers "does the schema name this?", which is
-/// the wrong question once the pin moves ahead of the renderers: a field the
-/// schema names and no renderer reads is accepted and then silently dropped, and
-/// PART 12 §9(b) calls that the worst of the three outcomes because the caller is
-/// told nothing. This says so instead, with the field named.
-fn refuse_unimplemented(
-    obj: &Map<String, Json>,
-    node_type: &str,
-    fields: &[&str],
-) -> Result<(), AstJsonError> {
-    for field in fields {
-        if obj.contains_key(*field) {
-            return Err(AstJsonError::new(format!(
-                "{node_type}.{field} is named by the schema but not implemented by this engine"
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn required_string<'a>(
