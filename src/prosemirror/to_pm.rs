@@ -614,10 +614,7 @@ impl Renderer {
                     };
                     next.push(mark(strong, attrs(n.attrs.as_ref())));
                     next.push(mark(emphasis, attrs(n.attrs.as_ref())));
-                } else {
-                    let Some(name) = self.emphasis_name(n.kind) else {
-                        return;
-                    };
+                } else if let Some(name) = self.emphasis_name(n.kind) {
                     // A mark cannot nest inside itself, so a span of a kind
                     // already open (a braced scope makes one spellable,
                     // markup-carve/carve#2091) merges into the outer mark.
@@ -628,6 +625,20 @@ impl Renderer {
                         self.degrade(emphasis_type(n.kind));
                     }
                     next.push(mark(name, attrs(n.attrs.as_ref())));
+                } else {
+                    // The map names no mark for this kind - `small_caps` today,
+                    // which carve-grammars has not decided. The CHILDREN are
+                    // ordinary inline content, so they go through unmarked and
+                    // it is the wrapper that is reported lost, the way the
+                    // canonical Carve writer flattens the same node.
+                    //
+                    // `emphasis_name` already recorded a DROP, which is what a
+                    // missing map name means for a node whose content goes with
+                    // it. Here the content survives, so the report is corrected
+                    // rather than left saying both.
+                    let ty = emphasis_type(n.kind);
+                    self.dropped.remove(ty);
+                    self.degrade(ty);
                 }
                 for child in &n.children {
                     self.inline(child, &next, out);
@@ -1027,6 +1038,9 @@ impl Renderer {
             EmphasisKind::Super => self.name("superscript"),
             EmphasisKind::Sub => self.name("subscript"),
             EmphasisKind::Highlight => self.name("highlight"),
+            // carve-grammars names no mark for it, so the map keeps it under
+            // `unmapped` and `name` degrades it to its children.
+            EmphasisKind::SmallCaps => self.name("small_caps"),
         }
     }
     fn degrade(&mut self, ty: &str) {

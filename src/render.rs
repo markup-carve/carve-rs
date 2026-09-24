@@ -3616,15 +3616,24 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
         EmphasisKind::Sub => ("sub", "sub"),
         EmphasisKind::Highlight => ("mark", "mark"),
         EmphasisKind::BoldItalic => ("strong", "em"),
+        EmphasisKind::SmallCaps => ("span", "span"),
+    };
+    // CARVE-P12-050: the small-caps span's `smallcaps` is a BASE class, merged
+    // into the author's class slot the way the math span's is, so an id written
+    // before a class keeps its place.
+    let attrs = if e.kind == EmphasisKind::SmallCaps {
+        render_attrs_with_base_class(&e.attrs, "smallcaps")
+    } else {
+        render_attrs(&e.attrs)
     };
     if e.kind == EmphasisKind::BoldItalic {
         // The combined token's trailing attribute block is the one
         // `[attributes]` slot of `bold_italic`, carried by the outer element.
-        out.push_str(&format!("<{open}{}><{close}>", render_attrs(&e.attrs)));
+        out.push_str(&format!("<{open}{attrs}><{close}>"));
         render_inlines_stateful(out, &e.children, options, state);
         out.push_str(&format!("</{close}></{open}>"));
     } else {
-        out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
+        out.push_str(&format!("<{}{}>", open, attrs));
         render_inlines_stateful(out, &e.children, options, state);
         out.push_str(&format!("</{}>", close));
     }

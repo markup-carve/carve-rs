@@ -2555,6 +2555,7 @@ pub(crate) fn emphasis_type(t: EmphasisKind) -> &'static str {
         EmphasisKind::Super => "superscript",
         EmphasisKind::Sub => "subscript",
         EmphasisKind::Highlight => "highlight",
+        EmphasisKind::SmallCaps => "small_caps",
     }
 }
 
@@ -3048,7 +3049,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "smart_punctuation")?,
         })),
         "emphasis" | "strong" | "underline" | "strike" | "superscript" | "subscript"
-        | "highlight" => {
+        | "highlight" | "small_caps" => {
             let kind = decode_emphasis_kind(ty, obj)?;
             let mut children = decode_inlines(required_array(obj, ty, "children")?)?;
             // The combined form is ONE node here and TWO on the wire: a
@@ -3349,6 +3350,7 @@ fn decode_emphasis_kind(ty: &str, obj: &Map<String, Json>) -> Result<EmphasisKin
         "superscript" => EmphasisKind::Super,
         "subscript" => EmphasisKind::Sub,
         "highlight" => EmphasisKind::Highlight,
+        "small_caps" => EmphasisKind::SmallCaps,
         _ => return Err(AstJsonError::new(format!("unknown emphasis type {ty:?}"))),
     })
 }
