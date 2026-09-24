@@ -95,9 +95,11 @@ pub(crate) fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
                         *spans.entry((base, col)).or_insert(1) += 1;
                     } else {
                         orphan_carets.insert((row_idx, col));
+                        base_for_col.insert(col, row_idx);
                     }
                 } else {
                     orphan_carets.insert((row_idx, col));
+                    base_for_col.insert(col, row_idx);
                 }
             } else {
                 base_for_col.insert(col, row_idx);

@@ -58,3 +58,11 @@ fn carets_under_visible_row_and_colspan_are_absorbed() {
         "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"3\" colspan=\"2\">A</th><th scope=\"col\">C</th></tr>\n    <tr><td>Y</td></tr>\n    <tr><td>Z</td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn orphan_caret_below_colspan_can_span_another_row() {
+    assert_eq!(
+        carve::to_html("| A | < | X |\n| B | ^ | Y |\n| C | ^ | Z |"),
+        "<table>\n  <tbody>\n    <tr><td colspan=\"2\">A</td><td>X</td></tr>\n    <tr><td>B</td><td rowspan=\"2\"></td><td>Y</td></tr>\n    <tr><td>C</td><td>Z</td></tr>\n  </tbody>\n</table>"
+    );
+}

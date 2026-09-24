@@ -2137,7 +2137,10 @@ fn render_table_row(
         if cell.span == Some(TableCellSpan::Rowspan) {
             if orphan_carets.contains(&(row_idx, col)) {
                 let scope = cell_scope_attr(cell, true, in_head);
-                write!(out, "<th{scope}></th>").unwrap();
+                let span = rowspan_cols
+                    .get(&(row_idx, col))
+                    .map_or(String::new(), |count| format!(" rowspan=\"{count}\""));
+                write!(out, "<th{scope}{span}></th>").unwrap();
             }
             continue;
         }
@@ -2208,7 +2211,11 @@ fn render_table_body_row(
             if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
                 let tag = if cell.header { "th" } else { "td" };
                 let scope = cell_scope_attr(cell, cell.header, false);
-                write!(out, "<{tag}{scope}></{tag}>").unwrap();
+                let span = ctx
+                    .rowspan_cols
+                    .get(&(source_row_idx, cell_index))
+                    .map_or(String::new(), |count| format!(" rowspan=\"{count}\""));
+                write!(out, "<{tag}{scope}{span}></{tag}>").unwrap();
             }
             continue;
         }
