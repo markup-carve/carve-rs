@@ -1947,8 +1947,53 @@ fn render_table(
     } else {
         0
     };
+    let footer_start = t.rows.len() - footer_count;
+    let crosses_section = rowspan_cols.iter().any(|(&(row, col), &span)| {
+        span > 1
+            && t.rows[row].cells[col].span != Some(TableCellSpan::Colspan)
+            && ((row < header_count && row + span > header_count)
+                || (row < footer_start && row + span > footer_start))
+    });
     // Computed once per table: every row and every cell reads the same answer.
     let column_defaults = table_column_defaults(t, header_count);
+    if crosses_section {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<tbody>");
+        let mut body_ctx = TableBodyRenderContext {
+            rowspan_cols: &rowspan_cols,
+            orphan_carets: &orphan_carets,
+            defaults: &column_defaults,
+            options,
+            state,
+        };
+        for (row_idx, row) in t.rows.iter().enumerate() {
+            out.push('\n');
+            indent(out, level + 2);
+            if row_idx < header_count {
+                render_table_row(
+                    out,
+                    row,
+                    true,
+                    body_ctx.options,
+                    row_idx,
+                    &rowspan_cols,
+                    &orphan_carets,
+                    body_ctx.state,
+                    &column_defaults,
+                );
+            } else {
+                render_table_body_row(out, row, row_idx, &mut body_ctx);
+            }
+        }
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("</tbody>");
+        out.push('\n');
+        indent(out, level);
+        out.push_str("</table>");
+        return;
+    }
     let has_header = header_count > 0;
     let body_start = header_count;
     // A ROW IS A ROW, IN EVERY SECTION (PART 10 §7, markup-carve/carve#1459).
@@ -1981,7 +2026,6 @@ fn render_table(
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
     // no <tbody>, matching carve-php.
-    let footer_start = t.rows.len() - footer_count;
     if body_start < footer_start {
         out.push('\n');
         indent(out, level + 1);

@@ -842,6 +842,9 @@ fn render_layout_table(
         if cells.len() != headers.len() {
             return None;
         }
+        if cells.iter().any(|cell| *cell == "^" || *cell == "<") {
+            return None;
+        }
         rows.push(cells);
         i += 1;
     }
@@ -1072,6 +1075,15 @@ mod layout_html_tests {
             let fast = try_layout_html(source, &Options::default())
                 .expect("the parity fixture is part of the accepted layout subset");
             assert_eq!(fast, authoritative(source), "source:\n{source}");
+        }
+    }
+
+    #[test]
+    fn gfm_tables_with_span_markers_use_the_authoritative_pipeline() {
+        for marker in ["^", "<"] {
+            let source = format!("| H | G |\n| --- | --- |\n| a | {marker} |\n");
+            assert!(try_layout_html(&source, &Options::default()).is_none());
+            assert_eq!(crate::to_html(&source), authoritative(&source));
         }
     }
 

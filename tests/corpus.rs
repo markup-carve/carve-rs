@@ -186,6 +186,8 @@ const IMPLEMENTED: &[&str] = &[
     "table-cell-attributes",
     "table-row-attributes",
     "table-header-cell-rowspan",
+    "an-explicit-table-head-span-keeps-one-row-group",
+    "a-table-foot-span-keeps-one-row-group",
     "block-quote-continuation-marker",
     "heading-marker-column-zero",
     "paragraph-trailing-whitespace",
