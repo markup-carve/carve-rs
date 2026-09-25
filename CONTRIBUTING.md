@@ -34,7 +34,7 @@ cargo test --doc
 ```
 
 **Use nextest. Plain `cargo test` is not a slower version of the same run.** The
-suite is roughly 6500 tests spread across several hundred separate test binaries.
+suite is about 6100 test functions spread across some 670 separate test binaries.
 Nextest schedules every test from every binary through one queue; `cargo test`
 runs one binary at a time and parallelizes only inside it, so it alternates
 between a short burst of work and a serialization point, several hundred times.
