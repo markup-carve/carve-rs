@@ -71,7 +71,7 @@ which the published crate does not carry.
 
 ### Improvements
 
-- `to_ast_envelope_json` and `from_ast_envelope_json` read and write the versioned AST interchange envelope, and `AstEnvelopeError` separates a newer contract, an unimplemented required extension and a foreign vocabulary from a tree that would not decode (#1963).
+- `to_ast_envelope_json` and `from_ast_envelope_json` read and write the versioned AST interchange envelope, and `AstEnvelopeError` separates a newer contract, an unimplemented required extension and a foreign vocabulary from a tree that would not decode. A major too large for a machine integer is a version refusal too, the schema pattern matching a major of any width (#1963, #1966).
 - A spanning table cell publishes its resolved extent, and a rowspan crossing a row-group boundary renders in one body group (#1850, #1854, markup-carve/carve#2224).
 - JSON AST interchange carries ruby base and annotation pairs through rendering, profiles and canonical source output, with the flattened form reported as `ruby-flattened` and accepted by `--allow-loss ruby-flattened`; it also preserves the optional line-end ranges on line blocks (#1859, #1868).
 - A small-caps span is carried through every target (#1864).
