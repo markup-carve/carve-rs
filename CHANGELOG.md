@@ -7,14 +7,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Detached block and inline trees can be dropped with `ast::dispose_blocks`
+  and `ast::dispose_inlines`, including a `Vec<BlockNode>` moved out of a
+  document. These functions use the same iterative teardown as `Document`.
+  Ordinary `drop` on detached nodes remains recursive. The derived `Clone`,
+  `Debug`, and equality traits also remain recursive: simple 16-level block
+  and inline chains passed on a 256 KiB thread stack in a debug build. No depth
+  is guaranteed for arbitrary trees, and deeper calls may overflow the stack.
+
 ### Changed
 
 - `Document` now drops its owned AST iteratively, so dropping a deeply nested
   document built by a caller does not overflow the stack (#1887). This adds a
   `Drop` implementation. Moving fields out, destructuring by value, and struct
   update syntax now fail to compile. Borrow fields to inspect them, or use
-  `std::mem::take` on a mutable document to transfer ownership. A detached deep
-  tree still needs bounded teardown. This API change ships in a 0.1.x patch.
+  `std::mem::take` on a mutable document to transfer ownership. Pass a detached
+  deep tree to the disposal functions above. This API change ships in a 0.1.x
+  patch.
 - `HtmlImportOptions.max_depth` cannot raise HTML import past the 128-level
   `MAX_HTML_IMPORT_DEPTH` ceiling. Lower values still narrow the limit.
 - Markdown conversion has fallible `try_markdown_to_ast`,
