@@ -74,7 +74,7 @@ fn a_nested_descendant_gets_the_same_treatment_and_no_row_of_its_own_kind() {
         rows,
         vec![
             row(RawPreserved, Warning, "/form[1]", "Preserved unsupported <form> element as raw HTML"),
-            row(AttributePreserved, Info, "/form[1]/div[1]", "Preserved attribute 5x on <div> inside the raw HTML <form> is kept as: not a Carve attribute name"),
+            row(AttributePreserved, Info, "/form[1]/div[1]", "Preserved unsupported attribute 5x on <div> inside the raw HTML <form> is kept as: not spellable as a Carve attribute name"),
             row(AttributePreserved, Error, "/form[1]/div[1]/img[1]", "Preserved src with a denied URL scheme on <img> inside the raw HTML <form> is kept as"),
         ]
     );
