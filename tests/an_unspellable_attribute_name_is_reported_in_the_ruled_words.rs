@@ -73,6 +73,15 @@ fn the_row_reads_unsupported_attribute_and_names_the_rule_that_refused_it() {
                 "/form[1]/a[1]",
                 "Preserved unsupported attribute xlink:href on <a> inside the raw HTML <form> is kept as: not spellable as a Carve attribute name"
             ),
+            // The `style` beside it takes a row of its own now that kept bytes
+            // read it through the refusal policy (markup-carve/carve#2267). It
+            // does not move the `align` row: both are spelling-ordered.
+            row(
+                AttributePreserved,
+                Info,
+                "/form[1]/div[2]",
+                "Preserved style on <div> inside the raw HTML <form> is kept as"
+            ),
             row(
                 AttributePreserved,
                 Info,

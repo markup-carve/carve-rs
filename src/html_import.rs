@@ -417,6 +417,61 @@ fn is_table_cell(tag: &str) -> bool {
     tag == "td" || tag == "th"
 }
 
+/// Each `url(...)` argument in a CSS value, with the quotes CSS allows around it
+/// stripped. A quoted argument is read to its closing quote, so a `)` inside it
+/// does not end the argument early.
+fn css_url_arguments(value: &str) -> Vec<&str> {
+    let lower = value.to_ascii_lowercase();
+    let mut out = Vec::new();
+    let mut from = 0usize;
+    while let Some(hit) = lower[from..].find("url(") {
+        let open = from + hit + 4;
+        let start = open + value[open..].len() - value[open..].trim_start().len();
+        let rest = &value[start..];
+        let (argument, after) = match rest.chars().next() {
+            Some(quote @ ('"' | '\'')) => match rest[1..].find(quote) {
+                Some(end) => (&rest[1..1 + end], start + 2 + end),
+                None => break,
+            },
+            _ => match rest.find(')') {
+                Some(end) => (&rest[..end], start + end),
+                None => break,
+            },
+        };
+        out.push(argument.trim());
+        from = after;
+    }
+    out
+}
+
+/// How the refusal policy reads a `style`: the subject the row names, and
+/// whether what the kept bytes carry is live (markup-carve/carve#2267).
+///
+/// The reason comes from a closed set of two, so it is derived rather than
+/// chosen per call. Asking the renderer's own sanitizer rather than restating
+/// its needles is what stops the importer refusing a different set than the
+/// renderer blanks.
+fn style_refusal(value: &str) -> (String, bool) {
+    if css_url_arguments(value)
+        .into_iter()
+        .any(has_denied_url_scheme)
+    {
+        return (
+            "style with a denied URL scheme in a declaration value".to_owned(),
+            true,
+        );
+    }
+    // BLANKED, not empty: the sanitizer answers `""` for `style=""` as well, so
+    // the test is whether it changed the value.
+    if sanitize_attr_value("style", value) != value {
+        return (
+            "style with a construct the CSS sanitizer refuses".to_owned(),
+            true,
+        );
+    }
+    ("style".to_owned(), false)
+}
+
 /// The slot a declaration reaches on an element of this tag, DISREGARDING the
 /// import mode - [`Importer::style_slot`] is the one that answers for a mode.
 fn mapped_style_slot(tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
@@ -603,10 +658,16 @@ impl<'a> Importer<'a> {
             path,
             node,
         );
+        self.own_last(node, HtmlImportDiagnosticCode::AttributeDropped);
+    }
+
+    /// Mark the row just pushed as `node`'s, so `keep_raw` can take it back.
+    ///
+    /// NOT when the cap swallowed the row: `diag` replaces the last entry with
+    /// the truncation marker there, which is why the code is checked.
+    fn own_last(&mut self, node: &Handle, code: HtmlImportDiagnosticCode) {
         if let Some(entry) = self.diagnostics.last_mut() {
-            // NOT when the cap swallowed the row: `diag` replaces the last
-            // entry with the truncation marker there.
-            if entry.diagnostic.code == HtmlImportDiagnosticCode::AttributeDropped {
+            if entry.diagnostic.code == code {
                 entry.owner = Some(node.clone());
             }
         }
@@ -734,11 +795,12 @@ impl<'a> Importer<'a> {
             .collect();
         for (name, value) in pairs {
             // The sanitizer's own test, so a denied token later in a URL list
-            // counts too. Dangerous CSS is its other half and not a scheme.
-            let denied = has_denied_url_scheme(&value)
-                || (!name.eq_ignore_ascii_case("style")
-                    && !value.is_empty()
-                    && sanitize_attr_value(&name, &value).is_empty());
+            // counts too. `style` is exempt from BOTH halves: `refusal` reads it
+            // declaration by declaration, where this probe would read
+            // `background` as the scheme of `background:url(javascript:x)`.
+            let denied = !name.eq_ignore_ascii_case("style")
+                && (has_denied_url_scheme(&value)
+                    || (!value.is_empty() && sanitize_attr_value(&name, &value).is_empty()));
             let (subject, reason, live) =
                 match Self::refusal(node, tag, &name, &value, &style_filled) {
                     Some(refusal) => (refusal.subject, refusal.reason, refusal.live || denied),
@@ -1321,12 +1383,29 @@ impl<'a> Importer<'a> {
                 live: true,
             });
         }
-        // The VALUE of a compact semantic span (PART 9 §10), `id`, `class` and
-        // `style` are read by `attrs` itself.
-        if matches!(name, "id" | "class" | "style")
+        // The VALUE of a compact semantic span (PART 9 §10), `id` and `class`
+        // are read by `attrs` itself.
+        if matches!(name, "id" | "class")
             || (is_semantic_span_tag(tag) && semantic_value_target(tag) == Some(name))
         {
             return None;
+        }
+        if name == "style" {
+            // THE SAME POLICY AS EVERY OTHER ATTRIBUTE (markup-carve/carve#2267).
+            // The CSS mapping in `attrs` answers for a document the import
+            // rewrites; this answers for bytes kept whole, where no mapping runs
+            // and `style-unmapped` would name one that did.
+            let (subject, live) = style_refusal(value);
+            return Some(Refusal {
+                subject,
+                reason: "",
+                severity: if live {
+                    HtmlImportSeverity::Error
+                } else {
+                    HtmlImportSeverity::Info
+                },
+                live,
+            });
         }
         if style_filled.contains(name) {
             // SUPERSEDED BY THE CSS BESIDE IT. A browser does not read
@@ -1430,6 +1509,55 @@ impl<'a> Importer<'a> {
         ) || (tag == "li" && name == "data-task-state" && Self::reads_task_state(handle))
     }
 
+    /// The CSS mapping: every declaration that reaches a slot, and one
+    /// `style-unmapped` row for the ones that reach none.
+    ///
+    /// ONLY THE DECLARATIONS THAT WENT NOWHERE. `style` used to be refused
+    /// wholesale, so a cell carrying `text-align:right` came back unaligned AND
+    /// carrying a row naming a loss this engine does not have to take - the
+    /// alignment has somewhere faithful to go, and `docs/html-import.md` makes a
+    /// declared loss a ceiling rather than a license (markup-carve/carve#1741).
+    ///
+    /// The row is OWNED by its element, which is how `keep_raw` takes it back
+    /// where the kept bytes run no mapping for it to describe.
+    fn map_style(&mut self, handle: &Handle, path: &str, tag: &str, value: &str, out: &mut Attrs) {
+        let cell = is_table_cell(tag);
+        let mut unmapped = false;
+        for (property, val) in style_declarations(value) {
+            match self.style_slot(tag, &property, &val) {
+                // A CELL TAKES THE MARKER RUN, NOT AN ATTRIBUTE. `|>` renders
+                // back as `style="text-align: right;"` and `{align=right}` as
+                // `align="right"`, so only the marker returns the declaration
+                // the import was handed - and only the marker keeps
+                // `carve -> html -> carve -> html` a fixed point, which the
+                // key-value was not (markup-carve/carve#1745). The cell's own
+                // fields carry it; `cell_style_alignment` reads them off the
+                // same element.
+                Some(_) if cell => {}
+                // OFF A CELL there is no marker run, and `align` is a legacy
+                // presentational attribute HTML defines for exactly these
+                // elements, so the key-value is the faithful spelling rather
+                // than a second-best one. `vertical-align` reaches no slot here
+                // at all and so never takes this arm.
+                Some(StyleSlot::Align(align)) => {
+                    out.key_values
+                        .insert("align".to_string(), align_keyword(align).to_string());
+                }
+                _ => unmapped = true,
+            }
+        }
+        if unmapped {
+            self.diag(
+                HtmlImportDiagnosticCode::StyleUnmapped,
+                "CSS declarations were not mapped".into(),
+                HtmlImportSeverity::Info,
+                path,
+                handle,
+            );
+            self.own_last(handle, HtmlImportDiagnosticCode::StyleUnmapped);
+        }
+    }
+
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
         let mut out = Attrs::default();
@@ -1440,7 +1568,15 @@ impl<'a> Importer<'a> {
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.to_string();
                 let value = attr.value.to_string();
-                if let Some(refusal) = Self::refusal(handle, &tag, &name, &value, &style_filled) {
+                if name == "style" {
+                    // AHEAD OF THE REFUSAL, deliberately. `refusal` answers for
+                    // `style` so the kept-bytes reading goes through the shared
+                    // policy, and this element is one the import rewrites - the
+                    // CSS mapping is its reading, not a drop.
+                    self.map_style(handle, path, &tag, &value, &mut out);
+                } else if let Some(refusal) =
+                    Self::refusal(handle, &tag, &name, &value, &style_filled)
+                {
                     self.refuse_attribute(handle, path, &tag, refusal);
                 } else if name == "id" {
                     out.id = Some(value);
@@ -1457,51 +1593,6 @@ impl<'a> Importer<'a> {
                     // would spell the same string twice - and diagnosing it as
                     // dropped, which is where `datetime` used to land, would
                     // report a loss that no longer happens (carve#1140).
-                } else if name == "style" {
-                    // ONLY THE DECLARATIONS THAT WENT NOWHERE. `style` used to
-                    // be refused wholesale, so a cell carrying
-                    // `text-align:right` came back unaligned AND carrying a row
-                    // naming a loss this engine does not have to take - the
-                    // alignment has somewhere faithful to go, and
-                    // `docs/html-import.md` makes a declared loss a ceiling
-                    // rather than a license (markup-carve/carve#1741).
-                    let cell = is_table_cell(&tag);
-                    let mut unmapped = false;
-                    for (property, val) in style_declarations(&value) {
-                        match self.style_slot(&tag, &property, &val) {
-                            // A CELL TAKES THE MARKER RUN, NOT AN ATTRIBUTE.
-                            // `|>` renders back as `style="text-align: right;"`
-                            // and `{align=right}` as `align="right"`, so only
-                            // the marker returns the declaration the import was
-                            // handed - and only the marker keeps
-                            // `carve -> html -> carve -> html` a fixed point,
-                            // which the key-value was not
-                            // (markup-carve/carve#1745). The cell's own fields
-                            // carry it; `cell_style_alignment` reads them off
-                            // the same element.
-                            Some(_) if cell => {}
-                            // OFF A CELL there is no marker run, and `align` is
-                            // a legacy presentational attribute HTML defines
-                            // for exactly these elements, so the key-value is
-                            // the faithful spelling rather than a second-best
-                            // one. `vertical-align` reaches no slot here at all
-                            // and so never takes this arm.
-                            Some(StyleSlot::Align(align)) => {
-                                out.key_values
-                                    .insert("align".to_string(), align_keyword(align).to_string());
-                            }
-                            _ => unmapped = true,
-                        }
-                    }
-                    if unmapped {
-                        self.diag(
-                            HtmlImportDiagnosticCode::StyleUnmapped,
-                            "CSS declarations were not mapped".into(),
-                            HtmlImportSeverity::Info,
-                            path,
-                            handle,
-                        );
-                    }
                 } else if Self::is_consumed_attribute(handle, &tag, &name) {
                     // Written back by the branch that builds the node.
                 } else {
