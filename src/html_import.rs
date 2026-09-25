@@ -198,6 +198,7 @@ pub struct HtmlImportDiagnostic {
 pub struct HtmlImportOptions {
     pub mode: HtmlImportMode,
     pub adapter: HtmlImportAdapter,
+    /// Maximum input nesting, capped at [`MAX_HTML_IMPORT_DEPTH`] even when set higher.
     pub max_depth: usize,
     pub max_nodes: usize,
     pub max_diagnostics: usize,
@@ -216,12 +217,15 @@ pub struct HtmlImportOptions {
     pub labels: BTreeMap<String, String>,
 }
 
+/// Hard depth ceiling for HTML import, independent of caller options.
+pub const MAX_HTML_IMPORT_DEPTH: usize = 128;
+
 impl Default for HtmlImportOptions {
     fn default() -> Self {
         Self {
             mode: HtmlImportMode::Safe,
             adapter: HtmlImportAdapter::Generic,
-            max_depth: 128,
+            max_depth: MAX_HTML_IMPORT_DEPTH,
             max_nodes: 1_000_000,
             max_diagnostics: 1_000,
             labels: BTreeMap::new(),
@@ -521,7 +525,7 @@ impl<'a> Importer<'a> {
     }
 
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
-        if depth > self.opts.max_depth {
+        if depth > self.opts.max_depth.min(MAX_HTML_IMPORT_DEPTH) {
             return Err(HtmlImportError::DepthLimit);
         }
         self.nodes += 1;
@@ -984,10 +988,8 @@ impl<'a> Importer<'a> {
         }
         None
     }
-    /// `text()` without its recursion, for the annotation - which is read to
-    /// settle the tier, so it is read before any depth counter has seen it. At
-    /// a caller-raised `max_depth` a recursive read is the thing that fails
-    /// first, and a blown stack is not the typed error this API promises.
+    /// `text()` without its recursion, for the annotation. It is read before
+    /// the depth counter reaches its children, so this walk must stay iterative.
     fn flat_text(h: &Handle) -> String {
         let mut out = String::new();
         let mut pending = vec![h.clone()];

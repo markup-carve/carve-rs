@@ -118,7 +118,7 @@ pub use extensions::{
 pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
     HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
-    HtmlImportSeverity, ImportConfidence, ImportFidelity,
+    HtmlImportSeverity, ImportConfidence, ImportFidelity, MAX_HTML_IMPORT_DEPTH,
 };
 pub use includes::{
     expand_includes, expands_for_target, IncludeContext, IncludeDenial, IncludeDependency,

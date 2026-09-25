@@ -122,6 +122,10 @@ pub struct Frontmatter {
     pub pos: Option<Pos>,
 }
 
+/// A Carve document.
+///
+/// Teardown is recursive, so callers building trees outside the bounded readers
+/// must bound their nesting. Renderers refuse trees past [`crate::MAX_RENDER_DEPTH`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,

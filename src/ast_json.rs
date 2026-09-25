@@ -3901,3 +3901,38 @@ impl Expect for Json {
 /// Deepest JSON nesting the reader will follow.
 const LONGEST_FIELD_CHAIN: usize = 6;
 const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * LONGEST_FIELD_CHAIN + 16;
+
+#[cfg(test)]
+mod depth_budget_tests {
+    use super::*;
+
+    #[test]
+    fn reader_refuses_json_beyond_its_budget_before_decoding() {
+        let at_limit = format!(
+            "{{\"nested\":{}0{}}}",
+            "[".repeat(MAX_JSON_DEPTH - 1),
+            "]".repeat(MAX_JSON_DEPTH - 1)
+        );
+        assert!(refuse_deeper_than_budget(&at_limit).is_ok());
+
+        let source = format!(
+            "{{\"type\":\"document\",\"srcByteLength\":0,\"children\":[],\"nested\":{}0{}}}",
+            "[".repeat(MAX_JSON_DEPTH),
+            "]".repeat(MAX_JSON_DEPTH)
+        );
+        let message = "JSON nests deeper than the reader's depth budget";
+        assert_eq!(
+            refuse_deeper_than_budget(&source).unwrap_err().to_string(),
+            message
+        );
+        assert_eq!(from_json(&source).unwrap_err().to_string(), message);
+        assert_eq!(
+            crate::from_prosemirror(&source).unwrap_err().to_string(),
+            message
+        );
+        assert_eq!(
+            crate::ast_patch_from_json(&source).unwrap_err().to_string(),
+            message
+        );
+    }
+}
