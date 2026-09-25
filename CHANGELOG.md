@@ -9,6 +9,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `HtmlImportOptions.max_depth` cannot raise HTML import past the 128-level
+  `MAX_HTML_IMPORT_DEPTH` ceiling. Lower values still narrow the limit.
 - Markdown conversion has fallible `try_markdown_to_ast`,
   `try_markdown_to_carve`, and `try_migrate_markdown` entry points. The older
   entry points panic when excessive nesting or the canonical writer prevents
