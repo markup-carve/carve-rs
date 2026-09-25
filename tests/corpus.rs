@@ -654,6 +654,9 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#2272's row, which carve-rs#1915 already answered - its
     // `a_profile_keeps_a_bodyless_named_container` pins the same four shapes.
     "a-title-or-label-fills-the-container-body-slot",
+    // markup-carve/carve#2319's row, arriving with this pin bump. carve-rs#1955
+    // answered #1951 and carve-rs#1956 pins the separator width.
+    "a-comment-line-s-text-is-content-and-a-block-body-is-payload",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1366,4 +1369,8 @@ corpus_test!(
 corpus_test!(
     c_a_title_or_label_fills_the_container_body_slot,
     "a-title-or-label-fills-the-container-body-slot"
+);
+corpus_test!(
+    c_a_comment_line_s_text_is_content_and_a_block_body_is_payload,
+    "a-comment-line-s-text-is-content-and-a-block-body-is-payload"
 );
