@@ -237,21 +237,29 @@ fn every_value_reads_as_one_of_three_classes() {
             "error",
             "style with a construct the CSS sanitizer refuses",
         ),
-        // THE DECLARATION SCAN READS THE VALUE AS WRITTEN, and the sanitizer
-        // does not: it strips comments and decodes CSS escapes first. So a
-        // commented-out denied URL still takes the scheme reason although the
-        // sanitizer leaves the value alone, and an escaped one takes the
-        // sanitizer reason although the sanitizer is what decodes it. Both
-        // stay `error`, and both are carve-js's answer on the same bytes - the
-        // three engines have to say the same thing here before any of them
-        // narrows it.
+        // BOTH READINGS READ THE TEXT THE RENDERER ACTS ON, which is comment
+        // stripped and escape decoded (carve-rs#1921, after carve-php#2391 named
+        // the preprocessing as one seam). Read as written instead, a
+        // commented-out denied URL took the scheme reason about a declaration
+        // the renderer writes back untouched, and an escaped scheme was
+        // invisible to the scan and took the weaker of the two reasons.
+        ("/* url(javascript:x) */ color:red", "info", "style"),
         (
-            "/* url(javascript:x) */ color:red",
+            r"background:url(javas\63ript:x)",
             "error",
             "style with a denied URL scheme in a declaration value",
         ),
+        // The comment strip is not a licence to under-report: the same denied
+        // URL outside the comment still carries the scheme reason.
         (
-            r"background:url(javas\63ript:x)",
+            "/* c */ background:url(javascript:x)",
+            "error",
+            "style with a denied URL scheme in a declaration value",
+        ),
+        // And an escaped construct with no URL in it stays on the second reason,
+        // because the set is closed at two (markup-carve/carve#2267).
+        (
+            r"width:expr\65 ssion(alert(1))",
             "error",
             "style with a construct the CSS sanitizer refuses",
         ),
@@ -324,4 +332,88 @@ fn the_style_row_sits_where_the_element_spells_the_attribute() {
         subjects(r#"<form onclick="a()" style="color:red">t</form>"#),
         vec![handler, style]
     );
+}
+
+/// carve-rs#1921: the ticket's own two values, WHOLE, because only the class and
+/// the reason move and the code was already right.
+///
+/// The commented one is the case that made the report describe something the
+/// renderer did not do: the declaration reaches the kept bytes untouched, so an
+/// `error` about a denied scheme in it named a danger that is not there.
+#[test]
+fn a_commented_denied_url_is_not_a_danger_and_an_escaped_one_is_the_scheme() {
+    let commented = r#"<form style="color:red;/*url(javascript:x)*/" onclick="y()">a</form>"#;
+    assert_eq!(
+        rows(commented),
+        vec![
+            preserved(
+                "info",
+                "/form[1]",
+                "Preserved style on <form> in the raw HTML this element is kept as"
+            ),
+            preserved(
+                "error",
+                "/form[1]",
+                "Preserved event-handler attribute onclick on <form> \
+                 in the raw HTML this element is kept as"
+            ),
+            raw_preserved("/form[1]", "form"),
+        ]
+    );
+    // What the row is now honest about: the bytes carry the declaration as
+    // written, and the renderer leaves it alone.
+    assert!(import(commented, HtmlImportMode::Roundtrip)
+        .0
+        .contains(r#"style="color:red;/*url(javascript:x)*/""#));
+    assert!(
+        carve::to_html(r#"[a]{style="color:red;/*url(javascript:x)*/"}"#)
+            .contains(r#"style="color:red;/*url(javascript:x)*/""#)
+    );
+
+    assert_eq!(
+        rows(r#"<form style="background:url(java\73 cript:x)">a</form>"#)[0],
+        preserved(
+            "error",
+            "/form[1]",
+            "Preserved style with a denied URL scheme in a declaration value on <form> \
+             in the raw HTML this element is kept as"
+        )
+    );
+}
+
+/// THE CLASS IS A BICONDITIONAL AGAINST THE SANITIZER, not an imitation of it:
+/// the row is `error` exactly where the renderer blanks the value. Pinned over
+/// the same table as the reasons above so a later value cannot drift from it.
+#[test]
+fn the_row_is_an_error_exactly_where_the_renderer_blanks_the_value() {
+    for value in [
+        "color:red",
+        "color:red;/*url(javascript:x)*/",
+        "color:red;/*expression(alert(1))*/",
+        "/*c*/color:red",
+        "background:url(javascript:x)",
+        r"background:url(java\73 cript:x)",
+        r"background:\75 rl(javascript:x)",
+        "background:url(pic.png)",
+        "width:expression(alert(1))",
+        r"width:expr\65 ssion(alert(1))",
+        "behavior:url(x.htc)",
+        "-moz-binding:url(#x)",
+        "@import url(x.css)",
+        // A denied scheme at the HEAD of the value, with no `url(...)` in it, is
+        // blanked and takes the second reason. The set is closed at two, so it
+        // carries every refusal the first does not name.
+        "javascript:alert(1)",
+        "",
+    ] {
+        let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
+        let blanked = !value.is_empty()
+            && carve::to_html(&format!("[a]{{style=\"{escaped}\"}}")).contains(r#"style="""#);
+        let (_, severity, ..) = rows(&format!(r#"<form style="{value}">t</form>"#))[0].clone();
+        assert_eq!(
+            severity == "error",
+            blanked,
+            "style=\"{value}\": row said {severity}, the renderer blanked={blanked}"
+        );
+    }
 }
