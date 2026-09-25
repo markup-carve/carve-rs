@@ -248,27 +248,21 @@ pub fn dispose_inlines(inlines: Vec<InlineNode>) {
     dispose_pending(pending);
 }
 
+// Each queued vector is emptied of child vectors in place and then dropped
+// shallow, so no node is moved through the work list.
 fn dispose_pending(mut pending: Vec<DropWork>) {
     while let Some(work) = pending.pop() {
         match work {
             DropWork::Blocks(mut blocks) => {
-                if let Some(block) = blocks.pop() {
-                    if !blocks.is_empty() {
-                        pending.push(DropWork::Blocks(blocks));
-                    }
-                    pending.push(DropWork::Block(block));
+                for block in &mut blocks {
+                    drain_block(&mut pending, block);
                 }
             }
             DropWork::Inlines(mut inlines) => {
-                if let Some(inline) = inlines.pop() {
-                    if !inlines.is_empty() {
-                        pending.push(DropWork::Inlines(inlines));
-                    }
-                    pending.push(DropWork::Inline(inline));
+                for inline in &mut inlines {
+                    drain_inline(&mut pending, inline);
                 }
             }
-            DropWork::Block(mut block) => drain_block(&mut pending, &mut block),
-            DropWork::Inline(mut inline) => drain_inline(&mut pending, &mut inline),
         }
     }
 }
@@ -276,8 +270,6 @@ fn dispose_pending(mut pending: Vec<DropWork>) {
 enum DropWork {
     Blocks(Vec<BlockNode>),
     Inlines(Vec<InlineNode>),
-    Block(BlockNode),
-    Inline(InlineNode),
 }
 
 fn queue_blocks(pending: &mut Vec<DropWork>, blocks: Vec<BlockNode>) {
@@ -371,7 +363,7 @@ fn drain_block(pending: &mut Vec<DropWork>, block: &mut BlockNode) {
                 node.fallback.as_mut(),
                 BlockNode::ThematicBreak(ThematicBreak::default()),
             );
-            pending.push(DropWork::Block(fallback));
+            pending.push(DropWork::Blocks(vec![fallback]));
         }
         BlockNode::ExtensionCarrier(node) => {
             queue_blocks(pending, std::mem::take(&mut node.children));
