@@ -1,6 +1,6 @@
 use crate::{
-    bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
-    HtmlImportAdapter, HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
+    bbcode_to_carve, djot_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter,
+    HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,8 +107,32 @@ fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
     }
 }
 
+/// Migrate Markdown and return its fidelity report.
+///
+/// # Panics
+///
+/// Panics if the canonical writer cannot represent the imported document. Use
+/// [`try_migrate_markdown`] to handle that error.
 pub fn migrate_markdown(source: &str) -> MigrationResult {
-    unverified(markdown_to_carve(source), SourceFormat::Markdown)
+    try_migrate_markdown(source).expect("the Markdown import cannot be written as Carve")
+}
+
+/// Migrate Markdown while preserving a typed canonical-writer failure.
+pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
+    let (value, losses) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    let mut result = unverified(value, SourceFormat::Markdown);
+    result
+        .report
+        .diagnostics
+        .extend(losses.into_iter().map(|message| MigrationDiagnostic {
+            code: "structure-unspellable".to_owned(),
+            message,
+            severity: HtmlImportSeverity::Warning,
+            fidelity: MigrationFidelity::Dropped,
+            confidence: MigrationConfidence::Exact,
+            path: None,
+        }));
+    Ok(result)
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {

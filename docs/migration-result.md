@@ -3,6 +3,8 @@
 `migrate_html`, `migrate_markdown`, `migrate_djot`, and `migrate_bbcode` return the same
 `MigrationResult` shape. This lets applications build one import workflow
 instead of special-casing HTML reports and treating other formats as strings.
+`try_migrate_markdown` returns the same result inside `Result`, with a writer
+error if the imported document cannot be spelled as Carve.
 
 ```rust
 use carve::{migrate_html, HtmlImportOptions, MigrationFidelity};
@@ -23,9 +25,10 @@ std::fs::write("document.crv", result.value)?;
 
 Version 2 reports use the same `Preserved`, `Normalized`, `Degraded`, and
 `Dropped` fidelity vocabulary as the other Carve engines. HTML retains its
-construct-specific diagnostics. Markdown, Djot, and BBCode currently emit a
+construct-specific diagnostics. Markdown, Djot, and BBCode emit a
 `fidelity-unverified` dropped/fallback warning on every import because those
-paths do not yet expose construct-level loss information. This deliberately
+paths do not yet verify overall fidelity. Markdown also reports each blank GFM
+table row it drops as `structure-unspellable`. This deliberately
 fails closed at the worst-case outcome: byte differences are not evidence of
 semantic fidelity.
 
