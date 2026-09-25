@@ -530,7 +530,7 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
                     attrs: a.attrs.take(),
                     name: TOC_CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
-                    summary: None,
+                    summary: a.title.take(),
                     label: a.label.take(),
                     pos: None,
                 });
@@ -564,11 +564,36 @@ fn render_toc_nav(
     budget: &RefCell<usize>,
 ) -> String {
     let (min, max) = toc_window(&node.attrs);
-    let attrs = render_attrs_without_keys(
-        &Some(named_nav_attrs(&node.attrs, &ctx.label(LABEL_TOC_NAV))),
-        &["depth", "from", "to"],
+    let authored_name = node.attrs.as_ref().is_some_and(|attrs| {
+        attrs.key_values.keys().any(|key| {
+            key.eq_ignore_ascii_case("aria-label") || key.eq_ignore_ascii_case("aria-labelledby")
+        })
+    });
+    let title_id = (node.summary.is_some() && !authored_name).then(|| ctx.mint_admonition_id());
+    let default_label = ctx.label(LABEL_TOC_NAV);
+    let mut nav_attrs = named_nav_attrs(
+        &node.attrs,
+        if title_id.is_some() {
+            ""
+        } else {
+            &default_label
+        },
     );
-    let empty_nav = format!("<nav{attrs}></nav>");
+    if let Some(id) = &title_id {
+        nav_attrs
+            .key_values
+            .insert("aria-labelledby".to_string(), id.clone());
+        crate::extension::record_attr_order(&mut nav_attrs, "aria-labelledby");
+    }
+    let attrs = render_attrs_without_keys(&Some(nav_attrs), &["depth", "from", "to"]);
+    // COLUMN 0, like the list below them: extensions section 8b.3 makes this nav
+    // fragment the cross-impl contract, and an indent here is a byte divergence.
+    let tokens = crate::extension::directive_tokens(node, ctx, 0, title_id.as_deref());
+    let empty_nav = if tokens.is_empty() {
+        format!("<nav{attrs}></nav>")
+    } else {
+        format!("<nav{attrs}>\n{}\n</nav>", tokens.join("\n"))
+    };
     // Preserve any authored blocks written inside the placeholder before the nav.
     let wrap = |nav: String| -> String {
         if node.children.is_empty() {
@@ -594,11 +619,15 @@ fn render_toc_nav(
     // raw-HTML policy, symbols map and typography mode as the heading it was
     // derived from - the injected `tableOfContents()` nav uses the same options
     // by the same argument, one hook earlier.
-    let nav = format!(
-        "<nav{attrs}>\n{}</nav>",
-        build_list(&picked, ListType::Ul, &|nodes| ctx
-            .render_inlines_inside_anchor(nodes))
-    );
+    let prefix = if tokens.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", tokens.join("\n"))
+    };
+    let list = build_list(&picked, ListType::Ul, &|nodes| {
+        ctx.render_inlines_inside_anchor(nodes)
+    });
+    let nav = format!("<nav{attrs}>\n{prefix}{list}</nav>");
     // Bound cumulative nav bytes across all `::: toc` blocks in one render: K
     // blocks x N headings would otherwise amplify output ~K*N. Once the budget
     // is exhausted, degrade to an empty nav. The borrow is scoped and released

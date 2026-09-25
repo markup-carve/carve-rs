@@ -360,11 +360,25 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             }
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
-        // A directive carries no title, so it degrades exactly as a div does:
-        // the label floor, if any, then the body.
         BlockNode::Directive(d) => {
             let body = render_blocks(&d.children, ctx, depth + 1);
-            prepend_label(body, d.label.as_deref())
+            let body = prepend_label(body, d.label.as_deref());
+            match &d.title {
+                Some(title) => {
+                    let title = pad_outside(
+                        render_title_inlines(title, ctx),
+                        "**",
+                        "<strong>",
+                        "</strong>",
+                    );
+                    if title.is_empty() {
+                        body
+                    } else {
+                        format!("{title}\n\n{body}")
+                    }
+                }
+                None => body,
+            }
         }
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, ctx, depth + 1);

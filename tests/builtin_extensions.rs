@@ -1378,9 +1378,34 @@ fn footnotes_no_marker_renders_at_end() {
 
 #[test]
 fn footnotes_placement_degrades_without_footnotes() {
+    // The ordinary typed-div rendering, which carve-js and carve-php emit too.
+    // It used to be a hand-written `<div class="footnotes"></div>`, shorter than
+    // the div every other empty container renders.
     let html = carve::to_html("Plain.\n\n::: footnotes\n:::\n");
-    assert!(html.contains("<div class=\"footnotes\"></div>"));
+    assert!(
+        html.contains("<div class=\"footnotes\">\n\n</div>"),
+        "{html}"
+    );
     assert!(!html.contains("doc-endnotes"));
+}
+
+#[test]
+fn a_degraded_marker_keeps_its_title_and_label() {
+    // Authored text never vanishes: the div a marker degrades to IS the placed
+    // element, so both tokens render inside it, and the author's own naming
+    // attribute is theirs to keep - only the GENERATED name is withheld, because
+    // ARIA prohibits it on role `generic` (CARVE-P9-072).
+    let html = carve::to_html("{aria-label=\"Mine\"}\n::: footnotes \"T\" [L]\nbody\n:::\n");
+    assert!(
+        html.contains("<div class=\"footnotes\" aria-label=\"Mine\">"),
+        "{html}"
+    );
+    assert!(
+        html.contains("<p class=\"admonition-title\">T</p>"),
+        "{html}"
+    );
+    assert!(html.contains("<p class=\"div-label\">L</p>"), "{html}");
+    assert!(!html.contains("aria-labelledby"), "{html}");
 }
 
 #[test]

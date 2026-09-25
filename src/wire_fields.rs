@@ -26,7 +26,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("definition_list", &["attrs", "items", "loose", "pos", "type"]),
     ("definition_term", &["attrs", "children", "pos", "type"]),
     ("delete", &["attrs", "children", "pos", "type"]),
-    ("directive", &["attrs", "children", "kind", "label", "pos", "type"]),
+    ("directive", &["attrs", "children", "kind", "label", "pos", "title", "type"]),
     ("div", &["attrs", "children", "label", "pos", "type"]),
     ("document", &["children", "srcByteLength", "type"]),
     ("emphasis", &["attrs", "children", "pos", "type"]),

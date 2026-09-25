@@ -1187,19 +1187,35 @@ fn encode_block_task<'a>(
         BlockNode::Directive(n) => {
             let mut w = typed(out, "directive");
             w.field("kind", |out| write_string(out, &n.kind));
-            w.field("children", |out| out.push('['));
-            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
-                let mut w = Writer { out, first: false };
-                if let Some(label) = &n.label {
-                    w.field("label", |out| write_string(out, label));
-                }
-                write_attrs_field(&mut w, &n.attrs);
-                write_pos_field(&mut w, &n.pos);
-                w.finish();
-            })));
-            push_array(tasks, &n.children, |node| {
-                EncodeTask::Block(node, depth + 1)
-            });
+            if let Some(title) = &n.title {
+                w.field("title", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(label) = &n.label {
+                        w.field("label", |out| write_string(out, label));
+                    }
+                    w.field("children", |out| out.push('['));
+                    finish_attrs_pos(tasks, &n.attrs, &n.pos);
+                    push_array(tasks, &n.children, |node| {
+                        EncodeTask::Block(node, depth + 1)
+                    });
+                })));
+                push_array(tasks, title, |node| EncodeTask::Inline(node, depth + 1));
+            } else {
+                w.field("children", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(label) = &n.label {
+                        w.field("label", |out| write_string(out, label));
+                    }
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(tasks, &n.children, |node| {
+                    EncodeTask::Block(node, depth + 1)
+                });
+            }
         }
         BlockNode::Div(n) => {
             let mut w = typed(out, "div");
@@ -1728,6 +1744,9 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
         BlockNode::Directive(n) => {
             let mut w = typed(out, "directive");
             w.field("kind", |out| write_string(out, &n.kind));
+            if let Some(title) = &n.title {
+                w.field("title", |out| write_inlines(out, title));
+            }
             if let Some(label) = &n.label {
                 w.field("label", |out| write_string(out, label));
             }
@@ -2776,6 +2795,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "directive" => Ok(BlockNode::Directive(Directive {
             attrs: optional_attrs(obj)?,
             kind: required_string(obj, "directive", "kind")?.to_string(),
+            title: optional_inlines(obj, "title")?,
             label: optional_string(obj, "label")?.map(str::to_string),
             children: decode_blocks(required_array(obj, "directive", "children")?)?,
             pos: optional_pos(obj, "directive")?,

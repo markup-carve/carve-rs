@@ -221,11 +221,20 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
             }
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, depth + 1),
-        // A directive carries no title, so it degrades exactly as a div does:
-        // the label floor, if any, then the body.
         BlockNode::Directive(d) => {
             let body = render_blocks(&d.children, depth + 1);
-            prepend_label(body, d.label.as_deref())
+            let body = prepend_label(body, d.label.as_deref());
+            match &d.title {
+                Some(title) => {
+                    let title = render_inlines(title);
+                    if title.is_empty() {
+                        body
+                    } else {
+                        format!("{title}\n\n{body}")
+                    }
+                }
+                None => body,
+            }
         }
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, depth + 1);

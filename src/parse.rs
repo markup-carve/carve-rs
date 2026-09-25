@@ -4876,6 +4876,9 @@ fn parse_eof_closed_colon_ladder(
                 BlockNode::Directive(Directive {
                     attrs: open.attrs,
                     kind,
+                    title: open
+                        .title
+                        .map(|title| parse_inline_with_options(&title, options)),
                     label: open.label,
                     children,
                     pos: None,
@@ -14829,15 +14832,13 @@ fn boxed_container_node(
     options: &Options<'_>,
 ) -> Box<BlockNode> {
     if let Some(kind) = open.kind {
-        // CARVE-P12-057, the same dispatch as the flatten path above. A
-        // directive has NO title slot - the schema closes the node without one -
-        // so an opener's quoted title on one of the six kinds is not carried.
-        // No corpus document or example spells one; where it should go is
-        // markup-carve/carve#2247.
         if crate::ast::is_generated_content_kind(&kind) {
             return Box::new(BlockNode::Directive(Directive {
                 attrs: open.attrs,
                 kind,
+                title: open.title.map(|title| {
+                    parse_inline_lines_with_anchor(&title, options, vec![title_anchor])
+                }),
                 label: open.label,
                 children,
                 pos,

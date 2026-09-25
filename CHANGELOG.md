@@ -13,6 +13,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `try_markdown_to_carve`, and `try_migrate_markdown` entry points. The older
   entry points panic when excessive nesting or the canonical writer prevents
   conversion instead of returning partial or empty results.
+- Generated-content directives retain their quoted titles through parsing,
+  AST interchange, source formatting and HTML placement (#1874).
 - JSON AST interchange preserves the optional line-end ranges on line blocks
   (CARVE-P12-058, #1859).
 - JSON AST interchange carries ruby base and annotation pairs through rendering,

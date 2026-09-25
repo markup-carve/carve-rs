@@ -191,6 +191,7 @@ fn render_html_pass(
     let mut state = RenderState {
         heading_id_options: options.heading_id_options(),
         crossref_index,
+        has_footnotes: !footnotes.is_empty(),
         ..RenderState::default()
     };
     let mut html =
@@ -466,7 +467,23 @@ pub(crate) struct RenderState {
     /// placement marker (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
     admonition_count: usize,
+    footnotes_heading: Option<FootnotesHeading>,
+    has_footnotes: bool,
     suppress_automatic_abbreviation: bool,
+}
+
+#[derive(Clone)]
+struct FootnotesHeading {
+    title: Option<Vec<InlineNode>>,
+    label: Option<String>,
+    id: Option<String>,
+}
+
+impl RenderState {
+    pub(crate) fn mint_admonition_id(&mut self) -> String {
+        self.admonition_count += 1;
+        crate::document_ids::unique_id(&format!("adm-{}", self.admonition_count))
+    }
 }
 
 fn render_document_blocks(
@@ -703,6 +720,19 @@ fn collect_footnotes_block(
             }
         }
         BlockNode::Directive(d) => {
+            // The title first, like an admonition's: a reference written in the
+            // opener is numbered where the opener stands, and a note referenced
+            // ONLY there still reaches the endnotes section.
+            if let Some(title) = &mut d.title {
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    title,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
             for child in &mut d.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -812,6 +842,20 @@ fn collect_footnotes_block(
             }
         }
         BlockNode::ExtensionCarrier(e) => {
+            // The carrier holds the title MOVED off the container it stands in,
+            // and the carrier is what renders, so the reference has to be
+            // numbered here. Collecting it on the container instead numbers a
+            // copy nobody emits.
+            if let Some(summary) = &mut e.summary {
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    summary,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
             for child in &mut e.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -1112,11 +1156,41 @@ fn render_footnotes_section(
     let was_rendering_footnotes = state.rendering_footnotes;
     state.rendering_footnotes = true;
     let mut out = String::new();
-    out.push_str("<section role=\"doc-endnotes\" aria-label=\"");
-    out.push_str(&escape_attr(
-        options.label(crate::extension::LABEL_ENDNOTES),
-    ));
-    out.push_str("\">\n  <hr>\n  <ol>");
+    if let Some(FootnotesHeading { title, label, id }) = state.footnotes_heading.clone() {
+        out.push_str("<section role=\"doc-endnotes\"");
+        if let Some(id) = &id {
+            write!(out, " aria-labelledby=\"{}\"", escape_attr(id)).unwrap();
+        } else {
+            write!(
+                out,
+                " aria-label=\"{}\"",
+                escape_attr(options.label(crate::extension::LABEL_ENDNOTES))
+            )
+            .unwrap();
+        }
+        out.push('>');
+        if let Some(title) = &title {
+            out.push_str("\n  <p class=\"admonition-title\"");
+            if let Some(id) = &id {
+                write!(out, " id=\"{}\"", escape_attr(id)).unwrap();
+            }
+            out.push('>');
+            render_inlines(&mut out, title, options, state);
+            out.push_str("</p>");
+        }
+        if let Some(label) = label {
+            out.push_str("\n  <p class=\"div-label\">");
+            out.push_str(&escape_text(&label));
+            out.push_str("</p>");
+        }
+    } else {
+        out.push_str("<section role=\"doc-endnotes\" aria-label=\"");
+        out.push_str(&escape_attr(
+            options.label(crate::extension::LABEL_ENDNOTES),
+        ));
+        out.push_str("\">");
+    }
+    out.push_str("\n  <hr>\n  <ol>");
     for (idx, entry) in footnotes.iter().enumerate() {
         let num = idx + 1;
         out.push('\n');
@@ -2482,7 +2556,23 @@ fn render_directive(
     // Emit the marker that the top-level render replaces with the endnotes
     // section, relocating it from the document end. A document without this
     // block is byte-identical to before.
-    if d.kind == "footnotes" && !state.rendering_footnotes {
+    // Only a marker in a document that HAS a note places the section. Any other
+    // one falls through below and renders as the ordinary `<div class="{kind}">`
+    // holding its own title, label and blocks, which is where an unconsumed
+    // token belongs (CARVE-P9-072) and what carve-js and carve-php emit.
+    if d.kind == "footnotes"
+        && !state.rendering_footnotes
+        && state.has_footnotes
+        && state.footnotes_heading.is_none()
+    {
+        // The title takes its id HERE, before the marker's children render, so
+        // the `adm-{n}` sequence follows document order.
+        let id = d.title.as_ref().map(|_| state.mint_admonition_id());
+        state.footnotes_heading = Some(FootnotesHeading {
+            title: d.title.clone(),
+            label: d.label.clone(),
+            id,
+        });
         // Preserve any blocks authored inside the placeholder before the
         // relocated endnotes (matching carve-js), then the marker.
         let body = render_blocks(&d.children, level, options, state);
@@ -2494,13 +2584,11 @@ fn render_directive(
         push_footnotes_placement_marker(out);
         return;
     }
-    // No title: the schema closes `directive` without one, so the slot is empty
-    // for every one of them (markup-carve/carve#2247).
     render_named_container(
         out,
         &d.attrs,
         &d.kind,
-        None,
+        d.title.as_deref(),
         &d.label,
         &d.children,
         level,
@@ -2529,10 +2617,7 @@ fn render_admonition(
     );
 }
 
-/// One renderer for both named containers. A directive's kind is never Tier-1,
-/// so it takes the same generic `<div class="{kind}">` shape a non-canonical
-/// admonition takes and has no title to place; two copies of that shape would
-/// drift.
+/// One renderer for both named containers.
 #[allow(clippy::too_many_arguments)]
 fn render_named_container(
     out: &mut String,
@@ -2573,8 +2658,7 @@ fn render_named_container(
     let mut title_id = None;
     let accessible_name = if canonical && !authored_name {
         if title.is_some() {
-            state.admonition_count += 1;
-            let id = crate::document_ids::unique_id(&format!("adm-{}", state.admonition_count));
+            let id = state.mint_admonition_id();
             let attr = format!(" aria-labelledby=\"{}\"", escape_attr(&id));
             title_id = Some(id);
             attr
