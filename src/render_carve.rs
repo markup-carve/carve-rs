@@ -359,32 +359,11 @@ fn narrow_escalation(
     best
 }
 
-/// The candidate escapes an escalated unit can still hand back, one occurrence
-/// at a time (PART 11 §2).
-///
-/// SAME SEARCH, ONE LEVEL FINER. The comparison is still document-scoped, so a
-/// failure still reports THAT the document changed and never WHERE; the
-/// occurrence is found by trying, and every state kept is one that re-parsed to
-/// the tree the conservative form parses to.
-///
-/// THE OCCURRENCES ARE LOGGED, NOT PREDICTED. A candidate site is whatever the
-/// writer's own escape arms visit, so they are collected by rendering once with
-/// the log switched on rather than by a second enumeration here that could
-/// drift from the one that emits.
-///
-/// THE FIRST RENDER IS A CONTROL, as it is one level up. With nothing relaxed
-/// it must reproduce the state the unit search settled on byte for byte; if
-/// logging changed what was written, the unit-scoped answer stands rather than
-/// a narrowing built on a pass that is not the pass being measured.
-///
-/// BOUNDED THE SAME WAY AND FOR THE SAME REASON. A group holding no failing
-/// occurrence is relaxed in one render, so a document with a handful of them
-/// costs about log(n) renders -- but a document where every occurrence is load
-/// bearing drives the halving to its leaves and pays a render and a parse per
-/// occurrence, which is a render of the whole document per escaped character. A
-/// paragraph of indented table rows is exactly that, and it is ordinary input
-/// rather than an adversarial one. The OUTPUT is unchanged where the budget
-/// binds: those occurrences are the opener runs §2 requires escaped in full.
+/// Narrow escaping one occurrence at a time after the unit-level pass.
+/// Candidate sites come from the writer's own log. If logging changes the
+/// control render, the unit-level result is kept. The search is bounded because
+/// every load-bearing occurrence can require another full render and parse.
+/// Where the budget binds, remaining occurrences stay escaped as §2 requires.
 fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut String) {
     let unit_scoped = best.clone();
     RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
@@ -498,10 +477,6 @@ fn set_relaxed(group: &[Occurrence], relaxed: bool) {
 /// budget runs out and returns the state it has reached, which is verified like
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
-///
-/// MEASURED over the 1358 pinned corpus documents: 51 reach the search at all,
-/// and once the control render has narrowed the candidates to the units the
-/// writer asks about, the widest holds eight and none holds more.
 fn relax_units(
     doc: &Document,
     units: &[usize],
@@ -555,8 +530,7 @@ fn comparable_tree(source: &str) -> Option<Document> {
 ///
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
-/// map below empty - and its clones unmade - for every document that has no
-/// such description, which is all but two of the 638 corpus documents.
+/// map below empty, and avoids cloning, for documents without such a description.
 fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
     emptied_marker_lines_at(blocks, 0, into);
 }
@@ -1739,9 +1713,8 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // Written back in the spelling it was read in
             // (markup-carve/carve#1718). Choosing structurally instead - the
             // fence whenever the quote holds a non-paragraph block -
-            // re-canonicalizes 50 corpus documents and every user document
-            // with a multi-block quote, so the node carries the author's
-            // choice rather than the writer inferring one.
+            // rewrites the spelling of authored multi-block quotes, so the node
+            // carries the author's choice rather than the writer inferring one.
             if quote.fenced {
                 let fence = colon_fence_for(ctx);
                 let body = render_inside_colon_container(&quote.children, ctx);
@@ -2149,11 +2122,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         // Writing the continuation at the marker's full width put every block
         // after the item's first, four columns too far in, where an INDENTED
         // block opener opens nothing: a heading, a fence or a quote came back as
-        // text of the marker line's paragraph. The three corpus documents that
-        // reported it - `05-lists-12`, `75-list-nesting-and-looseness-9` and
-        // `144-nested-item-looseness-does-not-propagate-to-the-outer-item-3` -
-        // are all task items, and carve-js fixed the same site in carve-js#1455.
-        //
+        // text of the marker line's paragraph.
         let continuation = " ".repeat(continuation_width);
         for line in lines {
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {

@@ -581,6 +581,10 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
 /// the document says `<li>parent`. The blank can only go where the following
 /// opener interrupts a paragraph on its own, which is why this asks per child
 /// instead of never writing it (carve#2281).
+///
+/// The block ABOVE has a say too: on some pairs the unseparated opener is
+/// swallowed by the text above instead of interrupting it, and a block is lost
+/// (carve-rs#1924).
 fn render_list_item(
     item: &ListItem,
     tight: bool,
@@ -597,12 +601,44 @@ fn render_list_item(
     let mut out = String::new();
     for child in &item.children {
         let rendered = render_block(child, ctx, depth);
-        if out.ends_with("\n\n") && interrupts_a_paragraph(child, &rendered) {
+        if out.ends_with("\n\n")
+            && interrupts_a_paragraph(child, &rendered)
+            && !absorbs_below(&out, child)
+        {
             out.pop();
         }
         out.push_str(&rendered);
     }
     out
+}
+
+/// Whether removing the blank makes the text above swallow this block.
+///
+/// Measured against cmark-gfm 0.29.0.gfm.13 over every pair of the block kinds
+/// that reach a tight item: a quote absorbs a following quote and a following
+/// table, and a table absorbs a following table. Every other pair keeps both
+/// blocks.
+///
+/// A list absorbs a following table too, and that pair is NOT here: a nested list
+/// leaves no blank line behind it, so the separator this decides about was never
+/// written and the table is glued whatever this answers (carve-rs#1930).
+///
+/// The WRITTEN tail answers it, not the sibling above. A wrapper this target
+/// renders transparently - a div, a line block, an admonition - can end in a
+/// quote or a table without being one, and a child it writes nothing for leaves
+/// the seam where it already was.
+fn absorbs_below(above_text: &str, below: &BlockNode) -> bool {
+    let tail = above_text
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or_default()
+        .trim_start_matches([' ', '\t']);
+    match below {
+        BlockNode::BlockQuote(_) => tail.starts_with('>'),
+        BlockNode::Table(_) => tail.starts_with(['>', '|']),
+        _ => false,
+    }
 }
 
 /// Whether this block's Markdown spelling starts a block directly below a
@@ -1505,7 +1541,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // document never had. The label between them is author
                     // content and gets the HTML pass for the same reason: this
                     // branch was deciding the question for brackets and
-                    // skipping it for `<` (raised by codex review).
+                    // skipping it for `<`.
                     format!("\\[^{}\\]", escape_md_html(&id))
                 }
             }
@@ -2328,7 +2364,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     // M2b's position test used to answer by scanning BACKWARD from the
     // candidate to the line's newline, once per candidate - so a line whose
     // every character is a candidate paid an O(n) scan n times over, which is
-    // the quadratic markup-carve/carve#1331 measured at 33x the pre-§8b writer.
+    // quadratic behavior on lines dense with candidates.
     // The position is a property of the LINE, not of the candidate, so it is
     // computed once when a line opens and read in O(1) after that.
     let mut content_start = content_position(&line, 0);

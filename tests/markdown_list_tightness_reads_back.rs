@@ -13,6 +13,11 @@
 //! a marker with nothing after it reads as a setext underline, a `---` line
 //! reads as one too, and a headerless table's rows are lazy continuation of the
 //! paragraph above them.
+//!
+//! The block ABOVE answers too, and on four pairs its answer is a BLOCK rather
+//! than a tightness flag - so those cases assert the item's block inventory
+//! beside the flag (carve-rs#1924). A tightness comparison alone passes while two
+//! quotes are merged into one.
 
 use carve::ast::{BlockNode, Document};
 
@@ -176,4 +181,92 @@ fn a_headerless_table_keeps_the_separator() {
     assert_eq!(out, "- a\n\n  | x |\n  | y |\n");
     let back = carve::markdown_import::markdown_to_ast(&out);
     assert_eq!(first_list(&back).items[0].children.len(), 2);
+}
+
+/// The item's children after the Markdown output is read back.
+fn reads_back_children(source: &str) -> Vec<BlockNode> {
+    let markdown = carve::to_markdown(source);
+    let back = carve::markdown_import::markdown_to_ast(&markdown);
+    first_list(&back).items[0].children.clone()
+}
+
+fn count_quotes(children: &[BlockNode]) -> usize {
+    children
+        .iter()
+        .filter(|child| matches!(child, BlockNode::BlockQuote(_)))
+        .count()
+}
+
+fn count_tables(children: &[BlockNode]) -> usize {
+    children
+        .iter()
+        .filter(|child| matches!(child, BlockNode::Table(_)))
+        .count()
+}
+
+#[test]
+fn two_sibling_quotes_keep_the_separator_and_stay_two() {
+    // Glued, cmark-gfm reads ONE quote holding both paragraphs and a block is
+    // lost. The item goes loose instead, which is the shape CommonMark has.
+    let source = "- x\n+\n> q\n+\n> r\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(out, "- x\n  > q\n\n  > r\n");
+    assert_eq!(count_quotes(&reads_back_children(source)), 2);
+}
+
+#[test]
+fn two_sibling_tables_keep_the_separator_and_stay_two() {
+    // Glued, the second table's delimiter row is read as a data cell holding
+    // `---` and the two tables become one. The first table carries a BODY row
+    // because a header-only table writes an extra trailing newline, which leaves
+    // a blank line behind whatever this decides.
+    let source = "- x\n+\n| a |\n|---|\n| 1 |\n+\n| b |\n|---|\n| 2 |\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(
+        out,
+        "- x\n  | a |\n  | --- |\n  | 1 |\n\n  | b |\n  | --- |\n  | 2 |\n"
+    );
+    assert_eq!(count_tables(&reads_back_children(source)), 2);
+}
+
+#[test]
+fn a_quote_the_block_above_wrote_keeps_the_next_quote_separate() {
+    // The admonition is not a quote, but on this target it WRITES one, so the
+    // quote below it would be glued to that quote and the two would merge. The
+    // written tail is what sees it; the node kind above does not.
+    let source = "- x\n+\n::: note\n> q\n:::\n+\n> r\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(out, "- x\n\n  > q\n\n  > r\n");
+    assert_eq!(count_quotes(&reads_back_children(source)), 2);
+}
+
+#[test]
+fn a_table_under_a_quote_keeps_the_separator() {
+    // Glued, the rows are lazy continuation of the quote's paragraph and the
+    // whole table is quoted text.
+    let source = "- x\n+\n> q\n+\n| a |\n|---|\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(out, "- x\n  > q\n\n  | a |\n  | --- |\n");
+    let children = reads_back_children(source);
+    assert_eq!(count_quotes(&children), 1);
+    assert_eq!(count_tables(&children), 1);
+}
+
+#[test]
+fn a_quote_under_a_paragraph_still_drops_its_separator() {
+    // THE CONTROL for the pair above. The shape #1911 fixed must not regress:
+    // one quote below a paragraph keeps the item tight.
+    let source = "- x\n+\n> q\n";
+    assert_eq!(carve::to_markdown(source), "- x\n  > q\n");
+    assert!(reads_back_tight(source));
+    assert_eq!(count_quotes(&reads_back_children(source)), 1);
+}
+
+#[test]
+fn a_dropped_child_leaves_the_paragraph_where_it_was() {
+    // The comment writes nothing on this target, so the seam the nested list
+    // meets is still the paragraph two children back.
+    let source = "- a\n  %% c\n  - b\n";
+    assert_eq!(carve::to_markdown(source), "- a\n  - b\n");
+    assert!(reads_back_tight(source));
 }

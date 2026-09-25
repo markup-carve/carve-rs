@@ -386,46 +386,10 @@ enum ParseMode {
     Carve,
 }
 
-/// The text every entry point must read, normalized once (matching carve-js /
-/// carve-php), allocating only when there is something to change:
-///
-///  - strip a single leading UTF-8 BOM (U+FEFF) so `\u{feff}# T` is a heading;
-///  - collapse CRLF / CR to LF;
-///  - replace a NUL (U+0000) with the U+FFFD replacement char so a control byte
-///    never reaches output (WHATWG-style).
-///
-/// A function rather than inline, so the parser and `to_carve` cannot disagree
-/// about whether a CRLF or BOM'd file HAS frontmatter (carve-rs#732, #725).
-/// Join collected lines back into a source string, TERMINATED.
-///
-/// The parser rebuilds its source several times and each consumer splits it
-/// again with `str::lines()`. `join` alone makes that round trip lossy in
-/// exactly one place, a trailing EMPTY line:
-///
-/// ```text
-/// ["a", ""]  ->  join  ->  "a\n"    ->  lines()  ->  ["a"]      the blank is gone
-/// ["a", ""]  ->  here  ->  "a\n\n"   ->  lines()  ->  ["a", ""]  preserved
-/// ```
-///
-/// Only the last line has nothing after it to imply its separator, so
-/// terminating changes that case and nothing else (carve-rs#908).
-/// Marks a line that reached its container by LAZY FOLDING (PART 0, PART 9 §10
-/// I2): always paragraph text, never re-classified as structure when the
-/// container's body is re-parsed.
-///
-/// A line carrying no `>` is not the quote's content at ANY column, so the frame
-/// does two jobs at once - its first character is not whitespace, so the line
-/// stands at column 0, and no block detector matches a line starting with it, so
-/// an indentation the quote never gave the line cannot re-open a block from it
-/// (markup-carve/carve-rs#1538).
-///
-/// UNFORGEABLE BY CONSTRUCTION rather than by luck: `normalize_source` replaces
-/// every U+0000 in the input with U+FFFD before the first line is read, so no
-/// document can carry the character this frame is built from. The executable
-/// spec relies on exactly the same prerequisite (markup-carve/carve#1523), and
-/// container bodies are re-parsed through `parse_blocks*`, which does NOT
-/// re-normalize - so a frame inserted during collection survives the nested
-/// parse instead of being replaced by it.
+/// Marks a lazily folded container line so nested parsing reads it as text.
+/// Source normalization replaces authored NUL with U+FFFD. Nested block
+/// parsing leaves the inserted marker intact. It pins the line to column 0,
+/// and no block opener matches it.
 pub(crate) const LAZY: &str = "\u{0000}L\u{0000}";
 
 /// A body line with the LAZY frame removed.
@@ -439,6 +403,8 @@ pub(crate) fn strip_lazy(line: &str) -> &str {
     line.strip_prefix(LAZY).unwrap_or(line)
 }
 
+/// Join collected lines with a terminal newline so a trailing empty line
+/// survives a later `str::lines()` pass.
 fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     if lines.is_empty() {
         return String::new();
@@ -452,6 +418,8 @@ fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     joined
 }
 
+/// Strip a leading BOM, normalize line endings, and replace authored NUL.
+/// Parser and writer entry points share this normalization.
 pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
     if !(source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')) {
         return std::borrow::Cow::Borrowed(source);
@@ -1723,8 +1691,7 @@ fn extract_footnote_defs(
                         // to be read at ANY column to say so: `detect_fence_open`
                         // above only sees a flush fence, so an INDENTED one left
                         // the flag standing and the dedent ate a column of the
-                        // code block - 40 documents, raised by `codex review`
-                        // and invisible to a 2289-document sweep.
+                        // code block.
                         //
                         // NO UPPER BOUND on the residual. A first version
                         // absorbed only strictly BELOW the nested note's own
@@ -2657,9 +2624,8 @@ fn extract_link_defs_with_guard(
                     // below its content column. An UNTERMINATED colon fence closes
                     // WITH its host, so its ownership must not reach a later
                     // sibling item - without this reset a `[r]: /url` in the next
-                    // item was kept as text instead of hoisted (codex review of
-                    // the 451 fix). Clear the state and let this line be processed
-                    // normally, where it may itself hoist or reopen.
+                    // item was kept as text instead of hoisted. Clear the state
+                    // so this line can hoist or reopen normally.
                     colon_fence = None;
                 } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
                     // Past the container's own content column: it is the
@@ -3845,9 +3811,9 @@ struct MappedSource {
     /// else - the document, a block quote, a list item - the run between the
     /// container's content column and the marker is the indentation that PLACES
     /// the marker, and PART 12 section 4 puts it INSIDE the span. Anchoring every
-    /// list at its marker instead moved nine corpus documents off carve-js
-    /// (markup-carve/carve#1797); this flag keeps the marker anchor to the two
-    /// bodies that earn it (markup-carve/carve#1980, converging with carve-js's
+    /// list at its marker diverges from carve-js (markup-carve/carve#1797).
+    /// This flag keeps the marker anchor to the two bodies that earn it
+    /// (markup-carve/carve#1980, converging with carve-js's
     /// `sublistsCarryAuthoredBase`).
     sublists_carry_authored_base: bool,
 }
@@ -6009,9 +5975,8 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 // the ordinary list rule reads it as lazy text - which is
                 // exactly what the enclosing body's own block is not.
                 //
-                // `indent > base` rather than `>= base` is an equivalent mutant
-                // today: measured over the whole corpus and 6000 generated
-                // shapes, widening it moves nothing, because the outer scan
+                // `indent > base` rather than `>= base` is equivalent for known shapes:
+                // widening it moves nothing, because the outer scan
                 // picks a marker at the base up again as its own opener. It is
                 // written this way because a line AT the marker's column is
                 // where a sibling marker goes, which belongs in the run.
@@ -6320,22 +6285,9 @@ where
     out
 }
 
-/// Parse the bodies of the containers a level left hollow, and the bodies THOSE
-/// open, without descending the stack (markup-carve/carve-rs#1165).
-///
-/// The parser's own recursion is what set the stack floor for a deeply nested
-/// document - not the AST-to-JSON encoder converted first
-/// (markup-carve/carve-rs#1164), and not the drop glue. A colon-container level
-/// cost about 1.6KiB across `parse_blocks`, `parse_container` and the two
-/// capped-body helpers, so 200 of them - the engine's own cap - needed 384KiB
-/// natively and 120-150KB through wasm, where the host owns the stack and an
-/// overflow takes the module rather than the call (markup-carve/carve-wasm#48).
-/// Nesting costs HEAP here instead.
-///
-/// Bodies land in an arena of slots and are stitched back in REVERSE discovery
-/// order, which is what makes a single pass enough: a slot is always discovered
-/// AFTER the slot holding its parent, so walking the links backwards fills
-/// every child before the node holding it is moved into place.
+/// Resolve container bodies without a stack frame per level, then stitch child
+/// slots into their parents in reverse discovery order. Each child is filled
+/// before its parent.
 fn resolve_pending_bodies(
     out: &mut Vec<BlockNode>,
     pending: Vec<PendingBody>,
@@ -8852,55 +8804,12 @@ fn has_indexed_comment_closer_after(
         .is_some_and(|last| last >= start)
 }
 
-/// The end index of the ONE block a `+` continuation marker attaches
-/// (PART 9 §17 L3), scanning from `start` over `lines`.
-///
-/// A BOUNDARY LINE INSIDE AN OPEN FENCE DOES NOT END THE CONTAINER
-/// (markup-carve/carve#983 corpus category 279). L3 bounds the attachment "up
-/// to the next blank line, sibling marker, or a further `+`", and those bound
-/// THE BLOCK: a fenced block ends at its CLOSER, which is what makes it one
-/// block, so a boundary line written between an opener and its closer is fence
-/// content and ends nothing.
-///
-/// ONE SPELLING FOR EVERY CONTAINER: `is_boundary` is the only per-container
-/// part, and its second argument is the index of the line being tested.
-///
-/// `comment_closers` is the caller's lazily built exact-width `%%%` closer
-/// index. It is a parameter rather than a local because REBUILDING it per call
-/// is quadratic on a document full of comment openers.
-/// How many of `slice`'s lines the ONE block a `+` continuation marker attaches
-/// occupies (§17 L3, markup-carve/carve#1290).
-///
-/// `slice` is the marker's EXTENT, already bounded by the caller's blank-line /
-/// sibling / further-`+` scan. Within it the marker takes one block, which is
-/// what the single-block parser consumes.
-///
-/// Parsed here only to be MEASURED; the caller splices the lines into the
-/// container's body, where they parse again in context. Re-parsing rather than
-/// scanning keeps ONE definition of where a block ends - a scan would be a copy
-/// of the block grammar, free to drift from it silently.
-///
-/// A LEADING ATTRIBUTE RUN IS PART OF THE BLOCK IT FLOATS ONTO. Only
-/// `parse_blocks` owns a pending-attribute slot, so an attribute line left to
-/// this `parse_block` call would read as a paragraph and stop the measurement
-/// in front of the block the attributes were written for. The run is consumed
-/// here so the block behind it is what gets measured.
-///
-/// A SELF-DELIMITING BLOCK IS NOT PARSED AT ALL: a fence and a colon container
-/// end at a closer, a line-level fact, so their extent is read from the lines.
-/// Do not parse the body instead - that re-walks the whole subtree at every
-/// level above it, 0.2 s to 9.52 s on a container nested to the cap.
-///
-/// MEASURING DOES NOT NEST either: the caller re-parses these same lines, so an
-/// inner `+` under a probe would be measured twice per level, doubling with
-/// depth. An inner marker therefore splices its whole extent instead. That
-/// cannot change the answer, because a block's LINE extent is decided by
-/// closers, quote prefixes and indentation, never by how an inner marker
-/// divided its content.
-///
-/// At least one line, always. A parser that consumed nothing would leave the
-/// caller's cursor where it was, and the container loop would see the same line
-/// forever.
+/// Length of the block attached by `+` within the caller's bounded slice.
+/// Leading attributes belong to that block. Fences and colon containers
+/// use their line extent directly; other blocks are parsed to find the end.
+/// Nested `+` markers stay whole: probing them repeats work per level, while
+/// an inner split cannot change the enclosing block's line extent.
+/// A nonempty slice consumes at least one line so the caller advances.
 fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
     if slice.is_empty() {
         return 0;
@@ -9018,6 +8927,8 @@ fn measuring_attached_block() -> bool {
     MEASURING_ATTACHED_BLOCK.with(|m| m.get())
 }
 
+/// Find the container boundary after `start`. Lines inside an open fence remain
+/// content. The caller shares its comment-closer index across probes.
 fn attached_block_end(
     lines: &[&str],
     start: usize,
@@ -12368,9 +12279,7 @@ fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &Mapped
     // here: this answer only matters through a break that needs the collector to
     // have STOPPED on a below-column line, and the degraded stop that leaves one
     // fires at `indent == strip_cols`, where the fence is at chunk column 0 and
-    // no descendant column can be at or below it. Measured: it changed this
-    // function's answer 2424 times over 162504 swept documents and changed none
-    // of them, nor any of the 1564 corpus documents. The rule now lives in
+    // no descendant column can be at or below it. The rule now lives in
     // `collect_indented_block_*`, where the collector can act on it.
     for (index, line) in chunk.source.lines().enumerate() {
         if let Some(fence_len) = open {
@@ -13263,24 +13172,9 @@ fn collect_definition_body(
     options: &Options<'_>,
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
-    // A LAZY LINE THAT FOLDED LEFT A PARAGRAPH OPEN, by construction: it reached
-    // the fold only by being flush-left and not interrupting, which is what
-    // paragraph text is. So the next flush-left line's answer is already known
-    // and does not need asking.
-    //
-    // It has to be known, rather than merely nice to know. `so_far` is rebuilt
-    // from every line collected so far and then PARSED, once per lazy line, so a
-    // paragraph continued lazily under a `:  ` body cost O(n^2) in both the copy
-    // and the parse: 32 KB took 22.9 seconds, growing 4x per doubling. That is
-    // the §25 shape - a document a reader could plausibly write, degrading
-    // superlinearly - and the LIST twin one call site over is linear on the same
-    // input, which is what says it is a defect rather than the price of the
-    // rule.
-    //
-    // Only a lazy fold may set it. Every other way a line joins the body -- a
-    // collected line at the body's own column, a `+` attached block -- can put a
-    // fence, a table or a container at the end of it, so each of those clears it
-    // and the next question is asked in full.
+    // A lazy fold leaves a paragraph open. Rechecking by parsing all collected
+    // lines after each fold would make a long paragraph quadratic. Other ways
+    // of extending the body clear this hint because they may open a block.
     let mut folded_a_lazy_line = false;
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
@@ -21446,28 +21340,9 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
     false
 }
 
-/// Promote sole-image paragraphs, driven by an EXPLICIT WORKLIST rather than by
-/// recursion.
-///
-/// PART 9 §25 bounds the tree at `MAX_NESTING_DEPTH`, and this pass runs over a
-/// tree the parser has already capped - so its depth was never unbounded. Its
-/// COST was: the frame here is ~1.6 KB (a `BlockNode` is 472 bytes and this pass
-/// moves them by value), so a document at the cap spent ~330 KB of stack in this
-/// one pass, and on a wasm host with a 1 MiB stack that is a third of the budget
-/// for a walk that only descends. A worklist makes the cost O(1) in depth, which
-/// is the shape the cap should have had all along (markup-carve/carve-php#1407
-/// settled the same point for a different walk: a loop, not a frame per level).
-///
-/// Sibling order within a level is unchanged; levels are visited in a different
-/// order than the recursion used, which is sound because each block's promotion
-/// reads and writes only that block.
-///
-/// `lone_image_needs_content_column` is TRUE at parse time and FALSE at render
-/// time, and the two answers are not a contradiction - they are the two halves
-/// of markup-carve/carve#1660. A block image is a top-level block construct, so
-/// an INDENTED lone image is a paragraph holding an inline image and the parse
-/// tree must say so. The HTML says something else on purpose: a paragraph whose
-/// Collapse lone-image paragraphs for HTML, regardless of source column.
+/// Collapse lone-image paragraphs for HTML regardless of source column.
+/// Parsing retains an indented lone image as a paragraph; HTML rendering
+/// promotes it on purpose (markup-carve/carve#1660).
 pub(crate) fn collapse_lone_image_paragraphs(doc: &mut Document) {
     promote_block_images(&mut doc.children, false, false);
     for blocks in doc.footnote_defs.values_mut() {
@@ -21475,6 +21350,7 @@ pub(crate) fn collapse_lone_image_paragraphs(doc: &mut Document) {
     }
 }
 
+/// Visit subtrees with a worklist to keep stack use independent of depth.
 fn promote_block_images(
     blocks: &mut [BlockNode],
     figures_only: bool,
@@ -23306,18 +23182,8 @@ mod container_comment_dedent_steps {
     /// The walk must cost steps in proportion to the DOCUMENT, not to openers
     /// times container length.
     ///
-    /// Three claims, in the shape `quote_prefix_calls` uses:
-    ///
-    /// 1. A floor. The first opener at a column has to walk to the dedent to
-    ///    learn where it is, so a zero count is a dead counter rather than a
-    ///    faster parser, and the two claims below would both pass on one.
-    /// 2. A ceiling, wide enough for honest drift: the two definition
-    ///    pre-passes each hold their own memo, so one walk of the container
-    ///    apiece is already two steps per line.
-    /// 3. The shape, which is the load-bearing half. A per-opener walk makes the
-    ///    per-line cost climb with `m` - measured at about 118 steps per line at
-    ///    m=60 against 238 at m=120 - while one walk per column per pre-pass
-    ///    holds it flat at about 2.
+    /// The lower bound keeps the counter live. Per-line cost must stay flat as
+    /// the opener count grows, catching per-opener rescanning.
     #[test]
     fn many_openers_over_one_container_walk_it_once_apiece() {
         let (small_src, small_lines) = openers_over_one_container(60);

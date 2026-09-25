@@ -3,9 +3,8 @@
 //!
 //! The index extension re-emits the COMPLETE sorted backlink list in every
 //! `::: index` block. With `K` index blocks and `N` total `:index[term]`
-//! markers in a document, the HTML output is `K * N * ~52` bytes - both `K` and
-//! `N` are attacker-controlled content, so a small input can amplify into a huge
-//! output (e.g. a 57KB input expanding to ~130MB, a ~2255x blowup).
+//! markers in a document, output grows with `K * N`. Both counts come from the
+//! input, so a small document can produce a large index.
 //!
 //! Policy (mirrors `abbr_budget`): the cumulative bytes emitted by `::: index`
 //! rendering are capped at

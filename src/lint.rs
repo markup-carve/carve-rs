@@ -1,69 +1,15 @@
-//! Source diagnostics for silent degradations (`lint_carve`).
+//! Source diagnostics for silent degradations.
 //!
-//! This is carve-rs' lint surface, and it starts with the two rules PART 9 §10
-//! implies and has nowhere else to say (markup-carve/carve#1131,
-//! markup-carve/carve#1132). Neither describes an engine defect: carve-rs,
-//! carve-js and carve-php render these byte-identically and exactly as the
-//! clause reads. They report the two places where the clause's own scope loses
-//! something an author wrote, with nothing else marking it.
-//!
-//! `semantic-attribute-value-ignored`
-//! : a value on a reserved name that only SELECTS a wrapper. `[x]{kbd="V"}`
-//!   renders `<kbd>x</kbd>` and `V` reaches no output.
-//!
-//! `semantic-attribute-outside-span`
-//! : a reserved name on any target other than an ordinary `[content]{attrs}`
-//!   span, where §10 does not apply and it stays a raw attribute. `` `c`{kbd} ``
-//!   renders `<code kbd="">c</code>`.
-//!
-//! Both rules are TIER-AWARE. PART 9 §9 reserves `abbr`, `time` and `kbd` in
-//! core; `samp`, `var`, `cite` and `dfn` only become elements once the
-//! `SemanticSpan` extension is registered. In a core render those four stay
-//! ordinary attributes and their value reaches the output intact, so reporting
-//! it as discarded would report a loss that is not happening - the same defect
-//! these rules exist to catch, pointed the other way. Hence
-//! [`lint_carve_with_options`]: pass the same [`Options`] you pass to
-//! `render_html_with_options`, and the diagnostics describe the output the
-//! author will actually get.
-//!
-//! PART 9 §4c adds the composite-figure findings (markup-carve/carve#1122),
-//! each a diagnostic over a valid parse:
-//!
-//! `figure-group-opener-metadata`
-//! : a `::: figure` opener carrying a quoted title or a `[label]` stays a
-//!   generic container - the group has no title or label slot by design.
-//!
-//! `figure-group-nested`
-//! : a bare `::: figure` opener inside an open group's body stays a generic
-//!   container; groups do not nest.
-//!
-//! `figure-group-panel-number`
-//! : a `#` placeholder in a PANEL caption has nothing to resolve against and
-//!   stays literal - panels are not sequence units.
-//!
-//! §4c also names `figure-group-empty` and `figure-group-single-panel` as
-//! STRICT-PROFILE findings. This surface has no profile or severity axis yet,
-//! and reporting them unconditionally would flag documents the clause calls
-//! valid and ordinary, so they wait for that axis rather than shipping under
-//! the wrong severity.
-//!
-//! PART 9 §15 A4 adds one more, and it is the first rule here that the AST
-//! cannot answer (markup-carve/carve#1281):
-//!
-//! `unattached-block-attribute`
-//! : a floating `{…}` that reaches no block, because the document or the
-//!   CONTAINER holding it ended first. `> {.k}` on a quote's last line renders
-//!   neither on the quote nor on anything after it.
-//!
-//! An unattached attribute leaves NOTHING behind - no node, and no attrs on a
-//! neighbour - which is exactly what makes it worth reporting and exactly why
-//! the walk above cannot find it. The parser records where it dropped one and
-//! this surface reads that record, rather than re-deriving the attachment rule
-//! from the source and risking a second answer.
-//!
-//! Rule ids and messages match carve-js' `lintCarve` (`src/lint.ts`) - "same
-//! rule, same id" is what parity means here, and a consumer reading
-//! diagnostics from two engines must not see one warning under two spellings.
+//! [`lint_carve_with_options`] should receive the same [`Options`] used for
+//! rendering. Under PART 9 §9-10, core reserves `abbr`, `time`, and `kbd`;
+//! `samp`, `var`, `cite`, and `dfn` become semantic elements only with the
+//! `SemanticSpan` extension.
+//! The parser records unattached block attributes, which leave no AST node;
+//! this pass reports that record instead of re-reading source attachment.
+//! The figure-group empty and single-panel findings in §4c are strict-profile
+//! only; reporting them unconditionally would flag valid documents. They await
+//! a profile/severity axis. Unattached attributes follow PART 9 §15 A4.
+//! See `docs/linting.md` for rule ids and examples.
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
