@@ -112,31 +112,52 @@ fn one_level_past_the_admitted_tree_is_refused() {
     );
 }
 
-/// Building the tree and DROPPING it is bounded on its own, with no render.
-///
-/// Derived `Drop` recurses, so a tree the importer was willing to build was one
-/// the process could not free. A caller that only parses untrusted Markdown, and
-/// never renders it, has to survive that.
+/// The AST entry point refuses before it can return a partial document.
 #[test]
-fn building_and_dropping_the_tree_is_bounded() {
-    for depth in PAST_THE_CEILING {
-        let doc = carve::markdown_to_ast(&nested_quotes(depth));
-        assert_eq!(doc.children.len(), 1, "one root block at {depth}");
-        drop(doc);
+fn ast_import_refuses_excessive_nesting() {
+    for depth in [MAX_RENDER_DEPTH + 1, MAX_RENDER_DEPTH + 2]
+        .into_iter()
+        .chain(PAST_THE_CEILING)
+    {
+        assert_names_the_ceiling(
+            &carve::try_markdown_to_ast(&nested_quotes(depth)).expect_err("AST import refuses"),
+            &format!("{depth} quotes"),
+        );
     }
 }
 
-/// Every tree-taking renderer refuses the same tree, rather than aborting in its
-/// own prepass. `markdown` and `plain` and `ansi` looked bounded at 2,000 and
-/// aborted at 100,000, in `crossref_index_for_document`.
 #[test]
-fn every_renderer_refuses_the_deep_tree() {
-    let doc = carve::markdown_to_ast(&nested_quotes(*PAST_THE_CEILING.last().expect("depths")));
-    assert!(carve::render_carve(&doc).is_err(), "carve");
-    assert!(carve::render_html(&doc).is_err(), "html");
-    assert!(carve::render_markdown(&doc).is_err(), "markdown");
-    assert!(carve::render_plain_text(&doc).is_err(), "plain");
-    assert!(carve::render_ansi(&doc).is_err(), "ansi");
+fn legacy_ast_import_panics_instead_of_returning_partial_content() {
+    assert!(std::panic::catch_unwind(|| carve::markdown_to_ast(&nested_quotes(2_000))).is_err());
+}
+
+#[test]
+fn footnote_body_inside_quotes_uses_its_hoisted_depth() {
+    let source = format!("a[^1]\n\n{}[^1]: {}x\n", "> ".repeat(240), "> ".repeat(200));
+    let migrated = carve::try_migrate_markdown(&source).expect("footnote body fits the ceiling");
+    assert!(
+        migrated
+            .value
+            .contains(&format!("[^1]: {}x", "> ".repeat(200))),
+        "{}",
+        migrated.value
+    );
+}
+
+#[test]
+fn footnote_body_beyond_ceiling_is_refused() {
+    let source = format!("a[^1]\n\n[^1]: {}x\n", "> ".repeat(MAX_RENDER_DEPTH + 1));
+    assert_names_the_ceiling(&refusal(&source), "footnote body");
+}
+
+#[test]
+fn unclosed_html_in_nested_items_does_not_inflate_depth() {
+    let mut source = String::new();
+    for level in 0..150 {
+        source.push_str(&"  ".repeat(level));
+        source.push_str("- <em><em><em>a\n");
+    }
+    carve::try_migrate_markdown(&source).expect("unclosed inline HTML does not deepen the AST");
 }
 
 /// The CLI answers with an exit CODE, which is the whole point.

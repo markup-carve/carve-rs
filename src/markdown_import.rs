@@ -74,16 +74,28 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
 ) -> Result<(String, Vec<String>), crate::RenderCarveError> {
-    let (document, losses) = markdown_to_ast_with_losses(markdown);
+    let (document, losses) = markdown_to_ast_with_losses(markdown)?;
     render_carve(&document).map(|value| (value, losses))
 }
 
 /// Convert Markdown source to a Carve [`Document`].
+///
+/// # Panics
+///
+/// Panics if Markdown nesting exceeds the renderer's depth ceiling. Use
+/// [`try_markdown_to_ast`] to handle that refusal.
 pub fn markdown_to_ast(markdown: &str) -> Document {
-    markdown_to_ast_with_losses(markdown).0
+    try_markdown_to_ast(markdown).expect("the Markdown tree exceeds the render depth ceiling")
 }
 
-fn markdown_to_ast_with_losses(markdown: &str) -> (Document, Vec<String>) {
+/// Build a Markdown document, returning a typed refusal when nesting is too deep.
+pub fn try_markdown_to_ast(markdown: &str) -> Result<Document, crate::RenderCarveError> {
+    markdown_to_ast_with_losses(markdown).map(|(document, _)| document)
+}
+
+fn markdown_to_ast_with_losses(
+    markdown: &str,
+) -> Result<(Document, Vec<String>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
     } else {
@@ -146,18 +158,19 @@ fn markdown_to_ast_with_losses(markdown: &str) -> (Document, Vec<String>) {
         }
     }
 
-    builder.finish()
+    if builder.over_depth {
+        return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
+    }
+    let result = builder.finish();
+    crate::render_depth::refuse_if_too_deep(&result.0, "carve")?;
+    Ok(result)
 }
 
 /// The nesting the importer will BUILD, in AST levels (PART 9 §25).
 ///
-/// TWO levels above the renderers' ceiling, and the second one is load-bearing.
-/// A refusal stops the event loop, so the innermost container is left EMPTY - its
-/// own depth is one less than the depth a child would have had. At
-/// `MAX_RENDER_DEPTH + 1` that emptied tree measured exactly at the ceiling and
-/// rendered; one more level means a truncated tree is always past it, and the
-/// writer refuses it with exactly the error it produced before the cap existed.
-/// A document the ceiling admits is built untouched.
+/// Two levels above the renderers' ceiling. The extra room accounts for frame
+/// nesting that does not add an AST level. A refusal stops the event loop and
+/// returns an error before a partial document can escape.
 ///
 /// The cap is here because this importer is the only one with nothing else to
 /// bound it. The Carve parser caps its own nesting, the HTML importer answers
@@ -327,6 +340,7 @@ enum Frame {
     FootnoteDef {
         label: String,
         children: Vec<BlockNode>,
+        outer_levels: (usize, usize),
     },
     Metadata(String),
 }
@@ -372,8 +386,8 @@ struct Builder {
     /// no call site can move the stack without moving these with it.
     block_levels: usize,
     inline_levels: usize,
-    /// Set when a frame was refused at the cap. The event loop stops on it and
-    /// `finish` closes what is open.
+    /// Set when a frame was refused at the cap. The event loop stops and the
+    /// importer returns an error instead of finishing a partial document.
     over_depth: bool,
     /// Top-level blocks, once every frame above them has closed.
     blocks: Vec<BlockNode>,
@@ -599,6 +613,24 @@ impl Builder {
     }
 
     fn start(&mut self, tag: Tag<'_>) {
+        if matches!(
+            tag,
+            Tag::Paragraph
+                | Tag::Heading { .. }
+                | Tag::BlockQuote(_)
+                | Tag::List(_)
+                | Tag::Item
+                | Tag::CodeBlock(_)
+                | Tag::HtmlBlock
+                | Tag::Table(_)
+                | Tag::TableHead
+                | Tag::TableRow
+                | Tag::TableCell
+                | Tag::FootnoteDefinition(_)
+                | Tag::MetadataBlock(_)
+        ) {
+            self.close_unclosed_html();
+        }
         if matches!(tag, Tag::Paragraph) {
             if let Some(Frame::ListItem { loose, .. }) = self.frames.last_mut() {
                 *loose = true;
@@ -669,6 +701,7 @@ impl Builder {
             Tag::FootnoteDefinition(label) => Frame::FootnoteDef {
                 label: label.to_string(),
                 children: Vec::new(),
+                outer_levels: (0, 0),
             },
             Tag::MetadataBlock(_) => Frame::Metadata(String::new()),
             // Nothing else is enabled, so nothing reaches here; an unopened
@@ -684,7 +717,14 @@ impl Builder {
     ///
     /// A refusal sets `over_depth` instead of pushing, which stops the event loop
     /// - so the matching end event never arrives and the stack stays balanced.
-    fn push_frame(&mut self, frame: Frame) {
+    fn push_frame(&mut self, mut frame: Frame) {
+        if let Frame::FootnoteDef { outer_levels, .. } = &mut frame {
+            *outer_levels = (self.block_levels, self.inline_levels);
+            self.block_levels = 1;
+            self.inline_levels = 0;
+            self.frames.push(frame);
+            return;
+        }
         let (block, inline) = levels_added(&frame);
         if self.block_levels + block > MAX_IMPORT_LEVELS
             || self.inline_levels + inline > MAX_IMPORT_LEVELS
@@ -699,6 +739,10 @@ impl Builder {
 
     fn pop_frame(&mut self) -> Option<Frame> {
         let frame = self.frames.pop()?;
+        if let Frame::FootnoteDef { outer_levels, .. } = &frame {
+            (self.block_levels, self.inline_levels) = *outer_levels;
+            return Some(frame);
+        }
         let (block, inline) = levels_added(&frame);
         self.block_levels -= block;
         self.inline_levels -= inline;
@@ -706,6 +750,11 @@ impl Builder {
     }
 
     fn end(&mut self, _tag: TagEnd) {
+        self.close_unclosed_html();
+        self.close();
+    }
+
+    fn close_unclosed_html(&mut self) {
         while matches!(
             self.frames.last(),
             Some(
@@ -717,7 +766,6 @@ impl Builder {
         ) {
             self.close();
         }
-        self.close();
     }
 
     fn close(&mut self) {
@@ -973,7 +1021,9 @@ impl Builder {
             // A definition is not a block in the document: Carve holds it in a
             // map keyed by label, so a note may be written anywhere and still
             // render at the end.
-            Frame::FootnoteDef { label, children } => {
+            Frame::FootnoteDef {
+                label, children, ..
+            } => {
                 self.footnote_defs.insert(label, children);
             }
             Frame::Metadata(content) => {

@@ -180,12 +180,12 @@ fn exceeds_ceiling(doc: &Document) -> bool {
             return true;
         }
         push_block_children(block, depth, &mut blocks, &mut inlines);
-    }
-    while let Some((inline, depth)) = inlines.pop() {
-        if depth > MAX_RENDER_DEPTH {
-            return true;
+        while let Some((inline, depth)) = inlines.pop() {
+            if depth > MAX_RENDER_DEPTH {
+                return true;
+            }
+            push_inline_children(inline, depth, &mut inlines);
         }
-        push_inline_children(inline, depth, &mut inlines);
     }
     false
 }
