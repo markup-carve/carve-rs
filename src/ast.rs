@@ -125,13 +125,21 @@ pub struct Frontmatter {
 /// A Carve document.
 ///
 /// Teardown drains block and inline trees iteratively while they are owned by
-/// this document. A detached node still uses Rust's recursive default drop.
+/// this document. Use [`dispose_blocks`] or [`dispose_inlines`] for detached
+/// trees that may be deeply nested.
 /// Renderers refuse trees past [`crate::MAX_RENDER_DEPTH`].
 ///
 /// Because `Document` implements [`Drop`], its fields cannot be moved out
 /// directly. This includes destructuring and struct update syntax. Borrow a
 /// field to inspect it, or use [`std::mem::take`] on a mutable document to
-/// transfer ownership. A detached deep tree needs its own bounded teardown.
+/// transfer ownership. Pass a detached deep tree to the corresponding disposal
+/// function when it is no longer needed.
+///
+/// `Clone`, `Debug`, and equality still recurse through child nodes. A test of
+/// 16 nested block quotes and emphasis nodes passes on a 256 KiB thread stack
+/// in a debug build. The result depends on the shape of the tree, build profile,
+/// compiler, and caller's stack. No depth is guaranteed for arbitrary trees.
+/// These traits have no depth error and may overflow the stack on deeper trees.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
@@ -217,27 +225,52 @@ impl Drop for Document {
             queue_blocks(&mut pending, std::mem::take(blocks));
         }
 
-        while let Some(work) = pending.pop() {
-            match work {
-                DropWork::Blocks(mut blocks) => {
-                    if let Some(block) = blocks.pop() {
-                        if !blocks.is_empty() {
-                            pending.push(DropWork::Blocks(blocks));
-                        }
-                        pending.push(DropWork::Block(block));
+        dispose_pending(pending);
+    }
+}
+
+/// Drop detached block trees without recursion through their child nodes.
+///
+/// This accepts a single node with `vec![node]` as well as a vector moved out
+/// of [`Document::children`] with [`std::mem::take`]. A regular Rust `drop` on
+/// a detached tree still recurses through its child nodes.
+pub fn dispose_blocks(blocks: Vec<BlockNode>) {
+    let mut pending = Vec::new();
+    queue_blocks(&mut pending, blocks);
+    dispose_pending(pending);
+}
+
+/// Drop detached inline trees without recursion through their child nodes.
+///
+/// Pass a single node as `vec![node]`. A regular Rust `drop` on a detached
+/// tree still recurses through its child nodes.
+pub fn dispose_inlines(inlines: Vec<InlineNode>) {
+    let mut pending = Vec::new();
+    queue_inlines(&mut pending, inlines);
+    dispose_pending(pending);
+}
+
+fn dispose_pending(mut pending: Vec<DropWork>) {
+    while let Some(work) = pending.pop() {
+        match work {
+            DropWork::Blocks(mut blocks) => {
+                if let Some(block) = blocks.pop() {
+                    if !blocks.is_empty() {
+                        pending.push(DropWork::Blocks(blocks));
                     }
+                    pending.push(DropWork::Block(block));
                 }
-                DropWork::Inlines(mut inlines) => {
-                    if let Some(inline) = inlines.pop() {
-                        if !inlines.is_empty() {
-                            pending.push(DropWork::Inlines(inlines));
-                        }
-                        pending.push(DropWork::Inline(inline));
-                    }
-                }
-                DropWork::Block(mut block) => drain_block(&mut pending, &mut block),
-                DropWork::Inline(mut inline) => drain_inline(&mut pending, &mut inline),
             }
+            DropWork::Inlines(mut inlines) => {
+                if let Some(inline) = inlines.pop() {
+                    if !inlines.is_empty() {
+                        pending.push(DropWork::Inlines(inlines));
+                    }
+                    pending.push(DropWork::Inline(inline));
+                }
+            }
+            DropWork::Block(mut block) => drain_block(&mut pending, &mut block),
+            DropWork::Inline(mut inline) => drain_inline(&mut pending, &mut inline),
         }
     }
 }
@@ -416,6 +449,11 @@ fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
     }
 }
 
+/// A block in the document tree.
+///
+/// Use [`dispose_blocks`] for a detached tree with unbounded nesting. Derived
+/// `Clone`, `Debug`, and equality recurse through child nodes; see [`Document`]
+/// for the measured small-stack behavior.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockNode {
     Heading(Heading),
@@ -1077,6 +1115,11 @@ pub struct ExtensionCarrier {
     pub pos: Option<Pos>,
 }
 
+/// An inline node in the document tree.
+///
+/// Use [`dispose_inlines`] for a detached tree with unbounded nesting. Derived
+/// `Clone`, `Debug`, and equality recurse through child nodes; see [`Document`]
+/// for the measured small-stack behavior.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineNode {
     Text(Text),

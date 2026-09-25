@@ -1,10 +1,120 @@
 use carve::{
-    BlockExtension, BlockNode, BlockQuote, Citation, CitationGroup, DefinitionDef, DefinitionItem,
-    DefinitionList, Emphasis, EmphasisKind, Figure, FigureTarget, InlineNode, Paragraph, Ruby,
-    RubyPair, Table, TableCell, TableRow, ThematicBreak,
+    dispose_blocks, dispose_inlines, BlockExtension, BlockNode, BlockQuote, Citation,
+    CitationGroup, DefinitionDef, DefinitionItem, DefinitionList, Emphasis, EmphasisKind, Figure,
+    FigureTarget, InlineNode, Paragraph, Ruby, RubyPair, Table, TableCell, TableRow, ThematicBreak,
 };
 
 const DEPTH: usize = 20_000;
+
+#[test]
+fn disposing_detached_block_and_inline_trees_uses_bounded_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let mut block = BlockNode::ThematicBreak(ThematicBreak::default());
+            let mut inline = InlineNode::text("end");
+            for _ in 0..DEPTH {
+                block = BlockNode::BlockQuote(BlockQuote {
+                    attrs: None,
+                    children: vec![block],
+                    fenced: false,
+                    pos: None,
+                });
+                inline = InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind: EmphasisKind::Italic,
+                    children: vec![inline],
+                    pos: None,
+                });
+            }
+
+            dispose_blocks(vec![block]);
+            dispose_inlines(vec![inline]);
+
+            let mut document = carve::parse("");
+            let mut block = BlockNode::ThematicBreak(ThematicBreak::default());
+            for _ in 0..DEPTH {
+                block = BlockNode::BlockQuote(BlockQuote {
+                    attrs: None,
+                    children: vec![block],
+                    fenced: false,
+                    pos: None,
+                });
+            }
+            document.children.push(block);
+            dispose_blocks(std::mem::take(&mut document.children));
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+// The derived traits walk nested fields. This is the measured small-stack
+// envelope for these simple caller-built chains, not a universal depth cap.
+#[test]
+fn recursive_ast_traits_handle_16_levels_on_a_small_stack() {
+    std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let mut block = BlockNode::ThematicBreak(ThematicBreak::default());
+            let mut inline = InlineNode::text("end");
+            for _ in 0..16 {
+                block = BlockNode::BlockQuote(BlockQuote {
+                    attrs: None,
+                    children: vec![block],
+                    fenced: false,
+                    pos: None,
+                });
+                inline = InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind: EmphasisKind::Italic,
+                    children: vec![inline],
+                    pos: None,
+                });
+            }
+
+            let block_clone = block.clone();
+            let inline_clone = inline.clone();
+            assert_eq!(block, block_clone);
+            assert_eq!(inline, inline_clone);
+            assert!(!format!("{block:?}").is_empty());
+            assert!(!format!("{inline:?}").is_empty());
+            dispose_blocks(vec![block, block_clone]);
+            dispose_inlines(vec![inline, inline_clone]);
+
+            let mut document = carve::parse("");
+            let mut block = BlockNode::ThematicBreak(ThematicBreak::default());
+            let mut inline = InlineNode::text("end");
+            for _ in 0..16 {
+                block = BlockNode::BlockQuote(BlockQuote {
+                    attrs: None,
+                    children: vec![block],
+                    fenced: false,
+                    pos: None,
+                });
+                inline = InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind: EmphasisKind::Italic,
+                    children: vec![inline],
+                    pos: None,
+                });
+            }
+            document.children.push(block);
+            document.children.push(BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: vec![inline],
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            }));
+            let cloned = document.clone();
+            assert_eq!(document, cloned);
+            assert!(!format!("{document:?}").is_empty());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
 
 #[test]
 fn dropping_deep_block_and_inline_trees_uses_bounded_stack() {
