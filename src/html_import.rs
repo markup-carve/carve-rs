@@ -1304,10 +1304,13 @@ impl<'a> Importer<'a> {
             // `html-import` report fixtures pin it byte for byte, so
             // the two sinks the filter adds are named separately rather
             // than folded into one message that would move it.
+            // `injection-sink`, not a local synonym: `docs/security.md`
+            // calls `srcdoc` and `formaction` sinks, and carve-js and
+            // carve-php both spell the subject that way.
             let what = if name.to_ascii_lowercase().starts_with("on") {
                 "event-handler"
             } else {
-                "active-content"
+                "injection-sink"
             };
             return Some(Refusal {
                 subject: format!("{what} attribute {name}"),
