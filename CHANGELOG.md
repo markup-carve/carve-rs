@@ -43,6 +43,8 @@ which the published crate does not carry.
 - A blank in a sibling sub-list no longer loosens the outer item (#1847).
 - The parser and Markdown importer backlog: a reference label holds an opening `[` as content, a `%%` comment inside a bare emphasis run consumes the rest of the line, a caption's number placeholder is the first `#` that does not begin a tag, a nested item's bare `:::` run opens its div in that item, a code span on an indented continuation line begins at its backtick run, and an unclosed inline HTML opener is bounded at the end of its block so the later blocks survive (#1827).
 - A quoted fence or container title is read as the source spells it, with no escape mechanism, so an authored backslash survives and an escaped quote cannot extend the slot (#1946, #1949).
+- The canonical writer escapes a caret beside a brace only where dropping the escape would change the reread tree, so `{^`, `^}` and `x{^y` are written as the source spells them (#1950, #1955).
+- A `%%` line comment drops trailing ASCII space and tab from its content and consumes one leading space or tab as the separator, in the block, inline and verse readers alike, and the canonical writer emits nothing after the marker for a comment that is empty once trimmed. A `%%%` block body keeps its bytes, and a no-break space or a vertical tab survives (#1951, #1955).
 - The Markdown writer keeps the `**`/`*` spelling of an emphasis that follows an escaped marker (#1831, #1836).
 - A list keeps its tightness on the Markdown target, and the tight-item separator rule reaches an ATX heading, a fenced code block and a GFM table as well as the two spellings CARVE-P11-047 names (#1900, #1911, #1914, #1925).
 - A tight item's sibling quotes and tables are kept apart, since a quote absorbs a following quote or table rather than being interrupted by it (#1924, #1934).
@@ -60,7 +62,7 @@ which the published crate does not carry.
 - The directive-as-admonition substitution is reported as a degradation (#1879, #1885).
 - A directive's quoted title survives parse, wire, writer and render, is walked where an admonition's is walked, and is visited at the eleven further traversals that skipped it (#1874, #1880, #1895, #1908, #1909, #1919, #1941).
 - The ProseMirror bridge carries a container title's inline words through its flatten, and writes a degraded composite figure's group caption as a trailing paragraph inside the `carveDiv`, which `from_prosemirror` accepts (#1785, #1944, #1947).
-- The BBCode importer spells the four formatting tags the way the Carve writer would, and escapes the inline constructs a post's own text forms beside the tags it converted (#1813, #1825).
+- The BBCode importer spells the four formatting tags the way the Carve writer would, escapes the inline constructs a post's own text forms beside the tags it converted, and keeps an empty quote as a `>` block instead of dropping it, with no trailing space on a blank line inside a quote (#1813, #1825, #1952, #1954).
 - The autolink extension decodes backslash escapes in a bare URL (#1842, #1843).
 - The Markdown importer keeps an ordered task item's marker as the text it was written as, reads a box for a bullet task item whose label is also defined, and reads a box only where the cmark-gfm tasklist extension reaches it (#1886, #1888, #1891, #1899, #1902, #1920).
 - An ordered task item's lost checkbox is reported as `structure-unspellable` in one wording at both the Markdown and the HTML entry point (#1890, #1904, #1928, #1948).
