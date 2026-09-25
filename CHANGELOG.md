@@ -19,6 +19,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Markdown migration reports ordered task checkboxes kept as text with a
+  `structure-unspellable` row beside `fidelity-unverified` (markup-carve/carve#2288).
 - `Document` now drops its owned AST iteratively, so dropping a deeply nested
   document built by a caller does not overflow the stack (#1887). This adds a
   `Drop` implementation. Moving fields out, destructuring by value, and struct

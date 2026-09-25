@@ -99,3 +99,80 @@ fn task_markers_take_precedence_over_reference_links() {
         "1. [x] done\n"
     );
 }
+
+#[test]
+fn ordered_task_markers_report_the_box_the_writer_cannot_spell() {
+    let result = migrate_markdown("1. [x] done\n2. [ ] next\n");
+    assert_eq!(result.value, "1. [x] done\n2. [ ] next\n");
+    let codes: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.code.as_str())
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            "fidelity-unverified",
+            "structure-unspellable",
+            "structure-unspellable"
+        ]
+    );
+    for diagnostic in result.report.diagnostics.iter().skip(1) {
+        assert_eq!(
+            diagnostic.message,
+            "An ordered task item is not spellable as a Carve task item; the checkbox marker was kept as text"
+        );
+        assert_eq!(diagnostic.fidelity, MigrationFidelity::Dropped);
+        assert_eq!(diagnostic.confidence, MigrationConfidence::Exact);
+    }
+
+    for source in [
+        "- [x] done\n",
+        "> 1. [x] done\n",
+        "```\n1. [x] done\n```\n",
+        "para\n2. [x] done\n",
+        "1. [x]\n",
+        "1.     [x] code\n",
+        "1. a\n   - [x] b\n",
+    ] {
+        let codes: Vec<_> = migrate_markdown(source)
+            .report
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(codes, ["fidelity-unverified"], "{source}");
+    }
+
+    for source in [
+        "- a\n  1. [x] b\n",
+        "para\n1. [x] done\n",
+        "1. [x] \n",
+        "1. [x]\t\n",
+        "1. [X] done\n",
+        "1.\t[x] done\n",
+    ] {
+        let codes: Vec<_> = migrate_markdown(source)
+            .report
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        assert_eq!(
+            codes,
+            ["fidelity-unverified", "structure-unspellable"],
+            "{source}"
+        );
+    }
+    let mixed = migrate_markdown("1. [x] done\n2. plain\n");
+    assert_eq!(
+        mixed
+            .report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "structure-unspellable")
+            .count(),
+        1
+    );
+}

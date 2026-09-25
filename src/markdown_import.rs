@@ -109,9 +109,10 @@ fn markdown_to_ast_with_losses(
     let source = normalize_heading_closers(&without_nuls, options);
     let mut builder = Builder::default();
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
-        if matches!(event, Event::TaskListMarker(_))
-            && (builder.in_ordered_item() || !tasklist_extension_reaches(&source, &range))
-        {
+        let task_marker = matches!(event, Event::TaskListMarker(_));
+        let ordered = task_marker && builder.in_ordered_item();
+        let extension_reaches = task_marker && tasklist_extension_reaches(&source, &range);
+        if task_marker && (ordered || !extension_reaches) {
             // NOWHERE TO PUT A BOX, or none to read. Carve spells a checkbox
             // only behind a bullet, so handing the writer one on an ordered
             // item dropped it - and the marker's own characters went with it,
@@ -119,6 +120,12 @@ fn markdown_to_ast_with_losses(
             // tasklist extension does not reach at all there is no box to read
             // in the first place (carve-rs#1899). Either way the characters the
             // author wrote stay as the text they were written as.
+            if ordered && extension_reaches {
+                builder.losses.push(
+                    "An ordered task item is not spellable as a Carve task item; the checkbox marker was kept as text"
+                        .to_owned(),
+                );
+            }
             builder.inline(InlineNode::text(&source[range.start..range.end]));
             if let Some(separator) = task_marker_separator(&source, range.end) {
                 builder.inline(separator);
