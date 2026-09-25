@@ -66,6 +66,40 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
     );
 }
 
+#[test]
+fn multiline_elements_in_table_cells_keep_the_table() {
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        for (html, expected, loss) in [
+            (
+                "<form>f\ng</form>",
+                "| f g |\n",
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+            ),
+            (
+                "<pre><code>f\ng</code></pre>",
+                "| `f g` |\n",
+                HtmlImportDiagnosticCode::StructureUnspellable,
+            ),
+        ] {
+            let source = format!("<table><tr><td>{html}</td></tr></table>");
+            let result = html_to_carve(&source, &options).unwrap();
+            assert_eq!(result.value, expected, "{mode:?}: {html}");
+            let codes: Vec<_> = result.report.diagnostics.iter().map(|d| d.code).collect();
+            assert!(codes.contains(&loss), "{mode:?}: {html}: {codes:?}");
+            assert!(codes.contains(&HtmlImportDiagnosticCode::ElementUnwrapped));
+            assert!(!codes.contains(&HtmlImportDiagnosticCode::RawPreserved));
+        }
+    }
+}
+
 /// Shared html-import fixtures whose pinned golden and this engine disagree,
 /// each naming the ruling that explains the gap.
 ///
