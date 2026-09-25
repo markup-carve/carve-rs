@@ -1322,9 +1322,16 @@ fn is_empty_block(node: &BlockNode) -> bool {
             adm.children.is_empty()
                 && !has_opener_content(adm.title.as_deref(), adm.label.as_deref())
         }
+        // A directive's KIND is content of its own: it names where generated
+        // content is placed (CARVE-P12-057), and that effect is elsewhere in
+        // the document, so nothing reading `children` can see it. A profile
+        // denies the constructs it names, and a bare `::: toc` names no denied
+        // inline and no denied block - deleting it would silently move or drop
+        // the table of contents (carve-rs#1922).
         BlockNode::Directive(div) => {
             div.children.is_empty()
                 && !has_opener_content(div.title.as_deref(), div.label.as_deref())
+                && !crate::ast::is_generated_content_kind(&div.kind)
         }
         BlockNode::Div(div) => div.children.is_empty() && div.label.is_none(),
         BlockNode::LineBlock(lb) => lb.children.is_empty(),

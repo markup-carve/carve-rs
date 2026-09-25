@@ -131,10 +131,15 @@ fn an_authored_marker_and_a_real_placement_do_not_trade_places() {
 /// authored one, and the two cancelled into a check that reported no collision.
 ///
 /// The extension here embeds its fragment, which is the case that must keep
-/// working: the placement still places inside the disclosure, and the authored
-/// character next to it is still the author's.
+/// working: the authored character next to the fragment is still the author's.
+///
+/// The marker inside the disclosure no longer places, because `CARVE-P9-073`
+/// grants that only to a marker at document top level and an extension's
+/// fragment is a directive body (carve-rs#1894). The section lands at the
+/// document end instead, and the collision the author's character makes is
+/// still answered by a fresh marker on the retry.
 #[test]
-fn a_placement_an_extension_renders_still_places_beside_an_authored_marker() {
+fn a_placement_an_extension_renders_leaves_an_authored_marker_alone() {
     let extension = Details::new();
     let options = Options::new().with_extension(&extension);
     let source = format!(
@@ -154,8 +159,17 @@ fn a_placement_an_extension_renders_still_places_beside_an_authored_marker() {
         .expect("a closed disclosure")
         .0;
     assert!(
-        disclosure.contains("doc-endnotes"),
-        "the section left the disclosure: {html:?}"
+        !disclosure.contains("doc-endnotes"),
+        "a contained marker placed the section: {html:?}"
+    );
+    assert!(
+        disclosure.contains("<div class=\"footnotes\">"),
+        "the floor did not render where the marker was written: {html:?}"
+    );
+    assert!(
+        html.find("</details>").expect("a closed disclosure")
+            < html.find("doc-endnotes").expect("endnotes"),
+        "the section did not land after the disclosure: {html:?}"
     );
     assert_eq!(html.matches("doc-endnotes").count(), 1);
 }
@@ -205,13 +219,14 @@ impl CarveExtension for DiscardsWhatItRenders {
     }
 }
 
-/// THE MARKERS OF A DISCARDED FRAGMENT MUST NOT BE COUNTED. One marker written
-/// into a fragment the extension throws away, and one marker the AUTHOR wrote,
-/// make the naive count match: one written, one standing, no collision
-/// reported - and the author's character is then consumed as the placement.
-///
-/// Counting only markers on paths that reach the document keeps the count a
-/// lower bound, so the authored one still makes `seen` exceed it.
+/// AN AUTHORED MARKER IS STILL THE AUTHOR'S when an extension discards what it
+/// rendered. The fragment carries a `::: footnotes` block, which since
+/// `CARVE-P9-073` writes no marker at all - an extension's children are a
+/// directive body, so the placement never reaches this path (carve-rs#1894).
+/// The case this was written for, a discarded marker paying for an authored one,
+/// is therefore no longer reachable from source; what remains reachable is the
+/// authored character making `seen` exceed `emitted`, which is what picks a
+/// fresh marker on the retry.
 #[test]
 fn a_marker_an_extension_discarded_does_not_pay_for_an_authored_one() {
     let extension = DiscardsWhatItRenders;
@@ -240,12 +255,14 @@ fn a_marker_an_extension_discarded_does_not_pay_for_an_authored_one() {
     );
 }
 
-/// ANY-DEPTH PLACEMENT IS UNCHANGED. carve-js recognizes the placement node in
-/// `ast.children` only, so a nested block is an ordinary div there; carve-rs
-/// writes its marker from `render_admonition`, which runs at every depth, so a
-/// nested block places. Nothing about picking the marker touches that.
+/// PLACEMENT IS TOP-LEVEL ONLY. carve-rs used to write its marker from the
+/// directive renderer, which runs at every depth, so a marker inside a block
+/// quote placed the section there. `CARVE-P9-073` (markup-carve/carve#2274)
+/// rules that it does not, and nothing about picking the marker touches that.
+/// The full container list is in
+/// `tests/a_placement_marker_places_only_at_document_top_level.rs`.
 #[test]
-fn a_placement_inside_a_blockquote_still_places_inside_the_blockquote() {
+fn a_placement_inside_a_blockquote_does_not_place_inside_the_blockquote() {
     let html = to_html("X[^a].\n\n> ::: footnotes\n> :::\n\n[^a]: a\n");
     let quote = html
         .split_once("<blockquote>")
@@ -255,8 +272,12 @@ fn a_placement_inside_a_blockquote_still_places_inside_the_blockquote() {
         .expect("a closed blockquote")
         .0;
     assert!(
-        quote.contains("doc-endnotes"),
-        "the section left the blockquote: {html:?}"
+        !quote.contains("doc-endnotes"),
+        "the section placed inside the blockquote: {html:?}"
+    );
+    assert!(
+        quote.contains("<div class=\"footnotes\">"),
+        "the floor did not render inside the blockquote: {html:?}"
     );
     assert_eq!(html.matches("doc-endnotes").count(), 1);
 }
