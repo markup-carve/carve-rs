@@ -131,10 +131,11 @@ pub use incremental::{
     parse_snapshot, reparse, IncrementalParse, IncrementalParseError, ParserSnapshot, TextChange,
 };
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
-pub use markdown_import::{markdown_to_ast, markdown_to_carve};
+pub use markdown_import::{markdown_to_ast, markdown_to_carve, try_markdown_to_carve};
 pub use migration::{
-    migrate_bbcode, migrate_djot, migrate_html, migrate_markdown, MigrationConfidence,
-    MigrationDiagnostic, MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
+    migrate_bbcode, migrate_djot, migrate_html, migrate_markdown, try_migrate_markdown,
+    MigrationConfidence, MigrationDiagnostic, MigrationFidelity, MigrationReport, MigrationResult,
+    SourceFormat,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

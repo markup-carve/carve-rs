@@ -38,12 +38,17 @@ as nothing. Name the adapter only for input you know came from that editor: on
 arbitrary HTML a mutually linked anchor pair is not proof of a footnote, which
 is why `generic` stays out.
 
-Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
-`carve migrate --from markdown input.md`. It parses the source to a tree and
+Markdown migration is `markdown_to_ast`, `markdown_to_carve`,
+`try_markdown_to_carve`, or `carve migrate --from markdown input.md`.
+`try_migrate_markdown` returns the output with diagnostics and a writer error
+if Carve cannot represent the document. `markdown_to_carve` and
+`migrate_markdown` panic on a writer error. The importer parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's
 spelling: a setext heading comes back as `#`, an indented code block as a
 fence. It has no mode or adapter. `--report` emits a dropped/fallback
-`fidelity-unverified` finding, so `--check-loss` deliberately exits 1.
+`fidelity-unverified` finding, so `--check-loss` deliberately exits 1. A blank
+GFM table row is dropped with a `structure-unspellable` warning in the migration
+report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics.
 
 Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages. Like Markdown,
