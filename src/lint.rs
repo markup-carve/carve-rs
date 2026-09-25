@@ -48,16 +48,15 @@ pub struct LintWarning {
 /// Lint `source` as a CORE render, with no extensions registered.
 ///
 /// Equivalent to [`lint_carve_with_options`] with [`Options::default`]. Use
-/// that instead whenever the caller renders with extensions - see the module
-/// docs for why the tier matters to both rules.
+/// that instead whenever the caller renders with extensions.
 pub fn lint_carve(source: &str) -> Vec<LintWarning> {
     lint_carve_with_options(source, &Options::default())
 }
 
 /// Lint `source` for the render `options` describe.
 ///
-/// Only `options.extensions` is read, because it is the only field either rule
-/// depends on: it decides which reserved names become elements. Positions are
+/// Only `options.extensions` is read: it selects extension-specific rules and
+/// decides which reserved names become elements. Positions are
 /// forced on regardless of what the caller set, since a diagnostic with no
 /// location is not one. Nothing here renders, so the render-only fields
 /// (`profile`, `mode`, `symbols`, ...) are deliberately ignored rather than
@@ -117,11 +116,85 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     for body in doc.footnote_defs.values() {
         collect_quote_fence_warnings(body, &to_byte, &mut out);
     }
+    if options
+        .extensions
+        .iter()
+        .any(|ext| ext.name() == "citations")
+    {
+        collect_contained_reference_placements(&doc.children, false, &to_byte, &mut out);
+        for body in doc.footnote_defs.values() {
+            collect_contained_reference_placements(body, true, &to_byte, &mut out);
+        }
+    }
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
+}
+
+fn collect_contained_reference_placements(
+    blocks: &[BlockNode],
+    contained: bool,
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Directive(d) => {
+                if contained && d.kind == "references" {
+                    out.push(warning(
+                        d.pos.clone(),
+                        to_byte,
+                        "references-placement-in-container",
+                        "This \"::: references\" marker is inside a container and does not place the reference list. Move it to document level, or remove it if no placement is needed.".to_string(),
+                    ));
+                }
+                collect_contained_reference_placements(&d.children, true, to_byte, out);
+            }
+            BlockNode::Admonition(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::Div(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::BlockQuote(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::LineBlock(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::FigureGroup(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::ExtensionCarrier(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
+            BlockNode::List(n) => {
+                for item in &n.items {
+                    collect_contained_reference_placements(&item.children, true, to_byte, out);
+                }
+            }
+            BlockNode::DefinitionList(n) => {
+                for item in &n.items {
+                    for definition in &item.definitions {
+                        collect_contained_reference_placements(
+                            &definition.children,
+                            true,
+                            to_byte,
+                            out,
+                        );
+                    }
+                }
+            }
+            BlockNode::Figure(n) => {
+                if let FigureTarget::BlockQuote(quote) = &*n.target {
+                    collect_contained_reference_placements(&quote.children, true, to_byte, out);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {

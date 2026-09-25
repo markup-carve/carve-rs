@@ -1265,18 +1265,46 @@ fn render_document(
 fn run_lint(args: &[String]) -> ExitCode {
     let mut paths: Vec<&str> = Vec::new();
     let mut enable_extensions = false;
-    for arg in args {
+    let mut enable_citations = false;
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
         match arg.as_str() {
             "--extensions" => enable_extensions = true,
+            "--extension" => {
+                index += 1;
+                match args.get(index).map(String::as_str) {
+                    Some("citations") => enable_citations = true,
+                    Some(other) => {
+                        eprintln!("carve lint: unknown extension: {other} (known: citations)");
+                        return ExitCode::from(2);
+                    }
+                    None => {
+                        eprintln!("carve lint: --extension requires a name");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            other if other.starts_with("--extension=") => {
+                if other == "--extension=citations" {
+                    enable_citations = true;
+                } else {
+                    eprintln!(
+                        "carve lint: unknown extension: {} (known: citations)",
+                        &other["--extension=".len()..]
+                    );
+                    return ExitCode::from(2);
+                }
+            }
             "-h" | "--help" => {
                 println!(
                     "carve lint - report constructs that parse but do not reach the page\n\n\
                      Usage:\n  \
-                     carve lint [--extensions] [files]\n\n\
+                     carve lint [--extensions] [--extension citations] [files]\n\n\
                      Reads stdin when no file is given, or when the file is `-`.\n\n\
                      Options:\n  \
-                     --extensions   enable the bundled extensions (the only render\n                 \
-                     option the linter reads)\n\n\
+                     --extensions           enable the bundled extensions\n  \
+                     --extension citations  enable citation placement lint\n\n\
                      Exit codes:\n  \
                      0   no findings\n  \
                      1   findings reported\n  \
@@ -1288,18 +1316,17 @@ fn run_lint(args: &[String]) -> ExitCode {
             // would have accepted `--static` or `--profile` here and quietly
             // dropped them, which reads as a clean lint of the wrong thing.
             other if other.starts_with('-') && other != "-" => {
-                eprintln!(
-                    "carve lint: unknown option: {other} (only --extensions applies to lint)"
-                );
+                eprintln!("carve lint: unknown option: {other}");
                 return ExitCode::from(2);
             }
             path => paths.push(path),
         }
+        index += 1;
     }
-    run_lint_paths(&paths, enable_extensions)
+    run_lint_paths(&paths, enable_extensions, enable_citations)
 }
 
-fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
+fn run_lint_paths(paths: &[&str], enable_extensions: bool, enable_citations: bool) -> ExitCode {
     // Only `options.extensions` is read by the linter - `lint_carve_with_options`
     // documents that - so nothing else from the render path is plumbed through
     // here. Owned locally so they outlive the borrow in `options`.
@@ -1309,6 +1336,7 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
     let color_swatch = carve::ColorSwatch::new();
     let fenced_presets = carve::FencedRender::presets();
     let math_block = carve::MathBlock::new();
+    let citations = carve::Citations::new();
     let mut options = carve::Options::new();
     if enable_extensions {
         options = options
@@ -1320,6 +1348,9 @@ fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
         for preset in &fenced_presets {
             options = options.with_extension(preset);
         }
+    }
+    if enable_citations {
+        options = options.with_extension(&citations);
     }
 
     let mut findings = 0usize;

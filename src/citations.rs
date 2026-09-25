@@ -176,6 +176,7 @@ impl CarveExtension for Citations {
                 &self.defs.borrow(),
                 &self.uses.borrow(),
                 self.has_bib(),
+                ctx.level(),
             ))
         } else {
             None
@@ -1091,6 +1092,7 @@ fn render_refs_list(
     defs: &BTreeMap<String, Def>,
     uses: &BTreeMap<String, usize>,
     has_bib: bool,
+    level: usize,
 ) -> String {
     let mut keys = order.to_vec();
     if mode == CitationMode::AuthorDate {
@@ -1105,6 +1107,8 @@ fn render_refs_list(
     } else {
         "ol"
     };
+    let item_indent = "  ".repeat(level + 1);
+    let closing_indent = "  ".repeat(level);
     let mut out = format!("<{tag} class=\"references\">");
     for key in keys {
         if let Some(def) = defs.get(&key) {
@@ -1136,7 +1140,7 @@ fn render_refs_list(
             }
             out.push('\n');
             out.push_str(&format!(
-                "  <li id=\"{}\">{}{}</li>",
+                "{item_indent}<li id=\"{}\">{}{}</li>",
                 escape_attr(&crate::document_ids::ref_id(&key)),
                 body,
                 backlinks
@@ -1144,6 +1148,6 @@ fn render_refs_list(
         }
     }
     out.push('\n');
-    out.push_str(&format!("</{tag}>"));
+    out.push_str(&format!("{closing_indent}</{tag}>"));
     out
 }
