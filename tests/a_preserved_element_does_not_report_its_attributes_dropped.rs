@@ -147,7 +147,7 @@ fn several_refused_attributes_on_one_element_keep_their_own_severities() {
 
 #[test]
 fn the_inline_preserve_arm_answers_the_same_way() {
-    // A different arm of the same mode, reporting an active-content sink
+    // A different arm of the same mode, reporting an injection sink
     // rather than an event handler. `srcdoc` is not an `on*` name and is
     // refused by the same renderer filter, so it is the same fact.
     let (value, rows) = roundtrip(r#"<iframe srcdoc="<p>x</p>" onload="z()"></iframe>"#);
@@ -156,7 +156,7 @@ fn the_inline_preserve_arm_answers_the_same_way() {
     assert_eq!(rows[0].1, HtmlImportSeverity::Error);
     assert_eq!(
         rows[0].2,
-        "Preserved active-content attribute srcdoc on <iframe> in the raw HTML this element is kept as"
+        "Preserved injection-sink attribute srcdoc on <iframe> in the raw HTML this element is kept as"
     );
 }
 
@@ -225,5 +225,34 @@ fn the_rewrite_reaches_the_preserved_element_and_nothing_else() {
             HtmlImportDiagnosticCode::AttributePreserved,
             HtmlImportDiagnosticCode::RawPreserved,
         ]
+    );
+}
+
+#[test]
+fn the_reports_subject_vocabulary_is_the_one_the_other_engines_spell() {
+    // THE SUBJECT NOUNS ARE A CROSS-ENGINE CONTRACT, so this pins the whole row
+    // set for one input rather than the one word that moved. carve-js
+    // (`src/html-import.ts`, `isDangerousAttrName` arm) and carve-php
+    // (`HtmlToCarve::reportPreservedAttribute`) both say `injection-sink` for a
+    // sink that is not an `on*` handler, `docs/security.md` calls `srcdoc` and
+    // `formaction` sinks, and this engine said `active-content` - a noun no
+    // other engine and no part of the spec uses (carve-rs#1881).
+    let (value, rows) = roundtrip(
+        r#"<form onclick="go()" action="javascript:alert(1)"><button formaction="javascript:alert(3)">go</button></form>"#,
+    );
+    assert!(value.contains(r#"formaction="javascript:alert(3)""#), "{value}");
+    let messages: Vec<&str> = rows.iter().map(|(_, _, m)| m.as_str()).collect();
+    assert_eq!(
+        messages,
+        vec![
+            "Preserved event-handler attribute onclick on <form> in the raw HTML this element is kept as",
+            "Preserved action with a denied URL scheme on <form> in the raw HTML this element is kept as",
+            "Preserved unsupported <form> element as raw HTML",
+            "Preserved injection-sink attribute formaction on <button> inside the raw HTML <form> is kept as",
+        ]
+    );
+    assert!(
+        !messages.iter().any(|m| m.contains("active-content")),
+        "no row may name a sink with a noun the spec and the other engines do not use: {messages:?}"
     );
 }
