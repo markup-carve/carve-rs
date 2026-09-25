@@ -1608,9 +1608,9 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     for extension in state.extensions {
         child_options = child_options.with_extension(*extension);
     }
-    let child = crate::parse_with_options(&source, &child_options);
-    let mut children = child.children;
-    let mut footnotes = child.footnote_defs;
+    let mut child = crate::parse_with_options(&source, &child_options);
+    let mut children = std::mem::take(&mut child.children);
+    let mut footnotes = std::mem::take(&mut child.footnote_defs);
     if let Some((complete_source, line_base)) = position_base {
         shift_source_positions(&mut children, &complete_source, &source, line_base);
         for body in footnotes.values_mut() {

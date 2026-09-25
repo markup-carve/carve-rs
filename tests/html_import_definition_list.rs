@@ -41,9 +41,10 @@ fn a_definition_list_survives_the_import() {
 #[test]
 fn several_terms_share_one_definition() {
     let html = "<dl><dt>HTML</dt><dt>HyperText Markup Language</dt><dd>The web's document format.</dd></dl>";
-    let carve::Document { children, .. } = html_to_ast(html, &HtmlImportOptions::default())
+    let document = html_to_ast(html, &HtmlImportOptions::default())
         .unwrap()
         .value;
+    let children = &document.children;
     let [BlockNode::DefinitionList(list)] = children.as_slice() else {
         panic!("expected one definition list, got {children:?}");
     };
@@ -57,9 +58,10 @@ fn several_terms_share_one_definition() {
 #[test]
 fn a_term_after_a_definition_opens_the_next_group() {
     let html = "<dl><dt>One</dt><dd>First</dd><dt>Two</dt><dd>Second</dd></dl>";
-    let carve::Document { children, .. } = html_to_ast(html, &HtmlImportOptions::default())
+    let document = html_to_ast(html, &HtmlImportOptions::default())
         .unwrap()
         .value;
+    let children = &document.children;
     let [BlockNode::DefinitionList(list)] = children.as_slice() else {
         panic!("expected one definition list, got {children:?}");
     };

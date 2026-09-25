@@ -66,8 +66,10 @@ fn assert_not_frontmatter(label: &str, source: &str, token: &str) {
 }
 
 fn assert_frontmatter(label: &str, source: &str, format: &str) {
-    let raw = parse(source)
+    let document = parse(source);
+    let raw = document
         .frontmatter_raw
+        .as_ref()
         .unwrap_or_else(|| panic!("{label}: no frontmatter block"));
     assert_eq!(raw.format, format, "{label}: wrong format token");
     assert_eq!(
@@ -159,8 +161,10 @@ fn the_canonical_and_bare_openers_are_unchanged() {
     // shared helper's fence assertion still does not apply to it. This line used
     // to assert `---`; PART 11 section 6b spells the token "for EVERY format,
     // the default one included" (markup-carve/carve#1040).
-    let bare = parse("---\na: 1\n---\nx\n")
+    let document = parse("---\na: 1\n---\nx\n");
+    let bare = document
         .frontmatter_raw
+        .as_ref()
         .expect("bare: no frontmatter block");
     assert_eq!(bare.format, "yaml");
     assert_eq!(fmt_first_line("---\na: 1\n---\nx\n"), "---yaml");

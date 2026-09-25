@@ -9,6 +9,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `Document` now drops its owned AST iteratively, so dropping a deeply nested
+  document built by a caller does not overflow the stack (#1887). This adds a
+  `Drop` implementation. Moving fields out, destructuring by value, and struct
+  update syntax now fail to compile. Borrow fields to inspect them, or use
+  `std::mem::take` on a mutable document to transfer ownership. A detached deep
+  tree still needs bounded teardown. This API change ships in a 0.1.x patch.
 - `HtmlImportOptions.max_depth` cannot raise HTML import past the 128-level
   `MAX_HTML_IMPORT_DEPTH` ceiling. Lower values still narrow the limit.
 - Markdown conversion has fallible `try_markdown_to_ast`,

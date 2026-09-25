@@ -21,10 +21,10 @@ fn imported(html: &str) -> String {
 }
 
 fn only_list(html: &str) -> carve::List {
-    let doc = html_to_ast(html, &HtmlImportOptions::default())
+    let mut doc = html_to_ast(html, &HtmlImportOptions::default())
         .unwrap()
         .value;
-    match doc.children.into_iter().next() {
+    match std::mem::take(&mut doc.children).into_iter().next() {
         Some(BlockNode::List(list)) => list,
         other => panic!("expected a list, got {other:?}"),
     }
