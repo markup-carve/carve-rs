@@ -4210,7 +4210,12 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::BlockQuote(b) => {
                 fill_offsets(&mut b.children, line_starts);
             }
-            BlockNode::Directive(d) => fill_offsets(&mut d.children, line_starts),
+            BlockNode::Directive(d) => {
+                if let Some(title) = &mut d.title {
+                    apply_inline_offsets(title, line_starts);
+                }
+                fill_offsets(&mut d.children, line_starts);
+            }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
             BlockNode::Admonition(a) => {
                 if let Some(title) = &mut a.title {
