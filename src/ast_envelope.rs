@@ -11,6 +11,7 @@
 //! the storage-and-process-boundary surface beside that codec, not a change to
 //! it.
 
+use std::cmp::Ordering;
 use std::fmt;
 
 use crate::ast::Document;
@@ -33,7 +34,7 @@ const EXTENSION_FIELDS: [&str; 3] = ["id", "version", "required"];
 /// `^[1-9][0-9]*\.(0|[1-9][0-9]*)$` from `ast-envelope-schema.json`. A leading
 /// zero is refused, so the `0.x`-reads-as-major convention the rest of this org
 /// versions by never applies to the contract version.
-fn split_contract_version(value: &str) -> Option<(u64, u64)> {
+fn split_contract_version(value: &str) -> Option<(&str, &str)> {
     let (major, minor) = value.split_once('.')?;
     for part in [major, minor] {
         if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
@@ -43,7 +44,19 @@ fn split_contract_version(value: &str) -> Option<(u64, u64)> {
     if major.starts_with('0') || (minor.starts_with('0') && minor.len() > 1) {
         return None;
     }
-    Some((major.parse().ok()?, minor.parse().ok()?))
+    Some((major, minor))
+}
+
+/// Orders two version parts as NUMBERS without parsing them.
+///
+/// The pattern rules out a leading zero, so a longer run of digits is the
+/// larger number and equal lengths compare lexicographically. Parsing instead
+/// bounded the comparison at `u64`, and a major past that returned `None` -
+/// which the caller reads as "does not match the pattern", so a version the
+/// schema accepts was refused as a malformed envelope rather than as the higher
+/// contract version it is (carve-rs#1965).
+fn compare_version_part(left: &str, right: &str) -> Ordering {
+    left.len().cmp(&right.len()).then_with(|| left.cmp(right))
 }
 
 /// An extension whose node types or fields the enveloped document uses.
@@ -273,7 +286,7 @@ pub fn from_ast_envelope_json(
         .expect("the build's own contract version matches the schema pattern");
     // A higher major only. A LOWER one cannot arrive while this build implements
     // major 1, which the schema's pattern makes the lowest there is.
-    if major > our_major {
+    if compare_version_part(major, our_major) == Ordering::Greater {
         return Err(AstEnvelopeError::Version {
             found: ast_version,
             implemented: AST_CONTRACT_VERSION.to_string(),
