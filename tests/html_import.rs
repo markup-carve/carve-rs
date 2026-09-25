@@ -103,21 +103,12 @@ struct AheadOfPin {
     ast: Option<&'static str>,
 }
 
-const AHEAD_OF_PIN: &[AheadOfPin] = &[
-    // CARVE-P12-057 makes `::: footnotes` a `directive`; the fixture still
-    // records the `admonition` every engine wrote before the split
-    // (markup-carve/carve#2243). The written source is unchanged - the opener is
-    // the same `::: footnotes` either way - so only the tree is recorded, and the
-    // source exit keeps comparing against the fixture.
-    AheadOfPin {
-        fixture: "endnotes-section-not-last",
-        reason: "CARVE-P12-057 makes `::: footnotes` a directive (markup-carve/carve#2243)",
-        carve: None,
-        ast: Some(
-            r#"{"children":[{"children":[{"type":"text","value":"a"},{"label":"1","type":"footnote_ref"}],"type":"paragraph"},{"children":[],"kind":"footnotes","type":"directive"},{"children":[{"type":"text","value":"after"}],"type":"paragraph"},{"children":[{"children":[{"type":"text","value":"n"}],"type":"paragraph"}],"label":"1","type":"footnote"}],"type":"document"}"#,
-        ),
-    },
-];
+/// Empty, and that is the state to keep it in: `endnotes-section-not-last`
+/// recorded the `directive` tree while the fixture still held the
+/// pre-CARVE-P12-057 `admonition`, and markup-carve/carve#2255 re-recorded the
+/// fixture, so the entry failed on the pin bump the way the contract above says
+/// it must.
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///

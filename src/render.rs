@@ -466,6 +466,12 @@ pub(crate) struct RenderState {
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
     /// placement marker (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
+    /// True only while the next block to render stands in the document's OWN
+    /// block list. `CARVE-P9-073`: a placement marker places only there, so
+    /// anything reached any other way sits inside a container. Heading
+    /// `<section>` wrapping is a rendering artifact and keeps the flag, which
+    /// is why this is not derived from the indent `level`.
+    at_document_top_level: bool,
     admonition_count: usize,
     footnotes_heading: Option<FootnotesHeading>,
     has_footnotes: bool,
@@ -522,6 +528,7 @@ fn render_document_blocks(
         if matches!(nodes[i], BlockNode::Heading(_)) && options.sections {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
+            state.at_document_top_level = true;
             render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
@@ -1344,6 +1351,9 @@ fn render_section(
             continue;
         }
         out.push('\n');
+        // A section wrapper does not contain its blocks the way a container
+        // does: they are still the document's own (`CARVE-P9-073`).
+        state.at_document_top_level = true;
         render_block(out, &nodes[i], level + 1, options, state);
         i += 1;
     }
@@ -1384,6 +1394,9 @@ fn render_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    // Taken here, so every nested render below reads false without each
+    // container having to clear it.
+    let at_document_top_level = std::mem::take(&mut state.at_document_top_level);
     if level.saturating_add(state.block_depth_bias) > MAX_RENDER_DEPTH {
         crate::render_depth::record("html");
         return;
@@ -1404,7 +1417,9 @@ fn render_block(
         BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
         BlockNode::Table(t) => render_table(out, t, level, options, state),
         BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
-        BlockNode::Directive(d) => render_directive(out, d, level, options, state),
+        BlockNode::Directive(d) => {
+            render_directive(out, d, level, at_document_top_level, options, state)
+        }
         BlockNode::Div(d) => render_div(out, d, level, options, state),
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
@@ -2550,17 +2565,20 @@ fn render_directive(
     out: &mut String,
     d: &Directive,
     level: usize,
+    at_document_top_level: bool,
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
     // Emit the marker that the top-level render replaces with the endnotes
     // section, relocating it from the document end. A document without this
     // block is byte-identical to before.
-    // Only a marker in a document that HAS a note places the section. Any other
+    // Only a marker in a document that HAS a note places the section, and only
+    // one standing at the document's own top level (`CARVE-P9-073`). Any other
     // one falls through below and renders as the ordinary `<div class="{kind}">`
     // holding its own title, label and blocks, which is where an unconsumed
     // token belongs (CARVE-P9-072) and what carve-js and carve-php emit.
     if d.kind == "footnotes"
+        && at_document_top_level
         && !state.rendering_footnotes
         && state.has_footnotes
         && state.footnotes_heading.is_none()

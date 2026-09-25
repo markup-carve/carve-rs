@@ -647,6 +647,13 @@ const IMPLEMENTED: &[&str] = &[
     // this engine already produces what the corpus expects.
     "an-explicit-table-head-span-keeps-one-row-group",
     "a-table-foot-span-keeps-one-row-group",
+    // markup-carve/carve#2286, arriving with this pin bump: a `::: footnotes`
+    // marker inside a container does not place (CARVE-P9-073). carve-rs#1894
+    // is the change that makes this row match.
+    "a-footnotes-placement-marker-inside-a-container-does-not-place",
+    // markup-carve/carve#2272's row, which carve-rs#1915 already answered - its
+    // `a_profile_keeps_a_bodyless_named_container` pins the same four shapes.
+    "a-title-or-label-fills-the-container-body-slot",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1351,4 +1358,12 @@ corpus_test!(
 corpus_test!(
     c_the_canonical_writer_glues_a_code_fence_to_its_info_string,
     "the-canonical-writer-glues-a-code-fence-to-its-info-string"
+);
+corpus_test!(
+    c_a_footnotes_placement_marker_inside_a_container_does_not_place,
+    "a-footnotes-placement-marker-inside-a-container-does-not-place"
+);
+corpus_test!(
+    c_a_title_or_label_fills_the_container_body_slot,
+    "a-title-or-label-fills-the-container-body-slot"
 );
