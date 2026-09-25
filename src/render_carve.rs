@@ -1921,16 +1921,15 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 format!("{{% {} %}}", comment.content)
             } else if comment.block {
                 render_block_comment(&comment.content)
-            } else if comment.content.is_empty() {
-                // An empty comment writes its marker and nothing else. The
-                // inline arm below has always done this; the block arm formatted
-                // unconditionally and produced `%% `, a trailing space on a
-                // writer-produced line that no clause asks for and that made
-                // this engine disagree with carve-js on the corpus
-                // (markup-carve/carve#1472).
-                "%%".to_string()
             } else {
-                format!("%% {}", comment.content)
+                let content = comment.content.trim_end_matches([' ', '\t']);
+                if content.is_empty() {
+                    // The line form cannot end in ASCII whitespace, including
+                    // when the comment content becomes empty after trimming.
+                    "%%".to_string()
+                } else {
+                    format!("%% {content}")
+                }
             }
         }
         // The canonical writer has no spelling for a block extension - Carve
@@ -4618,15 +4617,9 @@ fn escape_text(
         // is that document - so `^<TAB>` re-parses as text either way and PART 11
         // §4 asks for the minimal form when dropping the escape changes nothing.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
-        let empty_braced_super = ch == '^'
-            && ((previous == '{' && text[offset..].starts_with("^^}"))
-                || (next == '}' && text[..offset].ends_with("{^")));
         let caret_opens_inline = ch == '^'
-            && !empty_braced_super
-            && (previous == '{'
-                || next == '}'
-                || ((next == '[' || (chars.peek().is_none() && note.next_node_opens_a_note))
-                    && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode)));
+            && (next == '[' || (chars.peek().is_none() && note.next_node_opens_a_note))
+            && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode);
         let colon_cannot_open =
             ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
         at_line_start = ch == '\n';
@@ -4662,6 +4655,7 @@ fn escape_text(
                     | '='
                     | ':'
                     | ';'
+                    | '^'
             );
         // In a unit the search has escalated, each candidate site is offered
         // back on its own, so the one occurrence that needed the escape no
