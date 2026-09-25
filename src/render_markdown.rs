@@ -526,18 +526,23 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     let delim = if node.delim == Some(')') { ')' } else { '.' };
     let last = node.items.len().saturating_sub(1);
     for (index, item) in node.items.iter().enumerate() {
-        let prefix = if node.ordered {
+        // The pad is the item's CONTENT COLUMN, which is only the same as the
+        // printed prefix where the whole prefix is the marker. A task item's
+        // `[x] ` is the first inline of its first paragraph, so padding by it puts
+        // every block below four columns past where a reader looks for them
+        // (carve-rs#1912, carve-rs#1929).
+        let (prefix, pad) = if node.ordered {
             let prefix = format!("{counter}{delim} ");
             counter += 1;
-            prefix
+            let pad = prefix.len();
+            (prefix, pad)
         } else if let Some(checked) = item.checked {
-            if checked {
-                format!("{bullet} [x] ")
-            } else {
-                format!("{bullet} [ ] ")
-            }
+            let box_mark = if checked { 'x' } else { ' ' };
+            (format!("{bullet} [{box_mark}] "), bullet.len_utf8() + 1)
         } else {
-            format!("{bullet} ")
+            let prefix = format!("{bullet} ");
+            let pad = prefix.len();
+            (prefix, pad)
         };
         let content =
             trim_block_output(&render_list_item(item, node.tight, ctx, depth + 1)).to_string();
@@ -548,7 +553,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         } else {
             out.push_str(&format!("{prefix}{first}\n"));
         }
-        let continuation = " ".repeat(prefix.len());
+        let continuation = " ".repeat(pad);
         for line in lines {
             // A line with no content takes no pad: PART 11 section 7 emits such
             // a line empty, and trailing whitespace is what editors and
