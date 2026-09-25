@@ -79,9 +79,14 @@ fn tabs_before_closing_heading_hashes_do_not_become_heading_text() {
 
 #[test]
 fn reference_links_take_precedence_over_task_markers() {
+    // THE ORDERED FORM IS THE MARKER'S, not the definition's. This assertion
+    // read `1. [x](/u) done` when it landed, eight minutes before
+    // markup-carve/carve#2273 ruled that cmark-gfm wins here and the definition
+    // goes unused, so it pins a reading the ruling replaced. The bullet cases
+    // below still pin the old reading and are carve-rs#1888.
     assert_eq!(
         markdown_to_carve("1. [x] done\n\n[x]: /u\n"),
-        "1. [x](/u) done\n"
+        "1. [x] done\n"
     );
     assert_eq!(
         markdown_to_carve("- [x] done\n\n[x]: /u \"Title\"\n"),

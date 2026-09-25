@@ -113,6 +113,21 @@ fn markdown_to_ast_with_losses(
     let mut builder = Builder::default();
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
         if matches!(event, Event::TaskListMarker(_)) {
+            if builder.in_ordered_item() {
+                // NOWHERE TO PUT A BOX. Carve spells a checkbox only behind a
+                // bullet, so handing the writer one on an ordered item dropped
+                // it - and the marker's own characters went with it, which left
+                // `1. [x] done` as `1. done` (carve-rs#1886). cmark-gfm reads a
+                // box here and it is the reader the importers answer to
+                // (markup-carve/carve#2273), so what it read is kept as the text
+                // it was written as rather than as a link the oracle does not
+                // read.
+                builder.inline(InlineNode::text(&source[range.start..range.end]));
+                if let Some(separator) = task_marker_separator(&source, range.end) {
+                    builder.inline(separator);
+                }
+                continue;
+            }
             if let Some((href, title)) = reference_links.get(&(range.start, range.end)) {
                 let label = &source[range.start + 1..range.end - 1];
                 builder.inline(InlineNode::Link(Link {
@@ -126,14 +141,8 @@ fn markdown_to_ast_with_losses(
                     from_heading_reference: false,
                     pos: None,
                 }));
-                // pulldown consumes the separator after a task marker. A
-                // reference link keeps that separator as ordinary text.
-                let separator: String = source[range.end..]
-                    .chars()
-                    .take_while(|ch| matches!(ch, ' ' | '\t'))
-                    .collect();
-                if !separator.is_empty() {
-                    builder.inline(InlineNode::text(separator));
+                if let Some(separator) = task_marker_separator(&source, range.end) {
+                    builder.inline(separator);
                 }
                 continue;
             }
@@ -245,6 +254,19 @@ fn task_marker_reference_links(
             _ => None,
         })
         .collect()
+}
+
+/// The run of spaces or tabs pulldown swallows after a task marker.
+///
+/// A box renders its own separator, so the marker's own reading is the only one
+/// that has to put it back: anything that keeps the marker as ordinary content
+/// keeps what followed it as well.
+fn task_marker_separator(source: &str, end: usize) -> Option<InlineNode> {
+    let separator: String = source[end..]
+        .chars()
+        .take_while(|ch| matches!(ch, ' ' | '\t'))
+        .collect();
+    (!separator.is_empty()).then(|| InlineNode::text(separator))
 }
 
 /// A container under construction.
@@ -400,6 +422,17 @@ struct Builder {
 }
 
 impl Builder {
+    /// Whether the item being filled belongs to an ORDERED list.
+    ///
+    /// The NEAREST list frame, not the outermost one: a bullet task list nested
+    /// inside an ordered item still spells its boxes.
+    fn in_ordered_item(&self) -> bool {
+        self.frames.iter().rev().find_map(|frame| match frame {
+            Frame::List { ordered, .. } => Some(*ordered),
+            _ => None,
+        }) == Some(true)
+    }
+
     fn push(&mut self, event: Event<'_>, source: &str) {
         // Once a non-native HTML element opens, everything through its closing
         // tag is one verbatim raw-inline run. pulldown still tokenizes Markdown
