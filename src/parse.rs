@@ -386,29 +386,6 @@ enum ParseMode {
     Carve,
 }
 
-/// The text every entry point must read, normalized once (matching carve-js /
-/// carve-php), allocating only when there is something to change:
-///
-///  - strip a single leading UTF-8 BOM (U+FEFF) so `\u{feff}# T` is a heading;
-///  - collapse CRLF / CR to LF;
-///  - replace a NUL (U+0000) with the U+FFFD replacement char so a control byte
-///    never reaches output (WHATWG-style).
-///
-/// A function rather than inline, so the parser and `to_carve` cannot disagree
-/// about whether a CRLF or BOM'd file HAS frontmatter (carve-rs#732, #725).
-/// Join collected lines back into a source string, TERMINATED.
-///
-/// The parser rebuilds its source several times and each consumer splits it
-/// again with `str::lines()`. `join` alone makes that round trip lossy in
-/// exactly one place, a trailing EMPTY line:
-///
-/// ```text
-/// ["a", ""]  ->  join  ->  "a\n"    ->  lines()  ->  ["a"]      the blank is gone
-/// ["a", ""]  ->  here  ->  "a\n\n"   ->  lines()  ->  ["a", ""]  preserved
-/// ```
-///
-/// Only the last line has nothing after it to imply its separator, so
-/// terminating changes that case and nothing else (carve-rs#908).
 /// Marks a lazily folded container line so nested parsing reads it as text.
 /// Source normalization replaces authored NUL with U+FFFD. Nested block
 /// parsing leaves the inserted marker intact. It pins the line to column 0,
@@ -426,6 +403,8 @@ pub(crate) fn strip_lazy(line: &str) -> &str {
     line.strip_prefix(LAZY).unwrap_or(line)
 }
 
+/// Join collected lines with a terminal newline so a trailing empty line
+/// survives a later `str::lines()` pass.
 fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     if lines.is_empty() {
         return String::new();
@@ -439,6 +418,8 @@ fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     joined
 }
 
+/// Strip a leading BOM, normalize line endings, and replace authored NUL.
+/// Parser and writer entry points share this normalization.
 pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
     if !(source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')) {
         return std::borrow::Cow::Borrowed(source);
