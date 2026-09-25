@@ -18,9 +18,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use pulldown_cmark::{
-    Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
-};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::ast::*;
 use crate::render_carve;
@@ -109,43 +107,21 @@ fn markdown_to_ast_with_losses(
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
     let source = normalize_heading_closers(&without_nuls, options);
-    let reference_links = task_marker_reference_links(&source, options);
     let mut builder = Builder::default();
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
-        if matches!(event, Event::TaskListMarker(_)) {
-            if builder.in_ordered_item() {
-                // NOWHERE TO PUT A BOX. Carve spells a checkbox only behind a
-                // bullet, so handing the writer one on an ordered item dropped
-                // it - and the marker's own characters went with it, which left
-                // `1. [x] done` as `1. done` (carve-rs#1886). cmark-gfm reads a
-                // box here and it is the reader the importers answer to
-                // (markup-carve/carve#2273), so what it read is kept as the text
-                // it was written as rather than as a link the oracle does not
-                // read.
-                builder.inline(InlineNode::text(&source[range.start..range.end]));
-                if let Some(separator) = task_marker_separator(&source, range.end) {
-                    builder.inline(separator);
-                }
-                continue;
+        if matches!(event, Event::TaskListMarker(_)) && builder.in_ordered_item() {
+            // NOWHERE TO PUT A BOX. Carve spells a checkbox only behind a
+            // bullet, so handing the writer one on an ordered item dropped
+            // it - and the marker's own characters went with it, which left
+            // `1. [x] done` as `1. done` (carve-rs#1886). cmark-gfm reads a
+            // box here and it is the reader the importers answer to
+            // (markup-carve/carve#2273), so what it read is kept as the text
+            // it was written as.
+            builder.inline(InlineNode::text(&source[range.start..range.end]));
+            if let Some(separator) = task_marker_separator(&source, range.end) {
+                builder.inline(separator);
             }
-            if let Some((href, title)) = reference_links.get(&(range.start, range.end)) {
-                let label = &source[range.start + 1..range.end - 1];
-                builder.inline(InlineNode::Link(Link {
-                    attrs: None,
-                    href: href.clone(),
-                    title: title.clone(),
-                    children: vec![InlineNode::text(label)],
-                    ref_label: None,
-                    raw_ref: None,
-                    from_crossref: false,
-                    from_heading_reference: false,
-                    pos: None,
-                }));
-                if let Some(separator) = task_marker_separator(&source, range.end) {
-                    builder.inline(separator);
-                }
-                continue;
-            }
+            continue;
         }
         if matches!(&event, Event::Html(_))
             && !builder
@@ -228,32 +204,6 @@ fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, s
         normalized.replace_range(tab..tab + 1, " ");
     }
     Cow::Owned(normalized)
-}
-
-fn task_marker_reference_links(
-    source: &str,
-    options: Options,
-) -> BTreeMap<(usize, usize), (String, Option<String>)> {
-    if !source.contains("]:") {
-        return BTreeMap::new();
-    }
-    let mut without_tasks = options;
-    without_tasks.remove(Options::ENABLE_TASKLISTS);
-    Parser::new_ext(source, without_tasks)
-        .into_offset_iter()
-        .filter_map(|(event, range)| match event {
-            Event::Start(Tag::Link {
-                link_type: LinkType::Shortcut,
-                dest_url,
-                title,
-                ..
-            }) if matches!(&source[range.clone()], "[x]" | "[X]" | "[ ]") => Some((
-                (range.start, range.end),
-                (dest_url.to_string(), optional(&title)),
-            )),
-            _ => None,
-        })
-        .collect()
 }
 
 /// The run of spaces or tabs pulldown swallows after a task marker.
