@@ -4862,7 +4862,9 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })]);
             }
-            if self.opts.mode != HtmlImportMode::Roundtrip {
+            if self.opts.mode != HtmlImportMode::Roundtrip
+                || (self.cell_depth > 0 && Self::html(h).contains(['\r', '\n']))
+            {
                 self.charge_subtree(h, depth)?;
                 // No attribute walk on the way out: the element and everything
                 // riding on it is gone, and this warning covers all of it.
@@ -4937,7 +4939,17 @@ impl<'a> Importer<'a> {
             "sub" => emphasis(EmphasisKind::Sub),
             "sup" => emphasis(EmphasisKind::Super),
             "code" => {
-                let value = Self::text(h);
+                let mut value = Self::text(h);
+                if self.cell_depth > 0 && value.contains(['\r', '\n']) {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                        "Flattened a line break in <code> inside a table cell: a table row is one line".into(),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        h,
+                    );
+                    value = value.replace("\r\n", " ").replace(['\r', '\n'], " ");
+                }
                 if !value.is_empty() {
                     return Ok(vec![InlineNode::code(value, attrs)]);
                 }
@@ -5072,7 +5084,9 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })
             }
-            _ if self.opts.mode == HtmlImportMode::Roundtrip => {
+            _ if self.opts.mode == HtmlImportMode::Roundtrip
+                && !(self.cell_depth > 0 && Self::html(h).contains(['\r', '\n'])) =>
+            {
                 self.keep_raw(h, path, &tag);
                 InlineNode::RawInline(RawInline {
                     format: "html".into(),
