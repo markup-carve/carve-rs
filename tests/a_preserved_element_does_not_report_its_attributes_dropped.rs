@@ -240,7 +240,10 @@ fn the_reports_subject_vocabulary_is_the_one_the_other_engines_spell() {
     let (value, rows) = roundtrip(
         r#"<form onclick="go()" action="javascript:alert(1)"><button formaction="javascript:alert(3)">go</button></form>"#,
     );
-    assert!(value.contains(r#"formaction="javascript:alert(3)""#), "{value}");
+    assert!(
+        value.contains(r#"formaction="javascript:alert(3)""#),
+        "{value}"
+    );
     let messages: Vec<&str> = rows.iter().map(|(_, _, m)| m.as_str()).collect();
     assert_eq!(
         messages,
