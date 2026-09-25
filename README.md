@@ -74,8 +74,7 @@ renaming, heading shifts, nested directives, containment, and current limits.
 
 The [`docs/`](https://github.com/markup-carve/carve-rs/tree/main/docs) directory contains topic guides for rendering, extensions,
 the CLI, migrations, conformance, editor integration, streaming, accessibility,
-security, patches, and parser snapshots. Material formerly held in this README
-is preserved in the [full usage walkthrough](https://github.com/markup-carve/carve-rs/blob/main/docs/reference.md).
+security, patches, and parser snapshots.
 
 ## Development
 
