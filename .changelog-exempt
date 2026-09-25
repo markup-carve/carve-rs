@@ -6,5 +6,5 @@
 # bare number is an error rather than a skip. Every exemption that applies is
 # printed on a passing run too, so what was left out stays visible.
 #
-# Empty on purpose. The reconciled 0.1.7 section passes over all 17 of its
-# shipped-source merges without one.
+1932: comments only; no parser, writer or lint behavior moved.
+1933: comments only; benchmark snapshots and corpus counts removed from source.
