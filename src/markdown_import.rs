@@ -109,17 +109,25 @@ fn markdown_to_ast_with_losses(
     let source = normalize_heading_closers(&without_nuls, options);
     let mut builder = Builder::default();
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
-        if matches!(event, Event::TaskListMarker(_)) && builder.in_ordered_item() {
-            // NOWHERE TO PUT A BOX. Carve spells a checkbox only behind a
-            // bullet, so handing the writer one on an ordered item dropped
-            // it - and the marker's own characters went with it, which left
-            // `1. [x] done` as `1. done` (carve-rs#1886). cmark-gfm reads a
-            // box here and it is the reader the importers answer to
-            // (markup-carve/carve#2273), so what it read is kept as the text
-            // it was written as.
+        if matches!(event, Event::TaskListMarker(_))
+            && (builder.in_ordered_item() || !tasklist_extension_reaches(&source, &range))
+        {
+            // NOWHERE TO PUT A BOX, or none to read. Carve spells a checkbox
+            // only behind a bullet, so handing the writer one on an ordered
+            // item dropped it - and the marker's own characters went with it,
+            // which left `1. [x] done` as `1. done` (carve-rs#1886). Where the
+            // tasklist extension does not reach at all there is no box to read
+            // in the first place (carve-rs#1899). Either way the characters the
+            // author wrote stay as the text they were written as.
             builder.inline(InlineNode::text(&source[range.start..range.end]));
             if let Some(separator) = task_marker_separator(&source, range.end) {
                 builder.inline(separator);
+            } else if source[range.end..].starts_with(['\n', '\r']) {
+                // pulldown swallows the line end after a marker it read, so a
+                // label on the NEXT line came back joined to the brackets:
+                // `- [ ]` / `  foo` read `[ ]foo` where cmark-gfm reads
+                // `[ ]` and a soft break.
+                builder.inline(InlineNode::soft_break());
             }
             continue;
         }
@@ -204,6 +212,62 @@ fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, s
         normalized.replace_range(tab..tab + 1, " ");
     }
     Cow::Owned(normalized)
+}
+
+/// Whether cmark-gfm's tasklist extension reaches this bracket pair.
+///
+/// pulldown reads a box off any bullet item whose content opens with one; the
+/// extension is narrower, and cmark-gfm 0.29.0.gfm.13 is the reader the
+/// importers answer to (markup-carve/carve#2187). Three conditions, each
+/// measured against it rather than recalled (markup-carve/carve-php#2366):
+///
+/// - ONE container marker on the line before the pair. A second marker there -
+///   another item's or a quote's - puts the list out of reach, so `- - [ ] foo`
+///   and `> - [ ] foo` are text while the more deeply nested `- a` /
+///   `  - [ ] foo` is a box. Indentation alone never does.
+/// - A literal space, `x` or `X` inside the pair. `[<TAB>]` is not a state.
+/// - Whitespace after the pair ON THE SAME LINE. `- [ ]` at a line end is text,
+///   and so is `- [ ]` with its label on the next line.
+fn tasklist_extension_reaches(source: &str, marker: &std::ops::Range<usize>) -> bool {
+    // pulldown's range opens at the marker's leading indentation rather than at
+    // the bracket, so the bracket is found inside it.
+    let Some(bracket) = source[marker.start..marker.end]
+        .find('[')
+        .map(|offset| marker.start + offset)
+    else {
+        return false;
+    };
+    let line_start = source[..bracket]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let after_indent = source[line_start..bracket].trim_start_matches([' ', '\t']);
+    let Some(after_marker) = strip_one_list_marker(after_indent) else {
+        return false;
+    };
+    if after_marker.is_empty() || !after_marker.chars().all(|ch| matches!(ch, ' ' | '\t')) {
+        return false;
+    }
+    let mut pair = source[bracket..].chars();
+    pair.next();
+    if !matches!(pair.next(), Some(' ' | 'x' | 'X')) {
+        return false;
+    }
+    matches!(source[marker.end..].chars().next(), Some(' ' | '\t'))
+}
+
+/// What follows one bullet or ordered marker at the head of `line`, or `None`
+/// when `line` does not open with one.
+fn strip_one_list_marker(line: &str) -> Option<&str> {
+    if let Some(rest) = line.strip_prefix(['-', '*', '+']) {
+        return Some(rest);
+    }
+    let digits = line.len()
+        - line
+            .trim_start_matches(|ch: char| ch.is_ascii_digit())
+            .len();
+    (digits > 0)
+        .then(|| line[digits..].strip_prefix(['.', ')']))
+        .flatten()
 }
 
 /// The run of spaces or tabs pulldown swallows after a task marker.
