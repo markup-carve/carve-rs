@@ -1314,9 +1314,19 @@ fn is_empty_block(node: &BlockNode) -> bool {
             // is empty only when it has no rows.
             t.rows.is_empty()
         }
-        BlockNode::Admonition(adm) => adm.children.is_empty(),
-        BlockNode::Directive(div) => div.children.is_empty(),
-        BlockNode::Div(div) => div.children.is_empty(),
+        // A title or a `[label]` is visible container content that fills the
+        // body slot (CARVE-P10-001), so it keeps the container alive the way a
+        // caption keeps a `FigureGroup` alive - answering on `children` alone
+        // deleted authored text the profile never denied (CARVE-P9-068).
+        BlockNode::Admonition(adm) => {
+            adm.children.is_empty()
+                && !has_opener_content(adm.title.as_deref(), adm.label.as_deref())
+        }
+        BlockNode::Directive(div) => {
+            div.children.is_empty()
+                && !has_opener_content(div.title.as_deref(), div.label.as_deref())
+        }
+        BlockNode::Div(div) => div.children.is_empty() && div.label.is_none(),
         BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),
         BlockNode::Figure(_) => false,
@@ -1367,6 +1377,13 @@ fn is_empty_inline(node: &InlineNode) -> bool {
             None => false,
         },
     }
+}
+
+/// Whether a container opener still carries content the profile left standing.
+/// A title emptied by the denial itself does not count: nothing authored
+/// survives it, so the shell collapses with it.
+fn has_opener_content(title: Option<&[InlineNode]>, label: Option<&str>) -> bool {
+    label.is_some() || title.is_some_and(|title| !all_inlines_empty(title))
 }
 
 fn all_inlines_empty(inlines: &[InlineNode]) -> bool {
