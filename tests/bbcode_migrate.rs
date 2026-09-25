@@ -1,4 +1,19 @@
-use carve::{bbcode_to_carve, BbcodeImportError, BBCODE_MAX_INPUT_LENGTH};
+use carve::{bbcode_to_carve, to_carve, BbcodeImportError, BBCODE_MAX_INPUT_LENGTH};
+
+#[test]
+fn empty_quotes_survive_with_the_canonical_marker() {
+    let input = "a\n\n[quote][/quote]\n\n[quote] [/quote]\n\nb";
+    let written = bbcode_to_carve(input).unwrap();
+    assert_eq!(written, "a\n\n>\n\n>\n\nb\n");
+    assert_eq!(to_carve(&written), written);
+    for input in ["[quote]a\n  \nb[/quote]", "[quote]a\r\n \r\nb[/quote]"] {
+        assert_eq!(bbcode_to_carve(input).unwrap(), "> a\n>\n> b\n");
+    }
+    assert_eq!(
+        bbcode_to_carve("[quote=Alice][/quote]").unwrap(),
+        ">\n^ Alice\n"
+    );
+}
 
 #[test]
 fn common_bbcode_vocabulary_matches_the_other_importers() {

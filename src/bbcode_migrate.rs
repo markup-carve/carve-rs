@@ -761,12 +761,21 @@ fn convert_other(mut text: String) -> String {
 }
 
 fn quote_block(content: &str, author: Option<&str>) -> String {
-    let quoted = content
-        .trim()
-        .lines()
-        .map(|line| format!("> {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let body = content.trim();
+    let quoted = if body.is_empty() {
+        ">".to_string()
+    } else {
+        body.lines()
+            .map(|line| {
+                if line.trim().is_empty() {
+                    ">".to_string()
+                } else {
+                    format!("> {line}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let attribution = format_attribution(author.unwrap_or(""));
     if attribution.is_empty() {
         format!("\n\n{quoted}\n\n")
