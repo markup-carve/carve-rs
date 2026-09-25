@@ -530,7 +530,7 @@ fn comparable_tree(source: &str) -> Option<Document> {
 ///
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
-/// map below empty, and avoids cloning for documents without such a description.
+/// map below empty, and avoids cloning, for documents without such a description.
 fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
     emptied_marker_lines_at(blocks, 0, into);
 }
