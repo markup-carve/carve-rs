@@ -524,7 +524,8 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     // elements, the same input with one delimiter gives one. The AST records
     // `delim` and render_carve already reproduces it (carve#352, corpus 31).
     let delim = if node.delim == Some(')') { ')' } else { '.' };
-    for item in &node.items {
+    let last = node.items.len().saturating_sub(1);
+    for (index, item) in node.items.iter().enumerate() {
         let prefix = if node.ordered {
             let prefix = format!("{counter}{delim} ");
             counter += 1;
@@ -538,7 +539,8 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         } else {
             format!("{bullet} ")
         };
-        let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
+        let content =
+            trim_block_output(&render_list_item(item, node.tight, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
         let first = lines.next().unwrap_or_default();
         if first.is_empty() {
@@ -557,12 +559,79 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
                 out.push_str(&format!("{continuation}{line}\n"));
             }
         }
+        // A loose list is spelled with a blank line between its items. Without
+        // it a list whose looseness lives in the item BOUNDARY reads back tight
+        // (carve#2281): `- a` / blank / `- b` came back as two glued markers.
+        if !node.tight && index < last {
+            out.push('\n');
+        }
     }
     ctx.list_depth -= 1;
     if ctx.list_depth == 0 {
         out.push('\n');
     }
     out
+}
+
+/// A tight item's blocks, with the separator blank dropped where the block
+/// below can stand without it.
+///
+/// Every block leaves one blank line behind it, and inside a list item that
+/// blank is what makes the item LOOSE in CommonMark - `<li><p>parent</p>` where
+/// the document says `<li>parent`. The blank can only go where the following
+/// opener interrupts a paragraph on its own, which is why this asks per child
+/// instead of never writing it (carve#2281).
+fn render_list_item(
+    item: &ListItem,
+    tight: bool,
+    ctx: &mut MarkdownContext,
+    depth: usize,
+) -> String {
+    if !tight {
+        return render_blocks(&item.children, ctx, depth);
+    }
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
+        return String::new();
+    }
+    let mut out = String::new();
+    for child in &item.children {
+        let rendered = render_block(child, ctx, depth);
+        if out.ends_with("\n\n") && interrupts_a_paragraph(child, &rendered) {
+            out.pop();
+        }
+        out.push_str(&rendered);
+    }
+    out
+}
+
+/// Whether this block's Markdown spelling starts a block directly below a
+/// paragraph line, with no blank line between them.
+fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
+    match node {
+        // A quote marker always interrupts.
+        BlockNode::BlockQuote(_) => true,
+        BlockNode::List(list) => {
+            // An ordered marker that does not start at 1 cannot interrupt, and a
+            // marker with nothing after it reads as a setext underline. Both
+            // shapes need the blank to stay lists at all.
+            if list.ordered && list.start.unwrap_or(1) != 1 {
+                return false;
+            }
+            !bare_marker_line(rendered.split('\n').next().unwrap_or_default())
+        }
+        _ => false,
+    }
+}
+
+/// A list marker with no content after it: `-`, `*`, `1.`, `1)`.
+fn bare_marker_line(line: &str) -> bool {
+    let line = line.trim_end_matches(' ');
+    if let Some(rest) = line.strip_prefix(['-', '*', '+']) {
+        return rest.is_empty();
+    }
+    let rest = line.trim_start_matches(|c: char| c.is_ascii_digit());
+    rest.len() < line.len() && matches!(rest, "." | ")")
 }
 
 fn render_definition_list(
