@@ -2013,6 +2013,7 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::Directive(Directive {
                 attrs: None,
                 kind: "footnotes".to_string(),
+                title: None,
                 label: None,
                 children: Vec::new(),
                 pos: None,
@@ -2391,13 +2392,14 @@ impl<'a> Importer<'a> {
                 // into a field that does not exist and dropped on the way.
                 let generated = crate::ast::is_generated_content_kind(&kind);
                 let (title, body, body_paths) =
-                    self.admonition_title(&children, path, depth, !generated)?;
+                    self.admonition_title(&children, path, depth, true)?;
                 let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
                 let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
                 if generated {
                     return Ok(vec![BlockNode::Directive(Directive {
                         attrs,
                         kind,
+                        title,
                         label,
                         children,
                         pos: None,
@@ -2573,16 +2575,15 @@ impl<'a> Importer<'a> {
                 Self::without_structural_class(attrs, "admonition"),
                 &kind,
             );
-            // See the other container arm: a directive has no title slot.
             let generated = crate::ast::is_generated_content_kind(&kind);
-            let (title, body, body_paths) =
-                self.admonition_title(&children, path, depth, !generated)?;
+            let (title, body, body_paths) = self.admonition_title(&children, path, depth, true)?;
             let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
             let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
             if generated {
                 return Ok(vec![BlockNode::Directive(Directive {
                     attrs,
                     kind,
+                    title,
                     label,
                     children,
                     pos: None,
@@ -2677,8 +2678,7 @@ impl<'a> Importer<'a> {
     /// `<details>/<summary>` to a `details` admonition.
     #[allow(clippy::type_complexity)]
     /// `lift_title` is false for a generated-content container: `directive` has
-    /// no title field, so the paragraph stays an ordinary block rather than being
-    /// lifted into a slot that does not exist (CARVE-P12-057).
+    /// The first title paragraph becomes the container's title field.
     fn admonition_title(
         &mut self,
         children: &[Handle],

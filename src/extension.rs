@@ -766,6 +766,32 @@ pub struct RenderContext<'a> {
     state: Option<&'a std::cell::RefCell<&'a mut crate::render::RenderState>>,
 }
 
+pub(crate) fn directive_tokens(
+    node: &crate::ast::ExtensionCarrier,
+    ctx: &RenderContext<'_>,
+    level: usize,
+    title_id: Option<&str>,
+) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let pad = ctx.indent(level);
+    if let Some(title) = &node.summary {
+        let id = title_id
+            .map(|id| format!(" id=\"{}\"", escape_attr(id)))
+            .unwrap_or_default();
+        tokens.push(format!(
+            "{pad}<p class=\"admonition-title\"{id}>{}</p>",
+            ctx.render_inlines(title)
+        ));
+    }
+    if let Some(label) = &node.label {
+        tokens.push(format!(
+            "{pad}<p class=\"div-label\">{}</p>",
+            escape_text(label)
+        ));
+    }
+    tokens
+}
+
 impl<'a> RenderContext<'a> {
     pub(crate) fn new(options: &'a Options<'a>) -> Self {
         Self {
@@ -889,6 +915,13 @@ impl<'a> RenderContext<'a> {
     /// active HTML render the base id is returned unchanged.
     pub fn unique_id(&self, base_id: &str) -> String {
         crate::document_ids::unique_id(base_id)
+    }
+
+    pub(crate) fn mint_admonition_id(&self) -> String {
+        self.state
+            .expect("block extension render state")
+            .borrow_mut()
+            .mint_admonition_id()
     }
 
     pub fn escape_html(&self, input: &str) -> String {

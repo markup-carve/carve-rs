@@ -343,7 +343,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
                     attrs: a.attrs.take(),
                     name: LIST_CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
-                    summary: None,
+                    summary: a.title.take(),
                     label: a.label.take(),
                     pos: None,
                 });
@@ -469,15 +469,15 @@ fn render_index_list(
     // Preserve any authored content inside the placeholder before the list. That
     // content becomes the framework-indented first line, so the `<ul>` is no
     // longer first and must supply its own `pad`.
-    if node.children.is_empty() {
+    let mut parts = Vec::new();
+    if !node.children.is_empty() {
+        parts.push(ctx.render_blocks_at(&node.children, level));
+    }
+    parts.extend(crate::extension::directive_tokens(node, ctx, level, None));
+    if parts.is_empty() {
         ul
     } else {
-        format!(
-            "{}\n{}{}",
-            ctx.render_blocks_at(&node.children, level),
-            pad,
-            ul
-        )
+        format!("{}\n{}{}", parts.join("\n"), pad, ul)
     }
 }
 

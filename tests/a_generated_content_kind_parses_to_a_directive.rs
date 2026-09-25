@@ -99,18 +99,15 @@ fn a_directive_carries_its_opener_label() {
 }
 
 #[test]
-fn a_directive_publishes_no_title_because_the_schema_names_none() {
-    // markup-carve/carve#2247: `:::` admits a quoted title on every named
-    // container and `directive` has no slot for one, so the title is not
-    // carried. Pinned rather than left to be discovered.
+fn a_directive_publishes_its_opener_title() {
     let json = carve::to_json(&parse("::: toc \"Contents\"\n:::\n"));
     assert!(
         json.contains(r#""type":"directive""#),
         "still a directive: {json}"
     );
     assert!(
-        !json.contains("Contents"),
-        "the opener title has nowhere to go on this node: {json}"
+        json.contains(r#""title":[{"type":"text","value":"Contents"}]"#),
+        "the opener title belongs on this node: {json}"
     );
 }
 

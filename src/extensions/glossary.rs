@@ -131,7 +131,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
-                    summary: None,
+                    summary: a.title.take(),
                     label: a.label.take(),
                     pos: None,
                 });
@@ -196,11 +196,15 @@ fn render_glossary(
     // authored `{#id .class}` rides on the first <dl>.
     let mut first_dl = true;
     let mut parts: Vec<String> = Vec::new();
+    let mut tokens = crate::extension::directive_tokens(node, ctx, level, None);
     for child in &node.children {
         let BlockNode::DefinitionList(dl) = child else {
             parts.push(ctx.render_blocks_at(std::slice::from_ref(child), level));
             continue;
         };
+        if first_dl {
+            parts.append(&mut tokens);
+        }
         let mut rows: Vec<String> = Vec::new();
         for item in &dl.items {
             for term in &item.terms {
