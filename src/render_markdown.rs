@@ -596,9 +596,6 @@ fn render_list_item(
     ctx: &mut MarkdownContext,
     depth: usize,
 ) -> String {
-    if !tight {
-        return render_blocks(&item.children, ctx, depth);
-    }
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
@@ -606,15 +603,82 @@ fn render_list_item(
     let mut out = String::new();
     for child in &item.children {
         let rendered = render_block(child, ctx, depth);
-        if out.ends_with("\n\n")
+        if tight
+            && out.ends_with("\n\n")
             && interrupts_a_paragraph(child, &rendered)
             && !absorbs_below(&out, child)
         {
             out.pop();
+        } else if out.ends_with('\n')
+            && !out.ends_with("\n\n")
+            && swallowed_by_a_lazy_line(&out, child)
+        {
+            out.push('\n');
         }
         out.push_str(&rendered);
     }
     out
+}
+
+/// Whether the block below is read as more text of the block above because no
+/// blank line separates them and its own spelling opens with plain text.
+///
+/// A nested list is the only block this target writes with no blank line behind
+/// it, so this is the seam the tight-item predicate cannot reach: it decides
+/// about a blank that was never written. A table is in the swallowed set even
+/// though its delimiter row promotes a paragraph at the same level, because a
+/// lazy continuation line cannot open one - the rows arrive as the last nested
+/// item's text and the table does not reach the output (carve-rs#1930).
+///
+/// The tail has to be able to TAKE lazy text, which a bare marker and a heading
+/// cannot, so those stay glued and the item stays tight.
+fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
+    if !matches!(
+        below,
+        BlockNode::Paragraph(_) | BlockNode::Table(_) | BlockNode::DefinitionList(_)
+    ) {
+        return false;
+    }
+    let tail = above_text
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or_default()
+        .trim_start_matches([' ', '\t']);
+    if bare_marker_line(tail) || thematic_break_line(tail) {
+        return false;
+    }
+    let text = marker_content(tail);
+    !text.is_empty() && !text.starts_with(['#', '>', '|', '`', '~', '='])
+}
+
+/// A line's content with one list marker removed, for the marker lines a nested
+/// list ends on.
+fn marker_content(line: &str) -> &str {
+    if let Some(rest) = line.strip_prefix(['-', '*', '+']) {
+        if let Some(rest) = rest.strip_prefix(' ') {
+            return rest.trim_start_matches(' ');
+        }
+    }
+    let digits = line.trim_start_matches(|c: char| c.is_ascii_digit());
+    if digits.len() < line.len() {
+        if let Some(rest) = digits.strip_prefix(['.', ')']) {
+            if let Some(rest) = rest.strip_prefix(' ') {
+                return rest.trim_start_matches(' ');
+            }
+        }
+    }
+    line
+}
+
+/// A run of three or more of one break character, which closes everything above
+/// it rather than continuing it.
+fn thematic_break_line(line: &str) -> bool {
+    let line = line.trim_end_matches([' ', '\t']);
+    let Some(first) = line.chars().next() else {
+        return false;
+    };
+    matches!(first, '-' | '*' | '_') && line.len() >= 3 && line.chars().all(|c| c == first)
 }
 
 /// Whether removing the blank makes the text above swallow this block.
