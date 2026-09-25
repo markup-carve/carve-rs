@@ -333,11 +333,28 @@
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
     "commit": "7b5771b491346694ce1ccb01a4fdc960862410fb",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
+    "divergenceReasons": "Each entry says WHY as one of three kinds. `upstream-names-a-node` and `upstream-has-no-node` are claims about upstream: they name the ProseMirror node, and tools/check-schema-map.py resolves that name against the published list on every run, so the reason goes false mechanically rather than when somebody rereads it. `prose` carries no such claim and stays ungated beyond the check that the difference still exists (markup-carve/carve#2270).",
     "divergences": {
-      "abbreviation_def": "upstream gives it a node; here the definition rides on the doc node's attrs, so taking it is a bridge change",
-      "citation_definition": "upstream gives it a node; this bridge still reports and drops it",
-      "figure_group": "upstream gives it a node; this bridge degrades it to the generic div mapping",
-      "inline_extension": "upstream added a second, primary ProseMirror name; changing the emitted name is a separate bridge change"
+      "abbreviation_def": {
+        "kind": "upstream-names-a-node",
+        "node": "carveAbbreviationDefinition",
+        "why": "here the definition rides on the doc node's attrs, so taking it is a bridge change"
+      },
+      "citation_definition": {
+        "kind": "upstream-names-a-node",
+        "node": "carveCitationDefinition",
+        "why": "this bridge still reports and drops it"
+      },
+      "figure_group": {
+        "kind": "upstream-names-a-node",
+        "node": "carveFigureGroup",
+        "why": "this bridge degrades it to the generic div mapping"
+      },
+      "inline_extension": {
+        "kind": "upstream-names-a-node",
+        "node": "carveInlineExtension",
+        "why": "upstream made this the primary of two names; changing the emitted name is a separate bridge change"
+      }
     },
     "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` remains unmapped because it is nested group state rather than a standalone editor node."
   }

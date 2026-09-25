@@ -90,7 +90,11 @@ build there even outside the clippy job.
 
 `tools/check-schema-map.py` checks the ProseMirror schema map against
 carve-grammars. It needs a checkout of that repository, so it is easier to read
-the CI job than to reproduce it locally.
+the CI job than to reproduce it locally. A declared divergence says why as one of
+three reason kinds, two of which name the ProseMirror node they claim upstream
+does or does not publish; the checker resolves that name on every run, so such a
+reason goes false by itself. `python3 -m unittest discover -s tools -p 'test_*.py'`
+covers that gate, with `CARVE_GRAMMARS_DIR` pointing at the checkout.
 
 ## Conformance and the corpus
 

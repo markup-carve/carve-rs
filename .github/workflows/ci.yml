@@ -80,6 +80,11 @@ jobs:
           path: .carve-grammars
           fetch-depth: 0
       - run: python3 tools/check-schema-map.py --grammars .carve-grammars --github
+      # The reason gate, watched firing: it refuses a declaration whose claim
+      # about upstream has gone false, which the difference check cannot see.
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
+        env:
+          CARVE_GRAMMARS_DIR: .carve-grammars
 
   test:
     name: Build and test (Rust ${{ matrix.toolchain }})

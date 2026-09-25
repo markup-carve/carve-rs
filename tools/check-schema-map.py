@@ -14,7 +14,11 @@ continuously, so a gate on distance would be red from any open pull request and
 clearable only by luck; the distance is reported as a number instead.
 
 Every difference from upstream has to be named in `_provenance.divergences`,
-which is how a deliberate one is told apart from drift. Exit 0 all assertions
+which is how a deliberate one is told apart from drift. A declaration also says
+WHY as one of a closed set of reason kinds, and two of those kinds are claims
+about upstream this script tests (markup-carve/carve#2270): the difference
+disappearing and the reason going false are separate ways for a declaration to
+stop being true, and only the first used to be refused. Exit 0 all assertions
 hold, 1 an assertion failed, 2 usage error.
 """
 
@@ -31,6 +35,13 @@ FULL_REV_RE = re.compile(r"^[0-9a-f]{40}$")
 # `notes` is local prose, and `attrs`/`aliasOf` are upstream keys this engine's
 # loader never reads. A difference in one of them is not a decision.
 DECISION_KEYS = ("kind", "pm", "accepts")
+NODE_NAME_RE = re.compile(r"^carve[A-Z][A-Za-z0-9]*$")
+
+# What a divergence may say about upstream, and which of those a checker can
+# test. `prose` is the escape hatch: it carries no claim about upstream, so
+# nothing beyond the difference check reaches it.
+REASON_KINDS = ("upstream-has-no-node", "upstream-names-a-node", "prose")
+NODE_KINDS = ("upstream-has-no-node", "upstream-names-a-node")
 
 
 class Failure(Exception):
@@ -78,6 +89,87 @@ def provenance(local: dict) -> tuple[str, str, dict]:
     if not isinstance(divergences, dict):
         raise Failure("provenance_present", "`_provenance.divergences` is not an object")
     return str(commit), str(source), divergences
+
+
+def reason_shapes(divergences: dict) -> None:
+    """Every declaration carries one of `REASON_KINDS`, with the fields it needs.
+
+    An unconstrained prose field cannot be gated at all, which is how four
+    declarations kept saying "carve-grammars names no node for it yet" through an
+    upstream decision (markup-carve/carve#2270).
+    """
+    bad = []
+    for ty, entry in sorted(divergences.items()):
+        if not isinstance(entry, dict):
+            bad.append(f"{ty}: is {type(entry).__name__}, not an object with a `kind`")
+            continue
+        kind = entry.get("kind")
+        if kind not in REASON_KINDS:
+            bad.append(f"{ty}: `kind` is {kind!r}, not one of {', '.join(REASON_KINDS)}")
+            continue
+        if not str(entry.get("why") or "").strip():
+            bad.append(f"{ty}: says no `why`")
+        if kind not in NODE_KINDS:
+            continue
+        node = entry.get("node")
+        if not node:
+            bad.append(f"{ty}: `{kind}` names no `node`, so its claim about upstream cannot be tested")
+        elif not NODE_NAME_RE.match(str(node)):
+            bad.append(f"{ty}: `{node}` is not a ProseMirror name upstream could publish")
+    if bad:
+        raise Failure("divergence_reasons_are_shaped", "; ".join(bad))
+
+
+def upstream_node_names(doc: dict) -> set:
+    """Every ProseMirror name upstream publishes, mapped type or not.
+
+    `preservationNodes` and `markCarrierNodes` are named nodes that belong to no
+    Carve type, so a declaration claiming one is absent has to see them too.
+    """
+    names = set()
+    for entry in (doc.get("types") or {}).values():
+        if not isinstance(entry, dict):
+            continue
+        pm = entry.get("pm")
+        names.update([pm] if isinstance(pm, str) else [n for n in (pm or []) if isinstance(n, str)])
+    for key in ("preservationNodes", "markCarrierNodes"):
+        names.update(name for name in (doc.get(key) or {}) if name != "about")
+
+    return names
+
+
+def reasons_hold(divergences: dict, head: dict, branch: str) -> None:
+    """Test each declaration's claim about upstream against upstream's own list.
+
+    Two halves per kind, because one of them is typo-proof: the NAME the entry
+    gives is resolved against the published names, and upstream's decision about
+    the TYPE is read from the key the entry is filed under. A misspelled name
+    would otherwise never resolve and the claim would hold forever.
+    """
+    published = upstream_node_names(head)
+    decided = head.get("types") or {}
+    false_now = []
+    for ty, entry in sorted(divergences.items()):
+        kind = entry["kind"]
+        if kind not in NODE_KINDS:
+            continue
+        node = str(entry["node"])
+        resolves = node in published
+        if kind == "upstream-has-no-node":
+            if resolves:
+                false_now.append(f"{ty}: {branch} publishes `{node}`")
+            elif ty in decided:
+                false_now.append(f"{ty}: {branch} names a node for it, `{decided[ty].get('pm')}`")
+        elif not resolves:
+            false_now.append(f"{ty}: {branch} publishes no `{node}`")
+        elif ty not in decided:
+            false_now.append(f"{ty}: {branch} names no node for it at all")
+    if false_now:
+        raise Failure(
+            "divergence_reasons_hold",
+            f"{len(false_now)} declaration(s) state something about upstream that is no longer "
+            f"true; correct the reason or drop the entry: " + "; ".join(false_now),
+        )
 
 
 def source_path(source: str) -> str:
@@ -184,6 +276,11 @@ def main(argv=None) -> int:
         pinned = upstream_at(args.grammars, commit, path, "source_readable")
         head = upstream_at(args.grammars, ref, path, "pin_is_current")
 
+        # Ahead of the difference checks: a reason goes false while the
+        # difference persists, so the two cannot be reached through each other.
+        reason_shapes(divergences)
+        reasons_hold(divergences, head, args.branch)
+
         used = compare(decisions(local), decisions(pinned), divergences, "decisions_match_pin", "the pin")
         used |= compare(decisions(pinned), decisions(head), divergences, "pin_is_current", f"{args.branch}")
 
@@ -205,8 +302,9 @@ def main(argv=None) -> int:
         ).stdout.strip() or "?"
         print(f"recorded carve-grammars commit: {commit}")
         print(f"{args.branch} is {behind} commit(s) ahead of it, {touching} of them touching the map")
-        for ty, why in sorted(local["_provenance"].get("divergences", {}).items()):
-            print(f"declared divergence: {ty} - {why}")
+        for ty, entry in sorted(local["_provenance"].get("divergences", {}).items()):
+            node = f" ({entry['node']})" if entry.get("node") else ""
+            print(f"declared divergence: {ty} [{entry['kind']}{node}] - {entry['why']}")
 
     for failure in failures:
         annotate("error", f"{failure.check}: {failure.message}", args.github)
