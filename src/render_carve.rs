@@ -359,32 +359,11 @@ fn narrow_escalation(
     best
 }
 
-/// The candidate escapes an escalated unit can still hand back, one occurrence
-/// at a time (PART 11 §2).
-///
-/// SAME SEARCH, ONE LEVEL FINER. The comparison is still document-scoped, so a
-/// failure still reports THAT the document changed and never WHERE; the
-/// occurrence is found by trying, and every state kept is one that re-parsed to
-/// the tree the conservative form parses to.
-///
-/// THE OCCURRENCES ARE LOGGED, NOT PREDICTED. A candidate site is whatever the
-/// writer's own escape arms visit, so they are collected by rendering once with
-/// the log switched on rather than by a second enumeration here that could
-/// drift from the one that emits.
-///
-/// THE FIRST RENDER IS A CONTROL, as it is one level up. With nothing relaxed
-/// it must reproduce the state the unit search settled on byte for byte; if
-/// logging changed what was written, the unit-scoped answer stands rather than
-/// a narrowing built on a pass that is not the pass being measured.
-///
-/// BOUNDED THE SAME WAY AND FOR THE SAME REASON. A group holding no failing
-/// occurrence is relaxed in one render, so a document with a handful of them
-/// costs about log(n) renders -- but a document where every occurrence is load
-/// bearing drives the halving to its leaves and pays a render and a parse per
-/// occurrence, which is a render of the whole document per escaped character. A
-/// paragraph of indented table rows is exactly that, and it is ordinary input
-/// rather than an adversarial one. The OUTPUT is unchanged where the budget
-/// binds: those occurrences are the opener runs §2 requires escaped in full.
+/// Narrow escaping one occurrence at a time after the unit-level pass.
+/// Candidate sites come from the writer's own log. If logging changes the
+/// control render, the unit-level result is kept. The search is bounded because
+/// every load-bearing occurrence can require another full render and parse.
+/// Where the budget binds, remaining occurrences stay escaped as §2 requires.
 fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut String) {
     let unit_scoped = best.clone();
     RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
