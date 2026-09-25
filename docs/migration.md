@@ -49,7 +49,9 @@ spelling: a setext heading comes back as `#`, an indented code block as a
 fence. It has no mode or adapter. `--report` emits a dropped/fallback
 `fidelity-unverified` finding, so `--check-loss` deliberately exits 1. A blank
 GFM table row is dropped with a `structure-unspellable` warning in the migration
-report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics.
+report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics. An
+ordered task item keeps its marker as text, as in `1. [x] done`, because Carve
+spells a checkbox only behind a bullet.
 
 Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages. Like Markdown,
