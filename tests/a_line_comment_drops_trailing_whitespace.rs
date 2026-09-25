@@ -47,6 +47,13 @@ fn comment_content_uses_one_separator_and_drops_only_trailing_ascii_whitespace()
         ("%% \u{a0}\n", "\u{a0}"),
         ("%%\u{000b}x\n", "\u{000b}x"),
         ("%%\u{000b} x\n", "\u{000b} x"),
+        // A TAB is a separator too, and only the first one is. Removing the tab
+        // branch from all three readers left the whole suite green, so nothing
+        // else pins it (markup-carve/carve-rs#1951).
+        ("%%\t\tx\t\n", "\tx"),
+        ("z %%\t\tx\t\n", "\tx"),
+        ("::: |\na\n%%\t\tx\t\nb\n:::\n", "\tx"),
+        ("%%\t\u{a0}\n", "\u{a0}"),
     ] {
         assert_eq!(comment_contents(source), [expected], "{source:?}");
         let written = to_carve(source);
