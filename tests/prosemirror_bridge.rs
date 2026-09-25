@@ -1359,8 +1359,28 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // none of them. 494 is `{header-rows=1}` and 495 is `{footer-rows=1}`, and
     // 376-pipe-tables-can-state-head-and-foot-row-counts already carried the
     // same cause at the old pin - it was the only such document until now.
-    const STRICT: usize = 1445;
-    const LOSSY: usize = 415;
+    //
+    // ONE DOCUMENT CHANGES BUCKET HERE, AND THE READING ABOVE IS WHY IT CAN.
+    // "No corpus document reaches `block_extension`, `directive` or `ruby`" was
+    // measured off this report, and the report was the thing that was wrong:
+    // `to_pm` wrote a directive as an admonition without a degradation row, so a
+    // scan of the reported causes could not see the `::: footnotes` in
+    // 122-footnotes-placement.crv (carve-rs#1879). The claim held for
+    // `block_extension` and `ruby` and was false for `directive`.
+    //
+    // Reporting that substitution moves 122 from strict to lossy: 1445/415
+    // becomes 1444/416, and it is the only document that moves. Its round trip
+    // did not get worse - `from_pm` still reads the kind back and rebuilds the
+    // directive, and the HTML is unchanged - but the bucket is defined by an
+    // EMPTY report, so a report that stops lying reclassifies the document.
+    //
+    // That costs coverage, and the cost is the argument for the real fix rather
+    // than an argument against the row: a lossy document gets no HTML-equality
+    // and no canonical-source assertion here, so 122 leaves both. Emitting
+    // `carveDirective` would keep it strict and let both numbers go back up,
+    // which is carve-rs#1876.
+    const STRICT: usize = 1444;
+    const LOSSY: usize = 416;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
@@ -2340,5 +2360,58 @@ fn an_empty_code_span_survives_the_trip() {
     assert_eq!(
         render_html(&returned).unwrap(),
         render_html(&filled).unwrap()
+    );
+}
+
+/// A directive crossing the wire either carries its OWN ProseMirror name or is
+/// reported, and the assertion is written that way on purpose: pinning the
+/// emitted name to `carveDirective` would pass once carve-rs#1876 takes
+/// carve-grammars#562's node and say nothing about the interim, while pinning
+/// the degradation row alone would have to be deleted when the real node lands.
+/// This form holds under both, and fails on a bridge that substitutes silently.
+///
+/// It reads the CORPUS rather than a hand-built AST, because the premise of
+/// carve-rs#1879 is that the type is reachable from an ordinary document - a
+/// constructed `BlockNode::Directive` would prove the arm exists without
+/// proving anything about what a corpus run reports.
+#[test]
+fn a_directive_either_carries_its_own_name_or_is_reported() {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    let own_names = mapped_names(&map, "directive");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut checked = 0usize;
+    for entry in fs::read_dir(corpus).expect("corpus directory exists") {
+        let path = entry.expect("corpus entry is readable").path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("crv") {
+            continue;
+        }
+        let source = fs::read_to_string(&path).expect("corpus source is readable");
+        let document = parse(&source);
+        if !document
+            .children
+            .iter()
+            .any(|block| matches!(block, BlockNode::Directive(_)))
+        {
+            continue;
+        }
+        checked += 1;
+        let report = to_prosemirror(&document);
+        let mut emitted = BTreeSet::new();
+        collect_bridge_types(&report.json, &mut emitted);
+        let named = own_names.iter().any(|name| emitted.contains(name));
+        let told =
+            report.degraded.contains_key("directive") || report.dropped.contains_key("directive");
+        assert!(
+            named || told,
+            "{}: a directive crossed the wire as {:?} with no `directive` row in degraded {:?} or dropped {:?}",
+            path.display(),
+            emitted,
+            report.degraded.keys().collect::<Vec<_>>(),
+            report.dropped.keys().collect::<Vec<_>>(),
+        );
+    }
+    assert!(
+        checked > 0,
+        "no corpus document parsed to a directive, so this gate asserted nothing"
     );
 }
