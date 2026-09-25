@@ -1691,8 +1691,7 @@ fn extract_footnote_defs(
                         // to be read at ANY column to say so: `detect_fence_open`
                         // above only sees a flush fence, so an INDENTED one left
                         // the flag standing and the dedent ate a column of the
-                        // code block - 40 documents, raised by `codex review`
-                        // and invisible to a 2289-document sweep.
+                        // code block.
                         //
                         // NO UPPER BOUND on the residual. A first version
                         // absorbed only strictly BELOW the nested note's own
@@ -2625,9 +2624,8 @@ fn extract_link_defs_with_guard(
                     // below its content column. An UNTERMINATED colon fence closes
                     // WITH its host, so its ownership must not reach a later
                     // sibling item - without this reset a `[r]: /url` in the next
-                    // item was kept as text instead of hoisted (codex review of
-                    // the 451 fix). Clear the state and let this line be processed
-                    // normally, where it may itself hoist or reopen.
+                    // item was kept as text instead of hoisted. Clear the state
+                    // so this line can hoist or reopen normally.
                     colon_fence = None;
                 } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
                     // Past the container's own content column: it is the
@@ -3813,9 +3811,9 @@ struct MappedSource {
     /// else - the document, a block quote, a list item - the run between the
     /// container's content column and the marker is the indentation that PLACES
     /// the marker, and PART 12 section 4 puts it INSIDE the span. Anchoring every
-    /// list at its marker instead moved nine corpus documents off carve-js
-    /// (markup-carve/carve#1797); this flag keeps the marker anchor to the two
-    /// bodies that earn it (markup-carve/carve#1980, converging with carve-js's
+    /// list at its marker diverges from carve-js (markup-carve/carve#1797).
+    /// This flag keeps the marker anchor to the two bodies that earn it
+    /// (markup-carve/carve#1980, converging with carve-js's
     /// `sublistsCarryAuthoredBase`).
     sublists_carry_authored_base: bool,
 }
@@ -5977,9 +5975,8 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 // the ordinary list rule reads it as lazy text - which is
                 // exactly what the enclosing body's own block is not.
                 //
-                // `indent > base` rather than `>= base` is an equivalent mutant
-                // today: measured over the whole corpus and 6000 generated
-                // shapes, widening it moves nothing, because the outer scan
+                // `indent > base` rather than `>= base` is equivalent for known shapes:
+                // widening it moves nothing, because the outer scan
                 // picks a marker at the base up again as its own opener. It is
                 // written this way because a line AT the marker's column is
                 // where a sibling marker goes, which belongs in the run.

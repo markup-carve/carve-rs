@@ -1505,7 +1505,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // document never had. The label between them is author
                     // content and gets the HTML pass for the same reason: this
                     // branch was deciding the question for brackets and
-                    // skipping it for `<` (raised by codex review).
+                    // skipping it for `<`.
                     format!("\\[^{}\\]", escape_md_html(&id))
                 }
             }
