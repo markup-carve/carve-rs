@@ -241,46 +241,21 @@ impl Renderer {
                 }
                 (self.name("admonition")?, a, self.blocks(&n.children))
             }
-            // THE SUBSTITUTION IS REPORTED, because it is a substitution. A
-            // directive rides the admonition node with its kind explicit, and
-            // `from_pm` reads the kind back and rebuilds the directive, so the
-            // round trip through this pair survives - but the WIRE says
-            // `admonition` for something that is not one. A consumer cannot
-            // tell it from an authored admonition, and `admonition.kind` denies
-            // the six generated-content kinds, so a tree rebuilt from that name
-            // by anything but this bridge is one the schema refuses. An
-            // unreported substitution is a wrong value presented as a right
-            // one, which ranks below a reported loss.
-            //
-            // The report is the interim, not the fix: carve-grammars#562 named
-            // `carveDirective`, and taking it is the schema-map refresh
-            // carve-rs#1876 tracks for all four types it decided at once.
+            // Its OWN node, and the kind rides as `kind` rather than being
+            // appended to the classes the way an admonition's is. An admonition
+            // is a div with a type class, so its kind belongs there; the six
+            // generated-content kinds are not classes and `admonition.kind`
+            // refuses them, so a shared node would force the way back to choose
+            // between emitting a tree the schema rejects and keeping its own
+            // copy of the six-word list. CARVE-P12-057 exists so that list has
+            // one home every consumer reads.
             BlockNode::Directive(n) => {
-                self.degraded.insert(
-                    "directive".into(),
-                    "no mapped node: it rides the admonition node with its kind explicit, so the wire cannot distinguish it from an authored admonition and a tree rebuilt from that name carries a kind the admonition schema refuses".into(),
-                );
                 let mut a = attrs(n.attrs.as_ref());
-                let mut classes = a
-                    .remove("class")
-                    .and_then(|v| {
-                        if let Json::String(s) = v {
-                            Some(s)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-                if !classes.is_empty() {
-                    classes.push(' ');
-                }
-                classes.push_str(&n.kind);
-                a.insert("class".into(), Json::String(classes));
-                a.insert("carveAdmonitionKind".into(), Json::String(n.kind.clone()));
+                self.stamp(&mut a, "directive", "kind", Json::String(n.kind.clone()));
                 if let Some(label) = &n.label {
                     a.insert("label".into(), Json::String(label.clone()));
                 }
-                (self.name("admonition")?, a, self.blocks(&n.children))
+                (self.name("directive")?, a, self.blocks(&n.children))
             }
             BlockNode::Div(n) => {
                 let mut a = attrs(n.attrs.as_ref());
@@ -429,16 +404,33 @@ impl Renderer {
                 ]),
                 self.text_content(&n.content, &[]),
             ),
-            // CARVE-P12-055: the bridge registers no node for this, and §33
-            // already answers what a reader without the extension does - the
-            // fallback takes the node's place. What is lost is the extension's
-            // identity, version and payload, which is what gets reported.
+            // CARVE-P12-055: the required fallback is this node's CONTENT, not
+            // a stand-in that replaces it. It is a real block the editor edits
+            // and what the document means to a reader without the extension, so
+            // the name, version and payload ride as attributes beside it and
+            // nothing has to be reported lost.
             BlockNode::BlockExtension(n) => {
-                self.degraded.insert(
-                    "block_extension".into(),
-                    "no mapped node: the declared fallback takes its place, and the extension's name, version and payload are lost".into(),
-                );
-                return self.block(&n.fallback);
+                let mut a = attrs(n.attrs.as_ref());
+                let ty = "block_extension";
+                self.stamp(&mut a, ty, "name", Json::String(n.name.clone()));
+                if let Some(version) = &n.version {
+                    self.stamp(&mut a, ty, "version", Json::String(version.clone()));
+                }
+                if let Some(payload) = &n.payload {
+                    let mut p = Object::new();
+                    p.insert("format".into(), Json::String(payload.format.clone()));
+                    // Held as JSON TEXT in the AST and opaque to every core
+                    // target, so it goes back to a value here rather than being
+                    // re-escaped as a string the way back would have to guess at.
+                    if let Some(value) = &payload.value {
+                        if let Ok(parsed) = crate::ast_json::parse_value(value) {
+                            p.insert("value".into(), parsed);
+                        }
+                    }
+                    self.stamp(&mut a, ty, "payload", Json::Object(p));
+                }
+                let fallback = self.block(&n.fallback).into_iter().collect();
+                (self.name(ty)?, a, fallback)
             }
             BlockNode::ExtensionCarrier(_) => {
                 self.drop_type(
@@ -676,10 +668,13 @@ impl Renderer {
                     {
                         self.degrade(emphasis_type(n.kind));
                     }
-                    next.push(mark(name, attrs(n.attrs.as_ref())));
+                    if n.kind == EmphasisKind::SmallCaps {
+                        self.small_caps(n.attrs.as_ref(), name, &mut next);
+                    } else {
+                        next.push(mark(name, attrs(n.attrs.as_ref())));
+                    }
                 } else {
-                    // The map names no mark for this kind - `small_caps` today,
-                    // which carve-grammars has not decided. The CHILDREN are
+                    // The map names no mark for this kind. The CHILDREN are
                     // ordinary inline content, so they go through unmarked and
                     // it is the wrapper that is reported lost, the way the
                     // canonical Carve writer flattens the same node.
@@ -770,18 +765,30 @@ impl Renderer {
                     self.empty_mark("span", attrs(n.attrs.as_ref()), marks, out);
                 }
             }
+            // An inline ATOM: `pairs` IS the association, and there is no
+            // parallel children field a content expression could stand in for,
+            // so each pair's halves ride as inline arrays inside the attribute
+            // the way a citation group's prefix and suffix already do.
             InlineNode::Ruby(n) => {
-                self.degrade("ruby");
-                for pair in &n.pairs {
-                    for child in &pair.base {
-                        self.inline(child, marks, out);
-                    }
-                    self.push_text(out, "(", marks);
-                    for child in &pair.annotation {
-                        self.inline(child, marks, out);
-                    }
-                    self.push_text(out, ")", marks);
-                }
+                let mut a = attrs(n.attrs.as_ref());
+                let pairs = n
+                    .pairs
+                    .iter()
+                    .map(|pair| {
+                        let mut p = Object::new();
+                        p.insert("base".into(), Json::Array(self.inlines(&pair.base, &[])));
+                        p.insert(
+                            "annotation".into(),
+                            Json::Array(self.inlines(&pair.annotation, &[])),
+                        );
+                        Json::Object(p)
+                    })
+                    .collect();
+                self.stamp(&mut a, "ruby", "pairs", Json::Array(pairs));
+                let Some(name) = self.name("ruby") else {
+                    return;
+                };
+                out.push(node_marked(name, a, Vec::new(), marks));
             }
             InlineNode::Math(n) => {
                 let mut a = attrs(n.attrs.as_ref());
@@ -998,6 +1005,50 @@ impl Renderer {
         }
     }
 
+    /// A STRUCTURAL attribute, reporting an authored one of the same name
+    /// rather than overwriting it in silence.
+    ///
+    /// The three types upstream named at carve-grammars#562 spell their
+    /// structure under plain names - `kind`, `name`, `version`, `payload`,
+    /// `pairs` - where an admonition's kind takes a `carve`-prefixed one, so an
+    /// author who wrote a key of that name loses it here. That is the shared
+    /// map's call and not this bridge's to re-spell, but it is a loss and says
+    /// so.
+    fn stamp(&mut self, a: &mut Object, ty: &str, key: &str, value: Json) {
+        if a.insert(key.into(), value).is_some() {
+            self.degraded.insert(
+                ty.into(),
+                format!(
+                    "an authored `{key}` attribute shares its name with the structural one, \
+                     which wins"
+                ),
+            );
+        }
+    }
+
+    /// The small-caps mark, which carries the distinction and nothing else.
+    ///
+    /// CARVE-P12-050 keeps an attribute run on an ordinary attributed span
+    /// around the same children rather than on the wrapper, and a canonical
+    /// Carve writer does the same. Riding here it would come back on a mark the
+    /// AST has no attributed spelling for, so the run takes the span and the
+    /// nesting it gains is reported.
+    fn small_caps(&mut self, a: Option<&Attrs>, name: &'static str, next: &mut Vec<Json>) {
+        let carried = attrs(a);
+        if !carried.is_empty() {
+            if let Some(span) = self.name("span") {
+                self.degraded.insert(
+                    "small_caps".into(),
+                    "its attribute run moves to an ordinary span around the same children, \
+                     so the wrapper comes back nested inside one rather than attributed"
+                        .into(),
+                );
+                next.push(mark(span, carried));
+            }
+        }
+        next.push(mark(name, Object::new()));
+    }
+
     fn mark_children(
         &mut self,
         ty: &str,
@@ -1103,8 +1154,6 @@ impl Renderer {
             EmphasisKind::Super => self.name("superscript"),
             EmphasisKind::Sub => self.name("subscript"),
             EmphasisKind::Highlight => self.name("highlight"),
-            // carve-grammars names no mark for it, so the map keeps it under
-            // `unmapped` and `name` degrades it to its children.
             EmphasisKind::SmallCaps => self.name("small_caps"),
         }
     }

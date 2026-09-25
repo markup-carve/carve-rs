@@ -104,6 +104,16 @@
       "pm": "carveDiv",
       "notes": "profile vocabulary only: an admonition is a div with a type class"
     },
+    "directive": {
+      "kind": "node",
+      "pm": "carveDirective",
+      "notes": "its own node, deliberately not an alias of carveDiv the way admonition is: kind is what tells the six generated-content kinds apart, and admonition.kind now refuses those same six, so a bridge reading a shared node back would have to emit the admonition the AST schema rejects or keep its own copy of the enum. Children are usually empty; the content is generated from the document"
+    },
+    "block_extension": {
+      "kind": "node",
+      "pm": "carveBlockExtension",
+      "notes": "the required fallback is the node's CONTENT, not an attribute: it is a real block the editor edits. name, version and payload ride as attrs, so nothing is lost any more. Carve 0.1 source spells none, so one arrives over the AST-JSON wire only"
+    },
     "definition_list": {
       "kind": "node",
       "pm": "definitionList"
@@ -188,6 +198,11 @@
       "pm": "carveSymbol",
       "notes": "inline atom; name attr"
     },
+    "ruby": {
+      "kind": "node",
+      "pm": "carveRuby",
+      "notes": "inline atom, because pairs IS the association and there is no parallel children field a content expression could stand in for; each pair's base and annotation are ProseMirror inline arrays. Carve 0.1 source spells no ruby, so one arrives over the AST-JSON wire only"
+    },
     "citation_group": {
       "kind": "node",
       "pm": "carveCitation",
@@ -235,6 +250,11 @@
       "kind": "mark",
       "pm": "superscript"
     },
+    "small_caps": {
+      "kind": "mark",
+      "pm": "carveSmallCaps",
+      "notes": "a mark, not a node: it wraps inline content and nests with every other mark, where a node would make it an atom and stop the text inside being edited. Its own attribute run does not ride here - it goes on an ordinary carveSpan around the same children, and this mark carries the small-caps distinction alone"
+    },
     "insert": {
       "kind": "mark",
       "pm": "carveInsert"
@@ -277,11 +297,7 @@
     "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
     "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
     "soft_break": "a soft break is whitespace in the ProseMirror model",
-    "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not",
-    "small_caps": "an interchange-only wrapper this engine never produces; carve-grammars names no ProseMirror node or mark for it, and inventing one here would emit a name no downstream editor knows",
-    "ruby": "an interchange-only annotation this engine never produces; its paired base and annotation have no Carve 0.1 spelling, and carve-grammars names no ProseMirror node for it",
-    "block_extension": "the block twin of inline_extension, which Carve 0.1 source does not spell, so a parse produces none; carve-grammars names no ProseMirror node for it, so the bridge keeps the required core fallback in its place and reports the lost name, version and payload as a degradation",
-    "directive": "carve-grammars names no ProseMirror node for it, so a directive rides the admonition node with its kind explicit, exactly as a generated-content ::: kind did while it still parsed as an admonition; from_prosemirror reads the kind back and rebuilds the directive"
+    "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not"
   },
   "preservationNodes": {
     "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
@@ -315,18 +331,14 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "31eb9603221e9187a40e7c698d9a04ad15b411f7",
+    "commit": "7b5771b491346694ce1ccb01a4fdc960862410fb",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergences": {
       "abbreviation_def": "upstream gives it a node; here the definition rides on the doc node's attrs, so taking it is a bridge change",
       "citation_definition": "upstream gives it a node; this bridge still reports and drops it",
       "figure_group": "upstream gives it a node; this bridge degrades it to the generic div mapping",
-      "inline_extension": "upstream added a second, primary ProseMirror name; changing the emitted name is a separate bridge change",
-      "small_caps": "the spec added the type (markup-carve/carve#2210) and upstream has not decided it yet; unmapped here so every schema type has a decision, and it comes out when carve-grammars names one",
-      "ruby": "the spec added the type (markup-carve/carve#2221) and upstream has not decided it yet; same shape as small_caps above",
-      "block_extension": "the spec added the type (markup-carve/carve#2223) and upstream has not decided it yet; same shape as small_caps above",
-      "directive": "the spec added the type (markup-carve/carve#2225) and upstream has not decided it yet; same shape as small_caps above"
+      "inline_extension": "upstream added a second, primary ProseMirror name; changing the emitted name is a separate bridge change"
     },
-    "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` remains unmapped because it is nested group state rather than a standalone editor node. `small_caps`, `ruby`, `block_extension` and `directive` are unmapped because upstream names no ProseMirror node for them yet."
+    "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` remains unmapped because it is nested group state rather than a standalone editor node."
   }
 }

@@ -244,6 +244,69 @@ impl Reader {
                 }
                 Ok(n)
             }
+            // CARVE-P12-057. The kind arrives on the node, so nothing here has
+            // to decide what the container was from a list of words - which is
+            // the reason upstream gave the type a node of its own rather than
+            // an alias of the div an admonition rides.
+            "directive" => {
+                let children = array_field(obj, "content")
+                    .iter()
+                    .map(|v| self.block(v))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mut n = with_attrs(
+                    node(
+                        &ty,
+                        [
+                            ("kind", string_json(a, "kind", "")),
+                            ("label", optional_string(a, "label")),
+                            ("children", Json::Array(children)),
+                        ],
+                    ),
+                    &without(a, &["kind"]),
+                );
+                remove_nulls(&mut n);
+                Ok(n)
+            }
+            // CARVE-P12-055: the fallback is the node's content, so it is read
+            // back out of the content rather than reconstructed. A payload with
+            // none cannot become a block extension at all - the field is
+            // REQUIRED - so it is refused rather than given an invented block.
+            "block_extension" => {
+                let content = array_field(obj, "content");
+                let Some(first) = content.first() else {
+                    return Err(ProseMirrorError::new(
+                        "A block extension needs its required fallback as content",
+                    ));
+                };
+                if content.len() > 1 {
+                    self.dropped.insert(
+                        ty.clone(),
+                        "a block extension has one required fallback, so blocks after the first \
+                         have nowhere to go"
+                            .into(),
+                    );
+                }
+                let mut n = with_attrs(
+                    node(
+                        &ty,
+                        [
+                            ("name", string_json(a, "name", "")),
+                            ("version", optional_string(a, "version")),
+                            ("fallback", self.block(first)?),
+                            (
+                                "payload",
+                                match a.get("payload") {
+                                    Some(Json::Object(p)) => Json::Object(p.clone()),
+                                    _ => Json::Null,
+                                },
+                            ),
+                        ],
+                    ),
+                    &without(a, &["name", "version", "payload"]),
+                );
+                remove_nulls(&mut n);
+                Ok(n)
+            }
             "list" => self.list(obj, flavor),
             "table" => self.table(obj),
             "definition_list" => self.definition_list(obj),
@@ -308,14 +371,16 @@ impl Reader {
             .iter()
             .map(|v| self.block(v))
             .collect::<Result<Vec<_>, _>>()?;
-        // CARVE-P12-057: one of the six generated-content kinds is a `directive`,
-        // whatever node carried it here. The bridge has one node for both named
-        // containers - carve-grammars names none for `directive` - so the kind is
-        // what decides, exactly as it does on the parse path.
-        //
-        // An `admonition` that arrived from an ingest carrying one of the six
-        // therefore comes back as a directive. That is the same answer the parser
-        // gives for the same kind, and the bridge cannot tell the two apart.
+        // A LEGACY WIRE SHAPE, and the only reason it is still read. The
+        // outbound side no longer writes a directive onto this node - upstream
+        // named one of its own at carve-grammars#562 and carve-rs#1876 took it -
+        // so nothing this engine emits reaches here any more. What does reach
+        // here is a payload an older version of this bridge wrote, and refusing
+        // to recognize it would decode that payload as an admonition whose kind
+        // `admonition.kind` denies: a wrong value presented as a right one,
+        // which is the failure carve-rs#1879 was about, arriving from the other
+        // direction. So the six still decide, and the answer is still the one
+        // the parser gives for the same kind.
         if crate::ast::is_generated_content_kind(kind) {
             let mut n = with_attrs(
                 node(
@@ -739,7 +804,7 @@ impl Reader {
                 }
             }
             "strong" | "emphasis" | "underline" | "strike" | "highlight" | "subscript"
-            | "superscript" | "insert" | "delete" | "span" => {
+            | "superscript" | "insert" | "delete" | "span" | "small_caps" => {
                 with_attrs(node(ty, [("children", Json::Array(children))]), a)
             }
             _ => {
@@ -881,6 +946,41 @@ impl Reader {
                         .collect();
                     with_attrs(node(carve_type, [(field, Json::String(name))]), &kept)
                 }
+            }
+            // An atom, so its halves come out of `pairs` rather than out of
+            // content. A base is REQUIRED and an annotation may be empty, which
+            // the AST decoder enforces; a pair missing its base is refused here
+            // so the error names the wire shape rather than the decoded one.
+            "ruby" => {
+                let Some(Json::Array(pairs)) = a.get("pairs") else {
+                    return Err(ProseMirrorError::new(
+                        "A ruby annotation needs its pairs as an array",
+                    ));
+                };
+                let mut out = Vec::new();
+                for pair in pairs {
+                    let po = object_ref(pair, "ruby pair")?;
+                    let mut o = Object::new();
+                    o.insert(
+                        "base".into(),
+                        Json::Array(self.inlines(match po.get("base") {
+                            Some(Json::Array(v)) => v,
+                            _ => &[],
+                        })?),
+                    );
+                    o.insert(
+                        "annotation".into(),
+                        Json::Array(self.inlines(match po.get("annotation") {
+                            Some(Json::Array(v)) => v,
+                            _ => &[],
+                        })?),
+                    );
+                    out.push(Json::Object(o));
+                }
+                with_attrs(
+                    node(ty, [("pairs", Json::Array(out))]),
+                    &without(a, &["pairs"]),
+                )
             }
             "raw_inline" => node(
                 ty,

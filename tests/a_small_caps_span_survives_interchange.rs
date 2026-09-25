@@ -176,20 +176,55 @@ fn a_profile_can_deny_it_by_name() {
     assert!(!json.contains("small_caps"), "{json}");
 }
 
+/// The bridge carries the wrapper as a MARK (carve-grammars#562, taken in
+/// carve-rs#1876), so the letters stay text and stay editable.
+///
+/// Before that the map named nothing for it and the wrapper was reported lost
+/// while its children went through unmarked. A mark also means the trip is
+/// exact, which a degrade never was.
 #[test]
-fn the_prosemirror_bridge_degrades_the_wrapper_and_keeps_its_children() {
-    // carve-grammars names no node or mark for it, so the vendored map keeps it
-    // under `unmapped`. The children are ordinary inline content and survive.
-    let pm = carve::to_prosemirror(&decoded(BARE));
+fn the_prosemirror_bridge_carries_the_wrapper_as_a_mark() {
+    let document = decoded(BARE);
+    let pm = carve::to_prosemirror(&document);
     assert!(pm.json.contains("nasa"), "{}", pm.json);
     assert!(
-        pm.degraded.contains_key("small_caps"),
-        "the wrapper is reported degraded: {:?}",
-        pm.degraded
-    );
-    assert!(
-        !pm.dropped.contains_key("small_caps"),
-        "and not also dropped, which would say its content is gone: {:?}",
+        pm.degraded.is_empty() && pm.dropped.is_empty(),
+        "an unattributed wrapper loses nothing: {:?} / {:?}",
+        pm.degraded,
         pm.dropped
     );
+    let back = carve::from_prosemirror(&pm.json).expect("what it wrote reads back");
+    assert!(matches!(
+        first_inline(&back),
+        InlineNode::Emphasis(e) if e.kind == EmphasisKind::SmallCaps
+    ));
+    assert_eq!(carve::to_json(&back), carve::to_json(&document));
+}
+
+/// An ATTRIBUTED wrapper puts its run on an ordinary span and says so.
+///
+/// CARVE-P12-050 asks a canonical writer to keep the run on an attributed span
+/// around the same children rather than on the wrapper, and the map's entry says
+/// the mark carries the small-caps distinction alone. Nothing is lost, but the
+/// wrapper comes back nested inside a span instead of carrying the run, and that
+/// is a shape change a consumer can see.
+#[test]
+fn an_attributed_wrapper_moves_its_run_to_a_span_and_reports_the_nesting() {
+    let pm = carve::to_prosemirror(&decoded(WITH_ATTRS));
+    assert!(
+        pm.degraded.contains_key("small_caps"),
+        "the reshaping is reported: {:?}",
+        pm.degraded
+    );
+    let back = carve::from_prosemirror(&pm.json).expect("what it wrote reads back");
+    let InlineNode::Span(span) = first_inline(&back) else {
+        panic!("expected the run on a span, got {:?}", first_inline(&back));
+    };
+    let attrs = span.attrs.as_ref().expect("the run survives");
+    assert_eq!(attrs.id.as_deref(), Some("agency"));
+    assert_eq!(attrs.classes, vec!["loud".to_string()]);
+    assert!(matches!(
+        &span.children[0],
+        InlineNode::Emphasis(e) if e.kind == EmphasisKind::SmallCaps
+    ));
 }
