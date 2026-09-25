@@ -809,6 +809,9 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
         }
         BlockNode::Directive(n) => {
             report("directive", &n.attrs, n.pos.clone(), visit);
+            if let Some(title) = &n.title {
+                walk_inlines(title, visit);
+            }
             walk_blocks(&n.children, visit);
         }
         BlockNode::Div(n) => {

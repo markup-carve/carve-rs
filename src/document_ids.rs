@@ -340,6 +340,9 @@ impl Seeder {
             }
             BlockNode::Directive(d) => {
                 self.reserve_attrs(&d.attrs);
+                if let Some(title) = &d.title {
+                    self.walk_inlines(title);
+                }
                 self.walk_blocks(&d.children);
             }
             BlockNode::Div(d) => {

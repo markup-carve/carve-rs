@@ -46,7 +46,12 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
             }
             v.blocks(&mut a.children);
         }
-        BlockNode::Directive(d) => v.blocks(&mut d.children),
+        BlockNode::Directive(d) => {
+            if let Some(title) = &mut d.title {
+                v.inlines(title);
+            }
+            v.blocks(&mut d.children);
+        }
         BlockNode::Div(d) => v.blocks(&mut d.children),
         BlockNode::List(l) => {
             for item in &mut l.items {
