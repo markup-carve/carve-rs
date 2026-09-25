@@ -29,14 +29,7 @@ use std::path::{Path, PathBuf};
 /// branch, so a slug whose fixture had caught up was never reached and its line
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
-const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[(
-    "84-single-line-headings-10",
-    "md",
-    "CARVE-P11-047 reaches a heading (carve-rs#1914); the sidecar's blank line \
-     reads the item loose where the document's own HTML says tight, and it is \
-     re-recorded once markup-carve/carve-js#2056 lands and the spec pin moves",
-    "> - a\n>   ### b \\###\n",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
