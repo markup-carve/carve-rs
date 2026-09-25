@@ -256,3 +256,36 @@ fn a_broken_tree_inside_a_good_envelope_is_still_a_decode_failure() {
         "got {error:?}"
     );
 }
+
+/// carve-rs#1965. The schema's pattern matches a major of any width, so a
+/// version too large for a `u64` is a well-formed `astVersion` naming a
+/// contract this build predates - not a malformed envelope. Measured against
+/// carve-js and carve-php, which both answer `Version` here.
+#[test]
+fn a_major_too_large_for_u64_is_a_version_refusal() {
+    let payload = format!(
+        r#"{{"astVersion":"99999999999999999999.0","document":{}}}"#,
+        r#"{"type":"document","children":[],"srcByteLength":0}"#
+    );
+    match from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()) {
+        Err(AstEnvelopeError::Version { found, implemented }) => {
+            assert_eq!(found, "99999999999999999999.0");
+            assert_eq!(implemented, AST_CONTRACT_VERSION);
+        }
+        other => panic!("expected a version refusal, got {other:?}"),
+    }
+}
+
+/// The comparison is numeric, not lexicographic: `10.0` is above `1.0` even
+/// though it sorts below it as text.
+#[test]
+fn a_wider_major_compares_as_a_number() {
+    let payload = format!(
+        r#"{{"astVersion":"10.0","document":{}}}"#,
+        r#"{"type":"document","children":[],"srcByteLength":0}"#
+    );
+    assert!(matches!(
+        from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()),
+        Err(AstEnvelopeError::Version { .. })
+    ));
+}
