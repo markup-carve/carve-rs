@@ -1,6 +1,6 @@
 use carve::{
     from_json, from_prosemirror, from_prosemirror_with_report, parse, parse_with_options,
-    render_carve, render_html, to_prosemirror, BlockNode, Options,
+    render_carve, render_html, to_json, to_prosemirror, BlockNode, Options,
 };
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
@@ -31,6 +31,28 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
     (
         "carveTabSet",
         "the corpus is bridged without applying the tabs extension",
+    ),
+    // The bridge builds all three. What no checked-in document does is REACH
+    // them: Carve 0.1 source spells no block extension, ruby annotation or
+    // small-caps wrapper, so one arrives over the AST-JSON wire only.
+    //
+    // Measured against the parsed AST rather than against this bridge's own
+    // report, because the report is what was wrong the last time the same claim
+    // was made: a silent substitution hid `::: footnotes` from a scan of the
+    // reported causes (carve-rs#1879). Serializing each corpus document with
+    // `to_json` and looking for the type finds `directive` in
+    // 122-footnotes-placement.crv and none of these three anywhere.
+    (
+        "carveBlockExtension",
+        "no corpus document parses to a block extension; Carve 0.1 source spells none",
+    ),
+    (
+        "carveRuby",
+        "no corpus document parses to a ruby annotation; Carve 0.1 source spells none",
+    ),
+    (
+        "carveSmallCaps",
+        "no corpus document parses to a small-caps wrapper; Carve 0.1 source spells none",
     ),
 ];
 
@@ -1360,7 +1382,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 376-pipe-tables-can-state-head-and-foot-row-counts already carried the
     // same cause at the old pin - it was the only such document until now.
     //
-    // ONE DOCUMENT CHANGES BUCKET HERE, AND THE READING ABOVE IS WHY IT CAN.
+    // ONE DOCUMENT CHANGED BUCKET TWICE, AND THE READING ABOVE IS WHY IT COULD.
     // "No corpus document reaches `block_extension`, `directive` or `ruby`" was
     // measured off this report, and the report was the thing that was wrong:
     // `to_pm` wrote a directive as an admonition without a degradation row, so a
@@ -1368,19 +1390,21 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 122-footnotes-placement.crv (carve-rs#1879). The claim held for
     // `block_extension` and `ruby` and was false for `directive`.
     //
-    // Reporting that substitution moves 122 from strict to lossy: 1445/415
-    // becomes 1444/416, and it is the only document that moves. Its round trip
-    // did not get worse - `from_pm` still reads the kind back and rebuilds the
-    // directive, and the HTML is unchanged - but the bucket is defined by an
-    // EMPTY report, so a report that stops lying reclassifies the document.
+    // Reporting that substitution moved 122 out of the strict set - 1445/415 to
+    // 1444/416, the only document to move - because the bucket is defined by an
+    // EMPTY report and a report that stops lying reclassifies the document.
     //
-    // That costs coverage, and the cost is the argument for the real fix rather
-    // than an argument against the row: a lossy document gets no HTML-equality
-    // and no canonical-source assertion here, so 122 leaves both. Emitting
-    // `carveDirective` would keep it strict and let both numbers go back up,
-    // which is carve-rs#1876.
-    const STRICT: usize = 1444;
-    const LOSSY: usize = 416;
+    // Emitting the node upstream named puts it back: carve-rs#1876 takes
+    // `carveDirective` from carve-grammars#562, so the substitution is gone and
+    // there is nothing left to report for it. 1444/416 returns to 1445/415, 122
+    // is again the only document that moves, and `directive` leaves the reported
+    // causes entirely. It regains both the HTML-equality and the
+    // canonical-source assertion a lossy document does not get here.
+    //
+    // The claim about the other two is now measured a way this report cannot
+    // mislead - see the note on `NOT_IN_CORPUS`.
+    const STRICT: usize = 1445;
+    const LOSSY: usize = 415;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
@@ -2413,5 +2437,287 @@ fn a_directive_either_carries_its_own_name_or_is_reported() {
     assert!(
         checked > 0,
         "no corpus document parsed to a directive, so this gate asserted nothing"
+    );
+}
+
+// The four types carve-grammars#562 named at once (carve-rs#1876). Each one is
+// asserted in BOTH directions: a conforming payload of that type decodes, and
+// what this engine writes reads back. One direction alone passes on a bridge
+// that can write a name nothing reads, which is the gap these four were the
+// standing example of.
+//
+// Three of them have no Carve 0.1 spelling, so their AST side is built through
+// `from_json` rather than parsed. That is the only route a document carrying one
+// takes to this bridge either.
+
+/// The AST-JSON wrapper a single block needs, so a test states only its node.
+fn document_of(block: &str) -> String {
+    format!(r#"{{"type":"document","srcByteLength":0,"children":[{block}]}}"#)
+}
+
+/// The AST-JSON wrapper a single inline needs.
+fn paragraph_of(inline: &str) -> String {
+    document_of(&format!(r#"{{"type":"paragraph","children":[{inline}]}}"#))
+}
+
+fn pm_name(carve_type: &str) -> String {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    mapped_names(&map, carve_type)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("the map names no node for `{carve_type}`"))
+}
+
+#[test]
+fn a_directive_travels_as_its_own_node_in_both_directions() {
+    let (value, bridge) = pm("::: toc\n:::\n");
+    let node = &value["content"][0];
+    assert_eq!(node["type"], Value::String(pm_name("directive")));
+    assert_eq!(node["attrs"]["kind"], "toc");
+    // Not the admonition's spelling, and not a class either: the kind word is
+    // what the schema refuses on an admonition, so it may not ride as one.
+    assert!(node["attrs"].get("carveAdmonitionKind").is_none());
+    assert!(node["attrs"].get("class").is_none());
+    assert!(
+        bridge.degraded.is_empty() && bridge.dropped.is_empty(),
+        "a mapped node is not a loss: {:?} {:?}",
+        bridge.degraded,
+        bridge.dropped
+    );
+
+    let back = from_prosemirror(&bridge.json).expect("the node it wrote reads back");
+    let BlockNode::Directive(directive) = &back.children[0] else {
+        panic!("expected a directive, got {:?}", back.children[0]);
+    };
+    assert_eq!(directive.kind, "toc");
+}
+
+#[test]
+fn an_arriving_directive_node_decodes() {
+    let payload = json!({"type":"doc","content":[
+        {"type":pm_name("directive"),"attrs":{"kind":"footnotes","label":"main"}}
+    ]});
+    let document = from_prosemirror(&payload.to_string()).expect("a conforming directive decodes");
+    let BlockNode::Directive(directive) = &document.children[0] else {
+        panic!("expected a directive, got {:?}", document.children[0]);
+    };
+    assert_eq!(directive.kind, "footnotes");
+    assert_eq!(directive.label.as_deref(), Some("main"));
+    // The structural kind is not ALSO an authored attribute: writing it into the
+    // run would render `{kind=footnotes}` the author never typed, which is the
+    // mistake the admonition's class already had to be unwound from.
+    assert!(directive.attrs.is_none(), "{:?}", directive.attrs);
+}
+
+#[test]
+fn a_block_extension_keeps_its_fallback_as_content_both_ways() {
+    let source = document_of(
+        r#"{"type":"block_extension","name":"org.example.diagram","version":"2",
+            "payload":{"format":"application/json","value":{"shape":"box"}},
+            "fallback":{"type":"paragraph","children":[{"type":"text","value":"a box"}]}}"#,
+    );
+    let document = from_json(&source).expect("the AST-JSON wire carries one");
+    let bridge = to_prosemirror(&document);
+    let value: Value = serde_json::from_str(&bridge.json).expect("bridge emits JSON");
+    let node = &value["content"][0];
+    assert_eq!(node["type"], Value::String(pm_name("block_extension")));
+    assert_eq!(node["attrs"]["name"], "org.example.diagram");
+    assert_eq!(node["attrs"]["version"], "2");
+    assert_eq!(node["attrs"]["payload"]["format"], "application/json");
+    assert_eq!(node["attrs"]["payload"]["value"]["shape"], "box");
+    // The fallback is the node's CONTENT, so it is still a block the editor
+    // holds rather than a value beside it.
+    assert_eq!(
+        node["content"][0]["type"],
+        Value::String(pm_name("paragraph"))
+    );
+    assert!(
+        bridge.degraded.is_empty() && bridge.dropped.is_empty(),
+        "name, version and payload all have somewhere to go now: {:?} {:?}",
+        bridge.degraded,
+        bridge.dropped
+    );
+
+    let back = from_prosemirror(&bridge.json).expect("the node it wrote reads back");
+    let BlockNode::BlockExtension(extension) = &back.children[0] else {
+        panic!("expected a block extension, got {:?}", back.children[0]);
+    };
+    assert_eq!(extension.name, "org.example.diagram");
+    assert_eq!(extension.version.as_deref(), Some("2"));
+    assert_eq!(
+        extension.payload.as_ref().map(|p| p.format.as_str()),
+        Some("application/json")
+    );
+    assert!(matches!(*extension.fallback, BlockNode::Paragraph(_)));
+}
+
+#[test]
+fn a_block_extension_payload_with_no_fallback_is_refused() {
+    // The fallback is REQUIRED, and a payload without one cannot become a block
+    // extension. Inventing an empty block for it would put a document on the
+    // Carve side that says the extension degrades to nothing.
+    let payload = json!({"type":"doc","content":[
+        {"type":pm_name("block_extension"),"attrs":{"name":"org.example.diagram"}}
+    ]});
+    let error = from_prosemirror(&payload.to_string())
+        .expect_err("a block extension without its fallback is not a document");
+    assert!(error.to_string().contains("fallback"), "{error}");
+}
+
+#[test]
+fn a_ruby_annotation_travels_as_an_inline_atom_both_ways() {
+    let source = paragraph_of(
+        r#"{"type":"ruby","pairs":[
+            {"base":[{"type":"text","value":"漢"}],
+             "annotation":[{"type":"text","value":"kan"}]},
+            {"base":[{"type":"text","value":"字"}],"annotation":[]}]}"#,
+    );
+    let document = from_json(&source).expect("the AST-JSON wire carries one");
+    let bridge = to_prosemirror(&document);
+    let value: Value = serde_json::from_str(&bridge.json).expect("bridge emits JSON");
+    let node = &value["content"][0]["content"][0];
+    assert_eq!(node["type"], Value::String(pm_name("ruby")));
+    // An ATOM: the pairs are the association, so they ride in the attribute and
+    // the node holds no content of its own.
+    assert!(node.get("content").is_none(), "{node}");
+    assert_eq!(node["attrs"]["pairs"][0]["base"][0]["text"], "\u{6f22}");
+    assert_eq!(node["attrs"]["pairs"][0]["annotation"][0]["text"], "kan");
+    // An annotation may be empty; a base may not.
+    assert_eq!(
+        node["attrs"]["pairs"][1]["annotation"],
+        Value::Array(Vec::new())
+    );
+    assert!(
+        bridge.degraded.is_empty() && bridge.dropped.is_empty(),
+        "the pairs are carried, not flattened to parentheses: {:?} {:?}",
+        bridge.degraded,
+        bridge.dropped
+    );
+
+    let back = from_prosemirror(&bridge.json).expect("the node it wrote reads back");
+    assert_eq!(
+        to_json(&back),
+        to_json(&document),
+        "a ruby annotation survives the trip unchanged"
+    );
+}
+
+#[test]
+fn an_arriving_ruby_node_decodes() {
+    let payload = json!({"type":"doc","content":[{"type":pm_name("paragraph"),"content":[
+        {"type":pm_name("ruby"),"attrs":{"pairs":[
+            {"base":[{"type":pm_name("text"),"text":"NY"}],
+             "annotation":[{"type":pm_name("text"),"text":"New York"}]}]}}
+    ]}]});
+    let document = from_prosemirror(&payload.to_string()).expect("a conforming ruby decodes");
+    let BlockNode::Paragraph(paragraph) = &document.children[0] else {
+        panic!("expected a paragraph, got {:?}", document.children[0]);
+    };
+    let carve::InlineNode::Ruby(ruby) = &paragraph.children[0] else {
+        panic!(
+            "expected a ruby annotation, got {:?}",
+            paragraph.children[0]
+        );
+    };
+    assert_eq!(ruby.pairs.len(), 1);
+    assert!(render_html(&document).unwrap().contains("New York"));
+}
+
+#[test]
+fn small_caps_travels_as_a_mark_in_both_directions() {
+    let source =
+        paragraph_of(r#"{"type":"small_caps","children":[{"type":"text","value":"nato"}]}"#);
+    let document = from_json(&source).expect("the AST-JSON wire carries one");
+    let bridge = to_prosemirror(&document);
+    let value: Value = serde_json::from_str(&bridge.json).expect("bridge emits JSON");
+    let text = &value["content"][0]["content"][0];
+    // A MARK, so the text stays text and stays editable - a node would make it
+    // an atom and take the letters out of the editor's reach.
+    assert_eq!(text["type"], Value::String(pm_name("text")));
+    assert_eq!(text["text"], "nato");
+    assert_eq!(
+        text["marks"][0]["type"],
+        Value::String(pm_name("small_caps"))
+    );
+    assert!(
+        bridge.degraded.is_empty() && bridge.dropped.is_empty(),
+        "an unattributed wrapper loses nothing: {:?} {:?}",
+        bridge.degraded,
+        bridge.dropped
+    );
+
+    let back = from_prosemirror(&bridge.json).expect("the mark it wrote reads back");
+    assert_eq!(
+        to_json(&back),
+        to_json(&document),
+        "a small-caps wrapper survives the trip unchanged"
+    );
+}
+
+#[test]
+fn an_arriving_small_caps_mark_decodes() {
+    let payload = json!({"type":"doc","content":[{"type":pm_name("paragraph"),"content":[
+        {"type":pm_name("text"),"text":"nato","marks":[{"type":pm_name("small_caps")}]}
+    ]}]});
+    let document = from_prosemirror(&payload.to_string()).expect("a conforming mark decodes");
+    let BlockNode::Paragraph(paragraph) = &document.children[0] else {
+        panic!("expected a paragraph, got {:?}", document.children[0]);
+    };
+    let carve::InlineNode::Emphasis(emphasis) = &paragraph.children[0] else {
+        panic!("expected a wrapper, got {:?}", paragraph.children[0]);
+    };
+    assert_eq!(emphasis.kind, carve::EmphasisKind::SmallCaps);
+}
+
+/// An ATTRIBUTED small-caps wrapper reports the reshaping, because there is one.
+///
+/// CARVE-P12-050 keeps the run on an ordinary attributed span around the same
+/// children rather than on the wrapper, which is what the map's entry says the
+/// mark carries alone. Nothing is lost, but the wrapper comes back nested
+/// inside a span instead of carrying the run, and a shape change a consumer can
+/// see is a shape change the report names.
+#[test]
+fn an_attributed_small_caps_wrapper_puts_its_run_on_a_span_and_says_so() {
+    let source = paragraph_of(
+        r#"{"type":"small_caps","attrs":{"classes":["x"],"order":[".class"]},
+            "children":[{"type":"text","value":"nato"}]}"#,
+    );
+    let document = from_json(&source).expect("the AST-JSON wire carries one");
+    let bridge = to_prosemirror(&document);
+    let value: Value = serde_json::from_str(&bridge.json).expect("bridge emits JSON");
+    let marks = &value["content"][0]["content"][0]["marks"];
+    assert_eq!(marks[0]["type"], Value::String(pm_name("span")));
+    assert_eq!(marks[0]["attrs"]["class"], "x");
+    assert_eq!(marks[1]["type"], Value::String(pm_name("small_caps")));
+    assert!(marks[1].get("attrs").is_none(), "{marks}");
+    assert!(
+        bridge.degraded.contains_key("small_caps"),
+        "the reshaping is reported: {:?}",
+        bridge.degraded
+    );
+
+    let back = from_prosemirror(&bridge.json).expect("the marks it wrote read back");
+    assert!(
+        render_html(&back).unwrap().contains("x"),
+        "the class survives: {}",
+        render_html(&back).unwrap()
+    );
+}
+
+/// An authored attribute whose name is the structural one loses, and is told.
+///
+/// Upstream spells a directive's kind `kind` rather than under a `carve` prefix
+/// the way an admonition's is, so an author who wrote `{kind=...}` collides with
+/// it. The shared map's spelling is not this bridge's to re-choose, but the
+/// collision costs the authored value and a silent overwrite is the failure
+/// carve-rs#1879 named.
+#[test]
+fn an_authored_attribute_colliding_with_a_structural_one_is_reported() {
+    let (value, bridge) = pm("{kind=custom}\n::: toc\n:::\n");
+    assert_eq!(value["content"][0]["attrs"]["kind"], "toc");
+    assert!(
+        bridge.degraded.contains_key("directive"),
+        "the authored value is gone and nothing said so: {:?}",
+        bridge.degraded
     );
 }

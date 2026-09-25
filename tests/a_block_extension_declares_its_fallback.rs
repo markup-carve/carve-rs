@@ -161,26 +161,67 @@ fn every_target_renders_the_fallback() {
     );
 }
 
+/// The bridge carries it as its own node, with the fallback as that node's
+/// CONTENT (carve-grammars#562, taken in carve-rs#1876).
+///
+/// Before that the fallback took the node's place and the name, version and
+/// payload were reported lost. All three have somewhere to go now, so there is
+/// nothing left to report - and the fallback is still a block the editor edits
+/// rather than a value beside one.
+///
+/// Neither ProseMirror name is spelled here. The paragraph's is taken from what
+/// this engine bridges an ordinary paragraph to, which is what makes "the
+/// fallback is INSIDE the extension's node" the thing being asserted.
 #[test]
-fn the_prosemirror_bridge_puts_the_fallback_in_its_place_and_says_so() {
+fn the_prosemirror_bridge_carries_it_with_the_fallback_as_content() {
     let doc = decode(CONFORMING);
     let bridged = carve::to_prosemirror(&doc);
     let value: serde_json::Value = serde_json::from_str(&bridged.json).expect("PM JSON");
+    let plain = carve::to_prosemirror(&carve::parse("A flow chart.\n"));
+    let plain: serde_json::Value = serde_json::from_str(&plain.json).expect("PM JSON");
+    let paragraph = plain
+        .pointer("/content/0/type")
+        .cloned()
+        .expect("a paragraph bridges to something");
+
+    let node = value.pointer("/content/0").expect("the one block");
+    assert_ne!(
+        node.get("type"),
+        Some(&paragraph),
+        "the extension has a node of its own, so the fallback no longer stands in for it: {node}"
+    );
     assert_eq!(
-        value.pointer("/content/0/type").and_then(|v| v.as_str()),
-        Some("paragraph"),
-        "the fallback takes the node's place rather than the whole node being dropped"
+        node.pointer("/content/0/type"),
+        Some(&paragraph),
+        "the required fallback is the node's content: {node}"
+    );
+    assert_eq!(
+        node.pointer("/attrs/name").and_then(|v| v.as_str()),
+        Some("org.example.diagram"),
+        "the qualified name rides beside it: {node}"
+    );
+    assert_eq!(
+        node.pointer("/attrs/version").and_then(|v| v.as_str()),
+        Some("2")
+    );
+    assert_eq!(
+        node.pointer("/attrs/payload/value/lanes")
+            .and_then(serde_json::Value::as_u64),
+        Some(3),
+        "the payload goes over as a value, still opaque: {node}"
     );
     assert!(
-        bridged.degraded.contains_key("block_extension"),
-        "the lost identity, version and payload are reported: {:?} / {:?}",
+        bridged.degraded.is_empty() && bridged.dropped.is_empty(),
+        "nothing is lost any more: {:?} / {:?}",
         bridged.degraded,
         bridged.dropped
     );
-    assert!(
-        !bridged.dropped.contains_key("block_extension"),
-        "nothing is dropped: {:?}",
-        bridged.dropped
+
+    let back = carve::from_prosemirror(&bridged.json).expect("what it wrote reads back");
+    assert_eq!(
+        carve::to_json(&back),
+        carve::to_json(&doc),
+        "and the trip changes nothing"
     );
 }
 
