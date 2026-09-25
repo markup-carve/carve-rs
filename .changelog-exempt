@@ -8,3 +8,4 @@
 #
 1932: comments only; no parser, writer or lint behavior moved.
 1933: comments only; benchmark snapshots and corpus counts removed from source.
+1960: a performance regression that shipped nowhere. #1916 introduced the iterative Document teardown in this same unreleased window and cost about 11% on a small document; this recovers it. No consumer ever installed the slower form, and #1916's own breaking entry already describes the teardown.
