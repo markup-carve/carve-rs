@@ -7,7 +7,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// `fmt` fixtures this writer is AHEAD of, as `(slug, reason, ahead)`.
+/// Fixtures this writer is AHEAD of, as `(slug, target, reason, ahead)`.
+///
+/// The list was `fmt`-only, and the target is a column now because the same
+/// situation reached `md`: a corpus sidecar is hand-written and checked in the
+/// spec repository against the pinned carve-js build, so a ruling this engine
+/// implements first leaves the sidecar describing the other engine until that
+/// one catches up and the pin moves.
 ///
 /// TWO COLUMNS THAT WERE NOT HERE, and each closes a way the list could not do
 /// its job. `ahead` is what this writer emits TODAY, so the document is still
@@ -23,7 +29,14 @@ use std::path::{Path, PathBuf};
 /// branch, so a slug whose fixture had caught up was never reached and its line
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
-const FMT_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[(
+    "84-single-line-headings-10",
+    "md",
+    "CARVE-P11-047 reaches a heading (carve-rs#1914); the sidecar's blank line \
+     reads the item loose where the document's own HTML says tight, and it is \
+     re-recorded once markup-carve/carve-js#2056 lands and the spec pin moves",
+    "> - a\n>   ### b \\###\n",
+)];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
@@ -75,7 +88,7 @@ fn every_non_html_spec_fixture_matches() {
     );
 
     let mut failures = Vec::new();
-    let mut seen_fmt: Vec<String> = Vec::new();
+    let mut seen: Vec<(String, String)> = Vec::new();
     for (fixture, target) in fixtures {
         let slug = fixture.file_stem().unwrap().to_string_lossy();
         let source_path = dir.join(format!("{slug}.crv"));
@@ -84,32 +97,26 @@ fn every_non_html_spec_fixture_matches() {
             "{} has no .crv source pair",
             fixture.display()
         );
-        if target == "fmt" {
-            seen_fmt.push(slug.to_string());
-        }
+        seen.push((slug.to_string(), target.clone()));
         let source = fs::read_to_string(&source_path).expect("read corpus source");
         let expected = fs::read_to_string(&fixture).expect("read render fixture");
         let actual = render(&target, &source);
-        let declared = (target == "fmt")
-            .then(|| {
-                FMT_AHEAD_OF_PIN
-                    .iter()
-                    .find(|(name, _, _)| *name == slug.as_ref())
-            })
-            .flatten();
-        if let Some((_, reason, ahead)) = declared {
+        let declared = AHEAD_OF_PIN
+            .iter()
+            .find(|(name, kind, _, _)| *name == slug.as_ref() && *kind == target);
+        if let Some((_, _, reason, ahead)) = declared {
             // OUTSIDE THE MISMATCH BRANCH. Both halves are asked on every run:
             // the writer still emits what the declaration says, AND the fixture
             // still disagrees. The second is what retires the entry when the pin
             // moves past it.
             if actual != *ahead {
                 failures.push(format!(
-                    "{slug}.fmt ({reason})\n--- declared ahead ---\n{ahead:?}\n\
+                    "{slug}.{target} ({reason})\n--- declared ahead ---\n{ahead:?}\n\
                      --- actual ---\n{actual:?}"
                 ));
             } else if actual == expected {
                 failures.push(format!(
-                    "{slug}.fmt: the pin has caught up; delete its FMT_AHEAD_OF_PIN entry"
+                    "{slug}.{target}: the pin has caught up; delete its AHEAD_OF_PIN entry"
                 ));
             }
             continue;
@@ -121,14 +128,16 @@ fn every_non_html_spec_fixture_matches() {
         }
     }
 
-    let missing: Vec<_> = FMT_AHEAD_OF_PIN
+    let missing: Vec<_> = AHEAD_OF_PIN
         .iter()
-        .map(|(slug, _, _)| *slug)
-        .filter(|slug| !seen_fmt.contains(&slug.to_string()))
+        .filter(|(slug, target, _, _)| {
+            !seen.contains(&((*slug).to_string(), (*target).to_string()))
+        })
+        .map(|(slug, target, _, _)| format!("{slug}.{target}"))
         .collect();
     assert!(
         missing.is_empty(),
-        "FMT_AHEAD_OF_PIN names fixture(s) the corpus does not have: {missing:?}",
+        "AHEAD_OF_PIN names fixture(s) the corpus does not have: {missing:?}",
     );
     assert!(
         failures.is_empty(),
