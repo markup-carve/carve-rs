@@ -1505,7 +1505,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // document never had. The label between them is author
                     // content and gets the HTML pass for the same reason: this
                     // branch was deciding the question for brackets and
-                    // skipping it for `<` (raised by codex review).
+                    // skipping it for `<`.
                     format!("\\[^{}\\]", escape_md_html(&id))
                 }
             }
@@ -2328,7 +2328,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     // M2b's position test used to answer by scanning BACKWARD from the
     // candidate to the line's newline, once per candidate - so a line whose
     // every character is a candidate paid an O(n) scan n times over, which is
-    // the quadratic markup-carve/carve#1331 measured at 33x the pre-§8b writer.
+    // quadratic behavior on lines dense with candidates.
     // The position is a property of the LINE, not of the candidate, so it is
     // computed once when a line opens and read in O(1) after that.
     let mut content_start = content_position(&line, 0);
