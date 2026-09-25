@@ -29,10 +29,9 @@ build whose documents were never opened. A bad path is reported and skipped, so
 one missing file in a glob still lets every other document be checked.
 
 Reads stdin with no path, or with `-`, and reports under `<stdin>`.
-`--extensions` is the only option it takes, because it is the only render option
-the linter reads - every other flag is REFUSED with exit 2 rather than accepted
-and ignored, so `carve lint --static` cannot exit 0 having linted with a flag
-the caller believed was doing something.
+`--extensions` enables the bundled extensions. For citations, use
+`carve lint --extension citations docs/*.crv`. The command refuses render-only
+flags with exit 2 rather than silently ignoring them.
 
 The line format and the exit codes match carve-js's `carve lint` exactly, so a
 script that parses one CLI parses the other. The `rule` id is shared across
@@ -68,6 +67,10 @@ let warnings = carve::lint_carve_with_options(source, &options);
 
 `cite` on a block quote is a valid HTML URL attribute and is deliberately not
 reported.
+
+With citations enabled, `references-placement-in-container` reports a
+`::: references` marker inside a container. The marker renders as a div there;
+the generated list keeps its document position.
 
 ---
 

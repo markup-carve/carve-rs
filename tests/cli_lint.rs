@@ -148,16 +148,39 @@ fn several_files_each_report_under_their_own_name() {
 
 #[test]
 fn extensions_reaches_the_linter() {
-    // `--extensions` is the only render flag the linter reads, which is why it
-    // is the only one plumbed through. Asserted by a document whose warning
-    // exists either way: the flag must not CHANGE this result, and must not be
-    // rejected as an unknown option.
+    // The bundled extensions leave this core warning unchanged.
     let path = fixture(ORPHAN);
     let (plain, _, plain_code) = lint_path(&path);
     let (with_ext, _, ext_code) = lint(&[std::ffi::OsStr::new("--extensions"), path.as_os_str()]);
     assert_eq!(plain, with_ext);
     assert_eq!(plain_code, 1);
     assert_eq!(ext_code, 1);
+}
+
+#[test]
+fn citations_placement_is_checked_only_when_selected() {
+    let path = fixture("See [@x].\n\n> ::: references\n> :::\n\n[@x]: Source\n");
+    let (plain, _, plain_code) = lint_path(&path);
+    assert_eq!(plain, "");
+    assert_eq!(plain_code, 0);
+
+    let (selected, _, code) = lint(&[
+        std::ffi::OsStr::new("--extension"),
+        std::ffi::OsStr::new("citations"),
+        path.as_os_str(),
+    ]);
+    assert!(
+        selected.contains("references-placement-in-container"),
+        "{selected:?}"
+    );
+    assert_eq!(code, 1);
+
+    let (selected_equals, _, equals_code) = lint(&[
+        std::ffi::OsStr::new("--extension=citations"),
+        path.as_os_str(),
+    ]);
+    assert_eq!(selected_equals, selected);
+    assert_eq!(equals_code, 1);
 }
 
 #[test]
