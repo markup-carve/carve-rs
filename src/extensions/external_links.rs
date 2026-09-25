@@ -155,6 +155,9 @@ impl ExternalLinks {
                 }
             }
             BlockNode::Directive(d) => {
+                if let Some(title) = &mut d.title {
+                    self.visit_inlines(title);
+                }
                 for child in &mut d.children {
                     self.visit_block(child);
                 }

@@ -887,6 +887,9 @@ fn annotate_citations_block(
             }
         }
         BlockNode::Directive(d) => {
+            if let Some(title) = &mut d.title {
+                annotate_citations_inline(title, defs, mode, has_bib, seen, order, uses);
+            }
             for child in &mut d.children {
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }

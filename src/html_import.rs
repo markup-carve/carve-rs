@@ -6663,7 +6663,12 @@ fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<Inl
                 }
                 for_each_inline_run(&mut n.children, f);
             }
-            BlockNode::Directive(n) => for_each_inline_run(&mut n.children, f),
+            BlockNode::Directive(n) => {
+                if let Some(title) = &mut n.title {
+                    f(title, false);
+                }
+                for_each_inline_run(&mut n.children, f);
+            }
             BlockNode::Div(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::LineBlock(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::DefinitionList(n) => {

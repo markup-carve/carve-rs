@@ -281,7 +281,12 @@ fn rewrite_links_blocks(
             BlockNode::BlockQuote(b) => {
                 rewrite_links_blocks(&mut b.children, by_id, opts);
             }
-            BlockNode::Directive(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
+            BlockNode::Directive(d) => {
+                if let Some(t) = &mut d.title {
+                    rewrite_links_inlines(t, by_id, opts);
+                }
+                rewrite_links_blocks(&mut d.children, by_id, opts);
+            }
             BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
             BlockNode::Admonition(a) => {
                 if let Some(t) = &mut a.title {

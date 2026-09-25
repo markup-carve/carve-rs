@@ -2730,7 +2730,12 @@ where
                 }
                 walk_blocks(&admonition.children, depth + 1, visit);
             }
-            BlockNode::Directive(div) => walk_blocks(&div.children, depth + 1, visit),
+            BlockNode::Directive(directive) => {
+                if let Some(title) = &directive.title {
+                    visit(block, Some(title));
+                }
+                walk_blocks(&directive.children, depth + 1, visit);
+            }
             BlockNode::Div(div) => walk_blocks(&div.children, depth + 1, visit),
             BlockNode::LineBlock(lb) => walk_blocks(&lb.children, depth + 1, visit),
             BlockNode::List(list) => {

@@ -253,16 +253,22 @@ impl Reader {
                     .iter()
                     .map(|v| self.block(v))
                     .collect::<Result<Vec<_>, _>>()?;
+                let title = string_opt(a, "title")
+                    .map(|s| Json::Array(vec![node("text", [("value", Json::String(s.into()))])]))
+                    .unwrap_or(Json::Null);
                 let mut n = with_attrs(
                     node(
                         &ty,
                         [
                             ("kind", string_json(a, "kind", "")),
+                            ("title", title),
                             ("label", optional_string(a, "label")),
                             ("children", Json::Array(children)),
                         ],
                     ),
-                    &without(a, &["kind"]),
+                    // `title` is the opener's, so it must not ALSO come back as
+                    // an authored attribute - that writes the words twice.
+                    &without(a, &["kind", "title"]),
                 );
                 remove_nulls(&mut n);
                 Ok(n)

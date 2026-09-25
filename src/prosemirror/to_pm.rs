@@ -252,6 +252,7 @@ impl Renderer {
             BlockNode::Directive(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 self.stamp(&mut a, "directive", "kind", Json::String(n.kind.clone()));
+                self.directive_title(&mut a, n.title.as_deref());
                 if let Some(label) = &n.label {
                     a.insert("label".into(), Json::String(label.clone()));
                 }
@@ -1003,6 +1004,25 @@ impl Renderer {
                 ));
             }
         }
+    }
+
+    /// A directive's opener title, reporting the markup it flattens.
+    ///
+    /// Under the plain `title` CarveKit's `carveDirective` declares, which is
+    /// unambiguous here for a reason an admonition's is not: `attributeSlots`
+    /// reserves the name from the authored run, so the node holds no second
+    /// `title` for this one to be confused with.
+    fn directive_title(&mut self, a: &mut Object, title: Option<&[InlineNode]>) {
+        let Some(title) = title else {
+            return;
+        };
+        if title.iter().any(|v| !matches!(v, InlineNode::Text(_))) {
+            self.degraded.insert(
+                "directive".into(),
+                "title markup is flattened into a ProseMirror attribute".into(),
+            );
+        }
+        self.stamp(a, "directive", "title", Json::String(plain_text(title)));
     }
 
     /// A STRUCTURAL attribute, reporting an authored one of the same name

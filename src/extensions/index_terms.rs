@@ -216,6 +216,9 @@ fn rewrite_markers_block(
             }
         }
         BlockNode::Directive(d) => {
+            if let Some(title) = &mut d.title {
+                rewrite_markers_inline(title, counts, display);
+            }
             for child in &mut d.children {
                 rewrite_markers_block(child, counts, display);
             }
