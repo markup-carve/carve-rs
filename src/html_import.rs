@@ -2376,7 +2376,7 @@ impl<'a> Importer<'a> {
                     if ordered_task {
                         self.diag(
                             HtmlImportDiagnosticCode::StructureUnspellable,
-                            ORDERED_TASK_ITEM_FLATTENED.into(),
+                            ORDERED_TASK_ITEM_UNSPELLABLE.into(),
                             HtmlImportSeverity::Warning,
                             &input_path,
                             input,
@@ -6399,7 +6399,13 @@ const EMPTY_CODE_DROPPED: &str = "Dropped an empty <code>: its backtick run is c
 const CELL_BREAK_FLATTENED: &str = "Wrote a <br> in a table cell as a space: a cell is one line, so no Carve spelling keeps the break";
 const EMPTY_WRAPPER_DROPPED: &str = "Dropped an inline element that held only a dropped empty <code>: an empty pair of its delimiters reads back as text";
 const EMPTY_CODE_ATTRIBUTES_DROPPED: &str = "Dropped the attributes of an empty <code>: an attribute block attaches to a closing backtick run, which an empty span has not got";
-const ORDERED_TASK_ITEM_FLATTENED: &str = "Wrote an ordered task item's checkbox as its bracket text: a Carve task marker is spelled behind a bullet only, so the item keeps the characters and loses the task-item semantics";
+/// A checkbox read on an ordered list item, kept as the item's bracket text.
+///
+/// Shared with the Markdown entry point, because it is one loss with one cause
+/// and a consumer filtering on the message should not have to know which
+/// importer ran. The grammar clause behind it stays in the import contract's
+/// prose rather than in the row (carve-js#2062).
+pub(crate) const ORDERED_TASK_ITEM_UNSPELLABLE: &str = "An ordered task item is not spellable as a Carve task item; the checkbox marker was kept as text";
 
 /// The bracket pair the Carve writer spells behind a bullet (PART 11 §6g), for
 /// the ordered item where it can only be text.
