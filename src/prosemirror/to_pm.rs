@@ -1307,14 +1307,59 @@ fn ol_style(t: OrderedListType) -> &'static str {
         OrderedListType::UpperRoman => "I",
     }
 }
+/// A container title's WORDS, with its markup dropped.
+///
+/// The discriminator is authorship-and-location, not node kind (carve-rs#1944):
+/// an inline contributes the text the author typed in this title, and nothing
+/// for text that is generated or lives elsewhere - a minted footnote marker, a
+/// citation label from the bibliography, a resolved crossref number. Matches
+/// `inlinePlainText` in carve-grammars `tiptap/carve-to-pm.js` except where its
+/// `node.children` test cannot see an authored payload: a code span's value, an
+/// image's alt, a ruby base.
 fn plain_text(nodes: &[InlineNode]) -> String {
-    nodes
-        .iter()
-        .map(|n| match n {
-            InlineNode::Text(t) => t.value.clone(),
-            InlineNode::EscapedText(t) => t.value.clone(),
-            InlineNode::SmartPunctuation(t) => smart_punctuation_glyph(t).into(),
-            _ => String::new(),
-        })
-        .collect()
+    let mut out = String::new();
+    push_plain_text(nodes, &mut out);
+    out
+}
+
+fn push_plain_text(nodes: &[InlineNode], out: &mut String) {
+    for node in nodes {
+        match node {
+            InlineNode::Text(t) => out.push_str(&t.value),
+            InlineNode::EscapedText(t) => out.push_str(&t.value),
+            InlineNode::SmartPunctuation(t) => out.push_str(smart_punctuation_glyph(t)),
+            InlineNode::Code(c) => out.push_str(&c.value),
+            InlineNode::Image(i) => out.push_str(&i.alt),
+            InlineNode::Emphasis(e) => push_plain_text(&e.children, out),
+            InlineNode::Link(l) => push_plain_text(&l.children, out),
+            InlineNode::Span(s) => push_plain_text(&s.children, out),
+            InlineNode::CriticInsert(c) => push_plain_text(&c.children, out),
+            InlineNode::CriticDelete(c) => push_plain_text(&c.children, out),
+            // The annotation is a reading the writer cannot keep, not part of
+            // the sequence, so it contributes nothing.
+            InlineNode::Ruby(r) => {
+                for pair in &r.pairs {
+                    push_plain_text(&pair.base, out);
+                }
+            }
+            InlineNode::Math(_)
+            | InlineNode::RawInline(_)
+            | InlineNode::LiteralInline(_)
+            | InlineNode::Symbol(_)
+            | InlineNode::AutoLink(_)
+            | InlineNode::CrossRef(_)
+            | InlineNode::CaptionNumber(_)
+            | InlineNode::Mention(_)
+            | InlineNode::Tag(_)
+            | InlineNode::CitationGroup(_)
+            | InlineNode::Extension(_)
+            | InlineNode::Abbreviation(_)
+            | InlineNode::Footnote(_)
+            | InlineNode::SoftBreak(_)
+            | InlineNode::HardBreak(_)
+            | InlineNode::CriticSubstitute(_)
+            | InlineNode::CriticComment(_)
+            | InlineNode::Comment(_) => {}
+        }
+    }
 }
