@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Markdown conversion has fallible `try_markdown_to_carve` and
+  `try_migrate_markdown` entry points. The older entry points now panic if the
+  canonical writer refuses a document instead of returning an empty result.
 - JSON AST interchange preserves the optional line-end ranges on line blocks
   (CARVE-P12-058, #1859).
 - JSON AST interchange carries ruby base and annotation pairs through rendering,
@@ -21,6 +24,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Markdown import keeps the rest of a document when a GFM table has a blank row
+  and reports each dropped row. It also preserves reference links at the start
+  of list items, replaces NUL characters, and removes tab-separated closing
+  hashes from headings.
 - The plain-text escaper freezes a hash after an ampersand, so
   numeric-reference text cannot become a Carve tag.
 

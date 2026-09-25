@@ -15,9 +15,12 @@
 //! assert_eq!(carve::markdown_to_carve("*em* and **strong**"), "/em/ and *strong*\n");
 //! ```
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
+};
 
 use crate::ast::*;
 use crate::render_carve;
@@ -53,28 +56,39 @@ fn is_empty_destination(destination: &str) -> bool {
         .is_empty()
 }
 
-/// Convert Markdown source to Carve source, or the writer's refusal.
+/// Convert Markdown to Carve. Use [`try_markdown_to_carve`] to handle a writer
+/// refusal without a panic.
 ///
-/// Markdown caps nesting nowhere, and [`markdown_to_ast`] builds the tree from
-/// the parser's frames rather than by recursing, so this is the one importer that
-/// can hand the writer a tree deeper than `parse::MAX_NESTING_DEPTH` - which is
-/// what PART 9 §25's ceiling is for. Untrusted Markdown therefore needs the
-/// fallible form: [`markdown_to_carve`] can only answer with an empty string
-/// (carve-rs#1877).
-pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarveError> {
-    render_carve(&markdown_to_ast(markdown))
+/// # Panics
+///
+/// Panics if the canonical writer cannot represent the imported document.
+pub fn markdown_to_carve(markdown: &str) -> String {
+    try_markdown_to_carve(markdown).expect("the Markdown import cannot be written as Carve")
 }
 
-/// Convert Markdown source to Carve source.
-///
-/// Returns an empty string where the writer refuses; prefer
-/// [`try_markdown_to_carve`] for input you did not write.
-pub fn markdown_to_carve(markdown: &str) -> String {
-    try_markdown_to_carve(markdown).unwrap_or_default()
+/// Convert Markdown source without hiding a canonical-writer refusal.
+pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarveError> {
+    markdown_to_carve_with_losses(markdown).map(|(value, _)| value)
+}
+
+pub(crate) fn markdown_to_carve_with_losses(
+    markdown: &str,
+) -> Result<(String, Vec<String>), crate::RenderCarveError> {
+    let (document, losses) = markdown_to_ast_with_losses(markdown);
+    render_carve(&document).map(|value| (value, losses))
 }
 
 /// Convert Markdown source to a Carve [`Document`].
 pub fn markdown_to_ast(markdown: &str) -> Document {
+    markdown_to_ast_with_losses(markdown).0
+}
+
+fn markdown_to_ast_with_losses(markdown: &str) -> (Document, Vec<String>) {
+    let without_nuls = if markdown.contains('\0') {
+        Cow::Owned(markdown.replace('\0', "\u{fffd}"))
+    } else {
+        Cow::Borrowed(markdown)
+    };
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
@@ -82,23 +96,51 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
+    let source = normalize_heading_closers(&without_nuls, options);
+    let reference_links = task_marker_reference_links(&source, options);
     let mut builder = Builder::default();
-    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+    for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+        if matches!(event, Event::TaskListMarker(_)) {
+            if let Some((href, title)) = reference_links.get(&(range.start, range.end)) {
+                let label = &source[range.start + 1..range.end - 1];
+                builder.inline(InlineNode::Link(Link {
+                    attrs: None,
+                    href: href.clone(),
+                    title: title.clone(),
+                    children: vec![InlineNode::text(label)],
+                    ref_label: None,
+                    raw_ref: None,
+                    from_crossref: false,
+                    from_heading_reference: false,
+                    pos: None,
+                }));
+                // pulldown consumes the separator after a task marker. A
+                // reference link keeps that separator as ordinary text.
+                let separator: String = source[range.end..]
+                    .chars()
+                    .take_while(|ch| matches!(ch, ' ' | '\t'))
+                    .collect();
+                if !separator.is_empty() {
+                    builder.inline(InlineNode::text(separator));
+                }
+                continue;
+            }
+        }
         if matches!(&event, Event::Html(_))
             && !builder
                 .frames
                 .iter()
                 .any(|frame| matches!(frame, Frame::ListItem { .. } | Frame::BlockQuote(_)))
         {
-            let line_start = markdown[..range.start]
+            let line_start = source[..range.start]
                 .rfind('\n')
                 .map_or(0, |newline| newline + 1);
-            let indent = &markdown[line_start..range.start];
+            let indent = &source[line_start..range.start];
             if !indent.is_empty() && indent.chars().all(|ch| matches!(ch, ' ' | '\t')) {
                 builder.raw_html(indent);
             }
         }
-        builder.push(event, &markdown[range]);
+        builder.push(event, &source[range]);
         if builder.over_depth {
             break;
         }
@@ -126,6 +168,71 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
 /// (carve-rs#1877). Derived `Clone` and `Drop` recurse over the tree and have no
 /// ceiling to consult, so the only place to stop it is before it exists.
 const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 2;
+
+fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
+    if !source.contains('\t') {
+        return Cow::Borrowed(source);
+    }
+    let mut tabs = Vec::new();
+    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+        if !matches!(event, Event::Start(Tag::Heading { .. })) {
+            continue;
+        }
+        let bytes = source.as_bytes();
+        let mut end = range.end;
+        while end > range.start && matches!(bytes[end - 1], b' ' | b'\t' | b'\n' | b'\r') {
+            end -= 1;
+        }
+        let mut hashes = end;
+        while hashes > range.start && bytes[hashes - 1] == b'#' {
+            hashes -= 1;
+        }
+        if hashes > range.start && hashes < end && matches!(bytes[hashes - 1], b' ' | b'\t') {
+            if bytes[hashes - 1] == b'\t' {
+                tabs.push(hashes - 1);
+            }
+            for (offset, byte) in bytes[end..range.end].iter().enumerate() {
+                if *byte == b'\t' {
+                    tabs.push(end + offset);
+                }
+            }
+        }
+    }
+    if tabs.is_empty() {
+        return Cow::Borrowed(source);
+    }
+    let mut normalized = source.to_owned();
+    for tab in tabs.into_iter().rev() {
+        normalized.replace_range(tab..tab + 1, " ");
+    }
+    Cow::Owned(normalized)
+}
+
+fn task_marker_reference_links(
+    source: &str,
+    options: Options,
+) -> BTreeMap<(usize, usize), (String, Option<String>)> {
+    if !source.contains("]:") {
+        return BTreeMap::new();
+    }
+    let mut without_tasks = options;
+    without_tasks.remove(Options::ENABLE_TASKLISTS);
+    Parser::new_ext(source, without_tasks)
+        .into_offset_iter()
+        .filter_map(|(event, range)| match event {
+            Event::Start(Tag::Link {
+                link_type: LinkType::Shortcut,
+                dest_url,
+                title,
+                ..
+            }) if matches!(&source[range.clone()], "[x]" | "[X]" | "[ ]") => Some((
+                (range.start, range.end),
+                (dest_url.to_string(), optional(&title)),
+            )),
+            _ => None,
+        })
+        .collect()
+}
 
 /// A container under construction.
 ///
@@ -275,6 +382,7 @@ struct Builder {
     /// Carve parser assigns and therefore the one a round trip must reproduce.
     footnote_numbers: BTreeMap<String, usize>,
     frontmatter: Option<Frontmatter>,
+    losses: Vec<String>,
 }
 
 impl Builder {
@@ -792,7 +900,7 @@ impl Builder {
                 raw_ref: None,
                 pos: None,
             })),
-            Frame::Table { rows, .. } => self.block(BlockNode::Table(Table {
+            Frame::Table { rows, .. } if !rows.is_empty() => self.block(BlockNode::Table(Table {
                 attrs: None,
                 caption: None,
                 short_caption: None,
@@ -801,7 +909,21 @@ impl Builder {
                 row_groups: None,
                 pos: None,
             })),
-            Frame::TableRow { cells, .. } => {
+            Frame::Table { .. } => {}
+            Frame::TableRow { header, cells } => {
+                if !cells.is_empty()
+                    && cells.iter().all(|cell| {
+                        cell.children.is_empty() && cell.valign.is_none() && cell.attrs.is_none()
+                    })
+                {
+                    let kind = if header { "header" } else { "body" };
+                    let cell = if cells.len() == 1 { "cell" } else { "cells" };
+                    self.losses.push(format!(
+                        "Dropped a {kind} table row of {} blank {cell}; Carve spells no row whose every cell is blank",
+                        cells.len()
+                    ));
+                    return;
+                }
                 let row = TableRow {
                     cells,
                     attrs: None,
@@ -942,7 +1064,7 @@ impl Builder {
         }
     }
 
-    fn finish(mut self) -> Document {
+    fn finish(mut self) -> (Document, Vec<String>) {
         // Truncated input can leave frames open; closing them keeps the content
         // rather than discarding a half-built tree.
         while !self.frames.is_empty() {
@@ -955,7 +1077,7 @@ impl Builder {
             .map(|frontmatter| parse_frontmatter(&frontmatter.content))
             .unwrap_or_default();
 
-        Document {
+        let document = Document {
             frontmatter,
             frontmatter_raw: self.frontmatter,
             footnote_defs: self.footnote_defs,
@@ -963,7 +1085,8 @@ impl Builder {
             children: self.blocks,
             source_len: 0,
             ingest_payload_len: 0,
-        }
+        };
+        (document, self.losses)
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
-    bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
-    HtmlImportAdapter, HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
+    bbcode_to_carve, djot_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter,
+    HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,23 +107,32 @@ fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
     }
 }
 
-/// Migrate Markdown, or the writer's refusal.
+/// Migrate Markdown and return its fidelity report.
 ///
-/// The fallible form is the one to reach for on untrusted input: the Markdown
-/// importer is the only one whose tree has no nesting bound of its own, so it is
-/// the only one that can reach PART 9 §25's ceiling (carve-rs#1877).
-pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
-    Ok(unverified(
-        crate::try_markdown_to_carve(source)?,
-        SourceFormat::Markdown,
-    ))
+/// # Panics
+///
+/// Panics if the canonical writer cannot represent the imported document. Use
+/// [`try_migrate_markdown`] to handle that error.
+pub fn migrate_markdown(source: &str) -> MigrationResult {
+    try_migrate_markdown(source).expect("the Markdown import cannot be written as Carve")
 }
 
-/// Migrate Markdown, with an empty result where the writer refuses.
-///
-/// Prefer [`try_migrate_markdown`] for input you did not write.
-pub fn migrate_markdown(source: &str) -> MigrationResult {
-    unverified(markdown_to_carve(source), SourceFormat::Markdown)
+/// Migrate Markdown while preserving a typed canonical-writer failure.
+pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
+    let (value, losses) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    let mut result = unverified(value, SourceFormat::Markdown);
+    result
+        .report
+        .diagnostics
+        .extend(losses.into_iter().map(|message| MigrationDiagnostic {
+            code: "structure-unspellable".to_owned(),
+            message,
+            severity: HtmlImportSeverity::Warning,
+            fidelity: MigrationFidelity::Dropped,
+            confidence: MigrationConfidence::Exact,
+            path: None,
+        }));
+    Ok(result)
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
