@@ -17,3 +17,6 @@
 # `_fence.py` sat in the tree for months after the fix it applied was merged,
 # and an automated PR later tried to "fix" the repo by editing it.
 /_*
+
+# Python bytecode from tools/
+__pycache__/
