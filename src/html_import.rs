@@ -1,7 +1,9 @@
 //! HTML5-to-Carve migration boundary.
 
 use crate::ast::*;
-use crate::escape::{has_denied_url_scheme, is_dangerous_attr_name, sanitize_attr_value};
+use crate::escape::{
+    decoded_style_value, has_denied_url_scheme, is_dangerous_attr_name, sanitize_attr_value,
+};
 use crate::extension::{
     label_default, HeadingIdOptions, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF,
     LABEL_TABS_GROUP,
@@ -452,7 +454,14 @@ fn css_url_arguments(value: &str) -> Vec<&str> {
 /// its needles is what stops the importer refusing a different set than the
 /// renderer blanks.
 fn style_refusal(value: &str) -> (String, bool) {
-    if css_url_arguments(value)
+    // THE SAME TEXT THE RENDERER ACTS ON, which is what makes the two readings
+    // below one statement about one value rather than two scans that drift
+    // (markup-carve/carve-rs#1921). On the raw bytes a `url(...)` inside a CSS
+    // comment reported a denied scheme in a declaration the renderer writes
+    // back untouched, and `url(java\73 cript:x)` was invisible to this half and
+    // took the weaker of the two reasons markup-carve/carve#2267 allows.
+    let declarations = decoded_style_value(value);
+    if css_url_arguments(&declarations)
         .into_iter()
         .any(has_denied_url_scheme)
     {

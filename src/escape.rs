@@ -276,7 +276,11 @@ pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'
 /// script bindings. Whitespace is collapsed first so `expr ession (` cannot
 /// evade. Blanks the whole value rather than attempting CSS surgery.
 fn has_dangerous_css(value: &str) -> bool {
-    let compact = normalize_css_for_dangerous_check(value);
+    let compact: String = decoded_style_value(value)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
     compact.contains("expression(")
         || compact.contains("url(")
         || compact.contains("@import")
@@ -284,7 +288,16 @@ fn has_dangerous_css(value: &str) -> bool {
         || compact.contains("-moz-binding")
 }
 
-fn normalize_css_for_dangerous_check(value: &str) -> String {
+/// A `style` value as the needle check above reads it: CSS comments removed and
+/// CSS escapes decoded, so neither a commented-out construct nor
+/// `expr\65 ssion(` changes the answer. Whitespace and case are left alone,
+/// which the needle check folds itself and a `url(...)` argument needs.
+///
+/// Crate-visible because the HTML import report classifies a preserved `style`
+/// off the same text (markup-carve/carve-rs#1921). Reading the raw bytes there
+/// put the two out of step in both directions: a denied URL inside a comment
+/// looked live, and an escaped one looked like an unnamed construct.
+pub(crate) fn decoded_style_value(value: &str) -> String {
     let mut out = String::new();
     let mut chars = value.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -318,23 +331,17 @@ fn normalize_css_for_dangerous_check(value: &str) -> String {
                 }
                 if let Ok(cp) = u32::from_str_radix(&hex, 16) {
                     if let Some(decoded) = char::from_u32(cp) {
-                        if !decoded.is_whitespace() {
-                            out.extend(decoded.to_lowercase());
-                        }
+                        out.push(decoded);
                     }
                 }
                 continue;
             }
             if let Some(escaped) = chars.next() {
-                if !escaped.is_whitespace() {
-                    out.extend(escaped.to_lowercase());
-                }
+                out.push(escaped);
             }
             continue;
         }
-        if !ch.is_whitespace() {
-            out.extend(ch.to_lowercase());
-        }
+        out.push(ch);
     }
     out
 }
