@@ -515,6 +515,17 @@ impl CarveExtension for TocPlacement {
             &self.budget,
         ))
     }
+
+    /// The nav fragment is written at column 0 throughout - see the note in
+    /// [`render_toc_nav`] - so the caller must not indent its first line, or the
+    /// `<nav>` opener sits a level below the `</nav>` it pairs with.
+    ///
+    /// Only the nav itself. An authored block written inside the placeholder is
+    /// rendered at the ambient level and comes FIRST, so that shape keeps the
+    /// indent it has.
+    fn carrier_anchored_at_column_zero(&self, node: &ExtensionCarrier) -> bool {
+        node.name == TOC_CARRIER && node.children.is_empty()
+    }
 }
 
 /// Rewrite every `::: toc` admonition into a [`TOC_CARRIER`] block extension so
@@ -595,14 +606,22 @@ fn render_toc_nav(
         format!("<nav{attrs}>\n{}\n</nav>", tokens.join("\n"))
     };
     // Preserve any authored blocks written inside the placeholder before the nav.
+    //
+    // With children the FIRST line is authored content at the ambient level, and
+    // the caller indents that line itself, so the block's own pad comes off -
+    // the caller is told to skip the indent only for the bare-nav shape. Without
+    // this the authored block sat a level below the blockquote holding it.
     let wrap = |nav: String| -> String {
         if node.children.is_empty() {
             nav
         } else {
-            format!(
-                "{}\n{}",
-                ctx.render_blocks_at(&node.children, ctx.level()),
-                nav
+            crate::extension::unpad_first_line(
+                format!(
+                    "{}\n{}",
+                    ctx.render_blocks_at(&node.children, ctx.level()),
+                    nav
+                ),
+                &ctx.indent(ctx.level()),
             )
         }
     };

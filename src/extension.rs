@@ -666,6 +666,18 @@ pub trait CarveExtension {
     ) -> Option<String> {
         None
     }
+
+    /// Does this extension's carrier anchor its element at column 0 whatever the
+    /// nesting, rather than at the ambient block indentation?
+    ///
+    /// CARVE-P10-010 allows either, but ONE COLUMN SERVES BOTH TAGS. A column-0
+    /// fragment writes its own closer at 0, so the caller's first-line indent
+    /// would put only the opener a level deeper and the element would conform
+    /// under neither choice (carve-rs#1969). Ambient-anchored renderers, which
+    /// are all the others, leave this alone.
+    fn carrier_anchored_at_column_zero(&self, _node: &ExtensionCarrier) -> bool {
+        false
+    }
 }
 
 /// Context handed to [`CarveExtension::before_render`]. Carries the render
@@ -764,6 +776,21 @@ pub struct RenderContext<'a> {
     /// numbering and depth budget across the extension boundary. `None` on the
     /// inline path.
     state: Option<&'a std::cell::RefCell<&'a mut crate::render::RenderState>>,
+}
+
+/// Drop one `pad` from the first line of a placed extension's HTML.
+///
+/// `render_extension_carrier` indents that line itself, so a renderer whose
+/// parts all self-indent - which is what every line after the first needs -
+/// would otherwise put its first line one level too deep.
+pub(crate) fn unpad_first_line(html: String, pad: &str) -> String {
+    if pad.is_empty() {
+        return html;
+    }
+    match html.strip_prefix(pad) {
+        Some(rest) => rest.to_string(),
+        None => html,
+    }
 }
 
 pub(crate) fn directive_tokens(

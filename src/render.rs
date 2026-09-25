@@ -3049,7 +3049,14 @@ fn render_extension_carrier(
         let ctx = RenderContext::with_level_and_state(options, level, &shared);
         for ext in &options.extensions {
             if let Some(html) = ext.render_extension_carrier(node, &ctx) {
-                indent(out, level);
+                // A COLUMN-0 FRAGMENT TAKES NO INDENT HERE. It writes its own
+                // closer at 0, so indenting the first line would move the opener
+                // alone and leave the element at two columns - which
+                // CARVE-P10-010 refuses under either of the choices it allows
+                // (carve-rs#1969).
+                if !ext.carrier_anchored_at_column_zero(node) {
+                    indent(out, level);
+                }
                 out.push_str(&html);
                 return;
             }
