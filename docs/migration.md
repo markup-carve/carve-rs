@@ -38,11 +38,12 @@ as nothing. Name the adapter only for input you know came from that editor: on
 arbitrary HTML a mutually linked anchor pair is not proof of a footnote, which
 is why `generic` stays out.
 
-Markdown migration is `markdown_to_ast`, `markdown_to_carve`,
-`try_markdown_to_carve`, or `carve migrate --from markdown input.md`.
-`try_migrate_markdown` returns the output with diagnostics and a writer error
-if Carve cannot represent the document. `markdown_to_carve` and
-`migrate_markdown` panic on a writer error. The importer parses the source to a tree and
+Markdown migration is `markdown_to_ast`, `try_markdown_to_ast`,
+`markdown_to_carve`, `try_markdown_to_carve`, or
+`carve migrate --from markdown input.md`. The `try_` functions return an error
+when nesting is too deep or Carve cannot write the document.
+`try_migrate_markdown` also returns diagnostics. The older functions panic on
+these errors. The importer parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's
 spelling: a setext heading comes back as `#`, an indented code block as a
 fence. It has no mode or adapter. `--report` emits a dropped/fallback

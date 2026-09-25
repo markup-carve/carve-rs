@@ -43,6 +43,7 @@ pub fn render_ansi_with_options(
     doc: &Document,
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
+    crate::render_depth::refuse_if_too_deep(doc, "ansi")?;
     let watch = crate::render_depth::RenderDepthWatch::new();
     watch.into_result(render_ansi_inner(
         doc,
@@ -77,6 +78,7 @@ const FG_BRIGHT_WHITE: &str = "\x1b[97m";
 /// the parse cap sits below the ceiling - so this fails only for a tree built
 /// through the API or read by `from_json`, which is the caller who can act on it.
 pub fn render_ansi(doc: &Document) -> Result<String, crate::RenderDepthError> {
+    crate::render_depth::refuse_if_too_deep(doc, "ansi")?;
     let watch = crate::render_depth::RenderDepthWatch::new();
     watch.into_result(render_ansi_inner(
         doc,
