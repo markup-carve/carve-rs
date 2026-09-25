@@ -611,6 +611,18 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
     match node {
         // A quote marker always interrupts.
         BlockNode::BlockQuote(_) => true,
+        // CARVE-P11-047 states a property and names two spellings as examples.
+        // An ATX heading and a fence carry it too: both open below a paragraph
+        // line in cmark-gfm 0.29.0.gfm.13 (carve-rs#1914). A thematic break does
+        // NOT belong here - this target spells it `---`, which under a paragraph
+        // is a setext underline and turns the paragraph into a heading instead of
+        // interrupting it.
+        BlockNode::Heading(_) | BlockNode::CodeBlock(_) => true,
+        // A GFM table opens only where the delimiter row promotes the row above
+        // it. A headerless table writes rows alone, and those are read as lazy
+        // continuation of the paragraph, so its text would be swallowed into the
+        // paragraph rather than gaining a table.
+        BlockNode::Table(_) => has_delimiter_row(rendered),
         BlockNode::List(list) => {
             // An ordered marker that does not start at 1 cannot interrupt, and a
             // marker with nothing after it reads as a setext underline. Both
@@ -622,6 +634,18 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether a rendered table's second line is the delimiter row, which is what
+/// makes a GFM reader see a table at all.
+fn has_delimiter_row(rendered: &str) -> bool {
+    let Some(second) = rendered.split('\n').nth(1) else {
+        return false;
+    };
+    second.contains('-')
+        && second
+            .chars()
+            .all(|c| matches!(c, '|' | '-' | ':' | ' ' | '\t'))
 }
 
 /// A list marker with no content after it: `-`, `*`, `1.`, `1)`.

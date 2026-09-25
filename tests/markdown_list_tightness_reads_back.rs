@@ -10,7 +10,9 @@
 //!
 //! The separator is not always wrong, which is why the writer asks per case:
 //! an ordered marker that does not start at 1 cannot interrupt a paragraph,
-//! and a marker with nothing after it reads as a setext underline.
+//! a marker with nothing after it reads as a setext underline, a `---` line
+//! reads as one too, and a headerless table's rows are lazy continuation of the
+//! paragraph above them.
 
 use carve::ast::{BlockNode, Document};
 
@@ -113,4 +115,65 @@ fn a_loose_list_keeps_its_looseness_at_the_item_boundary() {
 fn a_tight_list_of_plain_items_is_unchanged() {
     assert_eq!(carve::to_markdown("- a\n- b\n"), "- a\n- b\n");
     assert!(reads_back_tight("- a\n- b\n"));
+}
+
+#[test]
+fn a_heading_does_not_loosen_the_item_above_it() {
+    let source = "- a\n  # h\n";
+    assert!(tight_in_source(source));
+    assert_eq!(carve::to_markdown(source), "- a\n  # h\n");
+    assert!(reads_back_tight(source));
+}
+
+#[test]
+fn a_fence_does_not_loosen_the_item_above_it() {
+    let source = "- a\n  ```\n  x\n  ```\n";
+    assert!(tight_in_source(source));
+    assert_eq!(carve::to_markdown(source), "- a\n  ```\n  x\n  ```\n");
+    assert!(reads_back_tight(source));
+}
+
+#[test]
+fn a_table_does_not_loosen_the_item_above_it() {
+    let source = "- a\n  | H |\n  | --- |\n  | x |\n";
+    assert!(tight_in_source(source));
+    assert_eq!(
+        carve::to_markdown(source),
+        "- a\n  | H |\n  | --- |\n  | x |\n"
+    );
+    assert!(reads_back_tight(source));
+}
+
+#[test]
+fn a_thematic_break_keeps_the_separator() {
+    // `---` under a paragraph line is a setext underline, so the break does not
+    // interrupt the paragraph - it turns it into a heading. The blank stays.
+    let source = "- a\n  ---\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(out, "- a\n\n  ---\n");
+    assert!(matches!(
+        first_list(&carve::markdown_import::markdown_to_ast(&out)).items[0]
+            .children
+            .get(1),
+        Some(BlockNode::ThematicBreak(_))
+    ));
+    // Without the blank the same reader answers a heading, which is the reading
+    // the separator buys.
+    let glued = carve::markdown_import::markdown_to_ast("- a\n  ---\n");
+    assert!(matches!(
+        first_list(&glued).items[0].children.first(),
+        Some(BlockNode::Heading(_))
+    ));
+}
+
+#[test]
+fn a_headerless_table_keeps_the_separator() {
+    // A GFM reader needs the delimiter row to see a table at all. Written
+    // directly under the paragraph line, a headerless table's rows are read as
+    // lazy continuation and its text is swallowed into the paragraph.
+    let source = "- a\n  | x |\n  | y |\n";
+    let out = carve::to_markdown(source);
+    assert_eq!(out, "- a\n\n  | x |\n  | y |\n");
+    let back = carve::markdown_import::markdown_to_ast(&out);
+    assert_eq!(first_list(&back).items[0].children.len(), 2);
 }
