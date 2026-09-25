@@ -78,23 +78,24 @@ fn tabs_before_closing_heading_hashes_do_not_become_heading_text() {
 }
 
 #[test]
-fn reference_links_take_precedence_over_task_markers() {
-    // THE ORDERED FORM IS THE MARKER'S, not the definition's. This assertion
-    // read `1. [x](/u) done` when it landed, eight minutes before
-    // markup-carve/carve#2273 ruled that cmark-gfm wins here and the definition
-    // goes unused, so it pins a reading the ruling replaced. The bullet cases
-    // below still pin the old reading and are carve-rs#1888.
-    assert_eq!(
-        markdown_to_carve("1. [x] done\n\n[x]: /u\n"),
-        "1. [x] done\n"
-    );
+fn task_markers_take_precedence_over_reference_links() {
+    // markup-carve/carve#2273: cmark-gfm 0.29.0.gfm.13 is the reader the
+    // importers answer to (markup-carve/carve#2187) and it reads a box for
+    // every shape here, leaving the definition unused. An unused definition
+    // renders nothing, so it may go out or stay.
     assert_eq!(
         markdown_to_carve("- [x] done\n\n[x]: /u \"Title\"\n"),
-        "- [x](/u \"Title\") done\n"
+        "- [x] done\n"
     );
     assert_eq!(markdown_to_carve("- [x] done\n"), "- [x] done\n");
     assert_eq!(
         markdown_to_carve("- [x]\tdone\n\n[x]: /u\n"),
-        "- [x](/u)\tdone\n"
+        "- [x] done\n"
+    );
+    // The ordered form keeps the marker as text (carve-rs#1886), which is the
+    // same reading spelled where the writer has no box to put it.
+    assert_eq!(
+        markdown_to_carve("1. [x] done\n\n[x]: /u\n"),
+        "1. [x] done\n"
     );
 }
