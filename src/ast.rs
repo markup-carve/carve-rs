@@ -506,14 +506,15 @@ pub fn is_generated_content_kind(kind: &str) -> bool {
 /// a consumer dispatching on the node type to decide whether to draw a callout
 /// otherwise has to carry the not-a-callout list itself.
 ///
-/// No `title`: the schema names `kind`, `label`, `children`, `attrs` and `pos`
-/// and closes the node, so an opener's quoted title has no slot here. Where one
-/// should go is markup-carve/carve#2247.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Directive {
     pub attrs: Option<Attrs>,
     /// One of [`GENERATED_CONTENT_KINDS`].
     pub kind: String,
+    /// The opener's quoted title, as [`Admonition::title`] carries one
+    /// (CARVE-P12-057, markup-carve/carve#2258). Not yet published on the wire:
+    /// it exists so the writer can put the authored bytes back.
+    pub title: Option<Vec<InlineNode>>,
     /// Opener `[label]` grouping id. Inert in core, like [`Admonition::label`].
     pub label: Option<String>,
     /// Blocks written inside the opener. Usually empty: the content is

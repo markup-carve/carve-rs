@@ -2494,8 +2494,9 @@ fn render_directive(
         push_footnotes_placement_marker(out);
         return;
     }
-    // No title: the schema closes `directive` without one, so the slot is empty
-    // for every one of them (markup-carve/carve#2247).
+    // `None` rather than `d.title`: the node carries the opener's title so the
+    // Carve writer can put it back (carve-rs#1880), and where CARVE-P9-072 places
+    // it in the HTML is carve-rs#1874. Passing it here now would move the corpus.
     render_named_container(
         out,
         &d.attrs,

@@ -2776,6 +2776,10 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "directive" => Ok(BlockNode::Directive(Directive {
             attrs: optional_attrs(obj)?,
             kind: required_string(obj, "directive", "kind")?.to_string(),
+            // The schema this pin names does not carry `directive.title` yet, so
+            // `WIRE_FIELDS` refuses the property before this runs and the field
+            // is always absent here (carve-rs#1874).
+            title: None,
             label: optional_string(obj, "label")?.map(str::to_string),
             children: decode_blocks(required_array(obj, "directive", "children")?)?,
             pos: optional_pos(obj, "directive")?,

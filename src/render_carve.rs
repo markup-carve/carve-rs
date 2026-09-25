@@ -1009,6 +1009,9 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             }
         }
         BlockNode::Directive(d) => {
+            if let Some(title) = &mut d.title {
+                normalize_escapes_inlines(title);
+            }
             for child in &mut d.children {
                 normalize_escapes_block(child);
             }
@@ -1840,10 +1843,16 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", admonition.kind),
             )
         }
-        // The same opener as an admonition, minus the title slot the node does
-        // not have (CARVE-P12-057). `parse(fmt(x)) == parse(x)` holds because the
-        // kind goes back where it came from and re-parses to a directive again.
+        // The same opener as an admonition (CARVE-P12-057), title slot included:
+        // `parse(fmt(x)) == parse(x)` held while the title was dropped, because
+        // it was absent from both trees, so only the source can witness the loss
+        // (carve-rs#1880).
         BlockNode::Directive(directive) => {
+            let title = directive
+                .title
+                .as_ref()
+                .map(|title| format!(" \"{}\"", escape_quoted(&render_inlines(title, ctx))))
+                .unwrap_or_default();
             let label = directive
                 .label
                 .as_ref()
@@ -1853,7 +1862,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let body = render_inside_colon_container(&directive.children, ctx);
             with_block_attrs(
                 &directive.attrs,
-                &format!("{fence} {}{label}\n{body}\n{fence}", directive.kind),
+                &format!("{fence} {}{title}{label}\n{body}\n{fence}", directive.kind),
             )
         }
         BlockNode::LineBlock(lb) => {

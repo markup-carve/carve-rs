@@ -100,9 +100,10 @@ fn a_directive_carries_its_opener_label() {
 
 #[test]
 fn a_directive_publishes_no_title_because_the_schema_names_none() {
-    // markup-carve/carve#2247: `:::` admits a quoted title on every named
-    // container and `directive` has no slot for one, so the title is not
-    // carried. Pinned rather than left to be discovered.
+    // The node carries the opener's title so the writer can put it back
+    // (carve-rs#1880), but the schema this pin names closes `directive` without
+    // a `title`, so it does not reach the wire. Moving the pin and publishing
+    // the field is carve-rs#1874.
     let json = carve::to_json(&parse("::: toc \"Contents\"\n:::\n"));
     assert!(
         json.contains(r#""type":"directive""#),

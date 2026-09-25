@@ -4210,7 +4210,12 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::BlockQuote(b) => {
                 fill_offsets(&mut b.children, line_starts);
             }
-            BlockNode::Directive(d) => fill_offsets(&mut d.children, line_starts),
+            BlockNode::Directive(d) => {
+                if let Some(title) = &mut d.title {
+                    apply_inline_offsets(title, line_starts);
+                }
+                fill_offsets(&mut d.children, line_starts);
+            }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
             BlockNode::Admonition(a) => {
                 if let Some(title) = &mut a.title {
@@ -4876,6 +4881,9 @@ fn parse_eof_closed_colon_ladder(
                 BlockNode::Directive(Directive {
                     attrs: open.attrs,
                     kind,
+                    title: open
+                        .title
+                        .map(|title| parse_inline_with_options(&title, options)),
                     label: open.label,
                     children,
                     pos: None,
@@ -14829,15 +14837,17 @@ fn boxed_container_node(
     options: &Options<'_>,
 ) -> Box<BlockNode> {
     if let Some(kind) = open.kind {
-        // CARVE-P12-057, the same dispatch as the flatten path above. A
-        // directive has NO title slot - the schema closes the node without one -
-        // so an opener's quoted title on one of the six kinds is not carried.
-        // No corpus document or example spells one; where it should go is
-        // markup-carve/carve#2247.
+        // CARVE-P12-057, the same dispatch as the flatten path above. The
+        // opener's quoted title is read the same way on either branch: dropping
+        // it here deleted authored bytes from anything that writes the tree back
+        // (carve-rs#1880).
         if crate::ast::is_generated_content_kind(&kind) {
             return Box::new(BlockNode::Directive(Directive {
                 attrs: open.attrs,
                 kind,
+                title: open.title.map(|title| {
+                    parse_inline_lines_with_anchor(&title, options, vec![title_anchor])
+                }),
                 label: open.label,
                 children,
                 pos,

@@ -380,7 +380,15 @@ impl ProfileFilter<'_> {
                 }
                 self.filter_blocks(&mut adm.children, depth)?;
             }
-            BlockNode::Directive(div) => self.filter_blocks(&mut div.children, depth)?,
+            BlockNode::Directive(dir) => {
+                // The title is authored inline content the Carve writer emits, so
+                // a profile that denies a node inside it has to reach it here or
+                // the denied node rides back out into the formatted source.
+                if let Some(title) = &mut dir.title {
+                    self.filter_inlines(title, depth)?;
+                }
+                self.filter_blocks(&mut dir.children, depth)?;
+            }
             BlockNode::Div(div) => self.filter_blocks(&mut div.children, depth)?,
             BlockNode::LineBlock(lb) => self.filter_blocks(&mut lb.children, depth)?,
             BlockNode::DefinitionList(dl) => {
@@ -1222,7 +1230,12 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
             cleanup_blocks(&mut adm.children);
         }
-        BlockNode::Directive(div) => cleanup_blocks(&mut div.children),
+        BlockNode::Directive(dir) => {
+            if let Some(title) = &mut dir.title {
+                cleanup_inlines(title);
+            }
+            cleanup_blocks(&mut dir.children);
+        }
         BlockNode::Div(div) => cleanup_blocks(&mut div.children),
         BlockNode::LineBlock(lb) => cleanup_blocks(&mut lb.children),
         BlockNode::DefinitionList(dl) => {

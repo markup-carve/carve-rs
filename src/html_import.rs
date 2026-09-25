@@ -2013,6 +2013,7 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::Directive(Directive {
                 attrs: None,
                 kind: "footnotes".to_string(),
+                title: None,
                 label: None,
                 children: Vec::new(),
                 pos: None,
@@ -2398,6 +2399,10 @@ impl<'a> Importer<'a> {
                     return Ok(vec![BlockNode::Directive(Directive {
                         attrs,
                         kind,
+                        // `admonition_title` was told not to consume one on a
+                        // generated kind, so there is none to carry. Reading it
+                        // back out of the placed element is carve-rs#1874.
+                        title: None,
                         label,
                         children,
                         pos: None,
@@ -2583,6 +2588,7 @@ impl<'a> Importer<'a> {
                 return Ok(vec![BlockNode::Directive(Directive {
                     attrs,
                     kind,
+                    title: None,
                     label,
                     children,
                     pos: None,
