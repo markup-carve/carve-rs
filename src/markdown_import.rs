@@ -121,10 +121,9 @@ fn markdown_to_ast_with_losses(
             // in the first place (carve-rs#1899). Either way the characters the
             // author wrote stay as the text they were written as.
             if ordered && extension_reaches {
-                builder.losses.push(
-                    "An ordered task item is not spellable as a Carve task item; the checkbox marker was kept as text"
-                        .to_owned(),
-                );
+                builder
+                    .losses
+                    .push(crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE.to_owned());
             }
             builder.inline(InlineNode::text(&source[range.start..range.end]));
             if let Some(separator) = task_marker_separator(&source, range.end) {

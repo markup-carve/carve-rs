@@ -13,8 +13,16 @@
 //!
 //! Every case asserts the rendered HTML beside the Carve, because the bracket
 //! text and the box look alike in neither.
+//!
+//! The message is the Markdown entry point's, and the import contract pins it for
+//! both (carve-js#2062). This side used to add "a Carve task marker is spelled
+//! behind a bullet only", which is `unordered_item` restated inside a diagnostic:
+//! one loss with one cause now reads the same whichever importer ran.
 
-use carve::{html_to_ast, html_to_carve, to_html, HtmlImportDiagnosticCode, HtmlImportOptions};
+use carve::{
+    html_to_ast, html_to_carve, migrate_markdown, to_html, HtmlImportDiagnosticCode,
+    HtmlImportOptions,
+};
 
 struct Imported {
     carve: String,
@@ -50,6 +58,7 @@ fn unspellable(rows: &[(HtmlImportDiagnosticCode, String, String)]) -> Vec<&str>
 }
 
 const BOX: &str = r#"<input type="checkbox""#;
+const MESSAGE: &str = "An ordered task item is not spellable as a Carve task item; the checkbox marker was kept as text";
 
 #[test]
 fn the_ticket_case_keeps_the_bracket_text_and_reports_the_loss() {
@@ -57,10 +66,45 @@ fn the_ticket_case_keeps_the_bracket_text_and_reports_the_loss() {
     assert_eq!(out.carve, "1. [x] done\n");
     assert!(out.html.contains("<li>[x] done</li>"), "{}", out.html);
     assert_eq!(unspellable(&out.rows), ["/ol[1]/li[1]/input[1]"]);
+    assert_eq!(out.rows[0].2, MESSAGE);
+}
+
+#[test]
+fn both_entry_points_say_the_same_thing() {
+    // The ruling itself (carve-js#2062): one loss with one cause, so a consumer
+    // filtering on the message does not have to know which importer ran. Both
+    // literals stay spelled out - reading the crate's own constant from here
+    // would let a wrong string pass in step with itself.
+    let from_html = imported("<ol><li><input type=\"checkbox\" checked> done</li></ol>");
     assert_eq!(
-        out.rows[0].2,
-        "Wrote an ordered task item's checkbox as its bracket text: a Carve task marker is spelled behind a bullet only, so the item keeps the characters and loses the task-item semantics"
+        from_html
+            .rows
+            .iter()
+            .map(|row| row.2.as_str())
+            .collect::<Vec<_>>(),
+        [MESSAGE]
     );
+    let from_markdown = migrate_markdown("1. [x] done\n");
+    let rows: Vec<&carve::MigrationDiagnostic> = from_markdown
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "structure-unspellable")
+        .collect();
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.message.as_str())
+            .collect::<Vec<_>>(),
+        [MESSAGE]
+    );
+    // Everything but `path` matches too: an HTML importer locates the `<input>`
+    // it read and a Markdown importer has no element to locate.
+    for row in rows {
+        assert_eq!(row.severity, carve::HtmlImportSeverity::Warning);
+        assert_eq!(row.fidelity, carve::MigrationFidelity::Dropped);
+        assert_eq!(row.confidence, carve::MigrationConfidence::Exact);
+        assert_eq!(row.path, None);
+    }
 }
 
 #[test]
