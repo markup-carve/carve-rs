@@ -458,30 +458,25 @@ fn render_index_list(
         entry.push_str("</li>");
         items.push(entry);
     }
-    // The framework indents the FIRST line of the returned HTML by `level`
-    // (see render_extension_carrier), so the opening `<ul>` must NOT carry its own
-    // leading pad or it double-indents inside a container (`    <ul>` instead of
-    // `  <ul>`, diverging from carve-js / carve-php). Interior lines still
-    // self-indent: `<li>` at level+1, `</ul>` at level.
     let ul = format!(
-        "<ul{}>\n{}\n{}</ul>",
+        "{}<ul{}>\n{}\n{}</ul>",
+        pad,
         render_attrs(&Some(with_base_class(&node.attrs, "index"))),
         items.join("\n"),
         pad
     );
-    // Preserve any authored content inside the placeholder before the list. That
-    // content becomes the framework-indented first line, so the `<ul>` is no
-    // longer first and must supply its own `pad`.
+    // Preserve any authored content inside the placeholder before the list.
     let mut parts = Vec::new();
     if !node.children.is_empty() {
         parts.push(ctx.render_blocks_at(&node.children, level));
     }
     parts.extend(crate::extension::directive_tokens(node, ctx, level, None));
-    if parts.is_empty() {
-        ul
-    } else {
-        format!("{}\n{}{}", parts.join("\n"), pad, ul)
-    }
+    parts.push(ul);
+    // Every part self-pads, which is what each one after the first needs, so the
+    // one pad the framework is about to add to the first line comes off here.
+    // Paying it twice put whichever part came first a level too deep: the `<ul>`
+    // when it led, and then a title when one preceded it (carve-rs#1969).
+    crate::extension::unpad_first_line(parts.join("\n"), &pad)
 }
 
 /// Flatten an inline tree to its text content, matching carve-js `inlineText`.

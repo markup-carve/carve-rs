@@ -232,22 +232,22 @@ fn render_glossary(
             " class=\"glossary\"".to_string()
         };
         first_dl = false;
-        // The framework indents the FIRST line of the returned HTML by `level`
-        // (see render_extension_carrier), so a `<dl>` that IS that line must not
-        // carry its own pad as well: CARVE-P10-010 gives one column to both
-        // tags, and paying twice put the opener a level below its own closer.
-        // A later list, or one after an authored block or a token, is no longer
-        // the first line and supplies its own.
-        let lead = if parts.is_empty() { "" } else { pad.as_str() };
         parts.push(format!(
             "{}<dl{}>\n{}\n{}</dl>",
-            lead,
+            pad,
             attr_str,
             rows.join("\n"),
             pad
         ));
     }
-    parts.join("\n")
+    // The framework indents the FIRST line of what an extension returns (see
+    // `render_extension_carrier`), so whatever lands on that line must not carry
+    // its own pad as well. Every part above self-pads, which is what a later one
+    // needs, so the one pad the framework is about to add comes off here - once,
+    // in one place, rather than per part. Paying it twice put a `<dl>` opener a
+    // level below its own closer (carve-rs#1906, CARVE-P10-010) and then a
+    // container title a level below the element it titles (carve-rs#1969).
+    crate::extension::unpad_first_line(parts.join("\n"), &pad)
 }
 
 /// A single-paragraph definition collapses to inline content; a multi-block
