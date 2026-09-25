@@ -7391,10 +7391,6 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
         let start = i;
         while i < bytes.len() {
-            if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
             if bytes[i] == b'"' {
                 title_start = Some(start);
                 title_end = Some(i);
@@ -7460,7 +7456,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     let title = open
         .title_start
         .zip(open.title_end)
-        .map(|(start, end)| unescape_quoted_header(&open_line[start..end]));
+        .map(|(start, end)| open_line[start..end].to_string());
     let label = open
         .label_start
         .zip(open.label_end)
@@ -7507,23 +7503,6 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             pos,
         })
     }
-}
-
-fn unescape_quoted_header(s: &str) -> String {
-    let mut out = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            if let Some(next) = chars.next() {
-                out.push(next);
-            } else {
-                out.push(c);
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 /// A CLOSER TAKES NO CONTENT, so its tail is the LINE ENDING and not a slot.
@@ -14641,12 +14620,8 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         let quote_at = (after.as_ptr() as usize) - (line.as_ptr() as usize);
         let text_at = quote_at + 1;
         let (title, remainder) = parse_quoted_metadata(after)?;
-        // Only when the title is the source verbatim. An escaped quote makes
-        // `parse_quoted_metadata` build a new string, and then no column in it
-        // maps back.
-        if line[text_at..].starts_with(&title) {
-            title_col = Some(line[..text_at].chars().count());
-        }
+        // The title is a subslice of this line, so its columns always map.
+        title_col = Some(line[..text_at].chars().count());
         // THE LABEL SLOT IS SPACES, for the same reason as the title slot
         // above. This one was missed entirely by #720, which narrowed only the
         // slot before the title: `trim_start` is `char::is_whitespace`, so this
@@ -14689,23 +14664,18 @@ fn parse_bare_label(s: &str) -> Option<String> {
     Some(s[1..close].to_string())
 }
 
+/// The slot is the source VERBATIM and the first `"` closes it, per
+/// `quoted_title = '"', {character - '"'}, '"'` and its normative note that
+/// there is no escape mechanism inside a quoted title. So a backslash is a
+/// literal backslash and a `"` has no spelling in the slot at all: a
+/// backslash-skipping scan read an escaped quote as content and opened a
+/// container on a line the grammar leaves a paragraph (carve-rs#1946).
 fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
-    let bytes = s.as_bytes();
-    if bytes.first() != Some(&b'"') {
+    if !s.starts_with('"') {
         return None;
     }
-    let mut i = 1;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' && i + 1 < bytes.len() {
-            i += 2;
-            continue;
-        }
-        if bytes[i] == b'"' {
-            return Some((unescape_quoted_header(&s[1..i]), &s[i + 1..]));
-        }
-        i += 1;
-    }
-    None
+    let close = 1 + s[1..].find('"')?;
+    Some((s[1..close].to_string(), &s[close + 1..]))
 }
 
 #[inline(never)]

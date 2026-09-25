@@ -770,25 +770,48 @@ fn an_admonition_title_places_its_inlines() {
     assert_eq!(spans, vec!["Install ", "*now*", " via ", "`npm`"]);
 }
 
-/// A title carrying an ESCAPE is rebuilt rather than sliced, so no column in it
-/// maps back and the inlines stay unplaced. Absent beats wrong: the rebuilt
-/// string is shorter than the source it came from, so every column after the
-/// escape would be off by one.
+/// The title is never rebuilt, so there is no unplaced case to guard. It is
+/// `{character - '"'}` verbatim, which makes every column in it a column of the
+/// opener line - and an escaped quote does not extend the slot, it leaves a
+/// remainder that is neither a label nor whitespace, so the line is an ordinary
+/// paragraph (markup-carve/carve-rs#1946).
 #[test]
-fn an_escaped_title_leaves_its_inlines_unplaced() {
-    let source = "::: note \"a \\\" b *x*\"\nBody.\n:::\n";
+fn an_escaped_quote_opens_no_admonition_to_place() {
+    let doc = parse_with_positions("::: note \"a \\\" b *x*\"\nBody.\n:::\n");
+    assert!(
+        matches!(&doc.children[0], BlockNode::Paragraph(_)),
+        "{:?}",
+        doc.children[0]
+    );
+}
+
+/// A title holding a literal backslash still slices, which is what removing the
+/// rebuild bought: the escaped pair is content, not a shortening.
+#[test]
+fn a_title_holding_a_backslash_places_its_inlines() {
+    let source = "::: note \"a \\\\ b *x*\"\nBody.\n:::\n";
     let doc = parse_with_positions(source);
 
     let BlockNode::Admonition(note) = &doc.children[0] else {
         panic!("the document is an admonition");
     };
     let title = note.title.as_ref().expect("it has a title");
-    let placed = title.iter().any(|inline| match inline {
-        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
-        carve::ast::InlineNode::Emphasis(e) => e.pos.is_some(),
-        _ => false,
-    });
-    assert!(!placed, "a rebuilt title cannot place anything");
+    let spans: Vec<String> = title
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => {
+                slice(source, t.pos.as_ref().expect("text is placed"))
+            }
+            carve::ast::InlineNode::EscapedText(t) => {
+                slice(source, t.pos.as_ref().expect("the escape is placed"))
+            }
+            carve::ast::InlineNode::Emphasis(e) => {
+                slice(source, e.pos.as_ref().expect("emphasis is placed"))
+            }
+            other => panic!("unexpected inline in the title: {other:?}"),
+        })
+        .collect();
+    assert_eq!(spans, vec!["a ", "\\\\", " b ", "*x*"]);
 }
 
 /// A `+` continuation attaches a flush-left block to the item above it. The

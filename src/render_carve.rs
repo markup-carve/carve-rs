@@ -1802,7 +1802,12 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let title = admonition
                 .title
                 .as_ref()
-                .map(|title| format!(" \"{}\"", escape_quoted(&render_inlines(title, ctx))))
+                .map(|title| {
+                    format!(
+                        " \"{}\"",
+                        escape_quoted_title(&render_inlines(title, ctx), "admonition")
+                    )
+                })
                 .unwrap_or_default();
             let label = admonition
                 .label
@@ -1820,7 +1825,12 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let title = directive
                 .title
                 .as_ref()
-                .map(|title| format!(" \"{}\"", escape_quoted(&render_inlines(title, ctx))))
+                .map(|title| {
+                    format!(
+                        " \"{}\"",
+                        escape_quoted_title(&render_inlines(title, ctx), "directive")
+                    )
+                })
                 .unwrap_or_default();
             let label = directive
                 .label
@@ -3569,7 +3579,7 @@ fn code_fence_info(lang: Option<&str>, title: Option<&str>, label: Option<&str>)
         parts.push(escape_fence_token(lang));
     }
     if let Some(title) = title {
-        parts.push(format!("\"{}\"", escape_quoted(title)));
+        parts.push(format!("\"{}\"", escape_quoted_title(title, "code_block")));
     }
     if let Some(label) = label {
         parts.push(format!("[{}]", write_flat_bracket_run(label)));
@@ -4843,8 +4853,26 @@ fn dangerous_destination_scheme(text: &str) -> bool {
         )
 }
 
+/// A link, an image and a `[ref]: url "t"` definition, whose `link_title` reads
+/// escapes back.
 fn escape_quoted(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// NOT the same rule: `quoted_title` takes `{character - '"'}` verbatim and has
+/// no escape mechanism, so escaping here changes the title instead of
+/// preserving it (carve-rs#1946). That leaves a `"` unspellable rather than
+/// escapable - markup-carve/carve-php#2375's reading of the same slot - and
+/// writing it as `\"` would emit source no conforming parser reads back, so the
+/// writer refuses instead.
+fn escape_quoted_title(text: &str, node_type: &'static str) -> String {
+    if text.contains('"') {
+        crate::render_carve_error::record_unspellable(
+            node_type,
+            "a double quote has no spelling inside a quoted title",
+        );
+    }
+    text.replace('"', "")
 }
 
 /// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a
