@@ -181,11 +181,9 @@ impl Document {
     /// bigger document.
     ///
     /// On the ingest path `source_len` arrives INSIDE the payload. Left alone it
-    /// let the payload choose the size of the guard meant to bound it: rewriting
-    /// one number to `1000000000` took a 214 KB payload from 1.04 MB of HTML to
-    /// 101 MB, 472x, for nine extra bytes. So an ingested document is bounded by
-    /// what its payload actually cost as well as by what it claims, and the
-    /// smaller wins.
+    /// let the payload choose the size of the guard meant to bound it. An
+    /// ingested document is therefore bounded by its payload size as well as by
+    /// its claimed source length, and the smaller wins.
     ///
     /// The claim is still honored where it is smaller, because a document that
     /// says it came from a short source is not made suspect by its AST being

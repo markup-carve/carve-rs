@@ -12282,9 +12282,7 @@ fn chunk_ends_in_degraded_comment_fence(cur: &mut LineCursor<'_>, chunk: &Mapped
     // here: this answer only matters through a break that needs the collector to
     // have STOPPED on a below-column line, and the degraded stop that leaves one
     // fires at `indent == strip_cols`, where the fence is at chunk column 0 and
-    // no descendant column can be at or below it. Measured: it changed this
-    // function's answer 2424 times over 162504 swept documents and changed none
-    // of them, nor any of the 1564 corpus documents. The rule now lives in
+    // no descendant column can be at or below it. The rule now lives in
     // `collect_indented_block_*`, where the collector can act on it.
     for (index, line) in chunk.source.lines().enumerate() {
         if let Some(fence_len) = open {

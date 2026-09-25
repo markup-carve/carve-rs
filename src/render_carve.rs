@@ -477,10 +477,6 @@ fn set_relaxed(group: &[Occurrence], relaxed: bool) {
 /// budget runs out and returns the state it has reached, which is verified like
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
-///
-/// MEASURED over the 1358 pinned corpus documents: 51 reach the search at all,
-/// and once the control render has narrowed the candidates to the units the
-/// writer asks about, the widest holds eight and none holds more.
 fn relax_units(
     doc: &Document,
     units: &[usize],
@@ -534,8 +530,7 @@ fn comparable_tree(source: &str) -> Option<Document> {
 ///
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
-/// map below empty - and its clones unmade - for every document that has no
-/// such description, which is all but two of the 638 corpus documents.
+/// map below empty, and avoids cloning for documents without such a description.
 fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
     emptied_marker_lines_at(blocks, 0, into);
 }
@@ -1718,9 +1713,8 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // Written back in the spelling it was read in
             // (markup-carve/carve#1718). Choosing structurally instead - the
             // fence whenever the quote holds a non-paragraph block -
-            // re-canonicalizes 50 corpus documents and every user document
-            // with a multi-block quote, so the node carries the author's
-            // choice rather than the writer inferring one.
+            // rewrites the spelling of authored multi-block quotes, so the node
+            // carries the author's choice rather than the writer inferring one.
             if quote.fenced {
                 let fence = colon_fence_for(ctx);
                 let body = render_inside_colon_container(&quote.children, ctx);
@@ -2128,11 +2122,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         // Writing the continuation at the marker's full width put every block
         // after the item's first, four columns too far in, where an INDENTED
         // block opener opens nothing: a heading, a fence or a quote came back as
-        // text of the marker line's paragraph. The three corpus documents that
-        // reported it - `05-lists-12`, `75-list-nesting-and-looseness-9` and
-        // `144-nested-item-looseness-does-not-propagate-to-the-outer-item-3` -
-        // are all task items, and carve-js fixed the same site in carve-js#1455.
-        //
+        // text of the marker line's paragraph.
         let continuation = " ".repeat(continuation_width);
         for line in lines {
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {
