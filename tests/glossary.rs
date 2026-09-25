@@ -113,3 +113,66 @@ fn drops_author_href_case_insensitively() {
     assert!(!out.contains("#other"));
     assert_eq!(out.to_lowercase().matches("href=").count(), 1);
 }
+
+/// The column each of an element's own tags is written at.
+fn tag_columns(html: &str, tag: &str) -> Vec<usize> {
+    html.lines()
+        .filter(|line| line.trim_start().starts_with(tag))
+        .map(|line| line.len() - line.trim_start().len())
+        .collect()
+}
+
+#[test]
+fn a_placed_dl_writes_both_its_tags_at_one_column() {
+    // CARVE-P10-010: the two tags may carry the nesting indentation or sit at
+    // column 0, and ONE COLUMN SERVES BOTH. The opener sat a level below its own
+    // closer, which conforms under neither choice.
+    //
+    // OFF COLUMN 0, which is the position the rest of this file never spells -
+    // and at column 0 all three engines agree, so nothing there can see this.
+    let nested = h("# H\n\n::: glossary\n:: term\n:  def\n:::");
+    assert_eq!(
+        nested,
+        "<section id=\"H\">\n  <h1>H</h1>\n  <dl class=\"glossary\">\n    \
+         <dt id=\"gloss-term\">term</dt>\n    <dd>def</dd>\n  </dl>\n</section>"
+    );
+    assert_eq!(tag_columns(&nested, "<dl"), vec![2]);
+    assert_eq!(tag_columns(&nested, "</dl>"), vec![2]);
+    // The rows sit one level inside their own element and move with the column
+    // it took, which is what the clause pins for a glossary rather than the
+    // column-0 anchoring it gives a `toc`.
+    assert_eq!(tag_columns(&nested, "<dt"), vec![4]);
+    assert_eq!(tag_columns(&nested, "<dd>"), vec![4]);
+
+    // The same document FLATTENED to top level, which is how every case above
+    // spells it. Its columns are 0 and 2, so an assertion written against it
+    // cannot fail on the divergence this test is for - the pair is what makes
+    // the case a guard rather than a restatement of the old golden.
+    let flat = h("::: glossary\n:: term\n:  def\n:::");
+    assert_eq!(tag_columns(&flat, "<dl"), vec![0]);
+    assert_eq!(tag_columns(&flat, "</dl>"), vec![0]);
+    assert_eq!(tag_columns(&flat, "<dt"), vec![2]);
+    assert_ne!(
+        tag_columns(&nested, "<dl"),
+        tag_columns(&flat, "<dl"),
+        "the nested spelling must be the one under test"
+    );
+}
+
+#[test]
+fn a_second_placed_dl_writes_both_its_tags_at_one_column() {
+    // The first list is the framework-indented first line; a later one is not,
+    // so it supplies its own column. Both still answer the clause.
+    let out = h("# H\n\n::: glossary\n:: a\n:  1\n\nnote\n\n:: b\n:  2\n:::");
+    assert_eq!(tag_columns(&out, "<dl"), vec![2, 2]);
+    assert_eq!(tag_columns(&out, "</dl>"), vec![2, 2]);
+    assert_eq!(tag_columns(&out, "<dt"), vec![4, 4]);
+}
+
+#[test]
+fn a_placed_dl_inside_a_container_follows_the_container() {
+    let out = h("# H\n\n::: note\n::: glossary\n:: term\n:  def\n:::\n:::");
+    assert_eq!(tag_columns(&out, "<dl"), vec![4]);
+    assert_eq!(tag_columns(&out, "</dl>"), vec![4]);
+    assert_eq!(tag_columns(&out, "<dt"), vec![6]);
+}
