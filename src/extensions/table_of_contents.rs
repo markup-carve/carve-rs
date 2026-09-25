@@ -281,6 +281,16 @@ fn collect_entries(
             BlockNode::Admonition(a) => collect_entries(&a.children, counts, opts, entries, false),
             BlockNode::Directive(d) => collect_entries(&d.children, counts, opts, entries, false),
             BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false),
+            BlockNode::Section(d) => collect_entries(&d.children, counts, opts, entries, false),
+            BlockNode::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_entries(blocks, counts, opts, entries, false);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => {
                 collect_entries(&e.children, counts, opts, entries, false)
             }
@@ -325,6 +335,16 @@ fn collect_all_entries(
             BlockNode::Admonition(a) => collect_all_entries(&a.children, counts, id_opts, entries),
             BlockNode::Directive(d) => collect_all_entries(&d.children, counts, id_opts, entries),
             BlockNode::Div(d) => collect_all_entries(&d.children, counts, id_opts, entries),
+            BlockNode::Section(d) => collect_all_entries(&d.children, counts, id_opts, entries),
+            BlockNode::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_all_entries(blocks, counts, id_opts, entries);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => {
                 collect_all_entries(&e.children, counts, id_opts, entries)
             }
@@ -555,6 +575,16 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
             BlockNode::Admonition(a) => rewrite_toc_containers(&mut a.children),
             BlockNode::Directive(d) => rewrite_toc_containers(&mut d.children),
             BlockNode::Div(d) => rewrite_toc_containers(&mut d.children),
+            BlockNode::Section(d) => rewrite_toc_containers(&mut d.children),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            rewrite_toc_containers(blocks);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => rewrite_toc_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {

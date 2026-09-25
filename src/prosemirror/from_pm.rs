@@ -357,7 +357,13 @@ impl Reader {
                 remove_nulls(&mut n);
                 Ok(n)
             }
-            "section" => self.container(obj, "div", "children", false),
+            "section" => {
+                let mut n = self.container(obj, "section", "children", false)?;
+                if let Some(level) = a.get("level") {
+                    insert(&mut n, "level", level.clone());
+                }
+                Ok(n)
+            }
             _ => Err(ProseMirrorError::new(format!(
                 "ProseMirror type `{name}` is not valid in a block position"
             ))),
@@ -552,12 +558,26 @@ impl Reader {
                     return Err(ProseMirrorError::new("A table row may contain only cells"));
                 }
                 let ca = attrs_obj(ce);
+                let rich_blocks = ca.get("carveCellBlocks") == Some(&Json::Bool(true));
+                let content = if rich_blocks {
+                    (
+                        "blocks",
+                        Json::Array(
+                            array_field(ce, "content")
+                                .iter()
+                                .map(|v| self.block(v))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        ),
+                    )
+                } else {
+                    ("children", Json::Array(self.table_cell_inlines(ce)?))
+                };
                 let mut cn = with_attrs(
                     node(
                         "table_cell",
                         [
                             ("header", Json::Bool(flavor == 1)),
-                            ("children", Json::Array(self.table_cell_inlines(ce)?)),
+                            content,
                             ("align", optional_string(ca, "alignment")),
                             ("valign", optional_string(ca, "verticalAlignment")),
                             (
@@ -1408,6 +1428,7 @@ fn is_structural_attr(k: &str) -> bool {
             | "alignment"
             | "verticalAlignment"
             | "carveAttrOrder"
+            | "carveCellBlocks"
             | "carveAutolink"
             | "carveAdmonitionKind"
             | "carveAdmonitionTitle"

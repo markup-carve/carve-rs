@@ -665,6 +665,18 @@ fn collect_footnotes_block(
                         seen,
                         order,
                     );
+                    if let Some(blocks) = &mut cell.blocks {
+                        for block in blocks {
+                            collect_footnotes_block(
+                                assign_ref_ids,
+                                block,
+                                def_labels,
+                                label_indices,
+                                seen,
+                                order,
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -763,6 +775,18 @@ fn collect_footnotes_block(
                 );
             }
         }
+        BlockNode::Section(d) => {
+            for child in &mut d.children {
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+        }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
@@ -832,6 +856,18 @@ fn collect_footnotes_block(
                                 seen,
                                 order,
                             );
+                            if let Some(blocks) = &mut cell.blocks {
+                                for block in blocks {
+                                    collect_footnotes_block(
+                                        assign_ref_ids,
+                                        block,
+                                        def_labels,
+                                        label_indices,
+                                        seen,
+                                        order,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -1140,6 +1176,7 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::Admonition(n) => n.attrs.as_ref(),
         BlockNode::Directive(n) => n.attrs.as_ref(),
         BlockNode::Div(n) => n.attrs.as_ref(),
+        BlockNode::Section(n) => n.attrs.as_ref(),
         BlockNode::LineBlock(n) => n.attrs.as_ref(),
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
         BlockNode::Figure(n) => n.attrs.as_ref(),
@@ -1421,6 +1458,16 @@ fn render_block(
             render_directive(out, d, level, at_document_top_level, options, state)
         }
         BlockNode::Div(d) => render_div(out, d, level, options, state),
+        BlockNode::Section(d) => {
+            indent(out, level);
+            out.push_str(&format!("<section{}>", render_attrs(&d.attrs)));
+            let children = rendered_children(&d.children, level + 1, options, state);
+            for child in &children {
+                out.push('\n');
+                out.push_str(child);
+            }
+            close_block_container(out, level, "section", !children.is_empty());
+        }
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
         BlockNode::Figure(f) => render_figure(out, f, level, options, state),
@@ -2320,7 +2367,11 @@ fn render_table_row(
         out.push_str(&extra);
         out.push_str(&style);
         out.push('>');
-        render_inlines(out, &cell.children, options, state);
+        if let Some(blocks) = &cell.blocks {
+            out.push_str(&render_blocks(blocks, 0, options, state));
+        } else {
+            render_inlines(out, &cell.children, options, state);
+        }
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
@@ -2404,7 +2455,11 @@ fn render_table_body_row(
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
         out.push('>');
-        render_inlines(out, &cell.children, ctx.options, ctx.state);
+        if let Some(blocks) = &cell.blocks {
+            out.push_str(&render_blocks(blocks, 0, ctx.options, ctx.state));
+        } else {
+            render_inlines(out, &cell.children, ctx.options, ctx.state);
+        }
         out.push_str("</");
         out.push_str(tag);
         out.push('>');

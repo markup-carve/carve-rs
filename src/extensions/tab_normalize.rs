@@ -99,6 +99,11 @@ impl TabNormalize {
                 for row in &mut t.rows {
                     for cell in &mut row.cells {
                         self.visit_inlines(&mut cell.children);
+                        if let Some(blocks) = &mut cell.blocks {
+                            for child in blocks {
+                                self.visit_block(child);
+                            }
+                        }
                     }
                 }
             }
@@ -124,6 +129,11 @@ impl TabNormalize {
                 }
             }
             BlockNode::Div(d) => {
+                for child in &mut d.children {
+                    self.visit_block(child);
+                }
+            }
+            BlockNode::Section(d) => {
                 for child in &mut d.children {
                     self.visit_block(child);
                 }
@@ -183,6 +193,11 @@ impl TabNormalize {
                 for row in &mut t.rows {
                     for cell in &mut row.cells {
                         self.visit_inlines(&mut cell.children);
+                        if let Some(blocks) = &mut cell.blocks {
+                            for child in blocks {
+                                self.visit_block(child);
+                            }
+                        }
                     }
                 }
             }

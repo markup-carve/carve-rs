@@ -1248,7 +1248,17 @@ pub(crate) fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) 
             BlockNode::BlockQuote(b) => walk_blocks(&b.children, f),
             BlockNode::Directive(d) => walk_blocks(&d.children, f),
             BlockNode::Div(d) => walk_blocks(&d.children, f),
+            BlockNode::Section(d) => walk_blocks(&d.children, f),
             BlockNode::Admonition(a) => walk_blocks(&a.children, f),
+            BlockNode::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            walk_blocks(blocks, f);
+                        }
+                    }
+                }
+            }
             BlockNode::List(l) => {
                 for item in &l.items {
                     walk_blocks(&item.children, f);
@@ -1261,11 +1271,19 @@ pub(crate) fn walk_blocks(blocks: &[BlockNode], f: &mut impl FnMut(&BlockNode)) 
                     }
                 }
             }
-            BlockNode::Figure(fig) => {
-                if let FigureTarget::BlockQuote(b) = &*fig.target {
-                    walk_blocks(&b.children, f);
+            BlockNode::Figure(fig) => match &*fig.target {
+                FigureTarget::BlockQuote(b) => walk_blocks(&b.children, f),
+                FigureTarget::Table(t) => {
+                    for row in &t.rows {
+                        for cell in &row.cells {
+                            if let Some(blocks) = &cell.blocks {
+                                walk_blocks(blocks, f);
+                            }
+                        }
+                    }
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -1278,7 +1296,17 @@ fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode))
             BlockNode::BlockQuote(b) => walk_blocks_mut(&mut b.children, f),
             BlockNode::Directive(d) => walk_blocks_mut(&mut d.children, f),
             BlockNode::Div(d) => walk_blocks_mut(&mut d.children, f),
+            BlockNode::Section(d) => walk_blocks_mut(&mut d.children, f),
             BlockNode::Admonition(a) => walk_blocks_mut(&mut a.children, f),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            walk_blocks_mut(blocks, f);
+                        }
+                    }
+                }
+            }
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     walk_blocks_mut(&mut item.children, f);
@@ -1291,11 +1319,19 @@ fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode))
                     }
                 }
             }
-            BlockNode::Figure(fig) => {
-                if let FigureTarget::BlockQuote(b) = &mut *fig.target {
-                    walk_blocks_mut(&mut b.children, f);
+            BlockNode::Figure(fig) => match &mut *fig.target {
+                FigureTarget::BlockQuote(b) => walk_blocks_mut(&mut b.children, f),
+                FigureTarget::Table(t) => {
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            if let Some(blocks) = &mut cell.blocks {
+                                walk_blocks_mut(blocks, f);
+                            }
+                        }
+                    }
                 }
-            }
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -1397,6 +1433,11 @@ fn rename_in_blocks(
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
                         rename_inlines(caption, footnotes, headings);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            rename_inlines(&mut cell.children, footnotes, headings);
+                        }
                     }
                 }
                 _ => {}
@@ -2064,6 +2105,7 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
             BlockNode::BlockQuote(b) => expand_blocks(&mut b.children, state),
             BlockNode::Directive(d) => expand_blocks(&mut d.children, state),
             BlockNode::Div(d) => expand_blocks(&mut d.children, state),
+            BlockNode::Section(d) => expand_blocks(&mut d.children, state),
             BlockNode::Admonition(a) => expand_blocks(&mut a.children, state),
             BlockNode::List(l) => {
                 for item in &mut l.items {
@@ -2081,6 +2123,19 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
                 match &mut *fig.target {
                     FigureTarget::BlockQuote(b) => expand_blocks(&mut b.children, state),
                     FigureTarget::Paragraph(p) => expand_inlines(&mut p.children, state),
+                    FigureTarget::Table(t) => {
+                        if let Some(caption) = &mut t.caption {
+                            expand_inlines(caption, state);
+                        }
+                        for row in &mut t.rows {
+                            for cell in &mut row.cells {
+                                expand_inlines(&mut cell.children, state);
+                                if let Some(blocks) = &mut cell.blocks {
+                                    expand_blocks(blocks, state);
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 expand_inlines(&mut fig.caption, state);
@@ -2115,6 +2170,9 @@ fn expand_blocks(blocks: &mut Vec<BlockNode>, state: &mut State<'_>) {
                 for row in &mut t.rows {
                     for cell in &mut row.cells {
                         expand_inlines(&mut cell.children, state);
+                        if let Some(blocks) = &mut cell.blocks {
+                            expand_blocks(blocks, state);
+                        }
                     }
                 }
             }

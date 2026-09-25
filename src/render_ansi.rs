@@ -244,6 +244,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             let body = render_blocks(&div.children, ctx, depth + 1);
             prepend_label(body, div.label.as_deref())
         }
+        BlockNode::Section(section) => render_blocks(&section.children, ctx, depth + 1),
         BlockNode::DefinitionList(list) => {
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
@@ -472,26 +473,33 @@ struct RenderedCell {
 }
 
 fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
-    let rows = node
-        .rows
-        .iter()
-        .map(|row| {
-            let row_is_header = row.cells.iter().all(|cell| cell.header);
-            row.cells
-                .iter()
-                .map(|cell| {
-                    let content =
-                        trim_non_nbsp(&render_block_inlines(&cell.children, ctx)).to_string();
-                    let plain = strip_ansi(&content);
-                    RenderedCell {
-                        content,
-                        plain,
-                        is_header: row_is_header,
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
+    let rows =
+        node.rows
+            .iter()
+            .map(|row| {
+                let row_is_header = row.cells.iter().all(|cell| cell.header);
+                row.cells
+                    .iter()
+                    .map(|cell| {
+                        let content = match &cell.blocks {
+                            Some(blocks) => trim_non_nbsp(&render_block_inlines(
+                                &crate::render_plain::flatten_cell_block_inlines(blocks),
+                                ctx,
+                            ))
+                            .to_string(),
+                            None => trim_non_nbsp(&render_block_inlines(&cell.children, ctx))
+                                .to_string(),
+                        };
+                        let plain = strip_ansi(&content);
+                        RenderedCell {
+                            content,
+                            plain,
+                            is_header: row_is_header,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
     let mut widths = Vec::<usize>::new();
     for row in &rows {
         for (i, cell) in row.iter().enumerate() {

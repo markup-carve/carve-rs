@@ -167,6 +167,169 @@ fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
         .collect()
 }
 
+pub(crate) fn flatten_cell_blocks(blocks: &[BlockNode]) -> String {
+    render_inlines(&flatten_cell_block_inlines(blocks))
+}
+
+/// Flatten block-bearing table cells to an inline run in document order.
+/// The target renderer still handles emphasis, links and other inline nodes.
+pub(crate) fn flatten_cell_block_inlines(blocks: &[BlockNode]) -> Vec<InlineNode> {
+    enum Part<'a> {
+        Block(&'a BlockNode),
+        Inlines(&'a [InlineNode]),
+        Text(String),
+    }
+    fn push_blocks<'a>(pending: &mut Vec<Part<'a>>, blocks: &'a [BlockNode]) {
+        pending.extend(blocks.iter().rev().map(Part::Block));
+    }
+    fn push_table<'a>(pending: &mut Vec<Part<'a>>, table: &'a Table) {
+        for row in table.rows.iter().rev() {
+            for cell in row.cells.iter().rev() {
+                match &cell.blocks {
+                    Some(blocks) => push_blocks(pending, blocks),
+                    None => pending.push(Part::Inlines(&cell.children)),
+                }
+            }
+        }
+    }
+    let mut pending = Vec::new();
+    push_blocks(&mut pending, blocks);
+    let mut chunks = Vec::new();
+    while let Some(part) = pending.pop() {
+        match part {
+            Part::Inlines(inlines) if !inlines.is_empty() => chunks.push(inlines.to_vec()),
+            Part::Inlines(_) => {}
+            Part::Text(text) => {
+                let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !text.is_empty() {
+                    chunks.push(vec![InlineNode::text(text)]);
+                }
+            }
+            Part::Block(block) => match block {
+                BlockNode::Heading(node) => pending.push(Part::Inlines(&node.children)),
+                BlockNode::Paragraph(node) => pending.push(Part::Inlines(&node.children)),
+                BlockNode::CodeBlock(node) => pending.push(Part::Text(node.content.clone())),
+                BlockNode::BlockQuote(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::List(node) => {
+                    for item in node.items.iter().rev() {
+                        push_blocks(&mut pending, &item.children);
+                    }
+                }
+                BlockNode::Table(node) => push_table(&mut pending, node),
+                BlockNode::Admonition(node) => {
+                    push_blocks(&mut pending, &node.children);
+                    if let Some(title) = &node.title {
+                        pending.push(Part::Inlines(title));
+                    }
+                }
+                BlockNode::Directive(node) => {
+                    push_blocks(&mut pending, &node.children);
+                    if let Some(title) = &node.title {
+                        pending.push(Part::Inlines(title));
+                    }
+                }
+                BlockNode::Div(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::Section(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::LineBlock(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::DefinitionList(node) => {
+                    for item in node.items.iter().rev() {
+                        for definition in item.definitions.iter().rev() {
+                            push_blocks(&mut pending, &definition.children);
+                        }
+                        for term in item.terms.iter().rev() {
+                            pending.push(Part::Inlines(&term.children));
+                        }
+                    }
+                }
+                BlockNode::Figure(node) => {
+                    pending.push(Part::Inlines(&node.caption));
+                    match node.target.as_ref() {
+                        FigureTarget::Paragraph(target) => {
+                            pending.push(Part::Inlines(&target.children))
+                        }
+                        FigureTarget::CodeBlock(target) => {
+                            pending.push(Part::Text(target.content.clone()))
+                        }
+                        FigureTarget::BlockQuote(target) => {
+                            push_blocks(&mut pending, &target.children)
+                        }
+                        FigureTarget::Table(target) => push_table(&mut pending, target),
+                        FigureTarget::Image(target) => pending.push(Part::Text(target.alt.clone())),
+                    }
+                }
+                BlockNode::FigureGroup(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::BlockExtension(node) => pending.push(Part::Block(&node.fallback)),
+                BlockNode::ExtensionCarrier(node) => push_blocks(&mut pending, &node.children),
+                BlockNode::BlockImage(node) => pending.push(Part::Text(node.alt.clone())),
+                BlockNode::RawBlock(node) => pending.push(Part::Text(node.content.clone())),
+                BlockNode::Comment(_)
+                | BlockNode::ThematicBreak(_)
+                | BlockNode::AbbreviationDef(_)
+                | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_) => {}
+            },
+        }
+    }
+    let mut out = Vec::new();
+    for chunk in chunks {
+        if !out.is_empty() {
+            out.push(InlineNode::text(" "));
+        }
+        out.extend(chunk);
+    }
+    flatten_cell_inline_breaks(&mut out);
+    out
+}
+
+pub(crate) fn flatten_cell_inlines(inlines: &[InlineNode]) -> Vec<InlineNode> {
+    let mut out = inlines.to_vec();
+    flatten_cell_inline_breaks(&mut out);
+    out
+}
+
+fn flatten_cell_inline_breaks(out: &mut [InlineNode]) {
+    let mut pending: Vec<_> = out.iter_mut().collect();
+    while let Some(node) = pending.pop() {
+        match node {
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => {
+                *node = InlineNode::text(" ");
+            }
+            InlineNode::Emphasis(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::Link(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::Span(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::Extension(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::CriticInsert(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::CriticDelete(n) => pending.extend(n.children.iter_mut()),
+            InlineNode::CriticSubstitute(n) => {
+                pending.extend(n.old.iter_mut());
+                pending.extend(n.new.iter_mut());
+            }
+            InlineNode::Ruby(n) => {
+                for pair in &mut n.pairs {
+                    pending.extend(pair.base.iter_mut());
+                    pending.extend(pair.annotation.iter_mut());
+                }
+            }
+            InlineNode::Footnote(n) => {
+                if let Some(inline) = &mut n.inline {
+                    pending.extend(inline.iter_mut());
+                }
+            }
+            InlineNode::CitationGroup(n) => {
+                for item in &mut n.items {
+                    for inlines in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        pending.extend(inlines.iter_mut());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn render_block(node: &BlockNode, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("plain");
@@ -240,6 +403,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
             let body = render_blocks(&div.children, depth + 1);
             prepend_label(body, div.label.as_deref())
         }
+        BlockNode::Section(section) => render_blocks(&section.children, depth + 1),
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, depth + 1),
         BlockNode::FigureGroup(group) => render_figure_group(group, depth + 1),
@@ -380,7 +544,10 @@ fn render_table(node: &Table) -> String {
         out.push_str(
             &row.cells
                 .iter()
-                .map(|cell| trim_non_nbsp(&render_inlines(&cell.children)).to_string())
+                .map(|cell| match &cell.blocks {
+                    Some(blocks) => flatten_cell_blocks(blocks),
+                    None => trim_non_nbsp(&render_inlines(&cell.children)).to_string(),
+                })
                 .collect::<Vec<_>>()
                 .join(" | "),
         );

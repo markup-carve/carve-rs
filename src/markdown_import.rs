@@ -1065,6 +1065,7 @@ impl Builder {
                     valign: None,
                     attrs: None,
                     children,
+                    blocks: None,
                     pos: None,
                 };
                 if let Some(Frame::TableRow { cells, .. }) = self.frames.last_mut() {

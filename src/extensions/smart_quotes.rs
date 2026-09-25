@@ -103,6 +103,9 @@ impl SmartQuotes {
                     for r in &mut t.rows {
                         for c in &mut r.cells {
                             self.visit_inlines(&mut c.children);
+                            if let Some(blocks) = &mut c.blocks {
+                                self.visit_blocks(blocks);
+                            }
                         }
                     }
                 }
@@ -119,6 +122,7 @@ impl SmartQuotes {
                     self.visit_blocks(&mut d.children);
                 }
                 BlockNode::Div(d) => self.visit_blocks(&mut d.children),
+                BlockNode::Section(d) => self.visit_blocks(&mut d.children),
                 BlockNode::LineBlock(l) => self.visit_blocks(&mut l.children),
                 BlockNode::DefinitionList(d) => {
                     for item in &mut d.items {
@@ -141,6 +145,9 @@ impl SmartQuotes {
                             for r in &mut t.rows {
                                 for c in &mut r.cells {
                                     self.visit_inlines(&mut c.children);
+                                    if let Some(blocks) = &mut c.blocks {
+                                        self.visit_blocks(blocks);
+                                    }
                                 }
                             }
                         }

@@ -79,6 +79,7 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
         }
         BlockNode::Directive(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::Div(d) => collect_blocks(&d.children, suppressed, out),
+        BlockNode::Section(d) => collect_blocks(&d.children, suppressed, out),
         BlockNode::LineBlock(lb) => collect_blocks(&lb.children, suppressed, out),
         BlockNode::DefinitionList(d) => {
             for item in &d.items {
@@ -134,6 +135,9 @@ fn collect_table(table: &crate::ast::Table, suppressed: bool, out: &mut Consumed
     for row in &table.rows {
         for cell in &row.cells {
             collect_inlines(&cell.children, suppressed, out);
+            if let Some(blocks) = &cell.blocks {
+                collect_blocks(blocks, suppressed, out);
+            }
         }
     }
 }

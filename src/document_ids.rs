@@ -349,6 +349,10 @@ impl Seeder {
                 self.reserve_attrs(&d.attrs);
                 self.walk_blocks(&d.children);
             }
+            BlockNode::Section(d) => {
+                self.reserve_attrs(&d.attrs);
+                self.walk_blocks(&d.children);
+            }
             BlockNode::LineBlock(lb) => {
                 self.reserve_attrs(&lb.attrs);
                 self.walk_blocks(&lb.children);
@@ -417,6 +421,9 @@ impl Seeder {
             for cell in &row.cells {
                 self.reserve_attrs(&cell.attrs);
                 self.walk_inlines(&cell.children);
+                if let Some(blocks) = &cell.blocks {
+                    self.walk_blocks(blocks);
+                }
             }
         }
     }

@@ -1666,6 +1666,26 @@ fn round_trip(source: &str) -> (String, String) {
     )
 }
 
+#[test]
+fn interchange_section_and_block_cell_survive_editor_bridge() {
+    let original = from_json(r#"{"type":"document","srcByteLength":0,"children":[{"type":"section","level":2,"children":[{"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"blocks":[{"type":"paragraph","children":[{"type":"text","value":"one"}]},{"type":"paragraph","children":[{"type":"text","value":"two"}]}]}]}]}]}]}"#).unwrap();
+    let pm = to_prosemirror(&original);
+    assert!(pm.dropped.is_empty(), "{:?}", pm.dropped);
+    assert!(pm.degraded.is_empty(), "{:?}", pm.degraded);
+    let wire: Value = serde_json::from_str(&pm.json).unwrap();
+    assert_eq!(
+        wire.pointer("/content/0/type"),
+        Some(&json!("carveSection"))
+    );
+    assert_eq!(wire.pointer("/content/0/attrs/level"), Some(&json!(2)));
+    assert_eq!(
+        wire.pointer("/content/0/content/0/content/0/content/0/attrs/carveCellBlocks"),
+        Some(&json!(true))
+    );
+    let returned = from_prosemirror(&pm.json).unwrap();
+    assert_eq!(to_json(&returned), to_json(&original));
+}
+
 /// PART 9 §21a: a delimited inline comment ends at `%}`, a `%%` comment ends at
 /// the end of the line. Losing the distinction is not a spelling change, it is
 /// a deletion: everything the author wrote after the comment on that line is

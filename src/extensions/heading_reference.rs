@@ -179,16 +179,29 @@ fn collect_headings(
     counts: &mut BTreeMap<String, usize>,
 ) {
     for block in blocks {
-        if let BlockNode::Heading(heading) = block {
-            let Some(id) = heading.attrs.as_ref().and_then(|attrs| attrs.id.as_ref()) else {
-                continue;
-            };
-            let text = normalize_quotes(inline_text(&heading.children).trim());
-            if text.is_empty() {
-                continue;
+        match block {
+            BlockNode::Heading(heading) => {
+                let Some(id) = heading.attrs.as_ref().and_then(|attrs| attrs.id.as_ref()) else {
+                    continue;
+                };
+                let text = normalize_quotes(inline_text(&heading.children).trim());
+                if text.is_empty() {
+                    continue;
+                }
+                *counts.entry(text.clone()).or_insert(0) += 1;
+                targets.entry(text).or_insert_with(|| id.clone());
             }
-            *counts.entry(text.clone()).or_insert(0) += 1;
-            targets.entry(text).or_insert_with(|| id.clone());
+            BlockNode::Section(section) => collect_headings(&section.children, targets, counts),
+            BlockNode::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_headings(blocks, targets, counts);
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -207,6 +220,7 @@ fn resolve_blocks(
             BlockNode::BlockQuote(quote) => resolve_blocks(&mut quote.children, targets, counts),
             BlockNode::Directive(div) => resolve_blocks(&mut div.children, targets, counts),
             BlockNode::Div(div) => resolve_blocks(&mut div.children, targets, counts),
+            BlockNode::Section(section) => resolve_blocks(&mut section.children, targets, counts),
             BlockNode::Admonition(admonition) => {
                 resolve_blocks(&mut admonition.children, targets, counts)
             }
@@ -222,6 +236,9 @@ fn resolve_blocks(
                 for row in &mut table.rows {
                     for cell in &mut row.cells {
                         resolve_inlines(&mut cell.children, targets, counts);
+                        if let Some(blocks) = &mut cell.blocks {
+                            resolve_blocks(blocks, targets, counts);
+                        }
                     }
                 }
             }

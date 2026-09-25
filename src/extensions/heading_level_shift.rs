@@ -85,6 +85,16 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
         BlockNode::BlockQuote(quote) => shift_blocks(&mut quote.children, shift),
         BlockNode::Directive(div) => shift_blocks(&mut div.children, shift),
         BlockNode::Div(div) => shift_blocks(&mut div.children, shift),
+        BlockNode::Section(section) => shift_blocks(&mut section.children, shift),
+        BlockNode::Table(table) => {
+            for row in &mut table.rows {
+                for cell in &mut row.cells {
+                    if let Some(blocks) = &mut cell.blocks {
+                        shift_blocks(blocks, shift);
+                    }
+                }
+            }
+        }
         BlockNode::Admonition(admonition) => shift_blocks(&mut admonition.children, shift),
         BlockNode::List(list) => {
             for item in &mut list.items {
@@ -98,13 +108,19 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
                 }
             }
         }
-        // Only the blockquote target can hold one; an image, a table, a code
-        // block and a paragraph cannot.
-        BlockNode::Figure(figure) => {
-            if let FigureTarget::BlockQuote(quote) = &mut *figure.target {
-                shift_blocks(&mut quote.children, shift);
+        BlockNode::Figure(figure) => match &mut *figure.target {
+            FigureTarget::BlockQuote(quote) => shift_blocks(&mut quote.children, shift),
+            FigureTarget::Table(table) => {
+                for row in &mut table.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            shift_blocks(blocks, shift);
+                        }
+                    }
+                }
             }
-        }
+            _ => {}
+        },
         BlockNode::FigureGroup(group) => shift_blocks(&mut group.children, shift),
         _ => {}
     }

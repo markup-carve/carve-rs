@@ -192,6 +192,7 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
             BlockNode::BlockQuote(b) => strip_generated_ids(&mut b.children, had_any),
             BlockNode::Directive(d) => strip_generated_ids(&mut d.children, had_any),
             BlockNode::Div(d) => strip_generated_ids(&mut d.children, had_any),
+            BlockNode::Section(d) => strip_generated_ids(&mut d.children, had_any),
             BlockNode::Admonition(a) => strip_generated_ids(&mut a.children, had_any),
             BlockNode::List(l) => {
                 for item in l.items.iter_mut() {
@@ -225,6 +226,7 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
             BlockNode::BlockQuote(b) => collect_heading_ids(&b.children, out),
             BlockNode::Directive(d) => collect_heading_ids(&d.children, out),
             BlockNode::Div(d) => collect_heading_ids(&d.children, out),
+            BlockNode::Section(d) => collect_heading_ids(&d.children, out),
             BlockNode::Admonition(a) => collect_heading_ids(&a.children, out),
             BlockNode::List(l) => {
                 for item in l.items.iter() {
@@ -565,6 +567,7 @@ fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut H
             }
             BlockNode::Directive(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             BlockNode::Div(div) => emptied_marker_lines_at(&div.children, list_depth, into),
+            BlockNode::Section(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             // The two other walks over this tree (`normalize_escapes_block` and
             // `redundant_heading_ids`) both descend into a figure's block-quote
             // target, so this one does too. No input reaches it today - a `dd`
@@ -966,6 +969,11 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     normalize_escapes_inlines(&mut cell.children);
+                    if let Some(blocks) = &mut cell.blocks {
+                        for child in blocks {
+                            normalize_escapes_block(child);
+                        }
+                    }
                 }
             }
         }
@@ -991,6 +999,11 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             }
         }
         BlockNode::Div(d) => {
+            for child in &mut d.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::Section(d) => {
             for child in &mut d.children {
                 normalize_escapes_block(child);
             }
@@ -1048,6 +1061,11 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     normalize_escapes_inlines(&mut cell.children);
+                    if let Some(blocks) = &mut cell.blocks {
+                        for child in blocks {
+                            normalize_escapes_block(child);
+                        }
+                    }
                 }
             }
         }
@@ -1870,6 +1888,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let body = render_inside_colon_container(&div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
+        BlockNode::Section(section) => render_blocks(&section.children, ctx),
         BlockNode::DefinitionList(list) => {
             let body =
                 with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx));
@@ -2365,6 +2384,12 @@ fn render_table_row(cells: &[String], attrs: &str) -> String {
 }
 
 fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> String {
+    if cell.blocks.is_some() && !cell.children.is_empty() {
+        crate::render_carve_error::record_unspellable(
+            "table_cell",
+            "a cell cannot carry both inline children and blocks",
+        );
+    }
     let attrs = render_attrs(&cell.attrs);
     // A lone span marker keeps a SPACE before it. Glued to the opening pipe, `<`
     // is also the left-alignment sigil, and the two readings differ: the
@@ -2412,12 +2437,22 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         attrs
     );
     ctx.table_cell_depth += 1;
-    let mut content = render_inlines(&cell.children, ctx);
+    let mut content = match &cell.blocks {
+        Some(blocks) => render_inlines(
+            &crate::render_plain::flatten_cell_block_inlines(blocks),
+            ctx,
+        ),
+        None => render_inlines(&cell.children, ctx),
+    };
     ctx.table_cell_depth -= 1;
+    content = content.replace(['\r', '\n'], " ");
     // A break at the cell's edge separates nothing, so its space is not written.
-    let is_break = |node: &&InlineNode| matches!(node, InlineNode::HardBreak(_));
+    let is_break =
+        |node: &&InlineNode| matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_));
     let leading = cell.children.iter().take_while(is_break).count();
-    if leading == cell.children.len() {
+    if cell.blocks.is_some() {
+        // Block content has already been flattened to a single cell line.
+    } else if leading == cell.children.len() {
         content.clear();
     } else {
         let trailing = cell.children.iter().rev().take_while(is_break).count();
@@ -3239,7 +3274,13 @@ fn render_inline_body(
             };
             format!("{body}{}", render_attrs(&footnote.attrs))
         }
-        InlineNode::SoftBreak(_) => "\n".to_string(),
+        InlineNode::SoftBreak(_) => {
+            if ctx.table_cell_depth > 0 {
+                " ".to_string()
+            } else {
+                "\n".to_string()
+            }
+        }
         InlineNode::HardBreak(_) => {
             // A cell is one line, so its break flattens to one space (PART 11
             // §1b, ruling markup-carve/carve#2067).

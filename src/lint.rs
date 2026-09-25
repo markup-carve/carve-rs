@@ -158,6 +158,9 @@ fn collect_contained_reference_placements(
             BlockNode::Div(n) => {
                 collect_contained_reference_placements(&n.children, true, to_byte, out)
             }
+            BlockNode::Section(n) => {
+                collect_contained_reference_placements(&n.children, true, to_byte, out)
+            }
             BlockNode::BlockQuote(n) => {
                 collect_contained_reference_placements(&n.children, true, to_byte, out)
             }
@@ -190,6 +193,15 @@ fn collect_contained_reference_placements(
             BlockNode::Figure(n) => {
                 if let FigureTarget::BlockQuote(quote) = &*n.target {
                     collect_contained_reference_placements(&quote.children, true, to_byte, out);
+                }
+            }
+            BlockNode::Table(n) => {
+                for row in &n.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_contained_reference_placements(blocks, true, to_byte, out);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -495,6 +507,18 @@ fn collect_figure_group_warnings(
                 collect_figure_group_warnings(&d.children, in_group, to_byte, out)
             }
             BlockNode::Div(d) => collect_figure_group_warnings(&d.children, in_group, to_byte, out),
+            BlockNode::Section(d) => {
+                collect_figure_group_warnings(&d.children, in_group, to_byte, out)
+            }
+            BlockNode::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_figure_group_warnings(blocks, in_group, to_byte, out);
+                        }
+                    }
+                }
+            }
             BlockNode::BlockQuote(b) => {
                 collect_figure_group_warnings(&b.children, in_group, to_byte, out)
             }
@@ -567,6 +591,16 @@ fn collect_quote_fence_warnings(
             BlockNode::Admonition(a) => collect_quote_fence_warnings(&a.children, to_byte, out),
             BlockNode::Directive(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
             BlockNode::Div(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
+            BlockNode::Section(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
+            BlockNode::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            collect_quote_fence_warnings(blocks, to_byte, out);
+                        }
+                    }
+                }
+            }
             BlockNode::LineBlock(lb) => collect_quote_fence_warnings(&lb.children, to_byte, out),
             BlockNode::FigureGroup(g) => collect_quote_fence_warnings(&g.children, to_byte, out),
             BlockNode::ExtensionCarrier(e) => {
@@ -818,6 +852,10 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             report("div", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
         }
+        BlockNode::Section(n) => {
+            report("section", &n.attrs, n.pos.clone(), visit);
+            walk_blocks(&n.children, visit);
+        }
         BlockNode::LineBlock(n) => {
             report("line_block", &n.attrs, n.pos.clone(), visit);
             walk_blocks(&n.children, visit);
@@ -908,6 +946,9 @@ fn walk_table(n: &Table, visit: &mut Visit<'_>) {
         for cell in &row.cells {
             report("table_cell", &cell.attrs, cell.pos.clone(), visit);
             walk_inlines(&cell.children, visit);
+            if let Some(blocks) = &cell.blocks {
+                walk_blocks(blocks, visit);
+            }
         }
     }
 }

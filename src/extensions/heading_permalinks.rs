@@ -190,6 +190,16 @@ fn walk_blocks(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Heading)) {
             BlockNode::Admonition(a) => walk_blocks(&mut a.children, f),
             BlockNode::Directive(d) => walk_blocks(&mut d.children, f),
             BlockNode::Div(d) => walk_blocks(&mut d.children, f),
+            BlockNode::Section(d) => walk_blocks(&mut d.children, f),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            walk_blocks(blocks, f);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => walk_blocks(&mut e.children, f),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
