@@ -98,7 +98,7 @@ fn a_reason_that_is_not_safety_is_preserved_at_info() {
     );
     assert_eq!(
         rows[0].2,
-        "Preserved attribute 5x on <form> in the raw HTML this element is kept as: not a Carve attribute name"
+        "Preserved unsupported attribute 5x on <form> in the raw HTML this element is kept as: not spellable as a Carve attribute name"
     );
 }
 

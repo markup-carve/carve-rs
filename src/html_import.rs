@@ -1386,9 +1386,14 @@ impl<'a> Importer<'a> {
             // Losing it loudly beats renaming it quietly.
             // Refused for the shape of its NAME, so the value is what
             // decides whether the preserved bytes carry something live.
+            // The wording is RULED (carve-rs#1882), not a local choice: the
+            // three engines each picked a different half of it, and this form
+            // is the one matching both patterns the report already uses -
+            // `unsupported` for "Carve has no spelling for this", and
+            // colon-plus-reason for explaining a refusal.
             return Some(Refusal {
-                subject: format!("attribute {name}"),
-                reason: ": not a Carve attribute name",
+                subject: format!("unsupported attribute {name}"),
+                reason: ": not spellable as a Carve attribute name",
                 severity: HtmlImportSeverity::Info,
                 live: sanitize_attr_value(name, value).is_empty() && !value.is_empty(),
             });
