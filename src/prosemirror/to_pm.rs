@@ -241,13 +241,25 @@ impl Renderer {
                 }
                 (self.name("admonition")?, a, self.blocks(&n.children))
             }
-            // carve-grammars names no ProseMirror node for `directive`, so it
-            // rides the admonition node with its kind explicit, exactly as
-            // `::: toc` did while it still parsed as an admonition. That keeps
-            // the round trip strict rather than degrading a shape the editor
-            // model already carries; `from_pm` reads the kind back and rebuilds
-            // the directive.
+            // THE SUBSTITUTION IS REPORTED, because it is a substitution. A
+            // directive rides the admonition node with its kind explicit, and
+            // `from_pm` reads the kind back and rebuilds the directive, so the
+            // round trip through this pair survives - but the WIRE says
+            // `admonition` for something that is not one. A consumer cannot
+            // tell it from an authored admonition, and `admonition.kind` denies
+            // the six generated-content kinds, so a tree rebuilt from that name
+            // by anything but this bridge is one the schema refuses. An
+            // unreported substitution is a wrong value presented as a right
+            // one, which ranks below a reported loss.
+            //
+            // The report is the interim, not the fix: carve-grammars#562 named
+            // `carveDirective`, and taking it is the schema-map refresh
+            // carve-rs#1876 tracks for all four types it decided at once.
             BlockNode::Directive(n) => {
+                self.degraded.insert(
+                    "directive".into(),
+                    "no mapped node: it rides the admonition node with its kind explicit, so the wire cannot distinguish it from an authored admonition and a tree rebuilt from that name carries a kind the admonition schema refuses".into(),
+                );
                 let mut a = attrs(n.attrs.as_ref());
                 let mut classes = a
                     .remove("class")
