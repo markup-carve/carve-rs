@@ -2254,8 +2254,34 @@ impl<'a> Importer<'a> {
                         && Self::attr(child, "type")
                             .is_some_and(|value| value.eq_ignore_ascii_case("checkbox"))
                 });
+                // PART 10 §11's carrier, read before the marker text so an
+                // ordered item keeps the state character it was written with
+                // rather than defaulting to the box.
+                let task_state = Self::reads_task_state(li)
+                    .then(|| Self::attr(li, "data-task-state"))
+                    .flatten()
+                    .and_then(|state| state.chars().next());
+                // UNSPELLABLE BEHIND AN ORDERED MARKER. `task_marker` in
+                // `resources/spec/03-blocks-core.ebnf` hangs off
+                // `unordered_item` alone, so no Carve source carries a box on an
+                // ordered item and the writer dropped both the box and the
+                // characters it was read from (carve-rs#1890). The bracket pair
+                // is kept as text, the way the Markdown importer keeps it
+                // (carve-rs#1886), and the row says what could not be spelled.
+                // The AST holds the box either way; only a writer loses it
+                // (PART 12 §16), so this runs on the writing exit alone.
+                let ordered_task = ordered && checkbox.is_some() && self.writing;
                 if let Some((j, input)) = checkbox {
                     let input_path = Self::child_path(&p, input, j);
+                    if ordered_task {
+                        self.diag(
+                            HtmlImportDiagnosticCode::StructureUnspellable,
+                            ORDERED_TASK_ITEM_FLATTENED.into(),
+                            HtmlImportSeverity::Warning,
+                            &input_path,
+                            input,
+                        );
+                    }
                     if let Some(kept) = self.attrs(input, &input_path) {
                         let names: Vec<String> = Self::attr_names(&kept)
                             .into_iter()
@@ -2291,22 +2317,32 @@ impl<'a> Importer<'a> {
                 // `blocks_at`: rebuilding an index from a list something was
                 // lifted out of renumbers every sibling after the hole
                 // (PART 12 §16, markup-carve/carve#1554).
+                //
+                // An ordered item's box is the one case where it is not
+                // consumed but SUBSTITUTED: a text node standing where the
+                // `<input>` stood, so the bracket pair reaches the item's own
+                // inline run and keeps the position the marker had among the
+                // siblings.
                 let (content, content_paths): (Vec<Handle>, Vec<String>) = li_children
                     .iter()
                     .enumerate()
-                    .filter(|(_, child)| {
-                        checkbox.map_or(true, |(_, input)| !Rc::ptr_eq(input, child))
+                    .filter_map(|(j, child)| {
+                        let path = Self::child_path(&p, child, j);
+                        if !checkbox.is_some_and(|(_, input)| Rc::ptr_eq(input, child)) {
+                            return Some((child.clone(), path));
+                        }
+                        ordered_task.then(|| {
+                            let checked = Self::attr(child, "checked").is_some();
+                            (text_node(&task_marker_text(checked, task_state)), path)
+                        })
                     })
-                    .map(|(j, child)| (child.clone(), Self::child_path(&p, child, j)))
                     .unzip();
                 items.push(ListItem {
                     attrs: self.attrs(li, &p),
-                    checked: checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()),
-                    // PART 10 §11: the only carrier the HTML has.
-                    task_state: Self::reads_task_state(li)
-                        .then(|| Self::attr(li, "data-task-state"))
-                        .flatten()
-                        .and_then(|state| state.chars().next()),
+                    checked: (!ordered_task)
+                        .then(|| checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()))
+                        .flatten(),
+                    task_state: if ordered_task { None } else { task_state },
                     children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
                     pos: None,
                 });
@@ -6249,6 +6285,21 @@ const EMPTY_CODE_DROPPED: &str = "Dropped an empty <code>: its backtick run is c
 const CELL_BREAK_FLATTENED: &str = "Wrote a <br> in a table cell as a space: a cell is one line, so no Carve spelling keeps the break";
 const EMPTY_WRAPPER_DROPPED: &str = "Dropped an inline element that held only a dropped empty <code>: an empty pair of its delimiters reads back as text";
 const EMPTY_CODE_ATTRIBUTES_DROPPED: &str = "Dropped the attributes of an empty <code>: an attribute block attaches to a closing backtick run, which an empty span has not got";
+const ORDERED_TASK_ITEM_FLATTENED: &str = "Wrote an ordered task item's checkbox as its bracket text: a Carve task marker is spelled behind a bullet only, so the item keeps the characters and loses the task-item semantics";
+
+/// The bracket pair the Carve writer spells behind a bullet (PART 11 §6g), for
+/// the ordered item where it can only be text.
+fn task_marker_text(checked: bool, state: Option<char>) -> String {
+    let state = state.unwrap_or(if checked { 'x' } else { ' ' });
+    format!("[{state}]")
+}
+
+/// A text node standing where an element the writer cannot spell stood.
+fn text_node(text: &str) -> Handle {
+    Node::new(NodeData::Text {
+        contents: RefCell::new(text.into()),
+    })
+}
 
 /// Walk one inline sequence as the Carve writer reads an empty code span's run,
 /// letting `keep` decide each empty span; `ends` is whether its run ends there.

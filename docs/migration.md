@@ -67,6 +67,12 @@ Carve-looking source text literal. Inputs above 256 KiB are rejected because
 the compatibility rewrite pipeline makes several bounded passes over a post.
 It also reports unverified fidelity and fails closed under `--check-loss`.
 
+An ordered task item has no Carve spelling either, so `html_to_carve` keeps the
+bracket pair as text and reports a `structure-unspellable` warning:
+`<ol><li><input type="checkbox" checked> done` becomes `1. [x] done`.
+`html_to_ast` keeps the box on the item and reports nothing, because only a
+writer loses it.
+
 For HTML, `--check-loss` exits 1 for `degraded` or `dropped` findings. Opaque
 raw HTML is degraded even when its bytes survive because it is not modeled or
 editable. An `attribute-preserved` row is not a failure by itself, but it only
