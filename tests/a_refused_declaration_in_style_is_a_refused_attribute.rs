@@ -237,6 +237,24 @@ fn every_value_reads_as_one_of_three_classes() {
             "error",
             "style with a construct the CSS sanitizer refuses",
         ),
+        // THE DECLARATION SCAN READS THE VALUE AS WRITTEN, and the sanitizer
+        // does not: it strips comments and decodes CSS escapes first. So a
+        // commented-out denied URL still takes the scheme reason although the
+        // sanitizer leaves the value alone, and an escaped one takes the
+        // sanitizer reason although the sanitizer is what decodes it. Both
+        // stay `error`, and both are carve-js's answer on the same bytes - the
+        // three engines have to say the same thing here before any of them
+        // narrows it.
+        (
+            "/* url(javascript:x) */ color:red",
+            "error",
+            "style with a denied URL scheme in a declaration value",
+        ),
+        (
+            r"background:url(javas\63ript:x)",
+            "error",
+            "style with a construct the CSS sanitizer refuses",
+        ),
         ("color:red", "info", "style"),
         ("text-align:left", "info", "style"),
         // The sanitizer answers `""` for an empty value as well as for a blanked
