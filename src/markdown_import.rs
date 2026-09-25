@@ -53,10 +53,24 @@ fn is_empty_destination(destination: &str) -> bool {
         .is_empty()
 }
 
-pub fn markdown_to_carve(markdown: &str) -> String {
-    let document = markdown_to_ast(markdown);
+/// Convert Markdown source to Carve source, or the writer's refusal.
+///
+/// Markdown caps nesting nowhere, and [`markdown_to_ast`] builds the tree from
+/// the parser's frames rather than by recursing, so this is the one importer that
+/// can hand the writer a tree deeper than `parse::MAX_NESTING_DEPTH` - which is
+/// what PART 9 §25's ceiling is for. Untrusted Markdown therefore needs the
+/// fallible form: [`markdown_to_carve`] can only answer with an empty string
+/// (carve-rs#1877).
+pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarveError> {
+    render_carve(&markdown_to_ast(markdown))
+}
 
-    render_carve(&document).unwrap_or_default()
+/// Convert Markdown source to Carve source.
+///
+/// Returns an empty string where the writer refuses; prefer
+/// [`try_markdown_to_carve`] for input you did not write.
+pub fn markdown_to_carve(markdown: &str) -> String {
+    try_markdown_to_carve(markdown).unwrap_or_default()
 }
 
 /// Convert Markdown source to a Carve [`Document`].
@@ -85,10 +99,30 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
             }
         }
         builder.push(event, &markdown[range]);
+        if builder.over_depth {
+            break;
+        }
     }
 
     builder.finish()
 }
+
+/// The nesting the importer will BUILD, in AST levels (PART 9 §25).
+///
+/// ONE level above the renderers' ceiling, deliberately: a tree that reaches this
+/// cap is already one level past what any renderer accepts, so the writer refuses
+/// it with exactly the error it would have produced without the cap. A document
+/// under the ceiling is built untouched.
+///
+/// The cap is here because this importer is the only one with nothing else to
+/// bound it. The Carve parser caps its own nesting, the HTML importer answers
+/// `HtmlImportError::DepthLimit`, ingest has its JSON depth budget - Markdown
+/// nesting is limited only by the input, and this builder folds frames instead of
+/// recursing, so it cheerfully built a tree that could not afterwards be walked,
+/// cloned or even FREED without overflowing the stack and aborting the process
+/// (carve-rs#1877). Derived `Clone` and `Drop` recurse over the tree and have no
+/// ceiling to consult, so the only place to stop it is before it exists.
+const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 1;
 
 /// A container under construction.
 ///
@@ -187,9 +221,50 @@ enum Frame {
     Metadata(String),
 }
 
+/// The AST levels a finished frame adds beneath itself: (block, inline).
+///
+/// EXHAUSTIVE on purpose. A container counted as zero here is a hole in
+/// [`MAX_IMPORT_LEVELS`], and the hole would only show as an abort on input deep
+/// enough to reach it.
+fn levels_added(frame: &Frame) -> (usize, usize) {
+    match frame {
+        // An item's blocks sit one level under the LIST, so the list owns that
+        // level and the item frame adds none of its own.
+        Frame::BlockQuote(_)
+        | Frame::List { .. }
+        | Frame::Table { .. }
+        | Frame::FootnoteDef { .. } => (1, 0),
+        Frame::Emphasis(..)
+        | Frame::Link { .. }
+        | Frame::HtmlEmphasis { .. }
+        | Frame::HtmlInsert { .. } => (0, 1),
+        // A paragraph, heading or cell OPENS an inline sequence rather than
+        // nesting inside one, and the rest hold text.
+        Frame::Paragraph(_)
+        | Frame::Heading(..)
+        | Frame::ListItem { .. }
+        | Frame::CodeBlock { .. }
+        | Frame::RawHtml(_)
+        | Frame::HtmlCode { .. }
+        | Frame::RawInline { .. }
+        | Frame::Image { .. }
+        | Frame::TableRow { .. }
+        | Frame::TableCell(_)
+        | Frame::Metadata(_) => (0, 0),
+    }
+}
+
 #[derive(Default)]
 struct Builder {
     frames: Vec<Frame>,
+    /// Block and inline nesting the open frames account for, held against
+    /// [`MAX_IMPORT_LEVELS`]. Maintained by `push_frame` / `pop_frame` alone, so
+    /// no call site can move the stack without moving these with it.
+    block_levels: usize,
+    inline_levels: usize,
+    /// Set when a frame was refused at the cap. The event loop stops on it and
+    /// `finish` closes what is open.
+    over_depth: bool,
     /// Top-level blocks, once every frame above them has closed.
     blocks: Vec<BlockNode>,
     footnote_defs: BTreeMap<String, Vec<BlockNode>>,
@@ -324,7 +399,7 @@ impl Builder {
         // tag (`<b class="x">`) opens a raw-inline run instead, so its
         // attributes survive verbatim rather than being dropped.
         if !tag.bare {
-            self.frames.push(Frame::RawInline {
+            self.push_frame(Frame::RawInline {
                 tag: name,
                 content: value.to_string(),
             });
@@ -374,7 +449,7 @@ impl Builder {
                 content: value.to_string(),
             },
         };
-        self.frames.push(frame);
+        self.push_frame(frame);
     }
 
     fn raw_inline(&mut self, content: String) {
@@ -491,7 +566,32 @@ impl Builder {
             _ => Frame::Paragraph(Vec::new()),
         };
 
+        self.push_frame(frame);
+    }
+
+    /// Push a frame, unless it would nest past [`MAX_IMPORT_LEVELS`].
+    ///
+    /// A refusal sets `over_depth` instead of pushing, which stops the event loop
+    /// - so the matching end event never arrives and the stack stays balanced.
+    fn push_frame(&mut self, frame: Frame) {
+        let (block, inline) = levels_added(&frame);
+        if self.block_levels + block > MAX_IMPORT_LEVELS
+            || self.inline_levels + inline > MAX_IMPORT_LEVELS
+        {
+            self.over_depth = true;
+            return;
+        }
+        self.block_levels += block;
+        self.inline_levels += inline;
         self.frames.push(frame);
+    }
+
+    fn pop_frame(&mut self) -> Option<Frame> {
+        let frame = self.frames.pop()?;
+        let (block, inline) = levels_added(&frame);
+        self.block_levels -= block;
+        self.inline_levels -= inline;
+        Some(frame)
     }
 
     fn end(&mut self, _tag: TagEnd) {
@@ -510,7 +610,7 @@ impl Builder {
     }
 
     fn close(&mut self) {
-        let Some(frame) = self.frames.pop() else {
+        let Some(frame) = self.pop_frame() else {
             return;
         };
 
@@ -766,7 +866,7 @@ impl Builder {
     /// the one the end tag pairs with; anything reaching the generic `close()`
     /// was left unpaired and falls back to raw there instead.
     fn close_matched_html(&mut self) {
-        match self.frames.pop() {
+        match self.pop_frame() {
             Some(Frame::HtmlEmphasis { kind, children, .. }) => {
                 self.inline(InlineNode::Emphasis(Emphasis {
                     attrs: None,
@@ -785,7 +885,7 @@ impl Builder {
                     pos: None,
                 }));
             }
-            Some(other) => self.frames.push(other),
+            Some(other) => self.push_frame(other),
             None => {}
         }
     }

@@ -80,6 +80,10 @@ enum EscapeMode {
 
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
+    // FIRST, before any pass reads the tree's shape: `redundant_heading_ids`
+    // clones the whole document and derived `Clone` has no ceiling
+    // (`crate::render_depth::refuse_if_too_deep`).
+    crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     crate::render_loss::record_ruby_in_document(doc);
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();

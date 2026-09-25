@@ -47,6 +47,9 @@ pub fn render_html_with_options(
     doc: &Document,
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
+    // BEFORE the clone below, which is itself a recursion over the tree with no
+    // ceiling to consult (`crate::render_depth::refuse_if_too_deep`).
+    crate::render_depth::refuse_if_too_deep(doc, "html")?;
     render_html_owned_with_options(doc.clone(), options)
 }
 

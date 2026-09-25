@@ -107,6 +107,21 @@ fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
     }
 }
 
+/// Migrate Markdown, or the writer's refusal.
+///
+/// The fallible form is the one to reach for on untrusted input: the Markdown
+/// importer is the only one whose tree has no nesting bound of its own, so it is
+/// the only one that can reach PART 9 §25's ceiling (carve-rs#1877).
+pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
+    Ok(unverified(
+        crate::try_markdown_to_carve(source)?,
+        SourceFormat::Markdown,
+    ))
+}
+
+/// Migrate Markdown, with an empty result where the writer refuses.
+///
+/// Prefer [`try_migrate_markdown`] for input you did not write.
 pub fn migrate_markdown(source: &str) -> MigrationResult {
     unverified(markdown_to_carve(source), SourceFormat::Markdown)
 }

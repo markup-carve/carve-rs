@@ -930,7 +930,13 @@ fn run_migrate(args: &[String]) -> ExitCode {
                 return ExitCode::from(2);
             }
         },
-        _ => carve::migrate_markdown(&source),
+        _ => match carve::try_migrate_markdown(&source) {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("carve migrate: {error}");
+                return ExitCode::from(2);
+            }
+        },
     };
     print!("{}", result.value);
     let report = migration_report_json(&result.report);
