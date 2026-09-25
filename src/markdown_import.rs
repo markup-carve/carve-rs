@@ -109,10 +109,13 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
 
 /// The nesting the importer will BUILD, in AST levels (PART 9 §25).
 ///
-/// ONE level above the renderers' ceiling, deliberately: a tree that reaches this
-/// cap is already one level past what any renderer accepts, so the writer refuses
-/// it with exactly the error it would have produced without the cap. A document
-/// under the ceiling is built untouched.
+/// TWO levels above the renderers' ceiling, and the second one is load-bearing.
+/// A refusal stops the event loop, so the innermost container is left EMPTY - its
+/// own depth is one less than the depth a child would have had. At
+/// `MAX_RENDER_DEPTH + 1` that emptied tree measured exactly at the ceiling and
+/// rendered; one more level means a truncated tree is always past it, and the
+/// writer refuses it with exactly the error it produced before the cap existed.
+/// A document the ceiling admits is built untouched.
 ///
 /// The cap is here because this importer is the only one with nothing else to
 /// bound it. The Carve parser caps its own nesting, the HTML importer answers
@@ -122,7 +125,7 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
 /// cloned or even FREED without overflowing the stack and aborting the process
 /// (carve-rs#1877). Derived `Clone` and `Drop` recurse over the tree and have no
 /// ceiling to consult, so the only place to stop it is before it exists.
-const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 1;
+const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 2;
 
 /// A container under construction.
 ///

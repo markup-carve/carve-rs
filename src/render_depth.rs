@@ -161,14 +161,19 @@ pub(crate) fn refuse_if_too_deep(
 /// `inline_depth` are two counters there). Summing them would refuse trees that
 /// render today.
 ///
+/// A root sequence is depth 0, which is the index the renderers' own counters
+/// carry - `render_blocks` tests the depth it was ENTERED at, before
+/// incrementing. Seeding at 1 instead refused one tree that renders on main: 432
+/// nested quotes, the deepest document the ceiling admits.
+///
 /// Stops at the first node past the ceiling, so a deep document costs the depth
 /// rather than the tree. A document under the ceiling pays one pointer walk.
 fn exceeds_ceiling(doc: &Document) -> bool {
     let mut blocks: Vec<(&BlockNode, usize)> = Vec::new();
     let mut inlines: Vec<(&InlineNode, usize)> = Vec::new();
-    push_blocks(&mut blocks, &doc.children, 1);
+    push_blocks(&mut blocks, &doc.children, 0);
     for body in doc.footnote_defs.values() {
-        push_blocks(&mut blocks, body, 1);
+        push_blocks(&mut blocks, body, 0);
     }
     while let Some((block, depth)) = blocks.pop() {
         if depth > MAX_RENDER_DEPTH {
@@ -211,13 +216,13 @@ fn push_block_children<'a>(
 ) {
     let deeper = depth + 1;
     match block {
-        BlockNode::Heading(h) => push_inlines(inlines, &h.children, 1),
-        BlockNode::Paragraph(p) => push_inlines(inlines, &p.children, 1),
+        BlockNode::Heading(h) => push_inlines(inlines, &h.children, 0),
+        BlockNode::Paragraph(p) => push_inlines(inlines, &p.children, 0),
         BlockNode::LineBlock(b) => push_blocks(blocks, &b.children, deeper),
         BlockNode::BlockQuote(b) => push_blocks(blocks, &b.children, deeper),
         BlockNode::Admonition(a) => {
             if let Some(title) = &a.title {
-                push_inlines(inlines, title, 1);
+                push_inlines(inlines, title, 0);
             }
             push_blocks(blocks, &a.children, deeper);
         }
@@ -231,7 +236,7 @@ fn push_block_children<'a>(
         BlockNode::DefinitionList(d) => {
             for item in &d.items {
                 for term in &item.terms {
-                    push_inlines(inlines, &term.children, 1);
+                    push_inlines(inlines, &term.children, 0);
                 }
                 for def in &item.definitions {
                     push_blocks(blocks, &def.children, deeper);
@@ -240,29 +245,29 @@ fn push_block_children<'a>(
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &t.caption {
-                push_inlines(inlines, caption, 1);
+                push_inlines(inlines, caption, 0);
             }
             for row in &t.rows {
                 for cell in &row.cells {
-                    push_inlines(inlines, &cell.children, 1);
+                    push_inlines(inlines, &cell.children, 0);
                 }
             }
         }
         BlockNode::FigureGroup(g) => {
             push_blocks(blocks, &g.children, deeper);
             if let Some(caption) = &g.caption {
-                push_inlines(inlines, caption, 1);
+                push_inlines(inlines, caption, 0);
             }
         }
         BlockNode::Figure(f) => {
-            push_inlines(inlines, &f.caption, 1);
+            push_inlines(inlines, &f.caption, 0);
             match &*f.target {
                 FigureTarget::BlockQuote(b) => push_blocks(blocks, &b.children, deeper),
-                FigureTarget::Paragraph(p) => push_inlines(inlines, &p.children, 1),
+                FigureTarget::Paragraph(p) => push_inlines(inlines, &p.children, 0),
                 FigureTarget::Table(t) => {
                     for row in &t.rows {
                         for cell in &row.cells {
-                            push_inlines(inlines, &cell.children, 1);
+                            push_inlines(inlines, &cell.children, 0);
                         }
                     }
                 }

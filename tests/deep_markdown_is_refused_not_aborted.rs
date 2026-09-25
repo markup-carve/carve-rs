@@ -78,9 +78,10 @@ fn nested_items_are_refused_too() {
 
 /// The control: the deepest tree the ceiling admits still migrates.
 ///
-/// This is what pins the bound the importer now builds to as one that cannot
-/// truncate a document any renderer would accept. `MAX_RENDER_DEPTH - 1` quotes
-/// wrap a paragraph, which is exactly `MAX_RENDER_DEPTH` levels.
+/// This is what pins the importer's build bound as one that cannot truncate a
+/// document any renderer would accept, and it is the case that caught the
+/// original off-by-one: `MAX_RENDER_DEPTH` nested quotes is the deepest document
+/// main migrates, and the first measurement of the fix refused it.
 ///
 /// The ONLY test here that needs a bigger stack, and the reason is the one
 /// `render_ceiling_refuses` gives: this case genuinely writes a tree 432 levels
@@ -89,7 +90,7 @@ fn nested_items_are_refused_too() {
 /// deliberately - a refusal that needed a bigger stack would not be a bound.
 #[test]
 fn the_deepest_admitted_tree_still_migrates() {
-    let depth = MAX_RENDER_DEPTH - 1;
+    let depth = MAX_RENDER_DEPTH;
     std::thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
         .spawn(move || {
@@ -105,7 +106,10 @@ fn the_deepest_admitted_tree_still_migrates() {
 /// One level further is refused, which is the behavior on both sides of the fix.
 #[test]
 fn one_level_past_the_admitted_tree_is_refused() {
-    assert_names_the_ceiling(&refusal(&nested_quotes(MAX_RENDER_DEPTH)), "one level past");
+    assert_names_the_ceiling(
+        &refusal(&nested_quotes(MAX_RENDER_DEPTH + 1)),
+        "one level past",
+    );
 }
 
 /// Building the tree and DROPPING it is bounded on its own, with no render.
