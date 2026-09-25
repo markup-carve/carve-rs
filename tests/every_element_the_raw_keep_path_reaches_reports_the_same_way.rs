@@ -2,7 +2,7 @@
 //! no Carve spelling reach it. This sweeps the whole population rather than the
 //! four names one clause happened to list, and pins the two edges of the report:
 //! content whose "handler" is escaped text owes no row, and a `style` inside kept
-//! bytes gets none yet (markup-carve/carve#2261, markup-carve/carve#2267).
+//! bytes is a refused attribute (markup-carve/carve#2261, markup-carve/carve#2267).
 
 use carve::html_import::{
     html_to_carve, HtmlImportDiagnosticCode, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
@@ -113,17 +113,14 @@ fn an_escaped_handler_in_kept_text_owes_no_row() {
 }
 
 /// THE BOUNDARY OF THE carve#2261 FIX, pinned so it is visible rather than
-/// assumed. Every attribute class routed through the refusal policy reaches the
-/// preserved reading by construction. `style` is the one class that is not: it
-/// takes its own branch and answers `style-unmapped`, a code that says a CSS
-/// mapping was attempted and matched nothing.
-///
-/// So a dangerous declaration inside kept bytes gets no `error` row, and a
-/// descendant's `style` gets no row at all. carve#2267 rules `style-unmapped`
-/// wrong inside kept bytes and pins the replacement wording in a clause; this
-/// test is what changes when that clause lands.
+/// assumed. `style` was the one attribute class not routed through the refusal
+/// policy: it took its own branch and answered `style-unmapped`, a code naming a
+/// CSS mapping that kept bytes never run. carve#2267 routes it, so both values
+/// are named here now - the element's own and the descendant's, each at `error`
+/// for its own reason. The whole rows live in
+/// `a_refused_declaration_in_style_is_a_refused_attribute.rs`.
 #[test]
-fn a_dangerous_style_inside_kept_bytes_has_no_row_yet() {
+fn a_dangerous_style_inside_kept_bytes_is_a_refused_attribute() {
     let html = concat!(
         r#"<form style="background:url(javascript:x)" onclick="y()">"#,
         r#"<p style="width:expression(alert(1))">a</p></form>"#
@@ -133,20 +130,18 @@ fn a_dangerous_style_inside_kept_bytes_has_no_row_yet() {
     assert!(report
         .iter()
         .any(|(code, severity, _)| *code == AttributePreserved && *severity == Error));
-    // Neither style value is named, at any severity.
-    let named: Vec<&(HtmlImportDiagnosticCode, HtmlImportSeverity, String)> = report
-        .iter()
-        .filter(|(_, _, message)| message.contains("style"))
-        .collect();
-    assert!(named.is_empty(), "{named:?}");
-    // The kept element's own style keeps the one row it has today. The
-    // descendant's has none, which is the silence carve#2267 describes.
     assert_eq!(
         report
             .iter()
-            .filter(|(code, _, _)| *code == StyleUnmapped)
+            .filter(|(code, severity, message)| *code == AttributePreserved
+                && *severity == Error
+                && message.contains("Preserved style with "))
             .count(),
-        1,
+        2,
+        "{report:?}"
+    );
+    assert!(
+        !report.iter().any(|(code, _, _)| *code == StyleUnmapped),
         "{report:?}"
     );
 }
@@ -158,7 +153,11 @@ fn a_dangerous_style_inside_kept_bytes_has_no_row_yet() {
 #[test]
 fn benign_css_reads_the_same_through_either_arm() {
     let inner = r#"<p style="font-weight:bold">a</p>"#;
-    let expected = vec![(StyleUnmapped, Info), (RawPreserved, Warning)];
+    let expected = vec![
+        (AttributePreserved, Info),
+        (RawPreserved, Warning),
+        (AttributePreserved, Info),
+    ];
     assert_eq!(
         codes(&format!(r#"<form style="color:red">{inner}</form>"#)),
         expected
