@@ -226,7 +226,12 @@ fn push_block_children<'a>(
             }
             push_blocks(blocks, &a.children, deeper);
         }
-        BlockNode::Directive(d) => push_blocks(blocks, &d.children, deeper),
+        BlockNode::Directive(d) => {
+            if let Some(title) = &d.title {
+                push_inlines(inlines, title, 0);
+            }
+            push_blocks(blocks, &d.children, deeper);
+        }
         BlockNode::Div(d) => push_blocks(blocks, &d.children, deeper),
         BlockNode::List(l) => {
             for item in &l.items {
