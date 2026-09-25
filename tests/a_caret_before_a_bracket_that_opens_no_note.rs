@@ -195,17 +195,28 @@ fn an_authored_escape_is_written_back() {
 }
 
 #[test]
-fn a_caret_a_brace_binds_keeps_its_escape() {
-    // The other arm of the same decision. `{^x^}` itself is a superscript node
-    // and never reaches this code, so it is not the shape to write here: these
-    // three are, because the caret arrives as ordinary text beside a brace and
-    // writing it bare would let a superscript form.
-    for (source, expected) in [
-        ("a {^x b\n", "a {\\^x b\n"),
-        ("a x^} b\n", "a x\\^} b\n"),
-        ("a {^ b\n", "a {\\^ b\n"),
-    ] {
-        assert_eq!(to_carve(source), expected, "control moved for {source:?}");
+fn a_caret_beside_a_brace_with_no_superscript_is_written_bare() {
+    for source in ["a {^x b\n", "a x^} b\n", "a {^ b\n"] {
+        assert_eq!(to_carve(source), source, "over-escaped {source:?}");
         invariants_hold(source);
     }
+}
+
+#[test]
+fn a_literal_caret_inside_a_complete_superscript_form_keeps_its_escape() {
+    for source in ["a {\\^x^} b\n", "a {\\^^} b\n"] {
+        let written = to_carve(source);
+        assert_eq!(written, source, "changed the literal caret in {source:?}");
+        invariants_hold(source);
+    }
+    for source in ["a {^x\\^} b\n", "a {\\^_x_^} b\n"] {
+        invariants_hold(source);
+    }
+}
+
+#[test]
+fn a_superscript_shaped_run_split_across_text_nodes_stays_text() {
+    let written = ingested(r#"{"type":"text","value":"a {^x"},{"type":"text","value":"^} b"}"#);
+    assert_eq!(to_html(&written), "<p>a {^x^} b</p>");
+    assert_eq!(to_carve(&written), written);
 }

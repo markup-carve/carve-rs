@@ -5226,8 +5226,12 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         }
         let content = trim_ascii_start(line)
             .strip_prefix("%%")
-            .unwrap_or_default()
-            .trim_start()
+            .unwrap_or_default();
+        let content = content
+            .strip_prefix(' ')
+            .or_else(|| content.strip_prefix('\t'))
+            .unwrap_or(content)
+            .trim_end_matches([' ', '\t'])
             .to_string();
         let span_start = cur.pos;
         cur.consume();
@@ -14975,7 +14979,13 @@ struct Stanza {
 /// column the rest of the block measures against.
 fn verse_comment_line(stripped: &str) -> Option<String> {
     let rest = stripped.strip_prefix("%%")?;
-    Some(rest.trim_start().to_string())
+    Some(
+        rest.strip_prefix(' ')
+            .or_else(|| rest.strip_prefix('\t'))
+            .unwrap_or(rest)
+            .trim_end_matches([' ', '\t'])
+            .to_string(),
+    )
 }
 
 /// Put the comment-only lines back, at the content position of the line each
@@ -17509,8 +17519,12 @@ fn parse_inline_context(
                 &mut buf_placeable,
                 &mut buf_src_delta,
             );
-            let content = String::from_utf8_lossy(&bytes[comment_start + 2..i])
-                .trim_start()
+            let raw = String::from_utf8_lossy(&bytes[comment_start + 2..i]);
+            let content = raw
+                .strip_prefix(' ')
+                .or_else(|| raw.strip_prefix('\t'))
+                .unwrap_or(&raw)
+                .trim_end_matches([' ', '\t'])
                 .to_string();
             out.push(InlineNode::Comment(Comment {
                 block: false,
