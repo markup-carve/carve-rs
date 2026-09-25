@@ -45,8 +45,8 @@ fn parse(src: &str) -> carve::Document {
 
 /// The document's single figure, or a failure naming what was there instead.
 fn figure(src: &str) -> Figure {
-    let doc = parse(src);
-    for block in doc.children {
+    let mut doc = parse(src);
+    for block in std::mem::take(&mut doc.children) {
         if let BlockNode::Figure(f) = block {
             return f;
         }

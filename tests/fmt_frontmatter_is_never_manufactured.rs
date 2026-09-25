@@ -139,9 +139,8 @@ fn a_real_leading_frontmatter_block_still_opens_with_three_dashes() {
     let src = "---yaml\nt: 1\n---\n\n***\n\n---\n";
     let formatted = assert_round_trips(src);
     assert!(formatted.starts_with("---yaml\n"));
-    let raw = carve::parse(&formatted)
-        .frontmatter_raw
-        .expect("frontmatter");
+    let document = carve::parse(&formatted);
+    let raw = document.frontmatter_raw.as_ref().expect("frontmatter");
     assert_eq!(raw.format, "yaml");
     assert_eq!(raw.content, "t: 1");
 }
@@ -206,9 +205,15 @@ fn crlf_keeps_a_format_the_map_cannot_represent() {
     let formatted = assert_round_trips(src);
     assert_eq!(formatted, "---toml\na = 1\n---\n\nbody\n");
 
-    let before = carve::parse(src).frontmatter_raw.expect("frontmatter");
-    let after = carve::parse(&formatted)
+    let before_document = carve::parse(src);
+    let after_document = carve::parse(&formatted);
+    let before = before_document
         .frontmatter_raw
+        .as_ref()
+        .expect("frontmatter");
+    let after = after_document
+        .frontmatter_raw
+        .as_ref()
         .expect("frontmatter survived fmt");
     assert_eq!(after.format, before.format);
     assert_eq!(after.content, before.content);
@@ -224,9 +229,11 @@ fn crlf_keeps_the_format_token() {
     let src = "---yaml\r\nt: 1\r\n---\r\n\r\nbody\r\n";
     let formatted = assert_round_trips(src);
     assert_eq!(formatted, "---yaml\nt: 1\n---\n\nbody\n");
+    let document = carve::parse(&formatted);
     assert_eq!(
-        carve::parse(&formatted)
+        document
             .frontmatter_raw
+            .as_ref()
             .expect("frontmatter")
             .format,
         "yaml"

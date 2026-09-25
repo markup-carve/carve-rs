@@ -74,8 +74,8 @@ fn ingested(inline_json: &str) -> String {
 /// The first code block's label, read out of the tree rather than out of HTML -
 /// a fence label is not rendered anywhere.
 fn code_fence_label(source: &str) -> Option<String> {
-    parse(source)
-        .children
+    let mut document = parse(source);
+    std::mem::take(&mut document.children)
         .into_iter()
         .find_map(|block| match block {
             BlockNode::CodeBlock(code) => code.label,
@@ -93,8 +93,8 @@ fn footnote_ref_id(source: &str) -> Option<String> {
         }
         None
     }
-    parse(source)
-        .children
+    let mut document = parse(source);
+    std::mem::take(&mut document.children)
         .into_iter()
         .find_map(|block| match block {
             BlockNode::Paragraph(paragraph) => walk(paragraph.children),

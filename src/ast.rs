@@ -124,8 +124,14 @@ pub struct Frontmatter {
 
 /// A Carve document.
 ///
-/// Teardown is recursive, so callers building trees outside the bounded readers
-/// must bound their nesting. Renderers refuse trees past [`crate::MAX_RENDER_DEPTH`].
+/// Teardown drains block and inline trees iteratively while they are owned by
+/// this document. A detached node still uses Rust's recursive default drop.
+/// Renderers refuse trees past [`crate::MAX_RENDER_DEPTH`].
+///
+/// Because `Document` implements [`Drop`], its fields cannot be moved out
+/// directly. This includes destructuring and struct update syntax. Borrow a
+/// field to inspect it, or use [`std::mem::take`] on a mutable document to
+/// transfer ownership. A detached deep tree needs its own bounded teardown.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
@@ -198,6 +204,215 @@ impl Document {
             return self.source_len;
         }
         self.ingest_payload_len
+    }
+}
+
+// A document owns both block and inline trees. Empty each recursive field before
+// its parent is dropped, keeping the pending work on the heap.
+impl Drop for Document {
+    fn drop(&mut self) {
+        let mut pending = Vec::new();
+        queue_blocks(&mut pending, std::mem::take(&mut self.children));
+        for blocks in self.footnote_defs.values_mut() {
+            queue_blocks(&mut pending, std::mem::take(blocks));
+        }
+
+        while let Some(work) = pending.pop() {
+            match work {
+                DropWork::Blocks(mut blocks) => {
+                    if let Some(block) = blocks.pop() {
+                        if !blocks.is_empty() {
+                            pending.push(DropWork::Blocks(blocks));
+                        }
+                        pending.push(DropWork::Block(block));
+                    }
+                }
+                DropWork::Inlines(mut inlines) => {
+                    if let Some(inline) = inlines.pop() {
+                        if !inlines.is_empty() {
+                            pending.push(DropWork::Inlines(inlines));
+                        }
+                        pending.push(DropWork::Inline(inline));
+                    }
+                }
+                DropWork::Block(mut block) => drain_block(&mut pending, &mut block),
+                DropWork::Inline(mut inline) => drain_inline(&mut pending, &mut inline),
+            }
+        }
+    }
+}
+
+enum DropWork {
+    Blocks(Vec<BlockNode>),
+    Inlines(Vec<InlineNode>),
+    Block(BlockNode),
+    Inline(InlineNode),
+}
+
+fn queue_blocks(pending: &mut Vec<DropWork>, blocks: Vec<BlockNode>) {
+    if !blocks.is_empty() {
+        pending.push(DropWork::Blocks(blocks));
+    }
+}
+
+fn queue_inlines(pending: &mut Vec<DropWork>, inlines: Vec<InlineNode>) {
+    if !inlines.is_empty() {
+        pending.push(DropWork::Inlines(inlines));
+    }
+}
+
+fn queue_table(pending: &mut Vec<DropWork>, table: &mut Table) {
+    if let Some(caption) = table.caption.take() {
+        queue_inlines(pending, caption);
+    }
+    if let Some(caption) = table.short_caption.take() {
+        queue_inlines(pending, caption);
+    }
+    for row in &mut table.rows {
+        for cell in &mut row.cells {
+            queue_inlines(pending, std::mem::take(&mut cell.children));
+        }
+    }
+}
+
+fn drain_block(pending: &mut Vec<DropWork>, block: &mut BlockNode) {
+    match block {
+        BlockNode::Heading(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        BlockNode::Paragraph(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        BlockNode::List(node) => {
+            for item in &mut node.items {
+                queue_blocks(pending, std::mem::take(&mut item.children));
+            }
+        }
+        BlockNode::BlockQuote(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
+        BlockNode::Table(node) => queue_table(pending, node),
+        BlockNode::Admonition(node) => {
+            if let Some(title) = node.title.take() {
+                queue_inlines(pending, title);
+            }
+            queue_blocks(pending, std::mem::take(&mut node.children));
+        }
+        BlockNode::Directive(node) => {
+            if let Some(title) = node.title.take() {
+                queue_inlines(pending, title);
+            }
+            queue_blocks(pending, std::mem::take(&mut node.children));
+        }
+        BlockNode::Div(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
+        BlockNode::LineBlock(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
+        BlockNode::DefinitionList(node) => {
+            for item in &mut node.items {
+                for term in &mut item.terms {
+                    queue_inlines(pending, std::mem::take(&mut term.children));
+                }
+                for definition in &mut item.definitions {
+                    queue_blocks(pending, std::mem::take(&mut definition.children));
+                }
+            }
+        }
+        BlockNode::Figure(node) => {
+            queue_inlines(pending, std::mem::take(&mut node.caption));
+            if let Some(caption) = node.short_caption.take() {
+                queue_inlines(pending, caption);
+            }
+            match node.target.as_mut() {
+                FigureTarget::BlockQuote(target) => {
+                    queue_blocks(pending, std::mem::take(&mut target.children));
+                }
+                FigureTarget::Table(target) => queue_table(pending, target),
+                FigureTarget::Paragraph(target) => {
+                    queue_inlines(pending, std::mem::take(&mut target.children));
+                }
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+            }
+        }
+        BlockNode::FigureGroup(node) => {
+            queue_blocks(pending, std::mem::take(&mut node.children));
+            if let Some(caption) = node.caption.take() {
+                queue_inlines(pending, caption);
+            }
+        }
+        BlockNode::CitationDefinition(node) => {
+            queue_inlines(pending, std::mem::take(&mut node.children));
+        }
+        BlockNode::BlockExtension(node) => {
+            let fallback = std::mem::replace(
+                node.fallback.as_mut(),
+                BlockNode::ThematicBreak(ThematicBreak::default()),
+            );
+            pending.push(DropWork::Block(fallback));
+        }
+        BlockNode::ExtensionCarrier(node) => {
+            queue_blocks(pending, std::mem::take(&mut node.children));
+            if let Some(summary) = node.summary.take() {
+                queue_inlines(pending, summary);
+            }
+        }
+        BlockNode::CodeBlock(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_)
+        | BlockNode::BlockImage(_)
+        | BlockNode::ThematicBreak(_) => {}
+    }
+}
+
+fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
+    match inline {
+        InlineNode::Emphasis(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        InlineNode::Link(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        InlineNode::Span(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        InlineNode::Extension(node) => queue_inlines(pending, std::mem::take(&mut node.children)),
+        InlineNode::Ruby(node) => {
+            for pair in &mut node.pairs {
+                queue_inlines(pending, std::mem::take(&mut pair.base));
+                queue_inlines(pending, std::mem::take(&mut pair.annotation));
+            }
+        }
+        InlineNode::CitationGroup(node) => {
+            for item in &mut node.items {
+                for field in [&mut item.prefix, &mut item.locator, &mut item.suffix] {
+                    if let Some(inlines) = field.take() {
+                        queue_inlines(pending, inlines);
+                    }
+                }
+            }
+        }
+        InlineNode::Footnote(node) => {
+            if let Some(inlines) = node.inline.take() {
+                queue_inlines(pending, inlines);
+            }
+        }
+        InlineNode::CriticInsert(node) => {
+            queue_inlines(pending, std::mem::take(&mut node.children))
+        }
+        InlineNode::CriticDelete(node) => {
+            queue_inlines(pending, std::mem::take(&mut node.children))
+        }
+        InlineNode::CriticSubstitute(node) => {
+            queue_inlines(pending, std::mem::take(&mut node.old));
+            queue_inlines(pending, std::mem::take(&mut node.new));
+        }
+        InlineNode::Text(_)
+        | InlineNode::EscapedText(_)
+        | InlineNode::SmartPunctuation(_)
+        | InlineNode::Code(_)
+        | InlineNode::Image(_)
+        | InlineNode::Math(_)
+        | InlineNode::RawInline(_)
+        | InlineNode::LiteralInline(_)
+        | InlineNode::Symbol(_)
+        | InlineNode::AutoLink(_)
+        | InlineNode::CrossRef(_)
+        | InlineNode::CaptionNumber(_)
+        | InlineNode::Mention(_)
+        | InlineNode::Tag(_)
+        | InlineNode::Abbreviation(_)
+        | InlineNode::SoftBreak(_)
+        | InlineNode::HardBreak(_)
+        | InlineNode::CriticComment(_)
+        | InlineNode::Comment(_) => {}
     }
 }
 

@@ -29,10 +29,10 @@ fn imported(html: &str) -> String {
 }
 
 fn only_inline(html: &str) -> InlineNode {
-    let doc = html_to_ast(html, &HtmlImportOptions::default())
+    let mut doc = html_to_ast(html, &HtmlImportOptions::default())
         .unwrap()
         .value;
-    match doc.children.into_iter().next() {
+    match std::mem::take(&mut doc.children).into_iter().next() {
         Some(BlockNode::Paragraph(p)) => p
             .children
             .into_iter()

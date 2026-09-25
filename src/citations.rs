@@ -127,7 +127,10 @@ impl CarveExtension for Citations {
         self.defs.borrow_mut().clear();
         self.order.borrow_mut().clear();
         self.uses.borrow_mut().clear();
-        doc.children = collect_defs(doc.children, &mut self.defs.borrow_mut());
+        doc.children = collect_defs(
+            std::mem::take(&mut doc.children),
+            &mut self.defs.borrow_mut(),
+        );
         // Seed the CSL-JSON pool: in-document defs win on collision (§6.2).
         if let Some(pool) = &self.bibliography {
             let mut defs = self.defs.borrow_mut();

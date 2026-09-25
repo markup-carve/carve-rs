@@ -1,9 +1,13 @@
 use carve::{BlockNode, CodeBlock};
 
 fn only_code_block(src: &str) -> CodeBlock {
-    let doc = carve::parse(src);
+    let mut doc = carve::parse(src);
     assert_eq!(doc.children.len(), 1);
-    match doc.children.into_iter().next().unwrap() {
+    match std::mem::take(&mut doc.children)
+        .into_iter()
+        .next()
+        .unwrap()
+    {
         BlockNode::CodeBlock(code) => code,
         other => panic!("expected code block, got {other:?}"),
     }
