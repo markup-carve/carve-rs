@@ -2877,7 +2877,7 @@ fn render_inlines_with_caption(
     {
         crate::render_carve_error::record_unspellable(
             "code",
-            "an empty code span has no Carve source spelling where its open run does not end",
+            "a code span has no Carve source spelling where its open run does not end",
         );
     }
     ctx.inline_depth += 1;
@@ -2941,6 +2941,10 @@ fn spell_empty_code_runs(mut out: String) -> String {
     out
 }
 
+fn code_needs_open_run(value: &str) -> bool {
+    value.is_empty() || (value.starts_with(['\r', '\n']) && value.ends_with('`'))
+}
+
 /// An empty code span is an open backtick run, which ends only at the end of a
 /// block or at a braced closer (PART 3, UNCLOSED RUN). `followed` is true when
 /// something after this sequence would be read into the run; `labelled` when a
@@ -2954,7 +2958,7 @@ fn holds_unspellable_empty_code(
     nodes.iter().enumerate().any(|(index, node)| {
         let after = followed || run_reads_on(&nodes[index + 1..]);
         match node {
-            InlineNode::Code(code) if code.value.is_empty() => {
+            InlineNode::Code(code) if code_needs_open_run(&code.value) => {
                 !empty_code_position_ends_its_run(after, labelled, cell_not_last)
                     || !render_attrs(&code.attrs).is_empty()
             }
@@ -3085,6 +3089,10 @@ fn render_nodes_with_verbatim(
                 opens_a_note,
                 opens_verbatim,
                 opens_bracket,
+                idx + 1 == nodes.len()
+                    && (!out.is_empty()
+                        || ctx.inline_depth > 1
+                        || matches!(node, InlineNode::Code(code) if safe_fence(&code.value, 1).len() < 3)),
             )
         };
         if !is_text {
@@ -3225,6 +3233,7 @@ fn render_inline(
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
     next_opens_a_bracket: bool,
+    may_run_to_end: bool,
 ) -> String {
     let previous = ctx.escape_unit;
     ctx.escape_unit = next_escape_unit();
@@ -3237,6 +3246,7 @@ fn render_inline(
         next_opens_a_note,
         next_opens_a_verbatim_span,
         next_opens_a_bracket,
+        may_run_to_end,
     );
     ctx.escape_unit = previous;
     out
@@ -3252,6 +3262,7 @@ fn render_inline_body(
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
     next_opens_a_bracket: bool,
+    may_run_to_end: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -3336,7 +3347,7 @@ fn render_inline_body(
             // container ends, and only the braced closer ends it inside an
             // emphasis: a bare closer is swallowed by the open run.
             if let Some(InlineNode::Code(code)) = emphasis.children.last() {
-                if code.value.is_empty() && code.attrs.is_none() {
+                if code_needs_open_run(&code.value) && code.attrs.is_none() {
                     if let Some(delim) = bare_delimiter(emphasis.kind) {
                         return format!(
                             "{}{}",
@@ -3392,7 +3403,16 @@ fn render_inline_body(
                 // Its run length is chosen once the whole run is written.
                 format!("{EMPTY_CODE_MARK}{}", render_attrs(&code.attrs))
             } else {
-                format!("{}{}", render_code(&value), render_attrs(&code.attrs))
+                format!(
+                    "{}{}",
+                    render_code_with_unclosed(
+                        &value,
+                        may_run_to_end
+                            && ctx.table_cell_depth == 0
+                            && render_attrs(&code.attrs).is_empty()
+                    ),
+                    render_attrs(&code.attrs)
+                )
             }
         }
         InlineNode::Link(link) => render_link(link, ctx),
@@ -4048,6 +4068,10 @@ fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
 }
 
 fn render_code(content: &str) -> String {
+    render_code_with_unclosed(content, false)
+}
+
+fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
     let fence = safe_fence(content, 1);
     // Pad exactly where the parser strips, so the strip is reversible and fmt
     // stays idempotent; the padding sits inside the fence, so a trailing
@@ -4064,6 +4088,25 @@ fn render_code(content: &str) -> String {
         || (content.starts_with(' ')
             && content.ends_with(' ')
             && !content.chars().all(|c| c == ' '));
+    // A leading pad before a newline is stripped by block normalization.
+    // At the end of a run, an unclosed span preserves the original value.
+    if needs_pad
+        && content.starts_with(['\r', '\n'])
+        && allow_unclosed
+        && !content.ends_with(['\r', '\n', ' ', '\t'])
+        && !content.as_bytes().windows(2).any(|pair| {
+            (matches!(pair[0], b' ' | b'\t') && matches!(pair[1], b'\r' | b'\n'))
+                || (pair[0] == b'\n' && matches!(pair[1], b' ' | b'\t' | b'\r' | b'\n'))
+        })
+    {
+        return format!("{fence}{content}");
+    }
+    if needs_pad && content.starts_with(['\r', '\n']) {
+        crate::render_carve_error::record_unspellable(
+            "code",
+            "a leading newline loses its padding where the code span cannot run to the end",
+        );
+    }
     if needs_pad {
         format!("{fence} {content} {fence}")
     } else {
