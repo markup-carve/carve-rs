@@ -3484,12 +3484,19 @@ fn render_bracketed_content(children: &[InlineNode], ctx: &mut CarveContext) -> 
 }
 
 /// Pair the text brackets of one inline run in order. A nested construct that
-/// writes its own brackets takes no part: it balances its own content. Only
-/// bracketed content has lone brackets to escape (PART 11 §5).
+/// writes its own brackets takes no part: it balances its own content, and an
+/// inline extension's content is not bracketed because its reader stops at the
+/// first `]`. Only bracketed content has lone brackets to escape, and a run
+/// holding an empty code span is left to the search (PART 11 §5).
 fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
-    fn walk(nodes: &[InlineNode], open: &mut Vec<(usize, usize)>, scope: &mut BracketScope) {
+    fn walk(
+        nodes: &[InlineNode],
+        open: &mut Vec<(usize, usize)>,
+        scope: &mut BracketScope,
+    ) -> bool {
         for node in nodes {
             match node {
+                InlineNode::Code(code) if code.value.is_empty() => return false,
                 InlineNode::Text(text) => {
                     let at = text as *const Text as usize;
                     let brackets = text.value.chars().filter(|c| matches!(c, '[' | ']'));
@@ -3503,17 +3510,25 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                         }
                     }
                 }
-                InlineNode::Emphasis(emphasis) => walk(&emphasis.children, open, scope),
+                InlineNode::Emphasis(emphasis) if !walk(&emphasis.children, open, scope) => {
+                    return false;
+                }
                 _ => {}
             }
         }
+        true
     }
     let mut scope = BracketScope {
         claimed: true,
         ..BracketScope::default()
     };
     let mut open = Vec::new();
-    walk(nodes, &mut open, &mut scope);
+    if !walk(nodes, &mut open, &mut scope) {
+        return BracketScope {
+            claimed: true,
+            ..BracketScope::default()
+        };
+    }
     if bracketed {
         scope.lone.extend(open);
     } else {
