@@ -110,11 +110,12 @@ fn a_tail_that_cannot_take_lazy_text_keeps_its_paragraph_glued() {
 
 #[test]
 fn the_absorption_set_is_unchanged() {
-    // carve-rs#1924: two sibling quotes keep their separator and read back as
-    // two quotes, and a quote under a paragraph still drops it and reads tight.
+    // carve-rs#1924: the quote keeps its separator from the block below it,
+    // and a quote under a paragraph still drops it and reads tight. The second
+    // `> r` is paragraph TEXT in Carve, so its `>` is escaped (PART 11 §8d).
     assert_eq!(
         carve::to_markdown("- x\n  > q\n+\n  > r\n"),
-        "- x\n  > q\n\n  > r\n"
+        "- x\n  > q\n\n  \\> r\n"
     );
     assert_eq!(carve::to_markdown("- x\n  > q\n"), "- x\n  > q\n");
 }

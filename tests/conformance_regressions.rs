@@ -25,7 +25,7 @@ fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
             "</section>"
         )
     );
-    assert!(carve::to_markdown(src).contains("See [name](#Name)"));
+    assert!(carve::to_markdown(src).contains("See [name](#name)"));
     assert!(!carve::to_markdown(src).contains("[name][]"));
     assert!(!carve::to_plain_text(src).contains("[name][]"));
     assert!(!carve::to_ansi(src).contains("[name][]"));

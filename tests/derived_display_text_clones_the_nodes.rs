@@ -90,7 +90,7 @@ fn the_title_style_is_the_clone_on_its_own() {
 fn the_label_reaches_markdown_as_markup_too() {
     assert!(
         numbered_md(MARKUP, CrossrefStyle::NumberTitle)
-            .contains("See [Section 1 - A **bold** `c` h](#A-bold-c-h)"),
+            .contains("See [Section 1 - A **bold** `c` h](#a-bold-c-h)"),
         "{}",
         numbered_md(MARKUP, CrossrefStyle::NumberTitle)
     );

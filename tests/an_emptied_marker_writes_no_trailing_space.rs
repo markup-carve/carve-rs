@@ -36,9 +36,11 @@ fn a_list_item_holding_only_a_footnote_definition_writes_the_bullet_bare() {
 }
 
 #[test]
-fn a_definition_holding_only_a_reference_definition_writes_the_colon_bare() {
+fn a_definition_holding_only_a_reference_definition_writes_no_marker() {
+    // PART 11 §10p: no definition marker at all, and an empty description
+    // writes nothing.
     let out = to_markdown(":: term\n:  [r]: /u\n\nsee [t][r]\n");
-    assert!(lines(&out).contains(&":"));
+    assert!(!lines(&out).contains(&":"));
     assert!(
         !out.contains(": \n"),
         "no line ends in the marker's separator: {out:?}"

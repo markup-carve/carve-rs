@@ -1,3 +1,3 @@
-# Title {#foo}
+# Title
 
-See [Title](#foo).
+See [Title](#title).

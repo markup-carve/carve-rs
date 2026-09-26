@@ -1,51 +1,58 @@
-//! The Markdown target has to emit a heading id whenever a cross-reference
-//! resolves to it, or the link it also emits points at nothing.
-//!
-//! Both halves were broken in ways that hid each other. The renderer re-slugged
-//! every heading instead of using the id the core assigned, so it never knew
-//! about a disambiguated `-2` id; the reference to it then matched no known
-//! heading and `render_link` degraded it to bare text, which looked like a
-//! deliberate choice rather than a missing id (carve#352).
+//! The Markdown target links a heading by its GFM slug and writes no `{#id}`
+//! suffix (PART 11 §11). A reference is still recognized by the id the core
+//! assigned: re-slugging every heading once lost a disambiguated `-2` id, and
+//! the reference degraded to bare text (carve#352).
 
 fn md(src: &str) -> String {
     carve::to_markdown(src)
 }
 
 #[test]
-fn a_duplicate_heading_keeps_the_disambiguated_id_it_is_referenced_by() {
-    // Two headings read `Setup`, so the second one's id is `Setup-2`. Deriving
-    // the slug alone gave both `Setup` and lost the reference entirely.
+fn a_duplicate_heading_is_linked_by_its_deduplicated_slug() {
+    // The second `Setup` has the Carve id `Setup-2` and the GFM slug `setup-1`.
     let out = md("## Setup\n\n## Setup\n\nSee </#setup-2>.\n");
 
-    assert!(out.contains("## Setup {#Setup-2}"), "{out}");
-    assert!(out.contains("[Setup](#Setup-2)"), "{out}");
+    assert!(out.contains("[Setup](#setup-1)"), "{out}");
 }
 
 #[test]
-fn an_undisambiguated_heading_gains_no_suffix() {
-    // Only a REFERENCED heading gets the suffix; the first `Setup` is not
-    // referenced and stays clean.
+fn no_heading_gains_a_suffix() {
     let out = md("## Setup\n\n## Setup\n\nSee </#setup-2>.\n");
 
-    assert!(out.contains("## Setup\n"), "{out}");
-    assert_eq!(out.matches("{#").count(), 1, "{out}");
+    assert!(out.contains("## Setup\n\n## Setup\n"), "{out}");
+    assert!(!out.contains("{#"), "{out}");
 }
 
 #[test]
-fn a_heading_referenced_only_from_a_footnote_body_still_gets_its_id() {
+fn a_heading_referenced_only_from_a_footnote_body_is_linked() {
     let out = md("# H\n\nBody[^n]\n\n[^n]: see </#h>\n");
 
-    assert!(out.contains("# H {#H}"), "{out}");
-    assert!(out.contains("[H](#H)"), "{out}");
+    assert!(out.contains("# H\n"), "{out}");
+    assert!(out.contains("[H](#h)"), "{out}");
 }
 
 #[test]
 fn a_self_referencing_heading_does_not_slug_its_own_expansion() {
     // `</#a>` resolves to a link carrying the heading's own text, so counting it
-    // in the slug produced `A-A` and every id derived here disagreed with the
-    // one the core assigned before resolution.
-    let out = md("# A </#a>\n");
+    // would slug `# A </#a>` as `a-a`.
+    let out = md("# A </#a>\n\nSee </#a>.\n");
 
-    assert!(out.contains("{#A}"), "{out}");
-    assert!(!out.contains("A-A"), "{out}");
+    assert!(out.contains("](#a)."), "{out}");
+    assert!(!out.contains("a-a"), "{out}");
+}
+
+#[test]
+fn a_heading_in_a_table_cell_is_not_a_target() {
+    // A block cell is flattened, so the heading inside it is not written as one
+    // and the link to it keeps its authored destination (PART 11 §11a).
+    let doc = carve::from_json(
+        r##"{"type":"document","srcByteLength":0,"children":[
+          {"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"blocks":[
+            {"type":"heading","level":2,"attrs":{"id":"in-cell"},"children":[{"type":"text","value":"Cell"}]}]}]}]},
+          {"type":"paragraph","children":[{"type":"link","href":"#in-cell","children":[{"type":"text","value":"x"}]}]}]}"##,
+    )
+    .unwrap();
+    let out = carve::render_markdown(&doc).unwrap();
+
+    assert!(out.contains("[x](#in-cell)"), "{out}");
 }

@@ -120,11 +120,10 @@ fn markdown_neutralizes_embedded_html() {
     // mid-line `>` is inert in every flavour.
     assert_eq!(md("a < b & c"), "a < b & c");
 
-    // The reason `&` stopped being escaped (carve#1071): an entity in Markdown
-    // TEXT decodes to a CHARACTER, and a character cannot open a tag. Text
-    // authored as `&lt;script&gt;` therefore comes back as the four characters a
-    // reader sees, never as live markup.
-    assert_eq!(md("a &lt;script&gt; b"), "a &lt;script&gt; b");
+    // Carve has no character references, so text authored as `&lt;script&gt;`
+    // is those characters; its `&`s are escaped so a reader does not decode
+    // them (PART 11 §8e). A bare `&` stays bare, as above (carve#1071).
+    assert_eq!(md("a &lt;script&gt; b"), "a \\&lt;script\\&gt; b");
     // A literal tag in text IS the hazard, and the backslash is what stops it.
     assert_eq!(md("a <script>x</script> b"), "a \\<script>x\\</script> b");
 }

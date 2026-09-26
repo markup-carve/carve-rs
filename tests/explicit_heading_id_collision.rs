@@ -58,5 +58,7 @@ fn the_markdown_target_agrees_with_the_html_one() {
     // points at different headings depending on the target.
     let md = carve::to_markdown("{#API-2}\n# Other\n\n# API\n\n# API\n\nSee </#api-3>.\n");
 
-    assert!(md.contains("[API](#API-3)"), "{md}");
+    // `API-3` is the third heading, the second `API`, whose GFM slug is
+    // `api-1` (PART 11 §11).
+    assert!(md.contains("[API](#api-1)"), "{md}");
 }

@@ -65,8 +65,8 @@ fn markdown_source_mode_gives_the_crossref_the_source_run() {
     let out = carve::to_markdown_with_options(TYPOGRAPHY, &options(SmartTypographyMode::Source));
     assert_eq!(
         out.trim(),
-        "# The \"quoted\" -- heading {#The-quoted-heading}\n\n\
-         See [The \"quoted\" -- heading](#The-quoted-heading)"
+        "# The \"quoted\" -- heading\n\n\
+         See [The \"quoted\" -- heading](#the-quoted----heading)"
     );
 }
 
@@ -128,7 +128,7 @@ fn the_label_keeps_the_headings_markup() {
     );
     assert_eq!(
         carve::to_markdown(input).trim(),
-        "# A **bold** heading {#A-bold-heading}\n\nSee [A **bold** heading](#A-bold-heading)"
+        "# A **bold** heading\n\nSee [A **bold** heading](#a-bold-heading)"
     );
 }
 
@@ -155,7 +155,7 @@ fn the_label_keeps_an_escaped_character() {
     );
     assert_eq!(
         carve::to_markdown(input).trim(),
-        "# A \\*star heading {#A-star-heading}\n\nSee [A \\*star heading](#A-star-heading)"
+        "# A \\*star heading\n\nSee [A \\*star heading](#a-star-heading)"
     );
 }
 
