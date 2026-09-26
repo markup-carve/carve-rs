@@ -2478,6 +2478,18 @@ impl<'a> Importer<'a> {
             } else {
                 self.blocks_at(&stray, Some(&stray_paths), path, depth + 1)?
             };
+            // No item, no list: an empty list has no spelling, and its attributes
+            // would be an attribute line with no block under it (carve#2367).
+            if list_items.is_empty() {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    format!("Dropped <{tag}> holding no item"),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(before);
+            }
             let mut items = Vec::new();
             for (i, li) in list_items.iter().enumerate() {
                 let p = format!("{path}/li[{}]", i + 1);
