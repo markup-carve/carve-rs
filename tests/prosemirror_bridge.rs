@@ -1410,6 +1410,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     //
     // The claim about the other two is now measured a way this report cannot
     // mislead - see the note on `NOT_IN_CORPUS`.
+    // At spec 238b8059, corpus 384-7 and 384-8 join the reported-lossy set:
+    // each contains a folded line and reports only `soft_break`, with nothing
+    // dropped. Corpus 498-5 joins the strict set. Classifying every document
+    // at this pin and at 34e93335 with the same engine found no existing
+    // document moving between sets: 1454/415 becomes 1455/417.
     nbsp_only_degraded.sort();
     assert_eq!(nbsp_only_degraded, vec![
         "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
