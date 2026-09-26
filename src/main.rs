@@ -245,8 +245,11 @@ fn main() -> ExitCode {
             "--allow-loss" => match args.next().as_deref() {
                 Some("raw-format-dropped") => allowed_render_losses.push("raw-format-dropped"),
                 Some("ruby-flattened") => allowed_render_losses.push("ruby-flattened"),
+                Some("table-section-attributes-dropped") => {
+                    allowed_render_losses.push("table-section-attributes-dropped")
+                }
                 _ => {
-                    eprintln!("carve: --allow-loss expects raw-format-dropped or ruby-flattened");
+                    eprintln!("carve: --allow-loss expects raw-format-dropped, ruby-flattened or table-section-attributes-dropped");
                     return ExitCode::from(2);
                 }
             },
@@ -1664,7 +1667,7 @@ fn print_usage() {
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          --strict-losses             refuse output when rendering loses content or structure\n  \
          --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
-         --allow-loss CODE          accept raw-format-dropped or ruby-flattened\n  \
+         --allow-loss CODE          accept raw-format-dropped, ruby-flattened or table-section-attributes-dropped\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \
          Defaults to the input file's directory; pass this to widen\n                              \
