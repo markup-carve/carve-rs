@@ -70,6 +70,24 @@ struct CarveContext {
     braced_spans: Vec<(char, Option<usize>)>,
     /// The emphasis kinds open around the node being written.
     open_kinds: Vec<char>,
+    /// The brackets of the inline run being written, as (text node address,
+    /// bracket ordinal in that node), and whether a run has claimed them.
+    brackets: BracketScope,
+    /// The last text node written ended on a bare `]` that closes a pair, and
+    /// nothing has been written since.
+    paired_closer_carry: std::cell::Cell<bool>,
+}
+
+/// PART 11 §5's view of the text brackets in one inline run.
+#[derive(Default)]
+struct BracketScope {
+    claimed: bool,
+    /// The run about to claim a scope is content written between `[` and `]`.
+    bracketed: bool,
+    /// Unpaired, inside content a construct writes between `[` and `]`.
+    lone: HashSet<(usize, usize)>,
+    /// A `]` the bracket scan pairs with an earlier `[`.
+    paired_closers: HashSet<(usize, usize)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -787,6 +805,8 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
+        brackets: BracketScope::default(),
+        paired_closer_carry: std::cell::Cell::new(false),
     };
     let mut parts = Vec::new();
     // THE BLOCK AS WRITTEN when the tree has it. The key/value map cannot hold
@@ -2728,12 +2748,22 @@ fn render_inlines_with_caption(
     // verbatim, and everything around it takes the ordinary escaping path with
     // the ordinary neighbour context.
     let prepared = isolate_directives(nodes);
+    // The scope is keyed by node address, so it is taken over the nodes that
+    // are actually written: the passes above clone.
+    let outer = (!ctx.brackets.claimed).then(|| {
+        let written = prepared.as_ref().map_or(nodes, |p| p.nodes.as_slice());
+        let scope = bracket_scope(written, ctx.brackets.bracketed);
+        std::mem::replace(&mut ctx.brackets, scope)
+    });
     let out = match prepared {
         Some(prepared) => {
             render_nodes_with_verbatim(&prepared.nodes, ctx, caption_can_open, &prepared.verbatim)
         }
         None => render_nodes(nodes, ctx, caption_can_open),
     };
+    if let Some(outer) = outer {
+        ctx.brackets = outer;
+    }
     ctx.inline_depth -= 1;
     if ctx.inline_depth == 0 {
         spell_empty_code_runs(out)
@@ -2889,6 +2919,9 @@ fn render_nodes_with_verbatim(
                     Some(InlineNode::HardBreak(_) | InlineNode::NonBreakingSpace(_))
                 )
                 || matches!(nodes.get(idx + 1), Some(InlineNode::NonBreakingSpace(_))));
+        let carried = ctx.paired_closer_carry.replace(false);
+        let is_text = matches!(node, InlineNode::Text(_)) && !verbatim.contains(&idx);
+        ctx.paired_closer_carry.set(carried && is_text);
         let rendered = if layout_space {
             note_inserted(S_STAGED_SPACE);
             staged_space().to_string()
@@ -2913,6 +2946,9 @@ fn render_nodes_with_verbatim(
                 opens_bracket,
             )
         };
+        if !is_text {
+            ctx.paired_closer_carry.set(false);
+        }
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -3104,6 +3140,14 @@ fn render_inline_body(
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
+            &|ordinal| {
+                let key = (text as *const Text as usize, ordinal);
+                BracketRole {
+                    lone: ctx.brackets.lone.contains(&key),
+                    paired_closer: ctx.brackets.paired_closers.contains(&key),
+                }
+            },
+            &ctx.paired_closer_carry,
             ctx.escape_mode_here(),
             ctx.escape_unit,
             // Does this node's first character sit at the start of a block
@@ -3218,7 +3262,7 @@ fn render_inline_body(
             let attrs = render_attrs(&span.attrs);
             format!(
                 "[{}]{}",
-                escape_note_reference_label(&render_inlines(&span.children, ctx), ctx),
+                escape_note_reference_label(&render_bracketed_content(&span.children, ctx), ctx),
                 if attrs.is_empty() { "{}" } else { &attrs }
             )
         }
@@ -3319,6 +3363,8 @@ fn render_inline_body(
         // bare - bytes that re-parse as an inline note.
         InlineNode::Abbreviation(abbr) => escape_text(
             &abbr.abbr,
+            &|_| BracketRole::default(),
+            &std::cell::Cell::new(false),
             ctx.escape_mode_here(),
             ctx.escape_unit,
             false,
@@ -3339,7 +3385,7 @@ fn render_inline_body(
                 // DISABLED, so a `^[` or a `[^` written inside it is ordinary
                 // text on the way back in and the writer owes it no escape.
                 ctx.note_content_depth += 1;
-                let content = render_inlines(inline, ctx);
+                let content = render_bracketed_content(inline, ctx);
                 ctx.note_content_depth -= 1;
                 format!("^[{content}]")
             } else {
@@ -3424,6 +3470,58 @@ fn render_inline_body(
     }
 }
 
+/// Content written between a construct's own `[` and `]`, with its lone
+/// brackets escaped in every form (PART 11 §5).
+fn render_bracketed_content(children: &[InlineNode], ctx: &mut CarveContext) -> String {
+    let unclaimed = BracketScope {
+        bracketed: true,
+        ..BracketScope::default()
+    };
+    let outer = std::mem::replace(&mut ctx.brackets, unclaimed);
+    let out = render_inlines(children, ctx);
+    ctx.brackets = outer;
+    out
+}
+
+/// Pair the text brackets of one inline run in order. A nested construct that
+/// writes its own brackets takes no part: it balances its own content. Only
+/// bracketed content has lone brackets to escape (PART 11 §5).
+fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
+    fn walk(nodes: &[InlineNode], open: &mut Vec<(usize, usize)>, scope: &mut BracketScope) {
+        for node in nodes {
+            match node {
+                InlineNode::Text(text) => {
+                    let at = text as *const Text as usize;
+                    let brackets = text.value.chars().filter(|c| matches!(c, '[' | ']'));
+                    for (ordinal, ch) in brackets.enumerate() {
+                        if ch == '[' {
+                            open.push((at, ordinal));
+                        } else if open.pop().is_some() {
+                            scope.paired_closers.insert((at, ordinal));
+                        } else {
+                            scope.lone.insert((at, ordinal));
+                        }
+                    }
+                }
+                InlineNode::Emphasis(emphasis) => walk(&emphasis.children, open, scope),
+                _ => {}
+            }
+        }
+    }
+    let mut scope = BracketScope {
+        claimed: true,
+        ..BracketScope::default()
+    };
+    let mut open = Vec::new();
+    walk(nodes, &mut open, &mut scope);
+    if bracketed {
+        scope.lone.extend(open);
+    } else {
+        scope.lone.clear();
+    }
+    scope
+}
+
 fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
     if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
@@ -3433,7 +3531,7 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
             return format!("</#{}>", escape_crossref_target(target));
         }
     }
-    let text = escape_note_reference_label(&render_inlines(&node.children, ctx), ctx);
+    let text = escape_note_reference_label(&render_bracketed_content(&node.children, ctx), ctx);
     let title = node
         .title
         .as_ref()
@@ -4679,6 +4777,8 @@ fn next_node_opens_a_note(
 #[allow(clippy::too_many_arguments)]
 fn escape_text(
     text: &str,
+    bracket_role: &dyn Fn(usize) -> BracketRole,
+    paired_closer_carry: &std::cell::Cell<bool>,
     mode: EscapeMode,
     unit: usize,
     opens_block_line: bool,
@@ -4710,6 +4810,8 @@ fn escape_text(
     let mut at_line_start = opens_block_line;
     let mut chars = text.char_indices().peekable();
     let mut previous = previous_boundary;
+    let mut bracket_ordinal = 0;
+    let mut after_paired_closer = paired_closer_carry.get();
     while let Some((offset, ch)) = chars.next() {
         // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
         // This dropped 61 codepoints - every C0 control but tab/newline/return,
@@ -4751,7 +4853,18 @@ fn escape_text(
             ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
         at_line_start = ch == '\n';
         let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
-        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
+        let role = if matches!(ch, '[' | ']') {
+            bracket_ordinal += 1;
+            bracket_role(bracket_ordinal - 1)
+        } else {
+            BracketRole::default()
+        };
+        let opens_a_destination = ch == '('
+            && after_paired_closer
+            && crate::parse::opens_inline_link_target(&text[offset..]);
+        let unconditional = role.lone
+            || opens_a_destination
+            || matches!(ch, '\\' | '`' | '"' | '\'')
             || extension_colon_at == Some(offset)
             || caret_opens_a_caption
             || caret_opens_inline
@@ -4793,13 +4906,23 @@ fn escape_text(
         let offered = mode == EscapeMode::Conservative && candidate && !unconditional;
         let relaxed =
             offered && occurrence_is_relaxed((unit, call, offset), offset > 0 && previous == ch);
-        if unconditional || (offered && !relaxed && !colon_cannot_open) {
+        let escaped = unconditional || (offered && !relaxed && !colon_cannot_open);
+        if escaped {
             out.push('\\');
         }
         out.push(ch);
         previous = ch;
+        after_paired_closer = ch == ']' && !escaped && role.paired_closer;
     }
+    paired_closer_carry.set(after_paired_closer);
     out
+}
+
+/// How PART 11 §5 reads one text bracket.
+#[derive(Default, Clone, Copy)]
+struct BracketRole {
+    lone: bool,
+    paired_closer: bool,
 }
 
 /// Whether the `:` at `offset` opens a symbol shortcode.
@@ -5319,15 +5442,23 @@ mod tests {
         (PROBES.with(Cell::get), PROBE_PARSES.with(Cell::get))
     }
 
-    /// Every paragraph holds a bare `[` in a span, which fails the minimal form,
-    /// so the escalation search runs to its budget. A candidate the halving has
+    /// A literal `/b/` in every paragraph fails the minimal form, so the
+    /// escalation search runs to its budget. A candidate the halving has
     /// already judged must not be parsed again.
     #[test]
     fn the_escalation_search_does_not_reparse_a_judged_candidate() {
-        let paragraph =
-            "<p><span class=b>[</span><a href=/x>edit</a><span class=b>]</span> a (b) c.</p>";
-        let (probes, parses) = search_cost(&paragraph.repeat(64));
+        let (probes, parses) = search_cost(&"<p>a /b/ c</p>".repeat(64));
         assert!(probes > 0, "the search did not run");
         assert!(parses < probes, "{parses} parses for {probes} probes");
+    }
+
+    /// PART 11 §5 puts a lone bracket in the minimal form, so a page of
+    /// `[edit]` markers needs no search at all.
+    #[test]
+    fn a_lone_bracket_needs_no_search() {
+        let paragraph =
+            "<p><span class=b>[</span><a href=/x>edit</a><span class=b>]</span> a [x](y) b.</p>";
+        let (probes, _) = search_cost(&paragraph.repeat(64));
+        assert_eq!(probes, 0);
     }
 }

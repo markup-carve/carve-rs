@@ -163,10 +163,13 @@ fn an_ingested_bracket_run_is_neutralized_without_the_caret() {
     // Written on the ingest path because that is the only way a text node can
     // hold this spelling: parsed from source, the `[](/u)` is already a link
     // node and the writer emits it as one.
+    //
+    // The link case needs no vote: PART 11 §5 escapes the `(` that would open
+    // its destination in both forms (markup-carve/carve#2357).
     for (inline, expected) in [
         (
             r#"{"type":"text","value":"x ^[](/u) y"}"#,
-            "x ^\\[](/u) y\n",
+            "x ^[]\\(/u) y\n",
         ),
         (
             r#"{"type":"text","value":"x ^[]{.c} y"}"#,
