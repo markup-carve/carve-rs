@@ -15,11 +15,14 @@ which the published crate does not carry.
 
 - Escaped spaces and preserved line-block columns are `non_breaking_space` nodes, and U+E000 is literal content in every field. A tree stored under the old marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`. Reparsing the source is the only remedy - a stored tree cannot tell a generated space from an authored character (#1981).
 
+### Fixes
+
+- A `+` one column left of an in-item block quote's marker is kept as text instead of being consumed as a continuation marker (markup-carve/carve-php#2470).
+
 ### Changed
 
 - Match the pinned extension attribute-order rule for spoiler wrappers with and without an authored class slot (#1981).
 - Annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces (#1981).
-
 
 ## [0.1.7] - 2026-09-25
 

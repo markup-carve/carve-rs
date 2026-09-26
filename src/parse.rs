@@ -8219,7 +8219,16 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         // they parse as their own block instead of folding into the quoted
         // paragraph. The marker only attaches; a blank line still ends the quote
         // and a `+` outside a container stays literal.
-        if trim_ascii(line) == "+" && indent_columns(line) == 0 {
+        // The body arrives stripped of any enclosing item's indentation, so a
+        // `+` written one column LEFT of the quote's marker is spelled exactly
+        // like one written at it and the column test above cannot tell them
+        // apart. `CARVE-P9-031` puts the marker at its container's marker
+        // column and nowhere else, and the collector's carried reach is what
+        // survives the dedent (markup-carve/carve-php#2470).
+        if trim_ascii(line) == "+"
+            && indent_columns(line) == 0
+            && cur.carried_reach(cur.pos) != Some(false)
+        {
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
