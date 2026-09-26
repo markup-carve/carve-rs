@@ -56,6 +56,11 @@ use json::Value;
 /// A real rs bug against the ruled behavior is fixed in rs, not parked here; a
 /// golden that bakes a carve-js bug is escalated (fixed in js + regenerated),
 /// never edited locally.
+///
+/// TWO-DIRECTIONAL, mirroring `FMT_AHEAD_OF_PIN` in
+/// `tests/corpus_render_fixtures.rs`: a row is asked both whether the vector
+/// still diverges and whether the vector still exists, so a difference that has
+/// closed retires its row instead of reading as coverage.
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 // ---------------------------------------------------------------------------
@@ -622,8 +627,13 @@ fn include_conformance_vectors_match_carve_js_goldens() {
     #[allow(unused_mut)]
     let mut skipped_filesystem = 0usize;
 
+    // Every vector the corpus HAS, skipped or not: a row naming a filesystem
+    // vector must not read as unknown merely because this build has no `fs`.
+    let mut seen: Vec<String> = Vec::new();
+
     for path in &entries {
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
+        seen.push(name.clone());
         let raw = fs::read_to_string(path).expect("read vector");
         let vector = Value::parse(&raw).unwrap_or_else(|e| panic!("{name}: {e}"));
         #[cfg(not(feature = "fs"))]
@@ -637,15 +647,41 @@ fn include_conformance_vectors_match_carve_js_goldens() {
         let run = run_vector(&vector);
         let diffs = compare(&name, &vector, &run);
 
+        if let Some(reason) = known.get(name.as_str()) {
+            if diffs.is_empty() {
+                // The half a skip-list cannot have: the row is now excusing
+                // nothing, so it goes red rather than counting as a pass.
+                failures.push((
+                    name.clone(),
+                    vec![format!(
+                        "the difference is gone; delete its KNOWN_DIFFERENCES entry ({reason})"
+                    )],
+                ));
+            } else {
+                // A documented, expected cross-engine difference: reported, not failed.
+                documented.push((name.clone(), (*reason).to_string()));
+            }
+            continue;
+        }
+
         if diffs.is_empty() {
             passed += 1;
-        } else if let Some(reason) = known.get(name.as_str()) {
-            // A documented, expected cross-engine difference: reported, not failed.
-            documented.push((name.clone(), (*reason).to_string()));
         } else {
             failures.push((name.clone(), diffs));
         }
     }
+
+    // The other way a row goes stale: upstream renames or renumbers the vector,
+    // and a name nothing matches excuses nothing while looking like it does.
+    let unknown: Vec<&str> = KNOWN_DIFFERENCES
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| !seen.iter().any(|s| s == name))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "KNOWN_DIFFERENCES names vector(s) the corpus does not have: {unknown:?}",
+    );
 
     // A RUN THAT COMPARED NOTHING MUST NOT READ AS A PASS. Without the `fs`
     // feature the filesystem vectors are skipped, and the count is asserted
