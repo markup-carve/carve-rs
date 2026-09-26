@@ -13,6 +13,15 @@ trusted-roundtrip policies. The CLI equivalent is:
 carve migrate --from html --mode safe --report report.json input.html
 ```
 
+A pipe-table cell is one line, so by default a cell holding a list, a code block
+or several paragraphs is flattened to its text. `list_table_for_block_cells` on
+`HtmlImportOptions` (CLI: `--list-table`) writes such a table as a
+`::: list-table`, whose cells are list items and keep their blocks; a table
+whose cells are all inline keeps the pipe form. It is off by default because
+ListTable is an optional extension: render the result with it enabled, or the
+table shows as a nested list. The Markdown target writes a list table as a pipe
+table either way.
+
 A `<math>` element is read for the TeX it already carries: a `<semantics>`
 annotation declaring `application/x-tex`, `text/x-tex` or `LaTeX`, else
 `alttext` with the assumption reported. There is no MathML-to-TeX converter

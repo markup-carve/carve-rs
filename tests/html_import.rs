@@ -163,6 +163,25 @@ fn without_locations(value: &serde_json::Value) -> serde_json::Value {
     }
 }
 
+/// The import options a fixture names in `options.json`, keyed by the
+/// JavaScript option names; a fixture without one imports with the defaults.
+fn fixture_options(dir: &Path) -> HtmlImportOptions {
+    let mut options = HtmlImportOptions::default();
+    let Ok(text) = fs::read_to_string(dir.join("options.json")) else {
+        return options;
+    };
+    let named: serde_json::Value = serde_json::from_str(&text).unwrap();
+    for (key, value) in named.as_object().expect("options.json holds an object") {
+        match key.as_str() {
+            "listTableForBlockCells" => {
+                options.list_table_for_block_cells = value.as_bool().expect("a boolean")
+            }
+            other => panic!("{}: unknown import option {other}", dir.display()),
+        }
+    }
+    options
+}
+
 #[test]
 fn shared_contract_fixtures_match() {
     let root = Path::new("tests/spec/tests/html-import");
@@ -188,8 +207,9 @@ fn shared_contract_fixtures_match() {
         let expected_ast: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.join("expected.ast.json")).unwrap())
                 .unwrap();
-        let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
-        let migration = migrate_html(&html, &HtmlImportOptions::default()).unwrap();
+        let options = fixture_options(&dir);
+        let result = html_to_carve(&html, &options).unwrap();
+        let migration = migrate_html(&html, &options).unwrap();
         if migration.value != result.value {
             mismatches.push(format!(
                 "{name} migration value\n  expected: {:?}\n  actual:  {:?}",
@@ -235,7 +255,7 @@ fn shared_contract_fixtures_match() {
         // would compare a fixture against an intermediate nobody publishes -
         // and would have gone green on exactly the defect this comparison was
         // added to catch, since the slot is correct on that side.
-        let published = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
+        let published = html_to_ast(&html, &options).unwrap();
         let actual_ast: serde_json::Value =
             serde_json::from_str(&carve::ast_json::to_json(&published.value)).unwrap();
         let actual_ast = without_locations(&actual_ast);

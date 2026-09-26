@@ -815,6 +815,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
     let mut adapter = carve::HtmlImportAdapter::Generic;
     let mut report_path: Option<&str> = None;
     let mut check_loss = false;
+    let mut list_table = false;
     let mut input: Option<&str> = None;
     let mut from: Option<String> = None;
     let mut i = 0;
@@ -863,6 +864,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
                 report_path = args.get(i).map(String::as_str);
             }
             "--check-loss" => check_loss = true,
+            "--list-table" => list_table = true,
             "-" => input = Some("-"),
             value if value.starts_with('-') => {
                 eprintln!("carve migrate: unknown option {value}");
@@ -913,6 +915,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             &carve::HtmlImportOptions {
                 mode,
                 adapter,
+                list_table_for_block_cells: list_table,
                 ..Default::default()
             },
         ) {
@@ -1619,7 +1622,9 @@ fn print_usage() {
                                      merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md), djot or bbcode to Carve.\n                              \
-         --mode/--adapter apply to html; --report/--check-loss\n                              \
+         --mode/--adapter/--list-table apply to html (--list-table\n                              \
+         writes a table whose cells hold blocks as ::: list-table);\n                              \
+         --report/--check-loss\n                              \
          apply to all importers and fail closed when fidelity is unknown\n                              \
          (exit 1 only when --check-loss finds loss, 2 on a\n                              \
          usage error or an unreadable file)\n  \
