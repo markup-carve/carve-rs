@@ -306,6 +306,7 @@ struct Importer<'a> {
     /// Every node of the parsed tree, numbered in DOCUMENT ORDER
     /// (markup-carve/carve#1586).
     document_order: HashMap<usize, (Handle, usize)>,
+    code_language_wrappers: HashMap<usize, Option<usize>>,
     nodes: usize,
     /// How many `<q>` elements are open around the node being read. HTML5
     /// leaves the marks to the user agent and every one of them alternates, so
@@ -926,6 +927,121 @@ impl<'a> Importer<'a> {
                 // paragraph after it rather than between the two.
                 | FOOTNOTE_PLACEMENT_TAG
         )
+    }
+
+    fn code_language_wrapper(&mut self, parent: &Handle, child: &Handle) -> bool {
+        if Self::tag(parent).as_deref() != Some("div") {
+            return false;
+        }
+        let element = self
+            .code_language_wrappers
+            .entry(Rc::as_ptr(parent) as usize)
+            .or_insert_with(|| {
+                let mut element = None;
+                for node in parent.children.borrow().iter() {
+                    match &node.data {
+                        NodeData::Element { .. } if element.is_none() => {
+                            element = Some(Rc::as_ptr(node) as usize)
+                        }
+                        NodeData::Comment { .. } => {}
+                        NodeData::Text { contents }
+                            if contents
+                                .borrow()
+                                .chars()
+                                .all(|c| matches!(c, '\t' | '\n' | '\x0c' | '\r' | ' ')) => {}
+                        _ => return None,
+                    }
+                }
+                element
+            });
+        *element == Some(Rc::as_ptr(child) as usize)
+    }
+
+    fn code_language(&mut self, pre: &Handle, code: &Handle) -> Option<String> {
+        fn html_space(c: char) -> bool {
+            matches!(c, '\t' | '\n' | '\x0c' | '\r' | ' ')
+        }
+        fn valid(value: &str) -> bool {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"_+#./-".contains(&c))
+        }
+        fn prefixed(class: &str, prefix: &str) -> Option<String> {
+            class.split(html_space).find_map(|token| {
+                if prefix == "highlight-" && token.starts_with("highlight-source-") {
+                    return None;
+                }
+                token
+                    .strip_prefix(prefix)
+                    .filter(|value| valid(value))
+                    .map(str::to_owned)
+            })
+        }
+        let sources = if Rc::ptr_eq(pre, code) {
+            vec![pre]
+        } else {
+            vec![code, pre]
+        };
+        for node in sources {
+            let class = Self::attr(node, "class").unwrap_or_default();
+            if let Some(value) = prefixed(&class, "language-").or_else(|| prefixed(&class, "lang-"))
+            {
+                return Some(value);
+            }
+            let data = Self::attr(node, "data-lang").unwrap_or_default();
+            let data = data.trim_matches(html_space);
+            if valid(data) {
+                return Some(data.to_owned());
+            }
+            if Rc::ptr_eq(node, pre) {
+                // ASCII delimiters make every candidate boundary a UTF-8 boundary.
+                let bytes = class.as_bytes();
+                for start in 0..bytes.len() {
+                    if (start == 0 || b"\t\n\x0c\r ;".contains(&bytes[start - 1]))
+                        && bytes[start..].starts_with(b"brush:")
+                    {
+                        let mut at = start + 6;
+                        while at < bytes.len() && b"\t\n\x0c\r ".contains(&bytes[at]) {
+                            at += 1;
+                        }
+                        let end = (at..bytes.len())
+                            .find(|&i| b"\t\n\x0c\r ;".contains(&bytes[i]))
+                            .unwrap_or(bytes.len());
+                        let value = &class[at..end];
+                        if valid(value) {
+                            return Some(value.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+        let parent = parent_handle(pre)?;
+        if !self.code_language_wrapper(&parent, pre) {
+            return None;
+        }
+        let class = Self::attr(&parent, "class").unwrap_or_default();
+        let highlight = class.split(html_space).any(|token| token == "highlight");
+        if highlight {
+            if let Some(value) = prefixed(&class, "highlight-source-") {
+                return Some(value);
+            }
+        }
+        if class.split(html_space).any(|token| token == "mw-highlight") {
+            if let Some(value) = prefixed(&class, "mw-highlight-lang-") {
+                return Some(value);
+            }
+        }
+        if highlight {
+            let outer = parent_handle(&parent)?;
+            if self.code_language_wrapper(&outer, &parent) {
+                return prefixed(
+                    &Self::attr(&outer, "class").unwrap_or_default(),
+                    "highlight-",
+                );
+            }
+        }
+        None
     }
 
     fn tag(handle: &Handle) -> Option<String> {
@@ -2420,10 +2536,7 @@ impl<'a> Importer<'a> {
                 .iter()
                 .find(|n| Self::tag(n).as_deref() == Some("code"))
                 .unwrap_or(h);
-            let class = Self::attr(code, "class").unwrap_or_default();
-            let lang = class
-                .split_whitespace()
-                .find_map(|c| c.strip_prefix("language-").map(str::to_owned));
+            let lang = self.code_language(h, code);
             let mut content = Self::text(code);
             if content.ends_with('\n') {
                 content.pop();
@@ -7479,6 +7592,7 @@ fn import(
         diagnostics: Vec::new(),
         turned_away: None,
         document_order: HashMap::new(),
+        code_language_wrappers: HashMap::new(),
         nodes: 0,
         quote_depth: 0,
         cell_depth: 0,
