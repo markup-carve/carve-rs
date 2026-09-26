@@ -121,6 +121,33 @@ fn it_survives_the_ast_json_round_trip_as_a_directive() {
 }
 
 #[test]
+fn an_empty_directive_publishes_children_and_requires_them_on_ingest() {
+    for kind in GENERATED_CONTENT_KINDS {
+        for title in ["", " \"Contents\""] {
+            let source = format!("::: {kind}{title}\n:::\n");
+            let written = carve::to_json(&parse(&source));
+            let tree: serde_json::Value = serde_json::from_str(&written).expect("valid JSON");
+            let directive = &tree["children"][0];
+            assert_eq!(directive["type"], "directive", "{source:?}");
+            assert_eq!(directive["children"], serde_json::json!([]), "{source:?}");
+
+            let decoded = carve::from_json(&written).expect("decodable");
+            assert_eq!(carve::to_json(&decoded), written, "{source:?}");
+
+            let mut absent = tree;
+            absent["children"][0]
+                .as_object_mut()
+                .expect("directive object")
+                .remove("children");
+            assert!(
+                carve::from_json(&absent.to_string()).is_err(),
+                "missing children accepted for {source:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn the_html_is_the_same_generic_div_the_kind_always_rendered() {
     // A directive's kind is never Tier-1, so it takes the same
     // `<div class="{kind}">` shape the non-canonical admonition it replaced took.
