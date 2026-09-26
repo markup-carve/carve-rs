@@ -657,6 +657,12 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#2319's row, arriving with this pin bump. carve-rs#1955
     // answered #1951 and carve-rs#1956 pins the separator width.
     "a-comment-line-s-text-is-content-and-a-block-body-is-payload",
+    // Added with the spec bump to carve 66661ed. Every document in each of
+    // the three was rendered through this engine and diffed against its
+    // committed HTML before being listed here.
+    "a-footnotes-marker-renders-its-authored-blocks-before-the-placed-section",
+    "an-unplaced-footnotes-marker-keeps-its-authored-blocks-inside-the-div",
+    "a-core-directive-kind-class-leads-authored-attributes",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1373,4 +1379,16 @@ corpus_test!(
 corpus_test!(
     c_a_comment_line_s_text_is_content_and_a_block_body_is_payload,
     "a-comment-line-s-text-is-content-and-a-block-body-is-payload"
+);
+corpus_test!(
+    c_a_footnotes_marker_renders_its_authored_blocks_before_the_placed_section,
+    "a-footnotes-marker-renders-its-authored-blocks-before-the-placed-section"
+);
+corpus_test!(
+    c_an_unplaced_footnotes_marker_keeps_its_authored_blocks_inside_the_div,
+    "an-unplaced-footnotes-marker-keeps-its-authored-blocks-inside-the-div"
+);
+corpus_test!(
+    c_a_core_directive_kind_class_leads_authored_attributes,
+    "a-core-directive-kind-class-leads-authored-attributes"
 );
