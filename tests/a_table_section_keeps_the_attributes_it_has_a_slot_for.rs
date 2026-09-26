@@ -451,3 +451,14 @@ fn a_partition_a_reader_cannot_derive_is_still_stated() {
         })
     );
 }
+
+#[test]
+fn source_loss_paths_use_final_body_indices() {
+    let losses = messages(
+        "<table><tbody id=\"a\"></tbody><tbody id=\"b\"><tr><td>1</td></tr></tbody></table>",
+        HtmlImportDiagnosticCode::StructureUnspellable,
+    )
+    .join("\n");
+    assert!(losses.contains("rowGroups.bodies[0].attrs"));
+    assert!(losses.contains("rowGroups.bodies[1].attrs"));
+}

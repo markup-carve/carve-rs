@@ -4634,6 +4634,11 @@ impl<'a> Importer<'a> {
         };
         let head_attrs = take_section_attrs("thead");
         let foot_attrs = take_section_attrs("tfoot");
+        let body_paths: Vec<Option<String>> = sections
+            .attrs
+            .iter()
+            .map(|slot| slot.as_ref().map(|(_, path)| path.clone()))
+            .collect();
         let mut bodies: Vec<TableBodyGroup> = Vec::new();
         let mut body_sections = Vec::new();
         let mut index = middle.start;
@@ -4665,10 +4670,7 @@ impl<'a> Importer<'a> {
             let own = section
                 .and_then(|id| sections.attrs.get_mut(id))
                 .and_then(Option::take)
-                .map(|(a, own_path)| {
-                    self.unspellable.push((node.clone(), own_path, format!("Dropped rowGroups.bodies[{}].attrs because Carve source cannot spell section attributes", bodies.len()), HtmlImportDiagnosticCode::StructureUnspellable));
-                    a
-                });
+                .map(|(a, _)| a);
             body_sections.push(section);
             bodies.push(TableBodyGroup {
                 head_rows: group_head,
@@ -4682,7 +4684,7 @@ impl<'a> Importer<'a> {
             if sections.tags[id] != "tbody" || trs.iter().any(|(_, section)| *section == Some(id)) {
                 continue;
             }
-            let Some((attrs, own_path)) = sections.attrs[id].take() else {
+            let Some((attrs, _)) = sections.attrs[id].take() else {
                 continue;
             };
             let index = body_sections
@@ -4699,7 +4701,6 @@ impl<'a> Importer<'a> {
                 },
             );
             body_sections.insert(index, Some(id));
-            self.unspellable.push((node.clone(), own_path, format!("Dropped rowGroups.bodies[{index}].attrs because Carve source cannot spell section attributes"), HtmlImportDiagnosticCode::StructureUnspellable));
         }
 
         // No `<thead>` at all: the leading run of header rows is what every
@@ -4728,6 +4729,14 @@ impl<'a> Importer<'a> {
             }
         }
 
+        for (index, body) in bodies.iter().enumerate() {
+            if body.attrs.is_some() {
+                let own_path = body_sections[index]
+                    .and_then(|id| body_paths[id].clone())
+                    .unwrap_or_else(|| path.to_owned());
+                self.unspellable.push((node.clone(), own_path, format!("Dropped rowGroups.bodies[{index}].attrs because Carve source cannot spell section attributes"), HtmlImportDiagnosticCode::StructureUnspellable));
+            }
+        }
         let derivable = head_attrs.is_none()
             && foot_attrs.is_none()
             && head_rows == leading_header_rows
