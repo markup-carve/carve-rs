@@ -2,8 +2,15 @@
 """Generate the inline-seam matrix the engines sweep for writer defects.
 
 Emits JSONL rows of `{"id": ..., "src": ...}`. Every id starts with its family
-name. `--check` asserts every family and every named shape has rows, so an edit
-cannot drop one without going red (markup-carve/carve-rs#1644).
+name. `--check` asserts every family is registered and populated and every named
+shape has rows, so an edit cannot drop one without going red
+(markup-carve/carve-rs#1644, #1972).
+
+WHAT `--check` DOES NOT SEE. It reads this generator and nothing else. No job in
+this repository or in the spec repo runs the emitted JSONL through an engine, so
+nothing automatic compares a writer's output against these sources: a defect the
+matrix would expose stays exposed only for whoever sweeps it by hand. `--check`
+guards the INPUT, not a result.
 
     python3 tools/seam-matrix.py matrix.jsonl
     python3 tools/seam-matrix.py --check
@@ -12,6 +19,7 @@ cannot drop one without going red (markup-carve/carve-rs#1644).
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 
@@ -131,6 +139,11 @@ FAMILIES = {
     "enclose": enclose,
 }
 
+# Generator functions that are plumbing rather than a family. Spelled out so
+# adding one is a visible decision: anything else this module yields from has to
+# be registered above or the check refuses it.
+NOT_A_FAMILY = frozenset({"rows"})
+
 # Shapes the matrix was blind to, each with a row that must exist. A populated
 # family is not enough: `nest` had rows while no row parsed as same-strength
 # nesting. The nesting spellings are ones the parser reads as nested.
@@ -150,6 +163,26 @@ def rows(only=None):
         yield from family()
 
 
+def unregistered_generators() -> list:
+    """Generator functions in this module that `FAMILIES` does not name.
+
+    `--check` walks `FAMILIES`, so it could only ever ask about the families
+    already registered: a new generator nobody wired in was never generated and
+    never checked, and the check stayed green (markup-carve/carve-rs#1972). The
+    enumeration is the module's own namespace, which is the one thing an author
+    adding a family cannot forget to update.
+    """
+    registered = {family for family in FAMILIES.values()}
+    return sorted(
+        name
+        for name, value in sorted(globals().items())
+        if inspect.isgeneratorfunction(value)
+        and getattr(value, "__module__", None) == __name__
+        and name not in NOT_A_FAMILY
+        and value not in registered
+    )
+
+
 def check() -> int:
     produced = {}
     sources = set()
@@ -158,6 +191,11 @@ def check() -> int:
         sources.add(src)
 
     failures = []
+    for name in unregistered_generators():
+        failures.append(
+            f"`{name}` is a generator function this module defines and `FAMILIES` "
+            f"does not name, so nothing generates or checks it"
+        )
     for name in FAMILIES:
         count = produced.get(name, 0)
         if count == 0:

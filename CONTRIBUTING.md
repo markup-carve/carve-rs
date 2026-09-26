@@ -83,7 +83,7 @@ CI runs each of these, and each is worth a local pass before pushing:
 | `cargo clippy --locked --all-targets -- -D warnings` | lints, with warnings fatal |
 | `cargo build --locked --no-default-features` | the `fs` feature is the only code in the crate that opens a file |
 | `python3 tools/sync-implemented.py --check` | whether a missing corpus category is a list problem or an engine one |
-| `python3 tools/seam-matrix.py --check` | the seam matrix still covers every shape family |
+| `python3 tools/seam-matrix.py --check` | every seam-matrix family is registered and populated, and every named shape has a row. It guards the generator; nothing in CI runs the emitted rows through an engine |
 
 `RUSTFLAGS: -D warnings` is set for the whole CI workflow, so a warning fails the
 build there even outside the clippy job.
@@ -93,8 +93,11 @@ carve-grammars. It needs a checkout of that repository, so it is easier to read
 the CI job than to reproduce it locally. A declared divergence says why as one of
 three reason kinds, two of which name the ProseMirror node they claim upstream
 does or does not publish; the checker resolves that name on every run, so such a
-reason goes false by itself. `python3 -m unittest discover -s tools -p 'test_*.py'`
-covers that gate, with `CARVE_GRAMMARS_DIR` pointing at the checkout.
+reason goes false by itself. The decisions it compares include the
+`markCarrierNodes` and `preservationNodes` entries, which belong to no Carve type
+and which this engine's loader reads. `python3 -m unittest discover -s tools -p 'test_*.py'`
+covers those gates and the seam matrix's, with `CARVE_GRAMMARS_DIR` pointing at
+the checkout.
 
 ## Conformance and the corpus
 

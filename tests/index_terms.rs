@@ -100,6 +100,17 @@ fn preserves_authored_content_before_list() {
 }
 
 #[test]
+fn title_and_label_precede_authored_content_and_generated_list() {
+    let out = h("A :index[parser].\n\n::: index \"Terms\" [I]\nAuthored body.\n:::");
+    assert!(
+        out.contains(
+            "<p class=\"admonition-title\">Terms</p>\n<p class=\"div-label\">I</p>\n<p>Authored body.</p>\n<ul class=\"index\">"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
 fn carries_block_attrs_on_ul() {
     let out = h("A :index[parser].\n\n{#book-index .two-col}\n::: index\n:::");
     assert!(out.contains("<ul id=\"book-index\" class=\"index two-col\">"));

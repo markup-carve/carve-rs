@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "about": "Carve node type to ProseMirror node/mark name, for engines building a Carve <-> ProseMirror bridge. Carve type names are the normative vocabulary from the spec (docs/profiles.md); the ProseMirror names are this package's CarveKit schema. Consumers read this rather than restating the mapping, which is how carve-php once ended up emitting `citation-group` against everyone else's underscores. `pm` is the name CarveKit registers; an optional `accepts` lists further names a bridge should recognize on the way in, for concepts a stock Tiptap extension already spells differently.",
+  "about": "Carve node type to ProseMirror node/mark name, for engines building a Carve <-> ProseMirror bridge. Carve type names are the node types of the spec's AST schema (resources/ast-schema.json), and every one of them has an entry in `types` or `unmapped`; the ProseMirror names are this package's CarveKit schema. Consumers read this rather than restating the mapping, which is how carve-php once ended up emitting `citation-group` against everyone else's underscores. `pm` is the name CarveKit registers; an optional `accepts` lists further names a bridge should recognize on the way in, for concepts a stock Tiptap extension already spells differently.",
   "positionAttribute": "Every block node may carry `carvePos`, the complete Carve `pos` object. Bridges use it to restore source-ordered definitions and definitions collected from emptied container lines. CarveKit retains it as non-rendered metadata.",
-  "carveSpecVocabulary": "spec/docs/profiles.md",
+  "carveSpecVocabulary": "spec/resources/ast-schema.json",
   "proseMirrorSchema": "tiptap/carve-kit.js (CarveKit)",
   "types": {
     "document": {
@@ -144,22 +144,21 @@
     },
     "comment": {
       "kind": "node",
-      "pm": [
-        "carveComment",
-        "carveCommentInline"
-      ],
+      "pm": ["carveComment", "carveCommentInline"],
       "notes": "block attr distinguishes %% line comments from fenced comments"
     },
     "mention": {
       "kind": "node",
-      "pm": [
-        "carveMention",
-        "carveTag"
-      ],
+      "pm": "carveMention",
       "accepts": [
         "mention"
       ],
-      "notes": "carveTag for the `#tag` flavor. `accepts` lists names a bridge should ALSO recognize on the way in that CarveKit does not itself register: `mention` is stock tiptap/extension-mention, and refusing it made a plain editor fail on a concept Carve already models fully."
+      "notes": "`accepts` lists names a bridge should ALSO recognize on the way in that CarveKit does not itself register: `mention` is stock tiptap/extension-mention, and refusing it made a plain editor fail on a concept Carve already models fully."
+    },
+    "tag": {
+      "kind": "node",
+      "pm": "carveTag",
+      "notes": "Its own AST type, so a `carveTag` resolves back to `tag` rather than to a `mention`. Profiles still classify it as `mention` (docs/profiles.md), which is a permission rule, not a wire rule."
     },
     "inline_extension": {
       "kind": "node",
@@ -300,8 +299,8 @@
     "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
     "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
     "soft_break": "a soft break is whitespace in the ProseMirror model",
-    "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not",
-    "non_breaking_space": "a generated space becomes literal U+00A0 text; its source spelling is re-derived on write"
+    "non_breaking_space": "a generated space becomes literal U+00A0 text; its source spelling is re-derived on write",
+    "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not"
   },
   "preservationNodes": {
     "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
@@ -335,7 +334,7 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "db1ca3ccc19055427e63e33503d0487b54c327dd",
+    "commit": "760b2019b7ebc6e15d28d7d210b1d8c81c5057ab",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergenceReasons": "Each entry says WHY as one of three kinds. `upstream-names-a-node` and `upstream-has-no-node` are claims about upstream: they name the ProseMirror node, and tools/check-schema-map.py resolves that name against the published list on every run, so the reason goes false mechanically rather than when somebody rereads it. `prose` carries no such claim and stays ungated beyond the check that the difference still exists (markup-carve/carve#2270).",
     "divergences": {

@@ -542,6 +542,24 @@ fn as_tab(block: &BlockNode) -> Option<TabRef<'_>> {
     }
 }
 
+/// Does this container hold anything this extension would render as a tab?
+///
+/// THE DECLINE IS DECIDED BEFORE THE REWRITE, not after it. `collect_tabs` is
+/// structural - `as_tab` reads a kind and a class and nothing else - so the
+/// question can be asked here, and asking it late is what lost the author's
+/// work: the render-stage decline handed the CARRIER back to the core renderer,
+/// which writes the sentinel name as the class and no attributes at all, so
+/// `{#tb data-x=1}` on a tab set with no tabs reached nothing
+/// (markup-carve/carve-rs#1979). carve-js never rewrites such a container.
+fn holds_a_tab(block: &BlockNode) -> bool {
+    let children = match block {
+        BlockNode::Admonition(admonition) => &admonition.children,
+        BlockNode::Div(div) => &div.children,
+        _ => return false,
+    };
+    children.iter().any(|child| as_tab(child).is_some())
+}
+
 fn is_tabs(block: &BlockNode) -> bool {
     match block {
         BlockNode::Admonition(admonition) => admonition.kind == "tabs",
@@ -555,7 +573,7 @@ fn is_tabs(block: &BlockNode) -> bool {
 
 fn rewrite_blocks(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
-        if is_tabs(block) {
+        if is_tabs(block) && holds_a_tab(block) {
             *block = match block {
                 BlockNode::Admonition(admonition) => {
                     BlockNode::ExtensionCarrier(ExtensionCarrier {

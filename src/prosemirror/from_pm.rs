@@ -175,12 +175,12 @@ impl Reader {
                 let content = array_field(obj, "content");
                 if content.len() == 1 {
                     let only = object_ref(&content[0], "paragraph child")?;
-                    if let Some((mapped, flavor)) = self.resolve(string_field(only, "type")?) {
+                    if let Some((mapped, _)) = self.resolve(string_field(only, "type")?) {
                         let ia = attrs_obj(only);
                         let unresolved = string_opt(ia, "carveRef").is_some()
                             && string_opt(ia, "src").unwrap_or_default().is_empty();
                         if mapped == "image" && !unresolved {
-                            return self.inline_atom(only, "image", flavor);
+                            return self.inline_atom(only, "image");
                         }
                     }
                 }
@@ -676,7 +676,7 @@ impl Reader {
                             .map(|v| v.0.as_str())
                             == Some("image")
                         {
-                            self.inline_atom(oo, "image", 0)?
+                            self.inline_atom(oo, "image")?
                         } else {
                             self.block(child)?
                         }
@@ -714,7 +714,7 @@ impl Reader {
                 self.apply_marks(obj, built, &mut out)?;
                 continue;
             }
-            let (ty, flavor) = self.known(name)?;
+            let (ty, _) = self.known(name)?;
             let built = if ty == "text" {
                 vec![node(
                     "text",
@@ -727,7 +727,7 @@ impl Reader {
                 // A null is how an atom says it built nothing, which only a
                 // nameless mention or tag does (markup-carve/carve-php#2176).
                 // Its marks go with it rather than wrapping an empty run.
-                match self.inline_atom(obj, &ty, flavor)? {
+                match self.inline_atom(obj, &ty)? {
                     Json::Null => continue,
                     built => vec![built],
                 }
@@ -842,12 +842,7 @@ impl Reader {
         Ok(n)
     }
 
-    fn inline_atom(
-        &mut self,
-        obj: &Object,
-        ty: &str,
-        flavor: usize,
-    ) -> Result<Json, ProseMirrorError> {
+    fn inline_atom(&mut self, obj: &Object, ty: &str) -> Result<Json, ProseMirrorError> {
         let a = attrs_obj(obj);
         let n = match ty {
             "hard_break" => node(ty, []),
@@ -884,8 +879,8 @@ impl Reader {
                 insert(&mut math, "number", optional_number(a, "number"));
                 math
             }
-            "mention" => {
-                let (carve_type, field, sigil) = if flavor == 1 {
+            "mention" | "tag" => {
+                let (carve_type, field, sigil) = if ty == "tag" {
                     ("tag", "name", '#')
                 } else {
                     ("mention", "user", '@')
