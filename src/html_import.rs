@@ -2867,6 +2867,10 @@ impl<'a> Importer<'a> {
                     );
                 }
             }
+            let mut blocks = blocks;
+            if let Some(BlockNode::Figure(figure)) = blocks.first_mut() {
+                share_figure_attrs(figure);
+            }
             return Ok(blocks);
         }
         // A RENDERED CALLOUT, before the unwrap claims it. `<aside>` reaches
@@ -6873,6 +6877,28 @@ fn fallback_image(math: &Handle, cache: &SiblingIndex) -> Option<Handle> {
             .and_then(|wrapper| next(&wrapper)),
     };
     found.filter(|f| element_name(f).as_deref() == Some("img"))
+}
+
+/// Only an image has an attribute slot of its own under a caption line; any
+/// other target shares the figure's line, merged the way the parser merges two
+/// stacked lines (markup-carve/carve#2370).
+fn share_figure_attrs(figure: &mut Figure) {
+    let slot = match &mut *figure.target {
+        FigureTarget::Image(_) => return,
+        FigureTarget::BlockQuote(quote) => &mut quote.attrs,
+        FigureTarget::Table(table) => &mut table.attrs,
+        FigureTarget::CodeBlock(code) => &mut code.attrs,
+        FigureTarget::Paragraph(paragraph) => &mut paragraph.attrs,
+    };
+    let Some(mut merged) = slot.take() else {
+        return;
+    };
+    if let Some(own) = figure.attrs.take() {
+        let mut shared = Some(merged);
+        crate::parse::merge_leading_attrs(&mut shared, own);
+        merged = shared.expect("a merge keeps the attributes it was given");
+    }
+    figure.attrs = Some(merged);
 }
 
 fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {

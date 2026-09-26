@@ -1,5 +1,6 @@
-//! A rebuilt figure writes its TARGET's own attribute line, and whatever the
-//! merge displaces is declared (ruling markup-carve/carve#1721).
+//! A rebuilt figure keeps its TARGET's own attributes, merged into the one
+//! attribute line the two share, and whatever the merge displaces is declared
+//! (ruling markup-carve/carve#1721; one line since markup-carve/carve#2370).
 //!
 //! THE ID THAT SURVIVED BELONGED TO THE ELEMENT THAT DID NOT. A
 //! `<figure id="f">` around a `<table id="g">` was written as `{#f}` over the
@@ -95,7 +96,7 @@ fn html_of(carve: &str) -> String {
 fn a_table_target_keeps_its_own_attribute_line_and_the_displaced_id_is_declared() {
     for mode in MODES {
         let (carve, rows) = imported(TABLE, mode);
-        assert_eq!(carve, "{#f .c}\n{#g .d}\n| a |\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(carve, "{#g .c .d}\n| a |\n^ Cap\n", "mode {mode:?}");
         assert_eq!(rows, vec![UNSPELLABLE, DISPLACED_ID], "mode {mode:?}");
     }
 }
@@ -124,7 +125,7 @@ fn a_quote_target_declares_the_displaced_id() {
             "<figure id=\"f\" class=\"c\"><blockquote id=\"g\" class=\"d\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(carve, "{#f .c}\n{#g .d}\n> a\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(carve, "{#g .c .d}\n> a\n^ Cap\n", "mode {mode:?}");
         assert_eq!(rows, vec![DISPLACED_ID], "mode {mode:?}");
     }
 }
@@ -157,10 +158,7 @@ fn a_code_block_target_declares_the_displaced_id() {
             "<figure id=\"f\" class=\"c\"><pre id=\"g\" class=\"d\"><code>a</code></pre><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(
-            carve, "{#f .c}\n{#g .d}\n```\na\n```\n^ Cap\n",
-            "mode {mode:?}"
-        );
+        assert_eq!(carve, "{#g .c .d}\n```\na\n```\n^ Cap\n", "mode {mode:?}");
         assert_eq!(rows, vec![DISPLACED_ID], "mode {mode:?}");
     }
 }
@@ -174,10 +172,7 @@ fn a_displaced_key_value_pair_is_declared_by_its_own_name() {
             "<figure data-k=\"1\"><blockquote data-k=\"2\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(
-            carve, "{data-k=1}\n{data-k=2}\n> a\n^ Cap\n",
-            "mode {mode:?}"
-        );
+        assert_eq!(carve, "{data-k=2}\n> a\n^ Cap\n", "mode {mode:?}");
         assert_eq!(
             rows,
             vec!["Info :: attribute-dropped :: Dropped one data-k on <figure>: the figure and its target both set data-k, and their two attribute lines merge into a single value"],
@@ -195,10 +190,7 @@ fn a_key_the_target_does_not_set_is_not_displaced() {
             "<figure data-k=\"1\"><blockquote data-j=\"2\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(
-            carve, "{data-k=1}\n{data-j=2}\n> a\n^ Cap\n",
-            "mode {mode:?}"
-        );
+        assert_eq!(carve, "{data-j=2 data-k=1}\n> a\n^ Cap\n", "mode {mode:?}");
         assert!(rows.is_empty(), "mode {mode:?}: {rows:?}");
     }
 }
@@ -214,7 +206,7 @@ fn equal_values_still_lose_one_of_the_two_and_the_row_fires() {
             "<figure id=\"x\"><blockquote id=\"x\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(carve, "{#x}\n{#x}\n> a\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(carve, "{#x}\n> a\n^ Cap\n", "mode {mode:?}");
         assert_eq!(rows, vec![DISPLACED_ID], "mode {mode:?}");
         let html = html_of(&carve);
         assert!(html.contains("<figure id=\"x\">"), "mode {mode:?}: {html}");
@@ -231,7 +223,7 @@ fn classes_union_and_owe_no_row() {
             "<figure class=\"c\"><table class=\"d\"><tr><td>a</td></tr></table><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(carve, "{.c}\n{.d}\n| a |\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(carve, "{.c .d}\n| a |\n^ Cap\n", "mode {mode:?}");
         assert_eq!(rows, vec![UNSPELLABLE], "mode {mode:?}");
     }
 }
