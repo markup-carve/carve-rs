@@ -3089,7 +3089,10 @@ fn render_nodes_with_verbatim(
                 opens_a_note,
                 opens_verbatim,
                 opens_bracket,
-                idx + 1 == nodes.len() && !out.is_empty(),
+                idx + 1 == nodes.len()
+                    && (!out.is_empty()
+                        || ctx.inline_depth > 1
+                        || matches!(node, InlineNode::Code(code) if safe_fence(&code.value, 1).len() < 3)),
             )
         };
         if !is_text {

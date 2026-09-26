@@ -7,6 +7,8 @@ fn a_leading_newline_does_not_leave_a_trailing_pad() {
         "before ``\n`\n",
         "before ```\n``\n",
         "{~before ``\n`~}\n",
+        "x {~``\n`~}\n",
+        "``\n`\n",
     ] {
         let formatted = to_carve(source);
         assert_eq!(
