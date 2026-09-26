@@ -1717,6 +1717,9 @@ impl<'a> Importer<'a> {
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.to_string();
                 let value = attr.value.to_string();
+                if name != "id" && name != "class" {
+                    key_order.push(name.clone());
+                }
                 if name == "style" {
                     // AHEAD OF THE REFUSAL, deliberately. `refusal` answers for
                     // `style` so the kept-bytes reading goes through the shared
@@ -1750,15 +1753,16 @@ impl<'a> Importer<'a> {
                     // and the author wrote it. Dropping `aria-label` was an
                     // accessibility regression applied silently and in bulk to
                     // exactly the documents an importer runs on (carve-rs#1060).
-                    out.key_values.insert(name.clone(), value);
-                    key_order.push(name);
+                    out.key_values.insert(name, value);
                 }
             }
         }
         self.drop_derived(handle, &mut out);
         // Keys in the order the element spells them, as `fmt` keeps them
-        // (carve-rs#2012). Writing exit only, like every `order` (carve#1647).
-        if self.writing && out.key_values.len() > 1 {
+        // (carve-rs#2012). Every name is listed, so a key written back later
+        // (a folded `title`) lands where the element had it; a name with no
+        // value is skipped by the writer. Writing exit only (carve#1647).
+        if self.writing && !out.key_values.is_empty() {
             out.order = [AttrSlot::Id, AttrSlot::Class]
                 .into_iter()
                 .chain(key_order.into_iter().map(AttrSlot::Key))

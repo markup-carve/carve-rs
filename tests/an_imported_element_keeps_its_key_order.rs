@@ -24,6 +24,16 @@ fn keys_keep_document_order_after_the_id_and_classes() {
             "<table><tr><td data-z=\"1\" data-a=\"2\">x</td></tr></table>",
             "|{data-z=1 data-a=2} x |\n",
         ),
+        // A key written back after the walk keeps the element's position: a
+        // folded `title`, and a semantic span's marker after every key.
+        (
+            "<p><span class=\"h\" title=\"T\" aria-label=\"L\">x</span></p>",
+            "[x]{.h title=T aria-label=L}\n",
+        ),
+        (
+            "<p><cite id=\"a\" class=\"b\" data-x-id=\"z\">c</cite></p>",
+            "[c]{#a .b data-x-id=z cite}\n",
+        ),
     ];
     for (html, expected) in cases {
         let out = migrated(html);
