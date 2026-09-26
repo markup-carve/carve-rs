@@ -3066,7 +3066,7 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         .map(decode_table_row)
         .collect::<Result<_, _>>()?;
     let row_groups = match obj.get("rowGroups") {
-        Some(value) => Some(decode_row_groups(value, rows.len())?),
+        Some(value) => Some(Box::new(decode_row_groups(value, rows.len())?)),
         None => None,
     };
     Ok(Table {
@@ -3160,8 +3160,8 @@ fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJso
         )));
     }
     Ok(TableRowGroups {
-        head_attrs: optional_named_attrs(obj, "headAttrs")?.map(Box::new),
-        foot_attrs: optional_named_attrs(obj, "footAttrs")?.map(Box::new),
+        head_attrs: optional_named_attrs(obj, "headAttrs")?,
+        foot_attrs: optional_named_attrs(obj, "footAttrs")?,
         head_rows,
         bodies,
         foot_rows,

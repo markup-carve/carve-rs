@@ -18,7 +18,7 @@ fn groups_of(html: &str) -> Option<TableRowGroups> {
         .unwrap()
         .value;
     match doc.children.first() {
-        Some(carve::BlockNode::Table(table)) => table.row_groups.clone(),
+        Some(carve::BlockNode::Table(table)) => table.row_groups.as_deref().cloned(),
         other => panic!("expected a table, got {other:?}"),
     }
 }

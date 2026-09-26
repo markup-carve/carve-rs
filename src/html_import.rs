@@ -4455,10 +4455,7 @@ impl<'a> Importer<'a> {
             path,
             &mut sections,
         );
-        // Whatever `row_groups` did not place. A `<thead>` and a `<tfoot>` have
-        // no slot at all - the field states the head and the foot as row COUNTS
-        // - and a `<tbody>`'s attributes reach nothing when the field itself was
-        // not kept.
+        // Report section attributes that could not be assigned to the partition.
         let sections_with_rows: BTreeSet<usize> = trs.iter().filter_map(|(_, s)| *s).collect();
         for (id, slot) in sections.attrs.iter().enumerate() {
             let Some((own, own_path)) = slot else {
@@ -4520,7 +4517,7 @@ impl<'a> Importer<'a> {
             short_caption: None,
             columns: Vec::new(),
             rows: result,
-            row_groups,
+            row_groups: row_groups.map(Box::new),
             pos: None,
         })
     }
@@ -4758,8 +4755,8 @@ impl<'a> Importer<'a> {
             HtmlImportDiagnosticCode::StructureUnspellable,
         ));
         Some(TableRowGroups {
-            head_attrs: head_attrs.map(Box::new),
-            foot_attrs: foot_attrs.map(Box::new),
+            head_attrs,
+            foot_attrs,
             head_rows,
             bodies,
             foot_rows,

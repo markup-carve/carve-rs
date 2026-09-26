@@ -613,7 +613,7 @@ pub struct Table {
     /// An explicit head/body/foot partition of `rows`, imported from or destined
     /// for a format whose table model has one. Carve 0.1 source has no spelling
     /// for it, so a parse never sets it.
-    pub row_groups: Option<TableRowGroups>,
+    pub row_groups: Option<Box<TableRowGroups>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -635,8 +635,8 @@ pub struct TableRowGroups {
     pub bodies: Vec<TableBodyGroup>,
     /// Rows at the end of `rows` forming the table foot.
     pub foot_rows: usize,
-    pub head_attrs: Option<Box<Attrs>>,
-    pub foot_attrs: Option<Box<Attrs>>,
+    pub head_attrs: Option<Attrs>,
+    pub foot_attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -61,7 +61,7 @@ fn a_body_section_puts_its_attributes_in_the_group() {
         "<table><thead><tr><th>a</th></tr></thead><tbody id=\"body\" class=\"x\"><tr><td>1</td></tr></tbody></table>",
     );
     assert_eq!(
-        table.row_groups,
+        table.row_groups.map(|groups| *groups),
         Some(TableRowGroups {
             head_attrs: None,
             foot_attrs: None,
@@ -96,7 +96,8 @@ fn the_same_table_without_them_still_states_nothing() {
         table_of(
             "<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>"
         )
-        .row_groups,
+        .row_groups
+        .map(|groups| *groups),
         None
     );
 }
@@ -192,7 +193,7 @@ fn an_empty_attributed_body_survives_import() {
 fn a_body_whose_grouping_was_dropped_is_reported() {
     let html =
         "<table><tbody id=\"b1\"><tr><td>1</td></tr></tbody><thead><tr><th>a</th></tr></thead></table>";
-    assert_eq!(table_of(html).row_groups, None);
+    assert_eq!(table_of(html).row_groups.map(|groups| *groups), None);
     assert_eq!(
         messages(html, HtmlImportDiagnosticCode::AttributeDropped),
         vec![
@@ -207,7 +208,9 @@ fn a_body_whose_grouping_was_dropped_is_reported() {
 #[test]
 fn a_zero_count_body_group_survives_absorption_when_it_carries_attributes() {
     assert_eq!(
-        table_of("<table><tbody id=\"hdr\"><tr><th>a</th></tr></tbody></table>").row_groups,
+        table_of("<table><tbody id=\"hdr\"><tr><th>a</th></tr></tbody></table>")
+            .row_groups
+            .map(|groups| *groups),
         Some(TableRowGroups {
             head_attrs: None,
             foot_attrs: None,
@@ -224,7 +227,9 @@ fn a_zero_count_body_group_survives_absorption_when_it_carries_attributes() {
     // And with NOTHING to carry, the same absorption still empties the group
     // away, or the field would land on the ordinary header-and-rows table.
     assert_eq!(
-        table_of("<table><tbody><tr><th>a</th></tr></tbody></table>").row_groups,
+        table_of("<table><tbody><tr><th>a</th></tr></tbody></table>")
+            .row_groups
+            .map(|groups| *groups),
         None
     );
 }
@@ -412,7 +417,7 @@ fn a_rowspan_leaving_the_header_run_is_still_clipped() {
 fn a_partition_a_reader_cannot_derive_is_still_stated() {
     assert_eq!(
         table_of("<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>")
-            .row_groups,
+            .row_groups.map(|groups| *groups),
         Some(TableRowGroups { head_attrs: None, foot_attrs: None,
             head_rows: 1,
             bodies: vec![TableBodyGroup {
@@ -428,7 +433,8 @@ fn a_partition_a_reader_cannot_derive_is_still_stated() {
         table_of(
             "<table><tbody><tr><td>1</td></tr></tbody><tbody><tr><td>2</td></tr></tbody></table>"
         )
-        .row_groups,
+        .row_groups
+        .map(|groups| *groups),
         Some(TableRowGroups {
             head_attrs: None,
             foot_attrs: None,
