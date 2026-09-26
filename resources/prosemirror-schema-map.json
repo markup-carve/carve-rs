@@ -333,7 +333,7 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "05b362aa887c9007e3f3fa1aa0d4670b84988c7a",
+    "commit": "f8c652df8ee7ed4d0498584655b4d0740f0f83aa",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergenceReasons": "Each entry says WHY as one of three kinds. `upstream-names-a-node` and `upstream-has-no-node` are claims about upstream: they name the ProseMirror node, and tools/check-schema-map.py resolves that name against the published list on every run, so the reason goes false mechanically rather than when somebody rereads it. `prose` carries no such claim and stays ungated beyond the check that the difference still exists (markup-carve/carve#2270).",
     "divergences": {
