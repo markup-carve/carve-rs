@@ -2,14 +2,14 @@
 //! it, so a block below it was glued whatever the tight-item predicate answered.
 //!
 //! A table's rows then arrive as lazy continuation of the last nested item and
-//! the table does not reach the output at all; a paragraph arrives as more of
-//! that item's text, which puts it in the wrong item (carve-rs#1930).
+//! the table does not reach the output at all. A paragraph after an effective
+//! `+` belongs to the outer item (carve-rs#1930).
 //!
-//! Only a block whose Markdown spelling OPENS with plain text can be taken that
-//! way, and only where the tail can take lazy text. A heading, a fence, a quote
-//! and a thematic break interrupt on their own, and a bare marker or a heading
-//! above has no paragraph to continue, so those pairs stay glued and the item
-//! stays tight.
+//! Only a block whose Markdown spelling opens with plain text can be taken that
+//! way, and only where the tail can take lazy text. A heading, fence, quote or
+//! thematic break interrupts on its own. A bare marker or a heading above has
+//! no paragraph to continue, so those pairs stay glued and the item stays
+//! tight. An inert `+` before indented text leaves the nested paragraph open.
 //!
 //! Every expectation reads its own output back through `markdown_to_ast`, which
 //! follows cmark-gfm 0.29.0.gfm.13. The emitted bytes are asserted only where
@@ -55,11 +55,11 @@ fn a_table_below_a_nested_list_reaches_the_output() {
 }
 
 #[test]
-fn a_paragraph_below_a_nested_list_stays_in_the_outer_item() {
-    // Glued, cmark-gfm reads `p` as more text of the nested item `L`, so the
-    // paragraph reaches the output inside the wrong item.
+fn an_inert_plus_leaves_plain_text_in_the_deepest_item() {
+    // The `+` has no flush-left block to attach. The following line remains
+    // lazy continuation of the nested item's paragraph.
     let source = "- x\n  - L\n+\n  p\n";
-    assert_eq!(carve::to_markdown(source), "- x\n  - L\n\n  p\n");
+    assert_eq!(carve::to_markdown(source), "- x\n  - L\n    p\n");
     let blocks = item_blocks(source);
     let nested = blocks
         .iter()
@@ -68,19 +68,14 @@ fn a_paragraph_below_a_nested_list_stays_in_the_outer_item() {
             _ => None,
         })
         .expect("the nested list");
-    assert_eq!(
-        nested.items[0].children.len(),
-        1,
-        "the nested item holds only its own text: {:?}",
-        nested.items[0].children
-    );
+    assert_eq!(nested.items[0].children.len(), 1);
     assert!(
-        blocks
+        !blocks
             .iter()
             .skip_while(|block| !matches!(block, BlockNode::List(_)))
             .skip(1)
             .any(|block| matches!(block, BlockNode::Paragraph(_))),
-        "the paragraph is a sibling of the nested list: {blocks:?}"
+        "the outer item gained a paragraph: {blocks:?}"
     );
 }
 

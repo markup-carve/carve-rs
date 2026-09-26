@@ -11,6 +11,22 @@ fn lazy_after_sublist_folds_into_deepest() {
 }
 
 #[test]
+fn inert_plus_before_indented_text_keeps_the_deepest_item_open() {
+    assert_eq!(
+        carve::to_html("- x\n  - L\n+\n  p\n"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>L\np</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn indented_plus_below_the_inner_content_column_is_literal_text() {
+    assert_eq!(
+        carve::to_html("- x\n  - L\n +\n"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>L\n+</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
 fn sibling_marker_after_lazy_starts_new_item() {
     assert_eq!(
         carve::to_html("- a\n  - b\nlazy\n- c"),

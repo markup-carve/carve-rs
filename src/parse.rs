@@ -11966,6 +11966,26 @@ fn collect_indented_block_mapped_with(
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
         let fence_owns_flush_left = fence.is_some() && line.starts_with(LAZY);
+        // A `+` at an ancestor's marker column names only a flush-left block.
+        // When the following line is indented, the marker contributes nothing
+        // and must not close this nested list's open paragraph.
+        if trim_ascii(line) == "+"
+            && indent == parent_indent
+            && fence.is_none()
+            && comment_fence.is_none()
+            && colon_open.is_empty()
+            && lines
+                .last()
+                .is_some_and(|line| detect_list_marker_full(line).is_some())
+            && cur.lines.get(cur.pos + 1).is_some_and(|next| {
+                let next = trim_ascii_start(next);
+                line_starts_paragraph(next) && !item_block_opener(next)
+            })
+            && !attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1))
+        {
+            cur.consume();
+            continue;
+        }
         // A MARKER THAT CAN NEVER REACH COLUMN 0 ATTACHES NOTHING (§17 L3,
         // markup-carve/carve#1436). Inside a body this collector is stripping,
         // document column 0 is unreachable by construction, so a lone `+` at the
@@ -12092,8 +12112,18 @@ fn collect_indented_block_mapped_with(
             }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
+        let stranded_plus_is_lazy_text = trim_ascii(line) == "+"
+            && fence.is_none()
+            && !in_comment_span
+            && colon_open.is_empty()
+            && indent > parent_indent
+            && indent < strip_cols
+            && lines
+                .last()
+                .is_some_and(|line| detect_list_marker_full(line).is_some());
         let stripped = match (in_comment_span, comment_fence_strip) {
             (true, Some(span_strip)) => span_strip.min(indent),
+            _ if stranded_plus_is_lazy_text => indent.saturating_sub(1),
             _ => dedent_for_collection(line, indent, strip_cols),
         };
         if comment_fence.is_none() {
