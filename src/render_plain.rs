@@ -539,7 +539,6 @@ fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth:
 }
 
 fn render_table(node: &Table) -> String {
-    crate::render_loss::record_table_section_attributes(node);
     let mut out = String::new();
     for row in &node.rows {
         out.push_str(
