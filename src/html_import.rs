@@ -5007,6 +5007,18 @@ impl<'a> Importer<'a> {
             );
             return Vec::new();
         }
+        // A pipe-table row is one line, so a line break has no spelling in a
+        // cell (markup-carve/carve#2372).
+        if self.cell_depth > 0 && content.contains(['\n', '\r']) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                "Dropped an HTML comment in a table cell: its text holds a line break, and a table row is one line".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                node,
+            );
+            return Vec::new();
+        }
         vec![InlineNode::Comment(Comment {
             block: false,
             delimited: true,
