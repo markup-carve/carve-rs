@@ -4844,7 +4844,11 @@ impl<'a> Importer<'a> {
                 alignment.push(own);
             }
             return Ok(BlockNode::Admonition(list_table_of(
-                rows, &alignment, caption, attrs,
+                rows,
+                &alignment,
+                caption,
+                attrs,
+                self.writing,
             )));
         }
         Ok(BlockNode::Table(Table {
@@ -7956,6 +7960,7 @@ fn list_table_of(
     own_alignment: &[Vec<(Option<TableAlign>, Option<TableVerticalAlign>)>],
     caption: Option<Vec<InlineNode>>,
     attrs: Option<Attrs>,
+    writing: bool,
 ) -> Admonition {
     // A placeholder is a header cell when the cell it continues is one.
     let mut header: Vec<Vec<bool>> = Vec::with_capacity(rows.len());
@@ -8004,7 +8009,10 @@ fn list_table_of(
             }
             let (align, valign) = own_row.next().copied().unwrap_or((None, None));
             let mut children = cell.blocks.clone().unwrap_or_default();
-            if let [BlockNode::Paragraph(p)] = children.as_mut_slice() {
+            // The escape is the writer's: a bare `^` or `<` item is a span
+            // marker. The published tree holds the text, as it does for a
+            // pipe-table cell.
+            if let (true, [BlockNode::Paragraph(p)]) = (writing, children.as_mut_slice()) {
                 if p.attrs.is_none() {
                     if let [InlineNode::Text(t)] = p.children.as_slice() {
                         if t.value == "^" || t.value == "<" {
@@ -8023,7 +8031,9 @@ fn list_table_of(
                     return;
                 }
                 item_attrs.key_values.insert(key.to_owned(), value);
-                push_order(&mut item_attrs, key);
+                if writing {
+                    push_order(&mut item_attrs, key);
+                }
             };
             if cell.header && r >= header_rows && c >= header_cols {
                 put("header", Some(String::new()));
@@ -8060,7 +8070,9 @@ fn list_table_of(
     for (key, n) in [("header-rows", header_rows), ("header-cols", header_cols)] {
         if n > 0 {
             table_attrs.key_values.insert(key.to_owned(), n.to_string());
-            push_order(&mut table_attrs, key);
+            if writing {
+                push_order(&mut table_attrs, key);
+            }
         }
     }
     Admonition {
@@ -8073,8 +8085,9 @@ fn list_table_of(
     }
 }
 
-/// Record `key` as the last slot. An empty order means "id, classes, keys in
-/// sorted order", so that reading is spelled out before the key is appended.
+/// Record `key` as the last slot, on the writing exit only: `order` is a
+/// source-layout field. An empty order means "id, classes, keys in sorted
+/// order", so that reading is spelled out before the key is appended.
 fn push_order(attrs: &mut Attrs, key: &str) {
     if attrs.order.is_empty() {
         if attrs.id.is_some() {
