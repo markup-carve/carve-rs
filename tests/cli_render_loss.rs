@@ -62,33 +62,62 @@ fn report_is_machine_readable_and_bounded() {
     assert!(report.contains("\"losses\":[]"));
 }
 
+/// CARVE-P12-034 sends a dropped section attributes field to the PART 11 §1d
+/// channel, and CARVE-P11-046 keeps the render-loss flags out of it: a table
+/// carrying section attributes is no render loss, so `--strict-losses` passes it
+/// and `--allow-loss` never grew a name for it.
 #[test]
-fn table_section_loss_can_be_allowed_with_a_zero_report_limit() {
+fn table_section_attributes_are_not_a_render_loss() {
     let ast = r#"{"type":"document","srcByteLength":0,"children":[{"type":"table","rows":[],"rowGroups":{"headRows":0,"footRows":0,"bodies":[],"headAttrs":{"id":"head"}}}]}"#;
-    let denied = run_input(
+    let path =
+        std::env::temp_dir().join(format!("carve-section-attrs-{}.json", std::process::id()));
+    let strict = run_input(
         &[
             "--from-json",
             "--plain",
             "--strict-losses",
-            "--max-render-losses",
-            "0",
+            "--report-losses",
+            path.to_str().unwrap(),
         ],
         ast,
     );
-    assert_eq!(denied.status.code(), Some(1));
-    assert!(denied.stdout.is_empty());
-    let allowed = run_input(
+    assert!(strict.status.success(), "{:?}", strict.stderr);
+    assert!(strict.stderr.is_empty(), "{:?}", strict.stderr);
+    let report = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(path);
+    assert!(report.contains("\"losses\":[]"), "{report}");
+    assert!(report.contains("\"totalLosses\":0"), "{report}");
+}
+
+/// The render-loss vocabulary is closed at the two codes of CARVE-P2-024, so
+/// `--allow-loss` offers those two names and refuses every other.
+#[test]
+fn allow_loss_offers_exactly_the_two_closed_codes() {
+    for code in ["raw-format-dropped", "ruby-flattened"] {
+        let accepted = run_input(&["--plain", "--allow-loss", code], "text\n");
+        assert!(accepted.status.success(), "{code}: {:?}", accepted.stderr);
+    }
+    let refused = run_input(
         &[
-            "--from-json",
             "--plain",
-            "--strict-losses",
-            "--max-render-losses",
-            "0",
             "--allow-loss",
             "table-section-attributes-dropped",
         ],
-        ast,
+        "text\n",
     );
-    assert!(allowed.status.success(), "{:?}", allowed.stderr);
-    assert!(allowed.stderr.is_empty());
+    assert_eq!(refused.status.code(), Some(2), "{:?}", refused.stderr);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(
+        stderr.trim_end(),
+        "carve: --allow-loss expects raw-format-dropped or ruby-flattened"
+    );
+    let help = run_input(&["--help"], "");
+    let help = String::from_utf8_lossy(&help.stdout);
+    let line = help
+        .lines()
+        .find(|line| line.contains("--allow-loss"))
+        .expect("--help documents --allow-loss");
+    assert!(!line.contains("table-section-attributes-dropped"), "{line}");
+    assert!(line.contains("raw-format-dropped"), "{line}");
+    assert!(line.contains("ruby-flattened"), "{line}");
 }
