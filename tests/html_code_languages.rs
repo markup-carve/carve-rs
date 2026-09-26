@@ -95,11 +95,13 @@ fn a_shared_wrapper_is_not_rescanned_per_pre() {
     let pres = "<pre>x</pre>".repeat(40000);
     let measure = |body: String| {
         let start = std::time::Instant::now();
-        html_to_ast(
+        let ast = html_to_ast(
             &format!("<div class=\"highlight highlight-source-js\">{body}</div>"),
             &HtmlImportOptions::default(),
         )
         .unwrap();
+        let tree: Value = serde_json::from_str(&carve::ast_json::to_json(&ast.value)).unwrap();
+        assert_eq!(blocks(&tree).len(), 40000);
         start.elapsed()
     };
     html_to_ast(&"<pre>x</pre>".repeat(1000), &HtmlImportOptions::default()).unwrap();
