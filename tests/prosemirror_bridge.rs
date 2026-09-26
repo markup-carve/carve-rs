@@ -1408,6 +1408,18 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // dropped. Corpus 498-5 joins the strict set. Classifying every document
     // at this pin and at 34e93335 with the same engine found no existing
     // document moving between sets: 1454/415 becomes 1455/417.
+    // The pin moves on to carve 66661ed, which adds ten documents and changes
+    // two. The engine is untouched by that bump, so a document whose source did
+    // not move cannot change bucket, and the counts close exactly on the twelve
+    // that did: 1443/429 over 1872 becomes 1451/431 over 1882. Six joiners are
+    // strict (435-16, 435-17, 499, 500, 500-2, 501) and four are lossy (435-14,
+    // 435-15, 435-18, 435-19), each reporting `soft_break` alone with nothing
+    // dropped - the kind 279 documents already carry, so no new kind appeared.
+    // Corpus 400 and 402 LEAVE the reported-lossy set: markup-carve/carve#2360
+    // rewrote `a<tab>b` as `tab<tab>gap`, whose tab reaches the next stop in one
+    // column, and one ordinary space is not the generated-space spelling the
+    // bridge degrades. That is why the ceiling below rises by two while the set
+    // named here loses two.
     nbsp_only_degraded.sort();
     assert_eq!(nbsp_only_degraded, vec![
         "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
@@ -1415,18 +1427,16 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
         "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
         "346-a-line-block-s-last-body-line-keeps-its-backslash-2.crv",
         "348-a-closed-inline-construct-spanning-a-verse-boundary-5.crv",
-        "400-a-container-starts-at-its-opening-markup-even-where-its-first-child-is-unplaced.crv",
-        "402-a-container-ends-at-the-markup-that-closes-it-even-where-its-last-child-is-unplaced.crv",
         "41-line-blocks-2.crv",
         "41-line-blocks-3.crv",
         "41-line-blocks-9.crv",
         "421-a-sigil-fence-takes-its-attribute-line.crv",
         "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
     ]);
-    // Twelve documents now report the generated-space spelling distinction.
-    // Their exact names are pinned above; the current corpus has 1872 files.
-    const STRICT: usize = 1443;
-    const LOSSY: usize = 429;
+    // Ten documents now report the generated-space spelling distinction.
+    // Their exact names are pinned above; the current corpus has 1882 files.
+    const STRICT: usize = 1451;
+    const LOSSY: usize = 431;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

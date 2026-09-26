@@ -132,6 +132,22 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                 carve::BlockNode::BlockQuote(b) => blocks(&mut b.children),
                 carve::BlockNode::Div(d) => blocks(&mut d.children),
                 carve::BlockNode::Admonition(a) => blocks(&mut a.children),
+                // The resolver descends into both, and neither was here: a
+                // paragraph at a directive's content column kept `true` on the
+                // parsed side against the decoded default, which is the
+                // difference this walk INVENTS rather than one it hides
+                // (corpus 499).
+                carve::BlockNode::Directive(d) => blocks(&mut d.children),
+                carve::BlockNode::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        inlines(caption);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            inlines(&mut cell.children);
+                        }
+                    }
+                }
                 carve::BlockNode::LineBlock(l) => blocks(&mut l.children),
                 carve::BlockNode::ExtensionCarrier(e) => blocks(&mut e.children),
                 carve::BlockNode::List(l) => {
