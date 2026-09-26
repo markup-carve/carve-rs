@@ -299,6 +299,7 @@
     "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
     "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
     "soft_break": "a soft break is whitespace in the ProseMirror model",
+    "non_breaking_space": "a generated space becomes literal U+00A0 text; its source spelling is re-derived on write",
     "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not"
   },
   "preservationNodes": {
@@ -333,7 +334,7 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "f8c652df8ee7ed4d0498584655b4d0740f0f83aa",
+    "commit": "760b2019b7ebc6e15d28d7d210b1d8c81c5057ab",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergenceReasons": "Each entry says WHY as one of three kinds. `upstream-names-a-node` and `upstream-has-no-node` are claims about upstream: they name the ProseMirror node, and tools/check-schema-map.py resolves that name against the published list on every run, so the reason goes false mechanically rather than when somebody rereads it. `prose` carries no such claim and stays ungated beyond the check that the difference still exists (markup-carve/carve#2270).",
     "divergences": {
