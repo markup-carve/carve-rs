@@ -217,6 +217,11 @@ pub struct HtmlImportOptions {
     /// one here closes that. Layered OVER the defaults, so naming one key
     /// leaves every other construct matched as before. Empty changes nothing.
     pub labels: BTreeMap<String, String>,
+    /// Write a table whose cells hold blocks as `::: list-table` rather than
+    /// flattening its cells (docs/html-import-contract.md, "A table whose cells
+    /// hold blocks can be written as a list table"). Off by default: ListTable
+    /// is a Tier-2 extension the reading processor has to enable.
+    pub list_table_for_block_cells: bool,
 }
 
 /// Hard depth ceiling for HTML import, independent of caller options.
@@ -231,6 +236,7 @@ impl Default for HtmlImportOptions {
             max_nodes: 1_000_000,
             max_diagnostics: 1_000,
             labels: BTreeMap::new(),
+            list_table_for_block_cells: false,
         }
     }
 }
@@ -2793,7 +2799,7 @@ impl<'a> Importer<'a> {
             return self.definition_list(h, path, depth, attrs);
         }
         if tag == "table" {
-            return Ok(vec![BlockNode::Table(self.table(h, path, depth, attrs)?)]);
+            return Ok(vec![self.table(h, path, depth, attrs)?]);
         }
         if tag == "div" {
             if let Some(math) = Self::carve_math(h, attrs.as_ref()) {
@@ -4434,7 +4440,7 @@ impl<'a> Importer<'a> {
         path: &str,
         depth: usize,
         attrs: Option<Attrs>,
-    ) -> Result<Table, HtmlImportError> {
+    ) -> Result<BlockNode, HtmlImportError> {
         // Each row remembers the `<thead>` / `<tbody>` / `<tfoot>` it is in, by
         // an id minted when the walk enters one. A rowspan stops at its ROW
         // GROUP in HTML, so the group is not bookkeeping here: it is what says
@@ -4590,6 +4596,12 @@ impl<'a> Importer<'a> {
                 left
             })
             .collect();
+        let list_form = self.opts.list_table_for_block_cells
+            && trs
+                .iter()
+                .any(|(tr, _)| source_cells(tr).iter().any(Self::holds_blocks));
+        let mut own_alignment: Vec<Vec<(Option<TableAlign>, Option<TableVerticalAlign>)>> =
+            Vec::new();
         let mut built: Vec<Vec<BuiltCell>> = Vec::with_capacity(trs.len());
         for (r, (tr, _)) in trs.iter().enumerate() {
             let mut row = Vec::new();
@@ -4635,6 +4647,19 @@ impl<'a> Importer<'a> {
                 // attribute block `attrs` builds (markup-carve/carve#1745,
                 // markup-carve/carve#1746).
                 let alignment = self.cell_style_alignment(cell);
+                let cell_attrs = self.attrs(cell, &p);
+                let (children, blocks) = if list_form {
+                    (
+                        Vec::new(),
+                        Some(self.blocks(&cell.children.borrow(), &p, depth + 1)?),
+                    )
+                } else {
+                    self.cell_depth += 1;
+                    let children = self.inlines(&cell.children.borrow(), &p, depth + 1);
+                    self.cell_depth -= 1;
+                    // A cell's edges are block edges: `fmt` drops their space.
+                    (trim_edge_whitespace(children?), None)
+                };
                 row.push(BuiltCell {
                     cell: TableCell {
                         colspan: None,
@@ -4643,20 +4668,17 @@ impl<'a> Importer<'a> {
                         span: None,
                         align: alignment.align,
                         valign: alignment.valign,
-                        attrs: self.attrs(cell, &p),
-                        children: {
-                            self.cell_depth += 1;
-                            let children = self.inlines(&cell.children.borrow(), &p, depth + 1);
-                            self.cell_depth -= 1;
-                            // A cell's edges are block edges: `fmt` drops their space.
-                            trim_edge_whitespace(children?)
-                        },
-                        blocks: None,
+                        attrs: cell_attrs,
+                        children,
+                        blocks,
                         pos: None,
                     },
                     colspan,
                     rowspan,
                 });
+            }
+            if list_form {
+                own_alignment.push(row.iter().map(|b| (b.cell.align, b.cell.valign)).collect());
             }
             built.push(row);
         }
@@ -4669,7 +4691,25 @@ impl<'a> Importer<'a> {
         let row_attrs: Vec<Option<Attrs>> = (0..trs.len())
             .map(|r| {
                 let p = format!("{path}/tr[{}]", r + 1);
-                self.attrs(&trs[r].0, &p)
+                let own = self.attrs(&trs[r].0, &p);
+                // A list-table row is an outer item, and no renderer reads
+                // attributes there.
+                match own {
+                    Some(own) if list_form => {
+                        self.diag(
+                            HtmlImportDiagnosticCode::AttributeDropped,
+                            format!(
+                                "Dropped {} on <tr>: a list table row has no attribute slot",
+                                Self::attr_names(&own).join(", ")
+                            ),
+                            HtmlImportSeverity::Info,
+                            &p,
+                            &trs[r].0,
+                        );
+                        None
+                    }
+                    own => own,
+                }
             })
             .collect();
         let mut result = self.span_grid(&trs, built, &row_attrs, path, depth)?;
@@ -4704,6 +4744,7 @@ impl<'a> Importer<'a> {
                 !cells.is_empty() && cells.iter().all(|n| Self::tag(n).as_deref() == Some("th"))
             })
             .collect();
+        let unspellable_before = self.unspellable.len();
         let row_groups = self.row_groups(
             h,
             &trs,
@@ -4713,6 +4754,19 @@ impl<'a> Importer<'a> {
             path,
             &mut sections,
         );
+        // A list table has no slot for the grouping on either exit, so the AST
+        // exit reports what only the writing exit reports for a pipe table.
+        if list_form && !self.writing {
+            for (node, lost_path, message, code) in self.unspellable.split_off(unspellable_before) {
+                self.diag(
+                    code,
+                    message,
+                    HtmlImportSeverity::Warning,
+                    &lost_path,
+                    &node,
+                );
+            }
+        }
         // Report section attributes that could not be assigned to the partition.
         let sections_with_rows: BTreeSet<usize> = trs.iter().filter_map(|(_, s)| *s).collect();
         for (id, slot) in sections.attrs.iter().enumerate() {
@@ -4743,7 +4797,7 @@ impl<'a> Importer<'a> {
                 &section_nodes[id].0,
             );
         }
-        let last_dropped = if self.writing {
+        let last_dropped = if self.writing && !list_form {
             self.drop_blank_rows(&trs, &mut result, path)
         } else {
             None
@@ -4769,7 +4823,35 @@ impl<'a> Importer<'a> {
                 );
             }
         }
-        Ok(Table {
+        if list_form {
+            // A list-table row is the list of its cells, so a row with none has
+            // no spelling.
+            let mut rows = Vec::with_capacity(result.len());
+            let mut alignment = Vec::with_capacity(result.len());
+            for (r, (row, own)) in result.into_iter().zip(own_alignment).enumerate() {
+                if row.cells.is_empty() {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                        "Dropped a row with no cells: a list table row is the list of its cells"
+                            .into(),
+                        HtmlImportSeverity::Warning,
+                        &format!("{path}/tr[{}]", r + 1),
+                        &trs[r].0,
+                    );
+                    continue;
+                }
+                rows.push(row);
+                alignment.push(own);
+            }
+            return Ok(BlockNode::Admonition(list_table_of(
+                rows,
+                &alignment,
+                caption,
+                attrs,
+                self.writing,
+            )));
+        }
+        Ok(BlockNode::Table(Table {
             attrs,
             caption,
             short_caption: None,
@@ -4777,7 +4859,32 @@ impl<'a> Importer<'a> {
             rows: result,
             row_groups: row_groups.map(Box::new),
             pos: None,
-        })
+        }))
+    }
+
+    /// A cell that holds blocks a pipe-table cell would flatten: a list, a code
+    /// block, a quotation, a table, a definition list, or a second paragraph.
+    fn holds_blocks(cell: &Handle) -> bool {
+        // Iterative: the scan runs before the walk that enforces the depth limit.
+        let mut paragraphs = 0;
+        let mut stack: Vec<Handle> = cell.children.borrow().iter().cloned().collect();
+        while let Some(node) = stack.pop() {
+            let Some(tag) = Self::tag(&node) else {
+                continue;
+            };
+            match tag.as_str() {
+                "ul" | "ol" | "pre" | "blockquote" | "table" | "dl" => return true,
+                "p" => {
+                    paragraphs += 1;
+                    if paragraphs > 1 {
+                        return true;
+                    }
+                }
+                _ => {}
+            }
+            stack.extend(node.children.borrow().iter().cloned());
+        }
+        false
     }
 
     /// Drop every row whose cells are all blank, which Carve reads as text
@@ -7842,5 +7949,193 @@ pub fn html_to_carve(
     Ok(HtmlImportResult {
         value,
         report: result.report,
+    })
+}
+
+/// The pipe-table grid, written as the `::: list-table` it is equivalent to
+/// (docs/html-import-contract.md, "A table whose cells hold blocks can be
+/// written as a list table").
+fn list_table_of(
+    rows: Vec<TableRow>,
+    own_alignment: &[Vec<(Option<TableAlign>, Option<TableVerticalAlign>)>],
+    caption: Option<Vec<InlineNode>>,
+    attrs: Option<Attrs>,
+    writing: bool,
+) -> Admonition {
+    // A placeholder is a header cell when the cell it continues is one.
+    let mut header: Vec<Vec<bool>> = Vec::with_capacity(rows.len());
+    for (r, row) in rows.iter().enumerate() {
+        let mut own: Vec<bool> = Vec::with_capacity(row.cells.len());
+        for (c, cell) in row.cells.iter().enumerate() {
+            let value = match cell.span {
+                Some(TableCellSpan::Rowspan) => {
+                    r > 0 && header[r - 1].get(c).copied().unwrap_or(false)
+                }
+                Some(TableCellSpan::Colspan) => c > 0 && own[c - 1],
+                None => cell.header,
+            };
+            own.push(value);
+        }
+        header.push(own);
+    }
+    let leading = |r: usize| header[r].iter().take_while(|&&h| h).count();
+    let mut header_rows = 0;
+    while header_rows < rows.len() && leading(header_rows) == rows[header_rows].cells.len() {
+        header_rows += 1;
+    }
+    let header_cols = (header_rows..rows.len()).map(leading).min().unwrap_or(0);
+
+    // The alignment each source cell was imported with, in grid order.
+    let mut own = own_alignment.iter();
+    let mut items = Vec::with_capacity(rows.len());
+    for (r, row) in rows.iter().enumerate() {
+        let mut own_row = own.next().map(|v| v.iter()).into_iter().flatten();
+        let mut cells = Vec::with_capacity(row.cells.len());
+        for (c, cell) in row.cells.iter().enumerate() {
+            if let Some(span) = cell.span {
+                let marker = if span == TableCellSpan::Rowspan {
+                    "^"
+                } else {
+                    "<"
+                };
+                cells.push(list_item(
+                    vec![paragraph(vec![InlineNode::Text(Text {
+                        value: marker.into(),
+                        pos: None,
+                    })])],
+                    None,
+                ));
+                continue;
+            }
+            let (align, valign) = own_row.next().copied().unwrap_or((None, None));
+            let mut children = cell.blocks.clone().unwrap_or_default();
+            // The escape is the writer's: a bare `^` or `<` item is a span
+            // marker. The published tree holds the text, as it does for a
+            // pipe-table cell.
+            if let (true, [BlockNode::Paragraph(p)]) = (writing, children.as_mut_slice()) {
+                if p.attrs.is_none() {
+                    if let [InlineNode::Text(t)] = p.children.as_slice() {
+                        if t.value == "^" || t.value == "<" {
+                            p.children = vec![InlineNode::EscapedText(EscapedText {
+                                value: t.value.clone(),
+                                pos: None,
+                            })];
+                        }
+                    }
+                }
+            }
+            let mut item_attrs = cell.attrs.clone().unwrap_or_default();
+            let mut put = |key: &str, value: Option<String>| {
+                let Some(value) = value else { return };
+                if item_attrs.key_values.contains_key(key) {
+                    return;
+                }
+                item_attrs.key_values.insert(key.to_owned(), value);
+                if writing {
+                    push_order(&mut item_attrs, key);
+                }
+            };
+            if cell.header && r >= header_rows && c >= header_cols {
+                put("header", Some(String::new()));
+            }
+            put(
+                "align",
+                align.map(|a| {
+                    match a {
+                        TableAlign::Left => "left",
+                        TableAlign::Right => "right",
+                        TableAlign::Center => "center",
+                    }
+                    .to_owned()
+                }),
+            );
+            put(
+                "valign",
+                valign.map(|a| {
+                    match a {
+                        TableVerticalAlign::Top => "top",
+                        TableVerticalAlign::Middle => "middle",
+                        TableVerticalAlign::Bottom => "bottom",
+                    }
+                    .to_owned()
+                }),
+            );
+            let attrs = (item_attrs != Attrs::default()).then_some(item_attrs);
+            cells.push(list_item(children, attrs));
+        }
+        let tight = !cells.iter().any(|item| item.children.len() > 1);
+        items.push(list_item(vec![bullet_list(cells, tight)], None));
+    }
+    let mut table_attrs = attrs.unwrap_or_default();
+    for (key, n) in [("header-rows", header_rows), ("header-cols", header_cols)] {
+        if n > 0 {
+            table_attrs.key_values.insert(key.to_owned(), n.to_string());
+            if writing {
+                push_order(&mut table_attrs, key);
+            }
+        }
+    }
+    Admonition {
+        attrs: (table_attrs != Attrs::default()).then_some(table_attrs),
+        kind: "list-table".into(),
+        title: caption.filter(|c| !c.is_empty()),
+        label: None,
+        children: vec![bullet_list(items, true)],
+        pos: None,
+    }
+}
+
+/// Record `key` as the last slot, on the writing exit only: `order` is a
+/// source-layout field. An empty order means "id, classes, keys in sorted
+/// order", so that reading is spelled out before the key is appended.
+fn push_order(attrs: &mut Attrs, key: &str) {
+    if attrs.order.is_empty() {
+        if attrs.id.is_some() {
+            attrs.order.push(AttrSlot::Id);
+        }
+        if !attrs.classes.is_empty() {
+            attrs.order.push(AttrSlot::Class);
+        }
+        for existing in attrs.key_values.keys() {
+            if existing != key {
+                attrs.order.push(AttrSlot::Key(existing.clone()));
+            }
+        }
+    }
+    attrs.order.push(AttrSlot::Key(key.to_owned()));
+}
+
+fn paragraph(children: Vec<InlineNode>) -> BlockNode {
+    BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        at_content_column: true,
+        block_image: false,
+        pos: None,
+    })
+}
+
+fn list_item(children: Vec<BlockNode>, attrs: Option<Attrs>) -> ListItem {
+    ListItem {
+        attrs,
+        checked: None,
+        task_state: None,
+        children,
+        pos: None,
+    }
+}
+
+fn bullet_list(items: Vec<ListItem>, tight: bool) -> BlockNode {
+    BlockNode::List(List {
+        attrs: None,
+        ordered: false,
+        start: None,
+        ol_type: None,
+        bare_marker: false,
+        delim: None,
+        bullet_char: None,
+        tight,
+        items,
+        pos: None,
     })
 }

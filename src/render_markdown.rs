@@ -357,6 +357,16 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
+            if let Some(table) = list_table_as_table(admonition) {
+                let table = render_table(&table, ctx);
+                return match admonition.label.as_deref().filter(|l| !l.is_empty()) {
+                    Some(label) => {
+                        ctx.previous_list = None;
+                        prepend_label(table, Some(label))
+                    }
+                    None => table,
+                };
+            }
             // Markdown has no admonition; preserve the title (otherwise lost)
             // as a leading bold line, then the body. Both are written before
             // the body, so they separate it from a list above (§10o).
@@ -870,6 +880,134 @@ fn render_definition_list(
         }
     }
     out
+}
+
+/// A `header-rows` / `header-cols` value as the ListTable extension reads it.
+fn list_table_count(value: Option<&String>) -> usize {
+    match value {
+        None => 0,
+        Some(v) if v.trim().is_empty() => 1,
+        Some(v) => {
+            let digits: String = v
+                .trim_start()
+                .chars()
+                .enumerate()
+                .take_while(|(i, c)| c.is_ascii_digit() || (*i == 0 && (*c == '-' || *c == '+')))
+                .map(|(_, c)| c)
+                .collect();
+            digits.parse::<i64>().map_or(0, |n| n.max(0) as usize)
+        }
+    }
+}
+
+/// The pipe table a `::: list-table` is equivalent to (PART 11 §10q,
+/// CARVE-P11-059), or `None` when its body is not a grid.
+fn list_table_as_table(node: &Admonition) -> Option<Table> {
+    if node.kind != "list-table" {
+        return None;
+    }
+    let [BlockNode::List(outer)] = node.children.as_slice() else {
+        return None;
+    };
+    if outer
+        .items
+        .iter()
+        .any(|row| !matches!(row.children.first(), Some(BlockNode::List(_))))
+    {
+        return None;
+    }
+    let empty = std::collections::BTreeMap::new();
+    let kv = node.attrs.as_ref().map_or(&empty, |a| &a.key_values);
+    let header_rows = list_table_count(kv.get("header-rows"));
+    let header_cols = list_table_count(kv.get("header-cols"));
+    let aligns: Vec<&str> = kv
+        .get("aligns")
+        .map(|v| v.split(',').map(str::trim).collect())
+        .unwrap_or_default();
+    let align_of = |value: &str| match value {
+        "left" => Some(TableAlign::Left),
+        "right" => Some(TableAlign::Right),
+        "center" => Some(TableAlign::Center),
+        _ => None,
+    };
+    let cell = |header: bool, span: Option<TableCellSpan>, align: Option<TableAlign>| TableCell {
+        header,
+        span,
+        colspan: None,
+        rowspan: None,
+        align,
+        valign: None,
+        attrs: None,
+        children: Vec::new(),
+        blocks: None,
+        pos: None,
+    };
+    let mut rows = Vec::with_capacity(outer.items.len());
+    for (r, row) in outer.items.iter().enumerate() {
+        // Every list in the row gives cells; any other block joins the cell before it.
+        let mut entries: Vec<(&ListItem, Vec<BlockNode>)> = Vec::new();
+        for block in &row.children {
+            match block {
+                BlockNode::List(inner) => {
+                    entries.extend(inner.items.iter().map(|item| (item, item.children.clone())))
+                }
+                other => entries.last_mut()?.1.push(other.clone()),
+            }
+        }
+        let header_row = r < header_rows
+            || entries
+                .first()
+                .and_then(|(item, _)| item.attrs.as_ref())
+                .is_some_and(|a| a.key_values.contains_key("header-row"));
+        let mut cells = Vec::with_capacity(entries.len());
+        for (c, (item, blocks)) in entries.into_iter().enumerate() {
+            if item.attrs.is_none() {
+                if let [BlockNode::Paragraph(p)] = blocks.as_slice() {
+                    if let (None, [InlineNode::Text(t)]) = (&p.attrs, p.children.as_slice()) {
+                        match t.value.trim() {
+                            "^" => {
+                                cells.push(cell(false, Some(TableCellSpan::Rowspan), None));
+                                continue;
+                            }
+                            "<" => {
+                                cells.push(cell(false, Some(TableCellSpan::Colspan), None));
+                                continue;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            let own = item.attrs.as_ref().map(|a| &a.key_values);
+            let align = own
+                .and_then(|kv| kv.get("align"))
+                .and_then(|v| align_of(v))
+                .or_else(|| aligns.get(c).and_then(|v| align_of(v)));
+            let header =
+                header_row || c < header_cols || own.is_some_and(|kv| kv.contains_key("header"));
+            let mut built = cell(header, None, align);
+            match blocks.as_slice() {
+                [BlockNode::Paragraph(p)] => built.children = p.children.clone(),
+                [] => {}
+                _ => built.blocks = Some(blocks),
+            }
+            cells.push(built);
+        }
+        rows.push(TableRow {
+            cells,
+            attrs: None,
+            pos: None,
+        });
+    }
+    Some(Table {
+        attrs: None,
+        caption: node.title.clone().filter(|t| !t.is_empty()),
+        short_caption: None,
+        columns: Vec::new(),
+        rows,
+        row_groups: None,
+        pos: None,
+    })
 }
 
 fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
@@ -2917,9 +3055,10 @@ where
         match block {
             BlockNode::Heading(heading) => visit(heading, written),
             BlockNode::BlockQuote(quote) => walk_headings(&quote.children, next, written, visit),
-            BlockNode::Admonition(admonition) => {
-                walk_headings(&admonition.children, next, written, visit)
-            }
+            BlockNode::Admonition(admonition) => match list_table_as_table(admonition) {
+                Some(table) => walk_headings(&[BlockNode::Table(table)], depth, written, visit),
+                None => walk_headings(&admonition.children, next, written, visit),
+            },
             BlockNode::Directive(directive) => {
                 walk_headings(&directive.children, next, written, visit)
             }
@@ -2985,6 +3124,11 @@ where
             BlockNode::Heading(heading) => visit(block, Some(&heading.children)),
             BlockNode::Paragraph(paragraph) => visit(block, Some(&paragraph.children)),
             BlockNode::BlockQuote(quote) => walk_blocks(&quote.children, depth + 1, visit),
+            BlockNode::Admonition(admonition) if list_table_as_table(admonition).is_some() => {
+                if let Some(table) = list_table_as_table(admonition) {
+                    walk_blocks(&[BlockNode::Table(table)], depth, visit);
+                }
+            }
             BlockNode::Admonition(admonition) => {
                 // The title is now rendered, so a crossref link in it must be
                 // seen by the prepass that collects referenced heading ids.
