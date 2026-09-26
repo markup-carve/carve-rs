@@ -1022,11 +1022,9 @@ fn an_indented_verse_line_places_text_and_spaces_separately() {
     assert_eq!(last.value, "Violets are blue.");
 }
 
-/// A TAB in the indent is the case that genuinely cannot be placed: it expands
-/// to up to four placeholders from one source character, so every column after
-/// it would be reported too far right.
+/// Text after an expanded tab still selects its original source slice.
 #[test]
-fn a_tab_indented_verse_line_still_declines() {
+fn a_tab_indented_verse_line_preserves_its_text_span() {
     let source = "::: |\nRoses are red,\n\tViolets are blue.\n:::\n";
     let doc = parse_with_positions(source);
 
@@ -1040,9 +1038,9 @@ fn a_tab_indented_verse_line_still_declines() {
     let carve::ast::InlineNode::Text(indented) = last else {
         panic!("it ends with text");
     };
-    assert!(
-        indented.pos.is_none(),
-        "a tab indent is not a one-for-one substitution, so it has no honest span"
+    assert_eq!(
+        slice(source, indented.pos.as_ref().unwrap()),
+        "Violets are blue."
     );
 }
 

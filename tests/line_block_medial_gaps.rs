@@ -96,18 +96,8 @@ fn a_lone_escaped_space_still_round_trips_as_written() {
 }
 
 #[test]
-fn a_line_holding_a_tab_refuses_a_position() {
-    // A rewrite is placeable only while it promotes a SPACE IN PLACE: one space
-    // becomes one placeholder, so every column still maps one to one and the
-    // node's value is still the source read differently.
-    //
-    // A tab is not that. It expands to up to four placeholders from one source
-    // character, and even where the arithmetic yields exactly one column the
-    // CHARACTER changed - `tab\tgap` published a position while its value read
-    // `tab gap`, so a consumer asked to highlight that span got source the node
-    // does not contain. carve-js publishes no position for the same lines.
-    //
-    // Per line: the tab-free neighbour keeps its position.
+fn merged_text_with_a_synthesized_space_omits_its_position() {
+    // The tab changes into a space inside one text value.
     let options = carve::Options {
         positions: true,
         ..Default::default()

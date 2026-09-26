@@ -4031,6 +4031,7 @@ fn parse_inline_segments_with_anchor(
         InlineAnchor {
             lines: &lines,
             breaks: &breaks,
+            columns: None,
         },
     )
 }
@@ -14957,20 +14958,28 @@ fn strip_leading_columns(line: &str, cols: usize) -> String {
 /// Uses the generated-NBSP placeholder (HTML folds it to `&nbsp;`; plain/ANSI
 /// turn it back into an ASCII space), so it stays distinct from a literal
 /// U+00A0 typed in the source.
-fn expand_line_block_ws(line: &str) -> String {
+fn expand_line_block_ws(line: &str, mut source_columns: Option<&mut Vec<Option<usize>>>) -> String {
     let mut out = String::with_capacity(line.len());
     let mut columns = 0usize;
     let mut seen_content = false;
+    let mut source_column = 0;
     let mut chars = line.char_indices().peekable();
 
     while let Some((_, ch)) = chars.next() {
         if ch != ' ' && ch != '\t' {
+            if let Some(map) = source_columns.as_deref_mut() {
+                map.push(Some(source_column));
+            }
+            source_column += 1;
             out.push(ch);
             seen_content = true;
             columns += 1;
             continue;
         }
 
+        let source_start = source_column;
+        source_column += 1;
+        let mut has_tab = ch == '\t';
         let mut width = if ch == '\t' { 4 - (columns % 4) } else { 1 };
         while let Some((_, next)) = chars.peek() {
             match next {
@@ -14978,15 +14987,23 @@ fn expand_line_block_ws(line: &str) -> String {
                 '\t' => width += 4 - ((columns + width) % 4),
                 _ => break,
             }
+            has_tab |= *next == '\t';
+            source_column += 1;
             chars.next();
         }
         columns += width;
 
         if !seen_content || width >= 2 {
-            for _ in 0..width {
+            for index in 0..width {
+                if let Some(map) = source_columns.as_deref_mut() {
+                    map.push((!has_tab).then_some(source_start + index));
+                }
                 out.push(crate::NBSP_PLACEHOLDER);
             }
         } else if chars.peek().is_some() {
+            if let Some(map) = source_columns.as_deref_mut() {
+                map.push((!has_tab).then_some(source_start));
+            }
             out.push(' ');
         }
         // ...and a ONE-COLUMN run at the END of the line is dropped, like
@@ -15002,6 +15019,9 @@ fn expand_line_block_ws(line: &str) -> String {
         // becomes NBSP content and survives.
     }
 
+    if let Some(map) = source_columns {
+        map.push(Some(source_column));
+    }
     out
 }
 
@@ -15016,6 +15036,7 @@ fn expand_line_block_ws(line: &str) -> String {
 /// line's TEXT unplaceable (carve-rs#480).
 struct Stanza {
     lines: LineBuffer,
+    source_columns: Vec<Vec<Option<usize>>>,
     at: Option<Pos>,
     end_cols: Vec<Option<isize>>,
     start_cols: Vec<Option<isize>>,
@@ -15553,6 +15574,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     cur.consume();
     let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
+    let mut source_columns = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
     let mut stanza_col_map: Vec<Option<isize>> = Vec::new();
     let mut stanza_end_cols: Vec<Option<isize>> = Vec::new();
@@ -15577,6 +15599,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let end_cols = std::mem::take(&mut stanza_end_cols);
                 let start_cols = std::mem::take(&mut stanza_start_cols);
                 stanzas.push(Stanza {
+                    source_columns: std::mem::take(&mut source_columns),
                     lines: LineBuffer {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
@@ -15607,26 +15630,10 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // author wrote. The comment itself is put back after the inline run, by
         // `splice_verse_comments`.
         let comment = verse_comment_line(&stripped);
-        let expanded = expand_line_block_ws(&stripped);
-        let dropped = stripped
-            .chars()
-            .count()
-            .checked_sub(expanded.chars().count());
-        let placeable_indent = dropped.is_some_and(|dropped| {
-            stripped
-                .chars()
-                .rev()
-                .take(dropped)
-                .all(|c| c == ' ' || c == '\t')
-        }) && expanded
-            .chars()
-            .zip(stripped.chars())
-            .all(|(e, s)| e == s || (s == ' ' && e == crate::NBSP_PLACEHOLDER));
-        stanza_col_map.push(if placeable_indent {
-            stripped_col(cur.source_col(line_at), line, &stripped)
-        } else {
-            None
-        });
+        let mut columns = Vec::new();
+        let expanded = expand_line_block_ws(&stripped, options.positions.then_some(&mut columns));
+        source_columns.push(columns);
+        stanza_col_map.push(stripped_col(cur.source_col(line_at), line, &stripped));
         // Where this line ENDS in the source, recorded whatever the indent
         // check decided. A hard break is the newline ENDING a line, not content
         // on it, and tab expansion does not move a line ending -- so the break's
@@ -15669,6 +15676,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     if !stanza.is_empty() {
         let at = stanza_start.take();
         stanzas.push(Stanza {
+            source_columns,
             lines: LineBuffer {
                 lines: stanza,
                 line_map: stanza_line_map,
@@ -15688,6 +15696,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         .map(
             |Stanza {
                  lines,
+                 source_columns,
                  at,
                  end_cols,
                  start_cols,
@@ -15704,7 +15713,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // See `harden_verse_breaks` for why the test is node kind and
                 // not depth, and why both exemptions need no code.
                 let _verse = InLineBlock::enter();
-                let inlines = harden_verse_breaks(parse_inline_lines_with_anchor(
+                let inlines = harden_verse_breaks(parse_inline_with_anchor(
                     &lines
                         .lines
                         .iter()
@@ -15712,7 +15721,11 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         .collect::<Vec<_>>()
                         .join("\n"),
                     options,
-                    anchors,
+                    InlineAnchor {
+                        lines: &anchors,
+                        breaks: &[],
+                        columns: Some(&source_columns),
+                    },
                 ));
                 let emptied: Vec<usize> = comments.iter().map(|(line, _)| *line).collect();
                 let inlines = place_line_block_breaks(
@@ -15724,6 +15737,10 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     options,
                 );
                 let inlines = splice_verse_comments(inlines, comments);
+                let mut at = at;
+                if let (Some(pos), Some(Some((_, column)))) = (&mut at, anchors.first()) {
+                    pos.start_column = document_column(*column, 0);
+                }
                 let mut node = BlockNode::Paragraph(Paragraph {
                     attrs: None,
                     children: inlines,
@@ -17139,6 +17156,8 @@ struct InlineBounds<'a> {
 }
 
 pub(crate) struct InlineAnchor<'a> {
+    /// Original codepoint column for each expanded line-block character.
+    columns: Option<&'a [Vec<Option<usize>>]>,
     lines: &'a [Option<(usize, isize)>],
     /// Byte offsets in the text at which a new anchor SEGMENT begins without a
     /// newline being there to mark it.
@@ -17166,11 +17185,17 @@ pub(crate) struct InlineAnchor<'a> {
 
 impl<'a> InlineAnchor<'a> {
     fn lines(lines: &'a [Option<(usize, isize)>]) -> Self {
-        Self { lines, breaks: &[] }
+        Self {
+            lines,
+            breaks: &[],
+            columns: None,
+        }
     }
 }
 
 struct InlinePositionMap<'a> {
+    columns: Option<&'a [Vec<Option<usize>>]>,
+    unmapped_prefix: Option<Vec<usize>>,
     lines: &'a [Option<(usize, isize)>],
     byte_line: Vec<usize>,
     byte_column: Vec<usize>,
@@ -17209,7 +17234,25 @@ impl<'a> InlinePositionMap<'a> {
         }
         byte_line[text.len()] = line;
         byte_column[text.len()] = column;
+        let unmapped_prefix = anchor.columns.map(|columns| {
+            let mut prefix = vec![0; text.len() + 1];
+            for (byte, ch) in text.char_indices() {
+                let missing = ch != '\n'
+                    && columns
+                        .get(byte_line[byte])
+                        .and_then(|line| line.get(byte_column[byte]))
+                        .copied()
+                        .flatten()
+                        .is_none();
+                for index in byte + 1..=byte + ch.len_utf8() {
+                    prefix[index] = prefix[byte] + usize::from(missing);
+                }
+            }
+            prefix
+        });
         Self {
+            columns: anchor.columns,
+            unmapped_prefix,
             lines: anchor.lines,
             byte_line,
             byte_column,
@@ -17231,11 +17274,31 @@ impl<'a> InlinePositionMap<'a> {
         }
         let (start_line, start_stripped) = self.lines.get(start_line_idx).copied().flatten()?;
         let (end_line, end_stripped) = self.lines.get(end_line_idx).copied().flatten()?;
+        let (start_column, end_column) = if let Some(columns) = self.columns {
+            let start_column = columns
+                .get(start_line_idx)?
+                .get(self.byte_column[start])
+                .copied()
+                .flatten()?;
+            let end_column = if self.byte_column[end] == 0 {
+                0
+            } else {
+                columns
+                    .get(end_line_idx)?
+                    .get(self.byte_column[end] - 1)
+                    .copied()
+                    .flatten()?
+                    + 1
+            };
+            (start_column, end_column)
+        } else {
+            (self.byte_column[start], self.byte_column[end])
+        };
         Some(Pos {
             start_line,
             end_line,
-            start_column: document_column(start_stripped, self.byte_column[start]),
-            end_column: document_column(end_stripped, self.byte_column[end]),
+            start_column: document_column(start_stripped, start_column),
+            end_column: document_column(end_stripped, end_column),
             start_offset: 0,
             end_offset: 0,
             file: None,
@@ -18813,9 +18876,17 @@ fn flush_text(
             (start as isize + buf.len() as isize + *buf_src_delta).max(start as isize) as usize;
         out.push(InlineNode::Text(Text {
             value: std::mem::take(buf),
-            pos: (*buf_placeable)
-                .then(|| inline_pos(positions, base + start, base + end))
-                .flatten(),
+            pos: (*buf_placeable
+                && positions
+                    .and_then(|map| map.unmapped_prefix.as_ref())
+                    .map_or(true, |prefix| {
+                        prefix
+                            .get(base + start)
+                            .zip(prefix.get(base + end))
+                            .is_some_and(|(start, end)| start == end)
+                    }))
+            .then(|| inline_pos(positions, base + start, base + end))
+            .flatten(),
         }));
     }
     *buf_start = None;
