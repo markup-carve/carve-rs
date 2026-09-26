@@ -61,7 +61,7 @@ fn non_html_renderers_resolve_crossrefs_at_render_time() {
     // Markdown has one, and uses it.
     assert_eq!(
         carve::to_markdown(src),
-        "# Some Title {#Some-Title}\n\nSee [Some Title](#Some-Title) and </#missing>.\n"
+        "# Some Title\n\nSee [Some Title](#some-title) and </#missing>.\n"
     );
 
     // ANSI styles it underlined-blue exactly as it styles a link, and suppresses

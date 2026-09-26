@@ -199,7 +199,7 @@ fn control_a_heading_ref_in_a_heading_still_resolves_inside_the_label() {
         carve::to_html(src)
     );
     assert!(
-        carve::to_markdown(src).contains("See [H l](#H-l)"),
+        carve::to_markdown(src).contains("See [H l](#h-l)"),
         "{}",
         carve::to_markdown(src)
     );

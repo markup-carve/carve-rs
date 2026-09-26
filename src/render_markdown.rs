@@ -113,19 +113,12 @@ fn render_markdown_once(
     OCCUPIED.with(|occupied| occupied.borrow_mut().clear());
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
-    let mut heading_ids = HashSet::new();
-    let mut referenced_heading_ids = HashSet::new();
     let crossref_index = crate::parse::crossref_index_for_document(doc, id_opts);
-    // Footnote definition bodies are rendered as block content too, so their
-    // headings and crossref links must be part of the heading-id / referenced-id
-    // prepass; otherwise a heading referenced only from a footnote loses the
-    // `{#id}` suffix needed to keep the link valid on reparse.
-    // Ids are assigned with the SAME duplicate disambiguation the core uses, not
-    // re-slugged per heading. Two headings reading `Setup` are `Setup` and
-    // `Setup-2`; deriving the slug alone gave both `Setup`, so a reference to
-    // `Setup-2` matched no heading - it lost its `{#id}` suffix here AND was
-    // degraded to bare text by `render_link`, which drops a fragment link whose
-    // target it does not know about (carve#352).
+    // PART 11 §11: a link to a heading is written with the heading's GFM slug.
+    // Every heading gets its Carve id here, in the core's order, so the ids
+    // match; only a heading this target writes as one takes a slug. Footnote
+    // bodies render as block content after the document, which is also the
+    // order a reader numbers their headings in.
     let mut explicit_ids = HashSet::new();
     let mut explicit_pass = |block: &BlockNode, _: Option<&[InlineNode]>| {
         if let BlockNode::Heading(heading) = block {
@@ -140,58 +133,29 @@ fn render_markdown_once(
     }
 
     let mut id_counts: HashMap<String, usize> = HashMap::new();
-    let mut heading_pass = |block: &BlockNode, _: Option<&[InlineNode]>| {
-        if let BlockNode::Heading(heading) = block {
-            heading_ids.insert(next_heading_id(heading, &mut id_counts, &explicit_ids));
+    let mut slugger = GfmSlugger::default();
+    let mut heading_slugs: HashMap<String, String> = HashMap::new();
+    let mut heading_pass = |heading: &Heading, written: bool| {
+        let id = next_heading_id(heading, &mut id_counts, &explicit_ids);
+        if written {
+            let slug = slugger.slug(&gfm_heading_text(&heading.children));
+            heading_slugs.entry(id).or_insert(slug);
         }
     };
-    walk_blocks(&doc.children, 0, &mut heading_pass);
-    for body in doc.footnote_defs.values() {
-        walk_blocks(body, 0, &mut heading_pass);
-    }
-    let mut ref_pass = |_: &BlockNode, inlines: Option<&[InlineNode]>| {
-        if let Some(inlines) = inlines {
-            walk_inlines(inlines, 0, false, &mut |node, in_link| {
-                // A reference inside a link label is flattened to text by the
-                // renderer, so it does not link anywhere and must not keep the
-                // target heading's `{#id}` suffix alive: `# H {#H}` is not
-                // Markdown, and with the reference gone the suffix anchors
-                // nothing (carve-rs#436).
-                if in_link {
-                    return;
-                }
-                if let InlineNode::Link(link) = node {
-                    if let Some(id) = fragment_id(&link.href) {
-                        if heading_ids.contains(id) {
-                            referenced_heading_ids.insert(id.to_string());
-                        }
-                    }
-                } else if let InlineNode::CrossRef(crossref) = node {
-                    if let Some((id, _)) = crossref_index.resolve(&crossref.target) {
-                        referenced_heading_ids.insert(id.to_string());
-                    }
-                }
-            });
-        }
-    };
-    walk_blocks(&doc.children, 0, &mut ref_pass);
-    for body in doc.footnote_defs.values() {
-        walk_blocks(body, 0, &mut ref_pass);
+    walk_headings(&doc.children, 0, true, &mut heading_pass);
+    for (_, body) in crate::ast_json::footnote_defs_in_source_order(doc) {
+        walk_headings(body, 0, true, &mut heading_pass);
     }
 
     let mut ctx = MarkdownContext {
         suppress_automatic_abbreviation: false,
-        heading_ids,
-        referenced_heading_ids,
-        explicit_ids,
-        // Rewound, because rendering walks the same headings in the same order
-        // and has to reproduce the same sequence of ids.
-        id_counts: HashMap::new(),
+        heading_slugs,
         list_depth: 0,
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index,
         link_depth: 0,
         table_cell_depth: 0,
+        previous_list: None,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -206,10 +170,9 @@ struct MarkdownContext {
     /// its visible text. The HTML renderer already carried this flag on its state;
     /// this target emitted the DEFINITION's text instead (carve#1176).
     suppress_automatic_abbreviation: bool,
-    heading_ids: HashSet<String>,
-    referenced_heading_ids: HashSet<String>,
-    explicit_ids: HashSet<String>,
-    id_counts: HashMap<String, usize>,
+    /// The GFM slug of every heading this target writes, by the Carve id the
+    /// document assigned it (PART 11 §11).
+    heading_slugs: HashMap<String, String>,
     list_depth: usize,
     /// Labels that actually have a definition. A reference without one did not
     /// form a footnote, so it is not a footnote marker. The HTML renderer decides
@@ -226,6 +189,9 @@ struct MarkdownContext {
     link_depth: usize,
     /// Nonzero while rendering a table cell's content.
     table_cell_depth: usize,
+    /// The kind and marker of the list last written in the current flow, when
+    /// nothing has been written after it (PART 11 §10o).
+    previous_list: Option<(bool, char)>,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -248,7 +214,30 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) 
         .collect()
 }
 
+/// Renders one block and keeps `previous_list` current for the flow it is
+/// written into (PART 11 §10o). A wrapper this target writes transparently
+/// leaves the answer to its children.
 fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
+    let out = render_block_kind(node, ctx, depth);
+    let transparent = matches!(
+        node,
+        BlockNode::List(_)
+            | BlockNode::Div(_)
+            | BlockNode::Section(_)
+            | BlockNode::LineBlock(_)
+            | BlockNode::Admonition(_)
+            | BlockNode::Directive(_)
+            | BlockNode::ExtensionCarrier(_)
+            | BlockNode::BlockExtension(_)
+            | BlockNode::DefinitionList(_)
+    );
+    if !transparent && !out.trim().is_empty() {
+        ctx.previous_list = None;
+    }
+    out
+}
+
+fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
@@ -256,20 +245,20 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
     match node {
         // Renders nothing, same as carve-js and carve-php on this target.
         BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
+        // No `{#id}` suffix: GFM has no heading-id syntax, and a link reaches
+        // the heading through its slug instead (PART 11 §11).
         BlockNode::Heading(heading) => {
-            let id = next_heading_id(heading, &mut ctx.id_counts, &ctx.explicit_ids);
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
-            let mut suffix = String::new();
-            if ctx.referenced_heading_ids.contains(&id) {
-                suffix = format!(" {{#{id}}}");
-            }
-            format!("{} {text}{suffix}\n\n", "#".repeat(heading.level as usize))
+            format!("{} {text}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
-            format!(
-                "{}\n\n",
-                protect_paragraph_list_markers(&render_block_inlines(&paragraph.children, ctx))
-            )
+            let text =
+                protect_paragraph_list_markers(&render_block_inlines(&paragraph.children, ctx));
+            if text.is_empty() {
+                String::new()
+            } else {
+                format!("{text}\n\n")
+            }
         }
         BlockNode::CodeBlock(code) => {
             let content = resolve_nbsp(&strip_controls(&code.content));
@@ -319,7 +308,9 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             format!("{}{}\n{}\n{}\n\n", fence, info, content, fence)
         }
         BlockNode::BlockQuote(quote) => {
+            let outer = ctx.previous_list.take();
             let lines = render_blocks(&quote.children, ctx, depth + 1);
+            ctx.previous_list = outer;
             let body = trim_block_output(&lines).to_string();
             let quoted = body
                 .split('\n')
@@ -334,63 +325,95 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 .join("\n");
             format!("{quoted}\n\n")
         }
-        BlockNode::List(list) => render_list(list, ctx, depth + 1),
+        BlockNode::List(list) => {
+            // The marker the list would take, switched when the list written
+            // just before it in this flow is of the same kind and used it.
+            let usual = if list.ordered {
+                if list.delim == Some(')') {
+                    ')'
+                } else {
+                    '.'
+                }
+            } else {
+                list.bullet_char.unwrap_or('-')
+            };
+            let marker = match ctx.previous_list {
+                Some((ordered, previous)) if ordered == list.ordered && previous == usual => {
+                    match usual {
+                        '.' => ')',
+                        ')' => '.',
+                        '-' => '*',
+                        _ => '-',
+                    }
+                }
+                _ => usual,
+            };
+            let out = render_list(list, ctx, depth + 1, marker);
+            if !out.trim().is_empty() {
+                ctx.previous_list = Some((list.ordered, marker));
+            }
+            out
+        }
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             // Markdown has no admonition; preserve the title (otherwise lost)
-            // as a leading bold line, then the body.
+            // as a leading bold line, then the body. Both are written before
+            // the body, so they separate it from a list above (§10o).
+            let title = admonition.title.as_ref().map(|title| {
+                pad_outside(
+                    render_title_inlines(title, ctx),
+                    "**",
+                    "<strong>",
+                    "</strong>",
+                )
+            });
+            if title.as_ref().is_some_and(|t| !t.is_empty())
+                || admonition.label.as_deref().is_some_and(|l| !l.is_empty())
+            {
+                ctx.previous_list = None;
+            }
             let body = render_blocks(&admonition.children, ctx, depth + 1);
             // The LABEL goes on first so the TITLE ends up above it, which is the
             // order the source writes them (`::: tip "Pro Tip" [Build]`) and the
             // order the HTML renderer emits (carve#352, corpus 42-admonitions-4).
             let body = prepend_label(body, admonition.label.as_deref());
-            match &admonition.title {
-                Some(title) => {
-                    let t = pad_outside(
-                        render_title_inlines(title, ctx),
-                        "**",
-                        "<strong>",
-                        "</strong>",
-                    );
-                    if t.is_empty() {
-                        body
-                    } else {
-                        format!("{t}\n\n{body}")
-                    }
-                }
-                None => body,
+            match title {
+                Some(t) if !t.is_empty() => format!("{t}\n\n{body}"),
+                _ => body,
             }
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Directive(d) => {
+            let title = d.title.as_ref().map(|title| {
+                pad_outside(
+                    render_title_inlines(title, ctx),
+                    "**",
+                    "<strong>",
+                    "</strong>",
+                )
+            });
+            if title.as_ref().is_some_and(|t| !t.is_empty())
+                || d.label.as_deref().is_some_and(|l| !l.is_empty())
+            {
+                ctx.previous_list = None;
+            }
             let body = render_blocks(&d.children, ctx, depth + 1);
             let body = prepend_label(body, d.label.as_deref());
-            match &d.title {
-                Some(title) => {
-                    let title = pad_outside(
-                        render_title_inlines(title, ctx),
-                        "**",
-                        "<strong>",
-                        "</strong>",
-                    );
-                    if title.is_empty() {
-                        body
-                    } else {
-                        format!("{title}\n\n{body}")
-                    }
-                }
-                None => body,
+            match title {
+                Some(t) if !t.is_empty() => format!("{t}\n\n{body}"),
+                _ => body,
             }
         }
         BlockNode::Div(div) => {
+            if div.label.as_deref().is_some_and(|l| !l.is_empty()) {
+                ctx.previous_list = None;
+            }
             let body = render_blocks(&div.children, ctx, depth + 1);
             prepend_label(body, div.label.as_deref())
         }
         BlockNode::Section(section) => render_blocks(&section.children, ctx, depth + 1),
-        BlockNode::DefinitionList(list) => {
-            render_definition_list(&list.items, ctx, true, depth + 1)
-        }
+        BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
         BlockNode::FigureGroup(group) => render_figure_group(group, ctx, depth + 1),
         // A standalone block image is its own block: terminate it so the next
@@ -434,81 +457,134 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
     }
 }
 
-/// Keep paragraph continuation lines from becoming lists in Markdown readers.
+/// Keep a paragraph's lines reading as paragraph text in Markdown readers: no
+/// edge whitespace (PART 11 §10m), no list, quote, thematic-break or setext
+/// opener (§8a M1c, §8d, §8g). The paragraph is one string here, so a marker
+/// split across inline nodes is seen whole.
 fn protect_paragraph_list_markers(text: &str) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last = lines.len() - 1;
     let mut output = String::with_capacity(text.len());
     let mut code_fence = 0usize;
-    for (line_index, source_line) in text.split('\n').enumerate() {
-        if line_index > 0 {
+    let mut written = 0usize;
+    for (line_index, source_line) in lines.iter().enumerate() {
+        let open_at_start = code_fence != 0;
+        code_fence = code_span_state_after(source_line, code_fence);
+        let mut line = if open_at_start {
+            (*source_line).to_string()
+        } else {
+            source_line.trim_start_matches([' ', '\t']).to_string()
+        };
+        if code_fence == 0 {
+            let backslashes = line.chars().rev().take_while(|c| *c == '\\').count();
+            line = if backslashes % 2 == 1 && line_index < last {
+                let body = &line[..line.len() - 1];
+                format!("{}\\", body.trim_end_matches([' ', '\t']))
+            } else {
+                line.trim_end_matches([' ', '\t']).to_string()
+            };
+        }
+        // A line trimming empties is not written: it would end the paragraph.
+        if line.is_empty() {
+            continue;
+        }
+        if !open_at_start {
+            // The underscore still stands as its carrier here, so the test reads
+            // it as `_` and an escape on it writes the character itself.
+            let underscore = carrier(C_UNDERSCORE);
+            let view = line.replace(underscore, "_");
+            if let Some(at) = paragraph_marker_escape(&view, written == 0) {
+                if line[at..].starts_with(underscore) {
+                    line.replace_range(at..at + underscore.len_utf8(), "\\_");
+                } else {
+                    line.insert(at, '\\');
+                }
+            }
+        }
+        if written > 0 {
             output.push('\n');
         }
-        let mut line = source_line.to_string();
-        if code_fence == 0 {
-            let bytes = line.as_bytes();
-            let mut marker = 0usize;
-            while marker < bytes.len() && marker < 3 && matches!(bytes[marker], b' ' | b'\t') {
-                marker += 1;
-            }
-            let insert_at = if marker + 1 < bytes.len()
-                && matches!(bytes[marker], b'-' | b'+')
-                && matches!(bytes[marker + 1], b' ' | b'\t')
-            {
-                Some(marker)
-            } else {
-                let digit_start = marker;
-                while marker < bytes.len()
-                    && marker - digit_start < 9
-                    && bytes[marker].is_ascii_digit()
-                {
-                    marker += 1;
-                }
-                if marker > digit_start
-                    && marker + 1 < bytes.len()
-                    && matches!(bytes[marker], b'.' | b')')
-                    && matches!(bytes[marker + 1], b' ' | b'\t')
-                {
-                    Some(marker)
-                } else {
-                    None
-                }
-            };
-            if let Some(at) = insert_at {
-                line.insert(at, '\\');
-            }
-        }
-
-        let bytes = line.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            if bytes[i] != b'`' {
-                i += 1;
-                continue;
-            }
-            let mut backslashes = 0usize;
-            let mut before = i;
-            while before > 0 && bytes[before - 1] == b'\\' {
-                backslashes += 1;
-                before -= 1;
-            }
-            let mut run = 1usize;
-            while i + run < bytes.len() && bytes[i + run] == b'`' {
-                run += 1;
-            }
-            if backslashes % 2 == 0 {
-                if code_fence == 0 {
-                    code_fence = run;
-                } else if code_fence == run {
-                    code_fence = 0;
-                }
-            }
-            i += run;
-        }
         output.push_str(&line);
+        written += 1;
     }
     output
 }
 
-fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
+/// Where a paragraph line needs a backslash so a reader does not open a block
+/// on it, if anywhere. The line carries no leading whitespace.
+fn paragraph_marker_escape(line: &str, first: bool) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let first_byte = *bytes.first()?;
+    // M1c, and §8g T3 for a marker with nothing after it.
+    if matches!(first_byte, b'-' | b'+')
+        && (bytes.len() == 1 && first || matches!(bytes.get(1), Some(b' ' | b'\t')))
+    {
+        return Some(0);
+    }
+    let digits = bytes
+        .iter()
+        .take(10)
+        .take_while(|b| b.is_ascii_digit())
+        .count();
+    if (1..=9).contains(&digits) && matches!(bytes.get(digits), Some(b'.' | b')')) {
+        let after = bytes.get(digits + 1);
+        if matches!(after, Some(b' ' | b'\t')) || after.is_none() && first {
+            return Some(digits);
+        }
+    }
+    // A `>` opens a block quote with or without a space after it.
+    if first_byte == b'>' {
+        return Some(0);
+    }
+    // §8g T2: a setext underline below the paragraph's first line.
+    if !first && matches!(first_byte, b'=' | b'-') && bytes.iter().all(|b| *b == first_byte) {
+        return Some(0);
+    }
+    // §8g T1: a thematic break.
+    if matches!(first_byte, b'-' | b'_' | b'*')
+        && bytes
+            .iter()
+            .all(|b| *b == first_byte || matches!(b, b' ' | b'\t'))
+        && bytes.iter().filter(|b| **b == first_byte).count() >= 3
+    {
+        return Some(0);
+    }
+    None
+}
+
+/// Whether a code span is still open after `line`, given the run length that
+/// was open before it (0 for none).
+fn code_span_state_after(line: &str, mut code_fence: usize) -> usize {
+    let bytes = line.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let mut backslashes = 0usize;
+        let mut before = i;
+        while before > 0 && bytes[before - 1] == b'\\' {
+            backslashes += 1;
+            before -= 1;
+        }
+        let mut run = 1usize;
+        while i + run < bytes.len() && bytes[i + run] == b'`' {
+            run += 1;
+        }
+        if backslashes % 2 == 0 {
+            if code_fence == 0 {
+                code_fence = run;
+            } else if code_fence == run {
+                code_fence = 0;
+            }
+        }
+        i += run;
+    }
+    code_fence
+}
+
+fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize, marker: char) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
@@ -516,18 +592,11 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     ctx.list_depth += 1;
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
-    // The authored bullet, not a normalized one. A change of bullet is what
-    // SEPARATES two adjacent lists in CommonMark, so emitting `-` for a `*` list
-    // merges lists the source kept apart -- the same section 11 rule the AST
-    // records `bullet_char` for and render_carve already honors (carve#352).
-    let bullet = node.bullet_char.unwrap_or('-');
-    // The authored ordered-list delimiter, for the same reason as the bullet
-    // above: in CommonMark a change of delimiter SEPARATES two adjacent lists, so
-    // emitting `1.` for a `1)` list merges lists the source kept apart. Measured
-    // against commonmark.js -- `1. a` followed by `1) c` gives two `<ol>`
-    // elements, the same input with one delimiter gives one. The AST records
-    // `delim` and render_carve already reproduces it (carve#352, corpus 31).
-    let delim = if node.delim == Some(')') { ')' } else { '.' };
+    // The authored bullet and delimiter, not normalized ones: a change of
+    // either is what SEPARATES two adjacent lists in CommonMark (carve#352),
+    // switched by the caller where the list above used the same one (§10o).
+    let bullet = marker;
+    let delim = marker;
     let last = node.items.len().saturating_sub(1);
     for (index, item) in node.items.iter().enumerate() {
         // The pad is the item's CONTENT COLUMN, which is only the same as the
@@ -548,8 +617,10 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
             let pad = prefix.len();
             (prefix, pad)
         };
+        let outer = ctx.previous_list.take();
         let content =
             trim_block_output(&render_list_item(item, node.tight, ctx, depth + 1)).to_string();
+        ctx.previous_list = outer;
         let mut lines = content.split('\n');
         let first = lines.next().unwrap_or_default();
         if first.is_empty() {
@@ -767,10 +838,12 @@ fn bare_marker_line(line: &str) -> bool {
     rest.len() < line.len() && matches!(rest, "." | ")")
 }
 
+/// PART 11 §10p: GFM has no definition list, and a `: ` marker is literal
+/// there, so each term is written as a paragraph of strong text and each
+/// description's blocks as ordinary blocks in the same flow.
 fn render_definition_list(
     items: &[DefinitionItem],
     ctx: &mut MarkdownContext,
-    trailing_blank: bool,
     depth: usize,
 ) -> String {
     if depth > MAX_RENDER_DEPTH {
@@ -780,29 +853,21 @@ fn render_definition_list(
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
-            out.push_str(&pad_outside(
+            let term = pad_outside(
                 render_block_inlines(term, ctx),
                 "**",
                 "<strong>",
                 "</strong>",
-            ));
-            out.push('\n');
-        }
-        for definition in &item.definitions {
-            // Same rule as the list marker above: a definition whose body was
-            // collected away writes the marker bare rather than with the
-            // separator space left dangling at the end of the line.
-            let rendered = render_blocks(definition, ctx, depth + 1);
-            let body = trim_block_output(&rendered);
-            if body.is_empty() {
-                out.push_str(":\n");
-            } else {
-                out.push_str(&format!(": {body}\n"));
+            );
+            if !term.is_empty() {
+                ctx.previous_list = None;
+                out.push_str(&term);
+                out.push_str("\n\n");
             }
         }
-    }
-    if trailing_blank {
-        out.push('\n');
+        for definition in &item.definitions {
+            out.push_str(&render_blocks(definition, ctx, depth + 1));
+        }
     }
     out
 }
@@ -836,12 +901,18 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
                 ctx.table_cell_depth += 1;
                 let content = trim_non_nbsp(&render_block_inlines(&inlines, ctx)).to_string();
                 ctx.table_cell_depth -= 1;
-                content
+                escape_cell_pipes(&content)
             })
             .map(|content| content.replace(['\r', '\n'], " "))
             .collect::<Vec<_>>();
         let rendered = format!("| {} |", cells.join(" | "));
-        if row.cells.iter().all(|cell| cell.header) {
+        // A span placeholder belongs to the cell that covers it (PART 11 §10n).
+        if row
+            .cells
+            .iter()
+            .all(|cell| cell.header || cell.span.is_some())
+            && row.cells.iter().any(|cell| cell.header)
+        {
             if header.is_none() {
                 aligns.clear();
             }
@@ -874,6 +945,13 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         }
     }
     let mut out = String::new();
+    // A GFM table needs a header row, so a headerless one gets an empty header
+    // as wide as its widest row (PART 11 §10n).
+    let header = header.or_else(|| {
+        let width = node.rows.iter().map(|row| row.cells.len()).max()?;
+        header_columns = width;
+        Some(format!("| {} |", vec![""; width].join(" | ")))
+    });
     if let Some(header) = header {
         out.push_str(&header);
         out.push('\n');
@@ -925,6 +1003,22 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
 /// with its number resolved. Emphasis and bold rather than invented syntax:
 /// the spelling the admonition title already uses for authored text with no
 /// native slot.
+/// PART 11 §8h: GFM splits a row on every unescaped `|` before it reads any
+/// inline, so every content pipe in a cell is escaped, one already escaped
+/// excepted.
+fn escape_cell_pipes(content: &str) -> String {
+    let mut out = String::with_capacity(content.len());
+    let mut backslashes = 0usize;
+    for ch in content.chars() {
+        if ch == '|' && backslashes % 2 == 0 {
+            out.push('\\');
+        }
+        backslashes = if ch == '\\' { backslashes + 1 } else { 0 };
+        out.push(ch);
+    }
+    out
+}
+
 fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
@@ -1011,7 +1105,12 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
             // places; both escape, so a reference still matches its definition
             // (carve-rs#807).
             escape_md_html(&strip_controls(label)),
-            trim_non_nbsp(&render_blocks(blocks, ctx, 0))
+            {
+                let outer = ctx.previous_list.take();
+                let body = render_blocks(blocks, ctx, 0);
+                ctx.previous_list = outer;
+                trim_non_nbsp(&body).to_string()
+            }
         ));
     }
     out
@@ -1706,7 +1805,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // Same expansion budget the abbreviation arm below spends,
                     // degrading to the authored target (carve-rs#805). See
                     // `crate::abbr_budget`.
-                    let text = if crate::abbr_budget::try_spend(text.len()) {
+                    let text = if crate::abbr_budget::try_spend(resolved_len(&text)) {
                         text
                     } else {
                         escape_text(&strip_controls(&crossref.target))
@@ -1715,10 +1814,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // an anchor, so it degrades to its display text -- the same
                     // rule the parser applies to every link it produces itself,
                     // and the HTML target applies to this node (carve-rs#436).
-                    if ctx.link_depth == 0 && ctx.heading_ids.contains(&id) {
-                        format!("[{text}](#{})", strip_controls(&id))
-                    } else {
-                        text
+                    match ctx.heading_slugs.get(&id) {
+                        Some(slug) if ctx.link_depth == 0 => format!("[{text}](#{slug})"),
+                        _ => text,
                     }
                 }
             }
@@ -1741,10 +1839,11 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     let children = unwrap_nested_anchors(&node.children);
     let text = render_inlines(children.as_ref(), ctx, depth);
     ctx.link_depth -= 1;
-    // A fragment that names no heading is still the author's destination, so
-    // the link is kept (PART 11 section 11a).
-    if let Some(id) = fragment_id(&node.href).filter(|id| ctx.heading_ids.contains(*id)) {
-        let destination = encode_markdown_destination(&format!("#{id}"));
+    // A fragment naming a heading is written as that heading's GFM slug, which
+    // needs no encoding; any other fragment is still the author's destination
+    // (PART 11 sections 11 and 11a).
+    if let Some(slug) = fragment_id(&node.href).and_then(|id| ctx.heading_slugs.get(id)) {
+        let destination = format!("#{slug}");
         if let Some(title) = &node.title {
             format!(
                 "[{text}]({destination} \"{}\")",
@@ -1861,10 +1960,17 @@ fn prepend_label(body: String, label: Option<&str>) -> String {
 }
 
 fn escape_text(text: &str) -> String {
-    let mut out = String::new();
-    // PEEKABLE, because M1e below decides on the NEXT character.
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
+    let mut out = String::with_capacity(text.len());
+    // The carriers are read once and the inserts counted here, because a
+    // carried character can be most of a long text and the thread-locals are
+    // not free per character.
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    let mut inserted = [0usize; CARRIER_COUNT];
+    let mut carry = |slot: usize, out: &mut String| {
+        inserted[slot] += 1;
+        out.push(carriers[slot]);
+    };
+    for ch in text.chars() {
         match ch {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
@@ -1897,23 +2003,35 @@ fn escape_text(text: &str) -> String {
             // describes: M2 and M3 protect a character so it survives as
             // itself, and an entity replaces it instead. Escaping the `<` alone
             // suffices - a tag that cannot open cannot be closed.
+            // `<`, `&` and `!` are decided on the EMITTED LINE too, across node
+            // boundaries (PART 11 §8d to §8f): a highlighter puts `<`, the tag
+            // name and `>` in three spans, so the next character is often in
+            // another node.
             '<' => {
-                let opens_markup = matches!(
-                    chars.peek(),
-                    Some(n) if n.is_ascii_alphabetic() || matches!(n, '/' | '!' | '?')
-                );
-                if opens_markup {
-                    out.push('\\');
-                }
-                out.push('<');
+                carry(C_ANGLE, &mut out);
+                continue;
+            }
+            '&' => {
+                carry(C_AMPERSAND, &mut out);
+                continue;
+            }
+            '!' => {
+                carry(C_BANG, &mut out);
                 continue;
             }
             // `_`, `#` and `[` are emitted as SENTINELS rather than as
             // backslashes: PART 11 §8a decides those three on the EMITTED LINE,
-            // which only `resolve_narrowed_escapes` can see. See
-            // `narrowed_sentinel`.
-            '_' | '#' | '[' => {
-                out.push(narrowed_sentinel(ch));
+            // which only `resolve_narrowed_escapes` can see.
+            '_' => {
+                carry(C_UNDERSCORE, &mut out);
+                continue;
+            }
+            '#' => {
+                carry(C_POSITIONAL_HASH, &mut out);
+                continue;
+            }
+            '[' => {
+                carry(C_BRACKET, &mut out);
                 continue;
             }
             // Markdown metacharacters. The ASTERISK keeps M1 unconditionally
@@ -1931,12 +2049,21 @@ fn escape_text(text: &str) -> String {
         }
         out.push(ch);
     }
+    INSERTED.with(|counts| {
+        let mut current = counts.get();
+        for (slot, count) in inserted.iter().enumerate() {
+            current[slot] += count;
+        }
+        counts.set(current);
+    });
     out
 }
 
 /// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
 /// CHOSEN PER DOCUMENT from code points it does not contain.
-const CARRIER_DEFAULTS: [char; 3] = ['\u{E004}', '\u{E005}', '\u{E006}'];
+const CARRIER_DEFAULTS: [char; 6] = [
+    '\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}', '\u{E008}', '\u{E009}',
+];
 const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 
 /// Slot indices into [`CARRIER_DEFAULTS`] / [`CARRIERS`].
@@ -1947,6 +2074,9 @@ const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 const C_UNDERSCORE: usize = 0;
 const C_BRACKET: usize = 1;
 const C_POSITIONAL_HASH: usize = 2;
+const C_ANGLE: usize = 3;
+const C_AMPERSAND: usize = 4;
+const C_BANG: usize = 5;
 
 thread_local! {
     /// The carriers in force for the render running on this thread.
@@ -1984,6 +2114,21 @@ impl Drop for CarrierGuard {
     fn drop(&mut self) {
         CARRIERS.with(|slot| slot.set(self.0));
     }
+}
+
+/// Byte length of `text` with every carrier counted as the ASCII character it
+/// stands for, so the label budget is charged alike in every engine.
+fn resolved_len(text: &str) -> usize {
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    text.chars()
+        .map(|c| {
+            if carriers.contains(&c) {
+                1
+            } else {
+                c.len_utf8()
+            }
+        })
+        .sum()
 }
 
 fn carrier(which: usize) -> char {
@@ -2067,23 +2212,11 @@ fn carried_character(slot: usize) -> char {
     match slot {
         C_UNDERSCORE => '_',
         C_BRACKET => '[',
+        C_ANGLE => '<',
+        C_AMPERSAND => '&',
+        C_BANG => '!',
         _ => '#',
     }
-}
-
-/// The carrier for a character §8a decides on the line, counted as inserted.
-///
-/// THE HASH TAKES M1f's CARRIER, not M1b's: its test is positional rather than
-/// adjacency, which is the test §8b M2b already applies on the authored side.
-fn narrowed_sentinel(ch: char) -> char {
-    let which = match ch {
-        '_' => C_UNDERSCORE,
-        '#' => return positional_sentinel(),
-        '[' => C_BRACKET,
-        other => return other,
-    };
-    note_inserted(which);
-    carrier(which)
 }
 
 /// Drop control characters from author content.
@@ -2459,6 +2592,19 @@ fn resolve_narrowed_escapes(text: &str) -> String {
                     opens_an_atx_heading(&line, i, content_start)
                         || closes_an_atx_heading(&line, &raw_chars, i, content_start),
                 )
+            } else if slot == C_ANGLE {
+                // §8a M1e, read across nodes (§8d).
+                let next = line.get(i + 1).copied().unwrap_or('\n');
+                (
+                    ch,
+                    next.is_ascii_alphabetic() || matches!(next, '/' | '!' | '?'),
+                )
+            } else if slot == C_AMPERSAND {
+                let rest: String = line[i + 1..].iter().take(40).collect();
+                (ch, opens_char_ref(&rest))
+            } else if slot == C_BANG {
+                // §8f: a live `[` is the writer's own, never a text carrier.
+                (ch, raw_chars.get(i + 1) == Some(&'['))
             } else {
                 (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
             }
@@ -2652,13 +2798,20 @@ fn next_heading_id(
 // core, including `CitationGroup` -> `raw`, so a citation heading's id is
 // consistent here too.
 fn plain_inlines(nodes: &[InlineNode]) -> String {
+    plain_inlines_with(nodes, ' ')
+}
+
+/// `plain_inlines`, spelling the staged no-break space as `nbsp`.
+fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
             InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
-            InlineNode::Text(text) => {
-                out.push_str(&text.value.replace(crate::NBSP_PLACEHOLDER, " "))
-            }
+            InlineNode::Text(text) => out.push_str(
+                &text
+                    .value
+                    .replace(crate::NBSP_PLACEHOLDER, nbsp.encode_utf8(&mut [0u8; 4])),
+            ),
             // Visible prose, so it feeds this slug exactly as it feeds the core's
             // (carve-rs#800). This is the THIRD spelling of one derivation - the
             // parse-time index, the HTML renderer and this one - and the reason
@@ -2666,7 +2819,9 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // ways has to be one id.
             InlineNode::EscapedText(escaped) => out.push_str(&escaped.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
-            InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
+            InlineNode::Emphasis(emphasis) => {
+                out.push_str(&plain_inlines_with(&emphasis.children, nbsp))
+            }
             InlineNode::Code(code) => out.push_str(&code.value),
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
@@ -2682,10 +2837,13 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // would slug `# A </#a>` as `A-A` and every id derived here would
             // disagree with the one the core assigned before resolution.
             InlineNode::Link(link) if link.from_crossref => {}
-            InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),
-            InlineNode::Ruby(r) => out.push_str(&plain_inlines(&r.flattened())),
+            InlineNode::Link(link) => out.push_str(&plain_inlines_with(&link.children, nbsp)),
+            InlineNode::Ruby(r) => out.push_str(&plain_inlines_with(&r.flattened(), nbsp)),
             InlineNode::Image(image) => out.push_str(&image.alt),
-            InlineNode::Extension(extension) => out.push_str(&plain_inlines(&extension.children)),
+            InlineNode::AutoLink(autolink) => out.push_str(&autolink.text),
+            InlineNode::Extension(extension) => {
+                out.push_str(&plain_inlines_with(&extension.children, nbsp))
+            }
             InlineNode::CitationGroup(group) => out.push_str(&group.raw),
             InlineNode::Abbreviation(abbr) => out.push_str(&abbr.abbr),
             InlineNode::Mention(mention) => out.push_str(&mention.user),
@@ -2708,6 +2866,105 @@ fn slugify(text: &str) -> String {
     // The Markdown renderer has no Options, so it always uses the case-preserving
     // default (lowercase = false), matching the parser's default id index.
     crate::parse::slugify_parse(text, crate::extension::HeadingIdOptions::PLAIN)
+}
+
+/// GitHub's heading slugger (github-slugger), which `pandoc -f gfm` follows:
+/// PART 11 §11 G2 to G5.
+#[derive(Default)]
+struct GfmSlugger {
+    counts: HashMap<String, usize>,
+}
+
+impl GfmSlugger {
+    fn slug(&mut self, text: &str) -> String {
+        static DROP: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let drop = DROP.get_or_init(|| {
+            regex::Regex::new(r"[^\p{L}\p{M}\p{N}\p{Pc} \-]").expect("the slug class is valid")
+        });
+        let base = drop.replace_all(&text.to_lowercase(), "").replace(' ', "-");
+        let mut slug = base.clone();
+        while self.counts.contains_key(&slug) {
+            let count = self.counts.entry(base.clone()).or_insert(0);
+            *count += 1;
+            slug = format!("{base}-{count}");
+        }
+        self.counts.insert(slug.clone(), 0);
+        slug
+    }
+}
+
+/// §11 G1: the heading's text content as this target writes it, a no-break
+/// space included as itself.
+fn gfm_heading_text(nodes: &[InlineNode]) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    let text = plain_inlines_with(nodes, '\u{00a0}');
+    text.trim_matches(|c: char| c.is_ascii_whitespace())
+        .nfc()
+        .collect()
+}
+
+/// Every heading in document order, and whether this target writes it as a
+/// heading: one inside a table cell is flattened into the cell.
+fn walk_headings<F>(blocks: &[BlockNode], depth: usize, written: bool, visit: &mut F)
+where
+    F: FnMut(&Heading, bool),
+{
+    if depth > MAX_RENDER_DEPTH {
+        return;
+    }
+    let next = depth + 1;
+    for block in blocks {
+        match block {
+            BlockNode::Heading(heading) => visit(heading, written),
+            BlockNode::BlockQuote(quote) => walk_headings(&quote.children, next, written, visit),
+            BlockNode::Admonition(admonition) => {
+                walk_headings(&admonition.children, next, written, visit)
+            }
+            BlockNode::Directive(directive) => {
+                walk_headings(&directive.children, next, written, visit)
+            }
+            BlockNode::Div(div) => walk_headings(&div.children, next, written, visit),
+            BlockNode::Section(section) => walk_headings(&section.children, next, written, visit),
+            BlockNode::LineBlock(lb) => walk_headings(&lb.children, next, written, visit),
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    walk_headings(&item.children, next, written, visit);
+                }
+            }
+            BlockNode::DefinitionList(list) => {
+                for item in &list.items {
+                    for definition in &item.definitions {
+                        walk_headings(definition, next, written, visit);
+                    }
+                }
+            }
+            BlockNode::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        if let Some(blocks) = &cell.blocks {
+                            walk_headings(blocks, next, false, visit);
+                        }
+                    }
+                }
+            }
+            BlockNode::Figure(figure) => {
+                if let FigureTarget::BlockQuote(quote) = &*figure.target {
+                    walk_headings(&quote.children, next, written, visit);
+                }
+            }
+            BlockNode::FigureGroup(group) => walk_headings(&group.children, next, written, visit),
+            BlockNode::ExtensionCarrier(extension) => {
+                walk_headings(&extension.children, next, written, visit)
+            }
+            BlockNode::BlockExtension(extension) => walk_headings(
+                std::slice::from_ref(extension.fallback.as_ref()),
+                next,
+                written,
+                visit,
+            ),
+            _ => {}
+        }
+    }
 }
 
 fn is_literal_crossref(text: &str) -> bool {
@@ -2796,56 +3053,6 @@ where
             }
             BlockNode::ExtensionCarrier(extension) => {
                 walk_blocks(&extension.children, depth + 1, visit)
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Walks inline content, telling the visitor whether the node sits inside a
-/// link label. The flag matters because a reference inside a label renders as
-/// plain text (links never nest), so it is not a live reference and must not
-/// keep a heading's `{#id}` suffix alive. It resets at a footnote body, which
-/// renders outside the anchor.
-fn walk_inlines<F>(nodes: &[InlineNode], depth: usize, in_link: bool, visit: &mut F)
-where
-    F: FnMut(&InlineNode, bool),
-{
-    if depth > MAX_RENDER_DEPTH {
-        crate::render_depth::record("markdown");
-        return;
-    }
-    for node in nodes {
-        visit(node, in_link);
-        match node {
-            InlineNode::Emphasis(emphasis) => {
-                walk_inlines(&emphasis.children, depth + 1, in_link, visit)
-            }
-            InlineNode::Link(link) => walk_inlines(&link.children, depth + 1, true, visit),
-            InlineNode::Span(span) => walk_inlines(&span.children, depth + 1, in_link, visit),
-            InlineNode::Ruby(r) => {
-                for pair in &r.pairs {
-                    walk_inlines(&pair.base, depth + 1, in_link, visit);
-                    walk_inlines(&pair.annotation, depth + 1, in_link, visit);
-                }
-            }
-            InlineNode::Extension(extension) => {
-                walk_inlines(&extension.children, depth + 1, in_link, visit)
-            }
-            InlineNode::Footnote(footnote) => {
-                if let Some(inline) = &footnote.inline {
-                    walk_inlines(inline, depth + 1, false, visit);
-                }
-            }
-            InlineNode::CriticInsert(insert) => {
-                walk_inlines(&insert.children, depth + 1, in_link, visit)
-            }
-            InlineNode::CriticDelete(delete) => {
-                walk_inlines(&delete.children, depth + 1, in_link, visit)
-            }
-            InlineNode::CriticSubstitute(sub) => {
-                walk_inlines(&sub.old, depth + 1, in_link, visit);
-                walk_inlines(&sub.new, depth + 1, in_link, visit);
             }
             _ => {}
         }

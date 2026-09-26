@@ -376,7 +376,8 @@ mod tests {
         let carve = crate::render_carve(&doc).unwrap();
         let markdown = crate::render_markdown(&doc).unwrap();
         assert_eq!(carve.lines().count(), 1, "{carve:?}");
-        assert_eq!(markdown.lines().count(), 1, "{markdown:?}");
+        // One body row under the empty header PART 11 §10n adds.
+        assert_eq!(markdown.lines().count(), 3, "{markdown:?}");
         assert!(carve.contains("one *two three*"), "{carve:?}");
         assert!(markdown.contains("**two<br>three**"), "{markdown:?}");
     }

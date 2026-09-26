@@ -27,7 +27,10 @@ fn a_path_tilde_is_escaped_which_is_the_cost_of_the_rule() {
 
 #[test]
 fn a_tilde_in_a_table_cell_is_text_like_any_other() {
-    assert_eq!(carve::to_markdown("| a~~b |\n"), "| a\\~\\~b |\n");
+    assert_eq!(
+        carve::to_markdown("| a~~b |\n"),
+        "|  |\n| --- |\n| a\\~\\~b |\n"
+    );
 }
 
 #[test]

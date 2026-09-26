@@ -173,12 +173,12 @@ fn a_thematic_break_keeps_the_separator() {
 
 #[test]
 fn a_headerless_table_keeps_the_separator() {
-    // A GFM reader needs the delimiter row to see a table at all. Written
-    // directly under the paragraph line, a headerless table's rows are read as
-    // lazy continuation and its text is swallowed into the paragraph.
+    // A headerless table gets an empty header and its delimiter row (PART 11
+    // §10n), which is what lets it open under the paragraph line like any
+    // other table, so the item stays tight.
     let source = "- a\n  | x |\n  | y |\n";
     let out = carve::to_markdown(source);
-    assert_eq!(out, "- a\n\n  | x |\n  | y |\n");
+    assert_eq!(out, "- a\n  |  |\n  | --- |\n  | x |\n  | y |\n");
     let back = carve::markdown_import::markdown_to_ast(&out);
     assert_eq!(first_list(&back).items[0].children.len(), 2);
 }

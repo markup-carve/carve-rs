@@ -123,7 +123,8 @@ fn the_by_text_index_carries_the_escaped_character() {
 fn control_the_markdown_target_derives_the_same_id() {
     let doc = carve::parse("# a\\.b\n\nSee </#a-b>\n");
     let md = carve::render_markdown(&doc).expect("markdown renders");
-    assert!(md.contains("(#a-b)"), "{md}");
+    // The written destination is the GFM slug of `a.b` (PART 11 §11).
+    assert!(md.contains("(#ab)"), "{md}");
 }
 
 /// CONTROL: an escaped character is not made into markup by reaching the

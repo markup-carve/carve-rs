@@ -163,14 +163,14 @@ fn an_id_declared_in_the_title_is_reserved() {
 
 #[test]
 fn a_crossref_in_the_title_keeps_the_target_heading_anchored() {
-    // The Markdown writer emits `{#id}` only for a heading something references.
-    // A reference the prepass cannot see leaves the link pointing at nothing.
+    // A reference in the title links the heading by its GFM slug (PART 11
+    // §11), which the prepass has to have assigned.
     for kind in ["toc", "note"] {
         let md = carve::to_markdown(&format!("::: {kind} \"See </#H>\"\n:::\n\n# H\n"));
-        assert!(md.contains("[H](#H)"), "{kind}: no link was written: {md}");
+        assert!(md.contains("[H](#h)"), "{kind}: no link was written: {md}");
         assert!(
-            md.contains("# H {#H}"),
-            "{kind}: the referenced heading lost its anchor: {md}"
+            md.contains("# H\n"),
+            "{kind}: the heading is not plain: {md}"
         );
     }
 }

@@ -210,6 +210,6 @@ fn crossref_in_a_footnote_body_in_a_label_still_links() {
     // survives -- matching carve-js.
     assert_eq!(
         carve::to_markdown("# H\n\n[x ^[see </#H>]](/outer)"),
-        "# H {#H}\n\n[x ^[see [H](#H)]](/outer)\n"
+        "# H\n\n[x ^[see [H](#h)]](/outer)\n"
     );
 }
