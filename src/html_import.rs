@@ -2036,7 +2036,30 @@ impl<'a> Importer<'a> {
                 let tag = tag.expect("a media fallback tag is an element name");
                 out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
             } else {
-                out.extend(self.block(handle, &path, depth + 1)?);
+                let mut produced = self.block(handle, &path, depth + 1)?;
+                // Carve source has no boundary between two definition lists, so
+                // an attribute-less one following another joins it (carve#2369).
+                if let (
+                    Some(BlockNode::DefinitionList(previous)),
+                    Some(BlockNode::DefinitionList(next)),
+                ) = (out.last_mut(), produced.first())
+                {
+                    if next.attrs.is_none() {
+                        let BlockNode::DefinitionList(next) = produced.remove(0) else {
+                            unreachable!("matched as a definition list above");
+                        };
+                        previous.items.extend(next.items);
+                        previous.loose |= next.loose;
+                        self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists".into(),
+                            HtmlImportSeverity::Info,
+                            &path,
+                            handle,
+                        );
+                    }
+                }
+                out.extend(produced);
             }
         } else {
             inline.push(handle.clone());
