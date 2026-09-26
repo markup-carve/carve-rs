@@ -271,8 +271,10 @@ pub(crate) fn flatten_cell_block_inlines_with(
                 BlockNode::BlockExtension(node) => pending.push(Part::Block(&node.fallback)),
                 BlockNode::ExtensionCarrier(node) => push_blocks(&mut pending, &node.children),
                 BlockNode::BlockImage(node) => pending.push(Part::Text(node.alt.clone())),
-                BlockNode::RawBlock(node) => pending.push(Part::Text(node.content.clone())),
-                BlockNode::Comment(_)
+                // carve#2390: a raw block has no payload that belongs on a line
+                // of a table, so a cell contributes nothing for it.
+                BlockNode::RawBlock(_)
+                | BlockNode::Comment(_)
                 | BlockNode::ThematicBreak(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
