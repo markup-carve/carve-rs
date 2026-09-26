@@ -32,6 +32,8 @@ which the published crate does not carry.
 - Escaped spaces and preserved line-block columns are `non_breaking_space` nodes, and U+E000 is literal content in every field. A tree stored under the old marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`. Reparsing the source is the only remedy - a stored tree cannot tell a generated space from an authored character (#1981).
 - `TableRowGroups` adds `head_attrs` and `foot_attrs`, so a downstream struct literal initializes both to `None` when unused, and `Table.row_groups` becomes `Option<Box<TableRowGroups>>` to keep section metadata off every block node (#1989).
 - The render-loss `code` enum is closed at the two codes that name a whole dropped node, so a consumer matching `table-section-attributes-dropped` no longer sees it and `--allow-loss` takes two names rather than three. A discarded table section attribute reports as `field-unspellable` on the PART 11 §1d conversion-diagnostics channel instead (#1994).
+- HTML import writes a link's or a span's edge whitespace outside the construct, so `<a href="/x"> x</a>` imports as a space ahead of `[x](/x)`. Whitespace-only content and a no-break space stay inside (#1999, markup-carve/carve#2361).
+- PART 11 §5 escapes two more occurrences unconditionally in the canonical writer: an unpaired `[` or `]` among the text brackets of content a construct writes between its own brackets, and a `(` directly after a bare `]` that closes a pair. The §2b search keeps the budget it used to spend finding them, so canonical output for a large imported document carries fewer escapes than before; the tree that output rereads to, and the HTML it renders, are unchanged (#1995, markup-carve/carve#2357).
 
 ### Fixes
 
@@ -82,6 +84,10 @@ which the published crate does not carry.
 - HTML import replaces an unsupported block element with its children in place, so the headings, lists and code blocks inside a custom or unknown tag survive instead of collapsing onto one line, and only the wrapper reports `element-unwrapped` (#1990).
 - Line-block text beside an expanded tab carries positions mapped back to the source, and a leading tab stays inside the stanza paragraph's extent (#1992).
 - A container title the quoted slot cannot spell becomes the body's first paragraph and is reported as `structure-unspellable`, so an import that used to fail the whole document with `SourceUnspellable` completes; a title holding a line break is caught the same way (#1993).
+- HTML import reads a `<math>` with no TeX as its text where its tokens read in order, rather than dropping the formula, and keeps one space where an `mspace` separates two letters or digits. A fraction or a script still drops, and a formula whose MathML the page hides imports once, through its fallback image's `alt` (#1999, #2000, markup-carve/carve#2361).
+- The Markdown writer keeps a link whose fragment names no heading, with the ordinary destination encoding, so `[CHAPTER III.](#chap03)` no longer collapses to its label (#2001, markup-carve/carve#2362).
+- The Markdown writer writes a hard break inside a table cell as `<br>`, in an inline cell and in a block-bearing one, instead of flattening it to a space. The plain, ANSI and canonical Carve targets still flatten it (#2001, markup-carve/carve#2362).
+- HTML import drops a list with no `<li>` instead of writing an attribute line with no block under it, reporting one `element-dropped` row at `warning` that covers the list's attributes. Stray children still move ahead of where the list stood (#2004, markup-carve/carve#2367).
 
 ### Improvements
 
@@ -96,6 +102,7 @@ which the published crate does not carry.
 - A spoiler wrapper follows the pinned extension attribute-order rule with and without an authored class slot, and annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces (#1981).
 - Table heads and feet keep their attributes through AST exchange and HTML import: HTML applies them to `thead`, `tbody` and `tfoot`, and the source and text targets report the ones they discard (#1989, markup-carve/carve#2339).
 - The PART 11 §2b escape search answers a probe whose bytes it has already judged by comparing them rather than reparsing, leaving the decisions, the budget spent and the output unchanged; about 40% of the probes on an imported web page take that path (#1991).
+- `carve migrate --from html` converts a page dense with brackets faster, since the two occurrences PART 11 §5 now names are escaped without a search (#1995, markup-carve/carve#2357).
 
 ## [0.1.6] - 2026-09-18
 
