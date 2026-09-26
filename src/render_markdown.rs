@@ -485,12 +485,20 @@ fn protect_paragraph_list_markers(text: &str) -> String {
             };
         }
         // A line trimming empties is not written: it would end the paragraph.
-        if line.is_empty() && !open_at_start && code_fence == 0 {
+        if line.is_empty() {
             continue;
         }
         if !open_at_start {
-            if let Some(at) = paragraph_marker_escape(&line, written == 0) {
-                line.insert(at, '\\');
+            // The underscore still stands as its carrier here, so the test reads
+            // it as `_` and an escape on it writes the character itself.
+            let underscore = carrier(C_UNDERSCORE);
+            let view = line.replace(underscore, "_");
+            if let Some(at) = paragraph_marker_escape(&view, written == 0) {
+                if line[at..].starts_with(underscore) {
+                    line.replace_range(at..at + underscore.len_utf8(), "\\_");
+                } else {
+                    line.insert(at, '\\');
+                }
             }
         }
         if written > 0 {
@@ -898,7 +906,13 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             .map(|content| content.replace(['\r', '\n'], " "))
             .collect::<Vec<_>>();
         let rendered = format!("| {} |", cells.join(" | "));
-        if row.cells.iter().all(|cell| cell.header) {
+        // A span placeholder belongs to the cell that covers it (PART 11 §10n).
+        if row
+            .cells
+            .iter()
+            .all(|cell| cell.header || cell.span.is_some())
+            && row.cells.iter().any(|cell| cell.header)
+        {
             if header.is_none() {
                 aligns.clear();
             }
@@ -1791,7 +1805,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // Same expansion budget the abbreviation arm below spends,
                     // degrading to the authored target (carve-rs#805). See
                     // `crate::abbr_budget`.
-                    let text = if crate::abbr_budget::try_spend(text.len()) {
+                    let text = if crate::abbr_budget::try_spend(resolved_len(&text)) {
                         text
                     } else {
                         escape_text(&strip_controls(&crossref.target))
@@ -2100,6 +2114,21 @@ impl Drop for CarrierGuard {
     fn drop(&mut self) {
         CARRIERS.with(|slot| slot.set(self.0));
     }
+}
+
+/// Byte length of `text` with every carrier counted as the ASCII character it
+/// stands for, so the label budget is charged alike in every engine.
+fn resolved_len(text: &str) -> usize {
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    text.chars()
+        .map(|c| {
+            if carriers.contains(&c) {
+                1
+            } else {
+                c.len_utf8()
+            }
+        })
+        .sum()
 }
 
 fn carrier(which: usize) -> char {
@@ -2811,6 +2840,7 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             InlineNode::Link(link) => out.push_str(&plain_inlines_with(&link.children, nbsp)),
             InlineNode::Ruby(r) => out.push_str(&plain_inlines_with(&r.flattened(), nbsp)),
             InlineNode::Image(image) => out.push_str(&image.alt),
+            InlineNode::AutoLink(autolink) => out.push_str(&autolink.text),
             InlineNode::Extension(extension) => {
                 out.push_str(&plain_inlines_with(&extension.children, nbsp))
             }
