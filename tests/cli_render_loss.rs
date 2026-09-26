@@ -1,24 +1,37 @@
-use std::io::Write;
-use std::process::{Command, Output, Stdio};
+use std::io::{ErrorKind, Write};
+use std::process::{Child, ChildStdin, Command, Output, Stdio};
 
 fn run(args: &[&str]) -> Output {
     run_input(args, "`x`{=latex}\n")
 }
 
-fn run_input(args: &[&str], input: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_carve"))
+fn spawn(args: &[&str]) -> Child {
+    Command::new(env!("CARGO_BIN_EXE_carve"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn carve");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
+        .expect("spawn carve")
+}
+
+/// An argument refusal returns before `carve` ever reads stdin, so this write
+/// races the child's exit and gets a closed pipe whenever the child wins. Only
+/// that one error is tolerated; a test whose input never arrived still fails on
+/// its own assertions about the output.
+fn write_input(stdin: &mut ChildStdin, input: &str) {
+    match stdin.write_all(input.as_bytes()) {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::BrokenPipe => {}
+        Err(err) => panic!("write to carve stdin: {err}"),
+    }
+}
+
+fn run_input(args: &[&str], input: &str) -> Output {
+    let mut child = spawn(args);
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    write_input(&mut stdin, input);
+    drop(stdin);
     child.wait_with_output().unwrap()
 }
 
@@ -120,4 +133,25 @@ fn allow_loss_offers_exactly_the_two_closed_codes() {
     assert!(!line.contains("table-section-attributes-dropped"), "{line}");
     assert!(line.contains("raw-format-dropped"), "{line}");
     assert!(line.contains("ruby-flattened"), "{line}");
+}
+
+/// `--allow-loss` refuses an unknown code before `carve` reads stdin, so the
+/// helper's write races the child's exit. This closes the race the other way
+/// round - wait for the refusal first - so the closed pipe is certain rather
+/// than occasional, and pins that the helper survives it.
+#[test]
+fn the_helper_survives_a_child_that_exits_before_reading_stdin() {
+    let mut child = spawn(&[
+        "--plain",
+        "--allow-loss",
+        "table-section-attributes-dropped",
+    ]);
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    assert_eq!(child.wait().unwrap().code(), Some(2));
+    assert_eq!(
+        stdin.write_all(b"text\n").unwrap_err().kind(),
+        ErrorKind::BrokenPipe,
+        "the refused child left its stdin readable, so this test pins nothing"
+    );
+    write_input(&mut stdin, "text\n");
 }
