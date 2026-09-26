@@ -20261,6 +20261,23 @@ fn link_destination_value(run: &str) -> Option<String> {
     Some(href)
 }
 
+/// Whether `text`, which starts at a `(`, opens an inline link destination
+/// that closes: what a bare `]` directly before it would turn into a link.
+///
+/// Only the first `LINK_TARGET_PROBE_CAP` bytes are read, so a writer asking
+/// once per `(` stays linear. A target that closes past the cap answers `false`,
+/// which leaves the `(` to the escape search rather than escaping it.
+pub(crate) fn opens_inline_link_target(text: &str) -> bool {
+    const LINK_TARGET_PROBE_CAP: usize = 4096;
+    let mut end = text.len().min(LINK_TARGET_PROBE_CAP);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let bytes = &text.as_bytes()[..end];
+    bytes.first() == Some(&b'(')
+        && read_link_target(bytes, 1, bytes.iter().rposition(|&b| b == b')')).is_some()
+}
+
 fn read_link_target(
     bytes: &[u8],
     start: usize,
