@@ -874,8 +874,8 @@ impl Renderer {
             }
             InlineNode::Tag(n) => {
                 let mut a = attrs(n.attrs.as_ref());
-                a.insert("id".into(), Json::String(n.name.clone())); /* `tag` is a PART 12 type classified under mention by the profile, so the shared map deliberately has no tag key. */
-                let Some(name) = self.nth_name("mention", 1) else {
+                a.insert("id".into(), Json::String(n.name.clone()));
+                let Some(name) = self.name("tag") else {
                     return;
                 };
                 out.push(node_marked(name, a, Vec::new(), marks));
