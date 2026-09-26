@@ -126,6 +126,98 @@ class DivergenceReasons(unittest.TestCase):
         self.assertIn("carveAbbreviationDefinition", published)
 
 
+class NamedNodeDecisions(unittest.TestCase):
+    """`markCarrierNodes` and `preservationNodes` are decisions, not prose.
+
+    `decisions()` read `types` and `unmapped` only, so a rename in either
+    section passed the difference check in silence - measured against a
+    carve-grammars branch renaming `carveEmptyMark`, where the checker printed
+    "every assertion holds" and exited 0 (markup-carve/carve-rs#1971). The
+    engine reads both sections: `src/prosemirror` picks the carrier by the entry
+    whose `attrs` holds `markType`, and the preserved names by the entries that
+    have an `attrs` at all.
+
+    The mutants are applied to the DOCUMENT rather than to a git branch, and
+    `compare` is the function the git plumbing feeds - the plumbing itself is
+    covered by the class above.
+    """
+
+    def setUp(self):
+        self.document = json.loads(MAP.read_text(encoding="utf-8"))
+
+    def decisions_of(self, document):
+        return check_schema_map.decisions(document)
+
+    def mutate(self, before, after):
+        text = json.dumps(self.document)
+        self.assertIn(f'"{before}"', text, f"{before} is not in the map")
+
+        return json.loads(text.replace(f'"{before}"', f'"{after}"'))
+
+    def refusal(self, mutant):
+        with self.assertRaises(check_schema_map.Failure) as caught:
+            check_schema_map.compare(
+                self.decisions_of(self.document),
+                self.decisions_of(mutant),
+                {},
+                "pin_is_current",
+                "the mutant",
+            )
+        self.assertEqual(caught.exception.check, "pin_is_current")
+
+        return caught.exception.message
+
+    def test_both_sections_reach_the_decision_set(self):
+        keys = self.decisions_of(self.document)
+        self.assertIn("carrier:carveEmptyMark", keys)
+        self.assertIn("preserved:carveUnsupported", keys)
+        self.assertIn("preserved:carveUnsupportedInline", keys)
+        self.assertNotIn("carrier:about", keys, "the section's prose is not a node")
+        self.assertNotIn("preserved:about", keys)
+
+    def test_a_renamed_carrier_is_refused(self):
+        message = self.refusal(self.mutate("carveEmptyMark", "carveEmptyMarkRENAMED"))
+        self.assertIn("carrier:carveEmptyMark", message)
+        self.assertIn("carrier:carveEmptyMarkRENAMED", message)
+
+    def test_a_renamed_preserved_node_is_refused(self):
+        message = self.refusal(
+            self.mutate("carveUnsupportedInline", "carveUnsupportedInlineRENAMED")
+        )
+        self.assertIn("preserved:carveUnsupportedInline", message)
+
+    def test_a_moved_carrier_attribute_is_refused(self):
+        """The attribute the loader SELECTS BY, which a rename alone would keep."""
+        message = self.refusal(self.mutate("markType", "markKind"))
+        self.assertIn("carrier:carveEmptyMark", message)
+        self.assertIn("markKind", message)
+
+    def test_a_changed_group_is_refused(self):
+        mutant = json.loads(json.dumps(self.document))
+        mutant["markCarrierNodes"]["carveEmptyMark"]["group"] = "block"
+        self.assertIn("carrier:carveEmptyMark", self.refusal(mutant))
+
+    def test_the_map_against_itself_is_no_difference(self):
+        """The control: the refusals above came from the mutation."""
+        used = check_schema_map.compare(
+            self.decisions_of(self.document),
+            self.decisions_of(json.loads(MAP.read_text(encoding="utf-8"))),
+            {},
+            "pin_is_current",
+            "itself",
+        )
+        self.assertEqual(used, set())
+
+    def test_the_sections_are_named_where_the_loader_reads_them(self):
+        """A rename of either section key would make the new decisions vanish."""
+        self.assertEqual(
+            [key for key, _ in check_schema_map.NAMED_NODE_SECTIONS],
+            ["markCarrierNodes", "preservationNodes"],
+        )
+        for key, _ in check_schema_map.NAMED_NODE_SECTIONS:
+            self.assertIsInstance(self.document.get(key), dict, f"{key} is not in the map")
+
+
 class ReasonShapes(unittest.TestCase):
     """The shape gate needs no upstream: it reads the declaration alone."""
 
