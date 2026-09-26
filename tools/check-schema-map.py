@@ -9,7 +9,8 @@ measured that commit, so the copy could fall behind in silence
     python3 tools/check-schema-map.py --grammars <carve-grammars checkout>
 
 The subject is the set of DECISIONS - which Carve type maps to which ProseMirror
-name, or is declared unmappable - not the commit distance. carve-grammars merges
+name or is declared unmappable, and the nodes the two sections outside `types`
+name, which `src/prosemirror` reads as well - not the commit distance. carve-grammars merges
 continuously, so a gate on distance would be red from any open pull request and
 clearable only by luck; the distance is reported as a number instead.
 
@@ -35,6 +36,16 @@ FULL_REV_RE = re.compile(r"^[0-9a-f]{40}$")
 # `notes` is local prose, and `attrs`/`aliasOf` are upstream keys this engine's
 # loader never reads. A difference in one of them is not a decision.
 DECISION_KEYS = ("kind", "pm", "accepts")
+# The two sections that name nodes belonging to no Carve type. `src/prosemirror`
+# reads both - the carrier by the entry whose `attrs` holds `markType`, the
+# preserved pair by the entries that have an `attrs` at all - so a rename or a
+# moved attribute upstream is a DECISION and not prose. Keyed with a prefix so
+# the name cannot collide with a Carve type, matching carve-php's `carrier:`.
+NAMED_NODE_SECTIONS = (("markCarrierNodes", "carrier"), ("preservationNodes", "preserved"))
+# `group` says where the node may appear and `kind` whether it is a node at all;
+# both change what a bridge may write. The ATTRIBUTE NAMES come with them
+# because the loader picks the carrier by one of them.
+NAMED_NODE_KEYS = ("kind", "group")
 NODE_NAME_RE = re.compile(r"^carve[A-Z][A-Za-z0-9]*$")
 
 # What a divergence may say about upstream, and which of those a checker can
@@ -66,6 +77,17 @@ def decisions(doc: dict) -> dict:
         out[ty] = ("type",) + tuple(json.dumps(entry.get(k)) for k in DECISION_KEYS)
     for ty in doc.get("unmapped") or {}:
         out[ty] = ("unmapped",)
+    for key, tag in NAMED_NODE_SECTIONS:
+        for name, entry in (doc.get(key) or {}).items():
+            # `about` is the section's own prose, not a node.
+            if name == "about" or not isinstance(entry, dict):
+                continue
+            attrs = entry.get("attrs")
+            out[f"{tag}:{name}"] = (
+                (tag,)
+                + tuple(json.dumps(entry.get(k)) for k in NAMED_NODE_KEYS)
+                + (json.dumps(sorted(attrs) if isinstance(attrs, dict) else attrs),)
+            )
     return out
 
 
