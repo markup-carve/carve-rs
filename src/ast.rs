@@ -436,6 +436,7 @@ fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
         | InlineNode::Abbreviation(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
@@ -1150,6 +1151,7 @@ pub enum InlineNode {
     Extension(InlineExtension),
     Abbreviation(Abbreviation),
     Footnote(Footnote),
+    NonBreakingSpace(NonBreakingSpace),
     SoftBreak(Break),
     HardBreak(Break),
     CriticInsert(CriticInsert),
@@ -1193,6 +1195,7 @@ impl InlineNode {
             Self::Extension(n) => n.pos.as_ref(),
             Self::Abbreviation(n) => n.pos.as_ref(),
             Self::Footnote(n) => n.pos.as_ref(),
+            Self::NonBreakingSpace(n) => n.pos.as_ref(),
             Self::SoftBreak(n) | Self::HardBreak(n) => n.pos.as_ref(),
             Self::CriticInsert(n) => n.pos.as_ref(),
             Self::CriticDelete(n) => n.pos.as_ref(),
@@ -1277,6 +1280,12 @@ pub struct Code {
     pub value: String,
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonBreakingSpace {
+    pub attrs: Option<Attrs>,
     pub pos: Option<Pos>,
 }
 

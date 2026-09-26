@@ -1672,6 +1672,7 @@ fn plain_inlines_typography_at(
     let source = smart == crate::extension::SmartTypographyMode::Source;
     for node in nodes {
         match node {
+            InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::Text(s) => out.push_str(&s.value),
             // Visible prose, so it feeds derived text (carve-rs#800). This has to
             // move together with `plain_inlines_parse`'s arm: the parse-time
@@ -1787,13 +1788,6 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
         out.push('"');
     }
     out.push('>');
-    // A code block's content is VERBATIM but not RAW: PART 12 §3 puts the
-    // no-break-space sentinel U+E000 on `code_block.content` alongside
-    // `text.value`, `code.value` and `literal_inline.content`, and a consumer
-    // MUST map it rather than emit it. Only `raw_block.content` is excluded,
-    // because that one is byte-for-byte passthrough. Writing the private-use
-    // character through is not merely untidy - a downstream typesetter draws
-    // the font's `.notdef` box for it, silently.
     write_escaped_text_nbsp(out, &c.content);
     out.push_str("\n</code></pre>");
 }
@@ -3719,6 +3713,13 @@ fn render_inline_after(
                 write_escaped_text(out, &format!("[^{id}]"));
             }
         }
+        InlineNode::NonBreakingSpace(n) => {
+            if n.attrs.is_some() {
+                out.push_str(&format!("<span{}>&nbsp;</span>", render_attrs(&n.attrs)));
+            } else {
+                out.push_str("&nbsp;");
+            }
+        }
         InlineNode::SoftBreak(_) => out.push('\n'),
         InlineNode::HardBreak(_) => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
@@ -3808,6 +3809,7 @@ fn flatten_text_at(nodes: &[InlineNode], depth: usize) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
+            InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::Text(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),

@@ -198,6 +198,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
         | InlineNode::Abbreviation(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
@@ -257,6 +258,7 @@ pub(crate) fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::Extension(n) => n.pos.as_mut(),
         InlineNode::Abbreviation(n) => n.pos.as_mut(),
         InlineNode::Footnote(n) => n.pos.as_mut(),
+        InlineNode::NonBreakingSpace(n) => n.pos.as_mut(),
         InlineNode::SoftBreak(n) => n.pos.as_mut(),
         InlineNode::HardBreak(n) => n.pos.as_mut(),
         InlineNode::CriticInsert(n) => n.pos.as_mut(),

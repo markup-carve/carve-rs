@@ -360,6 +360,7 @@ fn push_inline_children<'a>(
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
         | InlineNode::Abbreviation(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)

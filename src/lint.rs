@@ -970,6 +970,7 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::Abbreviation(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)

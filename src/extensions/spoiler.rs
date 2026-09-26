@@ -17,7 +17,8 @@
 //!
 //! Carve only emits the marker; the blur + reveal is the host's CSS (like the
 //! Mermaid extension). Author attributes merge onto the output element - the
-//! `spoiler` base class ahead of author classes, then id / key-values - with
+//! `spoiler` base class merges at the authored class slot, or follows the
+//! authored attributes when no class slot exists - with
 //! the always-on attribute hardening (`render_attrs_after_class` drops
 //! `on*` / `srcdoc` / `formaction` and neutralizes dangerous values), so a
 //! `{onclick=...}` can never reach the output.
@@ -25,7 +26,7 @@
 use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension};
 use crate::escape::escape_attr;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
-use crate::render::render_attrs_after_class;
+use crate::render::{render_attrs_after_class, render_attrs_with_base_class};
 
 /// The extra class a static (revealed) spoiler carries (after the base
 /// `spoiler` class): the blur is dropped, the content shown plainly.
@@ -149,26 +150,19 @@ impl CarveExtension for Spoiler {
     }
 }
 
-/// Build the output element's attribute string: `base` (one or more space-
-/// separated classes) ahead of any author classes, then id / key-values via the
-/// shared `render_attrs_after_class` (always-on attribute hardening + value
-/// escaping). Class-first, matching carve-php and core math.
+/// Merge the structural class at the authored class slot, or append it after
+/// authored attributes when that slot is absent. Without source order, use the
+/// canonical attribute order shared by other AST renderers.
 fn open_attrs_with_base(attrs: Option<&Attrs>, base: &str) -> String {
     match attrs {
-        Some(a) => {
-            let mut classes: Vec<String> = base.split(' ').map(str::to_string).collect();
-            for class in &a.classes {
-                if !classes.contains(class) {
-                    classes.push(class.clone());
-                }
-            }
+        Some(a) if a.classes.is_empty() && !a.order.is_empty() => {
             format!(
-                " class=\"{}\"{}",
-                escape_attr(&classes.join(" ")),
+                "{} class=\"{}\"",
                 render_attrs_after_class(a),
+                escape_attr(base)
             )
         }
-        None => format!(" class=\"{}\"", escape_attr(base)),
+        _ => render_attrs_with_base_class(&attrs.cloned(), base),
     }
 }
 

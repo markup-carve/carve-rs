@@ -570,7 +570,7 @@ fn spoiler_inline_merges_classes_and_strips_event_handler() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options(":spoiler[x]{#s .big onclick=\"y\"}", &opts),
-        "<p><span class=\"spoiler big\" id=\"s\">x</span></p>"
+        "<p><span id=\"s\" class=\"spoiler big\">x</span></p>"
     );
 }
 

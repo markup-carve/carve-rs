@@ -975,10 +975,9 @@ fn verse_lines_that_were_not_rewritten_keep_their_columns() {
     );
 }
 
-/// A line that IS rewritten stays unplaced, and only that line - its neighbor
-/// keeps its span. Before this, one indented line cost the whole stanza.
+/// Text and each generated indentation column retain their own source span.
 #[test]
-fn an_indented_verse_line_loses_only_its_own_span() {
+fn an_indented_verse_line_places_text_and_spaces_separately() {
     let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
     let doc = parse_with_positions(source);
 
@@ -998,27 +997,29 @@ fn an_indented_verse_line_loses_only_its_own_span() {
         ),
         "Roses are red,"
     );
-    // The rewritten line IS placed. Its value holds a placeholder where each
-    // indent space was, and that is a ONE-FOR-ONE substitution, so the span
-    // covers exactly the same code points the line occupies - reading each
-    // placeholder back as a space gives the slice verbatim.
-    //
-    // This used to assert the opposite, on the reasoning that a value differing
-    // from its slice cannot be placed. That conflated two different things: a
-    // value that differs because a character was SUBSTITUTED still spans the
-    // same region, unlike one that differs because characters were CONSUMED (an
-    // escape) or INVENTED (a resolved title). Only the latter two have no span.
-    let last = stanza.children.last().expect("a second line");
-    let carve::ast::InlineNode::Text(indented) = last else {
-        panic!("it ends with text");
+    let spaces: Vec<_> = stanza
+        .children
+        .iter()
+        .filter_map(|n| {
+            if let carve::ast::InlineNode::NonBreakingSpace(n) = n {
+                n.pos.as_ref()
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(spaces.len(), 2);
+    for pos in spaces {
+        assert_eq!(slice(source, pos), " ");
+    }
+    let carve::ast::InlineNode::Text(last) = stanza.children.last().unwrap() else {
+        panic!("text");
     };
-    let pos = indented.pos.as_ref().expect("the rewritten line is placed");
-    assert_eq!(slice(source, pos), "  Violets are blue.");
     assert_eq!(
-        indented.value.replace('\u{e000}', " "),
-        slice(source, pos),
-        "the placeholders do not stand one-for-one for the indent they replaced"
+        slice(source, last.pos.as_ref().unwrap()),
+        "Violets are blue."
     );
+    assert_eq!(last.value, "Violets are blue.");
 }
 
 /// A TAB in the indent is the case that genuinely cannot be placed: it expands

@@ -783,6 +783,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let mut covered = 0usize;
     let mut lossy = 0usize;
     let mut source_lossy: Vec<String> = Vec::new();
+    let mut nbsp_only_degraded = Vec::new();
     let mut undeclared: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
@@ -822,6 +823,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             }
             covered += 1;
         } else {
+            if pm.dropped.is_empty()
+                && pm.degraded.len() == 1
+                && pm.degraded.contains_key("non_breaking_space")
+            {
+                nbsp_only_degraded.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            }
             lossy += 1;
         }
     }
@@ -1401,8 +1408,25 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // dropped. Corpus 498-5 joins the strict set. Classifying every document
     // at this pin and at 34e93335 with the same engine found no existing
     // document moving between sets: 1454/415 becomes 1455/417.
-    const STRICT: usize = 1455;
-    const LOSSY: usize = 417;
+    nbsp_only_degraded.sort();
+    assert_eq!(nbsp_only_degraded, vec![
+        "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
+        "29-non-breaking-space.crv",
+        "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
+        "346-a-line-block-s-last-body-line-keeps-its-backslash-2.crv",
+        "348-a-closed-inline-construct-spanning-a-verse-boundary-5.crv",
+        "400-a-container-starts-at-its-opening-markup-even-where-its-first-child-is-unplaced.crv",
+        "402-a-container-ends-at-the-markup-that-closes-it-even-where-its-last-child-is-unplaced.crv",
+        "41-line-blocks-2.crv",
+        "41-line-blocks-3.crv",
+        "41-line-blocks-9.crv",
+        "421-a-sigil-fence-takes-its-attribute-line.crv",
+        "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
+    ]);
+    // Twelve documents now report the generated-space spelling distinction.
+    // Their exact names are pinned above; the current corpus has 1872 files.
+    const STRICT: usize = 1443;
+    const LOSSY: usize = 429;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

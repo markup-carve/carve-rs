@@ -346,6 +346,7 @@ fn validate_identity(sidecar: &NodeIdentity, ast: &Value) -> Result<(), AstSidec
 
 fn validate_ranges(sidecar: &AnnotationRanges, ast: &Value) -> Result<(), AstSidecarError> {
     version(sidecar.version)?;
+    let metrics = text_metrics(ast);
     let mut ids = HashSet::new();
     for range in &sidecar.ranges {
         nonempty(&range.id, "range id")?;
@@ -353,57 +354,88 @@ fn validate_ranges(sidecar: &AnnotationRanges, ast: &Value) -> Result<(), AstSid
         if !ids.insert(&range.id) {
             return Err(error("annotation range ids must be unique"));
         }
-        let start = node_at(ast, &range.start.path)?;
-        let end = node_at(ast, &range.end.path)?;
-        for (anchor, node) in [(&range.start, start), (&range.end, end)] {
-            if anchor.offset > node_text_length(node) {
+        let mut positions = Vec::new();
+        for anchor in [&range.start, &range.end] {
+            node_at(ast, &anchor.path)?;
+            let (start, length) = metrics
+                .get(&anchor.path)
+                .ok_or_else(|| error("anchor does not address AST text"))?;
+            if anchor.offset > *length {
                 return Err(error(format!(
                     "anchor at {:?} exceeds node text",
                     anchor.path
                 )));
             }
+            positions.push(start + anchor.offset);
         }
-        if range.start.path == range.end.path && range.start.offset > range.end.offset {
+        if positions[0] > positions[1] {
             return Err(error(format!("range {:?} ends before it starts", range.id)));
-        }
-        let same_file = start.pointer("/pos/file") == end.pointer("/pos/file");
-        let first = start.pointer("/pos/startOffset").and_then(Value::as_u64);
-        let last = end.pointer("/pos/endOffset").and_then(Value::as_u64);
-        if let (Some(first), Some(last)) = (first, last) {
-            if same_file && first > last {
-                return Err(error(format!("range {:?} ends before it starts", range.id)));
-            }
         }
     }
     Ok(())
 }
 
-fn node_text_length(node: &Value) -> usize {
-    let mut length = 0;
-    let mut pending = vec![node];
-    while let Some(value) = pending.pop() {
+const TEXT_FIELDS: &[&str] = &[
+    "target",
+    "title",
+    "children",
+    "items",
+    "rows",
+    "cells",
+    "blocks",
+    "inline",
+    "content",
+    "prefix",
+    "locator",
+    "suffix",
+    "old",
+    "new",
+    "pairs",
+    "base",
+    "annotation",
+    "caption",
+    "shortCaption",
+    "fallback",
+];
+
+fn text_metrics(ast: &Value) -> HashMap<String, (usize, usize)> {
+    let mut metrics = HashMap::new();
+    let mut cursor = 0;
+    let mut pending = vec![(String::new(), ast, None)];
+    while let Some((path, value, entered)) = pending.pop() {
+        if let Some(start) = entered {
+            metrics.insert(path, (start, cursor - start));
+            continue;
+        }
         match value {
             Value::Object(object) => {
-                if let Some(text) = object
-                    .get("value")
-                    .or_else(|| object.get("content"))
-                    .and_then(Value::as_str)
-                {
-                    length += text.chars().count();
-                } else {
-                    pending.extend(
-                        object
+                if let Some(kind) = object.get("type").and_then(Value::as_str) {
+                    pending.push((path.clone(), value, Some(cursor)));
+                    cursor += match kind {
+                        "soft_break" | "hard_break" | "non_breaking_space" => 1,
+                        _ => ["value", "content", "text", "alt"]
                             .iter()
-                            .filter(|(field, _)| structural_field(field))
-                            .map(|(_, value)| value),
-                    );
+                            .find_map(|key| object.get(*key).and_then(Value::as_str))
+                            .map_or(0, |text| text.chars().count()),
+                    };
+                }
+                for key in TEXT_FIELDS.iter().rev() {
+                    if let Some(child) = object.get(*key) {
+                        if child.is_object() || child.is_array() {
+                            pending.push((format!("{path}/{key}"), child, None));
+                        }
+                    }
                 }
             }
-            Value::Array(values) => pending.extend(values),
+            Value::Array(values) => {
+                for (index, child) in values.iter().enumerate().rev() {
+                    pending.push((format!("{path}/{index}"), child, None));
+                }
+            }
             _ => {}
         }
     }
-    length
+    metrics
 }
 
 fn validate_provenance(sidecar: &Provenance, ast: &Value) -> Result<(), AstSidecarError> {

@@ -643,6 +643,10 @@ impl Renderer {
     fn inline(&mut self, node: &InlineNode, marks: &[Json], out: &mut Vec<Json>) {
         match node {
             InlineNode::Text(n) => self.push_text(out, &n.value, marks),
+            InlineNode::NonBreakingSpace(_) => {
+                self.degrade("non_breaking_space");
+                self.push_text(out, "\u{00a0}", marks);
+            }
             InlineNode::EscapedText(n) => {
                 self.degrade("escaped_text");
                 self.push_text(out, &n.value, marks);
@@ -1339,6 +1343,7 @@ fn push_plain_text(nodes: &[InlineNode], out: &mut String) {
     for node in nodes {
         match node {
             InlineNode::Text(t) => out.push_str(&t.value),
+            InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::EscapedText(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(t) => out.push_str(smart_punctuation_glyph(t)),
             InlineNode::Code(c) => out.push_str(&c.value),

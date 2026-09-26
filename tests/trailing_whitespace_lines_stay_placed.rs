@@ -129,14 +129,31 @@ fn a_verse_line_ending_in_one_space_is_placed() {
 }
 
 #[test]
-fn a_verse_line_ending_in_two_spaces_is_unchanged() {
+fn a_verse_line_ending_in_two_spaces_places_each_node() {
     // THE CONTROL next to it. Two columns are a medial gap, so they become NBSP
     // CONTENT rather than being dropped, and the line was always placeable.
     let found = texts("::: |\ndef  \n:::\n");
     assert_eq!(found.len(), 1);
-    assert_eq!(found[0].1, Some((6, 11)));
-    assert!(found[0].0.starts_with("def"));
-    assert_eq!(found[0].0.chars().count(), 5, "the two gaps are content");
+    assert_eq!(found[0].1, Some((6, 9)));
+    assert_eq!(found[0].0, "def");
+    let doc = carve::parse_with_options(
+        "::: |\ndef  \n:::\n",
+        &Options::default().with_positions(true),
+    );
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("paragraph");
+    };
+    assert_eq!(stanza.children.len(), 3);
+    for (i, node) in stanza.children[1..].iter().enumerate() {
+        let InlineNode::NonBreakingSpace(space) = node else {
+            panic!("space");
+        };
+        let pos = space.pos.as_ref().unwrap();
+        assert_eq!((pos.start_offset, pos.end_offset), (9 + i, 10 + i));
+    }
 }
 
 #[test]

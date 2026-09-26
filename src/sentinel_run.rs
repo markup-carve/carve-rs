@@ -26,12 +26,8 @@
 //! together for no gain and make a slot added at one site a renumbering at the
 //! others. Ported from markup-carve/carve-js#1289's `src/sentinel-run.ts`.
 //!
-//! U+E000 is NOT allocatable here, and no caller should ask for it. It is the
-//! parser's in-band marker for a non-breaking space ([`crate::NBSP_PLACEHOLDER`]),
-//! shared with the HTML, plain, ANSI and Markdown renderers, so an authored
-//! U+E000 is already indistinguishable from a parsed nbsp before any writer
-//! runs. That is the other half of carve#678 and needs a decision about what the
-//! parsed text of an nbsp is, not a change here.
+//! The allocation pool retains its historical start at U+E001. Literal
+//! U+E000 is ordinary text; generated spaces are explicit AST nodes.
 
 use std::collections::BTreeSet;
 
