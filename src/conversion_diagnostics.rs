@@ -318,7 +318,9 @@ mod tests {
         let markdown = crate::render_markdown(&doc).unwrap();
         assert!(carve.lines().any(|line| line.contains("one two three")));
         // PART 11 section 9a: the Markdown target keeps the hard break as `<br>`.
-        assert!(markdown.lines().any(|line| line.contains("one two<br>three")));
+        assert!(markdown
+            .lines()
+            .any(|line| line.contains("one two<br>three")));
         assert!(matches!(
             crate::parse(&carve).children[0],
             crate::BlockNode::Table(_)
