@@ -1585,6 +1585,7 @@ impl<'a> Importer<'a> {
         // The keys a mapped declaration fills, so a presentational `align` /
         // `valign` beside one can be refused wherever the source put it.
         let style_filled = self.style_filled_attribute_names(handle, &tag);
+        let mut key_order: Vec<String> = Vec::new();
         if let NodeData::Element { attrs, .. } = &handle.data {
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.to_string();
@@ -1622,11 +1623,20 @@ impl<'a> Importer<'a> {
                     // and the author wrote it. Dropping `aria-label` was an
                     // accessibility regression applied silently and in bulk to
                     // exactly the documents an importer runs on (carve-rs#1060).
-                    out.key_values.insert(name, value);
+                    out.key_values.insert(name.clone(), value);
+                    key_order.push(name);
                 }
             }
         }
         self.drop_derived(handle, &mut out);
+        // Keys in the order the element spells them, as `fmt` keeps them
+        // (carve-rs#2012). Writing exit only, like every `order` (carve#1647).
+        if self.writing && out.key_values.len() > 1 {
+            out.order = [AttrSlot::Id, AttrSlot::Class]
+                .into_iter()
+                .chain(key_order.into_iter().map(AttrSlot::Key))
+                .collect();
+        }
         if out == Attrs::default() {
             None
         } else {
