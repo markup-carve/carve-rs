@@ -458,6 +458,23 @@ fn collect_items(blocks: &[BlockNode]) -> Vec<GroupItem<'_>> {
     items
 }
 
+/// Does this container hold a code block this extension would render as a panel?
+///
+/// Asked BEFORE the rewrite, for the reason `tabs::holds_a_tab` gives: the
+/// render-stage decline hands the CARRIER to the core renderer, which writes the
+/// sentinel name as the class and drops every authored attribute
+/// (markup-carve/carve-rs#1979).
+fn holds_a_code_block(block: &BlockNode) -> bool {
+    let children = match block {
+        BlockNode::Admonition(admonition) => &admonition.children,
+        BlockNode::Div(div) => &div.children,
+        _ => return false,
+    };
+    children
+        .iter()
+        .any(|child| matches!(child, BlockNode::CodeBlock(_)))
+}
+
 /// Is this node a code group - either the `::: code-group` typed div, which
 /// parses to an admonition, or a div carrying the class?
 fn is_code_group(block: &BlockNode) -> bool {
@@ -473,7 +490,7 @@ fn is_code_group(block: &BlockNode) -> bool {
 
 fn rewrite_blocks(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
-        if is_code_group(block) {
+        if is_code_group(block) && holds_a_code_block(block) {
             *block = match block {
                 BlockNode::Admonition(admonition) => {
                     rewrite_blocks(&mut admonition.children);
