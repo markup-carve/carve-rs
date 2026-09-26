@@ -2,6 +2,10 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 fn run(args: &[&str]) -> Output {
+    run_input(args, "`x`{=latex}\n")
+}
+
+fn run_input(args: &[&str], input: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_carve"))
         .args(args)
         .stdin(Stdio::piped())
@@ -13,7 +17,7 @@ fn run(args: &[&str]) -> Output {
         .stdin
         .take()
         .unwrap()
-        .write_all(b"`x`{=latex}\n")
+        .write_all(input.as_bytes())
         .unwrap();
     child.wait_with_output().unwrap()
 }
@@ -56,4 +60,35 @@ fn report_is_machine_readable_and_bounded() {
     assert!(report.contains("\"totalLosses\":1"));
     assert!(report.contains("\"truncated\":true"));
     assert!(report.contains("\"losses\":[]"));
+}
+
+#[test]
+fn table_section_loss_can_be_allowed_with_a_zero_report_limit() {
+    let ast = r#"{"type":"document","srcByteLength":0,"children":[{"type":"table","rows":[],"rowGroups":{"headRows":0,"footRows":0,"bodies":[],"headAttrs":{"id":"head"}}}]}"#;
+    let denied = run_input(
+        &[
+            "--from-json",
+            "--plain",
+            "--strict-losses",
+            "--max-render-losses",
+            "0",
+        ],
+        ast,
+    );
+    assert_eq!(denied.status.code(), Some(1));
+    assert!(denied.stdout.is_empty());
+    let allowed = run_input(
+        &[
+            "--from-json",
+            "--plain",
+            "--strict-losses",
+            "--max-render-losses",
+            "0",
+            "--allow-loss",
+            "table-section-attributes-dropped",
+        ],
+        ast,
+    );
+    assert!(allowed.status.success(), "{:?}", allowed.stderr);
+    assert!(allowed.stderr.is_empty());
 }

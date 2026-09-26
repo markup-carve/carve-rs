@@ -131,6 +131,41 @@ pub fn conversion_diagnostics(
                     )),
                     _ => {}
                 }
+                if ty == Some("table") {
+                    if let Some(Value::Object(groups)) = object.get("rowGroups") {
+                        let mut fields = vec![
+                            ("rowGroups.headAttrs".to_owned(), groups.get("headAttrs")),
+                            ("rowGroups.footAttrs".to_owned(), groups.get("footAttrs")),
+                        ];
+                        if let Some(Value::Array(bodies)) = groups.get("bodies") {
+                            for (index, body) in bodies.iter().enumerate() {
+                                fields.push((
+                                    format!("rowGroups.bodies[{index}].attrs"),
+                                    body.as_object().and_then(|b| b.get("attrs")),
+                                ));
+                            }
+                        }
+                        for (field, attrs) in fields {
+                            if attrs
+                                .and_then(Value::as_object)
+                                .is_some_and(|a| !a.is_empty())
+                            {
+                                report.total_diagnostics += 1;
+                                if report.diagnostics.len() < max_diagnostics {
+                                    report.diagnostics.push(ConversionDiagnostic {
+                                        code: ConversionDiagnosticCode::FieldUnspellable,
+                                        node: "table".to_owned(),
+                                        field: Some(field),
+                                        message:
+                                            "Carve source cannot spell table section attributes"
+                                                .to_owned(),
+                                        pos: position(value),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
                 for (code, field, message) in losses {
                     report.total_diagnostics += 1;
                     if report.diagnostics.len() < max_diagnostics {

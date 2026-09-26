@@ -4455,10 +4455,7 @@ impl<'a> Importer<'a> {
             path,
             &mut sections,
         );
-        // Whatever `row_groups` did not place. A `<thead>` and a `<tfoot>` have
-        // no slot at all - the field states the head and the foot as row COUNTS
-        // - and a `<tbody>`'s attributes reach nothing when the field itself was
-        // not kept.
+        // Report section attributes that could not be assigned to the partition.
         let sections_with_rows: BTreeSet<usize> = trs.iter().filter_map(|(_, s)| *s).collect();
         for (id, slot) in sections.attrs.iter().enumerate() {
             let Some((own, own_path)) = slot else {
@@ -4470,8 +4467,8 @@ impl<'a> Importer<'a> {
             // zero-count group would put a body in the partition that describes
             // no rows.
             let reason = match tag {
-                "thead" => "a table's head is stated as a row count and has no attribute slot",
-                "tfoot" => "a table's foot is stated as a row count and has no attribute slot",
+                "thead" => "the head cannot be represented in the retained row partition",
+                "tfoot" => "the foot cannot be represented in the retained row partition",
                 _ if sections_with_rows.contains(&id) => {
                     "the row grouping this body belongs to was not kept, and nothing else holds it"
                 }
@@ -4520,7 +4517,7 @@ impl<'a> Importer<'a> {
             short_caption: None,
             columns: Vec::new(),
             rows: result,
-            row_groups,
+            row_groups: row_groups.map(Box::new),
             pos: None,
         })
     }
@@ -4583,9 +4580,6 @@ impl<'a> Importer<'a> {
         path: &str,
         sections: &mut Sections,
     ) -> Option<TableRowGroups> {
-        if trs.is_empty() {
-            return None;
-        }
         let section_of = |index: usize| -> &str {
             trs[index]
                 .1
@@ -4619,7 +4613,31 @@ impl<'a> Importer<'a> {
             return None;
         }
 
+        let mut take_section_attrs = |tag: &str| {
+            let matching: Vec<usize> = sections
+                .tags
+                .iter()
+                .enumerate()
+                .filter_map(|(i, name)| (name == tag).then_some(i))
+                .collect();
+            if matching.len() == 1 {
+                sections.attrs[matching[0]].take().map(|(attrs, own_path)| {
+                    self.unspellable.push((node.clone(), own_path, format!("Dropped rowGroups.{} because Carve source cannot spell section attributes", if tag == "thead" { "headAttrs" } else { "footAttrs" }), HtmlImportDiagnosticCode::StructureUnspellable));
+                    attrs
+                })
+            } else {
+                None
+            }
+        };
+        let head_attrs = take_section_attrs("thead");
+        let foot_attrs = take_section_attrs("tfoot");
+        let body_paths: Vec<Option<String>> = sections
+            .attrs
+            .iter()
+            .map(|slot| slot.as_ref().map(|(_, path)| path.clone()))
+            .collect();
         let mut bodies: Vec<TableBodyGroup> = Vec::new();
+        let mut body_sections = Vec::new();
         let mut index = middle.start;
         while index < middle.end {
             let section = trs[index].1;
@@ -4650,12 +4668,36 @@ impl<'a> Importer<'a> {
                 .and_then(|id| sections.attrs.get_mut(id))
                 .and_then(Option::take)
                 .map(|(a, _)| a);
+            body_sections.push(section);
             bodies.push(TableBodyGroup {
                 head_rows: group_head,
                 body_rows: index - body_start,
                 row_head_columns: (row_head_columns > 0).then_some(row_head_columns),
                 attrs: own,
             });
+        }
+
+        for id in 0..sections.tags.len() {
+            if sections.tags[id] != "tbody" || trs.iter().any(|(_, section)| *section == Some(id)) {
+                continue;
+            }
+            let Some((attrs, _)) = sections.attrs[id].take() else {
+                continue;
+            };
+            let index = body_sections
+                .iter()
+                .position(|section| section.is_some_and(|s| s > id))
+                .unwrap_or(bodies.len());
+            bodies.insert(
+                index,
+                TableBodyGroup {
+                    head_rows: 0,
+                    body_rows: 0,
+                    row_head_columns: None,
+                    attrs: Some(attrs),
+                },
+            );
+            body_sections.insert(index, Some(id));
         }
 
         // No `<thead>` at all: the leading run of header rows is what every
@@ -4669,7 +4711,7 @@ impl<'a> Importer<'a> {
         // BOUNDARY the field exists to record, and absorbing it away leaves a
         // single ordinary body that the derivation reproduces.
         let mut head_rows = head_rows;
-        if head_rows == 0 && bodies.len() == 1 && leading_header_rows > 0 {
+        if head_attrs.is_none() && head_rows == 0 && bodies.len() == 1 && leading_header_rows > 0 {
             let absorbed = leading_header_rows.min(bodies[0].head_rows);
             head_rows = absorbed;
             bodies[0].head_rows -= absorbed;
@@ -4684,7 +4726,17 @@ impl<'a> Importer<'a> {
             }
         }
 
-        let derivable = head_rows == leading_header_rows
+        for (index, body) in bodies.iter().enumerate() {
+            if body.attrs.is_some() {
+                let own_path = body_sections[index]
+                    .and_then(|id| body_paths[id].clone())
+                    .unwrap_or_else(|| path.to_owned());
+                self.unspellable.push((node.clone(), own_path, format!("Dropped rowGroups.bodies[{index}].attrs because Carve source cannot spell section attributes"), HtmlImportDiagnosticCode::StructureUnspellable));
+            }
+        }
+        let derivable = head_attrs.is_none()
+            && foot_attrs.is_none()
+            && head_rows == leading_header_rows
             && foot_rows == 0
             && bodies.len() <= 1
             && bodies.iter().all(|b| {
@@ -4703,6 +4755,8 @@ impl<'a> Importer<'a> {
             HtmlImportDiagnosticCode::StructureUnspellable,
         ));
         Some(TableRowGroups {
+            head_attrs,
+            foot_attrs,
             head_rows,
             bodies,
             foot_rows,

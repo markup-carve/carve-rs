@@ -1,18 +1,3 @@
-//! A `<tbody>`'s and a `<tr>`'s own attributes reach the slots the model has for
-//! them, and the sections with no slot are named on the way out.
-//!
-//! Nothing read any of them before. Measured on this engine before the change:
-//! `<table><tbody id="body" class="x"><tr><td>1</td></tr></tbody></table>`
-//! imported with `row_groups: None` and not one diagnostic, and
-//! `<table><tr id="r1"><td>a</td></tr></table>` wrote `| a |`. Both fell into
-//! the empty `attrs` slot in silence - the exact loss `markup-carve/carve#1210`
-//! exists to kill - though `TableRow::attrs` is spelled by the writer on the
-//! closing pipe and `TableBodyGroup::attrs` is in PART 12's table model.
-//!
-//! Only a BODY has a section slot. The head and the foot are stated as row
-//! COUNTS, so attributes on `<thead>` or `<tfoot>` cannot be represented at all
-//! and are reported instead. Ported from `markup-carve/carve-js#1096`.
-
 use carve::{
     from_json, html_to_ast, html_to_carve, to_json, Attrs, BlockNode, HtmlImportDiagnostic,
     HtmlImportDiagnosticCode, HtmlImportOptions, HtmlImportSeverity, TableBodyGroup,
@@ -76,8 +61,10 @@ fn a_body_section_puts_its_attributes_in_the_group() {
         "<table><thead><tr><th>a</th></tr></thead><tbody id=\"body\" class=\"x\"><tr><td>1</td></tr></tbody></table>",
     );
     assert_eq!(
-        table.row_groups,
+        table.row_groups.map(|groups| *groups),
         Some(TableRowGroups {
+            head_attrs: None,
+            foot_attrs: None,
             head_rows: 1,
             bodies: vec![TableBodyGroup {
                 head_rows: 0,
@@ -109,7 +96,8 @@ fn the_same_table_without_them_still_states_nothing() {
         table_of(
             "<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>"
         )
-        .row_groups,
+        .row_groups
+        .map(|groups| *groups),
         None
     );
 }
@@ -178,63 +166,25 @@ fn a_row_attribute_follows_its_own_row_through_the_spans() {
     assert_eq!(written, "| a | b |{#r1}\n| ^ | c |{#r2}\n");
 }
 
-/// The head and the foot are stated as row COUNTS. There is no slot, so the
-/// attributes are named on the way out rather than dropped in silence.
 #[test]
-fn a_head_or_a_foot_is_reported_by_name() {
-    assert_eq!(
-        messages(
-            "<table><thead id=\"h\"><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec![
-            "Dropped id on <thead>: a table's head is stated as a row count and has no attribute slot"
-        ]
-    );
-    assert_eq!(
-        messages(
-            "<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot class=\"f\" data-k=\"v\"><tr><td>x</td></tr></tfoot></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec![
-            "Dropped class, data-k on <tfoot>: a table's foot is stated as a row count and has no attribute slot"
-        ]
-    );
-    // The report points at the SECTION, not at the table: the path is threaded
-    // through the row walk for exactly this.
-    assert_eq!(
-        paths(
-            "<table><thead id=\"h\"><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot id=\"f\"><tr><td>x</td></tr></tfoot></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec![
-            "/table[1]/thead[1]",
-            "/table[1]/tfoot[3]",
-        ]
-    );
+fn head_and_foot_attributes_survive_import() {
+    let html = "<table><thead id=\"h\"><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot id=\"f\"><tr><td>x</td></tr></tfoot></table>";
+    let groups = table_of(html).row_groups.unwrap();
+    assert_eq!(groups.head_attrs.unwrap().id.as_deref(), Some("h"));
+    assert_eq!(groups.foot_attrs.unwrap().id.as_deref(), Some("f"));
+    assert!(messages(html, HtmlImportDiagnosticCode::AttributeDropped).is_empty());
 }
 
-/// A body group IS the run of rows it consumes, so a section with none is not a
-/// group and has nowhere to put them.
-///
-/// This is the shape a list read back off the ROWS never sees: the sections are
-/// collected on the way through the table for exactly this one.
 #[test]
-fn a_section_with_no_rows_is_reported() {
+fn an_empty_attributed_body_survives_import() {
+    let html = "<table><tbody id=\"empty\"></tbody><tbody><tr><td>1</td></tr></tbody></table>";
+    let groups = table_of(html).row_groups.unwrap();
+    assert_eq!(groups.bodies[0].body_rows, 0);
     assert_eq!(
-        messages(
-            "<table><tbody id=\"empty\"></tbody><tbody><tr><td>1</td></tr></tbody></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec!["Dropped id on <tbody>: a body group is the rows it consumes, and this one has none"]
+        groups.bodies[0].attrs.as_ref().unwrap().id.as_deref(),
+        Some("empty")
     );
-    assert_eq!(
-        paths(
-            "<table><tbody id=\"empty\"></tbody><tbody><tr><td>1</td></tr></tbody></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec!["/table[1]/tbody[1]"]
-    );
+    assert!(messages(html, HtmlImportDiagnosticCode::AttributeDropped).is_empty());
 }
 
 /// A `<thead>` that is not a prefix of the rows drops the WHOLE grouping, and a
@@ -243,7 +193,7 @@ fn a_section_with_no_rows_is_reported() {
 fn a_body_whose_grouping_was_dropped_is_reported() {
     let html =
         "<table><tbody id=\"b1\"><tr><td>1</td></tr></tbody><thead><tr><th>a</th></tr></thead></table>";
-    assert_eq!(table_of(html).row_groups, None);
+    assert_eq!(table_of(html).row_groups.map(|groups| *groups), None);
     assert_eq!(
         messages(html, HtmlImportDiagnosticCode::AttributeDropped),
         vec![
@@ -258,8 +208,12 @@ fn a_body_whose_grouping_was_dropped_is_reported() {
 #[test]
 fn a_zero_count_body_group_survives_absorption_when_it_carries_attributes() {
     assert_eq!(
-        table_of("<table><tbody id=\"hdr\"><tr><th>a</th></tr></tbody></table>").row_groups,
+        table_of("<table><tbody id=\"hdr\"><tr><th>a</th></tr></tbody></table>")
+            .row_groups
+            .map(|groups| *groups),
         Some(TableRowGroups {
+            head_attrs: None,
+            foot_attrs: None,
             head_rows: 1,
             bodies: vec![TableBodyGroup {
                 head_rows: 0,
@@ -273,7 +227,9 @@ fn a_zero_count_body_group_survives_absorption_when_it_carries_attributes() {
     // And with NOTHING to carry, the same absorption still empties the group
     // away, or the field would land on the ordinary header-and-rows table.
     assert_eq!(
-        table_of("<table><tbody><tr><th>a</th></tr></tbody></table>").row_groups,
+        table_of("<table><tbody><tr><th>a</th></tr></tbody></table>")
+            .row_groups
+            .map(|groups| *groups),
         None
     );
 }
@@ -461,8 +417,8 @@ fn a_rowspan_leaving_the_header_run_is_still_clipped() {
 fn a_partition_a_reader_cannot_derive_is_still_stated() {
     assert_eq!(
         table_of("<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>")
-            .row_groups,
-        Some(TableRowGroups {
+            .row_groups.map(|groups| *groups),
+        Some(TableRowGroups { head_attrs: None, foot_attrs: None,
             head_rows: 1,
             bodies: vec![TableBodyGroup {
                 head_rows: 0,
@@ -477,8 +433,11 @@ fn a_partition_a_reader_cannot_derive_is_still_stated() {
         table_of(
             "<table><tbody><tr><td>1</td></tr></tbody><tbody><tr><td>2</td></tr></tbody></table>"
         )
-        .row_groups,
+        .row_groups
+        .map(|groups| *groups),
         Some(TableRowGroups {
+            head_attrs: None,
+            foot_attrs: None,
             head_rows: 0,
             bodies: vec![
                 TableBodyGroup {
@@ -497,4 +456,15 @@ fn a_partition_a_reader_cannot_derive_is_still_stated() {
             foot_rows: 0,
         })
     );
+}
+
+#[test]
+fn source_loss_paths_use_final_body_indices() {
+    let losses = messages(
+        "<table><tbody id=\"a\"></tbody><tbody id=\"b\"><tr><td>1</td></tr></tbody></table>",
+        HtmlImportDiagnosticCode::StructureUnspellable,
+    )
+    .join("\n");
+    assert!(losses.contains("rowGroups.bodies[0].attrs"));
+    assert!(losses.contains("rowGroups.bodies[1].attrs"));
 }

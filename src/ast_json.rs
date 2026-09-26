@@ -2151,6 +2151,12 @@ fn write_row_groups(out: &mut String, n: &TableRowGroups) {
         write_array(out, &n.bodies, write_body_group)
     });
     w.field("footRows", |out| write_usize(out, n.foot_rows));
+    if let Some(attrs) = &n.head_attrs {
+        w.field("headAttrs", |out| write_attrs(out, attrs));
+    }
+    if let Some(attrs) = &n.foot_attrs {
+        w.field("footAttrs", |out| write_attrs(out, attrs));
+    }
     w.finish();
 }
 
@@ -3060,7 +3066,7 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         .map(decode_table_row)
         .collect::<Result<_, _>>()?;
     let row_groups = match obj.get("rowGroups") {
-        Some(value) => Some(decode_row_groups(value, rows.len())?),
+        Some(value) => Some(Box::new(decode_row_groups(value, rows.len())?)),
         None => None,
     };
     Ok(Table {
@@ -3154,6 +3160,8 @@ fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJso
         )));
     }
     Ok(TableRowGroups {
+        head_attrs: optional_named_attrs(obj, "headAttrs")?,
+        foot_attrs: optional_named_attrs(obj, "footAttrs")?,
         head_rows,
         bodies,
         foot_rows,
@@ -3795,7 +3803,14 @@ fn optional_thematic_break_marker(obj: &Map<String, Json>) -> Result<Option<char
 }
 
 fn optional_attrs(obj: &Map<String, Json>) -> Result<Option<Attrs>, AstJsonError> {
-    let Some(value) = obj.get("attrs") else {
+    optional_named_attrs(obj, "attrs")
+}
+
+fn optional_named_attrs(
+    obj: &Map<String, Json>,
+    name: &str,
+) -> Result<Option<Attrs>, AstJsonError> {
+    let Some(value) = obj.get(name) else {
         return Ok(None);
     };
     let attrs_obj = value.expect_object("attrs")?;

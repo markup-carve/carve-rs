@@ -613,7 +613,7 @@ pub struct Table {
     /// An explicit head/body/foot partition of `rows`, imported from or destined
     /// for a format whose table model has one. Carve 0.1 source has no spelling
     /// for it, so a parse never sets it.
-    pub row_groups: Option<TableRowGroups>,
+    pub row_groups: Option<Box<TableRowGroups>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -624,8 +624,8 @@ pub struct Table {
 /// each body, then the foot, and they MUST account for every row exactly once.
 /// Absent means the implicit structure every renderer already derives - the
 /// leading run of header rows as the head, everything after it as one body, no
-/// foot, no row-head columns - so a tree without it does not change shape. HTML,
-/// plain and ANSI output ignore it.
+/// foot, no row-head columns. HTML renders explicit sections; text targets
+/// retain row order and report discarded section attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRowGroups {
     /// Rows at the start of `rows` forming the table head.
@@ -635,6 +635,8 @@ pub struct TableRowGroups {
     pub bodies: Vec<TableBodyGroup>,
     /// Rows at the end of `rows` forming the table foot.
     pub foot_rows: usize,
+    pub head_attrs: Option<Attrs>,
+    pub foot_attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

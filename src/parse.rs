@@ -16913,7 +16913,9 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
                     (count("header-rows"), count("footer-rows"))
                 {
                     if head_rows + foot_rows <= n.rows.len() {
-                        n.row_groups = Some(TableRowGroups {
+                        n.row_groups = Some(Box::new(TableRowGroups {
+                            head_attrs: None,
+                            foot_attrs: None,
                             head_rows,
                             bodies: vec![TableBodyGroup {
                                 head_rows: 0,
@@ -16922,7 +16924,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
                                 attrs: None,
                             }],
                             foot_rows,
-                        });
+                        }));
                     }
                 }
             }
