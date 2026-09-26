@@ -75,6 +75,9 @@ struct CarveContext {
     /// The brackets of the inline run being written, as (text node address,
     /// bracket ordinal in that node), and whether a run has claimed them.
     brackets: BracketScope,
+    /// Clones the writer made of nodes a claimed scope already keyed, mapped to
+    /// the node each was cloned from.
+    bracket_aliases: HashMap<usize, usize>,
     /// The last text node written ended on a bare `]` that closes a pair, and
     /// nothing has been written since.
     paired_closer_carry: std::cell::Cell<bool>,
@@ -90,6 +93,8 @@ struct BracketScope {
     lone: HashSet<(usize, usize)>,
     /// A `]` the bracket scan pairs with an earlier `[`.
     paired_closers: HashSet<(usize, usize)>,
+    /// Every node the scan read.
+    keyed: HashSet<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -899,6 +904,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         open_kinds: Vec::new(),
         brackets: BracketScope::default(),
         paired_closer_carry: std::cell::Cell::new(false),
+        bracket_aliases: HashMap::new(),
     };
     let mut parts = Vec::new();
     // THE BLOCK AS WRITTEN when the tree has it. The key/value map cannot hold
@@ -2838,6 +2844,7 @@ fn render_inlines_with_caption(
     }
     // Flatten before the writer checks neighboring nodes. A ruby base can
     // start with `[` or a code fence, which changes how preceding text escapes.
+    let original = nodes;
     let flattened;
     let nodes = if nodes.iter().any(|node| matches!(node, InlineNode::Ruby(_))) {
         flattened = nodes
@@ -2858,6 +2865,13 @@ fn render_inlines_with_caption(
         flattened.as_slice()
     } else {
         nodes
+    };
+    // A scope an enclosing run claimed keyed the nodes before this flattening
+    // cloned them.
+    let aliased = if ctx.brackets.claimed && !std::ptr::eq(nodes, original) {
+        alias_flattened(original, nodes, &mut ctx.bracket_aliases)
+    } else {
+        Vec::new()
     };
     if ctx.inline_depth == 0 && holds_unspellable_empty_code(nodes, false, false, ctx.cell_not_last)
     {
@@ -2887,6 +2901,9 @@ fn render_inlines_with_caption(
     };
     if let Some(outer) = outer {
         ctx.brackets = outer;
+    }
+    for clone in aliased {
+        ctx.bracket_aliases.remove(&clone);
     }
     ctx.inline_depth -= 1;
     if ctx.inline_depth == 0 {
@@ -3264,13 +3281,7 @@ fn render_inline_body(
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
-            &|ordinal| {
-                let key = (text as *const Text as usize, ordinal);
-                BracketRole {
-                    lone: ctx.brackets.lone.contains(&key),
-                    paired_closer: ctx.brackets.paired_closers.contains(&key),
-                }
-            },
+            &|ordinal| ctx.bracket_role(text as *const Text as usize, ordinal),
             &ctx.paired_closer_carry,
             ctx.escape_mode_here(),
             ctx.escape_unit,
@@ -3293,7 +3304,11 @@ fn render_inline_body(
         InlineNode::Emphasis(emphasis) => {
             let kinds = emphasis_delimiters(emphasis.kind);
             ctx.open_kinds.extend_from_slice(kinds);
-            let content = render_inlines(&emphasis.children, ctx);
+            let content = if writes_own_brackets(emphasis) {
+                render_bracketed_content(&emphasis.children, ctx)
+            } else {
+                render_inlines(&emphasis.children, ctx)
+            };
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
             // An empty brace pair is not a construct, and `{--}` is the braced
             // en dash (markup-carve/carve#1608), so an empty mark has no spelling.
@@ -3487,7 +3502,7 @@ fn render_inline_body(
         // bare - bytes that re-parse as an inline note.
         InlineNode::Abbreviation(abbr) => escape_text(
             &abbr.abbr,
-            &|_| BracketRole::default(),
+            &|ordinal| ctx.bracket_role(abbr as *const Abbreviation as usize, ordinal),
             &std::cell::Cell::new(false),
             ctx.escape_mode_here(),
             ctx.escape_unit,
@@ -3594,6 +3609,93 @@ fn render_inline_body(
     }
 }
 
+/// Map every bracket-bearing node `flattened` cloned from `original` back to its
+/// source, returning the clones' addresses. Mirrors the flattening above: an
+/// unattributed ruby becomes base, `(`, annotation, `)` per pair, an
+/// attributed one a span (a run of its own), anything else a clone.
+fn alias_flattened(
+    original: &[InlineNode],
+    flattened: &[InlineNode],
+    aliases: &mut HashMap<usize, usize>,
+) -> Vec<usize> {
+    fn same(
+        source: &InlineNode,
+        clone: &InlineNode,
+        aliases: &mut HashMap<usize, usize>,
+        out: &mut Vec<usize>,
+    ) {
+        match (source, clone) {
+            (InlineNode::Text(a), InlineNode::Text(b)) => {
+                let at = b as *const Text as usize;
+                aliases.insert(at, a as *const Text as usize);
+                out.push(at);
+            }
+            (InlineNode::Abbreviation(a), InlineNode::Abbreviation(b)) => {
+                let at = b as *const Abbreviation as usize;
+                aliases.insert(at, a as *const Abbreviation as usize);
+                out.push(at);
+            }
+            (InlineNode::Emphasis(a), InlineNode::Emphasis(b)) => {
+                all(&a.children, &b.children, aliases, out);
+            }
+            (InlineNode::CriticInsert(a), InlineNode::CriticInsert(b)) => {
+                all(&a.children, &b.children, aliases, out);
+            }
+            (InlineNode::CriticDelete(a), InlineNode::CriticDelete(b)) => {
+                all(&a.children, &b.children, aliases, out);
+            }
+            (InlineNode::CriticSubstitute(a), InlineNode::CriticSubstitute(b)) => {
+                all(&a.old, &b.old, aliases, out);
+                all(&a.new, &b.new, aliases, out);
+            }
+            (InlineNode::Ruby(a), InlineNode::Ruby(b)) => {
+                for (x, y) in a.pairs.iter().zip(&b.pairs) {
+                    all(&x.base, &y.base, aliases, out);
+                    all(&x.annotation, &y.annotation, aliases, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn all(
+        a: &[InlineNode],
+        b: &[InlineNode],
+        aliases: &mut HashMap<usize, usize>,
+        out: &mut Vec<usize>,
+    ) {
+        for (x, y) in a.iter().zip(b) {
+            same(x, y, aliases, out);
+        }
+    }
+    let mut out = Vec::new();
+    let mut at = 0;
+    for node in original {
+        match node {
+            InlineNode::Ruby(ruby) if ruby.attrs.is_some() => at += 1,
+            InlineNode::Ruby(ruby) => {
+                for pair in &ruby.pairs {
+                    let base = &flattened[at..at + pair.base.len()];
+                    all(&pair.base, base, aliases, &mut out);
+                    at += pair.base.len() + 1;
+                    let annotation = &flattened[at..at + pair.annotation.len()];
+                    all(&pair.annotation, annotation, aliases, &mut out);
+                    at += pair.annotation.len() + 1;
+                }
+            }
+            other => {
+                same(other, &flattened[at], aliases, &mut out);
+                at += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Small caps carrying attributes are written as an attributed span.
+fn writes_own_brackets(emphasis: &Emphasis) -> bool {
+    emphasis.kind == EmphasisKind::SmallCaps && !render_attrs(&emphasis.attrs).is_empty()
+}
+
 /// Content written between a construct's own `[` and `]`, with its lone
 /// brackets escaped in every form (PART 11 §5).
 fn render_bracketed_content(children: &[InlineNode], ctx: &mut CarveContext) -> String {
@@ -3622,25 +3724,58 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
             match node {
                 InlineNode::Code(code) if code.value.is_empty() => return false,
                 InlineNode::Text(text) => {
-                    let at = text as *const Text as usize;
-                    let brackets = text.value.chars().filter(|c| matches!(c, '[' | ']'));
-                    for (ordinal, ch) in brackets.enumerate() {
-                        if ch == '[' {
-                            open.push((at, ordinal));
-                        } else if open.pop().is_some() {
-                            scope.paired_closers.insert((at, ordinal));
-                        } else {
-                            scope.lone.insert((at, ordinal));
-                        }
-                    }
+                    pair(text as *const Text as usize, &text.value, open, scope)
                 }
+                InlineNode::Abbreviation(abbr) => {
+                    pair(
+                        abbr as *const Abbreviation as usize,
+                        &abbr.abbr,
+                        open,
+                        scope,
+                    );
+                }
+                // Written as `[content]{attrs}`: a bracketed run of its own.
+                InlineNode::Emphasis(emphasis) if writes_own_brackets(emphasis) => {}
                 InlineNode::Emphasis(emphasis) if !walk(&emphasis.children, open, scope) => {
                     return false;
+                }
+                InlineNode::CriticInsert(insert) if !walk(&insert.children, open, scope) => {
+                    return false;
+                }
+                InlineNode::CriticDelete(delete) if !walk(&delete.children, open, scope) => {
+                    return false;
+                }
+                InlineNode::CriticSubstitute(sub)
+                    if !walk(&sub.old, open, scope) || !walk(&sub.new, open, scope) =>
+                {
+                    return false;
+                }
+                // Written flattened, base then annotation; with attributes it is a
+                // span, which is a bracketed run of its own.
+                InlineNode::Ruby(ruby) if ruby.attrs.is_none() => {
+                    for pair in &ruby.pairs {
+                        if !walk(&pair.base, open, scope) || !walk(&pair.annotation, open, scope) {
+                            return false;
+                        }
+                    }
                 }
                 _ => {}
             }
         }
         true
+    }
+    fn pair(at: usize, value: &str, open: &mut Vec<(usize, usize)>, scope: &mut BracketScope) {
+        scope.keyed.insert(at);
+        let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
+        for (ordinal, ch) in brackets.enumerate() {
+            if ch == '[' {
+                open.push((at, ordinal));
+            } else if open.pop().is_some() {
+                scope.paired_closers.insert((at, ordinal));
+            } else {
+                scope.lone.insert((at, ordinal));
+            }
+        }
     }
     let mut scope = BracketScope {
         claimed: true,
@@ -4227,6 +4362,22 @@ fn next_escape_unit() -> usize {
 }
 
 impl CarveContext {
+    /// How PART 11 §5 reads bracket `ordinal` of the node at `at`.
+    fn bracket_role(&self, mut at: usize, ordinal: usize) -> BracketRole {
+        // A node can be cloned more than once on the way down; follow the
+        // chain only until the active scope knows the address.
+        while !self.brackets.keyed.contains(&at) {
+            match self.bracket_aliases.get(&at) {
+                Some(&source) => at = source,
+                None => break,
+            }
+        }
+        BracketRole {
+            lone: self.brackets.lone.contains(&(at, ordinal)),
+            paired_closer: self.brackets.paired_closers.contains(&(at, ordinal)),
+        }
+    }
+
     /// Which form a character written by `unit` takes (PART 11 §2b).
     fn escape_mode_for(&self, unit: usize) -> EscapeMode {
         ASKED_UNITS.with(|cell| {
@@ -5627,6 +5778,56 @@ mod tests {
             WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(false));
             assert!(whole > 100.0, "the search did not run: {whole:.1}");
             assert!(windowed < 30.0, "{windowed:.1} documents re-parsed");
+        }
+    }
+
+    /// The lone brackets the scan reaches through nodes that write no brackets
+    /// of their own are escaped in the minimal form already, including ruby
+    /// flattened inside emphasis, whose nodes the writer clones.
+    #[test]
+    fn the_bracket_scan_reaches_through_transparent_nodes() {
+        for (inline, escaped) in [
+            (
+                r#"{"type":"substitution","old":[{"type":"text","value":"["}],"new":[{"type":"text","value":"x"}]}"#,
+                "\\[",
+            ),
+            (
+                r#"{"type":"insert","children":[{"type":"text","value":"["}]}"#,
+                "\\[",
+            ),
+            (
+                r#"{"type":"delete","children":[{"type":"text","value":"a ]"}]}"#,
+                "\\]",
+            ),
+            (
+                r#"{"type":"abbreviation","abbr":"[a","expansion":"x"}"#,
+                "\\[",
+            ),
+            (
+                r#"{"type":"small_caps","children":[{"type":"text","value":"a ["}]}"#,
+                "\\[",
+            ),
+            (
+                r#"{"type":"emphasis","children":[{"type":"ruby","pairs":[{"base":[{"type":"text","value":"["}],"annotation":[{"type":"text","value":"r"}]}]}]}"#,
+                "\\[",
+            ),
+            // Cloned twice: each ruby flattening clones the nested one again.
+            (
+                r#"{"type":"emphasis","children":[{"type":"ruby","pairs":[{"base":[{"type":"strong","children":[{"type":"ruby","pairs":[{"base":[{"type":"text","value":"["}],"annotation":[{"type":"text","value":"r"}]}]}]}],"annotation":[{"type":"text","value":"s"}]}]}]}"#,
+                "\\[",
+            ),
+            // A scope keyed by clones is not redirected to their sources.
+            (
+                r#"{"type":"emphasis","children":[{"type":"ruby","pairs":[{"base":[{"type":"text","value":"x"}],"annotation":[{"type":"text","value":"r"}]}]},{"type":"small_caps","attrs":{"classes":["sc"]},"children":[{"type":"text","value":"["}]}]}"#,
+                "\\[",
+            ),
+        ] {
+            let json = format!(
+                r#"{{"type":"document","children":[{{"type":"paragraph","children":[{{"type":"span","attrs":{{"classes":["c"]}},"children":[{inline}]}}]}}],"srcByteLength":0}}"#
+            );
+            let doc = crate::from_json(&json).expect("decode AST");
+            let minimal = super::render_with_escapes(&doc, super::EscapeMode::Minimal);
+            assert!(minimal.contains(escaped), "{inline}: {minimal}");
         }
     }
 
