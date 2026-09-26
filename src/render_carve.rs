@@ -4988,12 +4988,51 @@ fn escape_quoted(text: &str) -> String {
 /// writer refuses instead.
 fn escape_quoted_title(text: &str, node_type: &'static str) -> String {
     if text.contains('"') {
-        crate::render_carve_error::record_unspellable(
-            node_type,
-            "a double quote has no spelling inside a quoted title",
-        );
+        crate::render_carve_error::record_unspellable(node_type, QUOTE_IN_QUOTED_TITLE);
     }
     text.replace('"', "")
+}
+
+const QUOTE_IN_QUOTED_TITLE: &str = "a double quote has no spelling inside a quoted title";
+
+/// Whether a container's quoted title slot can hold `title`, asked of the
+/// writer and the parser rather than predicted: a `"` is refused (an attribute
+/// value or a link title writes one too), and a line break writes an opener
+/// that no longer reads as one.
+pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
+    let probe = Document {
+        frontmatter: Default::default(),
+        frontmatter_raw: None,
+        footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
+        children: vec![BlockNode::Admonition(Admonition {
+            attrs: None,
+            kind: "note".into(),
+            title: Some(title.to_vec()),
+            label: None,
+            children: vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: vec![InlineNode::text("x")],
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            })],
+            pos: None,
+        })],
+        source_len: 0,
+        ingest_payload_len: 0,
+    };
+    match render_carve(&probe) {
+        Ok(source) => matches!(
+            crate::parse::parse(&source).children.as_slice(),
+            [BlockNode::Admonition(admonition)] if admonition.title.is_some()
+        ),
+        Err(crate::RenderCarveError::SourceUnspellable(error)) => {
+            error.reason() != QUOTE_IN_QUOTED_TITLE
+        }
+        // Another refusal is another pass's to answer.
+        Err(_) => true,
+    }
 }
 
 /// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a

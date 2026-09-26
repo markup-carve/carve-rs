@@ -2645,10 +2645,11 @@ impl<'a> Importer<'a> {
                 // the ordinary paragraph it reads as, rather than being lifted
                 // into a field that does not exist and dropped on the way.
                 let generated = crate::ast::is_generated_content_kind(&kind);
-                let (title, body, body_paths) =
+                let (mut title, body, body_paths) =
                     self.admonition_title(&children, path, depth, true)?;
                 let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
-                let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+                let mut children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+                self.keep_title_spellable(&mut title, &mut children, path, h);
                 if generated {
                     return Ok(vec![BlockNode::Directive(Directive {
                         attrs,
@@ -2830,9 +2831,11 @@ impl<'a> Importer<'a> {
                 &kind,
             );
             let generated = crate::ast::is_generated_content_kind(&kind);
-            let (title, body, body_paths) = self.admonition_title(&children, path, depth, true)?;
+            let (mut title, body, body_paths) =
+                self.admonition_title(&children, path, depth, true)?;
             let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
-            let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+            let mut children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+            self.keep_title_spellable(&mut title, &mut children, path, h);
             if generated {
                 return Ok(vec![BlockNode::Directive(Directive {
                     attrs,
@@ -3113,14 +3116,60 @@ impl<'a> Importer<'a> {
             body_paths.push(Self::child_path(path, child, i));
             body.push(child.clone());
         }
+        let mut title = title;
+        let mut children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+        self.keep_title_spellable(&mut title, &mut children, path, h);
         Ok(Admonition {
             attrs,
             kind: "details".into(),
             title,
             label: None,
-            children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
+            children,
             pos: None,
         })
+    }
+
+    /// On the exit that writes source, a title the quoted slot cannot spell
+    /// becomes the body's first paragraph. Written as a title it would either
+    /// fail the whole write or turn the opener, and the body with it, into a
+    /// paragraph (PART 11 section 1c, `structure-unspellable`).
+    fn keep_title_spellable(
+        &mut self,
+        title: &mut Option<Vec<InlineNode>>,
+        children: &mut Vec<BlockNode>,
+        path: &str,
+        h: &Handle,
+    ) {
+        if !self.writing
+            || title
+                .as_deref()
+                .map_or(true, crate::render_carve::quoted_title_is_spellable)
+        {
+            return;
+        }
+        let Some(inlines) = title.take() else {
+            return;
+        };
+        children.insert(
+            0,
+            BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: inlines,
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            }),
+        );
+        let tag = Self::tag(h).unwrap_or_default();
+        self.diag(
+            HtmlImportDiagnosticCode::StructureUnspellable,
+            format!(
+                "Moved the title of <{tag}> into its body: a quoted title cannot spell a double quote or a line break"
+            ),
+            HtmlImportSeverity::Warning,
+            path,
+            h,
+        );
     }
     /// The numbering style this `<ol>` is written with, or `None` for decimal.
     fn ordered_list_type(
