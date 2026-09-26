@@ -62,20 +62,65 @@ fn edge_whitespace_moves_outside_a_link_or_span() {
 }
 
 #[test]
-fn whitespace_only_content_a_no_break_space_and_a_strong_stay() {
+fn whitespace_only_content_and_a_no_break_space_stay() {
     for (html, carve) in [
         (r#"<p>a <a href="/w"> </a> b</p>"#, "a [ ](/w) b\n"),
         (
             "<p>a <a href=\"/n\">\u{a0}nb\u{a0}</a> b</p>",
             "a [\u{a0}nb\u{a0}](/n) b\n",
         ),
-        (
-            r#"<p>a <a href="/s"><b> x </b></a> b</p>"#,
-            "a [{* x *}](/s) b\n",
-        ),
     ] {
         assert_eq!(import(html).0, carve, "{html}");
     }
+}
+
+#[test]
+fn formatting_inside_a_link_or_span_moves_its_edge_space_out() {
+    for (html, carve) in [
+        (
+            r#"<p>a<a href="/s"><ins> x </ins></a>b</p>"#,
+            "a [{+x+}](/s) b\n",
+        ),
+        (
+            r#"<p>a<a href="/s"><del> x </del></a>b</p>"#,
+            "a [{-x-}](/s) b\n",
+        ),
+        (
+            r#"<p>a <a href="/s"><b> x </b></a> b</p>"#,
+            "a [*x*](/s) b\n",
+        ),
+        (r#"<p>a<a href="/s"><b> x </b></a>b</p>"#, "a [*x*](/s) b\n"),
+        (r#"<p><a href="/s"><b> x </b></a></p>"#, "[*x*](/s)\n"),
+        (
+            r#"<p>a<span id="s"><b> x </b></span>b</p>"#,
+            "a [*x*]{#s} b\n",
+        ),
+        (
+            r#"<p>a<a href="/s"><b><i> x </i></b></a>b</p>"#,
+            "a [*/x/*](/s) b\n",
+        ),
+        (
+            r#"<p>a<a href="/s">y<b> x </b>z</a>b</p>"#,
+            "a[y *x* z](/s)b\n",
+        ),
+        (
+            r#"<p>a<a href="/s"><b>&nbsp;x&nbsp;</b></a>b</p>"#,
+            "a[* x *](/s)b\n",
+        ),
+        (
+            r#"<p>a<a href="/s"><code> x </code></a>b</p>"#,
+            "a[`  x  `](/s)b\n",
+        ),
+    ] {
+        let (value, rows) = import(html);
+        assert_eq!(value, carve, "{html}");
+        assert!(rows.is_empty(), "{html}: {rows:?}");
+    }
+}
+
+#[test]
+fn formatting_outside_a_link_or_span_keeps_its_separating_spaces() {
+    assert_eq!(import("<p>a<b> x </b>b</p>").0, "a{* x *}b\n");
 }
 
 #[test]

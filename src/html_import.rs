@@ -6808,6 +6808,10 @@ fn drop_space_after_hard_break(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
 /// merges with whitespace already there (markup-carve/carve#2361).
 /// Whitespace-only content stays, and so does U+00A0, which is content.
 fn hoist_edge_space(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    hoist_nested_edge_space(nodes, false)
+}
+
+fn hoist_nested_edge_space(nodes: Vec<InlineNode>, within_link_or_span: bool) -> Vec<InlineNode> {
     fn starts_blank(node: Option<&InlineNode>) -> bool {
         matches!(node, Some(InlineNode::Text(t)) if t.value.starts_with([' ', '\t']))
     }
@@ -6863,8 +6867,41 @@ fn hoist_edge_space(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     let mut owed = false;
     for mut node in nodes {
         let (lead, trail) = match &mut node {
-            InlineNode::Link(link) => hoist(&mut link.children),
-            InlineNode::Span(span) => hoist(&mut span.children),
+            InlineNode::Link(link) if !within_link_or_span => {
+                link.children = coalesce(hoist_nested_edge_space(
+                    std::mem::take(&mut link.children),
+                    true,
+                ));
+                hoist(&mut link.children)
+            }
+            InlineNode::Span(span) if !within_link_or_span => {
+                span.children = coalesce(hoist_nested_edge_space(
+                    std::mem::take(&mut span.children),
+                    true,
+                ));
+                hoist(&mut span.children)
+            }
+            InlineNode::Emphasis(emphasis) if within_link_or_span => {
+                emphasis.children = coalesce(hoist_nested_edge_space(
+                    std::mem::take(&mut emphasis.children),
+                    true,
+                ));
+                hoist(&mut emphasis.children)
+            }
+            InlineNode::CriticInsert(change) if within_link_or_span => {
+                change.children = coalesce(hoist_nested_edge_space(
+                    std::mem::take(&mut change.children),
+                    true,
+                ));
+                hoist(&mut change.children)
+            }
+            InlineNode::CriticDelete(change) if within_link_or_span => {
+                change.children = coalesce(hoist_nested_edge_space(
+                    std::mem::take(&mut change.children),
+                    true,
+                ));
+                hoist(&mut change.children)
+            }
             _ => (false, false),
         };
         if (owed || lead)
