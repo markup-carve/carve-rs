@@ -314,6 +314,7 @@ struct Importer<'a> {
     quote_depth: usize,
     /// How many table cells the walk is inside.
     cell_depth: usize,
+    heading_depth: usize,
     /// The losses a WRITER takes, held back until one writes (PART 12 §16).
     /// The rows that belong to the WRITING exit only, each with the code it is
     /// reported under. `html_to_ast` keeps every structure these describe and is
@@ -1616,6 +1617,16 @@ impl<'a> Importer<'a> {
                 live: sanitize_attr_value(name, value).is_empty() && !value.is_empty(),
             });
         }
+        if value.contains(['\n', '\r']) {
+            // A quoted value stops at the line break [CARVE-P4-006], so the
+            // written block would not reparse (markup-carve/carve#2385).
+            return Some(Refusal {
+                subject: name.to_string(),
+                reason: ": its value spans a line break, which a Carve attribute value cannot",
+                severity: HtmlImportSeverity::Warning,
+                live: false,
+            });
+        }
         None
     }
 
@@ -2413,7 +2424,10 @@ impl<'a> Importer<'a> {
         }
         if matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
             let mut attrs = attrs;
-            let inlines = self.inlines(&children, path, depth + 1)?;
+            self.heading_depth += 1;
+            let inlines = self.inlines(&children, path, depth + 1);
+            self.heading_depth -= 1;
+            let inlines = inlines?;
             if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
                 if self.opts.mode == HtmlImportMode::Roundtrip
                     && Self::id_in_generated_position(h)
@@ -3549,6 +3563,18 @@ impl<'a> Importer<'a> {
             });
         }
         if items.is_empty() {
+            // No list is written, so nothing carries the `<dl>`'s attributes.
+            for name in attrs.as_ref().map(Self::attr_names).unwrap_or_default() {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    format!(
+                        "Dropped {name} on <dl>: a definition list holding no entry is not written"
+                    ),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+            }
             return Ok(before);
         }
         before.push(BlockNode::DefinitionList(DefinitionList {
@@ -5141,6 +5167,17 @@ impl<'a> Importer<'a> {
             self.diag(
                 HtmlImportDiagnosticCode::ElementDropped,
                 "Dropped an HTML comment in a table cell: its text holds a line break, and a table row is one line".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                node,
+            );
+            return Vec::new();
+        }
+        // A heading is one line too (markup-carve/carve#2396).
+        if self.heading_depth > 0 && content.contains(['\n', '\r']) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                "Dropped an HTML comment in a heading: its text holds a line break, and a heading is one line".into(),
                 HtmlImportSeverity::Warning,
                 path,
                 node,
@@ -7596,6 +7633,7 @@ fn import(
         nodes: 0,
         quote_depth: 0,
         cell_depth: 0,
+        heading_depth: 0,
         unspellable: Vec::new(),
         displaced_figure_attrs: Vec::new(),
         lone_image_paragraphs: Vec::new(),
