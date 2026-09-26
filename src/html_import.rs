@@ -349,6 +349,9 @@ struct Importer<'a> {
     /// dropped would be an address the allocator may hand to a live node next,
     /// so the map pins every node it can answer for.
     footnote_refs: HashMap<usize, (Handle, String)>,
+    /// Fallback images of formulas that imported as math, dropped where they stand.
+    formula_images: HashSet<usize>,
+    sibling_index: SiblingIndex,
 }
 
 /// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
@@ -1011,16 +1014,25 @@ impl<'a> Importer<'a> {
     /// annotation produces.
     ///
     /// `None` is tier 3, whose two answers are the caller's.
-    fn math_tex(h: &Handle) -> Option<(u8, String)> {
+    fn math_tex(&self, h: &Handle) -> Option<(u8, String)> {
         if let Some(annotated) = Self::tex_annotation(h) {
             return Some((1, annotated));
         }
-        let alttext = Self::attr(h, "alttext")?;
-        let trimmed = alttext.trim();
+        let alttext = Self::attr(h, "alttext").unwrap_or_default();
+        if !alttext.trim().is_empty() {
+            return Some((2, alttext.trim().to_string()));
+        }
+        // Adjacency alone is no evidence: the alt stands in for the formula
+        // only where the page hid the MathML so the image renders instead.
+        if !math_is_hidden(h) {
+            return None;
+        }
+        let alt = Self::attr(&fallback_image(h, &self.sibling_index)?, "alt")?;
+        let trimmed = alt.trim();
         if trimmed.is_empty() {
             return None;
         }
-        Some((2, trimmed.to_string()))
+        Some((3, trimmed.to_string()))
     }
     /// The `<annotation>` a `<semantics>` carries, if it declares TeX.
     ///
@@ -4929,7 +4941,7 @@ impl<'a> Importer<'a> {
                 boundary_pending = is_block;
             }
         }
-        Ok(drop_space_after_hard_break(coalesce(out)))
+        Ok(drop_space_after_hard_break(coalesce(hoist_edge_space(out))))
     }
     /// An HTML comment in an INLINE position, as the delimited Carve comment
     /// (markup-carve/carve#1709).
@@ -5013,6 +5025,16 @@ impl<'a> Importer<'a> {
             );
             return Ok(Vec::new());
         }
+        if self.formula_images.contains(&node_key(h)) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                "Dropped <img>: the fallback image of a formula imported as math".into(),
+                HtmlImportSeverity::Info,
+                path,
+                h,
+            );
+            return Ok(Vec::new());
+        }
         if tag == "q" {
             let attrs = self.attrs(h, path);
             let (open, close) = if self.quote_depth % 2 == 0 {
@@ -5058,7 +5080,7 @@ impl<'a> Importer<'a> {
             // to the raw arm below. Carve's own HTML spells math as a `<span>`,
             // so a `<math>` reaching that mode is foreign markup by definition
             // and its contract is to preserve it verbatim.
-            if let Some((tier, content)) = Self::math_tex(h) {
+            if let Some((tier, content)) = self.math_tex(h) {
                 // The subtree is charged here because the mapping returns
                 // without walking it. `max_nodes` and `max_depth` must not
                 // depend on which branch an element takes.
@@ -5083,6 +5105,20 @@ impl<'a> Importer<'a> {
                         path,
                         h,
                     );
+                } else if tier == 3 {
+                    self.diag(
+                        HtmlImportDiagnosticCode::EncodingAssumed,
+                        "Read <math> through its fallback image's alt: nothing declares the encoding of alt, so TeX is assumed".into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        h,
+                    );
+                }
+                if let Some(image) = fallback_image(h, &self.sibling_index) {
+                    if Self::attr(&image, "alt").as_deref().map(str::trim) == Some(content.as_str())
+                    {
+                        self.formula_images.insert(node_key(&image));
+                    }
                 }
                 return Ok(vec![InlineNode::Math(Math {
                     attrs,
@@ -5097,6 +5133,18 @@ impl<'a> Importer<'a> {
                 || (self.cell_depth > 0 && Self::html(h).contains(['\r', '\n']))
             {
                 self.charge_subtree(h, depth)?;
+                if self.opts.mode != HtmlImportMode::Roundtrip {
+                    if let Some(text) = linear_math_text(h) {
+                        self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            "Imported <math> as its text: no TeX annotation and no alttext, and its tokens read in order".into(),
+                            HtmlImportSeverity::Warning,
+                            path,
+                            h,
+                        );
+                        return Ok(vec![InlineNode::text(text)]);
+                    }
+                }
                 // No attribute walk on the way out: the element and everything
                 // riding on it is gone, and this warning covers all of it.
                 self.diag(
@@ -6536,6 +6584,251 @@ fn drop_space_after_hard_break(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     nodes
 }
 
+/// A link's or span's edge whitespace stands outside it, as one space that
+/// merges with whitespace already there (markup-carve/carve#2361).
+/// Whitespace-only content stays, and so does U+00A0, which is content.
+fn hoist_edge_space(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    fn starts_blank(node: Option<&InlineNode>) -> bool {
+        matches!(node, Some(InlineNode::Text(t)) if t.value.starts_with([' ', '\t']))
+    }
+    fn ends_blank(node: Option<&InlineNode>) -> bool {
+        matches!(node, Some(InlineNode::Text(t)) if t.value.ends_with([' ', '\t']))
+    }
+    fn kids(node: &InlineNode) -> Option<&[InlineNode]> {
+        match node {
+            InlineNode::Emphasis(e) => Some(&e.children),
+            InlineNode::Link(l) => Some(&l.children),
+            InlineNode::Span(s) => Some(&s.children),
+            _ => None,
+        }
+    }
+    // Through nested inlines: a strong ending in a space already has one there.
+    fn deep_starts_blank(node: Option<&InlineNode>) -> bool {
+        starts_blank(node)
+            || node
+                .and_then(kids)
+                .is_some_and(|k| deep_starts_blank(k.first()))
+    }
+    fn deep_ends_blank(node: Option<&InlineNode>) -> bool {
+        ends_blank(node)
+            || node
+                .and_then(kids)
+                .is_some_and(|k| deep_ends_blank(k.last()))
+    }
+    fn hoist(children: &mut Vec<InlineNode>) -> (bool, bool) {
+        if is_layout_only(children) {
+            return (false, false);
+        }
+        let lead = starts_blank(children.first());
+        if lead {
+            if let Some(InlineNode::Text(first)) = children.first_mut() {
+                first.value = first.value.trim_start_matches([' ', '\t']).to_string();
+                if first.value.is_empty() {
+                    children.remove(0);
+                }
+            }
+        }
+        let trail = ends_blank(children.last());
+        if trail {
+            if let Some(InlineNode::Text(last)) = children.last_mut() {
+                last.value = last.value.trim_end_matches([' ', '\t']).to_string();
+                if last.value.is_empty() {
+                    children.pop();
+                }
+            }
+        }
+        (lead, trail)
+    }
+    let mut out: Vec<InlineNode> = Vec::with_capacity(nodes.len());
+    let mut owed = false;
+    for mut node in nodes {
+        let (lead, trail) = match &mut node {
+            InlineNode::Link(link) => hoist(&mut link.children),
+            InlineNode::Span(span) => hoist(&mut span.children),
+            _ => (false, false),
+        };
+        if (owed || lead)
+            && !deep_ends_blank(out.last())
+            && !(owed && !lead && deep_starts_blank(Some(&node)))
+        {
+            out.push(InlineNode::text(" ".to_string()));
+        }
+        out.push(node);
+        owed = trail;
+    }
+    if owed {
+        out.push(InlineNode::text(" ".to_string()));
+    }
+    out
+}
+
+/// A text or comment node that carries nothing a formula shows.
+fn is_blank_or_comment(handle: &Handle) -> bool {
+    match &handle.data {
+        NodeData::Comment { .. } => true,
+        NodeData::Text { contents } => contents.borrow().chars().all(is_layout_space),
+        _ => false,
+    }
+}
+
+fn element_name(handle: &Handle) -> Option<String> {
+    match &handle.data {
+        NodeData::Element { name, .. } => Some(name.local.to_string()),
+        _ => None,
+    }
+}
+
+/// The text of a `<math>` with no TeX, when flattening cannot change its value
+/// (markup-carve/carve#2361): tokens in order, inside grouping elements only.
+/// A fraction or a script would flatten into a different number, so any other
+/// element refuses.
+fn linear_math_text(math: &Handle) -> Option<String> {
+    fn read(nodes: &[Handle], text: &mut String) -> bool {
+        for node in nodes {
+            if is_blank_or_comment(node) {
+                continue;
+            }
+            match element_name(node).as_deref() {
+                Some("semantics") => {
+                    let children = node.children.borrow();
+                    let Some(first) = children.iter().find(|c| !is_blank_or_comment(c)) else {
+                        return false;
+                    };
+                    if !read(std::slice::from_ref(first), text) {
+                        return false;
+                    }
+                }
+                Some("mrow" | "mstyle" | "mpadded") => {
+                    if !read(&node.children.borrow(), text) {
+                        return false;
+                    }
+                }
+                Some("mi" | "mn" | "mo" | "mtext") => {
+                    let mut token = String::new();
+                    for child in node.children.borrow().iter() {
+                        let NodeData::Text { contents } = &child.data else {
+                            return false;
+                        };
+                        token.push_str(&contents.borrow());
+                    }
+                    text.push_str(collapse(&token).trim_matches(' '));
+                }
+                Some("mspace") => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+    let mut text = String::new();
+    (read(&math.children.borrow(), &mut text) && !text.is_empty()).then_some(text)
+}
+
+fn hidden_by_style(handle: &Handle) -> bool {
+    let NodeData::Element { attrs, .. } = &handle.data else {
+        return false;
+    };
+    let attrs = attrs.borrow();
+    let Some(style) = attrs
+        .iter()
+        .find(|a| a.name.local.as_ref().eq_ignore_ascii_case("style"))
+    else {
+        return false;
+    };
+    // The effective value: the last declaration wins, an `!important` one first.
+    let mut display: Option<String> = None;
+    let mut important = false;
+    for declaration in style.value.split(';') {
+        let Some((property, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        if !property.trim().eq_ignore_ascii_case("display") {
+            continue;
+        }
+        let value = value.trim().to_ascii_lowercase();
+        let (value, is_important) = match value.strip_suffix("important") {
+            Some(rest) if rest.trim_end().ends_with('!') => (
+                rest.trim_end().trim_end_matches('!').trim().to_string(),
+                true,
+            ),
+            _ => (value, false),
+        };
+        if important && !is_important {
+            continue;
+        }
+        display = Some(value);
+        important = is_important;
+    }
+    display.as_deref() == Some("none")
+}
+
+/// A `<math>` hidden by `display: none`, on itself or on the `<span>` holding only it.
+fn math_is_hidden(math: &Handle) -> bool {
+    hidden_by_style(math)
+        || parent_handle(math).is_some_and(|wrapper| {
+            element_name(&wrapper).as_deref() == Some("span")
+                && hidden_by_style(&wrapper)
+                && wrapper
+                    .children
+                    .borrow()
+                    .iter()
+                    .all(|c| Rc::ptr_eq(c, math) || is_blank_or_comment(c))
+        })
+}
+
+/// The `<img>` that renders a formula for a reader without MathML: the next
+/// element after the `<math>`, or after a `<span>` holding nothing but it.
+/// Sibling positions, built once per parent so a run of formulas stays linear.
+type SiblingIndex = RefCell<HashMap<usize, HashMap<usize, usize>>>;
+
+fn sibling_position(
+    cache: &SiblingIndex,
+    parent: &Handle,
+    children: &[Handle],
+    node: &Handle,
+) -> Option<usize> {
+    let mut cache = cache.borrow_mut();
+    let cached = cache
+        .get(&node_key(parent))
+        .and_then(|positions| positions.get(&node_key(node)).copied());
+    if let Some(index) = cached.filter(|&i| children.get(i).is_some_and(|c| Rc::ptr_eq(c, node))) {
+        return Some(index);
+    }
+    let positions: HashMap<usize, usize> = children
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (node_key(c), i))
+        .collect();
+    let index = positions.get(&node_key(node)).copied();
+    cache.insert(node_key(parent), positions);
+    index
+}
+
+fn fallback_image(math: &Handle, cache: &SiblingIndex) -> Option<Handle> {
+    let next = |node: &Handle| -> Option<Handle> {
+        let parent = parent_handle(node)?;
+        let children = parent.children.borrow();
+        let index = sibling_position(cache, &parent, &children, node)?;
+        children[index + 1..]
+            .iter()
+            .find(|c| !is_blank_or_comment(c))
+            .cloned()
+    };
+    let found = match next(math) {
+        Some(found) => Some(found),
+        None => parent_handle(math)
+            .filter(|wrapper| {
+                element_name(wrapper).as_deref() == Some("span")
+                    && wrapper
+                        .children
+                        .borrow()
+                        .iter()
+                        .all(|c| Rc::ptr_eq(c, math) || is_blank_or_comment(c))
+            })
+            .and_then(|wrapper| next(&wrapper)),
+    };
+    found.filter(|f| element_name(f).as_deref() == Some("img"))
+}
+
 fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     let mut out = Vec::new();
     for n in nodes {
@@ -7096,6 +7389,8 @@ fn import(
         empty_code_spans: Vec::new(),
         braced_kind_spans: Vec::new(),
         footnote_refs: HashMap::new(),
+        formula_images: HashSet::new(),
+        sibling_index: RefCell::new(HashMap::new()),
     };
     // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
     // what it consumes: the numbers have to be on the tree as the AUTHOR wrote

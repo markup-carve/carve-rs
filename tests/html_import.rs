@@ -137,12 +137,14 @@ struct AheadOfPin {
     ast: Option<&'static str>,
 }
 
-/// Empty, and that is the state to keep it in: `endnotes-section-not-last`
-/// recorded the `directive` tree while the fixture still held the
-/// pre-CARVE-P12-057 `admonition`, and markup-carve/carve#2255 re-recorded the
-/// fixture, so the entry failed on the pin bump the way the contract above says
-/// it must.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
+    fixture: "security",
+    reason: "markup-carve/carve#2361: a span's edge whitespace stands outside it",
+    carve: Some("safe [text]{title=lost}\n"),
+    ast: Some(
+        r#"{"type":"document","children":[{"type":"paragraph","children":[{"type":"text","value":"safe "},{"type":"span","attrs":{"keyValues":{"title":"lost"}},"children":[{"type":"text","value":"text"}]}]}]}"#,
+    ),
+}];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
