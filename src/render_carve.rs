@@ -350,7 +350,14 @@ fn narrow_escalation(
     // Eight times the depth of the halving, which is what narrowing four
     // independent failing units costs. See `budget` on `relax_units`.
     let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
-    relax_units(doc, &units, &conservative_tree, &mut best, &mut budget);
+    relax_units(
+        doc,
+        &units,
+        &conservative_tree,
+        &mut best,
+        &mut budget,
+        None,
+    );
     // PART 11 §2 TAKES THE DECISION PER OPENER OCCURRENCE, and a unit is still
     // ONE KNOB: a unit that fails is written conservatively IN FULL, so every
     // candidate character beside the one that needed it is escaped for nothing
@@ -389,7 +396,7 @@ fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut S
     // separates them.
     let order: Vec<Occurrence> = occurrences.into_iter().rev().collect();
     let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
-    relax_occurrences(doc, &order, conservative_tree, best, &mut budget);
+    relax_occurrences(doc, &order, conservative_tree, best, &mut budget, None);
     // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a FIXPOINT.
     // Relaxing occurrences is not monotone: an occurrence rejected while a
     // neighbour was still escaped can be free once that neighbour is relaxed,
@@ -414,6 +421,7 @@ fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut S
             conservative_tree,
             best,
             &mut budget,
+            None,
         );
     }
     RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
@@ -427,6 +435,7 @@ fn relax_occurrences(
     conservative_tree: &Document,
     best: &mut String,
     budget: &mut usize,
+    rejected: Option<&str>,
 ) {
     if group.is_empty() || *budget == 0 {
         return;
@@ -434,7 +443,7 @@ fn relax_occurrences(
     *budget -= 1;
     set_relaxed(group, true);
     let candidate = render_with_escapes(doc, EscapeMode::Conservative);
-    if comparable_tree(&candidate).as_ref() == Some(conservative_tree) {
+    if candidate_holds(&candidate, best, rejected, conservative_tree) {
         *best = candidate;
         return;
     }
@@ -443,8 +452,48 @@ fn relax_occurrences(
         return;
     }
     let half = group.len() / 2;
-    relax_occurrences(doc, &group[..half], conservative_tree, best, budget);
-    relax_occurrences(doc, &group[half..], conservative_tree, best, budget);
+    relax_occurrences(
+        doc,
+        &group[..half],
+        conservative_tree,
+        best,
+        budget,
+        Some(&candidate),
+    );
+    relax_occurrences(
+        doc,
+        &group[half..],
+        conservative_tree,
+        best,
+        budget,
+        Some(&candidate),
+    );
+}
+
+/// Whether `candidate` re-parses to `conservative_tree`.
+///
+/// The verdict is a function of the bytes alone, so a candidate identical to
+/// `best` (verified) or to `rejected` (the enclosing group's failed candidate)
+/// is answered without a parse. The halving produces such repeats constantly:
+/// when one half of a failed group moves no bytes, the other half renders the
+/// group's candidate again.
+fn candidate_holds(
+    candidate: &str,
+    best: &str,
+    rejected: Option<&str>,
+    conservative_tree: &Document,
+) -> bool {
+    #[cfg(test)]
+    tests::PROBES.with(|n| n.set(n.get() + 1));
+    if candidate == best {
+        return true;
+    }
+    if rejected == Some(candidate) {
+        return false;
+    }
+    #[cfg(test)]
+    tests::PROBE_PARSES.with(|n| n.set(n.get() + 1));
+    comparable_tree(candidate).as_ref() == Some(conservative_tree)
 }
 
 fn set_relaxed(group: &[Occurrence], relaxed: bool) {
@@ -485,6 +534,7 @@ fn relax_units(
     conservative_tree: &Document,
     best: &mut String,
     budget: &mut usize,
+    rejected: Option<&str>,
 ) {
     if units.is_empty() || *budget == 0 {
         return;
@@ -492,7 +542,7 @@ fn relax_units(
     *budget -= 1;
     set_escalated(units, false);
     let candidate = render_with_escapes(doc, EscapeMode::Conservative);
-    if comparable_tree(&candidate).as_ref() == Some(conservative_tree) {
+    if candidate_holds(&candidate, best, rejected, conservative_tree) {
         *best = candidate;
         return;
     }
@@ -501,8 +551,22 @@ fn relax_units(
         return;
     }
     let half = units.len() / 2;
-    relax_units(doc, &units[..half], conservative_tree, best, budget);
-    relax_units(doc, &units[half..], conservative_tree, best, budget);
+    relax_units(
+        doc,
+        &units[..half],
+        conservative_tree,
+        best,
+        budget,
+        Some(&candidate),
+    );
+    relax_units(
+        doc,
+        &units[half..],
+        conservative_tree,
+        best,
+        budget,
+        Some(&candidate),
+    );
 }
 
 fn set_escalated(units: &[usize], escalated: bool) {
@@ -5197,4 +5261,34 @@ fn ends_in_an_escape(written: &str) -> bool {
     let mut chars = written.chars().rev();
     chars.next();
     chars.take_while(|&c| c == '\\').count() % 2 == 1
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    thread_local! {
+        pub(super) static PROBES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static PROBE_PARSES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// Probes and parses of the escalation search while `html` is imported.
+    fn search_cost(html: &str) -> (usize, usize) {
+        PROBES.with(|n| n.set(0));
+        PROBE_PARSES.with(|n| n.set(0));
+        crate::html_import::html_to_carve(html, &Default::default()).expect("imports");
+        (PROBES.with(Cell::get), PROBE_PARSES.with(Cell::get))
+    }
+
+    /// Every paragraph holds a bare `[` in a span, which fails the minimal form,
+    /// so the escalation search runs to its budget. A candidate the halving has
+    /// already judged must not be parsed again.
+    #[test]
+    fn the_escalation_search_does_not_reparse_a_judged_candidate() {
+        let paragraph =
+            "<p><span class=b>[</span><a href=/x>edit</a><span class=b>]</span> a (b) c.</p>";
+        let (probes, parses) = search_cost(&paragraph.repeat(64));
+        assert!(probes > 0, "the search did not run");
+        assert!(parses < probes, "{parses} parses for {probes} probes");
+    }
 }
