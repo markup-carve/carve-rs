@@ -16914,6 +16914,8 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
                 {
                     if head_rows + foot_rows <= n.rows.len() {
                         n.row_groups = Some(TableRowGroups {
+                            head_attrs: None,
+                            foot_attrs: None,
                             head_rows,
                             bodies: vec![TableBodyGroup {
                                 head_rows: 0,

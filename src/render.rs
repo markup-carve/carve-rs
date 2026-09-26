@@ -2043,6 +2043,30 @@ fn render_table(
     if resolved.columns.is_empty() {
         resolved.columns = columns_from_attrs(resolved.attrs.as_ref());
     }
+    if let Some(groups) = &resolved.row_groups {
+        if groups.head_attrs.is_some()
+            || groups.foot_attrs.is_some()
+            || groups.bodies.iter().any(|b| b.attrs.is_some())
+        {
+            let mut end = groups.head_rows;
+            let mut boundaries = vec![end];
+            for body in &groups.bodies {
+                end += body.head_rows + body.body_rows;
+                boundaries.push(end);
+            }
+            for boundary in boundaries {
+                if let Some(row) = resolved.rows.get_mut(boundary) {
+                    for cell in &mut row.cells {
+                        if cell.span == Some(TableCellSpan::Rowspan) {
+                            cell.span = None;
+                            cell.children.clear();
+                            cell.blocks = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
     let t = &resolved;
     indent(out, level);
     out.push_str("<table");
@@ -2117,27 +2141,26 @@ fn render_table(
                     .all(|(i, cell)| cell.header || resolved(i, cell))
         })
         .count();
-    let source_partition = t.attrs.as_ref().is_some_and(|attrs| {
-        attrs.key_values.contains_key("header-rows") || attrs.key_values.contains_key("footer-rows")
-    });
-    let header_count = if source_partition {
-        t.row_groups
-            .as_ref()
-            .map_or(derived_header_count, |groups| groups.head_rows)
-    } else {
-        derived_header_count
-    };
-    let footer_count = if source_partition {
-        t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows)
-    } else {
-        0
-    };
+    let header_count = t
+        .row_groups
+        .as_ref()
+        .map_or(derived_header_count, |groups| groups.head_rows);
+    let footer_count = t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows);
     let footer_start = t.rows.len() - footer_count;
+    let mut section_ends = vec![header_count, footer_start];
+    let mut section_end = header_count;
+    if let Some(groups) = &t.row_groups {
+        for body in &groups.bodies {
+            section_end += body.head_rows + body.body_rows;
+            section_ends.push(section_end);
+        }
+    }
     let crosses_section = rowspan_cols.iter().any(|(&(row, col), &span)| {
         span > 1
             && t.rows[row].cells[col].span != Some(TableCellSpan::Colspan)
-            && ((row < header_count && row + span > header_count)
-                || (row < footer_start && row + span > footer_start))
+            && section_ends
+                .iter()
+                .any(|&end| row < end && row + span > end)
     });
     // Computed once per table: every row and every cell reads the same answer.
     let column_defaults = table_column_defaults(t, header_count);
@@ -2186,10 +2209,18 @@ fn render_table(
     // `tbody` gave each row a line, and nothing said why one element had two
     // layouts - which is how two corpus fixtures came to demand different
     // `tfoot` shapes with no rule to measure either against.
-    if has_header {
+    if has_header
+        || t.row_groups
+            .as_ref()
+            .is_some_and(|g| g.head_attrs.is_some())
+    {
         out.push('\n');
         indent(out, level + 1);
-        out.push_str("<thead>");
+        out.push_str("<thead");
+        if let Some(g) = &t.row_groups {
+            write_attrs(out, &g.head_attrs);
+        }
+        out.push('>');
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
             out.push('\n');
             indent(out, level + 2);
@@ -2211,10 +2242,28 @@ fn render_table(
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
     // no <tbody>, matching carve-php.
-    if body_start < footer_start {
+    let fallback_bodies = if body_start < footer_start {
+        vec![TableBodyGroup {
+            head_rows: 0,
+            body_rows: footer_start - body_start,
+            row_head_columns: None,
+            attrs: None,
+        }]
+    } else {
+        vec![]
+    };
+    let bodies = t
+        .row_groups
+        .as_ref()
+        .map_or(fallback_bodies.as_slice(), |g| g.bodies.as_slice());
+    let mut body_start = body_start;
+    for body in bodies {
+        let body_end = body_start + body.head_rows + body.body_rows;
         out.push('\n');
         indent(out, level + 1);
-        out.push_str("<tbody>");
+        out.push_str("<tbody");
+        write_attrs(out, &body.attrs);
+        out.push('>');
         let mut body_ctx = TableBodyRenderContext {
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
@@ -2222,25 +2271,42 @@ fn render_table(
             options,
             state,
         };
-        for (row_idx, row) in t
-            .rows
-            .iter()
-            .enumerate()
-            .take(footer_start)
-            .skip(body_start)
-        {
+        for (row_idx, row) in t.rows.iter().enumerate().take(body_end).skip(body_start) {
             out.push('\n');
             indent(out, level + 2);
-            render_table_body_row(out, row, row_idx, &mut body_ctx);
+            if row_idx < body_start + body.head_rows {
+                render_table_row(
+                    out,
+                    row,
+                    true,
+                    body_ctx.options,
+                    row_idx,
+                    &rowspan_cols,
+                    &orphan_carets,
+                    body_ctx.state,
+                    &column_defaults,
+                );
+            } else {
+                render_table_body_row(out, row, row_idx, &mut body_ctx);
+            }
         }
         out.push('\n');
         indent(out, level + 1);
         out.push_str("</tbody>");
+        body_start = body_end;
     }
-    if footer_start < t.rows.len() {
+    if footer_start < t.rows.len()
+        || t.row_groups
+            .as_ref()
+            .is_some_and(|g| g.foot_attrs.is_some())
+    {
         out.push('\n');
         indent(out, level + 1);
-        out.push_str("<tfoot>");
+        out.push_str("<tfoot");
+        if let Some(g) = &t.row_groups {
+            write_attrs(out, &g.foot_attrs);
+        }
+        out.push('>');
         let mut foot_ctx = TableBodyRenderContext {
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,

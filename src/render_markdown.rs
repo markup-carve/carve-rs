@@ -805,6 +805,7 @@ fn render_definition_list(
 }
 
 fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
+    crate::render_loss::record_table_section_attributes(node);
     let mut header = None;
     let mut header_columns = 0usize;
     let mut rows = Vec::new();

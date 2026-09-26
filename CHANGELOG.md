@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Breaking
 
+- `TableRowGroups` adds `head_attrs` and `foot_attrs`. Downstream struct literals must initialize both fields to `None` when unused. Package releases remain on the 0.1 patch line.
+
 - Escaped spaces and preserved line-block columns are `non_breaking_space` nodes, and U+E000 is literal content in every field. A tree stored under the old marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`. Reparsing the source is the only remedy - a stored tree cannot tell a generated space from an authored character (#1981).
 
 ### Fixes
@@ -23,6 +25,10 @@ which the published crate does not carry.
 
 - Match the pinned extension attribute-order rule for spoiler wrappers with and without an authored class slot (#1981).
 - Annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces (#1981).
+
+### Added
+
+- Table heads and feet retain attributes through AST exchange and HTML import. HTML applies section attributes to `thead`, `tbody`, and `tfoot`; source and text targets report unsupported attributes. (markup-carve/carve#2339)
 
 ## [0.1.7] - 2026-09-25
 

@@ -473,6 +473,7 @@ struct RenderedCell {
 }
 
 fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
+    crate::render_loss::record_table_section_attributes(node);
     let rows =
         node.rows
             .iter()

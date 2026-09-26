@@ -54,29 +54,29 @@ fn a_partition_a_reader_cannot_derive_is_stated() {
         (
             "a foot",
             "<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>",
-            TableRowGroups { head_rows: 1, bodies: vec![body(0, 1, None)], foot_rows: 1 },
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 1, None)], foot_rows: 1 },
         ),
         (
             "a second body",
             "<table><tbody><tr><td>1</td></tr></tbody><tbody><tr><td>2</td></tr></tbody></table>",
-            TableRowGroups { head_rows: 0, bodies: vec![body(0, 1, None), body(0, 1, None)], foot_rows: 0 },
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 1, None), body(0, 1, None)], foot_rows: 0 },
         ),
         (
             "row-head columns",
             "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th>R1</th><td>1</td></tr><tr><th>R2</th><td>2</td></tr></tbody></table>",
-            TableRowGroups { head_rows: 1, bodies: vec![body(0, 2, Some(1))], foot_rows: 0 },
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 2, Some(1))], foot_rows: 0 },
         ),
         (
             // Word and pandoc both emit this: the derived head is EMPTY and the
             // stated one is not.
             "a head that is not header cells",
             "<table><thead><tr><td>a</td></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
-            TableRowGroups { head_rows: 1, bodies: vec![body(0, 1, None)], foot_rows: 0 },
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 1, None)], foot_rows: 0 },
         ),
         (
             "a body with its own header rows under a head",
             "<table><thead><tr><th>a</th></tr></thead><tbody><tr><th>m</th></tr><tr><td>1</td></tr></tbody></table>",
-            TableRowGroups { head_rows: 1, bodies: vec![body(1, 1, None)], foot_rows: 0 },
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(1, 1, None)], foot_rows: 0 },
         ),
     ] {
         assert_eq!(groups_of(html), Some(expected), "{name}");
@@ -94,6 +94,8 @@ fn a_header_only_first_body_stays_a_body_when_a_second_follows() {
             "<table><tbody><tr><th>a</th></tr></tbody><tbody><tr><td>1</td></tr></tbody></table>"
         ),
         Some(TableRowGroups {
+            head_attrs: None,
+            foot_attrs: None,
             head_rows: 0,
             bodies: vec![body(1, 0, None), body(0, 1, None)],
             foot_rows: 0,

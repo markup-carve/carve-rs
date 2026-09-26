@@ -83,7 +83,7 @@ pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
     ("attrs", &["classes", "id", "keyValues", "order"]),
     ("payload", &["format", "value"]),
     ("pos", &["endColumn", "endLine", "endOffset", "file", "startColumn", "startLine", "startOffset"]),
-    ("rowGroups", &["bodies", "footRows", "headRows"]),
+    ("rowGroups", &["bodies", "footAttrs", "footRows", "headAttrs", "headRows"]),
 ];
 
 /// Properties the schema names for an untyped record in an array,
