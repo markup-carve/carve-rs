@@ -937,6 +937,7 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         | InlineNode::Tag(_)
         | InlineNode::CitationGroup(_)
         | InlineNode::Abbreviation(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_) => {}
@@ -2816,7 +2817,18 @@ fn render_nodes_with_verbatim(
         let opens_bracket = nodes
             .get(idx + 1)
             .is_some_and(|next| leading_bracket_run(next).is_some());
-        let rendered = if verbatim.contains(&idx) {
+        let layout_space = ctx.line_block_depth > 0
+            && matches!(node, InlineNode::NonBreakingSpace(n) if render_attrs(&n.attrs).is_empty())
+            && (idx == 0
+                || matches!(
+                    nodes.get(idx.wrapping_sub(1)),
+                    Some(InlineNode::HardBreak(_) | InlineNode::NonBreakingSpace(_))
+                )
+                || matches!(nodes.get(idx + 1), Some(InlineNode::NonBreakingSpace(_))));
+        let rendered = if layout_space {
+            note_inserted(S_STAGED_SPACE);
+            staged_space().to_string()
+        } else if verbatim.contains(&idx) {
             // The directive's own source, as the author wrote it: no escaping,
             // and no smart typography either, so a quoted path keeps its
             // straight quotes instead of being curled into a path that names a
@@ -3273,6 +3285,16 @@ fn render_inline_body(
                 )
             };
             format!("{body}{}", render_attrs(&footnote.attrs))
+        }
+        InlineNode::NonBreakingSpace(n) => {
+            note_inserted(S_ESCAPED_SPACE);
+            let body = escaped_space();
+            let attrs = render_attrs(&n.attrs);
+            if attrs.is_empty() {
+                body
+            } else {
+                format!("[{body}]{attrs}")
+            }
         }
         InlineNode::SoftBreak(_) => {
             if ctx.table_cell_depth > 0 {
@@ -4127,7 +4149,7 @@ fn normalize(text: &str) -> String {
 /// blocks, frontmatter, and block comments reproduce their content byte-exact
 /// (carve-js issue 340). Sentinel-encode the vulnerable bytes before the
 /// content joins the document string; `normalize` restores them at the end.
-/// U+E000 is already the NBSP sentinel; U+E001..U+E003 extend the scheme.
+/// Markers are allocated from characters absent from the document.
 fn protect_verbatim(content: &str) -> String {
     let mut lines = Vec::new();
     for line in content.split('\n') {

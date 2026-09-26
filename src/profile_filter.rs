@@ -1100,6 +1100,7 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
         InlineNode::LiteralInline(l) => l.content.clone(),
+        InlineNode::NonBreakingSpace(_) => "\u{00a0}".to_string(),
         InlineNode::SoftBreak(_) => " ".to_string(),
         InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::Image(img) => image_text(img),
@@ -1384,6 +1385,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::CaptionNumber(_)
         | InlineNode::CitationGroup(_)
         | InlineNode::Ruby(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::AutoLink(_)

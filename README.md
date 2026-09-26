@@ -85,3 +85,16 @@ for the toolchain, the test commands, and what a spec-affecting change involves.
 Build setup, tests, and engine-pin maintenance are in the
 [development guide](https://github.com/markup-carve/carve-rs/blob/main/docs/development.md)
 and [engine pin guard](https://github.com/markup-carve/carve-rs/blob/main/docs/engine-pin-guard.md).
+
+### Whitespace and annotation offsets
+
+An escaped space produces a `non_breaking_space` node. Preserved line-block
+columns use the same node. Text and verbatim values keep literal Unicode,
+including U+E000. HTML renders generated spaces as `&nbsp;`; Markdown uses
+U+00A0, and plain text and ANSI use ordinary spaces. Package and envelope
+versions remain on the existing release line.
+
+Annotation offsets count Unicode codepoints in the contract's fixed field
+order. They do not depend on JSON property insertion order or source positions.
+The shared annotation fixture covers image alt text, math, breaks and reversed
+ranges.

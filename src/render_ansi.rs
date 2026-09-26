@@ -865,6 +865,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 }
             }
         }
+        InlineNode::NonBreakingSpace(_) => crate::NBSP_PLACEHOLDER.to_string(),
         InlineNode::SoftBreak(_) => " ".to_string(),
         InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::CriticInsert(insert) => style(

@@ -2456,6 +2456,12 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
                 w.finish();
             }
         }
+        InlineNode::NonBreakingSpace(n) => {
+            let mut w = typed(out, "non_breaking_space");
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
         InlineNode::SoftBreak(n) => {
             let mut w = typed(out, "soft_break");
             write_pos_field(&mut w, &n.pos);
@@ -3579,6 +3585,10 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             // renderer assigns this itself while numbering.
             ref_id: None,
             pos: optional_pos(obj, "inline_footnote")?,
+        })),
+        "non_breaking_space" => Ok(InlineNode::NonBreakingSpace(NonBreakingSpace {
+            attrs: optional_attrs(obj)?,
+            pos: optional_pos(obj, "non_breaking_space")?,
         })),
         "soft_break" => Ok(InlineNode::SoftBreak(Break {
             pos: optional_pos(obj, "soft_break")?,

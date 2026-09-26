@@ -52,6 +52,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("literal_inline", &["attrs", "content", "pos", "type"]),
     ("math", &["attrs", "content", "display", "label", "number", "pos", "type"]),
     ("mention", &["attrs", "pos", "type", "user"]),
+    ("non_breaking_space", &["attrs", "pos", "type"]),
     ("paragraph", &["attrs", "blockImage", "children", "pos", "type"]),
     ("raw_block", &["attrs", "content", "format", "pos", "type"]),
     ("raw_inline", &["attrs", "content", "format", "pos", "type"]),

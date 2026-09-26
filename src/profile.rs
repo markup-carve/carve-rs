@@ -103,6 +103,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     "link",
     "autolink",
     "image",
+    "non_breaking_space",
     "soft_break",
     "hard_break",
     "raw_inline",
@@ -292,6 +293,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         } else {
             "footnote_ref"
         }),
+        InlineNode::NonBreakingSpace(_) => Some("non_breaking_space"),
         InlineNode::SoftBreak(_) => Some("soft_break"),
         InlineNode::HardBreak(_) => Some("hard_break"),
         InlineNode::CriticInsert(_) => Some("insert"),
@@ -814,6 +816,7 @@ impl Profile {
                 "mention",
                 "code",
                 "link",
+                "non_breaking_space",
                 "soft_break",
                 "hard_break",
                 "delete",
@@ -915,6 +918,7 @@ impl Profile {
                 "insert",
                 "superscript",
                 "subscript",
+                "non_breaking_space",
                 "soft_break",
                 "hard_break",
             ]))

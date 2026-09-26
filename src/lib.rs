@@ -60,19 +60,10 @@ mod table_spans;
 mod translit_map;
 mod wire_fields;
 
-/// Private-use sentinel for a parser/renderer-GENERATED non-breaking space
-/// (an escaped space `\ ` or line-block leading indent). It is distinct from a
-/// LITERAL U+00A0 typed in the source: HTML folds both to `&nbsp;`, but the
-/// plain/ANSI renderers turn this placeholder back into an ASCII space while
-/// preserving literal U+00A0. Using a real char would conflate the two, and
-/// `fmt` could no longer tell `a\ b` from a typed no-break space.
-///
-/// U+E000 because this value is PUBLISHED - it reaches a consumer in a text
-/// node - and the reference implementation publishes U+E000 for it. Two engines
-/// spelling the same resolved space with different private-use characters is not
-/// something a consumer can be expected to absorb (carve-rs#404). The writer's
-/// own staging markers moved to U+E010.. to free it.
-pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
+/// Temporary marker for generated line-block columns and terminal rendering.
+/// Authored NUL is normalized before parsing. Published spaces use explicit
+/// `NonBreakingSpace` nodes; verbatim fields contain literal U+00A0.
+pub(crate) const NBSP_PLACEHOLDER: char = '\0';
 /// The Carve specification version this engine implements.
 ///
 /// `carve fmt --stamp` writes it into a document and [`needs_review`] compares

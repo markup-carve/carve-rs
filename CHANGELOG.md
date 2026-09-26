@@ -11,6 +11,12 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Changed
+
+- Escaped spaces and preserved line-block columns use `non_breaking_space` nodes. Literal U+E000 remains literal in every output; stored trees using the old marker need source reparsing to recover authored characters.
+- Annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces.
+
+
 ## [0.1.7] - 2026-09-25
 
 ### Breaking

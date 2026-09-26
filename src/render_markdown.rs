@@ -1628,6 +1628,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 }
             }
         }
+        InlineNode::NonBreakingSpace(_) => "\u{00a0}".to_string(),
         InlineNode::SoftBreak(_) => "\n".to_string(),
         // A BACKSLASH, not two trailing spaces (PART 11 section 9). Both mean
         // `<br />` to a CommonMark reader, but trailing whitespace is removed by
@@ -2100,20 +2101,7 @@ fn strip_controls(input: &str) -> String {
     strip_control_chars(input)
 }
 
-/// Resolve the no-break-space sentinel U+E000 to a literal U+00A0, Markdown's
-/// no-break space.
-///
-/// PART 12 §3 puts the sentinel on FOUR fields - `text.value`, `code.value`,
-/// `code_block.content` and `literal_inline.content` - and a consumer MUST map
-/// it on all of them rather than emit it. Only `raw_block.content` is excluded:
-/// that one is byte-for-byte passthrough, so a U+E000 in it is payload and
-/// mapping it would corrupt what the node exists to carry.
-///
-/// Two sources put it there and BOTH have to survive this: an escaped space
-/// (`\ `), which is a single sentinel, and a line block's preserved indentation
-/// (PART 9 §23), which is a RUN of one sentinel per space. Replacing every
-/// occurrence covers both; a fix that only knew about the escaped space would
-/// map the first and leave the rest.
+/// Resolve the internal staging marker to Markdown's literal no-break space.
 fn resolve_nbsp(text: &str) -> String {
     text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
 }
@@ -2663,6 +2651,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
+            InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::Text(text) => {
                 out.push_str(&text.value.replace(crate::NBSP_PLACEHOLDER, " "))
             }

@@ -4618,6 +4618,7 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::Extension(n) => n.pos.as_mut(),
         InlineNode::Abbreviation(n) => n.pos.as_mut(),
         InlineNode::Footnote(n) => n.pos.as_mut(),
+        InlineNode::NonBreakingSpace(n) => n.pos.as_mut(),
         InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos.as_mut(),
         InlineNode::CriticInsert(n) => n.pos.as_mut(),
         InlineNode::CriticDelete(n) => n.pos.as_mut(),
@@ -15055,55 +15056,134 @@ fn verse_comment_line(stripped: &str) -> Option<String> {
 fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<InlineNode> {
     inlines
         .into_iter()
-        .map(|node| match node {
-            // The hard break here IS the source's line ending, so it keeps the
-            // soft break's span rather than being rebuilt without one.
-            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
-            InlineNode::Emphasis(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::Emphasis(n)
-            }
-            InlineNode::Link(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::Link(n)
-            }
-            InlineNode::Span(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::Span(n)
-            }
-            InlineNode::Extension(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::Extension(n)
-            }
-            InlineNode::CriticInsert(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::CriticInsert(n)
-            }
-            InlineNode::CriticDelete(mut n) => {
-                n.children = harden_verse_breaks(n.children);
-                InlineNode::CriticDelete(n)
-            }
-            InlineNode::CriticSubstitute(mut n) => {
-                n.old = harden_verse_breaks(n.old);
-                n.new = harden_verse_breaks(n.new);
-                InlineNode::CriticSubstitute(n)
-            }
-            InlineNode::Footnote(mut n) => {
-                n.inline = n.inline.map(harden_verse_breaks);
-                InlineNode::Footnote(n)
-            }
-            InlineNode::CitationGroup(mut group) => {
-                for item in &mut group.items {
-                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
-                        .into_iter()
-                        .flatten()
-                    {
-                        *field = harden_verse_breaks(std::mem::take(field));
-                    }
+        .map(|mut node| {
+            let attrs = match &mut node {
+                InlineNode::NonBreakingSpace(n) => n.attrs.as_mut(),
+                InlineNode::Emphasis(n) => n.attrs.as_mut(),
+                InlineNode::Link(n) => n.attrs.as_mut(),
+                InlineNode::Image(n) => n.attrs.as_mut(),
+                InlineNode::Span(n) => n.attrs.as_mut(),
+                InlineNode::Ruby(n) => n.attrs.as_mut(),
+                InlineNode::Extension(n) => n.attrs.as_mut(),
+                InlineNode::Code(n) => n.attrs.as_mut(),
+                InlineNode::Math(n) => n.attrs.as_mut(),
+                InlineNode::LiteralInline(n) => n.attrs.as_mut(),
+                InlineNode::Symbol(n) => n.attrs.as_mut(),
+                InlineNode::AutoLink(n) => n.attrs.as_mut(),
+                InlineNode::Mention(n) => n.attrs.as_mut(),
+                InlineNode::Tag(n) => n.attrs.as_mut(),
+                InlineNode::Footnote(n) => n.attrs.as_mut(),
+                InlineNode::CriticInsert(n) => n.attrs.as_mut(),
+                InlineNode::CriticDelete(n) => n.attrs.as_mut(),
+                _ => None,
+            };
+            if let Some(attrs) = attrs {
+                for value in attrs
+                    .id
+                    .iter_mut()
+                    .chain(attrs.classes.iter_mut())
+                    .chain(attrs.key_values.values_mut())
+                {
+                    *value = value.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
                 }
-                InlineNode::CitationGroup(group)
             }
-            other => other,
+            match node {
+                // The hard break here IS the source's line ending, so it keeps the
+                // soft break's span rather than being rebuilt without one.
+                InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
+                InlineNode::Emphasis(mut n) => {
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::Emphasis(n)
+                }
+                InlineNode::Link(mut n) => {
+                    n.href = n.href.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    for value in n
+                        .title
+                        .iter_mut()
+                        .chain(n.ref_label.iter_mut())
+                        .chain(n.raw_ref.iter_mut())
+                    {
+                        *value = value.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    }
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::Link(n)
+                }
+                InlineNode::Span(mut n) => {
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::Span(n)
+                }
+                InlineNode::Extension(mut n) => {
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::Extension(n)
+                }
+                InlineNode::CriticInsert(mut n) => {
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::CriticInsert(n)
+                }
+                InlineNode::CriticDelete(mut n) => {
+                    n.children = harden_verse_breaks(n.children);
+                    InlineNode::CriticDelete(n)
+                }
+                InlineNode::CriticSubstitute(mut n) => {
+                    n.old = harden_verse_breaks(n.old);
+                    n.new = harden_verse_breaks(n.new);
+                    InlineNode::CriticSubstitute(n)
+                }
+                InlineNode::Footnote(mut n) => {
+                    for value in n.id.iter_mut().chain(n.ref_id.iter_mut()) {
+                        *value = value.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    }
+                    n.inline = n.inline.map(harden_verse_breaks);
+                    InlineNode::Footnote(n)
+                }
+                InlineNode::CitationGroup(mut group) => {
+                    group.raw = group.raw.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    for item in &mut group.items {
+                        for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                            .into_iter()
+                            .flatten()
+                        {
+                            *field = harden_verse_breaks(std::mem::take(field));
+                        }
+                    }
+                    InlineNode::CitationGroup(group)
+                }
+                InlineNode::Code(mut n) => {
+                    n.value = n.value.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    InlineNode::Code(n)
+                }
+                InlineNode::Math(mut n) => {
+                    n.content = n.content.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    InlineNode::Math(n)
+                }
+                InlineNode::RawInline(mut n) => {
+                    n.content = n.content.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    InlineNode::RawInline(n)
+                }
+                InlineNode::LiteralInline(mut n) => {
+                    n.content = n.content.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    InlineNode::LiteralInline(n)
+                }
+                InlineNode::Image(mut n) => {
+                    for value in [&mut n.src, &mut n.alt]
+                        .into_iter()
+                        .chain(n.title.iter_mut())
+                        .chain(n.ref_label.iter_mut())
+                        .chain(n.raw_ref.iter_mut())
+                    {
+                        *value = value.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+                    }
+                    InlineNode::Image(n)
+                }
+                InlineNode::Ruby(mut n) => {
+                    for pair in &mut n.pairs {
+                        pair.base = harden_verse_breaks(std::mem::take(&mut pair.base));
+                        pair.annotation = harden_verse_breaks(std::mem::take(&mut pair.annotation));
+                    }
+                    InlineNode::Ruby(n)
+                }
+                other => other,
+            }
         })
         .collect()
 }
@@ -17171,6 +17251,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::Extension(n) => n.pos = pos,
         InlineNode::Abbreviation(n) => n.pos = pos,
         InlineNode::Footnote(n) => n.pos = pos,
+        InlineNode::NonBreakingSpace(n) => n.pos = pos,
         InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos = pos,
         InlineNode::CriticInsert(n) => n.pos = pos,
         InlineNode::CriticDelete(n) => n.pos = pos,
@@ -17398,6 +17479,23 @@ fn parse_inline_context(
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
+        if c == 0 {
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+                &mut buf_src_delta,
+            );
+            out.push(InlineNode::NonBreakingSpace(NonBreakingSpace {
+                attrs: None,
+                pos: inline_pos(positions, base + i, base + i + 1),
+            }));
+            i += 1;
+            continue;
+        }
 
         // With no extension matcher able to claim an arbitrary byte, runs of
         // ASCII prose cannot open any core inline construct. Append the whole
@@ -17441,18 +17539,19 @@ fn parse_inline_context(
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
             if nxt == b' ' {
-                if buf_start.is_none() {
-                    buf_start = Some(i);
-                }
-                // Two source bytes become one placeholder character, so the
-                // buffer no longer measures the source. Record the difference
-                // rather than refusing a position: the span covers exactly the
-                // source this run came from, which is what the reference
-                // publishes too. Only the VALUE differs from the slice, and a
-                // slice holding a backslash is already exempt from that
-                // comparison for this reason.
-                buf_src_delta += 2 - crate::NBSP_PLACEHOLDER.len_utf8() as isize;
-                buf.push(crate::NBSP_PLACEHOLDER);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                out.push(InlineNode::NonBreakingSpace(NonBreakingSpace {
+                    attrs: None,
+                    pos: inline_pos(positions, base + i, base + i + 2),
+                }));
                 i += 2;
                 continue;
             }
@@ -18889,6 +18988,7 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         // An escaped character is its own node but still the character before
         // the quote, and quote flanking reads that character: `\{"quoted"`
         // opens on the brace exactly as an unescaped `{` would (corpus 163).
+        Some(InlineNode::NonBreakingSpace(_)) => '\u{00a0}',
         Some(InlineNode::EscapedText(t)) => t.value.chars().last().unwrap_or('x'),
         None => '\0',
         Some(_) => 'x',
@@ -22261,6 +22361,7 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         | InlineNode::CitationGroup(_)
         | InlineNode::Abbreviation(_)
         | InlineNode::Footnote(_)
+        | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
@@ -22351,6 +22452,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
+            InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
             InlineNode::Text(s) => out.push_str(&s.value),
             // An escaped character is VISIBLE prose - `\*` renders as `*` - so it
             // contributes to every text derived from this run, exactly as the
