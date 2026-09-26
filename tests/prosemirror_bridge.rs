@@ -56,14 +56,6 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
     ),
 ];
 
-// Wire types the published map deliberately does not name, and the entry each
-// resolves through. `tag` is a real PART 12 type, but the spec classifies it
-// under `mention` for profile purposes - profiles.md says the vocabulary "does
-// not list" it - so carve-grammars has no `tag` key and should not grow one.
-// Restating it as a local entry is how a vendored copy stops being a copy;
-// carve-php did exactly that and the entry turned out to be dead.
-const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
-
 // Documents whose CANONICAL CARVE SOURCE does not survive the bridge round
 // trip, grouped by cause. Every one of them renders byte-identical HTML.
 //
@@ -435,10 +427,11 @@ fn stock_mention_is_accepted_but_never_emitted() {
 #[test]
 fn inbound_mention_flavor_comes_from_the_arriving_name() {
     let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
-    let names = mapped_names(&map, "mention");
+    let mention = mapped_names(&map, "mention");
+    let tag = mapped_names(&map, "tag");
     let input = json!({"type":"doc","content":[{"type":"paragraph","content":[
-        {"type":names[0],"attrs":{"id":"alice"}}, {"type":"text","text":" "},
-        {"type":names[1],"attrs":{"id":"topic"}}
+        {"type":mention[0],"attrs":{"id":"alice"}}, {"type":"text","text":" "},
+        {"type":tag[0],"attrs":{"id":"topic"}}
     ]}]});
     let doc = from_prosemirror(&input.to_string()).expect("mapped mention flavors import");
     let html = render_html(&doc).unwrap();
@@ -464,7 +457,7 @@ const DIFFERENT_LABEL: &str =
 
 #[test]
 fn a_stock_tiptap_mention_is_named_by_its_id_then_its_label() {
-    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "tag")[0].clone();
     let cases = [
         (
             "mention",
@@ -537,7 +530,7 @@ fn a_stock_tiptap_mention_is_named_by_its_id_then_its_label() {
 
 #[test]
 fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
-    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "tag")[0].clone();
     let as_text = "the name has no Carve mention spelling, so it is written as literal text";
     let tag_as_text = "the name has no Carve tag spelling, so it is written as literal text";
     let cases = [
@@ -599,7 +592,7 @@ fn a_mention_name_with_no_carve_spelling_is_written_as_text() {
 /// a character the payload never carried.
 #[test]
 fn a_mention_with_no_name_at_all_is_dropped_and_reported() {
-    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "tag")[0].clone();
     let no_name = "a mention with no name has nothing to write";
     let tag_no_name = "a tag with no name has nothing to write";
     let cases = [
@@ -680,7 +673,7 @@ fn the_writer_still_refuses_a_nameless_mention_a_caller_builds() {
 /// empty report, and then reach a refusal that lost the whole document.
 #[test]
 fn a_mention_attribute_is_dropped_and_reported() {
-    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].clone();
+    let tag = mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "tag")[0].clone();
     let no_spelling = "a mention has no Carve spelling for an attribute";
     let cases = [
         (
@@ -738,7 +731,7 @@ fn a_mention_written_as_text_reports_its_attribute() {
     );
 
     let (carve, dropped, degraded) = written_mention(
-        mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "mention")[1].as_str(),
+        mapped_names(&serde_json::from_str(SCHEMA_MAP).unwrap(), "tag")[0].as_str(),
         json!({"id":"big release","label":null,"data-team":"core"}),
     );
     assert_eq!(carve, "ping \\#big release\n");
@@ -1443,17 +1436,30 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
 #[test]
 fn a_tag_keeps_its_flavor() {
     let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
-    let names = mapped_names(&map, "mention");
     let (value, report) = pm("@alice #topic");
     assert_eq!(
         value.pointer("/content/0/content/0/type"),
-        Some(&json!(names[0]))
+        Some(&json!(mapped_names(&map, "mention")[0]))
     );
     assert_eq!(
         value.pointer("/content/0/content/2/type"),
-        Some(&json!(names[1]))
+        Some(&json!(mapped_names(&map, "tag")[0]))
     );
     assert!(report.dropped.is_empty());
+}
+
+#[test]
+fn a_tag_and_a_mention_round_trip_through_their_own_entries() {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    assert_eq!(mapped_names(&map, "tag"), ["carveTag"]);
+    assert_eq!(mapped_names(&map, "mention"), ["carveMention"]);
+
+    let source = "ping @alice about #topic\n";
+    let bridged = to_prosemirror(&parse(source));
+    assert!(bridged.dropped.is_empty() && bridged.degraded.is_empty());
+    let import = from_prosemirror_with_report(&bridged.json).expect("the bridge output imports");
+    assert!(import.dropped.is_empty() && import.degraded.is_empty());
+    assert_eq!(render_carve(&import.document).unwrap(), source);
 }
 
 #[test]
@@ -1526,38 +1532,13 @@ fn every_wire_type_the_spec_defines_has_a_decision() {
     let undecided: Vec<&str> = wire_types
         .iter()
         .copied()
-        .filter(|ty| {
-            !named.contains_key(*ty)
-                && !unmapped.contains_key(*ty)
-                && !ALIASED_TYPES.iter().any(|(alias, _)| alias == ty)
-        })
+        .filter(|ty| !named.contains_key(*ty) && !unmapped.contains_key(*ty))
         .collect();
 
     assert!(
         undecided.is_empty(),
         "wire types with no decision in resources/prosemirror-schema-map.json: {undecided:?}"
     );
-}
-
-/// An alias stops being an alias the moment the map names the type itself.
-///
-/// Without this the list only ever grows: upstream could add a `tag` entry and
-/// the local indirection would sit there forever, describing nothing.
-#[test]
-fn no_aliased_type_is_named_by_the_map() {
-    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("the vendored map is valid JSON");
-    let named = map["types"].as_object().expect("the map names types");
-
-    for (alias, through) in ALIASED_TYPES {
-        assert!(
-            !named.contains_key(*alias),
-            "the map now names `{alias}` itself - drop it from ALIASED_TYPES and read it directly"
-        );
-        assert!(
-            named.contains_key(*through),
-            "`{alias}` resolves through `{through}`, which the map does not name"
-        );
-    }
 }
 
 /// A name two Carve types claim resolves by the payload, not by map order.
