@@ -3367,7 +3367,11 @@ impl<'a> Importer<'a> {
                 }
                 terms.push(DefinitionTerm {
                     attrs: self.attrs(node, &p),
-                    children: self.inlines(&node.children.borrow(), &p, node_depth + 1)?,
+                    children: trim_edge_whitespace(self.inlines(
+                        &node.children.borrow(),
+                        &p,
+                        node_depth + 1,
+                    )?),
                     pos: None,
                 });
                 continue;
@@ -4491,7 +4495,8 @@ impl<'a> Importer<'a> {
                             self.cell_depth += 1;
                             let children = self.inlines(&cell.children.borrow(), &p, depth + 1);
                             self.cell_depth -= 1;
-                            children?
+                            // A cell's edges are block edges: `fmt` drops their space.
+                            trim_edge_whitespace(children?)
                         },
                         blocks: None,
                         pos: None,
