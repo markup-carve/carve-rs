@@ -1,4 +1,4 @@
-//! Paragraph extents include unplaced merged text beside expanded tabs.
+//! Paragraph starts include an unplaced first text child.
 //! Unchanged text retains its own source span (markup-carve/carve#2175).
 
 use serde_json::Value;
@@ -53,15 +53,13 @@ fn placed(source: &str, ty: &str, nth: usize) -> Option<(u64, u64)> {
     ))
 }
 
-/// The document the ruling was written against: `a`, TAB, `b` at 6..9, the
-/// terminator at 9..10, the `%%` line at 10..12.
-const TABBED: &str = "::: |\na\tb\n%%\n:::\n";
+/// Merged text at 6..13, its newline at 13..14, and a comment at 14..16.
+const TABBED: &str = "::: |\ntab\tgap\n%%\n:::\n";
 
 #[test]
 fn a_stanza_paragraph_starts_at_its_own_first_line() {
-    // It used to start at 10 - the comment line, one line BELOW the source it
-    // is the paragraph for.
-    assert_eq!(nth(TABBED, "paragraph", 0), (6, 12));
+    // The unplaced first child must not move the start to the comment line.
+    assert_eq!(nth(TABBED, "paragraph", 0), (6, 16));
 }
 
 #[test]
@@ -69,7 +67,7 @@ fn the_break_that_ends_the_tab_bearing_line_is_inside_that_paragraph() {
     let (para_start, para_end) = nth(TABBED, "paragraph", 0);
     let (break_start, break_end) = nth(TABBED, "hard_break", 0);
 
-    assert_eq!((break_start, break_end), (9, 10));
+    assert_eq!((break_start, break_end), (13, 14));
     assert!(
         break_start >= para_start && break_end <= para_end,
         "the break at {break_start}..{break_end} sits outside its paragraph at \
@@ -86,25 +84,25 @@ fn the_reassembled_text_still_carries_no_position() {
 
 #[test]
 fn the_comment_the_block_layer_emptied_keeps_its_own_line() {
-    assert_eq!(nth(TABBED, "comment", 0), (10, 12));
+    assert_eq!(nth(TABBED, "comment", 0), (14, 16));
 }
 
 #[test]
 fn it_holds_at_every_depth() {
     // A stanza inside a quote, inside an item, and inside a footnote body. Each
     // is a separate walk in this engine, and the defect reached all of them.
-    let quoted = "> ::: |\n> a\tb\n> %%\n> :::\n";
-    assert_eq!(nth(quoted, "paragraph", 0), (10, 18));
+    let quoted = "> ::: |\n> tab\tgap\n> %%\n> :::\n";
+    assert_eq!(nth(quoted, "paragraph", 0), (10, 22));
 
-    let item = "- ::: |\n  a\tb\n  %%\n  :::\n";
-    assert_eq!(nth(item, "paragraph", 0), (10, 18));
+    let item = "- ::: |\n  tab\tgap\n  %%\n  :::\n";
+    assert_eq!(nth(item, "paragraph", 0), (10, 22));
 
     // A footnote body is a separate block list, so it is a separate walk again.
     // Asserted as the CONTAINMENT relation rather than as a literal offset:
     // whether a footnote's own indent sits inside the stanza's span is a
     // different question, still open across the engines, and this rule does not
     // answer it.
-    let footnote = "[^1]: ::: |\n    a\tb\n    c\td\n    e\n\nx[^1]\n";
+    let footnote = "[^1]: ::: |\n    tab\tgap\n    c\td\n    e\n\nx[^1]\n";
     let (start, end) = nth(footnote, "paragraph", 1);
     let (break_start, break_end) = nth(footnote, "hard_break", 0);
     assert!(
