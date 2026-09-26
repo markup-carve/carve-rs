@@ -29,26 +29,7 @@ use std::path::{Path, PathBuf};
 /// branch, so a slug whose fixture had caught up was never reached and its line
 /// survived forever - which is the same green above, read the other way round.
 /// The check below is made outside that branch for exactly that reason.
-const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[
-    (
-        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace",
-        "md",
-        "CARVE-P11-058: a definition list is written without the `:` marker",
-        "**term**\n\nsee [t](/u)\n",
-    ),
-    (
-        "227-a-definition-inside-a-definition-list-dd-is-collected-and-the-entry-keeps-no-trace-2",
-        "md",
-        "CARVE-P11-058: a definition list is written without the `:` marker",
-        "**term**\n\nsee[^f]\n\n[^f]: x\n",
-    ),
-    (
-        "284-a-ragged-table-keeps-each-row-s-cell-count",
-        "md",
-        "CARVE-P11-056: a headerless table gets an empty header row",
-        "|  |  |\n| --- | --- |\n| ~~x~~ |\n| a | b |\n",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str, &str)] = &[];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")

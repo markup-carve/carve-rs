@@ -90,11 +90,7 @@ const DECLARED_UNIMPLEMENTED: &[(&str, &str, Option<&str>)] = &[];
 /// now states, so a regression is caught exactly as the corpus would have
 /// caught it, and it must still DIFFER from the pinned fixture, so an entry the
 /// pin has caught up on fails and is deleted in the commit that moves the pin.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "37-crossref-label-typography-source-markdown",
-    "CARVE-P11-038: no `{#id}` suffix; the link takes the heading's GFM slug",
-    "# The \"quoted\" -- heading\n\nSee [The \"quoted\" -- heading](#the-quoted----heading)\n",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// The floor a manifest emptied or halved cannot get past. It sits under the
 /// count today for the same reason the other floors in this repo do: the
