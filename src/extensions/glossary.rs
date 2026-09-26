@@ -145,6 +145,16 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
             BlockNode::Admonition(a) => rewrite_blocks(&mut a.children, defined),
             BlockNode::Directive(d) => rewrite_blocks(&mut d.children, defined),
             BlockNode::Div(d) => rewrite_blocks(&mut d.children, defined),
+            BlockNode::Section(d) => rewrite_blocks(&mut d.children, defined),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            rewrite_blocks(blocks, defined);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => rewrite_blocks(&mut e.children, defined),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {

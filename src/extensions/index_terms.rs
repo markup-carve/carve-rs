@@ -228,6 +228,11 @@ fn rewrite_markers_block(
                 rewrite_markers_block(child, counts, display);
             }
         }
+        BlockNode::Section(d) => {
+            for child in &mut d.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
         BlockNode::ExtensionCarrier(e) => {
             for child in &mut e.children {
                 rewrite_markers_block(child, counts, display);
@@ -237,6 +242,11 @@ fn rewrite_markers_block(
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     rewrite_markers_inline(&mut cell.children, counts, display);
+                    if let Some(blocks) = &mut cell.blocks {
+                        for child in blocks {
+                            rewrite_markers_block(child, counts, display);
+                        }
+                    }
                 }
             }
         }
@@ -272,6 +282,11 @@ fn rewrite_markers_block(
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
                             rewrite_markers_inline(&mut cell.children, counts, display);
+                            if let Some(blocks) = &mut cell.blocks {
+                                for child in blocks {
+                                    rewrite_markers_block(child, counts, display);
+                                }
+                            }
                         }
                     }
                 }
@@ -360,6 +375,16 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
             BlockNode::Admonition(a) => rewrite_containers(&mut a.children),
             BlockNode::Directive(d) => rewrite_containers(&mut d.children),
             BlockNode::Div(d) => rewrite_containers(&mut d.children),
+            BlockNode::Section(d) => rewrite_containers(&mut d.children),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            rewrite_containers(blocks);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(e) => rewrite_containers(&mut e.children),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {

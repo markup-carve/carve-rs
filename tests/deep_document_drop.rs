@@ -238,6 +238,7 @@ fn dropping_deep_content_inside_figures_citations_and_definitions_uses_bounded_s
                         valign: None,
                         attrs: None,
                         children: vec![ruby],
+                        blocks: None,
                         pos: None,
                     }],
                     attrs: None,

@@ -21,8 +21,10 @@ pub mod ast_envelope;
 pub mod ast_json;
 pub mod ast_merge;
 pub mod ast_patch;
+pub mod ast_sidecars;
 pub mod bbcode_migrate;
 mod citations;
+pub mod conversion_diagnostics;
 pub mod djot_migrate;
 mod document_ids;
 mod escape;
@@ -99,9 +101,21 @@ pub use ast_patch::{
     create_ast_patch, create_reversible_ast_patch, AstPatchError, AstPatchOperation,
     ReversibleAstPatch,
 };
+pub use ast_sidecars::{
+    authored_provenance, fresh_node_identity, from_annotation_ranges_json, from_node_identity_json,
+    from_provenance_json, parse_with_authored_provenance, to_annotation_ranges_json,
+    to_node_identity_json, to_provenance_json, AnnotationAnchor, AnnotationRange, AnnotationRanges,
+    AstSidecarError, NodeIdentity, NodeIdentityEntry, NodeProvenance, Provenance, ProvenanceOrigin,
+    ProvenanceSource,
+};
 pub use bbcode_migrate::{bbcode_to_carve, BbcodeImportError, BBCODE_MAX_INPUT_LENGTH};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
+};
+pub use conversion_diagnostics::{
+    conversion_diagnostics, to_conversion_diagnostics_json, ConversionDiagnostic,
+    ConversionDiagnosticCode, ConversionDiagnostics, ConversionPos,
+    DEFAULT_MAX_CONVERSION_DIAGNOSTICS,
 };
 pub use djot_migrate::djot_to_carve;
 pub use extension::{
@@ -133,7 +147,8 @@ pub use includes::{
 #[cfg(feature = "fs")]
 pub use includes::{FileSystemResolver, DEFAULT_MAX_FILE_BYTES};
 pub use incremental::{
-    parse_snapshot, reparse, IncrementalParse, IncrementalParseError, ParserSnapshot, TextChange,
+    parse_snapshot, parse_snapshot_with_identity, reparse, IncrementalParse, IncrementalParseError,
+    ParserSnapshot, TextChange,
 };
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
 pub use markdown_import::{

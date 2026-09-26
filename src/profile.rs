@@ -180,6 +180,7 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         // `div` - `::: toc` would start surviving a deny list it never survived.
         BlockNode::Directive(_) => Some("directive"),
         BlockNode::Div(_) => Some("div"),
+        BlockNode::Section(_) => Some("section"),
         BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
         BlockNode::Figure(_) => Some("figure"),

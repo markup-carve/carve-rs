@@ -294,6 +294,9 @@ fn queue_table(pending: &mut Vec<DropWork>, table: &mut Table) {
     for row in &mut table.rows {
         for cell in &mut row.cells {
             queue_inlines(pending, std::mem::take(&mut cell.children));
+            if let Some(blocks) = cell.blocks.take() {
+                queue_blocks(pending, blocks);
+            }
         }
     }
 }
@@ -322,6 +325,7 @@ fn drain_block(pending: &mut Vec<DropWork>, block: &mut BlockNode) {
             queue_blocks(pending, std::mem::take(&mut node.children));
         }
         BlockNode::Div(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
+        BlockNode::Section(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
         BlockNode::LineBlock(node) => queue_blocks(pending, std::mem::take(&mut node.children)),
         BlockNode::DefinitionList(node) => {
             for item in &mut node.items {
@@ -458,6 +462,8 @@ pub enum BlockNode {
     /// attribute-only is a [`BlockNode::Div`].
     Directive(Directive),
     Div(Div),
+    /// An explicit section from an interchange document. Source sections are implicit.
+    Section(Section),
     LineBlock(LineBlock),
     DefinitionList(DefinitionList),
     Figure(Figure),
@@ -667,6 +673,8 @@ pub struct TableCell {
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Interchange-only block content, in place of inline children.
+    pub blocks: Option<Vec<BlockNode>>,
     /// Where this cell sits in the source (spec PART 12 §4).
     pub pos: Option<Pos>,
 }
@@ -719,6 +727,14 @@ pub struct Div {
     pub label: Option<String>,
     pub children: Vec<BlockNode>,
     /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section {
+    pub attrs: Option<Attrs>,
+    pub level: Option<u8>,
+    pub children: Vec<BlockNode>,
     pub pos: Option<Pos>,
 }
 

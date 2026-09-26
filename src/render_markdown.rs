@@ -384,6 +384,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             let body = render_blocks(&div.children, ctx, depth + 1);
             prepend_label(body, div.label.as_deref())
         }
+        BlockNode::Section(section) => render_blocks(&section.children, ctx, depth + 1),
         BlockNode::DefinitionList(list) => {
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
@@ -822,7 +823,19 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         let cells = row
             .cells
             .iter()
-            .map(|cell| trim_non_nbsp(&render_block_inlines(&cell.children, ctx)).to_string())
+            .map(|cell| match &cell.blocks {
+                Some(blocks) => trim_non_nbsp(&render_block_inlines(
+                    &crate::render_plain::flatten_cell_block_inlines(blocks),
+                    ctx,
+                ))
+                .to_string(),
+                None => trim_non_nbsp(&render_block_inlines(
+                    &crate::render_plain::flatten_cell_inlines(&cell.children),
+                    ctx,
+                ))
+                .to_string(),
+            })
+            .map(|content| content.replace(['\r', '\n'], " "))
             .collect::<Vec<_>>();
         let rendered = format!("| {} |", cells.join(" | "));
         if row.cells.iter().all(|cell| cell.header) {
@@ -2737,6 +2750,7 @@ where
                 walk_blocks(&directive.children, depth + 1, visit);
             }
             BlockNode::Div(div) => walk_blocks(&div.children, depth + 1, visit),
+            BlockNode::Section(section) => walk_blocks(&section.children, depth + 1, visit),
             BlockNode::LineBlock(lb) => walk_blocks(&lb.children, depth + 1, visit),
             BlockNode::List(list) => {
                 for item in &list.items {
@@ -2760,6 +2774,9 @@ where
                 for row in &table.rows {
                     for cell in &row.cells {
                         visit(block, Some(&cell.children));
+                        if let Some(blocks) = &cell.blocks {
+                            walk_blocks(blocks, depth + 1, visit);
+                        }
                     }
                 }
             }

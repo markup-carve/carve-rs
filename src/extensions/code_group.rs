@@ -513,6 +513,16 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             BlockNode::Admonition(admonition) => rewrite_blocks(&mut admonition.children),
             BlockNode::Directive(div) => rewrite_blocks(&mut div.children),
             BlockNode::Div(div) => rewrite_blocks(&mut div.children),
+            BlockNode::Section(section) => rewrite_blocks(&mut section.children),
+            BlockNode::Table(table) => {
+                for row in &mut table.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            rewrite_blocks(blocks);
+                        }
+                    }
+                }
+            }
             BlockNode::ExtensionCarrier(extension) => rewrite_blocks(&mut extension.children),
             BlockNode::DefinitionList(definition_list) => {
                 for item in &mut definition_list.items {

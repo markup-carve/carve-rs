@@ -282,6 +282,13 @@ impl Renderer {
                 };
                 (name, a, self.blocks(&n.children))
             }
+            BlockNode::Section(n) => {
+                let mut a = attrs(n.attrs.as_ref());
+                if let Some(level) = n.level {
+                    a.insert("level".into(), Json::from(level));
+                }
+                (self.name("section")?, a, self.blocks(&n.children))
+            }
             BlockNode::LineBlock(n) => (
                 self.name("line_block")?,
                 attrs(n.attrs.as_ref()),
@@ -535,7 +542,13 @@ impl Renderer {
                             ),
                         );
                     }
-                    Some(node_with(name, a, self.inlines(&cell.children, &[])))
+                    let content = if let Some(blocks) = &cell.blocks {
+                        a.insert("carveCellBlocks".into(), Json::Bool(true));
+                        self.blocks(blocks)
+                    } else {
+                        self.inlines(&cell.children, &[])
+                    };
+                    Some(node_with(name, a, content))
                 })
                 .collect();
             rows.push(node_with(

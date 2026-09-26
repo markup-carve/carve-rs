@@ -257,6 +257,7 @@ fn block_pos(block: &BlockNode) -> Option<&Pos> {
         BlockNode::Admonition(n) => n.pos.as_ref(),
         BlockNode::Directive(n) => n.pos.as_ref(),
         BlockNode::Div(n) => n.pos.as_ref(),
+        BlockNode::Section(n) => n.pos.as_ref(),
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),

@@ -353,12 +353,18 @@ impl ProfileFilter<'_> {
                                     continue;
                                 }
                                 DisallowedAction::ToText => {
-                                    let text: String = row.cells[c]
-                                        .children
-                                        .iter()
-                                        .map(|n| extract_inline_text(n, self.smart))
-                                        .collect();
+                                    let text: String = match &row.cells[c].blocks {
+                                        Some(blocks) => {
+                                            crate::render_plain::flatten_cell_blocks(blocks)
+                                        }
+                                        None => row.cells[c]
+                                            .children
+                                            .iter()
+                                            .map(|n| extract_inline_text(n, self.smart))
+                                            .collect(),
+                                    };
                                     row.cells[c].children = vec![InlineNode::text(text)];
+                                    row.cells[c].blocks = None;
                                     c += 1;
                                     continue;
                                 }
@@ -366,6 +372,9 @@ impl ProfileFilter<'_> {
                             }
                         }
                         self.filter_inlines(&mut row.cells[c].children, depth + 1)?;
+                        if let Some(blocks) = &mut row.cells[c].blocks {
+                            self.filter_blocks(blocks, depth + 1)?;
+                        }
                         c += 1;
                     }
                     r += 1;
@@ -390,6 +399,7 @@ impl ProfileFilter<'_> {
                 self.filter_blocks(&mut dir.children, depth)?;
             }
             BlockNode::Div(div) => self.filter_blocks(&mut div.children, depth)?,
+            BlockNode::Section(div) => self.filter_blocks(&mut div.children, depth)?,
             BlockNode::LineBlock(lb) => self.filter_blocks(&mut lb.children, depth)?,
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
@@ -889,6 +899,7 @@ fn text_cell(text: &str) -> TableCell {
         valign: None,
         attrs: None,
         children: vec![InlineNode::text(text.to_string())],
+        blocks: None,
         // A cell this filter synthesizes has no source of its own.
         pos: None,
     }
@@ -1008,6 +1019,7 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
         BlockNode::Admonition(adm) => block_children_join(&adm.children, smart),
         BlockNode::Directive(div) => block_children_join(&div.children, smart),
         BlockNode::Div(div) => block_children_join(&div.children, smart),
+        BlockNode::Section(div) => block_children_join(&div.children, smart),
         BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
         BlockNode::BlockExtension(ext) => extract_block_text(&ext.fallback, smart),
         BlockNode::ExtensionCarrier(ext) => block_children_join(&ext.children, smart),
@@ -1218,6 +1230,9 @@ fn cleanup_block_children(block: &mut BlockNode) {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     cleanup_inlines(&mut cell.children);
+                    if let Some(blocks) = &mut cell.blocks {
+                        cleanup_blocks(blocks);
+                    }
                 }
             }
             if let Some(caption) = &mut t.caption {
@@ -1334,6 +1349,7 @@ fn is_empty_block(node: &BlockNode) -> bool {
                 && !crate::ast::is_generated_content_kind(&div.kind)
         }
         BlockNode::Div(div) => div.children.is_empty() && div.label.is_none(),
+        BlockNode::Section(div) => div.children.is_empty(),
         BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),
         BlockNode::Figure(_) => false,

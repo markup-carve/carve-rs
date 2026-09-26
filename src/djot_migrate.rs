@@ -1083,6 +1083,7 @@ fn table_continuation_lines(source: &str) -> HashSet<usize> {
                 BlockNode::Admonition(node) => visit(&node.children, lines),
                 BlockNode::Directive(node) => visit(&node.children, lines),
                 BlockNode::Div(node) => visit(&node.children, lines),
+                BlockNode::Section(node) => visit(&node.children, lines),
                 BlockNode::LineBlock(node) => visit(&node.children, lines),
                 BlockNode::DefinitionList(list) => {
                     for item in &list.items {
@@ -1107,6 +1108,11 @@ fn table_continuation_lines(source: &str) -> HashSet<usize> {
         for row in &table.rows {
             if let Some(pos) = row.pos.clone() {
                 lines.extend((pos.start_line + 1)..=pos.end_line);
+            }
+            for cell in &row.cells {
+                if let Some(blocks) = &cell.blocks {
+                    visit(blocks, lines);
+                }
             }
         }
     }

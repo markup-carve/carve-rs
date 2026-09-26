@@ -2147,6 +2147,7 @@ fn probe_children(block: &BlockNode) -> ProbeChildren<'_> {
         BlockNode::BlockQuote(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::Directive(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::Div(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Section(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::Admonition(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::FigureGroup(b) => ProbeChildren::Blocks(&b.children),
         BlockNode::LineBlock(b) => ProbeChildren::Blocks(&b.children),
@@ -4113,6 +4114,7 @@ fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
         BlockNode::Comment(c) => c.pos.as_mut(),
         BlockNode::Directive(d) => d.pos.as_mut(),
         BlockNode::Div(d) => d.pos.as_mut(),
+        BlockNode::Section(d) => d.pos.as_mut(),
         BlockNode::Admonition(a) => a.pos.as_mut(),
         BlockNode::BlockQuote(b) => b.pos.as_mut(),
         BlockNode::List(l) => l.pos.as_mut(),
@@ -14510,6 +14512,7 @@ fn parse_table_cell(
         } else {
             parse_cell_inlines(cell, text, options, anchor, extra)
         },
+        blocks: None,
         // The caller places the cell: it knows where the row line sits.
         pos: None,
     }
@@ -16658,6 +16661,7 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::Admonition(n) => Some(&mut n.attrs),
         BlockNode::Directive(n) => Some(&mut n.attrs),
         BlockNode::Div(n) => Some(&mut n.attrs),
+        BlockNode::Section(n) => Some(&mut n.attrs),
         BlockNode::LineBlock(n) => Some(&mut n.attrs),
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
         BlockNode::Figure(n) => Some(&mut n.attrs),

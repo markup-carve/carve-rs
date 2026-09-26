@@ -125,6 +125,7 @@ thread_local! {
 /// Serialize an AST, refusing a programmatically constructed tree beyond the
 /// same depth budget used by the JSON reader.
 pub fn try_to_json(doc: &Document) -> Result<String, AstJsonError> {
+    validate_interchange_shape(doc)?;
     ENCODE_DEPTH.with(|depth| depth.set(0));
     ENCODE_REFUSED.with(|refused| refused.set(false));
     let mut out = String::new();
@@ -138,10 +139,76 @@ pub fn try_to_json(doc: &Document) -> Result<String, AstJsonError> {
     }
 }
 
+pub(crate) fn validate_interchange_shape(doc: &Document) -> Result<(), AstJsonError> {
+    let mut pending: Vec<&BlockNode> = doc.children.iter().collect();
+    for body in doc.footnote_defs.values() {
+        pending.extend(body);
+    }
+    while let Some(block) = pending.pop() {
+        match block {
+            BlockNode::Section(section) => {
+                if section.level.is_some_and(|level| !(1..=6).contains(&level)) {
+                    return Err(AstJsonError::new("section.level must be between 1 and 6"));
+                }
+                pending.extend(&section.children);
+            }
+            BlockNode::Table(table) => validate_table_cells(table, &mut pending)?,
+            BlockNode::Figure(figure) => match figure.target.as_ref() {
+                FigureTarget::Table(table) => validate_table_cells(table, &mut pending)?,
+                FigureTarget::BlockQuote(quote) => pending.extend(&quote.children),
+                FigureTarget::Paragraph(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Image(_) => {}
+            },
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    pending.extend(&item.children);
+                }
+            }
+            BlockNode::DefinitionList(list) => {
+                for item in &list.items {
+                    for definition in &item.definitions {
+                        pending.extend(&definition.children);
+                    }
+                }
+            }
+            BlockNode::BlockQuote(node) => pending.extend(&node.children),
+            BlockNode::Admonition(node) => pending.extend(&node.children),
+            BlockNode::Directive(node) => pending.extend(&node.children),
+            BlockNode::Div(node) => pending.extend(&node.children),
+            BlockNode::LineBlock(node) => pending.extend(&node.children),
+            BlockNode::FigureGroup(node) => pending.extend(&node.children),
+            BlockNode::BlockExtension(node) => pending.push(&node.fallback),
+            BlockNode::ExtensionCarrier(node) => pending.extend(&node.children),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_table_cells<'a>(
+    table: &'a Table,
+    pending: &mut Vec<&'a BlockNode>,
+) -> Result<(), AstJsonError> {
+    for row in &table.rows {
+        for cell in &row.cells {
+            if let Some(blocks) = &cell.blocks {
+                if !cell.children.is_empty() {
+                    return Err(AstJsonError::new(
+                        "table_cell cannot carry both children and blocks",
+                    ));
+                }
+                pending.extend(blocks);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Serialize an AST. Prefer [`try_to_json`] for trees not produced by the
 /// parser; this compatibility entry point panics on an over-depth API tree.
 pub fn to_json(doc: &Document) -> String {
-    try_to_json(doc).expect("AST JSON encoder depth budget exceeded")
+    try_to_json(doc).expect("AST JSON encoding failed")
 }
 
 pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usize)> {
@@ -526,6 +593,7 @@ fn promote_ingested_block_images(doc: &mut Document) {
                 BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
                 BlockNode::Directive(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
+                BlockNode::Section(d) => worklist.push(d.children.as_mut_slice()),
                 BlockNode::List(l) => {
                     for item in &mut l.items {
                         worklist.push(item.children.as_mut_slice());
@@ -809,6 +877,7 @@ pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
         BlockNode::Admonition(n) => n.pos.as_ref(),
         BlockNode::Directive(n) => n.pos.as_ref(),
         BlockNode::Div(n) => n.pos.as_ref(),
+        BlockNode::Section(n) => n.pos.as_ref(),
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),
@@ -976,7 +1045,14 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
             EncodeTask::TableCell(n, depth) => {
                 let mut w = typed(out, "table_cell");
                 w.field("header", |out| write_bool(out, n.header));
-                w.field("children", |out| out.push('['));
+                w.field(
+                    if n.blocks.is_some() {
+                        "blocks"
+                    } else {
+                        "children"
+                    },
+                    |out| out.push('['),
+                );
                 tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                     let mut w = Writer { out, first: false };
                     if let Some(span) = n.span {
@@ -1006,9 +1082,15 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                     write_pos_field(&mut w, &n.pos);
                     w.finish();
                 })));
-                push_array(&mut tasks, &n.children, |node| {
-                    EncodeTask::Inline(node, depth + 1)
-                });
+                if let Some(blocks) = &n.blocks {
+                    push_array(&mut tasks, blocks, |node| {
+                        EncodeTask::Block(node, depth + 1)
+                    });
+                } else {
+                    push_array(&mut tasks, &n.children, |node| {
+                        EncodeTask::Inline(node, depth + 1)
+                    });
+                }
             }
             EncodeTask::DefinitionTerm(n, depth) => {
                 let mut w = typed(out, "definition_term");
@@ -1224,6 +1306,22 @@ fn encode_block_task<'a>(
                 let mut w = Writer { out, first: false };
                 if let Some(label) = &n.label {
                     w.field("label", |out| write_string(out, label));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
+        }
+        BlockNode::Section(n) => {
+            let mut w = typed(out, "section");
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(level) = n.level {
+                    w.field("level", |out| write_usize(out, level as usize));
                 }
                 write_attrs_field(&mut w, &n.attrs);
                 write_pos_field(&mut w, &n.pos);
@@ -1765,6 +1863,16 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
+        BlockNode::Section(n) => {
+            let mut w = typed(out, "section");
+            w.field("children", |out| write_blocks(out, &n.children));
+            if let Some(level) = n.level {
+                w.field("level", |out| write_usize(out, level as usize));
+            }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
         BlockNode::LineBlock(n) => {
             let mut w = typed(out, "line_block");
             w.field("children", |out| write_blocks(out, &n.children));
@@ -2068,7 +2176,11 @@ fn write_table_row(out: &mut String, n: &TableRow) {
 fn write_table_cell(out: &mut String, n: &TableCell) {
     let mut w = typed(out, "table_cell");
     w.field("header", |out| write_bool(out, n.header));
-    w.field("children", |out| write_inlines(out, &n.children));
+    if let Some(blocks) = &n.blocks {
+        w.field("blocks", |out| write_blocks(out, blocks));
+    } else {
+        w.field("children", |out| write_inlines(out, &n.children));
+    }
     if let Some(span) = n.span {
         w.field("span", |out| {
             write_string(
@@ -2806,6 +2918,19 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             children: decode_blocks(required_array(obj, "div", "children")?)?,
             pos: optional_pos(obj, "div")?,
         })),
+        "section" => Ok(BlockNode::Section(Section {
+            attrs: optional_attrs(obj)?,
+            level: optional_usize(obj, "level")?
+                .map(|level| {
+                    u8::try_from(level)
+                        .ok()
+                        .filter(|level| (1..=6).contains(level))
+                        .ok_or_else(|| AstJsonError::new("section.level must be between 1 and 6"))
+                })
+                .transpose()?,
+            children: decode_blocks(required_array(obj, "section", "children")?)?,
+            pos: optional_pos(obj, "section")?,
+        })),
         "line_block" => Ok(BlockNode::LineBlock(LineBlock {
             attrs: optional_attrs(obj)?,
             children: decode_blocks(required_array(obj, "line_block", "children")?)?,
@@ -3045,6 +3170,11 @@ fn decode_table_row(value: &Json) -> Result<TableRow, AstJsonError> {
 fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
     let obj = value.expect_object("table_cell")?;
     expect_type(obj, "table_cell")?;
+    if obj.contains_key("children") == obj.contains_key("blocks") {
+        return Err(AstJsonError::new(
+            "table_cell requires exactly one of children or blocks",
+        ));
+    }
     Ok(TableCell {
         // PART 12 §26: an ingested count WINS and is not recomputed. An importer
         // may have resolved it from markers this engine never saw, which is how
@@ -3062,7 +3192,11 @@ fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
             .map(decode_table_valign)
             .transpose()?,
         attrs: optional_attrs(obj)?,
-        children: decode_inlines(required_array(obj, "table_cell", "children")?)?,
+        children: optional_inlines(obj, "children")?.unwrap_or_default(),
+        blocks: obj
+            .get("blocks")
+            .map(|value| decode_blocks(value.expect_array("table_cell.blocks")?))
+            .transpose()?,
         pos: optional_pos(obj, "table_cell")?,
     })
 }

@@ -165,8 +165,18 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
             BlockNode::BlockQuote(b) => number_blocks(&mut b.children, true, state),
             BlockNode::Directive(d) => number_blocks(&mut d.children, in_blockquote, state),
             BlockNode::Div(d) => number_blocks(&mut d.children, in_blockquote, state),
+            BlockNode::Section(d) => number_blocks(&mut d.children, in_blockquote, state),
             BlockNode::Admonition(a) => number_blocks(&mut a.children, in_blockquote, state),
             BlockNode::FigureGroup(g) => number_blocks(&mut g.children, in_blockquote, state),
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        if let Some(blocks) = &mut cell.blocks {
+                            number_blocks(blocks, in_blockquote, state);
+                        }
+                    }
+                }
+            }
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     number_blocks(&mut item.children, in_blockquote, state);
@@ -183,8 +193,18 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
                 // Only a blockquote target can hold a heading; the resolver
                 // assigns its heading an id (as a quoted heading), so mirror
                 // that descent for first-id-wins.
-                if let FigureTarget::BlockQuote(b) = &mut *f.target {
-                    number_blocks(&mut b.children, true, state);
+                match &mut *f.target {
+                    FigureTarget::BlockQuote(b) => number_blocks(&mut b.children, true, state),
+                    FigureTarget::Table(t) => {
+                        for row in &mut t.rows {
+                            for cell in &mut row.cells {
+                                if let Some(blocks) = &mut cell.blocks {
+                                    number_blocks(blocks, in_blockquote, state);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             // An extension carrier (Details/Spoiler/Glossary/… registered
@@ -288,6 +308,7 @@ fn rewrite_links_blocks(
                 rewrite_links_blocks(&mut d.children, by_id, opts);
             }
             BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
+            BlockNode::Section(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
             BlockNode::Admonition(a) => {
                 if let Some(t) = &mut a.title {
                     rewrite_links_inlines(t, by_id, opts);
@@ -316,13 +337,29 @@ fn rewrite_links_blocks(
                 for row in &mut t.rows {
                     for cell in &mut row.cells {
                         rewrite_links_inlines(&mut cell.children, by_id, opts);
+                        if let Some(blocks) = &mut cell.blocks {
+                            rewrite_links_blocks(blocks, by_id, opts);
+                        }
                     }
                 }
             }
             BlockNode::Figure(f) => {
                 rewrite_links_inlines(&mut f.caption, by_id, opts);
-                if let FigureTarget::BlockQuote(b) = &mut *f.target {
-                    rewrite_links_blocks(&mut b.children, by_id, opts);
+                match &mut *f.target {
+                    FigureTarget::BlockQuote(b) => {
+                        rewrite_links_blocks(&mut b.children, by_id, opts)
+                    }
+                    FigureTarget::Table(t) => {
+                        for row in &mut t.rows {
+                            for cell in &mut row.cells {
+                                rewrite_links_inlines(&mut cell.children, by_id, opts);
+                                if let Some(blocks) = &mut cell.blocks {
+                                    rewrite_links_blocks(blocks, by_id, opts);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             BlockNode::FigureGroup(g) => {

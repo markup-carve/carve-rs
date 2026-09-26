@@ -233,6 +233,7 @@ fn push_block_children<'a>(
             push_blocks(blocks, &d.children, deeper);
         }
         BlockNode::Div(d) => push_blocks(blocks, &d.children, deeper),
+        BlockNode::Section(d) => push_blocks(blocks, &d.children, deeper),
         BlockNode::List(l) => {
             for item in &l.items {
                 push_blocks(blocks, &item.children, deeper);
@@ -255,6 +256,9 @@ fn push_block_children<'a>(
             for row in &t.rows {
                 for cell in &row.cells {
                     push_inlines(inlines, &cell.children, 0);
+                    if let Some(content) = &cell.blocks {
+                        push_blocks(blocks, content, deeper);
+                    }
                 }
             }
         }
@@ -273,6 +277,9 @@ fn push_block_children<'a>(
                     for row in &t.rows {
                         for cell in &row.cells {
                             push_inlines(inlines, &cell.children, 0);
+                            if let Some(content) = &cell.blocks {
+                                push_blocks(blocks, content, deeper);
+                            }
                         }
                     }
                 }

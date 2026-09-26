@@ -3936,6 +3936,7 @@ impl<'a> Importer<'a> {
                 valign: None,
                 attrs: None,
                 children: Vec::new(),
+                blocks: None,
                 pos: None,
             }
         }
@@ -4002,6 +4003,7 @@ impl<'a> Importer<'a> {
                             valign: None,
                             attrs: None,
                             children: Vec::new(),
+                            blocks: None,
                             pos: None,
                         });
                         invented = true;
@@ -4275,6 +4277,7 @@ impl<'a> Importer<'a> {
                             self.cell_depth -= 1;
                             children?
                         },
+                        blocks: None,
                         pos: None,
                     },
                     colspan,
@@ -6685,6 +6688,7 @@ fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<Inl
                 for_each_inline_run(&mut n.children, f);
             }
             BlockNode::Div(n) => for_each_inline_run(&mut n.children, f),
+            BlockNode::Section(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::LineBlock(n) => for_each_inline_run(&mut n.children, f),
             BlockNode::DefinitionList(n) => {
                 for item in &mut n.items {
@@ -6762,6 +6766,7 @@ fn take_candidate_marks(blocks: &mut [BlockNode], kept: &mut [bool]) {
             }
             BlockNode::Directive(div) => take_candidate_marks(&mut div.children, kept),
             BlockNode::Div(div) => take_candidate_marks(&mut div.children, kept),
+            BlockNode::Section(div) => take_candidate_marks(&mut div.children, kept),
             BlockNode::LineBlock(line_block) => {
                 take_candidate_marks(&mut line_block.children, kept)
             }

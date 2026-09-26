@@ -578,6 +578,10 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
                 d.children = collect_defs(d.children, defs);
                 out.push(BlockNode::Div(d));
             }
+            BlockNode::Section(mut d) => {
+                d.children = collect_defs(d.children, defs);
+                out.push(BlockNode::Section(d));
+            }
             other => out.push(other),
         }
     }
@@ -875,6 +879,11 @@ fn annotate_citations_block(
                         order,
                         uses,
                     );
+                    if let Some(blocks) = &mut cell.blocks {
+                        for child in blocks {
+                            annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
+                        }
+                    }
                 }
             }
         }
@@ -895,6 +904,11 @@ fn annotate_citations_block(
             }
         }
         BlockNode::Div(d) => {
+            for child in &mut d.children {
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
+            }
+        }
+        BlockNode::Section(d) => {
             for child in &mut d.children {
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
@@ -939,6 +953,13 @@ fn annotate_citations_block(
                                 order,
                                 uses,
                             );
+                            if let Some(blocks) = &mut cell.blocks {
+                                for child in blocks {
+                                    annotate_citations_block(
+                                        child, defs, mode, has_bib, seen, order, uses,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
