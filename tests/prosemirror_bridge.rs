@@ -1421,18 +1421,21 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // bridge degrades. That is why the ceiling below rises by two while the set
     // named here loses two.
     nbsp_only_degraded.sort();
-    assert_eq!(nbsp_only_degraded, vec![
-        "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
-        "29-non-breaking-space.crv",
-        "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
-        "346-a-line-block-s-last-body-line-keeps-its-backslash-2.crv",
-        "348-a-closed-inline-construct-spanning-a-verse-boundary-5.crv",
-        "41-line-blocks-2.crv",
-        "41-line-blocks-3.crv",
-        "41-line-blocks-9.crv",
-        "421-a-sigil-fence-takes-its-attribute-line.crv",
-        "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
-    ]);
+    assert_eq!(
+        nbsp_only_degraded,
+        vec![
+            "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
+            "29-non-breaking-space.crv",
+            "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
+            "346-a-line-block-s-last-body-line-keeps-its-backslash-2.crv",
+            "348-a-closed-inline-construct-spanning-a-verse-boundary-5.crv",
+            "41-line-blocks-2.crv",
+            "41-line-blocks-3.crv",
+            "41-line-blocks-9.crv",
+            "421-a-sigil-fence-takes-its-attribute-line.crv",
+            "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
+        ]
+    );
     // Ten documents now report the generated-space spelling distinction.
     // Their exact names are pinned above; the current corpus has 1882 files.
     const STRICT: usize = 1451;
