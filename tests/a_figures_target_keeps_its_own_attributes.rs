@@ -190,7 +190,7 @@ fn a_key_the_target_does_not_set_is_not_displaced() {
             "<figure data-k=\"1\"><blockquote data-j=\"2\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
             mode,
         );
-        assert_eq!(carve, "{data-j=2 data-k=1}\n> a\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(carve, "{data-k=1 data-j=2}\n> a\n^ Cap\n", "mode {mode:?}");
         assert!(rows.is_empty(), "mode {mode:?}: {rows:?}");
     }
 }
