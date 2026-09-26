@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Fixes
+
+- A `+` one column left of an in-item block quote's marker is kept as text instead of being consumed as a continuation marker (markup-carve/carve-php#2470).
+
 ## [0.1.7] - 2026-09-25
 
 ### Breaking
