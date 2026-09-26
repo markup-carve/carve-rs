@@ -9362,7 +9362,16 @@ fn parse_list(
         let blank_run_before = std::mem::take(&mut blank_run);
         // Lone `+` continuation marker (Carve): attaches the next flush-left
         // block to the current item without indentation.
-        if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
+        //
+        // The collector's dedent destroys the document column, so a line BELOW
+        // an ancestor's content column arrives here spelled flush and reads as
+        // this frame's marker column. CARVE-P9-031 gives that line to its own
+        // column, which names no container, so it is ordinary text and reaches
+        // the output (markup-carve/carve#2322).
+        if trim_ascii(line) == "+"
+            && indent_columns(line) == base_indent
+            && cur.carried_reach(cur.pos) != Some(false)
+        {
             cur.consume();
             pending_blank = false;
             // A marker is not the block these were written for either (§15 A4).
@@ -10268,7 +10277,10 @@ fn parse_list(
             .or_else(|| detect_hardbreaks_block_open(marker.content))
             .or_else(|| detect_quote_block_open(marker.content));
         while let Some(next) = cur.peek() {
-            if trim_ascii(next) == "+" && indent_columns(next) <= base_indent {
+            if trim_ascii(next) == "+"
+                && indent_columns(next) <= base_indent
+                && cur.carried_reach(cur.pos) != Some(false)
+            {
                 if attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1)) {
                     break;
                 }
