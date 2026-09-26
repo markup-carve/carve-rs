@@ -3160,8 +3160,8 @@ fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJso
         )));
     }
     Ok(TableRowGroups {
-        head_attrs: optional_named_attrs(obj, "headAttrs")?,
-        foot_attrs: optional_named_attrs(obj, "footAttrs")?,
+        head_attrs: optional_named_attrs(obj, "headAttrs")?.map(Box::new),
+        foot_attrs: optional_named_attrs(obj, "footAttrs")?.map(Box::new),
         head_rows,
         bodies,
         foot_rows,

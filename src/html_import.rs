@@ -4758,8 +4758,8 @@ impl<'a> Importer<'a> {
             HtmlImportDiagnosticCode::StructureUnspellable,
         ));
         Some(TableRowGroups {
-            head_attrs,
-            foot_attrs,
+            head_attrs: head_attrs.map(Box::new),
+            foot_attrs: foot_attrs.map(Box::new),
             head_rows,
             bodies,
             foot_rows,

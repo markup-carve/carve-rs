@@ -2218,7 +2218,7 @@ fn render_table(
         indent(out, level + 1);
         out.push_str("<thead");
         if let Some(g) = &t.row_groups {
-            write_attrs(out, &g.head_attrs);
+            write_attrs_ref(out, g.head_attrs.as_deref());
         }
         out.push('>');
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
@@ -2304,7 +2304,7 @@ fn render_table(
         indent(out, level + 1);
         out.push_str("<tfoot");
         if let Some(g) = &t.row_groups {
-            write_attrs(out, &g.foot_attrs);
+            write_attrs_ref(out, g.foot_attrs.as_deref());
         }
         out.push('>');
         let mut foot_ctx = TableBodyRenderContext {
@@ -4142,6 +4142,10 @@ fn write_attr_key_value(out: &mut String, key: &str, value: &str) {
 }
 
 fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
+    write_attrs_ref(out, attrs.as_ref());
+}
+
+fn write_attrs_ref(out: &mut String, attrs: Option<&Attrs>) {
     let Some(attrs) = attrs else {
         return;
     };

@@ -635,8 +635,8 @@ pub struct TableRowGroups {
     pub bodies: Vec<TableBodyGroup>,
     /// Rows at the end of `rows` forming the table foot.
     pub foot_rows: usize,
-    pub head_attrs: Option<Attrs>,
-    pub foot_attrs: Option<Attrs>,
+    pub head_attrs: Option<Box<Attrs>>,
+    pub foot_attrs: Option<Box<Attrs>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

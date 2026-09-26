@@ -230,21 +230,24 @@ pub(crate) fn record_table_section_attributes(node: &crate::ast::Table) {
         return;
     };
     let mut fields = vec![
-        ("rowGroups.headAttrs".to_owned(), &groups.head_attrs),
-        ("rowGroups.footAttrs".to_owned(), &groups.foot_attrs),
+        (
+            "rowGroups.headAttrs".to_owned(),
+            groups.head_attrs.as_deref(),
+        ),
+        (
+            "rowGroups.footAttrs".to_owned(),
+            groups.foot_attrs.as_deref(),
+        ),
     ];
     fields.extend(
         groups
             .bodies
             .iter()
             .enumerate()
-            .map(|(i, b)| (format!("rowGroups.bodies[{i}].attrs"), &b.attrs)),
+            .map(|(i, b)| (format!("rowGroups.bodies[{i}].attrs"), b.attrs.as_ref())),
     );
     for (field, attrs) in fields {
-        if !attrs
-            .as_ref()
-            .is_some_and(|a| *a != crate::ast::Attrs::default())
-        {
+        if !attrs.is_some_and(|a| *a != crate::ast::Attrs::default()) {
             continue;
         }
         COLLECTOR.with(|slot| {
