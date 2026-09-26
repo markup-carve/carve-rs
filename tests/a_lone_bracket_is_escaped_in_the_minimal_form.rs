@@ -75,3 +75,22 @@ fn a_destination_paren_is_found_across_adjacent_text_nodes() {
     assert_eq!(split, "x [a]\\(b) y\n");
     assert_eq!(split, whole);
 }
+
+/// Corpus 45-inline-extensions-6: an extension's reader stops at the first
+/// `]`, so a `[` in its content pairs with nothing and needs no escape.
+#[test]
+fn inline_extension_content_has_no_lone_bracket() {
+    let written = ingested(
+        r#"{"type":"inline_extension","name":"foo","content":[{"type":"text","value":"a [b"}]},{"type":"text","value":" c]"}"#,
+    );
+    assert_eq!(written, ":foo[a [b] c]\n");
+    assert_eq!(to_carve(":foo[a [b] c]\n"), ":foo[a [b] c]\n");
+}
+
+/// A run holding an empty code span is left to the search, whose answer here
+/// escapes the bracket rather than the paren.
+#[test]
+fn a_run_with_an_empty_code_span_is_left_to_the_search() {
+    let written = ingested(r#"{"type":"text","value":"x [a](b) y "},{"type":"code","value":""}"#);
+    assert_eq!(written, "x \\[a](b) y ``\n");
+}
