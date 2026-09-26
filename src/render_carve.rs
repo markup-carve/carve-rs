@@ -110,6 +110,8 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     // (`crate::render_depth::refuse_if_too_deep`).
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     crate::render_loss::record_ruby_in_document(doc);
+    let one_run = text_as_one_run(doc);
+    let doc = one_run.as_ref().unwrap_or(doc);
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
     let output = protect_leading_bom(render_carve_unguarded(doc));
@@ -117,6 +119,145 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
         return Err(error);
     }
     watch.into_result(output).map_err(Into::into)
+}
+
+/// The tree with every stretch of adjacent text nodes merged into one, ruby
+/// flattened first as the writer writes it, or `None` when nothing merges.
+///
+/// PART 11 §2: adjacent text is one run, so where a tree splits text cannot
+/// decide which character carries an escape (`x (r` beside `) y` is
+/// `x \(r) y`, as the single node is).
+fn text_as_one_run(doc: &Document) -> Option<Document> {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+
+    fn splits(nodes: &[InlineNode]) -> bool {
+        nodes.iter().any(|node| matches!(node, InlineNode::Ruby(_)))
+            || nodes
+                .windows(2)
+                .any(|pair| matches!(pair, [InlineNode::Text(_), InlineNode::Text(_)]))
+            || nodes.iter().any(inline_splits)
+    }
+    fn inline_splits(node: &InlineNode) -> bool {
+        match node {
+            InlineNode::Emphasis(e) => splits(&e.children),
+            InlineNode::Link(l) => splits(&l.children),
+            InlineNode::Span(s) => splits(&s.children),
+            InlineNode::CriticInsert(c) => splits(&c.children),
+            InlineNode::CriticDelete(c) => splits(&c.children),
+            InlineNode::CriticSubstitute(c) => splits(&c.old) || splits(&c.new),
+            InlineNode::Extension(e) => splits(&e.children),
+            InlineNode::Footnote(f) => f.inline.as_deref().is_some_and(splits),
+            InlineNode::CitationGroup(g) => g.items.iter().any(|item| {
+                [&item.prefix, &item.locator, &item.suffix]
+                    .into_iter()
+                    .flatten()
+                    .any(|part| splits(part))
+            }),
+            _ => false,
+        }
+    }
+    fn blocks_split(blocks: &[BlockNode]) -> bool {
+        blocks.iter().any(block_splits)
+    }
+    fn cells_split(rows: &[TableRow]) -> bool {
+        rows.iter()
+            .flat_map(|row| &row.cells)
+            .any(|cell| splits(&cell.children) || cell.blocks.as_deref().is_some_and(blocks_split))
+    }
+    fn block_splits(block: &BlockNode) -> bool {
+        match block {
+            BlockNode::Heading(h) => splits(&h.children),
+            BlockNode::Paragraph(p) => splits(&p.children),
+            BlockNode::LineBlock(b) => blocks_split(&b.children),
+            BlockNode::BlockQuote(b) => blocks_split(&b.children),
+            BlockNode::Admonition(a) => {
+                a.title.as_deref().is_some_and(splits) || blocks_split(&a.children)
+            }
+            BlockNode::Directive(d) => {
+                d.title.as_deref().is_some_and(splits) || blocks_split(&d.children)
+            }
+            BlockNode::Div(d) => blocks_split(&d.children),
+            BlockNode::Section(d) => blocks_split(&d.children),
+            BlockNode::List(l) => l.items.iter().any(|item| blocks_split(&item.children)),
+            BlockNode::DefinitionList(d) => d.items.iter().any(|item| {
+                item.terms.iter().any(|term| splits(&term.children))
+                    || item
+                        .definitions
+                        .iter()
+                        .any(|def| blocks_split(&def.children))
+            }),
+            BlockNode::Table(t) => t.caption.as_deref().is_some_and(splits) || cells_split(&t.rows),
+            BlockNode::FigureGroup(g) => {
+                blocks_split(&g.children) || g.caption.as_deref().is_some_and(splits)
+            }
+            BlockNode::Figure(f) => {
+                splits(&f.caption)
+                    || match &*f.target {
+                        FigureTarget::BlockQuote(b) => blocks_split(&b.children),
+                        FigureTarget::Paragraph(p) => splits(&p.children),
+                        FigureTarget::Table(t) => cells_split(&t.rows),
+                        FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => false,
+                    }
+            }
+            BlockNode::BlockExtension(e) => block_splits(&e.fallback),
+            BlockNode::ExtensionCarrier(e) => blocks_split(&e.children),
+            _ => false,
+        }
+    }
+    struct Merge;
+    impl SubtreeVisitor for Merge {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            while inlines
+                .iter()
+                .any(|node| matches!(node, InlineNode::Ruby(_)))
+            {
+                *inlines = std::mem::take(inlines)
+                    .into_iter()
+                    .flat_map(|node| match node {
+                        InlineNode::Ruby(ruby) if ruby.attrs.is_some() => {
+                            vec![InlineNode::Span(Span {
+                                attrs: ruby.attrs.clone(),
+                                children: ruby.flattened(),
+                                injected: false,
+                                pos: ruby.pos.clone(),
+                            })]
+                        }
+                        InlineNode::Ruby(ruby) => ruby.flattened(),
+                        other => vec![other],
+                    })
+                    .collect();
+            }
+            let mut merged: Vec<InlineNode> = Vec::with_capacity(inlines.len());
+            for node in std::mem::take(inlines) {
+                match (merged.last_mut(), node) {
+                    (Some(InlineNode::Text(previous)), InlineNode::Text(text)) => {
+                        previous.value.push_str(&text.value);
+                        previous.pos = None;
+                    }
+                    (_, node) => merged.push(node),
+                }
+            }
+            *inlines = merged;
+            for inline in inlines {
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    if !blocks_split(&doc.children) && !doc.footnote_defs.values().any(|b| blocks_split(b)) {
+        return None;
+    }
+    let mut copy = doc.clone();
+    let mut merge = Merge;
+    merge.blocks(&mut copy.children);
+    for blocks in copy.footnote_defs.values_mut() {
+        merge.blocks(blocks);
+    }
+    Some(copy)
 }
 
 /// A U+FEFF that would land at the head of the OUTPUT is written one column in.
