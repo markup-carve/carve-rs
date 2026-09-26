@@ -790,7 +790,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let mut covered = 0usize;
     let mut lossy = 0usize;
     let mut source_lossy: Vec<String> = Vec::new();
-    let mut generated_space_only = Vec::new();
+    let mut nbsp_only_degraded = Vec::new();
     let mut undeclared: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
@@ -834,7 +834,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
                 && pm.degraded.len() == 1
                 && pm.degraded.contains_key("non_breaking_space")
             {
-                generated_space_only.push(path.file_name().unwrap().to_string_lossy().into_owned());
+                nbsp_only_degraded.push(path.file_name().unwrap().to_string_lossy().into_owned());
             }
             lossy += 1;
         }
@@ -1410,8 +1410,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     //
     // The claim about the other two is now measured a way this report cannot
     // mislead - see the note on `NOT_IN_CORPUS`.
-    generated_space_only.sort();
-    assert_eq!(generated_space_only, vec![
+    nbsp_only_degraded.sort();
+    assert_eq!(nbsp_only_degraded, vec![
         "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
         "29-non-breaking-space.crv",
         "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",

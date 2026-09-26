@@ -135,7 +135,6 @@ fn a_verse_line_ending_in_two_spaces_places_each_node() {
     let found = texts("::: |\ndef  \n:::\n");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].1, Some((6, 9)));
-    assert!(found[0].0.starts_with("def"));
     assert_eq!(found[0].0, "def");
     let doc = carve::parse_with_options(
         "::: |\ndef  \n:::\n",
