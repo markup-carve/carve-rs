@@ -3085,6 +3085,7 @@ fn render_nodes_with_verbatim(
                 opens_a_note,
                 opens_verbatim,
                 opens_bracket,
+                idx + 1 == nodes.len() && !out.is_empty(),
             )
         };
         if !is_text {
@@ -3225,6 +3226,7 @@ fn render_inline(
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
     next_opens_a_bracket: bool,
+    may_run_to_end: bool,
 ) -> String {
     let previous = ctx.escape_unit;
     ctx.escape_unit = next_escape_unit();
@@ -3237,6 +3239,7 @@ fn render_inline(
         next_opens_a_note,
         next_opens_a_verbatim_span,
         next_opens_a_bracket,
+        may_run_to_end,
     );
     ctx.escape_unit = previous;
     out
@@ -3252,6 +3255,7 @@ fn render_inline_body(
     next_opens_a_note: bool,
     next_opens_a_verbatim_span: bool,
     next_opens_a_bracket: bool,
+    may_run_to_end: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -3392,7 +3396,17 @@ fn render_inline_body(
                 // Its run length is chosen once the whole run is written.
                 format!("{EMPTY_CODE_MARK}{}", render_attrs(&code.attrs))
             } else {
-                format!("{}{}", render_code(&value), render_attrs(&code.attrs))
+                format!(
+                    "{}{}",
+                    render_code_with_unclosed(
+                        &value,
+                        may_run_to_end
+                            && ctx.inline_depth == 1
+                            && ctx.table_cell_depth == 0
+                            && render_attrs(&code.attrs).is_empty()
+                    ),
+                    render_attrs(&code.attrs)
+                )
             }
         }
         InlineNode::Link(link) => render_link(link, ctx),
@@ -4048,6 +4062,10 @@ fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
 }
 
 fn render_code(content: &str) -> String {
+    render_code_with_unclosed(content, false)
+}
+
+fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
     let fence = safe_fence(content, 1);
     // Pad exactly where the parser strips, so the strip is reversible and fmt
     // stays idempotent; the padding sits inside the fence, so a trailing
@@ -4064,6 +4082,19 @@ fn render_code(content: &str) -> String {
         || (content.starts_with(' ')
             && content.ends_with(' ')
             && !content.chars().all(|c| c == ' '));
+    // A leading pad before a newline is stripped by block normalization.
+    // At the end of a run, an unclosed span preserves the original value.
+    if needs_pad
+        && content.starts_with(['\r', '\n'])
+        && allow_unclosed
+        && !content.ends_with(['\r', '\n', ' ', '\t'])
+        && !content.as_bytes().windows(2).any(|pair| {
+            (matches!(pair[0], b' ' | b'\t') && matches!(pair[1], b'\r' | b'\n'))
+                || (pair[0] == b'\n' && matches!(pair[1], b' ' | b'\t' | b'\r' | b'\n'))
+        })
+    {
+        return format!("{fence}{content}");
+    }
     if needs_pad {
         format!("{fence} {content} {fence}")
     } else {
