@@ -202,6 +202,12 @@ pub enum SmartTypographyMode {
 /// optional corpus pins. Recording the slots makes the order explicit and
 /// APPENDED, so naming a block also never moves an attribute the author placed
 /// (markup-carve/carve#1468).
+///
+/// An author's order carries no class slot when the attribute line held no
+/// class, and the renderer's fallback then writes the class LAST - behind the
+/// key recorded here, which PART 10 §1 ranks below a structural attribute. So
+/// the class slot is recorded too, after the authored slots and ahead of the
+/// minted key (markup-carve/carve-rs#1970, ruled on markup-carve/carve#2328).
 pub(crate) fn record_attr_order(attrs: &mut crate::ast::Attrs, key: &str) {
     use crate::ast::AttrSlot;
     if attrs.order.is_empty() {
@@ -216,6 +222,8 @@ pub(crate) fn record_attr_order(attrs: &mut crate::ast::Attrs, key: &str) {
                 attrs.order.push(AttrSlot::Key(k));
             }
         }
+    } else if !attrs.order.iter().any(|s| matches!(s, AttrSlot::Class)) {
+        attrs.order.push(AttrSlot::Class);
     }
     if !attrs
         .order
