@@ -1,33 +1,5 @@
-//! A container starts at the MARKUP THAT OPENS IT, whether or not its first
-//! child is placed (markup-carve/carve-rs#1247).
-//!
-//! A line block stanza rewrites the whitespace it preserves to a sentinel, one
-//! per column, so every character keeps its own offset - except where the line
-//! holds a TAB. A tab expands to up to four columns from one source character,
-//! so the stanza's text is REASSEMBLED rather than sliced, and PART 12 section
-//! 4 has all three engines publish no position for it. That was ruled
-//! explicitly and stays: a tab's display width is not a source length, so any
-//! offset inside that text would be wrong in a way a consumer cannot detect.
-//!
-//! This engine then started the stanza's paragraph at the first child that DID
-//! carry a position, which dropped the tab-bearing line out of the paragraph's
-//! extent entirely - and left the `hard_break` that ends that line OUTSIDE the
-//! paragraph holding it. `docs/ast-json.md` states that a parent's span
-//! contains every child's, and the spec repository's `checkContainment` (in
-//! scripts/spec/ast-positions.mjs) checks it in a pass of its own, which named
-//! this engine and no other.
-//!
-//! THE START AND END RULES ARE NOT SYMMETRIC, and this file exists next to
-//! `a_container_ends_at_its_last_placed_child.rs` to say so. That one asks
-//! where a container's CONTENT stops, so its last placed child is the right
-//! boundary. This one asks where the CONSTRUCT begins, and a construct begins
-//! at its own markup - an unplaced child says nothing about where the author
-//! wrote it.
-//!
-//! NOT SEEN BY THE THREE-WAY SPAN PANEL, which is why an illegal tree sat here:
-//! no corpus document put a tab in a line block stanza that also holds a
-//! comment line, so the panel had nothing to compare. The pair is in the corpus
-//! now.
+//! Paragraph extents include unplaced merged text beside expanded tabs.
+//! Unchanged text retains its own source span (markup-carve/carve#2175).
 
 use serde_json::Value;
 
@@ -107,9 +79,9 @@ fn the_break_that_ends_the_tab_bearing_line_is_inside_that_paragraph() {
 
 #[test]
 fn the_reassembled_text_still_carries_no_position() {
-    // Ruled explicitly alongside the above, and pinned here so a later change
-    // cannot make this file pass by fabricating an offset for the text instead.
-    assert_eq!(placed(TABBED, "text", 0), None);
+    let source = "::: |\ntab\tgap\n%%\n:::\n";
+    assert_eq!(placed(source, "text", 0), None);
+    assert_eq!(nth(source, "paragraph", 0), (6, 16));
 }
 
 #[test]

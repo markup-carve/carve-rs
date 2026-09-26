@@ -81,9 +81,7 @@ fn a_stanza_without_tabs_is_unchanged() {
 }
 
 #[test]
-fn the_stanza_text_stays_unplaced_on_a_tab_line() {
-    // The other half of the rule: a tab really does make the TEXT's columns
-    // underivable, and this fix must not pretend otherwise.
+fn only_text_containing_synthesized_whitespace_stays_unplaced() {
     let options = carve::Options {
         positions: true,
         ..Default::default()
@@ -97,7 +95,7 @@ fn the_stanza_text_stays_unplaced_on_a_tab_line() {
                     for inline in &p.children {
                         if let InlineNode::Text(t) = inline {
                             texts += 1;
-                            assert!(t.pos.is_none(), "tab-bearing text should stay unplaced");
+                            assert_eq!(t.pos.is_none(), t.value == "tab gap");
                         }
                     }
                 }

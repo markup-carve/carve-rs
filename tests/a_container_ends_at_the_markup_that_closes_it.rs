@@ -1,35 +1,5 @@
-//! A container ends at the MARKUP THAT CLOSES IT, whether or not its last child
-//! is placed (markup-carve/carve#1551).
-//!
-//! The MIRROR of `a_container_starts_at_its_opening_markup.rs`, and the last
-//! arrangement the extent rules did not name. A line block stanza rewrites the
-//! whitespace it preserves to a sentinel, one per column, so every character
-//! keeps its own offset - except where the line holds a TAB. A tab expands to
-//! up to four columns from one source character, so the stanza's text is
-//! REASSEMBLED rather than sliced, and PART 12 section 4 has this engine
-//! publish no position for it. That was ruled explicitly and stays.
-//!
-//! Put the tab-bearing line LAST and that text is the paragraph's last child.
-//! This engine then ended the paragraph at the last child that DID carry a
-//! position - the `hard_break` closing the line above - which is offset 9 on
-//! the document below, one past the terminator that break owns. So the span
-//! ended immediately after a line terminator, which section 4 excludes by name,
-//! and the stanza's own last line fell outside the paragraph holding it. carve-js
-//! and carve-php ended it at 12, where that line ends.
-//!
-//! READ AS TWO STATEMENTS ABOUT MARKUP the two halves are symmetric: a
-//! container starts at the markup that opens it and ends at the markup that
-//! closes it. "Ends at its last placed child" (markup-carve/carve#1522) is the
-//! case for a container whose closer is IMPLICIT, where the last child's end is
-//! what it has instead of a closer - so this locates that ruling rather than
-//! overturning it, and `a_container_ends_at_its_last_placed_child.rs` next door
-//! still holds every case it pinned.
-//!
-//! NOT SEEN BY THE THREE-WAY SPAN PANEL, for the same reason as the start side
-//! and one more: no corpus document held this arrangement, AND the spec's
-//! `checkStopsAtChildren` skipped every container holding an unplaced child, so
-//! the check enforcing markup-carve/carve#1522 declined the one arrangement
-//! that ruling did not reach. Corpus 402 and the un-skip land with the clause.
+//! Paragraph extents include unplaced merged text beside expanded tabs.
+//! Unchanged text retains its own source span (markup-carve/carve#2175).
 
 use serde_json::Value;
 
@@ -112,10 +82,9 @@ fn the_span_does_not_end_immediately_after_a_line_terminator() {
 
 #[test]
 fn the_reassembled_text_still_carries_no_position() {
-    // Ruled explicitly alongside the above, and pinned here so a later change
-    // cannot make this file pass by fabricating an offset for the text instead
-    // of by widening the paragraph.
-    assert_eq!(placed(TABBED_LAST, "text", 0), None);
+    let source = "::: |\n%%\ntab\tgap\n:::\n";
+    assert_eq!(placed(source, "text", 0), None);
+    assert_eq!(nth(source, "paragraph", 0), (6, 16));
 }
 
 #[test]
