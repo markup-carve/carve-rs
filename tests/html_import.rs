@@ -137,14 +137,9 @@ struct AheadOfPin {
     ast: Option<&'static str>,
 }
 
-const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
-    fixture: "security",
-    reason: "markup-carve/carve#2361: a span's edge whitespace stands outside it",
-    carve: Some("safe [text]{title=lost}\n"),
-    ast: Some(
-        r#"{"type":"document","children":[{"type":"paragraph","children":[{"type":"text","value":"safe "},{"type":"span","attrs":{"keyValues":{"title":"lost"}},"children":[{"type":"text","value":"text"}]}]}]}"#,
-    ),
-}];
+/// Empty: its `security` entry went out with the bump past
+/// markup-carve/carve#2361.
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
