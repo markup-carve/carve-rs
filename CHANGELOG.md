@@ -11,25 +11,6 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Breaking
-
-- `TableRowGroups` adds `head_attrs` and `foot_attrs`. Downstream struct literals must initialize both fields to `None` when unused. `Table.row_groups` is now `Option<Box<TableRowGroups>>` to keep section metadata from enlarging every block node. Package releases remain on the 0.1 patch line.
-
-- Escaped spaces and preserved line-block columns are `non_breaking_space` nodes, and U+E000 is literal content in every field. A tree stored under the old marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`. Reparsing the source is the only remedy - a stored tree cannot tell a generated space from an authored character (#1981).
-
-### Fixes
-
-- A `+` one column left of an in-item block quote's marker is kept as text instead of being consumed as a continuation marker (markup-carve/carve-php#2470).
-
-### Changed
-
-- Match the pinned extension attribute-order rule for spoiler wrappers with and without an authored class slot (#1981).
-- Annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces (#1981).
-
-### Added
-
-- Table heads and feet retain attributes through AST exchange and HTML import. HTML applies section attributes to `thead`, `tbody`, and `tfoot`; source and text targets report unsupported attributes. (markup-carve/carve#2339)
-
 ## [0.1.7] - 2026-09-25
 
 ### Breaking
@@ -47,6 +28,10 @@ which the published crate does not carry.
 - A link tail holds no whitespace before its closing parenthesis, so `[t](a )` reads as prose (#1809).
 - A generated-content `:::` kind parses as a directive rather than an admonition (#1871, markup-carve/carve#2225).
 - Every empty block container renders one blank HTML body line (#1841, markup-carve/carve#2184).
+- `BlockNode::Section` and `TableCell.blocks` extend the public AST, so a downstream exhaustive match and a `TableCell` struct literal need the new variant and the new field (#1976).
+- Escaped spaces and preserved line-block columns are `non_breaking_space` nodes, and U+E000 is literal content in every field. A tree stored under the old marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`. Reparsing the source is the only remedy - a stored tree cannot tell a generated space from an authored character (#1981).
+- `TableRowGroups` adds `head_attrs` and `foot_attrs`, so a downstream struct literal initializes both to `None` when unused, and `Table.row_groups` becomes `Option<Box<TableRowGroups>>` to keep section metadata off every block node (#1989).
+- The render-loss `code` enum is closed at the two codes that name a whole dropped node, so a consumer matching `table-section-attributes-dropped` no longer sees it and `--allow-loss` takes two names rather than three. A discarded table section attribute reports as `field-unspellable` on the PART 11 §1d conversion-diagnostics channel instead (#1994).
 
 ### Fixes
 
@@ -87,6 +72,16 @@ which the published crate does not carry.
 - An ordered task item's lost checkbox is reported as `structure-unspellable` in one wording at both the Markdown and the HTML entry point (#1890, #1904, #1928, #1948).
 - HTML import keeps multiline elements and code inside a table cell on one Carve row, reporting the loss where content must be flattened (#1910, #1931).
 - The plain-text escaper freezes a hash after an ampersand, so numeric-reference text cannot become a Carve tag (#1841).
+- A placed element writes its opener and its closer at one column, so a glossary, an index, a `nav` and a block authored inside a toc marker stop paying the carrier's first-line pad twice (#1974).
+- A structural class is written ahead of an engine-minted attribute and behind the author's own slots, including on an attribute line that names no class (#1977).
+- A `+` at a column no container's marker column names is ordinary text: a column-zero marker before indented prose attaches nothing and leaves the nested paragraph open, an indented marker below a nested item's content column stays literal, and the item-lead lazy scan and the list loop's marker branch keep the character they used to consume (#1980, #1982).
+- A `+` one column left of an in-item block quote's marker is kept as text instead of being consumed as a continuation marker (#1987, markup-carve/carve-php#2470).
+- A container an extension declines keeps its id, its key-values and the author's own classes, since the decline is asked before the carrier rewrite rather than after it (#1983).
+- An active index directive writes its title and its label before its authored body and generated list (#1985).
+- The ProseMirror bridge reads `tag` through its own schema map entry rather than as a position inside `mention` (#1986).
+- HTML import replaces an unsupported block element with its children in place, so the headings, lists and code blocks inside a custom or unknown tag survive instead of collapsing onto one line, and only the wrapper reports `element-unwrapped` (#1990).
+- Line-block text beside an expanded tab carries positions mapped back to the source, and a leading tab stays inside the stanza paragraph's extent (#1992).
+- A container title the quoted slot cannot spell becomes the body's first paragraph and is reported as `structure-unspellable`, so an import that used to fail the whole document with `SourceUnspellable` completes; a title holding a line break is caught the same way (#1993).
 
 ### Improvements
 
@@ -97,6 +92,10 @@ which the published crate does not carry.
 - `block_extension` takes the wire name CARVE-P12-055 gives it, and `block_extension`, `directive` and `ruby` join the canonical type vocabulary so `is_type_allowed` stops answering "allowed" for a name it does not know (#1856, #1867).
 - The ProseMirror bridge builds the four types carve-grammars named for it (#1893).
 - `ast::dispose_blocks` and `ast::dispose_inlines` drop a detached block or inline tree with the same iterative teardown `Document` uses. Ordinary `drop` on detached nodes, and the derived `Clone`, `Debug` and equality traits, remain recursive (#1917, #1918, #1926).
+- Conversion diagnostics name the AST structures and fields Carve source cannot preserve, sections and block content reach a table cell through AST JSON, rendering, extensions and the ProseMirror bridge, and validated node identity, annotation range and provenance sidecars keep the ids of unchanged nodes across incremental snapshots (#1976).
+- A spoiler wrapper follows the pinned extension attribute-order rule with and without an authored class slot, and annotation offsets use a fixed codepoint projection independent of JSON key order, including image alt text, math, breaks and generated spaces (#1981).
+- Table heads and feet keep their attributes through AST exchange and HTML import: HTML applies them to `thead`, `tbody` and `tfoot`, and the source and text targets report the ones they discard (#1989, markup-carve/carve#2339).
+- The PART 11 §2b escape search answers a probe whose bytes it has already judged by comparing them rather than reparsing, leaving the decisions, the budget spent and the output unchanged; about 40% of the probes on an imported web page take that path (#1991).
 
 ## [0.1.6] - 2026-09-18
 
