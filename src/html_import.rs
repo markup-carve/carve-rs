@@ -1960,45 +1960,166 @@ impl<'a> Importer<'a> {
         // at (PART 12 §16, markup-carve/carve#1554).
         let mut inline_paths: Vec<String> = Vec::new();
         for (i, handle) in handles.iter().enumerate() {
-            let tag = Self::tag(handle);
-            let is_block = tag.as_deref().is_some_and(|tag| {
-                Self::is_block_tag(tag)
-                    || (self.opts.mode == HtmlImportMode::Roundtrip
-                        && ROUNDTRIP_RAW_BLOCK_TAGS.contains(&tag))
-            });
             let path = match paths {
                 Some(given) => given[i].clone(),
                 None => Self::child_path(parent, handle, i),
             };
-            // A MEDIA WRAPPER'S FALLBACK IS CONVERTED AS BLOCKS (ruling
-            // markup-carve/carve#1749). It is not a block tag and must not
-            // become one - see `is_media_fallback_tag` for why `roundtrip` keeps
-            // the inline raw span - so the ruling is applied here, at the one
-            // position where the children have somewhere block-shaped to go.
-            let is_media_fallback = self.opts.mode != HtmlImportMode::Roundtrip
-                && tag
-                    .as_deref()
-                    .map(Self::is_media_fallback_tag)
-                    .unwrap_or(false);
-            if is_block || is_media_fallback {
-                if !inline.is_empty() {
-                    self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
-                }
-                if is_media_fallback {
-                    let tag = tag.expect("a media fallback tag is an element name");
-                    out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
-                } else {
-                    out.extend(self.block(handle, &path, depth + 1)?);
-                }
-            } else {
-                inline.push(handle.clone());
-                inline_paths.push(path);
-            }
+            self.block_item(
+                handle,
+                path,
+                parent,
+                depth,
+                &mut out,
+                &mut inline,
+                &mut inline_paths,
+            )?;
         }
         if !inline.is_empty() {
             self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
         }
         Ok(out)
+    }
+
+    /// One child of a block walk: emitted as a block, or buffered into the
+    /// current inline run.
+    #[allow(clippy::too_many_arguments)]
+    fn block_item(
+        &mut self,
+        handle: &Handle,
+        path: String,
+        parent: &str,
+        depth: usize,
+        out: &mut Vec<BlockNode>,
+        inline: &mut Vec<Handle>,
+        inline_paths: &mut Vec<String>,
+    ) -> Result<(), HtmlImportError> {
+        // AN UNSUPPORTED ELEMENT IS REPLACED BY ITS CHILDREN IN PLACE
+        // (markup-carve/carve#2341), so they join this walk as if the
+        // wrapper were absent: blocks stay blocks, inline text joins the
+        // surrounding run.
+        if self.is_unmapped_element(handle) {
+            return self.splice_unmapped(handle, path, parent, depth, out, inline, inline_paths);
+        }
+        let tag = Self::tag(handle);
+        let is_block = tag.as_deref().is_some_and(|tag| {
+            Self::is_block_tag(tag)
+                || (self.opts.mode == HtmlImportMode::Roundtrip
+                    && ROUNDTRIP_RAW_BLOCK_TAGS.contains(&tag))
+        });
+        // A MEDIA WRAPPER'S FALLBACK IS CONVERTED AS BLOCKS (ruling
+        // markup-carve/carve#1749). It is not a block tag and must not
+        // become one - see `is_media_fallback_tag` for why `roundtrip` keeps
+        // the inline raw span - so the ruling is applied here, at the one
+        // position where the children have somewhere block-shaped to go.
+        let is_media_fallback = self.opts.mode != HtmlImportMode::Roundtrip
+            && tag
+                .as_deref()
+                .map(Self::is_media_fallback_tag)
+                .unwrap_or(false);
+        if is_block || is_media_fallback {
+            if !inline.is_empty() {
+                self.flush_inline_run(out, inline, inline_paths, parent, depth)?;
+            }
+            if is_media_fallback {
+                let tag = tag.expect("a media fallback tag is an element name");
+                out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
+            } else {
+                out.extend(self.block(handle, &path, depth + 1)?);
+            }
+        } else {
+            inline.push(handle.clone());
+            inline_paths.push(path);
+        }
+        Ok(())
+    }
+
+    /// Whether a `<p>` is among the children, looking through the unsupported
+    /// elements the walk splices away.
+    fn holds_paragraph(&self, h: &Handle) -> bool {
+        h.children.borrow().iter().any(|child| {
+            Self::tag(child).as_deref() == Some("p")
+                || (self.is_unmapped_element(child) && self.holds_paragraph(child))
+        })
+    }
+
+    /// Whether the inline arm would unwrap this element for want of a mapping.
+    /// `roundtrip` keeps such an element raw instead, so it never splices.
+    fn is_unmapped_element(&self, h: &Handle) -> bool {
+        if self.opts.mode == HtmlImportMode::Roundtrip
+            || self.footnote_refs.contains_key(&node_key(h))
+        {
+            return false;
+        }
+        let Some(tag) = Self::tag(h) else {
+            return false;
+        };
+        !(Self::is_block_tag(&tag)
+            || Self::is_media_fallback_tag(&tag)
+            || is_semantic_span_tag(&tag)
+            || matches!(
+                tag.as_str(),
+                "script"
+                    | "style"
+                    | "template"
+                    | "noscript"
+                    | "q"
+                    | "math"
+                    | "span"
+                    | "em"
+                    | "i"
+                    | "strong"
+                    | "b"
+                    | "s"
+                    | "strike"
+                    | "ins"
+                    | "del"
+                    | "u"
+                    | "mark"
+                    | "sub"
+                    | "sup"
+                    | "code"
+                    | "a"
+                    | "img"
+                    | "br"
+            ))
+    }
+
+    /// The unsupported element's rows, then its children walked in its place.
+    /// The rows are the inline arm's, so the report does not depend on which
+    /// context the element stood in.
+    #[allow(clippy::too_many_arguments)]
+    fn splice_unmapped(
+        &mut self,
+        h: &Handle,
+        path: String,
+        parent: &str,
+        depth: usize,
+        out: &mut Vec<BlockNode>,
+        inline: &mut Vec<Handle>,
+        inline_paths: &mut Vec<String>,
+    ) -> Result<(), HtmlImportError> {
+        let depth = depth + 1;
+        self.enter(depth)?;
+        let tag = Self::tag(h).expect("an unmapped element has a name");
+        let attrs = self.attrs(h, &path);
+        let children: Vec<Handle> = h.children.borrow().iter().cloned().collect();
+        for (i, child) in children.iter().enumerate() {
+            let child_path = Self::child_path(&path, child, i);
+            self.block_item(child, child_path, parent, depth, out, inline, inline_paths)?;
+        }
+        let unwrapped = self.report_unsupported_element(h, &tag, &path);
+        self.report_unplaceable_attrs(
+            h,
+            attrs,
+            &tag,
+            if unwrapped {
+                "the element was unwrapped and has no node to carry it"
+            } else {
+                "the empty element was dropped and has no node to carry it"
+            },
+            &path,
+        );
+        Ok(())
     }
 
     /// A media wrapper standing among blocks, unwrapped to its fallback
@@ -2447,12 +2568,7 @@ impl<'a> Importer<'a> {
                     pos: None,
                 });
             }
-            let tight = !list_items.iter().any(|li| {
-                li.children
-                    .borrow()
-                    .iter()
-                    .any(|child| Self::tag(child).as_deref() == Some("p"))
-            });
+            let tight = !list_items.iter().any(|li| self.holds_paragraph(li));
             let start = if ordered {
                 Self::attr(h, "start")
                     .and_then(|s| s.parse().ok())
