@@ -790,6 +790,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let mut covered = 0usize;
     let mut lossy = 0usize;
     let mut source_lossy: Vec<String> = Vec::new();
+    let mut generated_space_only = Vec::new();
     let mut undeclared: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
@@ -829,6 +830,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             }
             covered += 1;
         } else {
+            if pm.dropped.is_empty()
+                && pm.degraded.len() == 1
+                && pm.degraded.contains_key("non_breaking_space")
+            {
+                generated_space_only.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            }
             lossy += 1;
         }
     }
@@ -1403,8 +1410,25 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     //
     // The claim about the other two is now measured a way this report cannot
     // mislead - see the note on `NOT_IN_CORPUS`.
-    const STRICT: usize = 1445;
-    const LOSSY: usize = 415;
+    generated_space_only.sort();
+    assert_eq!(generated_space_only, vec![
+        "268-trailing-whitespace-on-a-content-line-is-dropped-12.crv",
+        "29-non-breaking-space.crv",
+        "345-a-line-block-s-hard-break-keeps-its-backslash-3.crv",
+        "346-a-line-block-s-last-body-line-keeps-its-backslash-2.crv",
+        "348-a-closed-inline-construct-spanning-a-verse-boundary-5.crv",
+        "400-a-container-starts-at-its-opening-markup-even-where-its-first-child-is-unplaced.crv",
+        "402-a-container-ends-at-the-markup-that-closes-it-even-where-its-last-child-is-unplaced.crv",
+        "41-line-blocks-2.crv",
+        "41-line-blocks-3.crv",
+        "41-line-blocks-9.crv",
+        "421-a-sigil-fence-takes-its-attribute-line.crv",
+        "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
+    ]);
+    // Twelve documents now report the generated-space spelling distinction.
+    // Their exact names are pinned above; the current corpus has 1872 files.
+    const STRICT: usize = 1443;
+    const LOSSY: usize = 429;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

@@ -155,6 +155,13 @@ impl CarveExtension for Spoiler {
 /// escaping). Class-first, matching carve-php and core math.
 fn open_attrs_with_base(attrs: Option<&Attrs>, base: &str) -> String {
     match attrs {
+        Some(a) if a.classes.is_empty() && !a.order.is_empty() => {
+            format!(
+                "{} class=\"{}\"",
+                render_attrs_after_class(a),
+                escape_attr(base)
+            )
+        }
         Some(a) => {
             let mut classes: Vec<String> = base.split(' ').map(str::to_string).collect();
             for class in &a.classes {
