@@ -301,7 +301,7 @@
     "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
     "soft_break": "a soft break is whitespace in the ProseMirror model",
     "figure_group": "the editor schema has no composite figure; the panels and group-caption text survive inside the generic container as a trailing paragraph, but the fact that they were one figure does not",
-    "non_breaking_space": "The editor retains a nonbreaking space as literal text, without its source escape."
+    "non_breaking_space": "a generated space becomes literal U+00A0 text; its source spelling is re-derived on write"
   },
   "preservationNodes": {
     "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
@@ -335,7 +335,7 @@
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
-    "commit": "7b5771b491346694ce1ccb01a4fdc960862410fb",
+    "commit": "db1ca3ccc19055427e63e33503d0487b54c327dd",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision, and tools/check-schema-map.py asserts every other decision still matches the commit named here",
     "divergenceReasons": "Each entry says WHY as one of three kinds. `upstream-names-a-node` and `upstream-has-no-node` are claims about upstream: they name the ProseMirror node, and tools/check-schema-map.py resolves that name against the published list on every run, so the reason goes false mechanically rather than when somebody rereads it. `prose` carries no such claim and stays ungated beyond the check that the difference still exists (markup-carve/carve#2270).",
     "divergences": {
