@@ -490,12 +490,11 @@ fn render_index_list(
         items.join("\n"),
         pad
     );
-    // Preserve any authored content inside the placeholder before the list.
-    let mut parts = Vec::new();
+    // The opener tokens precede the authored body and generated list.
+    let mut parts = crate::extension::directive_tokens(node, ctx, level, None);
     if !node.children.is_empty() {
         parts.push(ctx.render_blocks_at(&node.children, level));
     }
-    parts.extend(crate::extension::directive_tokens(node, ctx, level, None));
     parts.push(ul);
     // Every part self-pads, which is what each one after the first needs, so the
     // one pad the framework is about to add to the first line comes off here.
