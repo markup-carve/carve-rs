@@ -2877,7 +2877,7 @@ fn render_inlines_with_caption(
     {
         crate::render_carve_error::record_unspellable(
             "code",
-            "an empty code span has no Carve source spelling where its open run does not end",
+            "a code span has no Carve source spelling where its open run does not end",
         );
     }
     ctx.inline_depth += 1;
@@ -2941,6 +2941,10 @@ fn spell_empty_code_runs(mut out: String) -> String {
     out
 }
 
+fn code_needs_open_run(value: &str) -> bool {
+    value.is_empty() || (value.starts_with(['\r', '\n']) && value.ends_with('`'))
+}
+
 /// An empty code span is an open backtick run, which ends only at the end of a
 /// block or at a braced closer (PART 3, UNCLOSED RUN). `followed` is true when
 /// something after this sequence would be read into the run; `labelled` when a
@@ -2954,7 +2958,7 @@ fn holds_unspellable_empty_code(
     nodes.iter().enumerate().any(|(index, node)| {
         let after = followed || run_reads_on(&nodes[index + 1..]);
         match node {
-            InlineNode::Code(code) if code.value.is_empty() => {
+            InlineNode::Code(code) if code_needs_open_run(&code.value) => {
                 !empty_code_position_ends_its_run(after, labelled, cell_not_last)
                     || !render_attrs(&code.attrs).is_empty()
             }
@@ -3340,7 +3344,7 @@ fn render_inline_body(
             // container ends, and only the braced closer ends it inside an
             // emphasis: a bare closer is swallowed by the open run.
             if let Some(InlineNode::Code(code)) = emphasis.children.last() {
-                if code.value.is_empty() && code.attrs.is_none() {
+                if code_needs_open_run(&code.value) && code.attrs.is_none() {
                     if let Some(delim) = bare_delimiter(emphasis.kind) {
                         return format!(
                             "{}{}",
@@ -3401,7 +3405,6 @@ fn render_inline_body(
                     render_code_with_unclosed(
                         &value,
                         may_run_to_end
-                            && ctx.inline_depth == 1
                             && ctx.table_cell_depth == 0
                             && render_attrs(&code.attrs).is_empty()
                     ),
@@ -4094,6 +4097,12 @@ fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
         })
     {
         return format!("{fence}{content}");
+    }
+    if needs_pad && content.starts_with(['\r', '\n']) {
+        crate::render_carve_error::record_unspellable(
+            "code",
+            "a leading newline loses its padding where the code span cannot run to the end",
+        );
     }
     if needs_pad {
         format!("{fence} {content} {fence}")

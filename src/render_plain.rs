@@ -210,7 +210,8 @@ pub(crate) fn flatten_cell_block_inlines_with(
             Part::Inlines(inlines) if !inlines.is_empty() => chunks.push(inlines.to_vec()),
             Part::Inlines(_) => {}
             Part::Text(text) => {
-                let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                let text = text.replace("\r\n", " ").replace(['\r', '\n'], " ");
+                let text = trim_non_nbsp(&text).to_string();
                 if !text.is_empty() {
                     chunks.push(vec![InlineNode::text(text)]);
                 }

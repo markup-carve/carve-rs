@@ -164,3 +164,11 @@ fn the_html_target_still_renders_the_blocks_in_the_cell() {
     assert!(html.contains("src/Auth.php"), "{html}");
     assert!(html.contains("<b>kept</b>"), "{html}");
 }
+
+#[test]
+fn code_spaces_and_empty_lines_survive_the_flatten() {
+    let (md, plain, ansi, _) = targets(r#"{"type":"code_block","content":"a  b\n\nc"}"#);
+    for out in [md, plain, ansi] {
+        assert!(out.contains("a  b  c"), "{out}");
+    }
+}
