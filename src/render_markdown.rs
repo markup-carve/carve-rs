@@ -191,6 +191,7 @@ fn render_markdown_once(
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index,
         link_depth: 0,
+        table_cell_depth: 0,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -223,6 +224,8 @@ struct MarkdownContext {
     /// `[see </#H>](/outer)` must render as `[see H](/outer)`, not as a link
     /// inside a link, which is not valid Markdown (carve-rs#436).
     link_depth: usize,
+    /// Nonzero while rendering a table cell's content.
+    table_cell_depth: usize,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -823,17 +826,17 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         let cells = row
             .cells
             .iter()
-            .map(|cell| match &cell.blocks {
-                Some(blocks) => trim_non_nbsp(&render_block_inlines(
-                    &crate::render_plain::flatten_cell_block_inlines(blocks),
-                    ctx,
-                ))
-                .to_string(),
-                None => trim_non_nbsp(&render_block_inlines(
-                    &crate::render_plain::flatten_cell_inlines(&cell.children),
-                    ctx,
-                ))
-                .to_string(),
+            .map(|cell| {
+                let inlines = match &cell.blocks {
+                    Some(blocks) => {
+                        crate::render_plain::flatten_cell_block_inlines_with(blocks, true)
+                    }
+                    None => crate::render_plain::flatten_cell_inlines(&cell.children, true),
+                };
+                ctx.table_cell_depth += 1;
+                let content = trim_non_nbsp(&render_block_inlines(&inlines, ctx)).to_string();
+                ctx.table_cell_depth -= 1;
+                content
             })
             .map(|content| content.replace(['\r', '\n'], " "))
             .collect::<Vec<_>>();
@@ -1635,6 +1638,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // editors that strip on save, by `git apply --whitespace=fix` and by CI
         // whitespace checks -- and losing ONE of the two spaces is enough for the
         // break to vanish rather than degrade, silently, in a file nobody edited.
+        // In a table cell the newline would end the GFM row (PART 11 section 9a).
+        InlineNode::HardBreak(_) if ctx.table_cell_depth > 0 => "<br>".to_string(),
         InlineNode::HardBreak(_) => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
             format!(
@@ -1736,10 +1741,9 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     let children = unwrap_nested_anchors(&node.children);
     let text = render_inlines(children.as_ref(), ctx, depth);
     ctx.link_depth -= 1;
-    if let Some(id) = fragment_id(&node.href) {
-        if !ctx.heading_ids.contains(id) {
-            return text;
-        }
+    // A fragment that names no heading is still the author's destination, so
+    // the link is kept (PART 11 section 11a).
+    if let Some(id) = fragment_id(&node.href).filter(|id| ctx.heading_ids.contains(*id)) {
         let destination = encode_markdown_destination(&format!("#{id}"));
         if let Some(title) = &node.title {
             format!(

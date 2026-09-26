@@ -174,6 +174,16 @@ pub(crate) fn flatten_cell_blocks(blocks: &[BlockNode]) -> String {
 /// Flatten block-bearing table cells to an inline run in document order.
 /// The target renderer still handles emphasis, links and other inline nodes.
 pub(crate) fn flatten_cell_block_inlines(blocks: &[BlockNode]) -> Vec<InlineNode> {
+    flatten_cell_block_inlines_with(blocks, false)
+}
+
+/// As [`flatten_cell_block_inlines`], but a hard break survives when
+/// `keep_hard_breaks` is set: the Markdown target writes it as `<br>`
+/// (PART 11 section 9a).
+pub(crate) fn flatten_cell_block_inlines_with(
+    blocks: &[BlockNode],
+    keep_hard_breaks: bool,
+) -> Vec<InlineNode> {
     enum Part<'a> {
         Block(&'a BlockNode),
         Inlines(&'a [InlineNode]),
@@ -277,20 +287,24 @@ pub(crate) fn flatten_cell_block_inlines(blocks: &[BlockNode]) -> Vec<InlineNode
         }
         out.extend(chunk);
     }
-    flatten_cell_inline_breaks(&mut out);
+    flatten_cell_inline_breaks(&mut out, keep_hard_breaks);
     out
 }
 
-pub(crate) fn flatten_cell_inlines(inlines: &[InlineNode]) -> Vec<InlineNode> {
+pub(crate) fn flatten_cell_inlines(
+    inlines: &[InlineNode],
+    keep_hard_breaks: bool,
+) -> Vec<InlineNode> {
     let mut out = inlines.to_vec();
-    flatten_cell_inline_breaks(&mut out);
+    flatten_cell_inline_breaks(&mut out, keep_hard_breaks);
     out
 }
 
-fn flatten_cell_inline_breaks(out: &mut [InlineNode]) {
+fn flatten_cell_inline_breaks(out: &mut [InlineNode], keep_hard_breaks: bool) {
     let mut pending: Vec<_> = out.iter_mut().collect();
     while let Some(node) = pending.pop() {
         match node {
+            InlineNode::HardBreak(_) if keep_hard_breaks => {}
             InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => {
                 *node = InlineNode::text(" ");
             }

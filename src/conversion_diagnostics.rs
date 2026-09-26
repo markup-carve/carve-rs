@@ -317,7 +317,10 @@ mod tests {
         let carve = crate::render_carve(&doc).unwrap();
         let markdown = crate::render_markdown(&doc).unwrap();
         assert!(carve.lines().any(|line| line.contains("one two three")));
-        assert!(markdown.lines().any(|line| line.contains("one two three")));
+        // PART 11 section 9a: the Markdown target keeps the hard break as `<br>`.
+        assert!(markdown
+            .lines()
+            .any(|line| line.contains("one two<br>three")));
         assert!(matches!(
             crate::parse(&carve).children[0],
             crate::BlockNode::Table(_)
@@ -375,6 +378,6 @@ mod tests {
         assert_eq!(carve.lines().count(), 1, "{carve:?}");
         assert_eq!(markdown.lines().count(), 1, "{markdown:?}");
         assert!(carve.contains("one *two three*"), "{carve:?}");
-        assert!(markdown.contains("**two three**"), "{markdown:?}");
+        assert!(markdown.contains("**two<br>three**"), "{markdown:?}");
     }
 }
