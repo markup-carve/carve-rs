@@ -1,3 +1,5 @@
+mod escape_window;
+
 use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
@@ -348,7 +350,22 @@ fn narrow_escalation(
     let all: Vec<usize> = (1..=total).collect();
     ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(all.iter().copied().collect()));
     ASKED_UNITS.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
-    let control = render_with_escapes(doc, EscapeMode::Conservative);
+    // The control render also records where every unit sits, for the
+    // windowed probes below. A document whose break spelling needs the
+    // frontmatter fallback renders differently from its windows, so it keeps
+    // whole-document probes.
+    let windows_fit = doc.frontmatter_raw.is_some()
+        || !doc.frontmatter.is_empty()
+        || !crate::parse::opens_frontmatter(&conservative);
+    #[cfg(test)]
+    let windows_fit = windows_fit && !tests::WHOLE_DOCUMENT_PROBES.with(std::cell::Cell::get);
+    let (control, layout) = if windows_fit {
+        let (control, layout) =
+            escape_window::record(|| render_with_escapes(doc, EscapeMode::Conservative));
+        (control, Some(layout))
+    } else {
+        (render_with_escapes(doc, EscapeMode::Conservative), None)
+    };
     let asked = ASKED_UNITS
         .with(|cell| cell.borrow_mut().take())
         .unwrap_or_default();
@@ -360,30 +377,116 @@ fn narrow_escalation(
         .into_iter()
         .filter(|unit| asked.contains(unit))
         .collect();
-    let mut best = control;
+    let probe = Probe {
+        doc,
+        tree: &conservative_tree,
+        window_limit: conservative.len() / 2,
+        layout,
+    };
     // No guard for an EMPTY `units`: `relax_units` returns on an empty group,
     // and a check here would be one no corpus document can reach -- the control
     // render asks about a unit for every byte the two forms differ in, and they
     // differ or this is not running.
-    // Eight times the depth of the halving, which is what narrowing four
-    // independent failing units costs. See `budget` on `relax_units`.
-    let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
-    relax_units(
-        doc,
-        &units,
-        &conservative_tree,
-        &mut best,
-        &mut budget,
-        None,
-    );
+    let search = |local: bool| -> String {
+        ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some((1..=total).collect()));
+        let mut best = control.clone();
+        // Eight times the depth of the halving, which is what narrowing four
+        // independent failing units costs. See `budget` on `relax_units`.
+        let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
+        relax_units(&probe, local, &units, &mut best, &mut budget, None);
+        probe.settle(local, best)
+    };
+    let mut best = search(true);
+    if comparable_tree(&best).as_ref() != Some(&conservative_tree) {
+        best = search(false);
+    }
     // PART 11 §2 TAKES THE DECISION PER OPENER OCCURRENCE, and a unit is still
     // ONE KNOB: a unit that fails is written conservatively IN FULL, so every
     // candidate character beside the one that needed it is escaped for nothing
     // -- `\{\.note\}` where §2 wants `\{.note}`. §2b bounds how far the fallback
     // reaches; this is what is left inside the bound (markup-carve/carve#1533).
-    narrow_occurrences(doc, &conservative_tree, &mut best);
+    narrow_occurrences(&probe, &mut best);
     ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
     best
+}
+
+/// The narrowing searches' oracle.
+///
+/// With `local`, a probe renders and re-parses only the blocks around the
+/// relaxed units and compares that window before and after, so a probe costs
+/// the window instead of the document. The caller re-verifies the finished
+/// state against the whole document and repeats the search with `local` off
+/// when it does not hold, which is the search as it was before windows.
+struct Probe<'a> {
+    doc: &'a Document,
+    tree: &'a Document,
+    /// A window longer than this saves nothing over the whole document.
+    window_limit: usize,
+    layout: Option<escape_window::Layout>,
+}
+
+/// A probe's answer, with the whole-document candidate it rendered, if any.
+enum Verdict {
+    Holds,
+    Fails(Option<String>),
+}
+
+impl Probe<'_> {
+    fn render_window(&self, window: &escape_window::Window) -> String {
+        escape_window::render_pruned(window, || {
+            render_with_escapes_once(self.doc, EscapeMode::Conservative)
+        })
+    }
+
+    /// Apply a relaxation and keep it when the tree still holds.
+    fn keeps(
+        &self,
+        local: bool,
+        units: impl IntoIterator<Item = usize>,
+        apply: impl FnOnce(),
+        undo: impl FnOnce(),
+        best: &mut String,
+        rejected: Option<&str>,
+    ) -> Verdict {
+        let window = self
+            .layout
+            .as_ref()
+            .filter(|_| local)
+            .and_then(|layout| layout.window_for(units));
+        let before = window.as_ref().and_then(|window| {
+            let before = self.render_window(window);
+            (before.len() <= self.window_limit)
+                .then(|| comparable_tree(&before))
+                .flatten()
+                .map(|tree| (window, tree))
+        });
+        apply();
+        if let Some((window, before)) = before {
+            #[cfg(test)]
+            tests::WINDOW_PROBES.with(|n| n.set(n.get() + 1));
+            if comparable_tree(&self.render_window(window)).as_ref() == Some(&before) {
+                return Verdict::Holds;
+            }
+            undo();
+            return Verdict::Fails(None);
+        }
+        let candidate = render_with_escapes(self.doc, EscapeMode::Conservative);
+        if candidate_holds(&candidate, best, rejected, self.tree) {
+            *best = candidate;
+            return Verdict::Holds;
+        }
+        undo();
+        Verdict::Fails(Some(candidate))
+    }
+
+    /// The whole document in the state a search finished in. A local search's
+    /// `best` is only the last whole-document probe, so the state is rendered.
+    fn settle(&self, local: bool, best: String) -> String {
+        if !local {
+            return best;
+        }
+        render_with_escapes(self.doc, EscapeMode::Conservative)
+    }
 }
 
 /// Narrow escaping one occurrence at a time after the unit-level pass.
@@ -391,11 +494,11 @@ fn narrow_escalation(
 /// control render, the unit-level result is kept. The search is bounded because
 /// every load-bearing occurrence can require another full render and parse.
 /// Where the budget binds, remaining occurrences stay escaped as §2 requires.
-fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut String) {
+fn narrow_occurrences(probe: &Probe, best: &mut String) {
     let unit_scoped = best.clone();
     RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
     OCCURRENCE_LOG.with(|cell| *cell.borrow_mut() = Some(Vec::new()));
-    let control = render_with_escapes(doc, EscapeMode::Conservative);
+    let control = render_with_escapes(probe.doc, EscapeMode::Conservative);
     let occurrences = OCCURRENCE_LOG
         .with(|cell| cell.borrow_mut().take())
         .unwrap_or_default();
@@ -413,44 +516,54 @@ fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut S
     // `\{.note}`). Both spellings re-parse to the same tree, so only the order
     // separates them.
     let order: Vec<Occurrence> = occurrences.into_iter().rev().collect();
-    let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
-    relax_occurrences(doc, &order, conservative_tree, best, &mut budget, None);
-    // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a FIXPOINT.
-    // Relaxing occurrences is not monotone: an occurrence rejected while a
-    // neighbour was still escaped can be free once that neighbour is relaxed,
-    // and the halving never revisits a group it has descended past. Corpus 160
-    // is the case -- the closing `:::` line cannot go bare while the OPENING one
-    // is escaped, because then it is the only fence marker on the page, and it
-    // can once the opener is bare. The sweep spends the same budget, so where
-    // the budget is already gone it costs nothing, which is the pathological
-    // document.
-    for key in &order {
-        if budget == 0 {
-            break;
+    let search = |local: bool| -> String {
+        RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
+        let mut best = unit_scoped.clone();
+        let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
+        relax_occurrences(probe, local, &order, &mut best, &mut budget, None);
+        // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a
+        // FIXPOINT. Relaxing occurrences is not monotone: an occurrence
+        // rejected while a neighbour was still escaped can be free once that
+        // neighbour is relaxed, and the halving never revisits a group it has
+        // descended past. Corpus 160 is the case -- the closing `:::` line
+        // cannot go bare while the OPENING one is escaped, because then it is
+        // the only fence marker on the page, and it can once the opener is
+        // bare. The sweep spends the same budget, so where the budget is
+        // already gone it costs nothing, which is the pathological document.
+        for key in &order {
+            if budget == 0 {
+                break;
+            }
+            if RELAXED_OCCURRENCES
+                .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(key)))
+            {
+                continue;
+            }
+            relax_occurrences(
+                probe,
+                local,
+                std::slice::from_ref(key),
+                &mut best,
+                &mut budget,
+                None,
+            );
         }
-        if RELAXED_OCCURRENCES
-            .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(key)))
-        {
-            continue;
-        }
-        relax_occurrences(
-            doc,
-            std::slice::from_ref(key),
-            conservative_tree,
-            best,
-            &mut budget,
-            None,
-        );
+        probe.settle(local, best)
+    };
+    let mut narrowed = search(true);
+    if comparable_tree(&narrowed).as_ref() != Some(probe.tree) {
+        narrowed = search(false);
     }
+    *best = narrowed;
     RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
 }
 
 /// Hand `group` its bare form where the document still holds, halving the group
 /// on failure.
 fn relax_occurrences(
-    doc: &Document,
+    probe: &Probe,
+    local: bool,
     group: &[Occurrence],
-    conservative_tree: &Document,
     best: &mut String,
     budget: &mut usize,
     rejected: Option<&str>,
@@ -459,33 +572,24 @@ fn relax_occurrences(
         return;
     }
     *budget -= 1;
-    set_relaxed(group, true);
-    let candidate = render_with_escapes(doc, EscapeMode::Conservative);
-    if candidate_holds(&candidate, best, rejected, conservative_tree) {
-        *best = candidate;
+    let verdict = probe.keeps(
+        local,
+        group.iter().map(|&(unit, _, _)| unit),
+        || set_relaxed(group, true),
+        || set_relaxed(group, false),
+        best,
+        rejected,
+    );
+    let Verdict::Fails(candidate) = verdict else {
         return;
-    }
-    set_relaxed(group, false);
+    };
     if group.len() == 1 {
         return;
     }
     let half = group.len() / 2;
-    relax_occurrences(
-        doc,
-        &group[..half],
-        conservative_tree,
-        best,
-        budget,
-        Some(&candidate),
-    );
-    relax_occurrences(
-        doc,
-        &group[half..],
-        conservative_tree,
-        best,
-        budget,
-        Some(&candidate),
-    );
+    let rejected = candidate.as_deref();
+    relax_occurrences(probe, local, &group[..half], best, budget, rejected);
+    relax_occurrences(probe, local, &group[half..], best, budget, rejected);
 }
 
 /// Whether `candidate` re-parses to `conservative_tree`.
@@ -527,19 +631,14 @@ fn set_relaxed(group: &[Occurrence], relaxed: bool) {
         }
     });
 }
-
 /// Hand `units` their minimal form where the document still holds, halving the
 /// group on failure.
 ///
-/// `best` carries the render of the CURRENT escalation set, so the caller always
-/// holds bytes that were verified: an accepted relaxation replaces it, a
-/// rejected one restores the set it was measured against.
-///
 /// `budget` BOUNDS THE SEARCH, because its cost is proportional to how many
-/// units FAIL. A group holding no failing unit is relaxed in one render, so a
-/// document with a handful of them costs about log(n) renders -- but one where
-/// nearly every unit fails drives the recursion to its leaves and pays a render
-/// and a parse per unit, which is quadratic in the document.
+/// units FAIL. A group holding no failing unit is relaxed in one probe, so a
+/// document with a handful of them costs about log(n) probes -- but one where
+/// nearly every unit fails drives the recursion to its leaves and pays a probe
+/// per unit.
 ///
 /// Such a document gains almost nothing from narrowing: it IS the conservative
 /// form, arrived at because every block needed it. So the search stops when the
@@ -547,9 +646,9 @@ fn set_relaxed(group: &[Occurrence], relaxed: bool) {
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
 fn relax_units(
-    doc: &Document,
+    probe: &Probe,
+    local: bool,
     units: &[usize],
-    conservative_tree: &Document,
     best: &mut String,
     budget: &mut usize,
     rejected: Option<&str>,
@@ -558,33 +657,24 @@ fn relax_units(
         return;
     }
     *budget -= 1;
-    set_escalated(units, false);
-    let candidate = render_with_escapes(doc, EscapeMode::Conservative);
-    if candidate_holds(&candidate, best, rejected, conservative_tree) {
-        *best = candidate;
+    let verdict = probe.keeps(
+        local,
+        units.iter().copied(),
+        || set_escalated(units, false),
+        || set_escalated(units, true),
+        best,
+        rejected,
+    );
+    let Verdict::Fails(candidate) = verdict else {
         return;
-    }
-    set_escalated(units, true);
+    };
     if units.len() == 1 {
         return;
     }
     let half = units.len() / 2;
-    relax_units(
-        doc,
-        &units[..half],
-        conservative_tree,
-        best,
-        budget,
-        Some(&candidate),
-    );
-    relax_units(
-        doc,
-        &units[half..],
-        conservative_tree,
-        best,
-        budget,
-        Some(&candidate),
-    );
+    let rejected = candidate.as_deref();
+    relax_units(probe, local, &units[..half], best, budget, rejected);
+    relax_units(probe, local, &units[half..], best, budget, rejected);
 }
 
 fn set_escalated(units: &[usize], escalated: bool) {
@@ -606,6 +696,8 @@ fn set_escalated(units: &[usize], escalated: bool) {
 /// The same normalization `escaping_is_redundant` compares through, so the
 /// narrowing cannot answer differently from the decision that sent it here.
 fn comparable_tree(source: &str) -> Option<Document> {
+    #[cfg(test)]
+    tests::PARSED_BYTES.with(|n| n.set(n.get() + source.len()));
     std::panic::catch_unwind(|| comparable_document(crate::parse::parse_for_carve_shape(source)))
         .ok()
 }
@@ -838,7 +930,15 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     // -- which is where authors actually write one -- still merged (carve#1088).
     let mut previous_list: Option<&List> = None;
     let mut separated_from_previous = false;
-    for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
+    for (index, entry) in crate::ast_json::ordered_document_entries(doc, &footnote_defs)
+        .into_iter()
+        .enumerate()
+    {
+        let escape_window::Visit::Render(recorded) =
+            escape_window::visit(escape_window::ROOT, index)
+        else {
+            continue;
+        };
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
@@ -880,6 +980,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 text
             }
         };
+        escape_window::leave(recorded);
         if !writes_nothing(&text) {
             rendered.push(if separated_from_previous && !rendered.is_empty() {
                 hard_list_boundary(&text)
@@ -1376,9 +1477,14 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     // of sibling lists at the column they were written.
     let mut previous_list: Option<&List> = None;
     let mut separated_from_previous = false;
-    for block in blocks {
+    let list = blocks.as_ptr() as usize;
+    for (index, block) in blocks.iter().enumerate() {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+            continue;
+        };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let text = render_block(block, ctx);
+        escape_window::leave(recorded);
         ctx.after_caption_host = hosts_caption(block);
         if let BlockNode::List(list) = block {
             separated_from_previous =
@@ -1575,9 +1681,14 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     // condition under which a later bullet written there joins it instead of
     // opening below the paragraph above it. See `needs_a_blank_line_above`.
     let mut a_sub_list_already_opened = false;
+    let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+            continue;
+        };
         let next = blocks.get(index + 1);
         let rendered = render_block(block, ctx);
+        escape_window::leave(recorded);
         if writes_nothing(&rendered) {
             continue;
         }
@@ -2164,7 +2275,14 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
     // adjacent sibling lists on re-parse (carve issue 286).
     let delim = node.delim.unwrap_or('.');
     let bullet = node.bullet_char.unwrap_or('-');
+    let items = node.items.as_ptr() as usize;
     for (idx, item) in node.items.iter().enumerate() {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(items, idx) else {
+            if node.ordered {
+                counter += 1;
+            }
+            continue;
+        };
         // NO absolute depth term. The parent item's continuation prefix is
         // already the child list's indentation, so adding `"  " * (depth - 1)`
         // on top indented every level twice - and the two-space strip below was
@@ -2255,6 +2373,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         if !node.tight && idx < node.items.len() - 1 && !ends_with_nested_list {
             out.push('\n');
         }
+        escape_window::leave(recorded);
     }
     ctx.list_depth -= 1;
     trim_end_non_nbsp(&out).to_string()
@@ -2333,7 +2452,11 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
     // absorption gone the blank was a workaround for a bug that no longer
     // exists, and dropping it converges this writer's `carve` output with the
     // other engines.
-    for item in items {
+    let list = items.as_ptr() as usize;
+    for (index, item) in items.iter().enumerate() {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+            continue;
+        };
         for term in &item.terms {
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }
@@ -2367,6 +2490,7 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 out.push(format!("  {line}"));
             }
         }
+        escape_window::leave(recorded);
     }
     out.join("\n")
 }
@@ -4093,11 +4217,13 @@ fn occurrence_is_relaxed(key: Occurrence, continues_run: bool) -> bool {
 
 /// Claim the next unit ordinal for the node about to render.
 fn next_escape_unit() -> usize {
-    UNIT_COUNTER.with(|c| {
+    let next = UNIT_COUNTER.with(|c| {
         let next = c.get() + 1;
         c.set(next);
         next
-    })
+    });
+    escape_window::claimed(next);
+    next
 }
 
 impl CarveContext {
@@ -5446,6 +5572,9 @@ mod tests {
 
     thread_local! {
         pub(super) static PROBES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static WINDOW_PROBES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static PARSED_BYTES: Cell<usize> = const { Cell::new(0) };
+        pub(super) static WHOLE_DOCUMENT_PROBES: Cell<bool> = const { Cell::new(false) };
         pub(super) static PROBE_PARSES: Cell<usize> = const { Cell::new(0) };
     }
 
@@ -5462,9 +5591,43 @@ mod tests {
     /// already judged must not be parsed again.
     #[test]
     fn the_escalation_search_does_not_reparse_a_judged_candidate() {
+        WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(true));
         let (probes, parses) = search_cost(&"<p>a /b/ c</p>".repeat(64));
+        WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(false));
         assert!(probes > 0, "the search did not run");
         assert!(parses < probes, "{parses} parses for {probes} probes");
+    }
+
+    /// Documents' worth of source the escape narrowing re-parses for `html`.
+    fn reparsed_documents(html: &str) -> f64 {
+        PARSED_BYTES.with(|n| n.set(0));
+        let written = crate::html_import::html_to_carve(html, &Default::default())
+            .expect("imports")
+            .value;
+        PARSED_BYTES.with(Cell::get) as f64 / written.len() as f64
+    }
+
+    /// A page nested in containers, as imported web pages are, with a failing
+    /// unit in every paragraph: each probe re-parses a window around the units
+    /// it relaxes, not the whole document.
+    #[test]
+    fn the_escape_narrowing_reparses_windows_not_the_document() {
+        let paragraphs = "<p>a /b/ c</p><p>plain d.</p>".repeat(128);
+        let items = "<li><p>a /b/ c</p><p>plain d.</p></li>".repeat(128);
+        let entries = "<dt>t</dt><dd><p>a /b/ c</p><p>plain d.</p></dd>".repeat(128);
+        for body in [
+            paragraphs,
+            format!("<ul>{items}</ul>"),
+            format!("<dl>{entries}</dl>"),
+        ] {
+            let html = format!("<div class=a><div class=b><div class=c>{body}</div></div></div>");
+            let windowed = reparsed_documents(&html);
+            WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(true));
+            let whole = reparsed_documents(&html);
+            WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(false));
+            assert!(whole > 100.0, "the search did not run: {whole:.1}");
+            assert!(windowed < 30.0, "{windowed:.1} documents re-parsed");
+        }
     }
 
     /// PART 11 §5 puts a lone bracket in the minimal form, so a page of
