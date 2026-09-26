@@ -96,6 +96,21 @@ fn a_linear_token_run_imports_as_its_text() {
 }
 
 #[test]
+fn an_mspace_between_two_words_or_numbers_keeps_a_space() {
+    assert_eq!(
+        import(r#"<p><math><mn>1</mn><mspace width="1em"></mspace><mn>2</mn></math></p>"#).0,
+        "1 2\n"
+    );
+    assert_eq!(
+        import(
+            "<p><math><mi>x</mi><mo>,</mo><mspace></mspace><mi>y</mi><mspace></mspace></math></p>"
+        )
+        .0,
+        "x,y\n"
+    );
+}
+
+#[test]
 fn layout_keeps_the_drop() {
     for inner in [
         "<mfrac><mn>1</mn><mn>2</mn></mfrac>",

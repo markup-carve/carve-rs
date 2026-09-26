@@ -6683,7 +6683,7 @@ fn element_name(handle: &Handle) -> Option<String> {
 /// A fraction or a script would flatten into a different number, so any other
 /// element refuses.
 fn linear_math_text(math: &Handle) -> Option<String> {
-    fn read(nodes: &[Handle], text: &mut String) -> bool {
+    fn read(nodes: &[Handle], text: &mut String, spaced: &mut bool) -> bool {
         for node in nodes {
             if is_blank_or_comment(node) {
                 continue;
@@ -6694,12 +6694,12 @@ fn linear_math_text(math: &Handle) -> Option<String> {
                     let Some(first) = children.iter().find(|c| !is_blank_or_comment(c)) else {
                         return false;
                     };
-                    if !read(std::slice::from_ref(first), text) {
+                    if !read(std::slice::from_ref(first), text, spaced) {
                         return false;
                     }
                 }
                 Some("mrow" | "mstyle" | "mpadded") => {
-                    if !read(&node.children.borrow(), text) {
+                    if !read(&node.children.borrow(), text, spaced) {
                         return false;
                     }
                 }
@@ -6711,16 +6711,27 @@ fn linear_math_text(math: &Handle) -> Option<String> {
                         };
                         token.push_str(&contents.borrow());
                     }
-                    text.push_str(collapse(&token).trim_matches(' '));
+                    let token = collapse(&token);
+                    let token = token.trim_matches(' ');
+                    // A space keeps two words or numbers apart, so 1, space, 2 is not 12.
+                    if *spaced
+                        && text.chars().last().is_some_and(char::is_alphanumeric)
+                        && token.chars().next().is_some_and(char::is_alphanumeric)
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(token);
+                    *spaced = false;
                 }
-                Some("mspace") => {}
+                Some("mspace") => *spaced = true,
                 _ => return false,
             }
         }
         true
     }
     let mut text = String::new();
-    (read(&math.children.borrow(), &mut text) && !text.is_empty()).then_some(text)
+    let mut spaced = false;
+    (read(&math.children.borrow(), &mut text, &mut spaced) && !text.is_empty()).then_some(text)
 }
 
 fn hidden_by_style(handle: &Handle) -> bool {
