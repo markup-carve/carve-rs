@@ -4,6 +4,7 @@ use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
 use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
+use crate::scoped_state::{CellScope, RefCellScope};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::collections::{HashMap, HashSet};
@@ -109,6 +110,7 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     // clones the whole document and derived `Clone` has no ceiling
     // (`crate::render_depth::refuse_if_too_deep`).
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
+    let _session = RenderSession::new();
     crate::render_loss::record_ruby_in_document(doc);
     let one_run = text_as_one_run(doc);
     let doc = one_run.as_ref().unwrap_or(doc);
@@ -1002,9 +1004,8 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     {
         return authored;
     }
-    HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.set(true));
+    let _marker = CellScope::replace(&HYPHEN_BREAKS_ARE_UNSAFE, true);
     let fallback = render_with_escapes_once(doc, escape_mode);
-    HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.set(false));
     if crate::parse::opens_frontmatter(&fallback) {
         authored
     } else {
@@ -4542,6 +4543,45 @@ thread_local! {
     static LAST_OCCURRENCE_RELAXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+/// Owns the ambient state of one render, restoring an enclosing render on exit.
+struct RenderSession {
+    _redundant_ids: RefCellScope<BTreeSet<String>>,
+    _marker: CellScope<bool>,
+    _sentinels: CellScope<[char; SENTINEL_COUNT]>,
+    _inserted: CellScope<[usize; SENTINEL_COUNT]>,
+    _seen: CellScope<[usize; SENTINEL_COUNT]>,
+    _staged: RefCellScope<String>,
+    _units: CellScope<usize>,
+    _escalated: RefCellScope<Option<HashSet<usize>>>,
+    _asked: RefCellScope<Option<HashSet<usize>>>,
+    _relaxed: RefCellScope<Option<HashSet<Occurrence>>>,
+    _log: RefCellScope<Option<Vec<Occurrence>>>,
+    _indexes: RefCellScope<HashMap<usize, usize>>,
+    _last: CellScope<bool>,
+    _window: escape_window::Session,
+}
+
+impl RenderSession {
+    fn new() -> Self {
+        Self {
+            _redundant_ids: RefCellScope::replace(&REDUNDANT_IDS, BTreeSet::new()),
+            _marker: CellScope::replace(&HYPHEN_BREAKS_ARE_UNSAFE, false),
+            _sentinels: CellScope::replace(&SENTINELS, SENTINEL_DEFAULTS),
+            _inserted: CellScope::replace(&INSERTED, [0; SENTINEL_COUNT]),
+            _seen: CellScope::replace(&SEEN, [0; SENTINEL_COUNT]),
+            _staged: RefCellScope::replace(&STAGED, String::new()),
+            _units: CellScope::replace(&UNIT_COUNTER, 0),
+            _escalated: RefCellScope::replace(&ESCALATED_UNITS, None),
+            _asked: RefCellScope::replace(&ASKED_UNITS, None),
+            _relaxed: RefCellScope::replace(&RELAXED_OCCURRENCES, None),
+            _log: RefCellScope::replace(&OCCURRENCE_LOG, None),
+            _indexes: RefCellScope::replace(&ESCAPE_CALL_INDEXES, HashMap::new()),
+            _last: CellScope::replace(&LAST_OCCURRENCE_RELAXED, false),
+            _window: escape_window::Session::new(),
+        }
+    }
+}
+
 /// One candidate site the escape search can offer back.
 ///
 /// THE UNIT, THE RUN AND THE OFFSET, all three. The offset alone is not a key:
@@ -5970,6 +6010,21 @@ mod tests {
         pub(super) static PARSED_BYTES: Cell<usize> = const { Cell::new(0) };
         pub(super) static WHOLE_DOCUMENT_PROBES: Cell<bool> = const { Cell::new(false) };
         pub(super) static PROBE_PARSES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    #[test]
+    fn nested_render_uses_fresh_state_and_restores_its_caller() {
+        use super::*;
+        let _outer = RenderSession::new();
+        HYPHEN_BREAKS_ARE_UNSAFE.with(|flag| flag.set(true));
+        UNIT_COUNTER.with(|count| count.set(42));
+        STAGED.with(|text| text.borrow_mut().push_str("outer"));
+        let doc = crate::parse("---\n");
+        let rendered = render_carve(&doc).expect("render succeeds");
+        assert_eq!(rendered.trim(), "---");
+        assert!(HYPHEN_BREAKS_ARE_UNSAFE.with(Cell::get));
+        assert_eq!(UNIT_COUNTER.with(Cell::get), 42);
+        STAGED.with(|text| assert_eq!(&*text.borrow(), "outer"));
     }
 
     /// Probes and parses of the escalation search while `html` is imported.
