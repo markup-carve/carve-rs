@@ -9572,6 +9572,14 @@ fn parse_list(
                             .is_some_and(|open| open.content_col > content_col)
                             && cur.pos > 0
                             && is_blank_line(cur.lines[cur.pos - 1]);
+                        if pending_blank {
+                            blank_run = cur.lines[..cur.pos]
+                                .iter()
+                                .rev()
+                                .take(3)
+                                .take_while(|line| is_blank_line(line))
+                                .count();
+                        }
                     }
                     place_item_chunk(deferred, last_item, nested_children, carried);
                     if !nested_leaves_paragraph_open
@@ -11967,6 +11975,21 @@ fn collect_indented_block_mapped_with(
                 let _ = bi;
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
+                    // Descendants may own these blanks as fence payload. Copy
+                    // them without advancing the outer separator cursor.
+                    for at in cur.pos..k {
+                        let (residue, consumed, synthetic) =
+                            slice_columns_mapped(cur.lines[at], strip_cols, true);
+                        lines.push(residue);
+                        reached.push(false);
+                        if building_maps {
+                            line_map.push(cur.source_line(at));
+                            col_map.push(
+                                cur.source_col(at)
+                                    .map(|col| col + consumed as isize - synthetic as isize),
+                            );
+                        }
+                    }
                     break;
                 }
             }
@@ -12203,11 +12226,10 @@ fn collect_indented_block_mapped_with(
         }
         cur.consume();
     }
-    // TERMINATE while a fence is still open, so the blank collected above
-    // survives the round trip back through `str::lines()`. Same rule the plain
-    // collector applies (markup-carve/carve-rs#908).
+    // Preserve the last physical blank through `str::lines()`, including
+    // payload owned by an unfinished descendant fence.
     let mut source = lines.join("\n");
-    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+    if lines.last().is_some_and(|line| line.is_empty()) {
         source.push('\n');
     }
     debug_assert_eq!(reached.len(), lines.len());
