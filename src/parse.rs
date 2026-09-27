@@ -15928,7 +15928,7 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
             b'}' => return false,
             // A newline ends an inline block (read_attrs_at bails); defer.
             b'\n' => return false,
-            // Attribute separators are ASCII space, tab, and newline.
+            // Skip space, tab, and carriage return; line feed defers above.
             b' ' | b'\t' | b'\r' => i += 1,
             // Quotes and escapes are subtle -- defer.
             b'"' | b'\'' | b'\\' => return false,
