@@ -188,6 +188,7 @@ pub(crate) fn flatten_cell_block_inlines_with(
         Block(&'a BlockNode),
         Inlines(&'a [InlineNode]),
         Text(String),
+        Image(&'a Image),
     }
     fn push_blocks<'a>(pending: &mut Vec<Part<'a>>, blocks: &'a [BlockNode]) {
         pending.extend(blocks.iter().rev().map(Part::Block));
@@ -215,6 +216,13 @@ pub(crate) fn flatten_cell_block_inlines_with(
                 if !text.is_empty() {
                     chunks.push(vec![InlineNode::text(text)]);
                 }
+            }
+            Part::Image(image) => {
+                // A cell is one line, so the description loses its newlines.
+                let mut image = image.clone();
+                let alt = image.alt.replace("\r\n", " ").replace(['\r', '\n'], " ");
+                image.alt = trim_non_nbsp(&alt).to_string();
+                chunks.push(vec![InlineNode::Image(image)]);
             }
             Part::Block(block) => match block {
                 BlockNode::Heading(node) => pending.push(Part::Inlines(&node.children)),
@@ -265,13 +273,13 @@ pub(crate) fn flatten_cell_block_inlines_with(
                             push_blocks(&mut pending, &target.children)
                         }
                         FigureTarget::Table(target) => push_table(&mut pending, target),
-                        FigureTarget::Image(target) => pending.push(Part::Text(target.alt.clone())),
+                        FigureTarget::Image(target) => pending.push(Part::Image(target)),
                     }
                 }
                 BlockNode::FigureGroup(node) => push_blocks(&mut pending, &node.children),
                 BlockNode::BlockExtension(node) => pending.push(Part::Block(&node.fallback)),
                 BlockNode::ExtensionCarrier(node) => push_blocks(&mut pending, &node.children),
-                BlockNode::BlockImage(node) => pending.push(Part::Text(node.alt.clone())),
+                BlockNode::BlockImage(node) => pending.push(Part::Image(node)),
                 // carve#2390: a raw block has no payload that belongs on a line
                 // of a table, so a cell contributes nothing for it.
                 BlockNode::RawBlock(_)

@@ -5149,9 +5149,9 @@ impl<'a> Importer<'a> {
             && head_rows == leading_header_rows
             && foot_rows == 0
             && bodies.len() <= 1
-            && bodies.iter().all(|b| {
-                b.head_rows == 0 && b.row_head_columns.unwrap_or(0) == 0 && b.attrs.is_none()
-            });
+            // A single body's row-head count is read off its cells' header
+            // flags, so it states nothing the rows do not (PART 12 §15).
+            && bodies.iter().all(|b| b.head_rows == 0 && b.attrs.is_none());
         if derivable {
             return None;
         }

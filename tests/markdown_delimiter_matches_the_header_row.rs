@@ -1,15 +1,10 @@
-//! PART 11 section 10b: where a delimiter row is required to promote the first
-//! row to a header, that delimiter carries exactly one cell for each cell in the
-//! HEADER ROW, not one for each column reached by a wider body row.
+//! The Markdown header row and its delimiter are as wide as the widest row
+//! (PART 11 section 10n): GFM drops every body cell past the header's width, so
+//! a narrower header row gains empty cells and the delimiter matches it. Body
+//! rows keep their own cell counts.
 //!
-//! This renderer sized the separator from the TABLE width, so a ragged table
-//! emitted `| h |` over `| --- | --- |`. Neither python-markdown nor marked reads
-//! that as a table -- the cell counts have to agree -- so the document published
-//! as a paragraph of pipes and lost its table entirely (carve#1042).
-//!
-//! All three engines agreed on the wider row, which is why the cross-engine
-//! render comparison scored the shape green throughout; the evidence that settles
-//! it is an external reader, not another engine.
+//! The delimiter used to stop at the header row's own width (carve#1042), which
+//! kept the table but let a GFM reader drop the wider rows' extra cells.
 
 fn lines(src: &str) -> Vec<String> {
     carve::to_markdown(src)
@@ -24,12 +19,12 @@ fn cell_count(row: &str) -> usize {
 }
 
 #[test]
-fn the_delimiter_does_not_widen_to_reach_a_wider_body_row() {
+fn a_narrower_header_is_padded_to_a_wider_body_row() {
     // Corpus 284-a-ragged-table-keeps-each-row-s-cell-count-3: a one-cell header
     // over a two-cell body row.
     let out = lines("| h |\n|---|\n| |x |\n");
-    assert_eq!(out[0], "| h |");
-    assert_eq!(out[1], "| --- |");
+    assert_eq!(out[0], "| h |  |");
+    assert_eq!(out[1], "| --- | --- |");
     assert_eq!(out[2], "|  | x |");
 }
 
@@ -37,8 +32,8 @@ fn the_delimiter_does_not_widen_to_reach_a_wider_body_row() {
 fn the_span_free_shape_is_reached_too() {
     // Written with the space that ends the marker run (§20 T11).
     let out = lines("|= a |\n| x | y |\n");
-    assert_eq!(out[0], "| a |");
-    assert_eq!(out[1], "| --- |");
+    assert_eq!(out[0], "| a |  |");
+    assert_eq!(out[1], "| --- | --- |");
     assert_eq!(out[2], "| x | y |");
 }
 
@@ -53,9 +48,18 @@ fn a_header_wider_than_its_body_keeps_its_own_width() {
 }
 
 #[test]
-fn the_header_alignment_survives_the_narrowing() {
+fn the_header_alignment_survives_the_padding() {
     let out = lines("|=> h |\n| x | y |\n");
-    assert_eq!(out[1], "| ---: |");
+    assert_eq!(out[1], "| ---: | --- |");
+}
+
+#[test]
+fn a_padded_column_takes_a_later_header_row_s_alignment() {
+    // PART 11 section 10d: the effective alignment comes from every header row,
+    // so a column only the second one reaches is still aligned.
+    let out = lines("|= a |\n|= b |=> c |\n| 1 | 2 |\n");
+    assert_eq!(out[0], "| a |  |");
+    assert_eq!(out[1], "| --- | ---: |");
 }
 
 #[test]
