@@ -5216,12 +5216,14 @@ impl<'a> Importer<'a> {
         parent: &str,
         depth: usize,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
-        let mut out = Vec::new();
+        let mut out: Vec<InlineNode> = Vec::new();
+        // A BLOCK BOUNDARY IN AN INLINE SLOT SURVIVES ONLY IN THE BYTES (PART
+        // 11 §1b): ONE space, merging with layout already on either side, and
+        // a block that contributes nothing is not a side (carve-js `inlines`).
+        let mut previous_was_block = false;
         let flattening = handles
             .iter()
             .any(|h| Self::tag(h).as_deref().is_some_and(Self::is_block_tag));
-        let mut published = false;
-        let mut boundary_pending = false;
         for (i, h) in handles.iter().enumerate() {
             let tag = Self::tag(h).unwrap_or_else(|| {
                 // A comment names itself, the same way `child_path` spells it:
@@ -5237,47 +5239,28 @@ impl<'a> Importer<'a> {
                 Some(given) => given[i].clone(),
                 None => format!("{parent}/{tag}[{}]", i + 1),
             };
-            // `tag` is already the element's name, or the synthetic `text()` for a
-            // node that has none - and that is not a block tag, so this needs no
-            // second call to build the same String again.
-            let is_block = Self::is_block_tag(&tag);
-            if is_block && published {
-                boundary_pending = true;
-            }
+            let is_block = is_flattened_block(h);
             let mut produced = self.inline(h, &path, depth)?;
-            let contributes = !Self::inlines_are_blank(&produced);
-            if !contributes && flattening {
+            // Layout between flattened blocks is the boundary itself.
+            if flattening && Self::inlines_are_blank(&produced) {
                 continue;
             }
-            if contributes && boundary_pending {
-                // Plain-text layout at either edge shares the separator. Code and
-                // nonbreaking spaces remain content inside their own nodes.
-                while let Some(InlineNode::Text(text)) = out.last_mut() {
-                    text.value
-                        .truncate(text.value.trim_end_matches(is_layout_space).len());
-                    if !text.value.is_empty() {
-                        break;
-                    }
-                    out.pop();
-                }
-                for node in &mut produced {
-                    let InlineNode::Text(text) = node else {
-                        break;
-                    };
-                    let leading =
-                        text.value.len() - text.value.trim_start_matches(is_layout_space).len();
-                    text.value.drain(..leading);
-                    if !text.value.is_empty() {
-                        break;
-                    }
-                }
+            let at_boundary = previous_was_block || is_block;
+            if at_boundary && needs_separator(&out, &produced) {
                 out.push(InlineNode::text(" ".to_string()));
             }
-            out.extend(produced);
-            if contributes {
-                published = true;
-                boundary_pending = is_block;
+            if at_boundary && text_ends_with_layout(out.last()) {
+                if let Some(InlineNode::Text(first)) = produced.first_mut() {
+                    first.value = first.value.trim_start_matches(' ').to_string();
+                    if first.value.is_empty() {
+                        produced.remove(0);
+                    }
+                }
             }
+            if !produced.is_empty() {
+                previous_was_block = is_block;
+            }
+            out.extend(produced);
         }
         Ok(drop_space_after_hard_break(coalesce(hoist_edge_space(out))))
     }
@@ -8212,4 +8195,36 @@ fn bullet_list(items: Vec<ListItem>, tight: bool) -> BlockNode {
         items,
         pos: None,
     })
+}
+
+/// The block-level elements whose boundary an inline flatten keeps as a
+/// separator, including the ones never top level (carve-js `isFlattenedBlock`).
+fn is_flattened_block(h: &Handle) -> bool {
+    Importer::tag(h).is_some_and(|tag| {
+        Importer::is_block_tag(&tag)
+            || matches!(
+                tag.as_str(),
+                "li" | "dt" | "dd" | "td" | "th" | "tr" | "caption" | "figcaption"
+            )
+    })
+}
+
+/// Whether a flattened block boundary needs a separator: not where either side
+/// is missing, is a hard break, or already has layout at the join. A no-break
+/// space is content (PART 11 §7), so it does not separate.
+fn needs_separator(before: &[InlineNode], after: &[InlineNode]) -> bool {
+    let (Some(last), Some(first)) = (before.last(), after.first()) else {
+        return false;
+    };
+    if matches!(last, InlineNode::HardBreak(_)) || matches!(first, InlineNode::HardBreak(_)) {
+        return false;
+    }
+    if matches!(last, InlineNode::Text(t) if t.value.ends_with([' ', '\t'])) {
+        return false;
+    }
+    !matches!(first, InlineNode::Text(t) if t.value.starts_with([' ', '\t']))
+}
+
+fn text_ends_with_layout(node: Option<&InlineNode>) -> bool {
+    matches!(node, Some(InlineNode::Text(t)) if t.value.ends_with([' ', '\t']))
 }
