@@ -6099,10 +6099,15 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
 fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
     let mut end = start;
     let mut description_column = None;
+    // A term has no content column, so a line past the list's base folds into
+    // an open term as text (carve#2411). List markers still interrupt it, and
+    // comments and link and footnote definitions keep their §10 I5 reading.
+    let mut term_open = true;
     let mut j = start + 1;
     while j < lines.len() {
         let candidate = &lines[j];
         if is_blank_line(candidate) {
+            term_open = false;
             let mut ahead = j + 1;
             while ahead < lines.len() && is_blank_line(&lines[ahead]) {
                 ahead += 1;
@@ -6136,12 +6141,26 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
             .flatten();
         if column == base && (is_definition_list_start(&local) || description.is_some()) {
             end = j;
+            term_open = description.is_none();
             if let Some((_, width)) = description {
                 description_column = Some(base + width);
             }
             j += 1;
             continue;
         }
+        if term_open && column > base {
+            let text = strip_leading_columns(candidate, column);
+            if !is_list_marker(&text)
+                && !text.starts_with("%%")
+                && parse_link_def_line(&text).is_none()
+                && parse_footnote_def_line(&text).is_none()
+            {
+                end = j;
+                j += 1;
+                continue;
+            }
+        }
+        term_open = false;
         if description_column.is_none() && column == base && !item_block_opener(&local) {
             end = j;
             j += 1;
@@ -6196,6 +6215,16 @@ fn unterminated_code_fence_folds(cur: &mut LineCursor<'_>, line: &str) -> bool {
 
 fn item_block_opener(line: &str) -> bool {
     item_block_opener_with_invisible_arms(line, true)
+}
+
+/// Would `line` open a block at its container's column? The lint for a line
+/// folded into a definition term asks this; attribute lines are left out.
+pub(crate) fn opens_block_for_term_lint(line: &str) -> bool {
+    let colons = line.bytes().take_while(|b| *b == b':').count();
+    item_block_opener_with_invisible_arms(line, false)
+        || (colons >= 3 && matches!(line.as_bytes().get(colons), None | Some(b' ')))
+        || parse_footnote_def_line(line).is_some()
+        || parse_link_def_line(line).is_some()
 }
 
 /// `item_block_opener`, with the INVISIBLE arms switchable.

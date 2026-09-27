@@ -106,6 +106,10 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         collect_figure_group_warnings(body, false, &to_byte, &mut out);
     }
     collect_quote_fence_warnings(&doc.children, &to_byte, &mut out);
+    let term_fold_bodies: Vec<&[BlockNode]> = std::iter::once(doc.children.as_slice())
+        .chain(doc.footnote_defs.values().map(Vec::as_slice))
+        .collect();
+    collect_term_fold_warnings(source, &term_fold_bodies, &to_byte, &mut out);
     // A footnote definition hoists to the document (PART 9 §7), so its body is
     // not reachable from `children`. The walk reports nothing there yet, for a
     // reason outside this rule: a block opener below a quote line in a footnote
@@ -544,6 +548,170 @@ fn collect_figure_group_warnings(
             }
             BlockNode::ExtensionCarrier(e) => {
                 collect_figure_group_warnings(&e.children, in_group, to_byte, out)
+            }
+            _ => {}
+        }
+    }
+}
+
+/// A block opener indented past a term's marker folds into the term as text,
+/// because a term has no content column (carve#2411). One warning per term, on
+/// its first opener-shaped folded line.
+fn collect_term_fold_warnings(
+    source: &str,
+    bodies: &[&[BlockNode]],
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    // The same line split as `original_line_start_offsets`. A leading BOM stays
+    // in line 1 because positions count it; `visual_column` gives it no width.
+    let lines: Vec<&str> = source
+        .split('\n')
+        .flat_map(|line| line.strip_suffix('\r').unwrap_or(line).split('\r'))
+        .collect();
+    let starts = crate::parse::original_line_start_offsets(source);
+    let mut visit = |block: &BlockNode| {
+        let BlockNode::DefinitionList(dl) = block else {
+            return;
+        };
+        for term in dl.items.iter().flat_map(|item| &item.terms) {
+            let Some(pos) = &term.pos else { continue };
+            if pos.end_line <= pos.start_line {
+                continue;
+            }
+            let term_line = lines.get(pos.start_line - 1).copied().unwrap_or("");
+            let marker_chars = pos.start_column.saturating_sub(1);
+            let marker_byte = term_line
+                .char_indices()
+                .nth(marker_chars)
+                .map_or(term_line.len(), |(i, _)| i);
+            let quotes = term_line[..marker_byte].matches('>').count();
+            let marker_column = visual_column(&term_line[..marker_byte]);
+            // A line inside a multi-line code, math or raw span is verbatim
+            // content, not a folded opener.
+            let mut spans = Vec::new();
+            let mut stack: Vec<(&InlineNode, usize)> =
+                term.children.iter().map(|child| (child, 0)).collect();
+            while let Some((node, depth)) = stack.pop() {
+                let span = match node {
+                    InlineNode::Code(c) => c.pos.as_ref(),
+                    InlineNode::Math(m) => m.pos.as_ref(),
+                    InlineNode::RawInline(r) => r.pos.as_ref(),
+                    InlineNode::LiteralInline(l) => l.pos.as_ref(),
+                    _ => None,
+                };
+                if let Some(p) = span {
+                    spans.push((p.start_line, p.end_line));
+                }
+                crate::render_depth::push_inline_children(node, depth, &mut stack);
+            }
+            let verbatim = |line_no: usize| {
+                spans
+                    .iter()
+                    .any(|&(first, last)| first < line_no && line_no <= last)
+            };
+            for line_no in pos.start_line + 1..=pos.end_line {
+                if verbatim(line_no) {
+                    continue;
+                }
+                let line = lines.get(line_no - 1).copied().unwrap_or("");
+                let Some(indent) = past_quotes_and_indent(line, quotes) else {
+                    continue;
+                };
+                let rest = &line[indent..];
+                if visual_column(&line[..indent]) <= marker_column
+                    || !crate::parse::opens_block_for_term_lint(rest)
+                {
+                    continue;
+                }
+                let start =
+                    starts.get(line_no - 1).copied().unwrap_or(0) + line[..indent].chars().count();
+                out.push(LintWarning {
+                    line: line_no,
+                    column: line[..indent].chars().count() + 1,
+                    rule: "definition-term-block-folded",
+                    message: "This block opener is indented under a definition term, which has \
+                              no content column, so it folds into the term as text. Dedent it to \
+                              the container's content column to open the block, or put it in the \
+                              term's \": \" description."
+                        .to_string(),
+                    start: to_byte(start),
+                    end: to_byte(start + rest.chars().count()),
+                });
+                break;
+            }
+        }
+    };
+    for blocks in bodies {
+        walk_all_blocks(blocks, &mut visit);
+    }
+}
+
+fn visual_column(prefix: &str) -> usize {
+    prefix.chars().fold(0, |column, c| {
+        if c == '\u{feff}' {
+            column
+        } else if c == '\t' {
+            (column / 4 + 1) * 4
+        } else {
+            column + 1
+        }
+    })
+}
+
+/// Byte index past `quotes` quote markers and the indentation after them.
+fn past_quotes_and_indent(line: &str, quotes: usize) -> Option<usize> {
+    let mut at = 0;
+    for _ in 0..quotes {
+        let rest = &line[at..];
+        let lead = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        let after = &rest[lead..];
+        if !after.starts_with('>') {
+            return None;
+        }
+        at += lead + 1;
+        if line[at..].starts_with(' ') {
+            at += 1;
+        }
+    }
+    let rest = &line[at..];
+    Some(at + rest.len() - rest.trim_start_matches([' ', '\t']).len())
+}
+
+/// Visit every block, descending into every container that holds blocks.
+fn walk_all_blocks(blocks: &[BlockNode], visit: &mut dyn FnMut(&BlockNode)) {
+    for block in blocks {
+        visit(block);
+        match block {
+            BlockNode::BlockQuote(b) => walk_all_blocks(&b.children, visit),
+            BlockNode::Admonition(a) => walk_all_blocks(&a.children, visit),
+            BlockNode::Directive(d) => walk_all_blocks(&d.children, visit),
+            BlockNode::Div(d) => walk_all_blocks(&d.children, visit),
+            BlockNode::Section(d) => walk_all_blocks(&d.children, visit),
+            BlockNode::LineBlock(lb) => walk_all_blocks(&lb.children, visit),
+            BlockNode::FigureGroup(g) => walk_all_blocks(&g.children, visit),
+            BlockNode::ExtensionCarrier(e) => walk_all_blocks(&e.children, visit),
+            BlockNode::Table(t) => {
+                for cell in t.rows.iter().flat_map(|row| &row.cells) {
+                    if let Some(blocks) = &cell.blocks {
+                        walk_all_blocks(blocks, visit);
+                    }
+                }
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    walk_all_blocks(&item.children, visit);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for def in dl.items.iter().flat_map(|item| &item.definitions) {
+                    walk_all_blocks(&def.children, visit);
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &*f.target {
+                    walk_all_blocks(&b.children, visit);
+                }
             }
             _ => {}
         }
