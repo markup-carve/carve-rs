@@ -12816,8 +12816,10 @@ fn fold_term(
         cur.consume();
     }
     let mut children = Vec::new();
+    let mut boundaries = Vec::new();
     for (index, part) in parts.into_iter().enumerate() {
         if index > 0 {
+            boundaries.push(children.len());
             children.push(InlineNode::SoftBreak(Break { pos: None }));
         }
         match part {
@@ -12826,6 +12828,28 @@ fn fold_term(
                 children.extend(parse_inline_lines_with_anchor(&text, options, anchors));
             }
             Part::Run(text, None) => children.extend(parse_inline_with_options(&text, options)),
+        }
+    }
+    // A part-boundary break is placed once both its neighbours exist: from the
+    // preceding sibling's end to the following sibling's start, the span the
+    // fold's own in-part breaks already publish (carve#2469).
+    for index in boundaries {
+        let pos = index
+            .checked_sub(1)
+            .and_then(|previous| children.get(previous))
+            .and_then(InlineNode::pos)
+            .zip(children.get(index + 1).and_then(InlineNode::pos))
+            .map(|(prev, next)| Pos {
+                start_line: prev.end_line,
+                end_line: next.start_line,
+                start_column: prev.end_column,
+                end_column: next.start_column,
+                start_offset: prev.end_offset,
+                end_offset: next.start_offset,
+                file: prev.file.clone(),
+            });
+        if let InlineNode::SoftBreak(br) = &mut children[index] {
+            br.pos = pos;
         }
     }
     children
