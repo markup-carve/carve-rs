@@ -17,6 +17,7 @@ use crate::escape::{escape_attr, sanitize_attr_value};
 use crate::extension::Options;
 use crate::parse::parse_with_options;
 use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
+use crate::source_positions::CodepointLineStarts;
 
 /// One diagnostic: a silent degradation, located in the source the caller
 /// passed.
@@ -323,7 +324,7 @@ fn collect_unattached_block_attribute_warnings(
     if spans.is_empty() {
         return;
     }
-    let line_starts = line_start_offsets(source);
+    let line_starts = CodepointLineStarts::original(source);
     for pos in spans {
         let start = to_byte(codepoint_offset_at(
             &line_starts,
@@ -350,22 +351,6 @@ fn collect_unattached_block_attribute_warnings(
     }
 }
 
-/// Codepoint offset of the start of each 1-based source line, in the ORIGINAL
-/// text.
-///
-/// THE PARSER'S OWN TABLE, not a second one. Turning a (line, column) pair back
-/// into an offset is a question about NORMALIZATION: a leading BOM is stripped
-/// and both CRLF and a lone CR collapse to LF before the parser sees a line
-/// (PART 1), so a table that counts only `\n` and keeps the BOM disagrees with
-/// the positions it is being asked to place. The disagreement is silent -
-/// `para\r\r{.k}\r` produced an empty span at end of input, and `<BOM>{.k}`
-/// highlighted the mark and lost the closing brace. Reusing
-/// `original_line_start_offsets` is what keeps one answer to the question, and
-/// it is the same table `fill_offsets` places every node with.
-fn line_start_offsets(source: &str) -> Vec<usize> {
-    crate::parse::original_line_start_offsets(source)
-}
-
 /// The CODEPOINT offset of a 1-based (line, column) pair.
 ///
 /// `line_starts` holds codepoint offsets and [`Pos`] counts columns in
@@ -375,7 +360,7 @@ fn line_start_offsets(source: &str) -> Vec<usize> {
 /// Computed rather than read off a node, because these spans are taken DURING
 /// the parse and `fill_offsets` only ever runs over nodes that reached the tree.
 /// An unattached attribute reaches none, by definition.
-fn codepoint_offset_at(line_starts: &[usize], line: usize, column: usize) -> usize {
+fn codepoint_offset_at(line_starts: &CodepointLineStarts, line: usize, column: usize) -> usize {
     let Some(&line_start) = line_starts.get(line.saturating_sub(1)) else {
         return line_starts.last().copied().unwrap_or(0);
     };
@@ -563,13 +548,13 @@ fn collect_term_fold_warnings(
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
 ) {
-    // The same line split as `original_line_start_offsets`. A leading BOM stays
+    // The same line split as `CodepointLineStarts::original`. A leading BOM stays
     // in line 1 because positions count it; `visual_column` gives it no width.
     let lines: Vec<&str> = source
         .split('\n')
         .flat_map(|line| line.strip_suffix('\r').unwrap_or(line).split('\r'))
         .collect();
-    let starts = crate::parse::original_line_start_offsets(source);
+    let starts = CodepointLineStarts::original(source);
     let mut visit = |block: &BlockNode| {
         let BlockNode::DefinitionList(dl) = block else {
             return;
