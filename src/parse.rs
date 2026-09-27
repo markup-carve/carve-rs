@@ -16087,7 +16087,7 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-fn is_css_identifier(name: &str) -> bool {
+pub(crate) fn is_css_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -16210,6 +16210,23 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                     attrs.order.push(AttrSlot::Id);
                 }
                 attrs.id = Some(value);
+            } else if key == "class" {
+                // `class=value` is a SPELLING OF THE CLASS SLOT, the same way
+                // `id=value` above is a spelling of the id slot (CARVE-P4-007):
+                // it appends to `classes` in source order and never enters
+                // `key_values`, so `{class=a .b}` is one `class="a b"` instead of
+                // two `class` attributes on one element (carve#2439). The two
+                // spellings stay distinct in SOURCE, because `.` reads the
+                // `explicit_identifier` a fence word does while a value reaches
+                // past it - `-col` is a class only the key-value form can spell.
+                // ONE `Class` entry for the merged slot, the way the `.` branch
+                // above records it: every class renders in a single `class`
+                // attribute, so a second entry would make the writer spell an
+                // attribute that does not exist.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(value);
             } else {
                 if !attrs.key_values.contains_key(key) {
                     attrs.order.push(AttrSlot::Key(key.to_string()));
@@ -16224,6 +16241,16 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                     attrs.order.push(AttrSlot::Id);
                 }
                 attrs.id = Some(String::new());
+            } else if token == "class" {
+                // And a bare boolean `class` feeds the class slot, because PART 4
+                // gives it the SAME empty-string AST value as `class=""` - which
+                // the branch above folds - so leaving it here would make two
+                // spellings of one documented value build different trees, and
+                // would keep the second `class` attribute CARVE-P4-007 removes.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(String::new());
             } else {
                 // Boolean attribute: a bare word with no value, rendered name="".
                 // (Matched last so `k=v` is a key/value, not a bare `k`.)
