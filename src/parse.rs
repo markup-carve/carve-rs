@@ -5947,13 +5947,15 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             && colon.is_none()
             && parse_footnote_def_line(&opener).is_some();
         if let Some(open) = code {
+            // CARVE-P0-004: only the container's content column and the opener's
+            // own base close it, so an unterminated fence runs to the container's
+            // end and a run in between stays payload at its authored column.
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if !is_blank_line(candidate) && indent_columns(candidate) < base {
-                    break;
-                }
                 end = j;
+                let column = indent_columns(candidate);
                 if !is_blank_line(candidate)
-                    && is_fence_close(&strip_leading_columns(candidate, base), open)
+                    && (column == 0 || column == base)
+                    && is_fence_close(&strip_leading_columns(candidate, column), open)
                 {
                     break;
                 }
@@ -6119,6 +6121,13 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                         *col += consumed as isize - synthetic as isize;
                     }
                 }
+                continue;
+            }
+            // The base dedent is all or nothing: a verbatim line that does not
+            // reach the base keeps what sits past the CONTAINER's column instead.
+            // Only a code fence carries such a line - every other opener's extent
+            // above breaks below the base.
+            if code.is_some() && indent_columns(line) < base {
                 continue;
             }
             *line = strip_leading_columns(line, base);
@@ -13203,7 +13212,18 @@ impl DefinitionBodyFence {
     /// Follow the fence over one line collected at the body's column.
     fn track(&mut self, dedented: &str, opener_column: usize) {
         let was_open = self.open.is_some();
-        track_collected_fence(&mut self.open, dedented, true, opener_column);
+        // CARVE-P0-004: an opener PAST the body's column is measured from its own
+        // authored column, and so is its closer. The body's own column closes it
+        // too, and nothing in between does.
+        let at_base = self
+            .open
+            .is_some_and(|open| opener_column == open.content_col);
+        let tracked = if was_open && !at_base {
+            dedented
+        } else {
+            trim_ascii_start(dedented)
+        };
+        track_collected_fence(&mut self.open, tracked, true, opener_column);
         // The closer is the line that took the fence from open to closed; any
         // other line at the column is content, and content after a closed block
         // opens a paragraph the fold can reach again.
@@ -13664,9 +13684,11 @@ fn collect_definition_body(
             }
             break;
         }
-        if let Some(open) = fence.open {
-            let (residue, consumed, synthetic) =
-                slice_columns_mapped(line, open.content_col.max(content_column), true);
+        if fence.open.is_some() {
+            // The body's own column, like every other line this collector takes:
+            // an opener PAST it leaves its authored residue for the rebase, which
+            // would otherwise dedent this line a second time.
+            let (residue, consumed, synthetic) = slice_columns_mapped(line, content_column, true);
             lines.push(residue);
             line_map.push(cur.source_line(cur.pos));
             col_map.push(

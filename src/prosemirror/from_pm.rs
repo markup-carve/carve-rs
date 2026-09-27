@@ -1036,7 +1036,7 @@ impl Reader {
             "comment" => node(
                 "comment",
                 [
-                    ("block", Json::Bool(false)),
+                    ("block", bool_json(a, "block", false)),
                     ("delimited", bool_json(a, "delimited", false)),
                     ("content", string_json(a, "content", "")),
                 ],

@@ -1015,6 +1015,11 @@ impl Renderer {
                     Map::from_iter([
                         ("content".into(), Json::String(n.content.clone())),
                         ("delimited".into(), Json::Bool(n.delimited)),
+                        // §21a: the spelling is the node's identity here as it is
+                        // on the block arm. Drop the flag and a folded `%%%` fence
+                        // returns spelled `%%`, which runs to the end of its
+                        // inline run and eats what followed it on the line.
+                        ("block".into(), Json::Bool(n.block)),
                     ]),
                     Vec::new(),
                     marks,
