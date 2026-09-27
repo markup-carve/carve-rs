@@ -5389,6 +5389,15 @@ struct ResolvedBody {
 
 /// Fill in the children of a node [`open_container`] emitted hollow.
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
+    if let Some(last) = children.iter().rev().find_map(crate::ast_json::block_pos) {
+        if let Some(pos) = block_pos_mut(node) {
+            if (last.end_line, last.end_column) > (pos.end_line, pos.end_column) {
+                pos.end_line = last.end_line;
+                pos.end_column = last.end_column;
+                pos.end_offset = last.end_offset;
+            }
+        }
+    }
     match node {
         BlockNode::Admonition(n) => n.children = children,
         BlockNode::Directive(n) => n.children = children,
@@ -14972,7 +14981,7 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             None
         };
         // Through the caption the cursor just consumed, like a figure's span.
-        let pos = span_of(cur, span_start, cur.pos, options);
+        let pos = container_span(cur, span_start, closed, options);
         return (
             boxed_figure_group(Vec::new(), caption, pos),
             ContainerBody {
@@ -14984,9 +14993,9 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             },
         );
     }
-    let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
+    let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
     // The span covers the opening fence through the closing one.
-    let pos = span_of(cur, span_start, cur.pos, options);
+    let pos = container_span(cur, span_start, closed, options);
     let title_anchor = open.title_col.and_then(|col| {
         Some((
             cur.source_line(span_start)?,
@@ -15002,6 +15011,23 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             in_group,
         },
     )
+}
+
+fn container_span(
+    cur: &LineCursor<'_>,
+    start: usize,
+    closed: bool,
+    options: &Options<'_>,
+) -> Option<Pos> {
+    let mut end = cur.pos;
+    if !closed {
+        while end > start + 1 && is_blank_line(cur.lines[end - 1]) {
+            end -= 1;
+        }
+    }
+    // A verbatim child may own these blanks. Filling the children extends
+    // this span over that payload after the body has been parsed.
+    span_of(cur, start, end, options)
 }
 
 /// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and
