@@ -1444,9 +1444,18 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 96a9dac, whose corpus does not move again.
     //
     // Ten documents now report the generated-space spelling distinction.
-    // Their exact names are pinned above; the current corpus has 1895 files.
-    const STRICT: usize = 1458;
-    const LOSSY: usize = 437;
+    // Their exact names are pinned above.
+    //
+    // The pin moves on to carve e00d86a9, which adds the twenty-five documents
+    // of corpus 504 (markup-carve/carve#2458) and changes none. Classifying
+    // every document at both pins with this same engine found NO document
+    // moving between the two buckets and none leaving the corpus, so the whole
+    // change is the twenty-five joiners: five strict (504-17 through 504-21)
+    // and twenty lossy, each reporting the single cause `soft_break` with
+    // nothing dropped - the kind hundreds of documents already carry, so no new
+    // kind appeared. 1458/437 over 1895 files becomes 1463/457 over 1920.
+    const STRICT: usize = 1463;
+    const LOSSY: usize = 457;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
