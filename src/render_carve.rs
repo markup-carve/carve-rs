@@ -2663,7 +2663,12 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             continue;
         };
         for term in &item.terms {
-            out.push(format!(":: {}", render_inlines(term, ctx)));
+            // A comment opening a line must stay past the term's column, or it
+            // would end the term (carve#2411).
+            out.push(format!(
+                ":: {}",
+                render_inlines(term, ctx).replace("\n%%", "\n %%")
+            ));
         }
         for def in &item.definitions {
             // An EMPTY description whose line carries a hoisted definition is one
@@ -3370,6 +3375,13 @@ fn render_nodes_with_verbatim(
         // list to check - the clause WAS a list, and the case it did not reach
         // is the first one under it.
         let mut rendered = rendered;
+        // At a line start a joined `%%%` would open a comment fence, so a
+        // comment folded into a term keeps its separator there (carve#2411).
+        if let InlineNode::Comment(c) = node {
+            if !c.delimited && !c.block && c.content.starts_with('%') && out.ends_with('\n') {
+                rendered = format!("%% {}", c.content);
+            }
+        }
         // A BARE OPENER IS DECIDED ON THE EMITTED BYTES too: emphasis, links and
         // spans report no boundary character, so `{/x/}{/y/}` wrote `/x//y/`
         // and the second opener, after its own marker, read back as text
@@ -3522,6 +3534,11 @@ fn render_inline_body(
         // already emitted for this line.
         InlineNode::Comment(c) if c.delimited => {
             format!("{{%{} %}}", pad_delimited(&c.content))
+        }
+        // A comment fence folded into a term: every line one column past the
+        // term's, so the fence stays in the term (carve#2411).
+        InlineNode::Comment(c) if c.block => {
+            format!(" {}", render_block_comment(&c.content).replace('\n', "\n "))
         }
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line

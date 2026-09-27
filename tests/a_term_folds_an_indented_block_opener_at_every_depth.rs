@@ -109,10 +109,82 @@ fn plain_text_list_markers_and_openers_that_open_are_quiet() {
 }
 
 #[test]
-fn a_comment_or_a_definition_still_ends_a_nested_term() {
-    let heading = "<dl><dt>a</dt><dd><p>b</p><dl><dt>c</dt></dl><h1 id=\"H\">H</h1></dd></dl>";
-    assert_eq!(flat(":: a\n: b\n  :: c\n    %% note\n    # H\n"), heading);
-    assert_eq!(flat(":: a\n: b\n  :: c\n    [r]: /u\n    # H\n"), heading);
+fn a_comment_past_the_column_stays_a_comment_and_the_term_goes_on() {
+    assert_eq!(flat(":: c\n  %% note\n  more\n"), "<dl><dt>cmore</dt></dl>");
+    assert_eq!(
+        flat(":: c\n  %%%\n  hidden\n  %%%\n  more\n"),
+        "<dl><dt>cmore</dt></dl>"
+    );
+    assert_eq!(
+        flat(":: a\n: b\n  :: c\n    %% note\n    # H\n"),
+        "<dl><dt>a</dt><dd><p>b</p><dl><dt>c# H</dt></dl></dd></dl>"
+    );
+    // Inline content does not reach across the comment.
+    assert_eq!(
+        carve::to_html(":: a `code\n  %% note\n  end`\n"),
+        "<dl>\n  <dt>a <code>code</code>\n\n  end<code></code></dt>\n</dl>"
+    );
+}
+
+#[test]
+fn a_comment_at_the_container_column_ends_the_term() {
+    assert_eq!(
+        flat(":: c\n%% note\nmore\n"),
+        "<dl><dt>c</dt></dl><p>more</p>"
+    );
+}
+
+#[test]
+fn a_definition_past_the_column_is_term_text_and_one_at_it_registers() {
+    assert_eq!(
+        flat("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n"),
+        "<p>[t][r]</p><dl><dt>a</dt><dd><p>b</p><dl><dt>c[r]: /u</dt></dl></dd></dl>"
+    );
+    assert_eq!(
+        flat("x[^n]\n\n- item\n\n  :: c\n    [^n]: y\n"),
+        "<p>x[^n]</p><ul><li>item<dl><dt>c[^n]: y</dt></dl></li></ul>"
+    );
+    assert_eq!(
+        flat("[t][r]\n\n:: a\n: b\n  :: c\n  [r]: /u\n"),
+        "<p><a href=\"/u\">t</a></p><dl><dt>a</dt><dd><p>b</p><dl><dt>c</dt></dl></dd></dl>"
+    );
+    assert_eq!(
+        reports("[t][r]\n\n:: a\n: b\n  :: c\n    [r]: /u\n"),
+        [(6, 5)]
+    );
+    assert!(reports(":: c\n  %%%\n  # H\n  %%%\n  more\n").is_empty());
+}
+
+#[test]
+fn a_fence_payload_neither_opens_nor_ends_a_term() {
+    // A `::` line inside a comment fence is no term.
+    assert_eq!(
+        flat("[t][r]\n\n:: a\n: b\n  %%%\n  :: fake\n    %%%\n  [r]: /u\n"),
+        "<p><a href=\"/u\">t</a></p><dl><dt>a</dt><dd>b</dd></dl>"
+    );
+    // An indented `>` inside the term is text, not a deeper quote.
+    assert_eq!(
+        flat("[t][r]\n\n:: a\n: b\n  :: c\n    > text\n    [r]: /u\n"),
+        "<p>[t][r]</p><dl><dt>a</dt><dd><p>b</p><dl><dt>c&gt; text[r]: /u</dt></dl></dd></dl>"
+    );
+    // A blank inside a folded comment fence does not end the term.
+    assert_eq!(
+        flat("[t][r]\n\n:: c\n  %%%\n\n  hidden\n  %%%\n  [r]: /u\n"),
+        "<p>[t][r]</p><dl><dt>c[r]: /u</dt></dl>"
+    );
+}
+
+#[test]
+fn a_folded_comment_formats_back_to_itself() {
+    for source in [
+        ":: c\n  %% note\n  more\n",
+        ":: c\n  %% % note\n  visible\n  %% %\n  more\n",
+        ":: a\n: b\n  :: c\n    %%%\n    x\n    %%%\n    # H\n",
+    ] {
+        let once = carve::render_carve(&carve::parse(source)).unwrap();
+        assert_eq!(carve::to_html(&once), carve::to_html(source), "{source:?}");
+        assert_eq!(carve::render_carve(&carve::parse(&once)).unwrap(), once);
+    }
 }
 
 #[test]

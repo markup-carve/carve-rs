@@ -588,6 +588,10 @@ fn collect_term_fold_warnings(
                 if let Some(p) = span {
                     spans.push((p.start_line, p.end_line));
                 }
+                // A folded comment's lines are all comment, its first included.
+                if let InlineNode::Comment(Comment { pos: Some(p), .. }) = node {
+                    spans.push((p.start_line.saturating_sub(1), p.end_line));
+                }
                 crate::render_depth::push_inline_children(node, depth, &mut stack);
             }
             let verbatim = |line_no: usize| {
