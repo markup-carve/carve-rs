@@ -22498,6 +22498,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::Span(s) if !s.injected => out.push_str(&plain_inlines_parse(&s.children)),
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
