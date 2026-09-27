@@ -116,6 +116,9 @@ fn copied_blanks_do_not_extend_an_unfinished_div() {
         ("- ::: d\n  b\n\ntail\n", 2),
         ("> - ::: d\n>   b\n>\n> tail\n", 2),
         ("- ::: d\n\n  ```\n  b\n\n", 5),
+        ("- ::: d\n  - a\n\n\ntail\n", 2),
+        ("- ::: figure\n  - a\n\n", 2),
+        ("- ::: d\n  - ```\n    body\n\n", 4),
     ] {
         let doc = parse_with_options(source, &Options::default().with_positions(true));
         let block = match &doc.children[0] {
@@ -130,6 +133,7 @@ fn copied_blanks_do_not_extend_an_unfinished_div() {
         let position = match &list.items[0].children[0] {
             BlockNode::Div(div) => div.pos.as_ref(),
             BlockNode::Admonition(div) => div.pos.as_ref(),
+            BlockNode::FigureGroup(group) => group.pos.as_ref(),
             _ => panic!("expected container"),
         };
         assert_eq!(position.unwrap().end_line, end);

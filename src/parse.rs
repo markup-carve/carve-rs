@@ -5387,10 +5387,36 @@ struct ResolvedBody {
     child_slot: usize,
 }
 
+fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
+    loop {
+        block = match block {
+            BlockNode::CodeBlock(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_)
+            | BlockNode::LineBlock(_) => return crate::ast_json::block_pos(block),
+            BlockNode::BlockQuote(node) => node.children.last()?,
+            BlockNode::Div(node) => node.children.last()?,
+            BlockNode::Admonition(node) => node.children.last()?,
+            BlockNode::Directive(node) => node.children.last()?,
+            BlockNode::FigureGroup(node) => node.children.last()?,
+            BlockNode::ExtensionCarrier(node) => node.children.last()?,
+            BlockNode::List(node) => node.items.last()?.children.last()?,
+            BlockNode::DefinitionList(node) => {
+                node.items.last()?.definitions.last()?.children.last()?
+            }
+            BlockNode::Figure(node) => match &*node.target {
+                FigureTarget::BlockQuote(quote) => quote.children.last()?,
+                _ => return None,
+            },
+            _ => return None,
+        };
+    }
+}
+
 /// Fill in the children of a node [`open_container`] emitted hollow.
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
     if let Some(pos) = block_pos_mut(node) {
-        if let Some(last) = children.iter().rev().find_map(crate::ast_json::block_pos) {
+        if let Some(last) = children.last().and_then(trailing_verbatim_pos) {
             if (last.end_line, last.end_column) > (pos.end_line, pos.end_column) {
                 pos.end_line = last.end_line;
                 pos.end_column = last.end_column;
