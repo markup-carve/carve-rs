@@ -126,13 +126,13 @@ fn ascii_layout_still_collapses_the_way_html_reads_it() {
 #[test]
 fn an_empty_block_is_not_this_shape_and_does_not_move() {
     // `<p></p>` holds no character to classify and nothing was dropped, so it
-    // reports nothing and keeps the node it always kept. PART 11 §10j names the
-    // empty paragraph as the sibling shape whose handling already keeps §1.
+    // reports nothing. It carries nothing either, so neither exit keeps a node
+    // for it (markup-carve/carve#2423).
     let (written, diagnostics) = imported("<p></p>");
 
     assert_eq!(written, "\n");
     assert!(diagnostics.is_empty());
-    assert!(ast_json("<p></p>").contains("\"type\":\"paragraph\""));
+    assert!(!ast_json("<p></p>").contains("\"type\":\"paragraph\""));
 }
 
 #[test]
