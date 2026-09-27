@@ -3240,7 +3240,7 @@ fn render_nodes_with_verbatim(
                 idx + 1 == nodes.len()
                     && (!out.is_empty()
                         || ctx.inline_depth > 1
-                        || matches!(node, InlineNode::Code(code) if safe_fence(&code.value, 1).len() < 3)),
+                        || matches!(node, InlineNode::Code(code) if code_span_fence(&code.value).len() < 3)),
             )
         };
         if !is_text {
@@ -3572,11 +3572,14 @@ fn render_inline_body(
             } else {
                 format!(
                     "{}{}",
-                    render_code_with_unclosed(
-                        &value,
-                        may_run_to_end
-                            && ctx.table_cell_depth == 0
-                            && render_attrs(&code.attrs).is_empty()
+                    guard_code_lines(
+                        &render_code_with_unclosed(
+                            &value,
+                            may_run_to_end
+                                && ctx.table_cell_depth == 0
+                                && render_attrs(&code.attrs).is_empty()
+                        ),
+                        ctx
                     ),
                     render_attrs(&code.attrs)
                 )
@@ -4247,12 +4250,55 @@ fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
     out
 }
 
+fn code_span_fence(content: &str) -> String {
+    if content.starts_with(['\r', '\n']) {
+        let mut widths = [false; 3];
+        let mut run = 0;
+        for ch in content.chars().chain(std::iter::once(' ')) {
+            if ch == '`' {
+                run += 1;
+            } else {
+                if run < widths.len() {
+                    widths[run] = true;
+                }
+                run = 0;
+            }
+        }
+        for (width, used) in widths.iter().enumerate().skip(1) {
+            if !used {
+                return "`".repeat(width);
+            }
+        }
+    }
+    safe_fence(content, 1)
+}
+
+fn guard_code_lines(written: &str, ctx: &CarveContext) -> String {
+    if ctx.line_block_depth > 0 || ctx.in_term {
+        return written.to_owned();
+    }
+    static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let marker = MARKER.get_or_init(|| regex::Regex::new(r"^(?:> |\[[^\]\n]+\]:[ \t])").unwrap());
+    written
+        .split('\n')
+        .enumerate()
+        .map(|(index, line)| {
+            if index > 0 && marker.is_match(line) {
+                format!(" {line}")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_code(content: &str) -> String {
     render_code_with_unclosed(content, false)
 }
 
 fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
-    let fence = safe_fence(content, 1);
+    let fence = code_span_fence(content);
     // Pad exactly where the parser strips, so the strip is reversible and fmt
     // stays idempotent; the padding sits inside the fence, so a trailing
     // attribute block still attaches to the closing run. The parser strips one
@@ -5933,6 +5979,12 @@ fn escape_critic_text(text: &str) -> String {
 }
 
 fn first_boundary(node: &InlineNode) -> Option<char> {
+    match node {
+        InlineNode::Mention(_) => return Some('@'),
+        InlineNode::Tag(_) => return Some('#'),
+        InlineNode::Symbol(_) => return Some(':'),
+        _ => {}
+    }
     boundary_text(node).and_then(|s| {
         let mut chars = s.chars();
         match chars.next() {

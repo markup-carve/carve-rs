@@ -6,12 +6,11 @@
 //! `SemanticSpan` extension.
 //! The parser records unattached block attributes, which leave no AST node;
 //! this pass reports that record instead of re-reading source attachment.
-//! The figure-group empty and single-panel findings in §4c are strict-profile
-//! only; reporting them unconditionally would flag valid documents. They await
-//! a profile/severity axis. Unattached attributes follow PART 9 §15 A4.
+//! Unattached attributes follow PART 9 §15 A4.
 //! See `docs/linting.md` for rule ids and examples.
 
 mod reference_rules;
+mod source_rules;
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
@@ -137,6 +136,7 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         }
     }
     reference_rules::collect(source, &doc, options, &to_byte, &mut out);
+    source_rules::collect(source, &doc, &to_byte, &mut out);
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
@@ -473,6 +473,15 @@ fn collect_figure_group_warnings(
                 collect_figure_group_warnings(&a.children, in_group, to_byte, out);
             }
             BlockNode::FigureGroup(g) => {
+                let panels = g
+                    .children
+                    .iter()
+                    .filter(|child| matches!(child, BlockNode::Figure(_) | BlockNode::Table(_)))
+                    .count();
+                if panels < 2 {
+                    out.push(warning(g.pos.clone(), to_byte, if panels == 0 { "figure-group-empty" } else { "figure-group-single-panel" },
+                        if panels == 0 { "This figure group has no captionable panel." } else { "This figure group has one panel; a plain figure does not need the group wrapper." }.into()));
+                }
                 for child in &g.children {
                     let panel_caption = match child {
                         BlockNode::Figure(f) => Some(&f.caption),

@@ -703,6 +703,7 @@ fn render_layout_ordered_list(
             break;
         };
         if number != expected
+            || text == "+"
             || detect_heading(text).is_some()
             || detect_fence_open(text).is_some()
             || detect_container_open(text).is_some()
