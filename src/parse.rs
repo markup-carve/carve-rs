@@ -4630,8 +4630,7 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
 }
 
 fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
-    let mut cloned = node.clone();
-    inline_pos_mut(&mut cloned).cloned()
+    node.pos().cloned()
 }
 
 /// Codepoint offset of the start of each line.
