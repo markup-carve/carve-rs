@@ -2338,7 +2338,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
         }
         BlockNode::Comment(comment) => {
             if comment.delimited {
-                format!("{{% {} %}}", comment.content)
+                format!("{{%{} %}}", pad_delimited(&comment.content))
             } else if comment.block {
                 render_block_comment(&comment.content)
             } else {
@@ -3520,7 +3520,9 @@ fn render_inline_body(
         // whitespace before the marker (it is not part of the text); the space
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
-        InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
+        InlineNode::Comment(c) if c.delimited => {
+            format!("{{%{} %}}", pad_delimited(&c.content))
+        }
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line
         // TRAILING whitespace, which PART 2 discards on the way back in and §7
@@ -4169,6 +4171,17 @@ fn render_frontmatter(frontmatter: &std::collections::BTreeMap<String, String>) 
     }
     out.push_str("\n---");
     out
+}
+
+/// The text of a `{% ... %}` comment, with the opener's pad where one separates
+/// it from the text. A pad before a line break would be line-trailing whitespace
+/// the writer invented (markup-carve/carve#2425).
+fn pad_delimited(content: &str) -> String {
+    if content.starts_with('\n') {
+        content.to_string()
+    } else {
+        format!(" {content}")
+    }
 }
 
 fn render_block_comment(content: &str) -> String {

@@ -3053,6 +3053,9 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             InlineNode::Emphasis(emphasis) => {
                 out.push_str(&plain_inlines_with(&emphasis.children, nbsp))
             }
+            InlineNode::Span(span) if !span.injected => {
+                out.push_str(&plain_inlines_with(&span.children, nbsp))
+            }
             InlineNode::Code(code) => out.push_str(&code.value),
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
