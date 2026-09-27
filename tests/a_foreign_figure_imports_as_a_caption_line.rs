@@ -715,3 +715,17 @@ fn a_blank_first_caption_lets_a_later_one_caption() {
         "![a](i.png)\n^ two\n"
     );
 }
+
+/// An unwrapped figure writes its caption paragraph where the `<figcaption>`
+/// stood, not after everything else.
+#[test]
+fn an_unwrapped_figure_keeps_its_caption_in_source_order() {
+    assert_eq!(
+        import("<figure><blockquote><p>q</p></blockquote><figcaption>Cap</figcaption><p>Next</p></figure>"),
+        "> q\n\nCap\n\nNext\n"
+    );
+    assert_eq!(
+        import("<figure><figcaption>C</figcaption><ul><li>a</li></ul></figure>"),
+        "C\n\n- a\n"
+    );
+}

@@ -4054,6 +4054,7 @@ impl<'a> Importer<'a> {
             attrs
         };
         let mut caption = None;
+        let mut caption_index = usize::MAX;
         // EACH HOST CHILD KEEPS ITS OWN POSITION. The caption is lifted out of
         // the child list here, and every margin the branches below drop leaves
         // another hole in it, so an index rebuilt from this vector names a
@@ -4090,6 +4091,7 @@ impl<'a> Importer<'a> {
                     // matching it would mean reproducing the corruption.
                     if !Self::inlines_are_blank(&inlines) {
                         caption = Some(inlines);
+                        caption_index = index;
                     }
                     continue;
                 }
@@ -4128,12 +4130,22 @@ impl<'a> Importer<'a> {
                 self.enter(depth + 1)?;
             }
         }
-        let host_paths: Vec<String> = host
-            .iter()
-            .map(|(index, child)| Self::child_path(path, child, *index))
-            .collect();
-        let host: Vec<Handle> = host.into_iter().map(|(_, child)| child).collect();
-        let mut blocks = self.blocks_at(&host, Some(&host_paths), path, depth + 1)?;
+        // An unwrapped figure writes its caption paragraph where the
+        // `<figcaption>` stood, so the host is walked in two runs around it.
+        let split = host.partition_point(|(index, _)| *index < caption_index);
+        let mut blocks = Vec::new();
+        let mut caption_at = 0;
+        for (run, part) in [&host[..split], &host[split..]].into_iter().enumerate() {
+            let paths: Vec<String> = part
+                .iter()
+                .map(|(index, child)| Self::child_path(path, child, *index))
+                .collect();
+            let nodes: Vec<Handle> = part.iter().map(|(_, child)| child.clone()).collect();
+            blocks.extend(self.blocks_at(&nodes, Some(&paths), path, depth + 1)?);
+            if run == 0 {
+                caption_at = blocks.len();
+            }
+        }
         let Some(caption) = caption else {
             return Ok((blocks, false));
         };
@@ -4156,13 +4168,16 @@ impl<'a> Importer<'a> {
                 BlockNode::CodeBlock(code) => FigureTarget::CodeBlock(code),
                 other => {
                     blocks.insert(0, other);
-                    blocks.push(BlockNode::Paragraph(Paragraph {
-                        attrs: None,
-                        children: caption,
-                        at_content_column: true,
-                        block_image: false,
-                        pos: None,
-                    }));
+                    blocks.insert(
+                        caption_at,
+                        BlockNode::Paragraph(Paragraph {
+                            attrs: None,
+                            children: caption,
+                            at_content_column: true,
+                            block_image: false,
+                            pos: None,
+                        }),
+                    );
                     return Ok((blocks, true));
                 }
             };
@@ -4178,13 +4193,16 @@ impl<'a> Importer<'a> {
                 true,
             ));
         }
-        blocks.push(BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children: caption,
-            at_content_column: true,
-            block_image: false,
-            pos: None,
-        }));
+        blocks.insert(
+            caption_at,
+            BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: caption,
+                at_content_column: true,
+                block_image: false,
+                pos: None,
+            }),
+        );
         Ok((blocks, true))
     }
 
