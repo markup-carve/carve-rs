@@ -2540,6 +2540,10 @@ impl<'a> Importer<'a> {
                 );
                 return Ok(Vec::new());
             }
+            // A bare one carries nothing, and the writer writes nothing for it.
+            if inlines.is_empty() {
+                return Ok(Vec::new());
+            }
             let candidate = lone_image(&inlines).map(|image| {
                 (
                     attrs.is_some(),
