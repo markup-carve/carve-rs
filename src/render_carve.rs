@@ -94,6 +94,8 @@ struct BracketScope {
     lone: HashSet<(usize, usize)>,
     /// A `]` the bracket scan pairs with an earlier `[`.
     paired_closers: HashSet<(usize, usize)>,
+    /// In bracketed content, each paired `]` mapped to its `[`.
+    closer_openers: HashMap<(usize, usize), (usize, usize)>,
     /// Every node the scan read.
     keyed: HashSet<usize>,
 }
@@ -530,6 +532,9 @@ fn narrow_escalation(
         tree: &conservative_tree,
         window_limit: conservative.len() / 2,
         layout,
+        charged: std::cell::Cell::new(0),
+        search_start: std::cell::Cell::new(0),
+        parse_allowance: ESCAPE_SEARCH_PARSE_FACTOR * conservative.len(),
     };
     // No guard for an EMPTY `units`: `relax_units` returns on an empty group,
     // and a check here would be one no corpus document can reach -- the control
@@ -541,6 +546,7 @@ fn narrow_escalation(
         // Eight times the depth of the halving, which is what narrowing four
         // independent failing units costs. See `budget` on `relax_units`.
         let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
+        probe.begin_search();
         relax_units(&probe, local, &units, &mut best, &mut budget, None);
         probe.settle(local, best)
     };
@@ -571,7 +577,18 @@ struct Probe<'a> {
     /// A window longer than this saves nothing over the whole document.
     window_limit: usize,
     layout: Option<escape_window::Layout>,
+    /// Bytes of source the probes have rendered for re-parsing, cached or not,
+    /// so the charge is a property of the search rather than of a cache.
+    charged: std::cell::Cell<usize>,
+    search_start: std::cell::Cell<usize>,
+    parse_allowance: usize,
 }
+
+/// How many documents' worth of source one narrowing search may re-parse
+/// beyond its probe count. Windowed probes are cheap, so this lets a large
+/// document with many independent failing units finish the search, while the
+/// total stays linear in the document.
+const ESCAPE_SEARCH_PARSE_FACTOR: usize = 16;
 
 /// A probe's answer, with the whole-document candidate it rendered, if any.
 enum Verdict {
@@ -580,6 +597,20 @@ enum Verdict {
 }
 
 impl Probe<'_> {
+    fn begin_search(&self) {
+        self.search_start.set(self.charged.get());
+    }
+
+    /// Whether a search may not probe again: its count and its parse allowance
+    /// are both spent.
+    fn exhausted(&self, budget: usize) -> bool {
+        budget == 0 && self.charged.get() - self.search_start.get() >= self.parse_allowance
+    }
+
+    fn charge(&self, bytes: usize) {
+        self.charged.set(self.charged.get() + bytes);
+    }
+
     fn render_window(&self, window: &escape_window::Window) -> String {
         escape_window::render_pruned(window, || {
             render_with_escapes_once(self.doc, EscapeMode::Conservative)
@@ -606,19 +637,22 @@ impl Probe<'_> {
             (before.len() <= self.window_limit)
                 .then(|| comparable_tree(&before))
                 .flatten()
-                .map(|tree| (window, tree))
+                .map(|tree| (window, tree, before.len()))
         });
         apply();
-        if let Some((window, before)) = before {
+        if let Some((window, before, before_len)) = before {
             #[cfg(test)]
             tests::WINDOW_PROBES.with(|n| n.set(n.get() + 1));
-            if comparable_tree(&self.render_window(window)).as_ref() == Some(&before) {
+            let after = self.render_window(window);
+            self.charge(before_len + after.len());
+            if comparable_tree(&after).as_ref() == Some(&before) {
                 return Verdict::Holds;
             }
             undo();
             return Verdict::Fails(None);
         }
         let candidate = render_with_escapes(self.doc, EscapeMode::Conservative);
+        self.charge(candidate.len());
         if candidate_holds(&candidate, best, rejected, self.tree) {
             *best = candidate;
             return Verdict::Holds;
@@ -668,6 +702,7 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
         RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
         let mut best = unit_scoped.clone();
         let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
+        probe.begin_search();
         relax_occurrences(probe, local, &order, &mut best, &mut budget, None);
         // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a
         // FIXPOINT. Relaxing occurrences is not monotone: an occurrence
@@ -679,7 +714,7 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
         // bare. The sweep spends the same budget, so where the budget is
         // already gone it costs nothing, which is the pathological document.
         for key in &order {
-            if budget == 0 {
+            if probe.exhausted(budget) {
                 break;
             }
             if RELAXED_OCCURRENCES
@@ -716,10 +751,10 @@ fn relax_occurrences(
     budget: &mut usize,
     rejected: Option<&str>,
 ) {
-    if group.is_empty() || *budget == 0 {
+    if group.is_empty() || probe.exhausted(*budget) {
         return;
     }
-    *budget -= 1;
+    *budget = budget.saturating_sub(1);
     let verdict = probe.keeps(
         local,
         group.iter().map(|&(unit, _, _)| unit),
@@ -801,10 +836,10 @@ fn relax_units(
     budget: &mut usize,
     rejected: Option<&str>,
 ) {
-    if units.is_empty() || *budget == 0 {
+    if units.is_empty() || probe.exhausted(*budget) {
         return;
     }
-    *budget -= 1;
+    *budget = budget.saturating_sub(1);
     let verdict = probe.keeps(
         local,
         units.iter().copied(),
@@ -3983,8 +4018,9 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         for (ordinal, ch) in brackets.enumerate() {
             if ch == '[' {
                 open.push((at, ordinal));
-            } else if open.pop().is_some() {
+            } else if let Some(opener) = open.pop() {
                 scope.paired_closers.insert((at, ordinal));
+                scope.closer_openers.insert((at, ordinal), opener);
             } else {
                 scope.lone.insert((at, ordinal));
             }
@@ -4005,6 +4041,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         scope.lone.extend(open);
     } else {
         scope.lone.clear();
+        scope.closer_openers.clear();
     }
     scope
 }
@@ -4541,6 +4578,11 @@ thread_local! {
         std::cell::RefCell::new(HashMap::new());
     /// The decision the last candidate site took, so a RUN can inherit it.
     static LAST_OCCURRENCE_RELAXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether each paired `[` was last written escaped, for its closer. The
+    /// two sit in different units whenever a nested construct separates them,
+    /// and as separate knobs neither could be relaxed alone.
+    static ESCAPED_OPENERS: std::cell::RefCell<HashMap<(usize, usize), bool>> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 /// Owns the ambient state of one render, restoring an enclosing render on exit.
@@ -4558,6 +4600,7 @@ struct RenderSession {
     _log: RefCellScope<Option<Vec<Occurrence>>>,
     _indexes: RefCellScope<HashMap<usize, usize>>,
     _last: CellScope<bool>,
+    _openers: RefCellScope<HashMap<(usize, usize), bool>>,
     _window: escape_window::Session,
 }
 
@@ -4577,6 +4620,7 @@ impl RenderSession {
             _log: RefCellScope::replace(&OCCURRENCE_LOG, None),
             _indexes: RefCellScope::replace(&ESCAPE_CALL_INDEXES, HashMap::new()),
             _last: CellScope::replace(&LAST_OCCURRENCE_RELAXED, false),
+            _openers: RefCellScope::replace(&ESCAPED_OPENERS, HashMap::new()),
             _window: escape_window::Session::new(),
         }
     }
@@ -4658,6 +4702,8 @@ impl CarveContext {
         BracketRole {
             lone: self.brackets.lone.contains(&(at, ordinal)),
             paired_closer: self.brackets.paired_closers.contains(&(at, ordinal)),
+            key: (at, ordinal),
+            opener: self.brackets.closer_openers.get(&(at, ordinal)).copied(),
         }
     }
 
@@ -5478,10 +5524,21 @@ fn escape_text(
         // whose own guard already decided it -- the caret, a sigil binding to a
         // verbatim run, the unconditional set -- is not a candidate and is
         // never offered.
-        let offered = mode == EscapeMode::Conservative && candidate && !unconditional;
-        let relaxed =
-            offered && occurrence_is_relaxed((unit, call, offset), offset > 0 && previous == ch);
-        let escaped = unconditional || (offered && !relaxed && !colon_cannot_open);
+        let escaped = if let (']', Some(opener)) = (ch, role.opener) {
+            // A paired closer follows its opener, which may sit in another unit.
+            let escaped =
+                ESCAPED_OPENERS.with(|cell| cell.borrow().get(&opener).copied().unwrap_or(false));
+            LAST_OCCURRENCE_RELAXED.with(|cell| cell.set(!escaped));
+            escaped
+        } else {
+            let offered = mode == EscapeMode::Conservative && candidate && !unconditional;
+            let relaxed = offered
+                && occurrence_is_relaxed((unit, call, offset), offset > 0 && previous == ch);
+            unconditional || (offered && !relaxed && !colon_cannot_open)
+        };
+        if ch == '[' {
+            ESCAPED_OPENERS.with(|cell| cell.borrow_mut().insert(role.key, escaped));
+        }
         if escaped {
             out.push('\\');
         }
@@ -5498,6 +5555,10 @@ fn escape_text(
 struct BracketRole {
     lone: bool,
     paired_closer: bool,
+    /// This bracket, as the scope keys it.
+    key: (usize, usize),
+    /// The `[` a paired `]` in bracketed content closes.
+    opener: Option<(usize, usize)>,
 }
 
 /// Whether the `:` at `offset` opens a symbol shortcode.
@@ -6075,7 +6136,7 @@ mod tests {
             let whole = reparsed_documents(&html);
             WHOLE_DOCUMENT_PROBES.with(|flag| flag.set(false));
             assert!(whole > 100.0, "the search did not run: {whole:.1}");
-            assert!(windowed < 30.0, "{windowed:.1} documents re-parsed");
+            assert!(windowed < 48.0, "{windowed:.1} documents re-parsed");
         }
     }
 
