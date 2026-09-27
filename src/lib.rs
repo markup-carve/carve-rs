@@ -82,7 +82,7 @@ pub use ast_envelope::{
     from_ast_envelope_json, to_ast_envelope_json, AstEnvelopeError, AstEnvelopeExtension,
     AstEnvelopeOptions, AstEnvelopeReaderOptions, AST_CONTRACT_VERSION, CORE_AST_VOCABULARY,
 };
-pub use ast_json::{from_json, to_json, try_to_json, AstJsonError};
+pub use ast_json::{from_json, to_json, try_to_json, AstJsonError, AstJsonErrorKind};
 pub use ast_merge::{
     merge_ast, merge_ast_with_resolver, MergeConflict, MergeConflictReason, MergeResolution,
     MergeResult,

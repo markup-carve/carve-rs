@@ -6,37 +6,14 @@
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use serde::Deserialize;
 use serde_json::Map;
 
 use crate::ast::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AstJsonError {
-    message: String,
-}
-
-impl AstJsonError {
-    fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-
-    fn from_serde(error: serde_json::Error) -> Self {
-        Self::new(error.to_string())
-    }
-}
-
-impl fmt::Display for AstJsonError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for AstJsonError {}
+mod error;
+pub use error::{AstJsonError, AstJsonErrorKind};
 
 pub(crate) type Json = serde_json::Value;
 
@@ -60,7 +37,7 @@ fn refuse_deeper_than_budget(input: &str) -> Result<(), AstJsonError> {
             b'[' | b'{' => {
                 depth += 1;
                 if depth > MAX_JSON_DEPTH {
-                    return Err(AstJsonError::new(
+                    return Err(AstJsonError::depth(
                         "JSON nests deeper than the reader's depth budget",
                     ));
                 }
@@ -131,7 +108,7 @@ pub fn try_to_json(doc: &Document) -> Result<String, AstJsonError> {
     let mut out = String::new();
     write_document(&mut out, doc);
     if ENCODE_REFUSED.with(Cell::get) {
-        Err(AstJsonError::new(
+        Err(AstJsonError::depth(
             "JSON nests deeper than the encoder's depth budget",
         ))
     } else {
@@ -297,6 +274,14 @@ fn named_fields(
 /// not carried - conformant on OUTPUT, and silent on INPUT. The clause rules
 /// that out for the reason §9(b) gives about depth: a caller told the tree was
 /// accepted learns nothing about what went missing (carve-rs#691).
+fn field_path(parent: &str, field: &str) -> String {
+    if parent.is_empty() {
+        field.to_owned()
+    } else {
+        format!("{parent}.{field}")
+    }
+}
+
 fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
     match node {
         Json::Array(items) => {
@@ -318,9 +303,9 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
             if is_legacy_definition_entry(obj) {
                 for key in obj.keys() {
                     if !LEGACY_DEFINITION_ENTRY_FIELDS.contains(&key.as_str()) {
-                        return Err(AstJsonError::new(format!(
+                        return Err(AstJsonError::unknown_field(format!(
                             "the legacy definition entry at {path} carries {key:?}, which the schema does not name (PART 12 §11)"
-                        )));
+                        ), field_path(path, key)));
                     }
                 }
             }
@@ -328,9 +313,9 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                 if let Some(known) = named_fields(crate::wire_fields::WIRE_FIELDS, ty) {
                     for key in obj.keys() {
                         if !known.contains(&key.as_str()) {
-                            return Err(AstJsonError::new(format!(
+                            return Err(AstJsonError::unknown_field(format!(
                                 "{ty} at {path} carries {key:?}, which the schema does not name (PART 12 §11)"
-                            )));
+                            ), field_path(path, key)));
                         }
                     }
                     // The objects that hang off a node without a `type` of
@@ -343,9 +328,9 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                         };
                         for key in value.keys() {
                             if !allowed.contains(&key.as_str()) {
-                                return Err(AstJsonError::new(format!(
+                                return Err(AstJsonError::unknown_field(format!(
                                     "{helper} at {path}.{helper} carries {key:?}, which the schema does not name (PART 12 §11)"
-                                )));
+                                ), field_path(&field_path(path, helper), key)));
                             }
                         }
                     }
@@ -386,9 +371,9 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                             };
                             for key in record.keys() {
                                 if !allowed.contains(&key.as_str()) {
-                                    return Err(AstJsonError::new(format!(
+                                    return Err(AstJsonError::unknown_field(format!(
                                         "{position} at {path}.{property}[{index}] carries {key:?}, which the schema does not name (PART 12 §11)"
-                                    )));
+                                    ), field_path(&format!("{}[{index}]", field_path(path, property)), key)));
                                 }
                             }
                         }

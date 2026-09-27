@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Added
 
+- AST JSON errors expose their kind, unknown-field path, and syntax location while preserving their display messages and serde error causes.
+
 - HTML import recognizes explicit code-language hints on code blocks and Sphinx, GitHub and MediaWiki wrappers, with validated tokens and deterministic fallback (markup-carve/carve#2387).
 
 ### Fixed

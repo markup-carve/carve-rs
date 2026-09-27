@@ -1,9 +1,6 @@
-//! Carve AST node definitions for the MVP subset.
+//! Carve AST nodes for parsing, transformation, and rendering.
 //!
-//! Mirrors the shape of `markup-carve/carve-js`'s `ast.ts`, but only
-//! covers constructs the MVP parser+renderer produces. Tables,
-//! admonitions, abbreviations, mentions/tags, attributes, and
-//! frontmatter are deferred to future PRs.
+//! The public JSON representation is encoded separately in `ast_json`.
 
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
@@ -1171,7 +1168,7 @@ pub enum InlineNode {
 impl InlineNode {
     /// The node's span in the original source, when the parser could determine
     /// one. EXHAUSTIVE on purpose: a `_ => None` arm here would silently answer
-    /// "unpositioned" for a variant added later, and the one caller derives a
+    /// "unpositioned" for a variant added later, and callers derive a
     /// block's `pos` from the first and last positioned node on a line.
     pub(crate) fn pos(&self) -> Option<&Pos> {
         match self {

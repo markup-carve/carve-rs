@@ -34,6 +34,19 @@ let document = carve::parse(source);
 let html = carve::render_html(&document)?;
 ```
 
+Use fallible entry points for imported content and caller-built trees:
+
+```rust
+let document = carve::from_json(payload)?;
+let serialized = carve::try_to_json(&document)?;
+let source = carve::try_markdown_to_carve(markdown)?;
+```
+
+`AstJsonError::kind()` distinguishes syntax, depth, unknown-field, and other AST
+refusals. `path()` identifies an unknown field; syntax errors expose `line()`,
+`column()`, and the original serde error through `std::error::Error::source()`.
+The compatibility `to_json` and `markdown_to_carve` functions panic on refusal.
+
 Checked render functions report content omitted for the selected output and
 can return `RenderLossError` before publishing a value. Source-aware tools can
 prepare canonical formatting with `to_carve_patch` and apply it with
