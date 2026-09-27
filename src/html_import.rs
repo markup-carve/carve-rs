@@ -6906,22 +6906,70 @@ fn is_layout_only(nodes: &[InlineNode]) -> bool {
 }
 
 /// The edge LAYOUT whitespace of a paragraph's run, removed.
-fn trim_edge_whitespace(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
-    while let Some(InlineNode::Text(first)) = nodes.first_mut() {
-        first.value = first.value.trim_start_matches(is_layout_space).to_string();
-        if first.value.is_empty() {
-            nodes.remove(0);
-        } else {
-            break;
+fn trim_edge_whitespace(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    trim_formatting_edges(nodes, true, true)
+}
+
+fn trim_formatting_edges(
+    mut nodes: Vec<InlineNode>,
+    leading: bool,
+    trailing: bool,
+) -> Vec<InlineNode> {
+    if leading {
+        while let Some(InlineNode::Text(first)) = nodes.first_mut() {
+            first.value = first.value.trim_start_matches(is_layout_space).to_string();
+            if first.value.is_empty() {
+                nodes.remove(0);
+            } else {
+                break;
+            }
         }
     }
-    while let Some(InlineNode::Text(last)) = nodes.last_mut() {
-        last.value = last.value.trim_end_matches(is_layout_space).to_string();
-        if last.value.is_empty() {
-            nodes.pop();
-        } else {
-            break;
+    if trailing {
+        while let Some(InlineNode::Text(last)) = nodes.last_mut() {
+            last.value = last.value.trim_end_matches(is_layout_space).to_string();
+            if last.value.is_empty() {
+                nodes.pop();
+            } else {
+                break;
+            }
         }
+    }
+    fn ends_with_space(node: &InlineNode) -> bool {
+        let children = match node {
+            InlineNode::Text(text) => return text.value.ends_with([' ', '\t']),
+            InlineNode::HardBreak(_) => return true,
+            InlineNode::Emphasis(node) => &node.children,
+            InlineNode::CriticInsert(node) => &node.children,
+            InlineNode::CriticDelete(node) => &node.children,
+            InlineNode::Link(node) => &node.children,
+            InlineNode::Span(node) => &node.children,
+            _ => return false,
+        };
+        children.last().is_some_and(ends_with_space)
+    }
+    for index in 0..nodes.len() {
+        let before = if index == 0 {
+            leading
+        } else {
+            ends_with_space(&nodes[index - 1])
+        };
+        let after = match nodes.get(index + 1) {
+            None => trailing,
+            Some(InlineNode::HardBreak(_)) => true,
+            Some(InlineNode::Text(text)) => text.value.starts_with([' ', '\t']),
+            _ => false,
+        };
+        let children = match &mut nodes[index] {
+            InlineNode::Emphasis(node) => &mut node.children,
+            InlineNode::CriticInsert(node) => &mut node.children,
+            InlineNode::CriticDelete(node) => &mut node.children,
+            _ => continue,
+        };
+        if children.iter().all(|child| matches!(child, InlineNode::Text(text) if text.value.chars().all(is_layout_space))) {
+            continue;
+        }
+        *children = trim_formatting_edges(std::mem::take(children), before, after);
     }
     nodes
 }
