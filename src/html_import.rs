@@ -1417,11 +1417,11 @@ impl<'a> Importer<'a> {
 
     /// The slot a declaration reaches IN THIS MODE.
     ///
-    /// `safe` MAPS NOTHING. It is the conservative mode: a declaration it
-    /// declines is dropped and reported, which is where every mode stood before
-    /// markup-carve/carve#1741 and where `safe` stays after it.
+    /// Safe mode maps horizontal table-cell alignment (carve#2422).
     fn style_slot(&self, tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
-        if self.opts.mode == HtmlImportMode::Safe {
+        if self.opts.mode == HtmlImportMode::Safe
+            && !(is_table_cell(tag) && property == "text-align")
+        {
             return None;
         }
         mapped_style_slot(tag, property, value)
