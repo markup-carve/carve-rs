@@ -535,6 +535,8 @@ fn narrow_escalation(
         charged: std::cell::Cell::new(0),
         search_start: std::cell::Cell::new(0),
         parse_allowance: ESCAPE_SEARCH_PARSE_FACTOR * conservative.len(),
+        extra_probes: std::cell::Cell::new(0),
+        extra_cap: std::cell::Cell::new(0),
     };
     // No guard for an EMPTY `units`: `relax_units` returns on an empty group,
     // and a check here would be one no corpus document can reach -- the control
@@ -546,7 +548,7 @@ fn narrow_escalation(
         // Eight times the depth of the halving, which is what narrowing four
         // independent failing units costs. See `budget` on `relax_units`.
         let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
-        probe.begin_search();
+        probe.begin_search(budget);
         relax_units(&probe, local, &units, &mut best, &mut budget, None);
         probe.settle(local, best)
     };
@@ -582,6 +584,9 @@ struct Probe<'a> {
     charged: std::cell::Cell<usize>,
     search_start: std::cell::Cell<usize>,
     parse_allowance: usize,
+    /// Probes a search has made past its count, and how many it may make.
+    extra_probes: std::cell::Cell<usize>,
+    extra_cap: std::cell::Cell<usize>,
 }
 
 /// How many documents' worth of source one narrowing search may re-parse
@@ -590,6 +595,10 @@ struct Probe<'a> {
 /// total stays linear in the document.
 const ESCAPE_SEARCH_PARSE_FACTOR: usize = 16;
 
+/// How many times its probe count a search may probe at most. A probe still
+/// walks structures sized by the document, so the count stays logarithmic.
+const ESCAPE_SEARCH_PROBE_FACTOR: usize = 4;
+
 /// A probe's answer, with the whole-document candidate it rendered, if any.
 enum Verdict {
     Holds,
@@ -597,14 +606,27 @@ enum Verdict {
 }
 
 impl Probe<'_> {
-    fn begin_search(&self) {
+    fn begin_search(&self, count: usize) {
         self.search_start.set(self.charged.get());
+        self.extra_probes.set(0);
+        self.extra_cap.set((ESCAPE_SEARCH_PROBE_FACTOR - 1) * count);
     }
 
-    /// Whether a search may not probe again: its count and its parse allowance
-    /// are both spent.
+    /// Whether a search may not probe again: its count is spent, and so is
+    /// either its parse allowance or its cap on extra probes.
     fn exhausted(&self, budget: usize) -> bool {
-        budget == 0 && self.charged.get() - self.search_start.get() >= self.parse_allowance
+        budget == 0
+            && (self.charged.get() - self.search_start.get() >= self.parse_allowance
+                || self.extra_probes.get() >= self.extra_cap.get())
+    }
+
+    /// Spend one probe of `budget`, counting it as extra once that is empty.
+    fn spend(&self, budget: &mut usize) {
+        if *budget == 0 {
+            self.extra_probes.set(self.extra_probes.get() + 1);
+        } else {
+            *budget -= 1;
+        }
     }
 
     fn charge(&self, bytes: usize) {
@@ -702,7 +724,7 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
         RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
         let mut best = unit_scoped.clone();
         let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
-        probe.begin_search();
+        probe.begin_search(budget);
         relax_occurrences(probe, local, &order, &mut best, &mut budget, None);
         // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a
         // FIXPOINT. Relaxing occurrences is not monotone: an occurrence
@@ -754,7 +776,7 @@ fn relax_occurrences(
     if group.is_empty() || probe.exhausted(*budget) {
         return;
     }
-    *budget = budget.saturating_sub(1);
+    probe.spend(budget);
     let verdict = probe.keeps(
         local,
         group.iter().map(|&(unit, _, _)| unit),
@@ -839,7 +861,7 @@ fn relax_units(
     if units.is_empty() || probe.exhausted(*budget) {
         return;
     }
-    *budget = budget.saturating_sub(1);
+    probe.spend(budget);
     let verdict = probe.keeps(
         local,
         units.iter().copied(),
