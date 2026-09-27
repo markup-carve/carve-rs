@@ -3096,9 +3096,7 @@ impl<'a> Importer<'a> {
         // between rows at the same position, and these are not.
         let mut blocks = self.blocks(&children, path, depth + 1)?;
         let mut attrs = attrs;
-        if self.opts.mode == HtmlImportMode::Roundtrip {
-            Self::restore_hoisted_section_id(&tag, &mut attrs, &mut blocks);
-        }
+        Self::restore_hoisted_section_id(&tag, &mut attrs, &mut blocks);
         // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
         // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
         // `<form>` all land here and keep only their children. The keep list
