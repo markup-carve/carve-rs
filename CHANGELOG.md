@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Changed
+
+- Abbreviation expansion reuses unchanged text and appends split spans directly to the inline output.
+
 ### Added
 
 - `Document::summary()` provides fixed-size metadata for logging without traversing or exposing AST content.
