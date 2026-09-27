@@ -1,29 +1,6 @@
-//! A cell's `text-align` and `vertical-align` reach the cell's MARKER RUN in
-//! `semantic` and `roundtrip`, and are dropped and reported in `safe`.
-//!
-//! `style` used to be refused wholesale, so a cell carrying `text-align:right`
-//! came back unaligned AND carrying a `style-unmapped` row - a loss this engine
-//! never had to take. The alignment had somewhere faithful to go the whole
-//! time: a Carve cell alignment renders back as `style="text-align: right;"`,
-//! the very declaration the import was handed, and `docs/html-import.md` makes
-//! a declared loss a ceiling rather than a license (markup-carve/carve#1741).
-//! `vertical-align` answers the same test through the cell's `valign` and was
-//! not mapped either (markup-carve/carve#1746).
-//!
-//! THE DESTINATION IS THE NATIVE MARKER, NOT `{align=…}` / `{valign=…}`
-//! (markup-carve/carve#1745). The two spellings do not render the same thing:
-//! `|>` writes the CSS and `{align=right}` writes the presentational attribute,
-//! so only the marker is a fixed point. With the key-value,
-//! `carve -> html -> carve -> html` drifted, because the first render wrote the
-//! declaration, the import turned it into the attribute, and the second render
-//! wrote the attribute.
-//!
-//! THE BOUNDARY IS THE POINT, so every side of it is pinned here: the mapping
-//! happens and SURVIVES A FULL RE-RENDER; `safe` still drops and still reports;
-//! the properties and the values the language genuinely cannot spell still
-//! report, so the change cannot read as a blanket "stop reporting"; and a body
-//! cell repeating its column's value writes no run of its own, because the head
-//! already says it.
+//! Cell alignment uses native markers so rendering restores the CSS declaration.
+//! An align attribute would render the legacy HTML attribute instead (carve#1745).
+//! Horizontal alignment maps in every mode; vertical alignment maps outside safe.
 
 use carve::{html_to_carve, to_html, HtmlImportDiagnosticCode, HtmlImportMode, HtmlImportOptions};
 
@@ -67,8 +44,12 @@ fn the_mapping_is_present_in_the_binary_under_test() {
 }
 
 #[test]
-fn text_align_reaches_the_marker_run_in_semantic_and_roundtrip() {
-    for mode in [HtmlImportMode::Semantic, HtmlImportMode::Roundtrip] {
+fn text_align_reaches_the_marker_run_in_every_mode() {
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
         for (value, marker) in [("right", ">"), ("left", "<"), ("center", "~")] {
             let html = cell(&format!("text-align:{value}"));
             assert_eq!(imported(&html, mode), format!("|{marker} a | b |\n"));
@@ -160,18 +141,13 @@ fn the_marker_run_is_a_fixed_point_through_html() {
     }
 }
 
-/// THE BOUNDARY A CARELESS FIX CROSSES. `safe` is the conservative mode and
-/// maps no CSS onto a cell.
+/// Safe mode still reports vertical alignment.
 #[test]
-fn safe_still_drops_the_alignment_and_still_reports_it() {
+fn safe_still_drops_vertical_alignment_and_reports_it() {
     for declaration in [
-        "text-align:right",
-        "text-align:left",
-        "text-align:center",
         "vertical-align:top",
         "vertical-align:middle",
         "vertical-align:bottom",
-        "text-align:right;vertical-align:top",
     ] {
         let html = cell(declaration);
         assert_eq!(imported(&html, HtmlImportMode::Safe), "| a | b |\n");
