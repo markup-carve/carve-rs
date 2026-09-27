@@ -208,7 +208,7 @@ fn push_inlines<'a>(
 /// EXHAUSTIVE for the reason that one is: a `_ => {}` arm would leave a
 /// container added later out of the measurement, and the abort this refusal
 /// exists to prevent would come back through it with nothing to say why.
-fn push_block_children<'a>(
+pub(crate) fn push_block_children<'a>(
     block: &'a BlockNode,
     depth: usize,
     blocks: &mut Vec<(&'a BlockNode, usize)>,

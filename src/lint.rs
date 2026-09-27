@@ -11,6 +11,8 @@
 //! a profile/severity axis. Unattached attributes follow PART 9 §15 A4.
 //! See `docs/linting.md` for rule ids and examples.
 
+mod reference_rules;
+
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
 use crate::escape::{escape_attr, sanitize_attr_value};
@@ -56,8 +58,9 @@ pub fn lint_carve(source: &str) -> Vec<LintWarning> {
 
 /// Lint `source` for the render `options` describe.
 ///
-/// Only `options.extensions` is read: it selects extension-specific rules and
-/// decides which reserved names become elements. Positions are
+/// `options.extensions` selects extension-specific rules and decides which
+/// reserved names become elements. Heading-id options keep reference checks
+/// consistent with rendering. Positions are
 /// forced on regardless of what the caller set, since a diagnostic with no
 /// location is not one. Nothing here renders, so the render-only fields
 /// (`profile`, `mode`, `symbols`, ...) are deliberately ignored rather than
@@ -65,6 +68,8 @@ pub fn lint_carve(source: &str) -> Vec<LintWarning> {
 pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintWarning> {
     let mut parse_options = Options {
         positions: true,
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ascii_heading_ids: options.ascii_heading_ids,
         ..Options::default()
     };
     parse_options.extensions.clone_from(&options.extensions);
@@ -131,6 +136,7 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
             collect_contained_reference_placements(body, true, &to_byte, &mut out);
         }
     }
+    reference_rules::collect(source, &doc, options, &to_byte, &mut out);
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
