@@ -65,26 +65,41 @@ fn the_two_sinks_only_the_shared_filter_knows_are_refused() {
     }
 }
 
-/// `srcset` is REFUSED ON THE WAY IN, and it is the one refusal here that is
-/// not derived.
+/// A list-valued URL attribute is KEPT, and its safety is the renderer's
+/// (markup-carve/carve#2306).
 ///
-/// This is the IMPORTER declining to admit a list-valued URL attribute the
-/// keep list never reached, which is a separate decision from what the
-/// renderer does with one an author wrote by hand. The §25 half is
-/// `markup-carve/carve#1320`, now ruled and implemented - the value sanitizer
-/// probes a URL-list value at every candidate rather than at its head, see
-/// `tests/a_url_list_attribute_is_probed_at_every_candidate.rs`. The refusal
-/// here neither waits on that nor duplicates it: admitting the attribute would
-/// be widening retention, and that is its own call.
+/// `[CARVE-P9-055]` has the renderer harden a URL-list attribute token-wise
+/// rather than reject it, so the attribute is representable and the rewriting
+/// path does not refuse it. A row is owed only where a token carries a denied
+/// scheme, which is the `<name> with a denied URL scheme` subject the
+/// raw-kept path already writes.
 #[test]
-fn a_list_valued_url_attribute_is_refused_rather_than_carried() {
+fn a_list_valued_url_attribute_is_carried_rather_than_refused() {
+    assert_eq!(
+        imported("<p><img src=\"a.png\" alt=\"\" srcset=\"a.png 1x, b.png 2x\"></p>"),
+        "![](a.png){srcset=\"a.png 1x, b.png 2x\"}\n"
+    );
+}
+
+/// The kept value's DANGEROUS half is blanked at render, not at import, and
+/// this pins the pair so the retention above cannot be read as a hole.
+///
+/// The §25 half is `markup-carve/carve#1320`, ruled and implemented - the
+/// value sanitizer probes a URL-list value at every candidate rather than at
+/// its head, see `tests/a_url_list_attribute_is_probed_at_every_candidate.rs`.
+#[test]
+fn the_renderer_blanks_a_denied_token_the_import_carried() {
     let source =
         imported("<img src=\"a.png\" alt=\"a\" srcset=\"safe.png 1x, javascript:alert(1) 2x\">");
     assert!(
-        !source.contains("srcset") && !source.contains("javascript:"),
-        "the smuggled URL reached the source: {source}"
+        source.contains("javascript:alert(1)"),
+        "the import stopped carrying the value: {source}"
     );
-    assert_eq!(source, "![a](a.png)\n");
+    let html = to_html(&source);
+    assert!(
+        html.contains("srcset=\"\"") && !html.contains("javascript:"),
+        "the render did not blank the denied token: {html}"
+    );
 }
 
 /// THE TRAP THIS FILE EXISTS TO AVOID. The renderer strips `on*` on output, so
@@ -163,6 +178,9 @@ fn no_active_attribute_reaches_the_source_on_any_element_category() {
     ];
     // Handler names no enumeration lists, mixed case included, plus the two
     // sinks and `style`. None of these has a bare spelling in any keep list.
+    // A URL-list attribute is NOT in this sweep: the import carries it and the
+    // renderer hardens it token-wise, which
+    // `the_renderer_blanks_a_denied_token_the_import_carried` pins instead.
     let attrs = [
         "onclick=\"PWNED\"",
         "onmouseover=\"PWNED\"",
@@ -175,7 +193,6 @@ fn no_active_attribute_reaches_the_source_on_any_element_category() {
         "srcdoc=\"PWNED\"",
         "formaction=\"PWNED\"",
         "style=\"background:url(PWNED)\"",
-        "srcset=\"a.png 1x, javascript:PWNED 2x\"",
     ];
     let mut checked = 0usize;
     for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
