@@ -1589,7 +1589,7 @@ impl<'a> Importer<'a> {
             // `<blockquote>`; naming the drop is the honest form
             // (carve-rs#1060).
             return Some(Refusal {
-                subject: format!("attribute {name}"),
+                subject: name.to_owned(),
                 reason: ": the semantic span's marker owns that key",
                 severity: HtmlImportSeverity::Info,
                 live: false,
