@@ -94,3 +94,31 @@ fn reference_checks_use_the_renderers_heading_id_options() {
         "{warnings:?}"
     );
 }
+
+#[test]
+fn heading_collisions_follow_assigned_ids_and_document_order() {
+    for (source, line) in [
+        ("# A\n\n{#A}\n# X\n", 1),
+        ("x[^n]\n\n[^n]: text\n\n  # A\n\n# A\n", 5),
+        ("{#same}\n# First\n\n{#same}\n# Second\n", 5),
+    ] {
+        let warnings: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|w| w.rule == "duplicate-heading-id")
+            .collect();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(warnings[0].line, line, "{warnings:?}");
+    }
+}
+
+#[test]
+fn nested_list_definitions_are_checked() {
+    let source = "x[^a]\n\n- [^a]: one\n\n- - [^a]: two\n";
+    let warning = lint_carve(source)
+        .into_iter()
+        .find(|w| w.rule == "duplicate-footnote-definition")
+        .unwrap();
+    assert_eq!(warning.line, 5);
+    assert_eq!(warning.column, 5);
+    assert_eq!(&source[warning.start..warning.end], "[^a]:");
+}

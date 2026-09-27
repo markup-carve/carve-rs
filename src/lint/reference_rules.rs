@@ -17,6 +17,7 @@ pub(super) fn collect(
     for body in doc.footnote_defs.values() {
         blocks.extend(body.iter().map(|b| (b, 0)));
     }
+    blocks.reverse();
     let mut inlines = Vec::new();
     let mut headings = Vec::new();
     let mut inline_spans = Vec::new();
@@ -34,14 +35,16 @@ pub(super) fn collect(
             }
             _ => {}
         }
+        let first_child = blocks.len();
         push_block_children(block, depth, &mut blocks, &mut inlines);
+        blocks[first_child..].reverse();
     }
-    headings.sort_by_key(|h| h.pos.as_ref().map(|p| p.start_offset).unwrap_or(0));
-    let mut used = BTreeSet::new();
+    let mut explicit_ids = BTreeSet::new();
     for heading in headings {
-        let explicit = heading
-            .attrs
-            .as_ref()
+        let attrs = heading.attrs.as_ref();
+        // Parsing stamps generated ids without an authored order slot.
+        // Keep that distinction when checking duplicate explicit ids.
+        let explicit = attrs
             .filter(|a| a.order.contains(&AttrSlot::Id))
             .and_then(|a| a.id.as_ref());
         let base = explicit.cloned().unwrap_or_else(|| {
@@ -50,23 +53,21 @@ pub(super) fn collect(
                 options.heading_id_options(),
             )
         });
-        if used.contains(&base) {
+        let collision = match explicit {
+            Some(id) => !explicit_ids.insert(id),
+            None => attrs
+                .and_then(|a| a.id.as_ref())
+                .is_some_and(|id| id != &base),
+        };
+        if collision {
             report(
                 heading.pos.clone(),
                 "duplicate-heading-id",
-                format!("Heading id \"{base}\" collides with an earlier heading."),
+                format!("Heading id \"{base}\" collides with another heading or an explicit id."),
                 to_byte,
                 out,
             );
-            if explicit.is_none() {
-                let mut suffix = 2;
-                while used.contains(&format!("{base}-{suffix}")) {
-                    suffix += 1;
-                }
-                used.insert(format!("{base}-{suffix}"));
-            }
         }
-        used.insert(base);
     }
     let definitions: BTreeMap<_, _> = doc
         .footnote_defs
@@ -118,7 +119,7 @@ pub(super) fn collect(
     let mut sites = BTreeMap::<String, Pos>::new();
     let mut first_keys = BTreeMap::<String, String>::new();
     let definition =
-        regex::Regex::new(r"^(?:[ \t]*>[ ]?)*[ \t]*(?:[-+*] |[0-9]+[.)] |: )?\[\^([^]\r\n]+)\]:")
+        regex::Regex::new(r"^(?:[ \t]*>[ ]?)*[ \t]*(?:[-+*] |[0-9]+[.)] |: )*\[\^([^]\r\n]+)\]:")
             .unwrap();
     inline_spans.sort_unstable();
     let mut span_index = 0;
