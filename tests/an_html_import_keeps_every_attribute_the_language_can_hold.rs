@@ -340,3 +340,46 @@ fn a_title_a_slot_already_holds_is_not_spelled_twice() {
 fn a_language_tag_uses_the_shorthand() {
     assert_eq!(imported("<p lang=\"fr\">x</p>"), "{:fr}\nx\n");
 }
+
+/// The RAW-KEPT half of the same ruling, which moves with the refusal and is
+/// the half a cross-engine ledger reads.
+///
+/// A kept element owes one `attribute-preserved` row per attribute the
+/// rewriting path would have refused, plus any whose value the renderer blanks
+/// for a denied scheme. A URL-list attribute is not refused, so a benign value
+/// owes NOTHING and a denied token owes the
+/// `<name> with a denied URL scheme` subject - the row all three engines
+/// already write, rather than a fourth spelling of the same fact.
+#[test]
+fn a_kept_url_list_attribute_owes_a_row_only_for_a_denied_token() {
+    fn preserved(html: &str) -> Vec<String> {
+        let options = HtmlImportOptions {
+            mode: HtmlImportMode::Roundtrip,
+            ..Default::default()
+        };
+        html_to_carve(html, &options)
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.contains("srcset"))
+            .map(|d| d.message.clone())
+            .collect()
+    }
+    assert_eq!(
+        preserved(
+            "<form onclick=\"go()\"><img src=\"a.png\" srcset=\"b.png 2x\" alt=\"a\"></form>"
+        ),
+        Vec::<String>::new(),
+        "a benign URL-list value owes no row"
+    );
+    assert_eq!(
+        preserved(
+            "<form onclick=\"go()\"><img src=\"a.png\" srcset=\"b.png 2x, javascript:x 3x\" alt=\"a\"></form>"
+        ),
+        vec![
+            "Preserved srcset with a denied URL scheme on <img> inside the raw HTML <form> is kept as"
+                .to_string()
+        ]
+    );
+}
