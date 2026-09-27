@@ -133,7 +133,7 @@ fn render_markdown_once(
         walk_blocks(body, 0, &mut explicit_pass);
     }
 
-    let mut id_counts: HashMap<String, usize> = HashMap::new();
+    let mut id_counts = std::collections::BTreeMap::new();
     let mut slugger = GfmSlugger::default();
     let mut heading_slugs: HashMap<String, String> = HashMap::new();
     let mut heading_pass = |heading: &Heading, written: bool| {
@@ -3087,27 +3087,16 @@ fn flatten_heading_text(text: &str) -> String {
 /// order, so the prepass and the render agree on every id.
 fn next_heading_id(
     heading: &Heading,
-    counts: &mut HashMap<String, usize>,
+    counts: &mut std::collections::BTreeMap<String, usize>,
     explicit_ids: &HashSet<String>,
 ) -> String {
     let explicit = heading.attrs.as_ref().and_then(|attrs| attrs.id.clone());
     let has_explicit = explicit.is_some();
     let base = explicit.unwrap_or_else(|| slugify(&plain_inlines(&heading.children)));
 
-    let mut count = counts.get(&base).copied().unwrap_or(0);
-    let id = loop {
-        count += 1;
-        let candidate = if count == 1 {
-            base.clone()
-        } else {
-            format!("{base}-{count}")
-        };
-        if has_explicit || !explicit_ids.contains(&candidate) {
-            break candidate;
-        }
-    };
-    counts.insert(base, count);
-    id
+    crate::document_ids::allocate_heading_id(base, has_explicit, counts, |id| {
+        explicit_ids.contains(id)
+    })
 }
 
 // Markdown-specific flattening. Node coverage is kept in lockstep with the

@@ -88,7 +88,10 @@ fn quoted_view(text: &str, quotes: usize) -> (&str, usize) {
 fn container_view(text: &str) -> &str {
     static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = PREFIX.get_or_init(|| {
-        regex::Regex::new(r"^(?:[ \t]*> ?|[ \t]*(?:[-*+] |[0-9A-Za-z]+[.)] |: ))").unwrap()
+        regex::Regex::new(
+            r"^(?:[ \t]*> ?|[ \t]*(?:[-*] |(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)] |: ))",
+        )
+        .unwrap()
     });
     let mut rest = text;
     while let Some(m) = re.find(rest) {
@@ -139,7 +142,7 @@ pub(super) fn collect(
     let mut items = Vec::new();
     let mut fences = Vec::new();
     let marker = regex::Regex::new(
-        r"^([ \t]*)([-+*]|[0-9A-Za-z]+[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
+        r"^([ \t]*)([-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(\{[^{}\r\n]*\})?( +)(?:\[[ xX_?>-]\] +)?",
     )
     .unwrap();
     let colon = regex::Regex::new(r"^(:{3,})(?:[ \t]|$)").unwrap();

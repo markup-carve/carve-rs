@@ -2860,6 +2860,16 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let raw_body = render_blocks(blocks, ctx);
+    if raw_body.lines().any(|line| {
+        line.trim_start_matches([' ', '\t'])
+            .strip_prefix(sentinel(S_CODE_LINE))
+            .is_some_and(|rest| rest.starts_with('>'))
+    }) {
+        crate::render_carve_error::record_unspellable(
+            "code",
+            "a block-marker continuation cannot stay inside a footnote paragraph",
+        );
+    }
     let single_body;
     let body = trim_non_nbsp(if blocks.len() == 1 {
         single_body = raw_body.replace("\n\n", "\n");
@@ -3577,7 +3587,8 @@ fn render_inline_body(
                             &value,
                             may_run_to_end
                                 && ctx.table_cell_depth == 0
-                                && render_attrs(&code.attrs).is_empty()
+                                && render_attrs(&code.attrs).is_empty(),
+                            ctx.in_term,
                         ),
                         ctx
                     ),
@@ -3620,10 +3631,10 @@ fn render_inline_body(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(&spell_verse_empty_lines(
-                &math.content,
-                ctx.line_block_depth > 0
-            )),
+            render_code(
+                &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
+                ctx
+            ),
             render_attrs(&math.attrs)
         ),
         InlineNode::RawInline(raw) => {
@@ -3642,7 +3653,7 @@ fn render_inline_body(
             let verbatim = if raw.format.eq_ignore_ascii_case("html") {
                 format!("`{content}`")
             } else {
-                render_code(&content)
+                render_code(&content, ctx)
             };
             format!("{verbatim}{{={}}}", escape_format(&raw.format))
         }
@@ -3652,7 +3663,11 @@ fn render_inline_body(
             // `render_code` widens the backtick fence when the content holds
             // backticks, so the round-trip re-parses identically.
             let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
-            format!("!{}{}", render_code(&content), render_attrs(&lit.attrs))
+            format!(
+                "!{}{}",
+                render_code(&content, ctx),
+                render_attrs(&lit.attrs)
+            )
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
@@ -4274,17 +4289,26 @@ fn code_span_fence(content: &str) -> String {
 }
 
 fn guard_code_lines(written: &str, ctx: &CarveContext) -> String {
-    if ctx.line_block_depth > 0 || ctx.in_term {
+    if ctx.line_block_depth > 0 {
         return written.to_owned();
     }
     static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let marker = MARKER.get_or_init(|| regex::Regex::new(r"^(?:> |\[[^\]\n]+\]:[ \t])").unwrap());
+    let marker =
+        MARKER.get_or_init(|| regex::Regex::new(r"^(?:>(?: |$)|\[[^\]\n]+\]:[ \t])").unwrap());
     written
         .split('\n')
         .enumerate()
         .map(|(index, line)| {
             if index > 0 && marker.is_match(line) {
-                format!(" {line}")
+                if ctx.in_term {
+                    crate::render_carve_error::record_unspellable(
+                        "code",
+                        "a block marker on a continuation line ends the definition term",
+                    );
+                    return line.to_owned();
+                }
+                note_inserted(S_CODE_LINE);
+                format!("{}{line}", sentinel(S_CODE_LINE))
             } else {
                 line.to_owned()
             }
@@ -4293,11 +4317,18 @@ fn guard_code_lines(written: &str, ctx: &CarveContext) -> String {
         .join("\n")
 }
 
-fn render_code(content: &str) -> String {
-    render_code_with_unclosed(content, false)
+fn render_code(content: &str, ctx: &CarveContext) -> String {
+    render_code_with_unclosed(content, false, ctx.in_term)
 }
 
-fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
+fn render_code_with_unclosed(content: &str, allow_unclosed: bool, in_term: bool) -> String {
+    let normalized;
+    let content = if content.contains('\r') {
+        normalized = content.replace("\r\n", "\n").replace('\r', "\n");
+        normalized.as_str()
+    } else {
+        content
+    };
     let fence = code_span_fence(content);
     // Pad exactly where the parser strips, so the strip is reversible and fmt
     // stays idempotent; the padding sits inside the fence, so a trailing
@@ -4314,6 +4345,27 @@ fn render_code_with_unclosed(content: &str, allow_unclosed: bool) -> String {
         || (content.starts_with(' ')
             && content.ends_with(' ')
             && !content.chars().all(|c| c == ' '));
+    let reason = if content
+        .as_bytes()
+        .windows(2)
+        .any(|pair| matches!(pair[0], b' ' | b'\t') && pair[1] == b'\n')
+    {
+        Some("a line of the value ends in whitespace, which the block layer strips")
+    } else if !in_term
+        && content
+            .as_bytes()
+            .windows(2)
+            .any(|pair| pair[0] == b'\n' && matches!(pair[1], b' ' | b'\t'))
+    {
+        Some("a line of the value starts with whitespace, which the block layer strips")
+    } else if needs_pad && content.ends_with('\n') {
+        Some("a padded value ending in a line terminator loses the pad")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        crate::render_carve_error::record_unspellable("code", reason);
+    }
     // A leading pad before a newline is stripped by block normalization.
     // At the end of a run, an unclosed span preserves the original value.
     if needs_pad
@@ -4538,10 +4590,11 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 
 /// The staging characters an AUTHORED occurrence can be mistaken for.
 const SENTINEL_DEFAULTS: [char; SENTINEL_COUNT] = [
-    '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}',
+    '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}', '\u{e013}',
 ];
 
-const SENTINEL_COUNT: usize = 6;
+const SENTINEL_COUNT: usize = 7;
+const S_CODE_LINE: usize = 6;
 
 const S_BLANK: usize = 0;
 const S_GUARD: usize = 1;
@@ -5021,6 +5074,25 @@ fn guard_thematic_break_lines(body: &str) -> String {
 
 /// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
 fn restore_verbatim(text: &str) -> String {
+    let text = text
+        .split('\n')
+        .map(|line| {
+            if let Some((prefix, rest)) = line.split_once(sentinel(S_CODE_LINE)) {
+                if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
+                    let guarded = if rest.starts_with('[') {
+                        format!("{prefix} ")
+                    } else if let Some(last_quote) = prefix.rfind('>') {
+                        format!("{}  ", &prefix[..=last_quote])
+                    } else {
+                        " ".to_owned()
+                    };
+                    return format!("{guarded}{rest}");
+                }
+            }
+            line.replace(sentinel(S_CODE_LINE), "")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     text.split('\n')
         .map(|line| {
             // The marker may arrive INDENTED: inside a container the host adds

@@ -9,7 +9,7 @@
 //! (identified by the non-rendered [`crate::ast::Link::from_crossref`] flag set
 //! during crossref resolution).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span};
 use crate::extension::{BeforeRenderContext, CarveExtension, HeadingIdOptions};
@@ -122,6 +122,7 @@ impl CarveExtension for HeadingNumbers {
             numbers: Vec::new(),
             heading_counts: BTreeMap::new(),
             by_id: BTreeMap::new(),
+            seen_ids: BTreeSet::new(),
         };
         number_blocks(&mut doc.children, false, &mut state);
 
@@ -148,8 +149,9 @@ struct NumberState {
     numbers: Vec<u32>,
     /// Per-base id dedup counter, mirroring the renderer's `next_heading_id`
     /// so the computed id matches the rendered `<section id>` / `</#id>` href.
-    heading_counts: BTreeMap<String, u32>,
+    heading_counts: BTreeMap<String, usize>,
     by_id: BTreeMap<String, Entry>,
+    seen_ids: BTreeSet<String>,
 }
 
 fn has_class(h: &Heading, cls: &str) -> bool {
@@ -218,24 +220,20 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
 }
 
 fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState) {
-    // Compute this heading's FINAL id exactly as the renderer's `next_heading_id`
-    // does (explicit id or slug, then dedup), advancing the shared counter for
-    // EVERY heading in document order so the ids stay in lock-step with the
-    // rendered `<section id>` / resolved `</#id>` hrefs. Deduped ids are unique,
-    // so first-id-wins falls out for free (no later heading reuses a key).
+    // Keep the renderer's id allocation and the first heading's link target.
     let base = h
         .attrs
         .as_ref()
         .and_then(|a| a.id.clone())
         .unwrap_or_else(|| slugify_parse(&plain_inlines(&h.children), state.id_opts));
-    let count = state.heading_counts.entry(base.clone()).or_insert(0);
-    *count += 1;
-    let id = if *count == 1 {
-        base
-    } else {
-        format!("{base}-{count}")
-    };
+    let id = crate::document_ids::allocate_heading_id(
+        base,
+        h.attrs.as_ref().is_some_and(|attrs| attrs.id.is_some()),
+        &mut state.heading_counts,
+        crate::document_ids::is_explicit_id,
+    );
 
+    let first = state.seen_ids.insert(id.clone());
     if in_blockquote || has_class(h, "unnumbered") || h.level < state.min_level {
         return;
     }
@@ -259,13 +257,15 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         .join(".");
 
     let title = crossref_label_clone(&h.children);
-    state.by_id.insert(
-        id,
-        Entry {
-            number: number.clone(),
-            title,
-        },
-    );
+    if first {
+        state.by_id.insert(
+            id,
+            Entry {
+                number: number.clone(),
+                title,
+            },
+        );
+    }
 
     // MARKED as injected. PART 9R R4's THE LABEL IS TAKEN BEFORE ANY
     // RENDER-STAGE INJECTION names this span, and this engine derives display

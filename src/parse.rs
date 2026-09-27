@@ -1869,7 +1869,7 @@ fn extract_footnote_defs(
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                     authored_base_at_start: false,
-                    reached: Vec::new(),
+                    reached: vec![true; def_lines.len()],
                     // A FOOTNOTE BODY carries authored base for its sublists, so
                     // a list marker past the body's content column anchors its
                     // span at the marker (markup-carve/carve#1980).
@@ -21999,19 +21999,12 @@ fn collect_heading_titles(
                     // cross-reference resolved to the wrong heading - or, once the
                     // renderer was fixed, to none at all (#335).
                     let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
-                    let mut count = scan.counts.get(&base).copied().unwrap_or(0);
-                    let id = loop {
-                        count += 1;
-                        let candidate = if count == 1 {
-                            base.clone()
-                        } else {
-                            format!("{base}-{count}")
-                        };
-                        if has_explicit || !explicit_ids.contains(&candidate) {
-                            break candidate;
-                        }
-                    };
-                    scan.counts.insert(base, count);
+                    let id = crate::document_ids::allocate_heading_id(
+                        base,
+                        has_explicit,
+                        scan.counts,
+                        |id| explicit_ids.contains(id),
+                    );
                     if let Some(assigned) = scan.assigned.as_deref_mut() {
                         assigned.push(id.clone());
                     }

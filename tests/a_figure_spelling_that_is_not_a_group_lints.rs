@@ -66,7 +66,7 @@ text
 }
 
 #[test]
-fn a_bare_group_outside_a_group_lints_clean() {
+fn a_bare_group_outside_a_group_only_reports_its_single_panel() {
     let source = "\
 ::: figure
 ![one](a.png)
@@ -74,7 +74,9 @@ fn a_bare_group_outside_a_group_lints_clean() {
 :::
 ^ Figure #: Group
 ";
-    assert_eq!(carve::lint_carve(source), vec![]);
+    let warnings = carve::lint_carve(source);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].rule, "figure-group-single-panel");
 }
 
 #[test]

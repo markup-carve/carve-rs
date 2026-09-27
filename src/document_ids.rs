@@ -21,6 +21,33 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::*;
 use crate::extension::HeadingIdOptions;
 
+pub(crate) fn allocate_heading_id(
+    base: String,
+    explicit: bool,
+    counts: &mut BTreeMap<String, usize>,
+    reserved: impl Fn(&str) -> bool,
+) -> String {
+    if explicit {
+        counts.entry(base.clone()).or_insert(1);
+        return base;
+    }
+    let mut count = counts.get(&base).copied().unwrap_or(0);
+    let id = loop {
+        count += 1;
+        let candidate = if count == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{count}")
+        };
+        if !counts.contains_key(&candidate) && !reserved(&candidate) {
+            break candidate;
+        }
+    };
+    counts.insert(base, count);
+    counts.entry(id.clone()).or_insert(1);
+    id
+}
+
 #[derive(Default)]
 pub(crate) struct DocumentIdRegistry {
     /// id -> next 1-based suffix candidate for that base (mirrors carve-php's
@@ -313,21 +340,9 @@ impl Seeder {
         let base = explicit.unwrap_or_else(|| {
             crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), self.id_opts)
         });
-        let mut count = self.heading_counts.get(&base).copied().unwrap_or(0);
-        let id = loop {
-            count += 1;
-            let id = if count == 1 {
-                base.clone()
-            } else {
-                format!("{base}-{count}")
-            };
-            // An explicit heading id wins verbatim; an auto slug skips any id an
-            // explicit `{#id}` elsewhere already claimed (avoids a duplicate id).
-            if has_explicit || !self.registry.explicit_ids.contains(&id) {
-                break id;
-            }
-        };
-        self.heading_counts.insert(base, count);
+        let id = allocate_heading_id(base, has_explicit, &mut self.heading_counts, |id| {
+            self.registry.explicit_ids.contains(id)
+        });
         self.registry.reserve(&id);
         self.assigned.push(id);
     }
