@@ -11835,14 +11835,20 @@ fn collect_indented_block_mapped_with(
             // path was fixed in #911 and this one was not, so `--html` (which
             // takes the plain path) and `--json`/`fmt` (which take this one)
             // parsed the same document differently (markup-carve/carve-rs#908).
+            // What lies past the content column is the code line's content
+            // (PART 11 §7), so a line of spaces keeps that residue.
             if fence.is_some() {
-                lines.push(String::new());
+                let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
+                lines.push(residue);
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
                 }
                 reached.push(false);
                 if building_maps {
-                    col_map.push(cur.source_col(cur.pos));
+                    col_map.push(
+                        cur.source_col(cur.pos)
+                            .map(|col| col + consumed as isize - synthetic as isize),
+                    );
                 }
                 cur.consume();
                 continue;
@@ -11883,13 +11889,19 @@ fn collect_indented_block_mapped_with(
                     break;
                 }
             }
-            lines.push(String::new());
+            // The residue stays for a descendant's open fence, which this
+            // frame does not track; a blank line reads as blank either way.
+            let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
+            lines.push(residue);
             if building_maps {
                 line_map.push(cur.source_line(cur.pos));
             }
             reached.push(false);
             if building_maps {
-                col_map.push(cur.source_col(cur.pos));
+                col_map.push(
+                    cur.source_col(cur.pos)
+                        .map(|col| col + consumed as isize - synthetic as isize),
+                );
             }
             cur.consume();
             continue;
