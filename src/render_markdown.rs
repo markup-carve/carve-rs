@@ -110,6 +110,7 @@ fn render_markdown_once(
 ) -> String {
     INSERTED.with(|counts| counts.set([0; CARRIER_COUNT]));
     SEEN.with(|counts| counts.set([0; CARRIER_COUNT]));
+    IN_LINK_TEXT.with(|d| d.set(0));
     OCCUPIED.with(|occupied| occupied.borrow_mut().clear());
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
@@ -501,11 +502,15 @@ fn protect_paragraph_list_markers(text: &str) -> String {
         if !open_at_start {
             // The underscore still stands as its carrier here, so the test reads
             // it as `_` and an escape on it writes the character itself.
+            // So does §8i's `.`, which can be an ordered marker's delimiter.
             let underscore = carrier(C_UNDERSCORE);
-            let view = line.replace(underscore, "_");
+            let dot = carrier(C_WWW_DOT);
+            let view = line.replace(underscore, "_").replace(dot, ".");
             if let Some(at) = paragraph_marker_escape(&view, written == 0) {
                 if line[at..].starts_with(underscore) {
                     line.replace_range(at..at + underscore.len_utf8(), "\\_");
+                } else if line[at..].starts_with(dot) {
+                    line.replace_range(at..at + dot.len_utf8(), "\\.");
                 } else {
                     line.insert(at, '\\');
                 }
@@ -1857,7 +1862,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 // -- the HTML target renders it outside the anchor entirely. So
                 // a reference inside one is not nested and still links.
                 let outer = std::mem::replace(&mut ctx.link_depth, 0);
+                let outer_text = IN_LINK_TEXT.with(|d| d.replace(0));
                 let rendered = render_inlines(inline, ctx, depth + 1);
+                IN_LINK_TEXT.with(|d| d.set(outer_text));
                 ctx.link_depth = outer;
                 format!("^[{rendered}]")
             } else {
@@ -1948,6 +1955,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 None => format!("</#{}>", escape_md_html(&strip_controls(&crossref.target))),
                 Some((id, title)) => {
                     let label = ctx.crossref_index.label(&id);
+                    // Written as link text below, where §8i escapes nothing.
+                    let links = ctx.link_depth == 0 && ctx.heading_slugs.contains_key(&id);
+                    if links {
+                        IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
+                    }
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
                         None => escape_text(&strip_controls(&title)),
@@ -1960,6 +1972,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     } else {
                         escape_text(&strip_controls(&crossref.target))
                     };
+                    if links {
+                        IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
+                    }
                     // Inside a link label the reference is already surrounded by
                     // an anchor, so it degrades to its display text -- the same
                     // rule the parser applies to every link it produces itself,
@@ -1985,9 +2000,11 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
         return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
     }
     ctx.link_depth += 1;
+    IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
     // Render the label through the anchor-unwrapping view.
     let children = unwrap_nested_anchors(&node.children);
     let text = render_inlines(children.as_ref(), ctx, depth);
+    IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
     ctx.link_depth -= 1;
     // A fragment naming a heading is written as that heading's GFM slug, which
     // needs no encoding; any other fragment is still the author's destination
@@ -2120,7 +2137,23 @@ fn escape_text(text: &str) -> String {
         inserted[slot] += 1;
         out.push(carriers[slot]);
     };
-    for ch in text.chars() {
+    let autolinks = IN_LINK_TEXT.with(std::cell::Cell::get) == 0;
+    let chars: Vec<char> = if autolinks {
+        text.chars().collect()
+    } else {
+        Vec::new()
+    };
+    for (at, ch) in text.chars().enumerate() {
+        // PART 11 §8i: a `:` or `.` that may start an autolink is decided on the
+        // line, since the rest of the form can come from another node.
+        if autolinks && ch == ':' && may_be_scheme_colon(&chars, at) {
+            carry(C_SCHEME_COLON, &mut out);
+            continue;
+        }
+        if autolinks && ch == '.' && may_be_www_dot(&chars, at) {
+            carry(C_WWW_DOT, &mut out);
+            continue;
+        }
         match ch {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
@@ -2209,10 +2242,48 @@ fn escape_text(text: &str) -> String {
     out
 }
 
+/// Whether the `:` at `at` could be a scheme's, given only its own node: a
+/// `//` (or the end of the value) after it, and a letter run before it that is
+/// a scheme or reaches the start of the value.
+fn may_be_scheme_colon(chars: &[char], at: usize) -> bool {
+    let rest = &chars[at + 1..];
+    let slashes = rest.iter().take(2).take_while(|c| **c == '/').count();
+    if slashes < rest.len().min(2) {
+        return false;
+    }
+    let run = chars[..at]
+        .iter()
+        .rev()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .count();
+    run == at || scheme_ends_at(chars, at)
+}
+
+/// Whether the `.` at `at` could end a `www`: three `w` before it, or a run of
+/// them reaching the start of the value.
+fn may_be_www_dot(chars: &[char], at: usize) -> bool {
+    let run = chars[..at].iter().rev().take_while(|c| **c == 'w').count();
+    run >= 3 || run == at
+}
+
+/// Whether `http`, `https` or `ftp` ends at `at` and no ASCII letter precedes it
+/// (§8i U1).
+fn scheme_ends_at(line: &[char], at: usize) -> bool {
+    ["https", "http", "ftp"].iter().any(|scheme| {
+        let len = scheme.len();
+        at >= len
+            && line[at - len..at]
+                .iter()
+                .zip(scheme.chars())
+                .all(|(c, s)| c.eq_ignore_ascii_case(&s))
+            && !(at > len && line[at - len - 1].is_ascii_alphabetic())
+    })
+}
+
 /// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
 /// CHOSEN PER DOCUMENT from code points it does not contain.
-const CARRIER_DEFAULTS: [char; 6] = [
-    '\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}', '\u{E008}', '\u{E009}',
+const CARRIER_DEFAULTS: [char; 8] = [
+    '\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}', '\u{E008}', '\u{E009}', '\u{E00A}', '\u{E00B}',
 ];
 const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 
@@ -2227,6 +2298,9 @@ const C_POSITIONAL_HASH: usize = 2;
 const C_ANGLE: usize = 3;
 const C_AMPERSAND: usize = 4;
 const C_BANG: usize = 5;
+/// The `:` and `.` that may start a GFM autolink (PART 11 §8i).
+const C_SCHEME_COLON: usize = 6;
+const C_WWW_DOT: usize = 7;
 
 thread_local! {
     /// The carriers in force for the render running on this thread.
@@ -2248,6 +2322,9 @@ thread_local! {
     /// is made against a SET rather than against a second copy of the document.
     static OCCUPIED: std::cell::RefCell<std::collections::BTreeSet<u32>> =
         const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+    /// Mirrors `MarkdownContext::link_depth` for `escape_text`: GFM builds no
+    /// autolink inside a link's text, so §8i escapes nothing there.
+    static IN_LINK_TEXT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Install `chars` for the duration of one render, restoring the previous run on
@@ -2365,6 +2442,8 @@ fn carried_character(slot: usize) -> char {
         C_ANGLE => '<',
         C_AMPERSAND => '&',
         C_BANG => '!',
+        C_SCHEME_COLON => ':',
+        C_WWW_DOT => '.',
         _ => '#',
     }
 }
@@ -2755,6 +2834,12 @@ fn resolve_narrowed_escapes(text: &str) -> String {
             } else if slot == C_BANG {
                 // §8f: a live `[` is the writer's own, never a text carrier.
                 (ch, raw_chars.get(i + 1) == Some(&'['))
+            } else if slot == C_SCHEME_COLON {
+                let slashes = line.get(i + 1) == Some(&'/') && line.get(i + 2) == Some(&'/');
+                (ch, slashes && scheme_ends_at(&line, i))
+            } else if slot == C_WWW_DOT {
+                let www = i >= 3 && line[i - 3..i] == ['w', 'w', 'w'];
+                (ch, www && !(i > 3 && line[i - 4].is_ascii_alphanumeric()))
             } else {
                 (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
             }
