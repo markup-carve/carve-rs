@@ -5231,12 +5231,33 @@ impl<'a> Importer<'a> {
             if is_block && published {
                 boundary_pending = true;
             }
-            let produced = self.inline(h, &path, depth)?;
+            let mut produced = self.inline(h, &path, depth)?;
             let contributes = !Self::inlines_are_blank(&produced);
             if !contributes && flattening {
                 continue;
             }
             if contributes && boundary_pending {
+                // Plain-text layout at either edge shares the separator. Code and
+                // nonbreaking spaces remain content inside their own nodes.
+                while let Some(InlineNode::Text(text)) = out.last_mut() {
+                    text.value
+                        .truncate(text.value.trim_end_matches(is_layout_space).len());
+                    if !text.value.is_empty() {
+                        break;
+                    }
+                    out.pop();
+                }
+                for node in &mut produced {
+                    let InlineNode::Text(text) = node else {
+                        break;
+                    };
+                    let leading =
+                        text.value.len() - text.value.trim_start_matches(is_layout_space).len();
+                    text.value.drain(..leading);
+                    if !text.value.is_empty() {
+                        break;
+                    }
+                }
                 out.push(InlineNode::text(" ".to_string()));
             }
             out.extend(produced);

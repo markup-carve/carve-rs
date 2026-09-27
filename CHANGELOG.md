@@ -15,6 +15,10 @@ which the published crate does not carry.
 
 - HTML import recognizes explicit code-language hints on code blocks and Sphinx, GitHub and MediaWiki wrappers, with validated tokens and deterministic fallback (markup-carve/carve#2387).
 
+### Fixed
+
+- HTML import collapses plain-text layout whitespace at flattened block boundaries to one space, including nested lists in table cells (#2028).
+
 ## [0.1.7] - 2026-09-25
 
 ### Breaking
