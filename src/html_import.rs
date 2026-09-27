@@ -1595,14 +1595,6 @@ impl<'a> Importer<'a> {
                 live: false,
             });
         }
-        if name == "srcset" {
-            return Some(Refusal {
-                subject: format!("list-valued URL attribute {name}"),
-                reason: "",
-                severity: HtmlImportSeverity::Warning,
-                live: sanitize_attr_value(name, value).is_empty() && !value.is_empty(),
-            });
-        }
         if !is_attr_identifier(name) {
             // No BARE spelling in Carve attribute syntax. The writer's
             // `escape_attr_key` strips every character the rule
