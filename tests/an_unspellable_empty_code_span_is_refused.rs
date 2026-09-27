@@ -174,14 +174,14 @@ fn the_ast_import_keeps_the_empty_span() {
     assert!(to_json(&doc).contains(r#"{"type":"code","value":""}"#));
 }
 
-/// The AST exit keeps the whitespace the writing exit trims after a span.
+/// Block-edge padding is trimmed without removing the empty code span.
 #[test]
-fn the_ast_import_keeps_trailing_whitespace() {
+fn the_ast_import_keeps_empty_code_and_trims_block_edge_padding() {
     let doc = carve::html_to_ast(
         "<p><s>x<code></code> </s></p>",
         &HtmlImportOptions::default(),
     )
     .unwrap()
     .value;
-    assert!(to_json(&doc).contains(r#"{"type":"code","value":""},{"type":"text","value":" "}"#));
+    assert!(to_json(&doc).contains(r#"{"type":"code","value":""}]"#));
 }
