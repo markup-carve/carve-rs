@@ -86,7 +86,7 @@ fn the_row_reads_unsupported_attribute_and_names_the_rule_that_refused_it() {
                 AttributePreserved,
                 Info,
                 "/form[1]/div[2]",
-                "Preserved attribute align on <div> inside the raw HTML <form> is kept as: a mapped CSS declaration already sets it"
+                "Preserved align on <div> inside the raw HTML <form> is kept as: a mapped CSS declaration already sets it"
             ),
             row(
                 AttributePreserved,

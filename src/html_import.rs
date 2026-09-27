@@ -1558,7 +1558,7 @@ impl<'a> Importer<'a> {
             // keeping both would spell one axis twice, in two
             // spellings, from one source - and the two would disagree.
             return Some(Refusal {
-                subject: format!("attribute {name}"),
+                subject: name.to_owned(),
                 reason: ": a mapped CSS declaration already sets it",
                 severity: HtmlImportSeverity::Info,
                 live: false,
@@ -1591,7 +1591,7 @@ impl<'a> Importer<'a> {
             return Some(Refusal {
                 subject: name.to_owned(),
                 reason: ": the semantic span's marker owns that key",
-                severity: HtmlImportSeverity::Info,
+                severity: HtmlImportSeverity::Warning,
                 live: false,
             });
         }
