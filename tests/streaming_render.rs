@@ -1,6 +1,18 @@
 use carve::{try_render_html_streaming, Options, StreamOutcome};
 
 #[test]
+fn accepted_output_arrives_in_multiple_utf8_chunks() {
+    let source = "# Heading\n\nSecond paragraph.\n";
+    let mut chunks = Vec::new();
+    let outcome = try_render_html_streaming(source, &Options::default(), |chunk| {
+        chunks.push(chunk.to_string());
+    });
+    assert_eq!(outcome, StreamOutcome::Complete);
+    assert!(chunks.len() > 1);
+    assert_eq!(chunks.concat(), carve::to_html(source));
+}
+
+#[test]
 fn accepted_input_reaches_the_sink_byte_identically() {
     let source = "# Heading\n\nText with *strong*.\n";
     let mut output = String::new();
