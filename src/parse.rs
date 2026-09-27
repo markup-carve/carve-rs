@@ -1,4 +1,4 @@
-//! Carve parser (MVP subset).
+//! Carve block and inline parser.
 //!
 //! Block-level reads line by line; inline does a single linear scan
 //! over each block's text. No backtracking.
@@ -8,7 +8,9 @@ use crate::ast::*;
 use crate::extension::{
     AsciiHeadingIds, BlockMatch, HeadingIdOptions, InlineMatch, MatcherContext, Options,
 };
+use crate::include_walk::{block_pos_mut, inline_pos_mut};
 use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
+use crate::source_positions::CodepointLineStarts;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use unicode_normalization::UnicodeNormalization;
@@ -542,7 +544,7 @@ fn parse_with_options_mode_and_index(
         // Line NUMBERS are unaffected: the normalization preserves the line
         // count, so entry N still describes line N. Only where each line starts
         // in the file changes, which is exactly what this table holds.
-        let line_starts = original_line_start_offsets(original);
+        let line_starts = CodepointLineStarts::original(original);
         fill_offsets(&mut children, &line_starts);
         for blocks in footnote_defs.values_mut() {
             fill_offsets(blocks, &line_starts);
@@ -3289,7 +3291,7 @@ fn append_link_reference_definitions(
     if link_defs.is_empty() {
         return;
     }
-    let line_starts = line_start_offsets(source);
+    let line_starts = CodepointLineStarts::normalized(source);
     let lines: Vec<&str> = source.split('\n').collect();
     let mut authored: Vec<(Option<usize>, LinkReferenceDefinition)> = Vec::new();
     for (label, def) in link_defs {
@@ -4094,49 +4096,8 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     })
 }
 
-/// Fill the offset fields from the original source, in CODEPOINTS (PART 12
-/// section 4). Runs once per document: the line table is one pass, and the
-/// conversion is the identity for any document without an astral character.
-/// A block's own span, to write through.
-///
-/// EXHAUSTIVE on purpose. A `_ => None` arm here is why an `abbreviation_def`
-/// shipped with a correct line and column and offsets of `0..0` - present, and
-/// selecting nothing. That is the fourth node family to fail exactly that way,
-/// after figure captions, footnote definition bodies and definition terms. A
-/// new variant is now a compile error rather than a silent 0..0.
-fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
-    match block {
-        BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
-        BlockNode::Heading(h) => h.pos.as_mut(),
-        BlockNode::Paragraph(p) => p.pos.as_mut(),
-        BlockNode::ThematicBreak(t) => t.pos.as_mut(),
-        BlockNode::CodeBlock(c) => c.pos.as_mut(),
-        BlockNode::RawBlock(r) => r.pos.as_mut(),
-        BlockNode::Comment(c) => c.pos.as_mut(),
-        BlockNode::Directive(d) => d.pos.as_mut(),
-        BlockNode::Div(d) => d.pos.as_mut(),
-        BlockNode::Section(d) => d.pos.as_mut(),
-        BlockNode::Admonition(a) => a.pos.as_mut(),
-        BlockNode::BlockQuote(b) => b.pos.as_mut(),
-        BlockNode::List(l) => l.pos.as_mut(),
-        BlockNode::Table(t) => t.pos.as_mut(),
-        BlockNode::LineBlock(l) => l.pos.as_mut(),
-        BlockNode::Figure(f) => f.pos.as_mut(),
-        BlockNode::FigureGroup(g) => g.pos.as_mut(),
-        BlockNode::BlockImage(i) => i.pos.as_mut(),
-        BlockNode::DefinitionList(d) => d.pos.as_mut(),
-        BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
-        // The Citations extension builds this one in `after_parse`, which runs
-        // after `fill_offsets`, and derives its `pos` from inline positions
-        // that pass has already converted - so there is nothing there to
-        // convert, and an arm is still required rather than a `_`.
-        BlockNode::CitationDefinition(d) => d.pos.as_mut(),
-        BlockNode::BlockExtension(e) => e.pos.as_mut(),
-        BlockNode::ExtensionCarrier(e) => e.pos.as_mut(),
-    }
-}
-
-fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
+/// Fill node and sidecar offsets in codepoints (PART 12 §4).
+fn fill_offsets(blocks: &mut [BlockNode], line_starts: &CodepointLineStarts) {
     for block in blocks {
         if let Some(pos) = block_pos_mut(block) {
             apply_offsets(pos, line_starts);
@@ -4513,14 +4474,14 @@ fn emptied_container_markup(line: &str, start_column: usize, quote: bool) -> usi
 }
 
 /// Turn the line/column pair already on a span into codepoint offsets.
-fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
+fn apply_offsets(pos: &mut Pos, line_starts: &CodepointLineStarts) {
     if let Some(start) = line_starts.get(pos.start_line.saturating_sub(1)) {
         pos.start_offset = start + pos.start_column.saturating_sub(1);
     }
     if let Some(end) = line_starts.get(pos.end_line.saturating_sub(1)) {
         pos.end_offset = end + pos.end_column.saturating_sub(1);
     }
-    if line_starts.first() == Some(&1) {
+    if line_starts.has_leading_bom() {
         if pos.start_line == 1 {
             pos.start_column += 1;
         }
@@ -4536,7 +4497,7 @@ fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
 /// Both halves in one place, because they were added a week apart and the
 /// second nearly dropped the first: a span whose offsets are never filled stays
 /// 0..0, which reads as present and selects nothing.
-fn apply_table_offsets(table: &mut Table, line_starts: &[usize]) {
+fn apply_table_offsets(table: &mut Table, line_starts: &CodepointLineStarts) {
     if let Some(caption) = &mut table.caption {
         apply_inline_offsets(caption, line_starts);
     }
@@ -4553,7 +4514,7 @@ fn apply_table_offsets(table: &mut Table, line_starts: &[usize]) {
     }
 }
 
-fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &[usize]) {
+fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &CodepointLineStarts) {
     for node in nodes {
         if let Some(pos) = inline_pos_mut(node) {
             apply_offsets(pos, line_starts);
@@ -4595,86 +4556,8 @@ fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &[usize]) {
     }
 }
 
-fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
-    match node {
-        InlineNode::Text(n) => n.pos.as_mut(),
-        InlineNode::EscapedText(n) => n.pos.as_mut(),
-        InlineNode::SmartPunctuation(n) => n.pos.as_mut(),
-        InlineNode::Emphasis(n) => n.pos.as_mut(),
-        InlineNode::Code(n) => n.pos.as_mut(),
-        InlineNode::Link(n) => n.pos.as_mut(),
-        InlineNode::Image(n) => n.pos.as_mut(),
-        InlineNode::Span(n) => n.pos.as_mut(),
-        InlineNode::Ruby(n) => n.pos.as_mut(),
-        InlineNode::Math(n) => n.pos.as_mut(),
-        InlineNode::RawInline(n) => n.pos.as_mut(),
-        InlineNode::LiteralInline(n) => n.pos.as_mut(),
-        InlineNode::Symbol(n) => n.pos.as_mut(),
-        InlineNode::AutoLink(n) => n.pos.as_mut(),
-        InlineNode::CrossRef(n) => n.pos.as_mut(),
-        InlineNode::CaptionNumber(n) => n.pos.as_mut(),
-        InlineNode::Mention(n) => n.pos.as_mut(),
-        InlineNode::Tag(n) => n.pos.as_mut(),
-        InlineNode::CitationGroup(n) => n.pos.as_mut(),
-        InlineNode::Extension(n) => n.pos.as_mut(),
-        InlineNode::Abbreviation(n) => n.pos.as_mut(),
-        InlineNode::Footnote(n) => n.pos.as_mut(),
-        InlineNode::NonBreakingSpace(n) => n.pos.as_mut(),
-        InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos.as_mut(),
-        InlineNode::CriticInsert(n) => n.pos.as_mut(),
-        InlineNode::CriticDelete(n) => n.pos.as_mut(),
-        InlineNode::CriticSubstitute(n) => n.pos.as_mut(),
-        InlineNode::Comment(n) => n.pos.as_mut(),
-        InlineNode::CriticComment(n) => n.pos.as_mut(),
-    }
-}
-
 fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
     node.pos().cloned()
-}
-
-/// Codepoint offset of the start of each line.
-/// Line-start offsets in the ORIGINAL text, in codepoints.
-///
-/// Splits on every `newline` the grammar admits - '\n', '\r\n' and a lone
-/// '\r' - so the entry count matches the normalized line count, and skips a
-/// leading BOM so line 0 starts at the first real character rather than at the
-/// mark (carve#876).
-pub(crate) fn original_line_start_offsets(source: &str) -> Vec<usize> {
-    let mut chars = source.chars().peekable();
-    let mut starts = Vec::new();
-    let mut count = 0usize;
-    if chars.peek() == Some(&'\u{feff}') {
-        chars.next();
-        count += 1;
-    }
-    starts.push(count);
-    while let Some(ch) = chars.next() {
-        count += 1;
-        if ch == '\r' {
-            if chars.peek() == Some(&'\n') {
-                chars.next();
-                count += 1;
-            }
-            starts.push(count);
-        } else if ch == '\n' {
-            starts.push(count);
-        }
-    }
-
-    starts
-}
-
-fn line_start_offsets(source: &str) -> Vec<usize> {
-    let mut starts = vec![0usize];
-    let mut count = 0usize;
-    for ch in source.chars() {
-        count += 1;
-        if ch == '\n' {
-            starts.push(count);
-        }
-    }
-    starts
 }
 
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {

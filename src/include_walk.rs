@@ -206,6 +206,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
     }
 }
 
+// Keep position matches exhaustive so new variants cannot silently lose spans.
 pub(crate) fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
     match block {
         BlockNode::Heading(n) => n.pos.as_mut(),

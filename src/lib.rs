@@ -55,6 +55,7 @@ mod scoped_state;
 mod sentinel_run;
 mod source_layout;
 mod source_patch;
+mod source_positions;
 mod stamp;
 pub mod stream;
 mod table_spans;
