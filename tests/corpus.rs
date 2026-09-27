@@ -668,6 +668,10 @@ const IMPLEMENTED: &[&str] = &[
     // against their committed HTML before the category was listed here.
     "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item",
     "a-block-opener-indented-under-a-definition-term-is-term-text-at-every-depth",
+    // Added with the spec bump to carve e00d86a9. All twenty-five documents of
+    // markup-carve/carve#2458 were rendered through this engine and diffed
+    // against their committed HTML before the category was listed here.
+    "a-comment-or-a-definition-under-a-definition-term-folds-at-every-depth",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
