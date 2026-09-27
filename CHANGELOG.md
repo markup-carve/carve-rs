@@ -21,8 +21,6 @@ which the published crate does not carry.
 
 ### Fixed
 
-- Unfinished nested code fences retain trailing blanks at EOF. Three trailing blanks in an indented fence still separate the following sibling list.
-
 - Unquoted attribute values reject pipes, backslashes, and quotes while preserving Unicode whitespace as content; formatting quotes values containing backslashes (#2054).
 
 - HTML import collapses plain-text layout whitespace at flattened block boundaries to one space, including nested lists in table cells (#2028).
