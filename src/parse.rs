@@ -5688,7 +5688,11 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }) && lines
                     .get(i + 1)
                     .is_some_and(|next| !is_blank_line(next) && indent_columns(next) < column);
-                paragraph_open = colon_folds;
+                paragraph_open = colon_folds
+                    || (include_sublists
+                        && marker
+                            .as_ref()
+                            .is_some_and(|marker| line_starts_paragraph(marker.content)));
                 nested_columns.push(column);
                 after_blank = false;
                 block_at_minimum = false;
