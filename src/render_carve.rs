@@ -2798,7 +2798,10 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
             &crate::render_plain::flatten_cell_block_inlines(blocks),
             ctx,
         ),
-        None => render_inlines(&cell.children, ctx),
+        None => match merge_break_layout(&cell.children) {
+            Some(merged) => render_inlines(&merged, ctx),
+            None => render_inlines(&cell.children, ctx),
+        },
     };
     ctx.table_cell_depth -= 1;
     content = content.replace(['\r', '\n'], " ");
@@ -2823,6 +2826,54 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     // CENTERED column holding `x~` (carve-rs#819). Padding every cell parts
     // them without enumerating which characters merge.
     pad_cell(&prefix, &content)
+}
+
+/// A cell's hard break is written as one space, so layout on either side of it
+/// would double that space (PART 11 §1b). Trims it off the neighboring text at
+/// every depth; `None` when no break has any.
+fn merge_break_layout(nodes: &[InlineNode]) -> Option<Vec<InlineNode>> {
+    let mut out = nodes.to_vec();
+    trim_break_layout(&mut out).then_some(out)
+}
+
+fn trim_break_layout(nodes: &mut Vec<InlineNode>) -> bool {
+    let layout = |c: char| c == ' ' || c == '\t';
+    let mut changed = false;
+    for index in 0..nodes.len() {
+        if let Some(children) = formatted_children(&mut nodes[index]) {
+            changed |= trim_break_layout(children);
+        }
+        if !matches!(nodes[index], InlineNode::HardBreak(_)) {
+            continue;
+        }
+        if let Some(InlineNode::Text(t)) = index.checked_sub(1).and_then(|i| nodes.get_mut(i)) {
+            let kept = t.value.trim_end_matches(layout).len();
+            changed |= kept != t.value.len();
+            t.value.truncate(kept);
+        }
+        if let Some(InlineNode::Text(t)) = nodes.get_mut(index + 1) {
+            let kept = t.value.trim_start_matches(layout);
+            if kept.len() != t.value.len() {
+                changed = true;
+                t.value = kept.to_string();
+            }
+        }
+    }
+    if changed {
+        nodes.retain(|node| !matches!(node, InlineNode::Text(t) if t.value.is_empty()));
+    }
+    changed
+}
+
+fn formatted_children(node: &mut InlineNode) -> Option<&mut Vec<InlineNode>> {
+    match node {
+        InlineNode::Emphasis(n) => Some(&mut n.children),
+        InlineNode::Span(n) => Some(&mut n.children),
+        InlineNode::Link(n) => Some(&mut n.children),
+        InlineNode::CriticInsert(n) => Some(&mut n.children),
+        InlineNode::CriticDelete(n) => Some(&mut n.children),
+        _ => None,
+    }
 }
 
 /// THE TARGET KEEPS ITS OWN ATTRIBUTES (ruling markup-carve/carve#1721).

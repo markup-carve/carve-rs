@@ -199,19 +199,17 @@ fn nothing_moves_off_a_wrapper_the_renderer_never_writes() {
     );
 }
 
-/// CONTROL: the other modes are untouched. `roundtrip` alone may read a
-/// `<section id>` as a hoist, because its input is Carve-produced HTML by
-/// definition; in arbitrary HTML the id names the region and the import has no
-/// standing to move it onto a heading.
+/// Every mode reads the wrapper's id back onto its heading: the renderer
+/// writes `{#install}` over `# H` as this exact HTML, so nothing moves.
 #[test]
-fn the_other_modes_still_report_the_wrappers_id_as_dropped() {
+fn the_other_modes_hand_the_wrappers_id_back_too() {
     let mut wrong = Vec::new();
     for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
         let imported = import("<section id=\"install\"><h1>H</h1></section>", mode);
-        if imported.carve != "# H\n" {
+        if imported.carve != "{#install}\n# H\n" {
             wrong.push(format!("{mode:?}: wrote {:?}", imported.carve));
         }
-        if !imported.messages.iter().any(|m| m.contains("install")) {
+        if imported.messages.iter().any(|m| m.contains("install")) {
             wrong.push(format!("{mode:?}: reported {:?}", imported.messages));
         }
     }

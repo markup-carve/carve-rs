@@ -44,12 +44,12 @@ fn a_sectioning_wrapper_unwraps_in_every_mode() {
             HtmlImportMode::Semantic,
             HtmlImportMode::Roundtrip,
         ] {
-            // `roundtrip` hands a `<section id>` back to the heading the
+            // Every mode hands a `<section id>` back to the heading the
             // renderer hoisted it off (markup-carve/carve-rs#1380), so the
             // heading it comes back as carries the id. That is still the
             // heading Carve spells, which is what this test is about; the id
             // itself is ruled by `an_unwrapped_wrapper_hands_its_id_back_to_the_heading`.
-            let hoisted = tag == "section" && mode == HtmlImportMode::Roundtrip;
+            let hoisted = tag == "section";
             let want = if hoisted { "{#x}\n# H\n" } else { "# H\n" };
             let back = import(&html, mode);
             if back != want {
@@ -160,4 +160,36 @@ fn an_unwrapped_wrapper_hands_its_id_back_to_the_heading() {
         "the id was restored but still reported dropped: {:?}",
         report.report.diagnostics
     );
+}
+
+/// The hand-back holds in every mode, not only `roundtrip`: a derived id stays
+/// derived, a heading's own id wins, and the wrapper's other attributes are
+/// reported rather than moved onto the heading.
+#[test]
+fn a_section_wrapper_gives_its_id_back_in_every_mode() {
+    let html =
+        "<section id=\"S1\" class=\"ltx_section\"><h2 class=\"t\">Intro</h2><p>x</p></section>\n\
+                <section id=\"Intro-2\"><h2>Intro 2</h2><p>y</p></section>\n\
+                <section id=\"outer\"><h2 id=\"own\">Own</h2><p>z</p></section>\n";
+    for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
+        let options = HtmlImportOptions {
+            mode,
+            ..HtmlImportOptions::default()
+        };
+        let result = html_to_carve(html, &options).unwrap();
+        assert_eq!(
+            result.value, "{#S1 .t}\n## Intro\n\nx\n\n## Intro 2\n\ny\n\n{#own}\n## Own\n\nz\n",
+            "{mode:?}"
+        );
+        let dropped: Vec<&str> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.starts_with("Dropped"))
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(dropped.len(), 2, "{mode:?}: {dropped:?}");
+        assert!(dropped[0].contains("ltx_section"), "{dropped:?}");
+        assert!(dropped[1].contains("outer"), "{dropped:?}");
+    }
 }

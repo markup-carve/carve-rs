@@ -64,6 +64,10 @@ cases! {
         ["/table[1]/tr[1]/td[1]/br[1]"],
     inside_a_strong: "<table><tr><td><strong>x<br>y</strong></td></tr></table>" => "| *x y* |\n",
         ["/table[1]/tr[1]/td[1]/strong[1]/br[2]"],
+    after_a_space: "<table><tr><td><b>x</b> <br>y</td></tr></table>" => "| *x* y |\n",
+        ["/table[1]/tr[1]/td[1]/br[3]"],
+    after_a_space_in_a_strike: "<table><tr><td><s>x <br></s> z</td></tr></table>" => "| {~x ~} z |\n",
+        ["/table[1]/tr[1]/td[1]/s[1]/br[2]"],
 }
 
 /// Control: a break outside a table is still a backslash and a newline, with no row.
