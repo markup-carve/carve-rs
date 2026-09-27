@@ -4524,7 +4524,7 @@ fn quote_attr_value(value: &str) -> String {
     if !value.is_empty()
         && value
             .chars()
-            .all(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\'' | '{' | '}' | '|'))
+            .all(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\'' | '\\' | '{' | '}' | '|'))
     {
         value.to_string()
     } else {
