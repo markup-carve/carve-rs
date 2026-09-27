@@ -13,6 +13,14 @@ trusted-roundtrip policies. The CLI equivalent is:
 carve migrate --from html --mode safe --report report.json input.html
 ```
 
+In safe and semantic modes, unsupported elements give way to their children
+before the importer groups comments into blocks or inline runs. An empty
+`<x-el></x-el>` beside a comment contributes no inline content. For example,
+`<p>a</p><!--note--><x-el></x-el><p>b</p>` produces a fenced block comment
+between the paragraphs and an `element-dropped` diagnostic for `<x-el>`.
+A comment beside text stays inline. In roundtrip mode, the unknown element
+is preserved as raw HTML, so it and the adjacent comment form an inline run.
+
 A pipe-table cell is one line, so by default a cell holding a list, a code block
 or several paragraphs is flattened to its text. `list_table_for_block_cells` on
 `HtmlImportOptions` (CLI: `--list-table`) writes such a table as a

@@ -203,3 +203,71 @@ fn a_comment_between_two_list_items_is_kept_and_says_that_it_moved() {
     // the move costs a reader of the OUTPUT nothing.
     assert_eq!(row.severity.as_str(), "info");
 }
+
+#[test]
+fn empty_unsupported_elements_do_not_make_a_comment_inline() {
+    use carve::{html_to_ast, parse, render_carve, HtmlImportDiagnosticCode};
+
+    for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        for (html, bare, expected, path) in [
+            (
+                "<section>\n<h2>T</h2><!--/lit-part-->\n<x-el></x-el>\n<p>y</p></section>",
+                "<section>\n<h2>T</h2><!--/lit-part-->\n\n<p>y</p></section>",
+                "## T\n\n%%%\n/lit-part\n%%%\n\ny\n",
+                "/section[1]/x-el[5]",
+            ),
+            (
+                "<p>a</p><!--note--><x-el></x-el><p>b</p>",
+                "<p>a</p><!--note--><p>b</p>",
+                "a\n\n%%%\nnote\n%%%\n\nb\n",
+                "/x-el[3]",
+            ),
+            (
+                "<p>a</p><x-el></x-el><!--note--><p>b</p>",
+                "<p>a</p><!--note--><p>b</p>",
+                "a\n\n%%%\nnote\n%%%\n\nb\n",
+                "/x-el[2]",
+            ),
+            (
+                "<!--note--><x-el></x-el>",
+                "<!--note-->",
+                "%%%\nnote\n%%%\n",
+                "/x-el[2]",
+            ),
+            (
+                "text<!--note--><x-el></x-el><p>b</p>",
+                "text<!--note--><p>b</p>",
+                "text{% note %}\n\nb\n",
+                "/x-el[3]",
+            ),
+        ] {
+            let result = html_to_carve(html, &options).unwrap();
+            assert_eq!(result.value, expected, "{mode:?}: {html}");
+            assert_eq!(
+                html_to_ast(html, &options).unwrap().value,
+                html_to_ast(bare, &options).unwrap().value,
+                "{mode:?}: {html}"
+            );
+            assert_eq!(render_carve(&parse(&result.value)).unwrap(), result.value);
+            let baseline = html_to_carve(bare, &options).unwrap().report.diagnostics;
+            let mut rows = result.report.diagnostics;
+            let dropped = rows.pop().expect("empty element diagnostic");
+            assert_eq!(rows, baseline, "{mode:?}: {html}");
+            assert_eq!(dropped.code, HtmlImportDiagnosticCode::ElementDropped);
+            assert_eq!(dropped.path.as_deref(), Some(path));
+            assert_eq!(dropped.severity.as_str(), "warning");
+        }
+    }
+}
+
+#[test]
+fn a_roundtrip_comment_beside_a_preserved_unknown_element_stays_inline() {
+    let (value, codes) = import("<!--note--><x-el></x-el>", HtmlImportMode::Roundtrip);
+    assert_eq!(value, "{% note %}`<x-el></x-el>`{=html}\n");
+    assert_eq!(codes, ["raw-preserved"]);
+    assert_eq!(carve::render_carve(&carve::parse(&value)).unwrap(), value);
+}
