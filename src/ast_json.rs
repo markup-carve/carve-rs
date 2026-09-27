@@ -2486,7 +2486,11 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
         }
         InlineNode::Comment(n) => {
             let mut w = typed(out, "comment");
-            w.field("block", |out| write_bool(out, false));
+            // `block` is the SPELLING (`%%%` against `%%`), not the position:
+            // an inline comment reaches this arm with `block: true` whenever a
+            // fenced comment folds into a line that holds inline content, which
+            // markup-carve/carve#2458 makes reachable under a definition term.
+            w.field("block", |out| write_bool(out, n.block));
             if n.delimited {
                 w.field("delimited", |out| write_bool(out, true));
             }
