@@ -124,9 +124,10 @@ fn multiline_elements_in_table_cells_keep_the_table() {
 /// optional `carve` / `ast` / `report` fields in
 /// `test/html-import-conformance.test.ts`.
 ///
-/// `messages` records a report whose ROWS agree and whose wording does not,
-/// which is the one report divergence an entry can hold: the codes, order,
-/// paths, severities and fidelities are compared against the fixture as usual.
+/// A report divergence is not recordable here. A clause that moves the rows
+/// moves the source they describe in every case so far, and a wording
+/// difference is no divergence at all: markup-carve/carve#2454 ruled that the
+/// message is this engine's and is not compared.
 struct AheadOfPin {
     fixture: &'static str,
     reason: &'static str,
@@ -135,29 +136,13 @@ struct AheadOfPin {
     /// The tree this engine publishes TODAY, as JSON, with `pos` and
     /// `srcByteLength` left out the way the comparison leaves them out.
     ast: Option<&'static str>,
-    /// The message this engine writes TODAY for each diagnostic the fixture
-    /// states, in the fixture's order; `None` defers that row to the fixture.
-    messages: Option<&'static [Option<&'static str>]>,
 }
 
-const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
-    fixture: "summary-holding-blocks",
-    // markup-carve/carve#2428 ruled that the dropped class is reported, and it
-    // is: the codes, order, paths, severities and fidelities all match. The
-    // fixture then spells the two `attribute-dropped` messages without the
-    // attribute's value, which is the one thing
-    // `an_attribute_dropped_row_counts_attributes_not_class_names` pins this
-    // engine's wording for. No ruling picks between the two spellings.
-    reason: "markup-carve/carve#2428 ruled the row, not its wording",
-    carve: None,
-    ast: None,
-    messages: Some(&[
-        None,
-        Some("Dropped class=\"t\" on <div>: the element was unwrapped and has no node to carry it"),
-        None,
-        Some("Dropped class=\"s\" on <div>: the element was unwrapped and has no node to carry it"),
-    ]),
-}];
+// Empty. Its `summary-holding-blocks` entry recorded the two `attribute-dropped`
+// messages this engine writes, and markup-carve/carve#2454 took the message out
+// of the contract and out of the fixtures, so there is nothing left for the
+// entry to be a statement about.
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
@@ -377,8 +362,10 @@ fn shared_contract_fixtures_match() {
         // field, and a field nobody compares is a field each engine answers on
         // its own. `path` is the one that happened to: three engines invented
         // three rootings and the loop that was supposed to catch it read only
-        // the codes (markup-carve/carve#1257). `message` and `severity` were
-        // unread here for the same reason and are pinned with it.
+        // the codes (markup-carve/carve#1257). `severity` was unread here for the
+        // same reason and is pinned with it. `message` is not among them:
+        // markup-carve/carve#2454 ruled the sentence this engine's, so no fixture
+        // states one and nothing here reads one.
         for (index, expected_diagnostic) in expected_report["diagnostics"]
             .as_array()
             .unwrap()
@@ -395,38 +382,6 @@ fn shared_contract_fixtures_match() {
             if let Some(path) = expected_diagnostic["path"].as_str() {
                 if source_actual.path.as_deref() != Some(path) {
                     mismatches.push(format!("{at} path: {path:?} != {:?}", source_actual.path));
-                }
-            }
-            if let Some(message) = expected_diagnostic["message"].as_str() {
-                let recorded = ahead
-                    .and_then(|entry| entry.messages)
-                    .and_then(|messages| messages.get(index).copied())
-                    .flatten();
-                match recorded {
-                    Some(current) => {
-                        if source_actual.message != current {
-                            mismatches.push(format!(
-                                "{at} message: AHEAD_OF_PIN says this engine writes {current:?} \
-                                 ({}), and it writes {:?} - update the entry or delete it",
-                                ahead.map(|entry| entry.reason).unwrap_or_default(),
-                                source_actual.message
-                            ));
-                        }
-                        if source_actual.message == message {
-                            mismatches.push(format!(
-                                "{at} message: matches the fixture now - drop the row from its \
-                                 AHEAD_OF_PIN entry"
-                            ));
-                        }
-                    }
-                    None => {
-                        if source_actual.message != message {
-                            mismatches.push(format!(
-                                "{at} message: {message:?} != {:?}",
-                                source_actual.message
-                            ));
-                        }
-                    }
                 }
             }
             if let Some(severity) = expected_diagnostic["severity"].as_str() {
