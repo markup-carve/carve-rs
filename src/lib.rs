@@ -51,6 +51,7 @@ mod render_loss;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod scoped_state;
 mod sentinel_run;
 mod source_layout;
 mod source_patch;

@@ -9,6 +9,7 @@
 //! Units are walk ordinals, so a skipped block still advances the counter by
 //! the units it would have claimed, as recorded in the control render.
 
+use crate::scoped_state::RefCellScope;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -69,6 +70,20 @@ impl Window {
 thread_local! {
     static RECORDING: RefCell<Option<Recording>> = const { RefCell::new(None) };
     static ACTIVE: RefCell<Option<Window>> = const { RefCell::new(None) };
+}
+
+pub(super) struct Session {
+    _recording: RefCellScope<Option<Recording>>,
+    _active: RefCellScope<Option<Window>>,
+}
+
+impl Session {
+    pub(super) fn new() -> Self {
+        Self {
+            _recording: RefCellScope::replace(&RECORDING, None),
+            _active: RefCellScope::replace(&ACTIVE, None),
+        }
+    }
 }
 
 /// What a block loop does with the element at `slot`.
@@ -144,13 +159,14 @@ pub(super) fn claimed(unit: usize) {
 
 /// Run `render` with the layout recorded.
 pub(super) fn record<T>(render: impl FnOnce() -> T) -> (T, Layout) {
-    RECORDING.with(|cell| {
-        *cell.borrow_mut() = Some(Recording {
+    let _scope = RefCellScope::replace(
+        &RECORDING,
+        Some(Recording {
             layout: Layout::default(),
             spans: HashMap::new(),
             stack: Vec::new(),
-        });
-    });
+        }),
+    );
     let out = render();
     let recording = RECORDING
         .with(|cell| cell.borrow_mut().take())
@@ -199,8 +215,54 @@ impl Layout {
 
 /// Run `render` with only `window` written.
 pub(super) fn render_pruned<T>(window: &Window, render: impl FnOnce() -> T) -> T {
-    ACTIVE.with(|cell| *cell.borrow_mut() = Some(window.clone()));
-    let out = render();
-    ACTIVE.with(|cell| *cell.borrow_mut() = None);
-    out
+    let _scope = RefCellScope::replace(&ACTIVE, Some(window.clone()));
+    render()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn nested_pruning_restores_the_outer_window_after_unwinding() {
+        let _session = Session::new();
+        let outer = Window {
+            ranges: HashMap::from([(ROOT, (0, 0))]),
+            spans: Rc::default(),
+        };
+        let inner = Window {
+            ranges: HashMap::from([(ROOT, (1, 1))]),
+            spans: Rc::default(),
+        };
+        render_pruned(&outer, || {
+            assert!(matches!(visit(ROOT, 1), Visit::Skip));
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                render_pruned(&inner, || {
+                    assert!(matches!(visit(ROOT, 1), Visit::Render(false)));
+                    panic!("interrupted probe");
+                })
+            }));
+            assert!(result.is_err());
+            assert!(matches!(visit(ROOT, 1), Visit::Skip));
+        });
+        assert!(matches!(visit(ROOT, 1), Visit::Render(false)));
+    }
+
+    #[test]
+    fn interrupted_inner_recording_preserves_the_outer_layout() {
+        let _session = Session::new();
+        let (_, layout) = record(|| {
+            let Visit::Render(recorded) = visit(ROOT, 0) else {
+                panic!("recording skipped")
+            };
+            claimed(0);
+            assert!(catch_unwind(|| record(|| panic!("interrupted recording"))).is_err());
+            claimed(1);
+            leave(recorded);
+        });
+        assert_eq!(layout.owner, vec![Some(0), Some(0)]);
+        assert_eq!(layout.elements.len(), 1);
+        assert!(matches!(visit(ROOT, 0), Visit::Render(false)));
+    }
 }
