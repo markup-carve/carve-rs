@@ -11,7 +11,9 @@
 //! either: whitespace at the end of a line that HAS content (it can be document
 //! content -- stripping it before a soft break changed rendered output in
 //! carve#359), and whitespace that IS verbatim content, since a line of three
-//! spaces inside a code block renders as three spaces.
+//! spaces inside a code block renders as three spaces. The second exemption is
+//! enforced by `carries_verbatim_content` below; until corpus 505 arrived it was
+//! stated here and absent from the code, because no document reached the shape.
 
 mod common;
 
@@ -26,8 +28,25 @@ fn offending_lines(out: &str) -> Vec<(usize, String)> {
     out.lines()
         .enumerate()
         .filter(|(_, line)| !line.is_empty() && line.trim_matches([' ', '\t']).is_empty())
+        .filter(|(i, _)| !carries_verbatim_content(out, *i))
         .map(|(i, line)| (i + 1, line.to_string()))
         .collect()
+}
+
+/// Section 7's own exception, asked the way section 7 words it.
+///
+/// The clause exempts spaces that are VERBATIM CONTENT because "emptying it
+/// would change the document", so the question is answered by emptying the line
+/// and re-rendering rather than by re-deriving which output lines sit inside a
+/// fence. A line carrying only a structural indent renders the same emptied, so
+/// that half of the clause still fails here.
+fn carries_verbatim_content(out: &str, index: usize) -> bool {
+    let mut lines: Vec<&str> = out.split('\n').collect();
+    if index >= lines.len() {
+        return false;
+    }
+    lines[index] = "";
+    carve::to_html(out) != carve::to_html(&lines.join("\n"))
 }
 
 #[test]
@@ -73,32 +92,15 @@ fn the_writer_never_emits_trailing_whitespace_inner() {
         "the corpus sweep read a different number of documents than the spec examples define"
     );
 
-    // Known remaining, shared with carve-js: a fenced block inside a list item
-    // has its indentation SENTINEL-PROTECTED so that normalize() cannot eat real
-    // code indentation, which also hides the structural indent on a line whose
-    // verbatim content is empty. Section 7 says that indent is layout and must
-    // go; fixing it means teaching the protection to tell the two apart, in both
-    // engines. Listed rather than filtered out of the sweep, so it stays visible.
-    // And the SAME site one container in: a footnote body and a `dd` indent a
-    // fenced block the way an item does, and the line whose verbatim content is
-    // empty keeps that structural indent.
-    //
-    // PRE-EXISTING and reachable with no `+` marker at all - Form A spells both,
-    // `[^f]: n` / two-column ``` / `a` / blank / `b` / ``` and the `:  d`
-    // analogue, and both emit the line on `main` today. Corpus category 279 did
-    // not cause it; it made the corpus REACH it, because before it a blank
-    // inside a `+`-attached fence severed the fence and no corpus document put a
-    // blank inside a code block in either container. carve-php measured the same
-    // two shapes and filed markup-carve/carve-php#1068.
-    let known = [
-        "73-list-nesting-and-looseness-5.crv:3",
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-2.crv:7",
-        "279-a-boundary-line-inside-an-open-fence-does-not-end-the-container-3.crv:6",
-    ];
-    let failures: Vec<String> = failures
-        .into_iter()
-        .filter(|f| !known.iter().any(|k| f.starts_with(k)))
-        .collect();
+    // No site is declared, and that state was measured rather than assumed.
+    // Three stood here: `73-list-nesting-and-looseness-5.crv:3`, which upstream
+    // renumbered to 75 so it named no corpus file and excused nothing, and two
+    // `279-...` sites. Sweeping every whitespace-only line this writer emits
+    // over the whole corpus at this pin returns exactly the two corpus 505 sites
+    // and neither 279 one, so all three were suppressing nothing. They are
+    // deleted rather than re-worded: a deferral nobody re-measures stops
+    // guarding. carve-rs#2062, which measures a verbatim line's residue from its
+    // fence opener, is what closed the 279 shapes.
     assert!(
         failures.is_empty(),
         "fmt emitted {} line(s) ending in whitespace:\n{}",
@@ -146,4 +148,23 @@ fn a_blank_line_in_a_fenced_block_in_a_list_item_stays_empty() {
     assert_eq!(out, "- ```\n  a\n\n  b\n  ```\n- c\n");
     // And it survives its own output, which is the property the indent broke.
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
+}
+
+/// The verbatim exemption must not swallow the rule.
+///
+/// A whitespace-only line outside verbatim content renders the same emptied, so
+/// it is still reported. Without this, scoping section 7 to non-verbatim lines
+/// would have left a sweep that cannot fire.
+#[test]
+fn a_whitespace_only_line_outside_verbatim_content_is_still_reported() {
+    assert_eq!(offending_lines("a\n   \nb\n"), vec![(2, "   ".to_string())]);
+    assert_eq!(
+        offending_lines("- one\n\n  \n- two\n"),
+        vec![(3, "  ".to_string())]
+    );
+    // And the exempted shape is exempted: three spaces inside a code block.
+    assert_eq!(
+        offending_lines("```\na\n   \nb\n```\n"),
+        Vec::<(usize, String)>::new()
+    );
 }
