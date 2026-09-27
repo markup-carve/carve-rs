@@ -17451,11 +17451,16 @@ impl<'a> InlinePositionMap<'a> {
         } else {
             (self.byte_column[start], self.byte_column[end])
         };
+        let start_column = document_column(start_stripped, start_column);
+        let end_column = document_column(end_stripped, end_column);
+        if self.columns.is_some() && start_line == end_line && start_column == end_column {
+            return None;
+        }
         Some(Pos {
             start_line,
             end_line,
-            start_column: document_column(start_stripped, start_column),
-            end_column: document_column(end_stripped, end_column),
+            start_column,
+            end_column,
             start_offset: 0,
             end_offset: 0,
             file: None,
