@@ -821,7 +821,7 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         if !attrs.classes.is_empty() {
             out.push_str(&format!(
                 " class=\"{}\"",
-                ctx.escape_attr(&attrs.classes.join(" "))
+                ctx.escape_attr(&crate::render::sanitized_classes(&attrs.classes).join(" "))
             ));
         }
     };
@@ -886,7 +886,7 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         if !attrs.classes.is_empty() {
             out.push_str(&format!(
                 " class=\"{}\"",
-                ctx.escape_attr(&attrs.classes.join(" "))
+                ctx.escape_attr(&crate::render::sanitized_classes(&attrs.classes).join(" "))
             ));
         }
     };

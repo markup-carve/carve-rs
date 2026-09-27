@@ -535,7 +535,7 @@ fn render_attrs(attrs: &Attrs) -> String {
         if !attrs.classes.is_empty() {
             out.push_str(&format!(
                 " class=\"{}\"",
-                escape_attr(&attrs.classes.join(" "))
+                escape_attr(&crate::render::sanitized_classes(&attrs.classes).join(" "))
             ));
         }
         for (key, value) in &attrs.key_values {
@@ -554,7 +554,7 @@ fn render_attrs(attrs: &Attrs) -> String {
                 if !attrs.classes.is_empty() {
                     out.push_str(&format!(
                         " class=\"{}\"",
-                        escape_attr(&attrs.classes.join(" "))
+                        escape_attr(&crate::render::sanitized_classes(&attrs.classes).join(" "))
                     ));
                 }
             }

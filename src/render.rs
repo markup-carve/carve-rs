@@ -2783,7 +2783,11 @@ fn render_named_container(
     let tag = if canonical { "aside" } else { "div" };
     let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
+            dedup_class_str(&format!(
+                "{} {}",
+                base,
+                sanitized_classes(&at.classes).join(" ")
+            )),
             render_attrs_after_class_for(at, tag),
         ),
         Some(at) => (base, render_attrs_after_class_for(at, tag)),
@@ -3014,7 +3018,11 @@ fn render_figure(
 fn class_first_attrs(base: &str, attrs: &Option<Attrs>) -> String {
     let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
+            dedup_class_str(&format!(
+                "{} {}",
+                base,
+                sanitized_classes(&at.classes).join(" ")
+            )),
             render_attrs_after_class(at),
         ),
         Some(at) => (base.to_string(), render_attrs_after_class(at)),
@@ -4086,25 +4094,30 @@ fn write_attr_id(out: &mut String, id: &str) {
     out.push('"');
 }
 
-/// Write the ` class="..."` slot from a list of class names joined by spaces.
+/// The class slot as an HTML sink may write it: every AUTHORED entry through the
+/// value sanitizer, the empty ones dropped, deduped in first-occurrence order
+/// (§15, matching carve-php / carve-js).
+pub(crate) fn sanitized_classes(classes: &[String]) -> Vec<std::borrow::Cow<'_, str>> {
+    let mut sanitized: Vec<std::borrow::Cow<'_, str>> = Vec::new();
+    for entry in classes {
+        // Probe the WHOLE entry. Splitting it into names would bypass the
+        // sanitizer's scheme normalization, letting `java script:alert(1)`
+        // through, and so would deny less than before the class fold
+        // (carve-js#1164).
+        let entry = crate::escape::sanitize_attr_value("class", entry);
+        if !entry.is_empty() && !sanitized.contains(&entry) {
+            sanitized.push(entry);
+        }
+    }
+    sanitized
+}
+
+/// Write the ` class="..."` slot. The quotes go out even when every entry drops,
+/// because a bare `class` claims the slot as `class=""` (PART 4).
 #[inline]
 fn write_attr_class(out: &mut String, classes: &[String]) {
     out.push_str(" class=\"");
-    let mut first = true;
-    // Dedup repeated classes keeping first-occurrence order (`{.a .a}` ->
-    // `class="a"`), matching carve-php / carve-js (§15).
-    let mut seen: Vec<&str> = Vec::new();
-    for class in classes {
-        if seen.contains(&class.as_str()) {
-            continue;
-        }
-        seen.push(class);
-        if !first {
-            out.push(' ');
-        }
-        write_escaped_attr(out, class);
-        first = false;
-    }
+    write_escaped_attr(out, &sanitized_classes(classes).join(" "));
     out.push('"');
 }
 
@@ -4123,7 +4136,11 @@ fn dedup_class_str(s: &str) -> String {
 fn structural_attrs(base: &str, attrs: &Option<Attrs>) -> (String, String) {
     match attrs {
         Some(a) if !a.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
+            dedup_class_str(&format!(
+                "{} {}",
+                base,
+                sanitized_classes(&a.classes).join(" ")
+            )),
             render_attrs_after_class(a),
         ),
         Some(a) => (base.to_string(), render_attrs_after_class(a)),
@@ -4382,7 +4399,7 @@ pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) ->
         let joined = if classes.is_empty() {
             base.to_string()
         } else {
-            format!("{} {}", base, classes.join(" "))
+            format!("{} {}", base, sanitized_classes(classes).join(" "))
         };
         format!(" class=\"{}\"", escape_attr(&dedup_class_str(&joined)))
     };
