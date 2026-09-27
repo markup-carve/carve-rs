@@ -221,6 +221,12 @@ fn empty_unsupported_elements_do_not_make_a_comment_inline() {
                 "/section[1]/x-el[5]",
             ),
             (
+                "<p>a</p><!--note--><x-el></x-el><p>b</p>",
+                "<p>a</p><!--note--><p>b</p>",
+                "a\n\n%%%\nnote\n%%%\n\nb\n",
+                "/x-el[3]",
+            ),
+            (
                 "<p>a</p><x-el></x-el><!--note--><p>b</p>",
                 "<p>a</p><!--note--><p>b</p>",
                 "a\n\n%%%\nnote\n%%%\n\nb\n",
@@ -248,15 +254,12 @@ fn empty_unsupported_elements_do_not_make_a_comment_inline() {
             );
             assert_eq!(render_carve(&parse(&result.value)).unwrap(), result.value);
             let baseline = html_to_carve(bare, &options).unwrap().report.diagnostics;
-            let rows: Vec<_> = result
-                .report
-                .diagnostics
-                .into_iter()
-                .filter(|row| !baseline.contains(row))
-                .collect();
-            assert_eq!(rows.len(), 1, "{mode:?}: {rows:?}");
-            assert_eq!(rows[0].code, HtmlImportDiagnosticCode::ElementDropped);
-            assert_eq!(rows[0].path.as_deref(), Some(path));
+            let mut rows = result.report.diagnostics;
+            let dropped = rows.pop().expect("empty element diagnostic");
+            assert_eq!(rows, baseline, "{mode:?}: {html}");
+            assert_eq!(dropped.code, HtmlImportDiagnosticCode::ElementDropped);
+            assert_eq!(dropped.path.as_deref(), Some(path));
+            assert_eq!(dropped.severity.as_str(), "warning");
         }
     }
 }
