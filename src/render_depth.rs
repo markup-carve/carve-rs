@@ -128,7 +128,7 @@ impl Drop for RenderDepthWatch {
 /// The recording guards above cannot carry this on their own, because they sit
 /// inside the renderer's own recursion and several things recurse over the tree
 /// before it starts: the defensive `doc.clone()` in the borrowed-AST entry
-/// points, the second one in `render_carve::redundant_heading_ids`, and prepasses
+/// points and prepasses
 /// such as `parse::crossref_index_for_document`. Derived `Clone` has no ceiling
 /// to consult at all, so a tree deeper than the C stack aborted the process -
 /// SIGABRT, no exit code a caller can branch on, no diagnostic, and in a server a
