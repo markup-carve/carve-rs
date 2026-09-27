@@ -672,6 +672,11 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#2458 were rendered through this engine and diffed
     // against their committed HTML before the category was listed here.
     "a-comment-or-a-definition-under-a-definition-term-folds-at-every-depth",
+    // Added with the spec bump to carve 5315967c. All four documents of
+    // markup-carve/carve#2464 were rendered through this engine and diffed
+    // against their committed HTML before the category was listed here;
+    // carve-rs#2062 already measures the residue from the fence opener.
+    "a-verbatim-line-keeps-what-sits-past-its-fence-opener-not-past-its-container",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
