@@ -6938,7 +6938,6 @@ fn trim_formatting_edges(
     fn ends_with_space(node: &InlineNode) -> bool {
         let children = match node {
             InlineNode::Text(text) => return text.value.ends_with([' ', '\t']),
-            InlineNode::HardBreak(_) => return true,
             InlineNode::Emphasis(node) => &node.children,
             InlineNode::CriticInsert(node) => &node.children,
             InlineNode::CriticDelete(node) => &node.children,
@@ -6952,7 +6951,8 @@ fn trim_formatting_edges(
         let before = if index == 0 {
             leading
         } else {
-            ends_with_space(&nodes[index - 1])
+            matches!(nodes[index - 1], InlineNode::HardBreak(_))
+                || ends_with_space(&nodes[index - 1])
         };
         let after = match nodes.get(index + 1) {
             None => trailing,

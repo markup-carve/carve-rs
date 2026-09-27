@@ -63,6 +63,16 @@ fn formatting_around_a_link_keeps_only_separating_space() {
             "<p>a<br><strong> <a href=\"/x\">mk</a> </strong>b</p>",
             "a\\\n{*[mk](/x) *}b\n",
         ),
+        (
+            "nested hard break",
+            "<p><strong>x<br></strong><em> y</em></p>",
+            "{*x\\\n*}{/ y/}\n",
+        ),
+        (
+            "nonbreaking space",
+            "<p>a <strong>&nbsp;<a href=\"/x\">mk</a>&nbsp;</strong> b</p>",
+            "a * [mk](/x) * b\n",
+        ),
     ] {
         let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
         assert_eq!(result.value, expected, "{name}");
