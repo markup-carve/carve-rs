@@ -508,8 +508,10 @@ fn protect_paragraph_list_markers(text: &str) -> String {
             let view = line.replace(underscore, "_").replace(dot, ".");
             if let Some(at) = paragraph_marker_escape(&view, written == 0) {
                 if line[at..].starts_with(underscore) {
+                    note_assembled(&line[at..at + underscore.len_utf8()]);
                     line.replace_range(at..at + underscore.len_utf8(), "\\_");
                 } else if line[at..].starts_with(dot) {
+                    note_assembled(&line[at..at + dot.len_utf8()]);
                     line.replace_range(at..at + dot.len_utf8(), "\\.");
                 } else {
                     line.insert(at, '\\');
@@ -1088,31 +1090,24 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         }
     }
     let mut out = String::new();
-    // A GFM table needs a header row, so a headerless one gets an empty header
-    // as wide as its widest row (PART 11 §10n).
+    // GFM drops every body cell past the header's width, so the header is as
+    // wide as the widest row: an empty one where the table has none, and a
+    // narrower one padded with empty cells (PART 11 §10n).
+    let widest = node.rows.iter().map(|row| row.cells.len()).max();
     let header = header.or_else(|| {
-        let width = node.rows.iter().map(|row| row.cells.len()).max()?;
+        let width = widest?;
         header_columns = width;
         Some(format!("| {} |", vec![""; width].join(" | ")))
     });
     if let Some(mut header) = header {
-        // GFM drops every body cell past the header's width, so a narrower
-        // header row gains empty cells up to the widest row (PART 11 §10n).
-        let width = node
-            .rows
-            .iter()
-            .map(|row| row.cells.len())
-            .max()
-            .unwrap_or(0);
-        while header_columns < width {
+        while header_columns < widest.unwrap_or(0) {
             header.push_str("  |");
             header_columns += 1;
         }
         out.push_str(&header);
         out.push('\n');
-        // The delimiter promotes the header row, so its width must match that
-        // row rather than a wider body row. Otherwise common Markdown readers
-        // reject the whole table (carve#1042, PART 11 §10b).
+        // The delimiter matches the header row cell for cell; a padded column
+        // takes no alignment, since only a header row sets one (§10d).
         let sep = (0..header_columns)
             .map(|i| match aligns.get(i).copied().flatten() {
                 Some(TableAlign::Left) => ":---",
@@ -2138,19 +2133,18 @@ fn escape_text(text: &str) -> String {
         out.push(carriers[slot]);
     };
     let autolinks = IN_LINK_TEXT.with(std::cell::Cell::get) == 0;
-    let chars: Vec<char> = if autolinks {
-        text.chars().collect()
-    } else {
-        Vec::new()
-    };
-    for (at, ch) in text.chars().enumerate() {
+    // Both forms start on an ASCII byte and are decided from ASCII bytes, so
+    // the scans read `text` in place: a 50k label is escaped once per
+    // reference, and collecting it first cost more than the whole render.
+    let bytes = text.as_bytes();
+    for (at, ch) in text.char_indices() {
         // PART 11 §8i: a `:` or `.` that may start an autolink is decided on the
         // line, since the rest of the form can come from another node.
-        if autolinks && ch == ':' && may_be_scheme_colon(&chars, at) {
+        if autolinks && ch == ':' && may_be_scheme_colon(bytes, at) {
             carry(C_SCHEME_COLON, &mut out);
             continue;
         }
-        if autolinks && ch == '.' && may_be_www_dot(&chars, at) {
+        if autolinks && ch == '.' && may_be_www_dot(bytes, at) {
             carry(C_WWW_DOT, &mut out);
             continue;
         }
@@ -2245,38 +2239,40 @@ fn escape_text(text: &str) -> String {
 /// Whether the `:` at `at` could be a scheme's, given only its own node: a
 /// `//` (or the end of the value) after it, and a letter run before it that is
 /// a scheme or reaches the start of the value.
-fn may_be_scheme_colon(chars: &[char], at: usize) -> bool {
-    let rest = &chars[at + 1..];
-    let slashes = rest.iter().take(2).take_while(|c| **c == '/').count();
+fn may_be_scheme_colon(bytes: &[u8], at: usize) -> bool {
+    let rest = &bytes[at + 1..];
+    let slashes = rest.iter().take(2).take_while(|b| **b == b'/').count();
     if slashes < rest.len().min(2) {
         return false;
     }
-    let run = chars[..at]
+    let run = bytes[..at]
         .iter()
         .rev()
-        .take_while(|c| c.is_ascii_alphabetic())
+        .take_while(|b| b.is_ascii_alphabetic())
         .count();
-    run == at || scheme_ends_at(chars, at)
+    run == at || scheme_ends_at(at, |k| bytes.get(k).map(|b| *b as char))
 }
 
 /// Whether the `.` at `at` could end a `www`: three `w` before it, or a run of
 /// them reaching the start of the value.
-fn may_be_www_dot(chars: &[char], at: usize) -> bool {
-    let run = chars[..at].iter().rev().take_while(|c| **c == 'w').count();
+fn may_be_www_dot(bytes: &[u8], at: usize) -> bool {
+    let run = bytes[..at].iter().rev().take_while(|b| **b == b'w').count();
     run >= 3 || run == at
 }
 
 /// Whether `http`, `https` or `ftp` ends at `at` and no ASCII letter precedes it
 /// (§8i U1).
-fn scheme_ends_at(line: &[char], at: usize) -> bool {
+/// Read through `char_at` so both passes can ask: the escape pass indexes one
+/// text node's bytes, the resolve pass the whole line's chars.
+fn scheme_ends_at(at: usize, char_at: impl Fn(usize) -> Option<char>) -> bool {
     ["https", "http", "ftp"].iter().any(|scheme| {
         let len = scheme.len();
         at >= len
-            && line[at - len..at]
-                .iter()
-                .zip(scheme.chars())
-                .all(|(c, s)| c.eq_ignore_ascii_case(&s))
-            && !(at > len && line[at - len - 1].is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .enumerate()
+                .all(|(k, s)| char_at(at - len + k).is_some_and(|c| c.eq_ignore_ascii_case(&s)))
+            && !(at > len && char_at(at - len - 1).is_some_and(|c| c.is_ascii_alphabetic()))
     })
 }
 
@@ -2836,7 +2832,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
                 (ch, raw_chars.get(i + 1) == Some(&'['))
             } else if slot == C_SCHEME_COLON {
                 let slashes = line.get(i + 1) == Some(&'/') && line.get(i + 2) == Some(&'/');
-                (ch, slashes && scheme_ends_at(&line, i))
+                (ch, slashes && scheme_ends_at(i, |k| line.get(k).copied()))
             } else if slot == C_WWW_DOT {
                 let www = i >= 3 && line[i - 3..i] == ['w', 'w', 'w'];
                 (ch, www && !(i > 3 && line[i - 4].is_ascii_alphanumeric()))

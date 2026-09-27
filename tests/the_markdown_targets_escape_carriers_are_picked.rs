@@ -26,9 +26,8 @@
 //! private-use character is invisible in a rendered string, which is exactly how
 //! the defect hid.
 
-/// The three the Markdown target reserved. It was four until `#` stopped
-/// needing a carrier of its own (markup-carve/carve#2049).
-const RESERVED: [u32; 3] = [0xE004, 0xE005, 0xE006];
+/// The reserved carriers this table measures, the last two being §8i's.
+const RESERVED: [u32; 5] = [0xE004, 0xE005, 0xE006, 0xE00A, 0xE00B];
 
 /// Private-use code points NO mechanism in this crate claims, so a difference
 /// against one of these can only be the reservation.
@@ -92,6 +91,32 @@ fn a_code_block_returns_what_the_author_wrote() {
     for reserved in RESERVED {
         let source = format!("```\nlet x = 1;{}\n```\n", at(reserved));
         assert_eq!(carve::to_markdown(&source), source);
+    }
+}
+
+#[test]
+fn authored_autolink_carriers_survive_paragraph_marker_protection() {
+    for code in [0xE00A, 0xE00B] {
+        for template in ["1@ x\n", "> 1@ x\n", "- 1@ x\n", "text\n2@ x\n"] {
+            let source = shape(template, code);
+            assert_eq!(carve::to_markdown(&source), source);
+        }
+    }
+}
+
+#[test]
+fn autolinks_still_escape_with_authored_carriers() {
+    assert_eq!(
+        carve::to_markdown("See https://x.io and www.y.org\n"),
+        "See https\\://x.io and www\\.y.org\n"
+    );
+    for code in [0xE00A, 0xE00B] {
+        let carrier = at(code);
+        let source = format!("1{carrier} x See https://x.io and www.y.org\n");
+        assert_eq!(
+            carve::to_markdown(&source),
+            format!("1{carrier} x See https\\://x.io and www\\.y.org\n")
+        );
     }
 }
 

@@ -124,9 +124,9 @@ fn multiline_elements_in_table_cells_keep_the_table() {
 /// optional `carve` / `ast` / `report` fields in
 /// `test/html-import-conformance.test.ts`.
 ///
-/// The report is not recordable here. A clause that moves the rows moves the
-/// source they describe in every case so far, so no entry has needed it, and the
-/// engine tests for the ruling pin the rows directly.
+/// `messages` records a report whose ROWS agree and whose wording does not,
+/// which is the one report divergence an entry can hold: the codes, order,
+/// paths, severities and fidelities are compared against the fixture as usual.
 struct AheadOfPin {
     fixture: &'static str,
     reason: &'static str,
@@ -135,11 +135,29 @@ struct AheadOfPin {
     /// The tree this engine publishes TODAY, as JSON, with `pos` and
     /// `srcByteLength` left out the way the comparison leaves them out.
     ast: Option<&'static str>,
+    /// The message this engine writes TODAY for each diagnostic the fixture
+    /// states, in the fixture's order; `None` defers that row to the fixture.
+    messages: Option<&'static [Option<&'static str>]>,
 }
 
-/// Empty: its `security` entry went out with the bump past
-/// markup-carve/carve#2361.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[];
+const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
+    fixture: "summary-holding-blocks",
+    // markup-carve/carve#2428 ruled that the dropped class is reported, and it
+    // is: the codes, order, paths, severities and fidelities all match. The
+    // fixture then spells the two `attribute-dropped` messages without the
+    // attribute's value, which is the one thing
+    // `an_attribute_dropped_row_counts_attributes_not_class_names` pins this
+    // engine's wording for. No ruling picks between the two spellings.
+    reason: "markup-carve/carve#2428 ruled the row, not its wording",
+    carve: None,
+    ast: None,
+    messages: Some(&[
+        None,
+        Some("Dropped class=\"t\" on <div>: the element was unwrapped and has no node to carry it"),
+        None,
+        Some("Dropped class=\"s\" on <div>: the element was unwrapped and has no node to carry it"),
+    ]),
+}];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
@@ -380,11 +398,35 @@ fn shared_contract_fixtures_match() {
                 }
             }
             if let Some(message) = expected_diagnostic["message"].as_str() {
-                if source_actual.message != message {
-                    mismatches.push(format!(
-                        "{at} message: {message:?} != {:?}",
-                        source_actual.message
-                    ));
+                let recorded = ahead
+                    .and_then(|entry| entry.messages)
+                    .and_then(|messages| messages.get(index).copied())
+                    .flatten();
+                match recorded {
+                    Some(current) => {
+                        if source_actual.message != current {
+                            mismatches.push(format!(
+                                "{at} message: AHEAD_OF_PIN says this engine writes {current:?} \
+                                 ({}), and it writes {:?} - update the entry or delete it",
+                                ahead.map(|entry| entry.reason).unwrap_or_default(),
+                                source_actual.message
+                            ));
+                        }
+                        if source_actual.message == message {
+                            mismatches.push(format!(
+                                "{at} message: matches the fixture now - drop the row from its \
+                                 AHEAD_OF_PIN entry"
+                            ));
+                        }
+                    }
+                    None => {
+                        if source_actual.message != message {
+                            mismatches.push(format!(
+                                "{at} message: {message:?} != {:?}",
+                                source_actual.message
+                            ));
+                        }
+                    }
                 }
             }
             if let Some(severity) = expected_diagnostic["severity"].as_str() {
