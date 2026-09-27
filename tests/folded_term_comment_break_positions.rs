@@ -23,9 +23,9 @@ fn breaks_cover_their_original_line_endings() {
                                 .skip(start)
                                 .take(end - start)
                                 .collect::<String>(),
-                            eol
+                            format!("{eol}{}", if pos["startLine"] == 1 { ">   " } else { "> " })
                         );
-                        assert_eq!(pos["endColumn"], 1);
+                        assert_eq!(pos["endColumn"], if pos["startLine"] == 1 { 5 } else { 3 });
                         assert_eq!(
                             pos["endLine"].as_u64().unwrap(),
                             pos["startLine"].as_u64().unwrap() + 1
