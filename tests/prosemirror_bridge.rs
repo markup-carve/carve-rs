@@ -1420,8 +1420,6 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // column, and one ordinary space is not the generated-space spelling the
     // bridge degrades. That is why the ceiling below rises by two while the set
     // named here loses two.
-    // The pin moves on to carve 9247883, which adds corpus 503: all six of its
-    // documents join the reported-lossy set on `soft_break` alone.
     nbsp_only_degraded.sort();
     assert_eq!(
         nbsp_only_degraded,
@@ -1438,9 +1436,16 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
             "486-any-character-is-content-of-the-combined-bold-italic-token-3.crv",
         ]
     );
+    // The pin moves on to carve 9247883, which adds the ten documents of
+    // corpus 503 and changes none. Six are lossy (503 and 503-2 through 503-6),
+    // each reporting `soft_break` alone with nothing dropped, and four are
+    // strict; the declared source-lossy set and the names pinned above both
+    // held, so no existing document moved bucket. The pin then reaches carve
+    // 96a9dac, whose corpus does not move again.
+    //
     // Ten documents now report the generated-space spelling distinction.
-    // Their exact names are pinned above; the current corpus has 1882 files.
-    const STRICT: usize = 1451;
+    // Their exact names are pinned above; the current corpus has 1895 files.
+    const STRICT: usize = 1458;
     const LOSSY: usize = 437;
     assert!(
         covered >= STRICT,
