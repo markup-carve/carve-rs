@@ -1668,7 +1668,11 @@ impl<'a> Importer<'a> {
     /// where the kept bytes run no mapping for it to describe.
     fn map_style(&mut self, handle: &Handle, path: &str, tag: &str, value: &str, out: &mut Attrs) {
         let cell = is_table_cell(tag);
-        let mut unmapped = false;
+        // THE PROPERTY NAMES, IN DECLARATION ORDER, not a flag. The shared
+        // contract fixtures name the declaration that went nowhere and carry one
+        // row per property, so a single generic row cannot say which of two
+        // declarations was lost.
+        let mut unmapped: Vec<String> = Vec::new();
         for (property, val) in style_declarations(value) {
             match self.style_slot(tag, &property, &val) {
                 // A CELL TAKES THE MARKER RUN, NOT AN ATTRIBUTE. `|>` renders
@@ -1689,13 +1693,13 @@ impl<'a> Importer<'a> {
                     out.key_values
                         .insert("align".to_string(), align_keyword(align).to_string());
                 }
-                _ => unmapped = true,
+                _ => unmapped.push(property.clone()),
             }
         }
-        if unmapped {
+        for property in &unmapped {
             self.diag(
                 HtmlImportDiagnosticCode::StyleUnmapped,
-                "CSS declarations were not mapped".into(),
+                format!("CSS declaration {property} was not mapped"),
                 HtmlImportSeverity::Info,
                 path,
                 handle,
@@ -2445,6 +2449,32 @@ impl<'a> Importer<'a> {
             let inlines = self.inlines(&children, path, depth + 1);
             self.heading_depth -= 1;
             let inlines = inlines?;
+            // AN EMPTY HEADING IS DROPPED, WITH ONE ROW (markup-carve/carve#2419).
+            // It has no Carve spelling at all - `inline_content` is one-or-more -
+            // so the writer wrote a bare marker, which re-reads as a paragraph and
+            // breaks `parse(html_to_carve(h)) == html_to_ast(h)`. Dropping it is
+            // what this contract already does to every other empty container, and
+            // it carries nothing a reader loses.
+            //
+            // REPORTED WHETHER OR NOT IT CARRIED ATTRIBUTES, unlike the paragraph
+            // below: a bare empty `<p>` leaves silently because it carries
+            // nothing (carve#2423), while the ruling here names one row for the
+            // heading either way.
+            if inlines.is_empty() || is_layout_only(&inlines) {
+                let message = if inlines.is_empty() {
+                    format!("Dropped <{tag}> holding no content")
+                } else {
+                    format!("Dropped whitespace-only <{tag}> holding no content character")
+                };
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    message,
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(Vec::new());
+            }
             if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
                 if self.opts.mode == HtmlImportMode::Roundtrip
                     && Self::id_in_generated_position(h)
@@ -3756,11 +3786,33 @@ impl<'a> Importer<'a> {
     /// A `<figure>` is NOT one of them. It has its own rows and its own rulings
     /// (markup-carve/carve#1716, markup-carve/carve#1723), and reaches neither
     /// arm.
+    /// Is `h` inside a `<code>` element?
+    fn inside_code_span(h: &Handle) -> bool {
+        let mut current = parent_handle(h);
+        while let Some(node) = current {
+            if Self::tag(&node).as_deref() == Some("code") {
+                return true;
+            }
+            current = parent_handle(&node);
+        }
+        false
+    }
+
     fn report_unsupported_element(&mut self, h: &Handle, tag: &str, path: &str) -> bool {
         if Self::has_content_to_unwrap(h) {
+            // INSIDE A CODE SPAN THE ROW NAMES IT. The loss there is not the
+            // wrapper going away, which is what the generic wording describes -
+            // it is that a verbatim slot cannot hold the boundary the wrapper
+            // marked, which the `structure-unspellable` row above it states
+            // (markup-carve/carve#2441).
+            let message = if Self::inside_code_span(h) {
+                format!("Unwrapped <{tag}> inside <code>")
+            } else {
+                format!("Unwrapped unsupported <{tag}> element")
+            };
             self.diag(
                 HtmlImportDiagnosticCode::ElementUnwrapped,
-                format!("Unwrapped unsupported <{tag}> element"),
+                message,
                 HtmlImportSeverity::Info,
                 path,
                 h,
@@ -5598,6 +5650,32 @@ impl<'a> Importer<'a> {
             "sup" => emphasis(EmphasisKind::Super),
             "code" => {
                 let mut value = Self::text(h);
+                // THE JOIN IS REPORTED, AND NOTHING IS INSERTED
+                // (markup-carve/carve#2441). A code span's value is a verbatim
+                // TEXT slot, so the single space section 1b gives an inline-only
+                // slot at a flattened block boundary would be a byte the author
+                // never wrote - the `adjacent-code-spans` fixture next door
+                // separates two spans with an empty comment for the same reason.
+                // Reading the element's text is what keeps the bytes right and
+                // what hides the boundary from the flatten, so the loss is
+                // announced on the PART 11 section 1d channel instead.
+                if h.children.borrow().iter().any(|child| {
+                    Self::tag(child).is_some_and(|tag| {
+                        Self::is_block_tag(&tag)
+                            || matches!(
+                                tag.as_str(),
+                                "li" | "dt" | "dd" | "td" | "th" | "tr" | "caption" | "figcaption"
+                            )
+                    })
+                }) {
+                    self.diag(
+                        HtmlImportDiagnosticCode::StructureUnspellable,
+                        "A code span's value cannot hold the block boundary inside <code>".into(),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        h,
+                    );
+                }
                 if self.cell_depth > 0 && value.contains(['\r', '\n']) {
                     self.diag(
                         HtmlImportDiagnosticCode::StructureUnspellable,

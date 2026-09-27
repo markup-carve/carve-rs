@@ -2148,6 +2148,13 @@ fn escape_text(text: &str) -> String {
             carry(C_WWW_DOT, &mut out);
             continue;
         }
+        // E1's local part can start the text, so there is no cheap prefilter the
+        // way `://` and `www` give the other two: every text `@` is carried and
+        // the line decides.
+        if autolinks && ch == '@' {
+            carry(C_EMAIL_AT, &mut out);
+            continue;
+        }
         match ch {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
@@ -2278,8 +2285,9 @@ fn scheme_ends_at(at: usize, char_at: impl Fn(usize) -> Option<char>) -> bool {
 
 /// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
 /// CHOSEN PER DOCUMENT from code points it does not contain.
-const CARRIER_DEFAULTS: [char; 8] = [
+const CARRIER_DEFAULTS: [char; 9] = [
     '\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}', '\u{E008}', '\u{E009}', '\u{E00A}', '\u{E00B}',
+    '\u{E00C}',
 ];
 const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
 
@@ -2297,6 +2305,10 @@ const C_BANG: usize = 5;
 /// The `:` and `.` that may start a GFM autolink (PART 11 §8i).
 const C_SCHEME_COLON: usize = 6;
 const C_WWW_DOT: usize = 7;
+/// The `@` of an address GFM's email extension would match (§8i E1). Its own
+/// slot because it is the one form in §8i spelled with an empty comment rather
+/// than a backslash, and the emit site reads the slot to know that.
+const C_EMAIL_AT: usize = 8;
 
 thread_local! {
     /// The carriers in force for the render running on this thread.
@@ -2440,6 +2452,7 @@ fn carried_character(slot: usize) -> char {
         C_BANG => '!',
         C_SCHEME_COLON => ':',
         C_WWW_DOT => '.',
+        C_EMAIL_AT => '@',
         _ => '#',
     }
 }
@@ -2836,12 +2849,19 @@ fn resolve_narrowed_escapes(text: &str) -> String {
             } else if slot == C_WWW_DOT {
                 let www = i >= 3 && line[i - 3..i] == ['w', 'w', 'w'];
                 (ch, www && !(i > 3 && line[i - 4].is_ascii_alphanumeric()))
+            } else if slot == C_EMAIL_AT {
+                (ch, gfm_email_at(&line, i))
             } else {
                 (ch, adjacent_to_live_delimiter(&line, i, ch) || pairs[i])
             }
         });
 
         match keep {
+            Some(('@', true)) => {
+                // §8i E1: both readers link the address whichever character
+                // carries a backslash, so the empty comment is what holds it.
+                out.push_str("<!---->@");
+            }
             Some((ch, true)) => {
                 out.push('\\');
                 out.push(ch);
@@ -2851,6 +2871,71 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         }
     }
     out
+}
+
+/// Does GFM's email extension match an address at the `@` on `line[at]` (§8i E1)?
+///
+/// A port of carve-php's `gfmEmailAt`, character for character, so the two
+/// engines answer the shared fixture alike by construction rather than by two
+/// independent readings of the extension. Read on the EMITTED line, so an
+/// address a highlighter split across spans is still one form.
+fn gfm_email_at(line: &[char], at: usize) -> bool {
+    let mut start = at;
+    let mut xmpp = false;
+    while start > 0 {
+        let ch = line[start - 1];
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '+' | '-' | '_') {
+            start -= 1;
+            continue;
+        }
+        if ch == ':' {
+            let mut took_protocol = false;
+            for protocol in ["mailto:", "xmpp:"] {
+                let spelled: Vec<char> = protocol.chars().collect();
+                if start < spelled.len() || line[start - spelled.len()..start] != spelled[..] {
+                    continue;
+                }
+                let before = start - spelled.len();
+                if before > 0 && line[before - 1].is_ascii_alphanumeric() {
+                    continue;
+                }
+                xmpp = xmpp || protocol == "xmpp:";
+                start -= 1;
+                took_protocol = true;
+                break;
+            }
+            if took_protocol {
+                continue;
+            }
+        }
+        break;
+    }
+    if start == at {
+        return false;
+    }
+    let mut dots = 0usize;
+    let mut end = at + 1;
+    while end < line.len() {
+        let ch = line[end];
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || (xmpp && ch == '/') {
+            end += 1;
+            continue;
+        }
+        // A second `@` means the run is not one address.
+        if ch == '@' {
+            return false;
+        }
+        if ch == '.' && line.get(end + 1).is_some_and(char::is_ascii_alphanumeric) {
+            dots += 1;
+            end += 1;
+            continue;
+        }
+        break;
+    }
+    // A domain with no dot is not matched by either reader, and a trailing `-`
+    // or `_` ends no label. With no domain at all `line[end - 1]` is the `@`
+    // itself, which is not alphabetic, so the same test refuses it.
+    dots > 0 && line[end - 1].is_ascii_alphabetic()
 }
 
 /// Whether the `#` at `index` opens the TRAILING run of a line emitted as a

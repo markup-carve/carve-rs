@@ -163,7 +163,7 @@ fn a_style_outside_kept_bytes_stays_style_unmapped() {
                 "degraded".to_owned(),
                 "exact".to_owned(),
                 "/p[1]".to_owned(),
-                "CSS declarations were not mapped".to_owned(),
+                "CSS declaration color was not mapped".to_owned(),
             )],
             "{mode:?}"
         );

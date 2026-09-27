@@ -293,7 +293,14 @@ fn a_foreign_captions_attributes_are_reported_rather_than_discarded() {
         d.iter().any(|m| m.contains("onclick")),
         "an event handler was dropped with no diagnostic: {d:?}"
     );
-    assert!(d.iter().any(|m| m.contains("CSS declarations")), "{d:?}");
+    // NAMES THE DECLARATION. The shared html-import contract fixtures carry one
+    // row per unmapped property rather than one generic row, so `color` is what
+    // a reader is told went nowhere.
+    assert!(
+        d.iter()
+            .any(|m| m == "CSS declaration color was not mapped"),
+        "{d:?}"
+    );
     assert!(d.iter().any(|m| m.contains("id=\"c\"")), "{d:?}");
     assert!(d.iter().any(|m| m.contains("class=\"k\"")), "{d:?}");
     // The caption TEXT still arrives; reporting the attributes does not cost it.
