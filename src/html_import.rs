@@ -2528,6 +2528,18 @@ impl<'a> Importer<'a> {
             // in the tree that the writer drops, so the two exits disagreed
             // about characters no reader can act on.
             let inlines = trim_edge_whitespace(inlines);
+            // No spelling holds an empty paragraph, and its attribute line
+            // would land on the next block, so the row covers the attributes.
+            if inlines.is_empty() && attrs.is_some() {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    format!("Dropped <{tag}> holding no content"),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(Vec::new());
+            }
             let candidate = lone_image(&inlines).map(|image| {
                 (
                     attrs.is_some(),

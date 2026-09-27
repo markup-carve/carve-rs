@@ -1138,3 +1138,37 @@ fn a_flattened_cell_boundary_is_one_space() {
         assert_eq!(source, expected, "{html}");
     }
 }
+
+/// An empty paragraph carrying attributes is dropped with one row, rather
+/// than writing an attribute line the next block would take.
+#[test]
+fn an_attributed_empty_paragraph_is_dropped_with_a_row() {
+    let result = html_to_carve(
+        "<p>a</p><p class=\"mw-empty-elt\" id=\"x\"></p><p>b</p><p id=\"y\"><span></span></p><p></p><hr id=\"h\">",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(result.value, "a\n\nb\n\n{#h}\n---\n");
+    let rows: Vec<(&str, &str, &str)> = result
+        .report
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str(), d.severity.as_str()))
+        .filter(|(_, m, _)| m.contains("<p>"))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "element-dropped",
+                "Dropped <p> holding no content",
+                "warning"
+            ),
+            (
+                "element-dropped",
+                "Dropped <p> holding no content",
+                "warning"
+            ),
+        ]
+    );
+}
