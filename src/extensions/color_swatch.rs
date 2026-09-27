@@ -234,9 +234,10 @@ fn open_attrs(
         }
     }
     if let Some(a) = attrs {
-        for class in &a.classes {
-            if !classes.contains(class) {
-                classes.push(class.clone());
+        for class in crate::render::sanitized_classes(&a.classes) {
+            let class = class.into_owned();
+            if !classes.contains(&class) {
+                classes.push(class);
             }
         }
     }
@@ -284,9 +285,10 @@ fn generic_fallback(
     let base = format!("ext-{name}");
     let mut classes = vec![base];
     if let Some(a) = attrs {
-        for class in &a.classes {
-            if !classes.contains(class) {
-                classes.push(class.clone());
+        for class in crate::render::sanitized_classes(&a.classes) {
+            let class = class.into_owned();
+            if !classes.contains(&class) {
+                classes.push(class);
             }
         }
     }

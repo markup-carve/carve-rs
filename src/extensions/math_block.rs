@@ -115,7 +115,10 @@ fn transform_blocks(
                 let base = "math display";
                 let (class, rest) = match &code.attrs {
                     Some(a) if !a.classes.is_empty() => (
-                        format!("{} {}", base, a.classes.join(" ")),
+                        match crate::render::sanitized_classes(&a.classes).join(" ") {
+                            extra if extra.is_empty() => base.to_string(),
+                            extra => format!("{base} {extra}"),
+                        },
                         crate::render::render_attrs_after_class_for(a, "div"),
                     ),
                     Some(a) => (
