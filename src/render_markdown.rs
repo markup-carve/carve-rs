@@ -508,8 +508,10 @@ fn protect_paragraph_list_markers(text: &str) -> String {
             let view = line.replace(underscore, "_").replace(dot, ".");
             if let Some(at) = paragraph_marker_escape(&view, written == 0) {
                 if line[at..].starts_with(underscore) {
+                    note_assembled(&line[at..at + underscore.len_utf8()]);
                     line.replace_range(at..at + underscore.len_utf8(), "\\_");
                 } else if line[at..].starts_with(dot) {
+                    note_assembled(&line[at..at + dot.len_utf8()]);
                     line.replace_range(at..at + dot.len_utf8(), "\\.");
                 } else {
                     line.insert(at, '\\');
