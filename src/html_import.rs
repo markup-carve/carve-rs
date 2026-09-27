@@ -1668,7 +1668,11 @@ impl<'a> Importer<'a> {
     /// where the kept bytes run no mapping for it to describe.
     fn map_style(&mut self, handle: &Handle, path: &str, tag: &str, value: &str, out: &mut Attrs) {
         let cell = is_table_cell(tag);
-        let mut unmapped = false;
+        // THE PROPERTY NAMES, IN DECLARATION ORDER, not a flag. The shared
+        // contract fixtures name the declaration that went nowhere and carry one
+        // row per property, so a single generic row cannot say which of two
+        // declarations was lost.
+        let mut unmapped: Vec<String> = Vec::new();
         for (property, val) in style_declarations(value) {
             match self.style_slot(tag, &property, &val) {
                 // A CELL TAKES THE MARKER RUN, NOT AN ATTRIBUTE. `|>` renders
@@ -1689,13 +1693,13 @@ impl<'a> Importer<'a> {
                     out.key_values
                         .insert("align".to_string(), align_keyword(align).to_string());
                 }
-                _ => unmapped = true,
+                _ => unmapped.push(property.clone()),
             }
         }
-        if unmapped {
+        for property in &unmapped {
             self.diag(
                 HtmlImportDiagnosticCode::StyleUnmapped,
-                "CSS declarations were not mapped".into(),
+                format!("CSS declaration {property} was not mapped"),
                 HtmlImportSeverity::Info,
                 path,
                 handle,
