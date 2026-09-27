@@ -667,6 +667,7 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#2406 were rendered through this engine and diffed
     // against their committed HTML before the category was listed here.
     "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item",
+    "a-block-opener-indented-under-a-definition-term-is-term-text-at-every-depth",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -1395,4 +1396,12 @@ corpus_test!(
 corpus_test!(
     c_a_core_directive_kind_class_leads_authored_attributes,
     "a-core-directive-kind-class-leads-authored-attributes"
+);
+corpus_test!(
+    c_an_attribute_line_under_an_attributed_sub_item_stays_in_that_item,
+    "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item"
+);
+corpus_test!(
+    c_a_block_opener_indented_under_a_definition_term_is_term_text_at_every_depth,
+    "a-block-opener-indented-under-a-definition-term-is-term-text-at-every-depth"
 );
