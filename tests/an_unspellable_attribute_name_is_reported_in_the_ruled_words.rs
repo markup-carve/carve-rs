@@ -92,7 +92,7 @@ fn the_row_reads_unsupported_attribute_and_names_the_rule_that_refused_it() {
                 AttributePreserved,
                 Info,
                 "/form[1]/cite[3]",
-                "Preserved attribute cite on <cite> inside the raw HTML <form> is kept as: the semantic span's marker owns that key"
+                "Preserved cite on <cite> inside the raw HTML <form> is kept as: the semantic span's marker owns that key"
             ),
         ]
     );
