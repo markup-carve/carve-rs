@@ -4452,7 +4452,16 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     };
     let emit_classes = |parts: &mut Vec<String>| {
         for cls in &attrs.classes {
-            parts.push(format!(".{}", escape_attr_name_value(cls)));
+            // THE SHORTHAND ONLY REACHES WHAT A FENCE WORD REACHES. `.` takes the
+            // `explicit_identifier` (carve#2435), so `-col`, `w-1/2` and the empty
+            // class have no `.` spelling and take the key-value form the parser
+            // now folds back into this same slot (CARVE-P4-007). Written as `.`
+            // they were source this engine's own parser reads as a paragraph.
+            if crate::parse::is_css_identifier(cls) {
+                parts.push(format!(".{}", escape_attr_name_value(cls)));
+            } else {
+                parts.push(format!("class={}", quoted_attr_value(cls)));
+            }
         }
     };
     let emit_key = |parts: &mut Vec<String>, key: &str| {
@@ -4518,6 +4527,23 @@ fn is_language_tag(value: &str) -> bool {
                 && subtag.len() <= 8
                 && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
         })
+}
+
+/// A value in the QUOTED form whatever it holds.
+///
+/// `unquoted_value` is `(letter | digit | '-' | '_' | '.' | ':')+`, so a class
+/// like `w-1/2` has no bare spelling and [`quote_attr_value`] hands one back
+/// anyway (carve#2440). The classes that reach the key-value form are exactly
+/// the ones `.` cannot spell, so this asks no questions and quotes - which is
+/// also the spelling carve#2435 ruled for the importer, `{class="-col"}`.
+fn quoted_attr_value(value: &str) -> String {
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('|', "\\|")
+    )
 }
 
 fn quote_attr_value(value: &str) -> String {

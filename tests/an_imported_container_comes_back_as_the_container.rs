@@ -115,11 +115,25 @@ fn a_container_no_extension_claims_survives_too() {
 /// opener reads its type word as `[a-zA-Z0-9_][\w-]*`, so a class outside that
 /// shape cannot be the fence word: written there it would read back as a
 /// paragraph, and the element would lose both its class and its structure.
+///
+/// The `.` SHORTHAND READS THE SAME PRODUCTION, which this case used to write
+/// anyway. carve#2435 ruled the key-value form for it, and the reason is the one
+/// above applied one step further: `{.-2col}` re-parses as a paragraph holding
+/// its own markup plus a class-less `<div>`, so the class was lost exactly where
+/// this case says it is kept.
 #[test]
 fn a_class_no_fence_opener_can_spell_stays_a_class() {
     let html = "<div class=\"-2col\"><p>x</p></div>";
     assert_eq!(block_kinds(&imported_ast(html)), vec!["div", "paragraph"]);
-    assert_eq!(imported(html), "{.-2col}\n:::\nx\n:::\n");
+    let written = imported(html);
+    assert_eq!(written, "{class=\"-2col\"}\n:::\nx\n:::\n");
+    // The half the old expectation could not meet: what is written re-parses to
+    // the element it came from.
+    assert_eq!(
+        block_kinds(&carve::parse(&written)),
+        vec!["div", "paragraph"]
+    );
+    assert!(carve::to_html(&written).contains("<div class=\"-2col\">"));
 }
 
 /// The class PAIR is what marks a rendered callout. A bare `<aside>` is somebody
