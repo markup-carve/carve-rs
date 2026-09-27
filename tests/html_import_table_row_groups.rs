@@ -42,6 +42,9 @@ fn a_table_every_renderer_already_derives_states_nothing() {
         "<table><tr><th>a</th></tr><tr><td>1</td></tr></table>",
         "<table><tbody><tr><th>a</th></tr><tr><td>1</td></tr></tbody></table>",
         "<table><tr><td>1</td></tr><tr><td>2</td></tr></table>",
+        // A single body's row-head count is what its cells' header flags say.
+        "<table><tr><th>A</th><th>B</th></tr><tr><th>1</th><td>x</td></tr></table>",
+        "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th>R1</th><td>1</td></tr><tr><th>R2</th><td>2</td></tr></tbody></table>",
     ] {
         assert_eq!(groups_of(html), None, "{html}");
     }
@@ -62,9 +65,9 @@ fn a_partition_a_reader_cannot_derive_is_stated() {
             TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 1, None), body(0, 1, None)], foot_rows: 0 },
         ),
         (
-            "row-head columns",
-            "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th>R1</th><td>1</td></tr><tr><th>R2</th><td>2</td></tr></tbody></table>",
-            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 2, Some(1))], foot_rows: 0 },
+            "row-head columns beside a foot",
+            "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th>R1</th><td>1</td></tr><tr><th>R2</th><td>2</td></tr></tbody><tfoot><tr><td>f</td><td>g</td></tr></tfoot></table>",
+            TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 2, Some(1))], foot_rows: 1 },
         ),
         (
             // Word and pandoc both emit this: the derived head is EMPTY and the
@@ -111,18 +114,18 @@ fn row_head_columns_counts_columns_and_not_cells() {
     for (name, html, expected) in [
         (
             "a colspan header",
-            "<table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><th colspan=\"2\">R</th><td>1</td></tr><tr><th colspan=\"2\">S</th><td>2</td></tr></tbody></table>",
+            "<table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><th colspan=\"2\">R</th><td>1</td></tr><tr><th colspan=\"2\">S</th><td>2</td></tr></tbody><tbody><tr><td>z</td></tr></tbody></table>",
             2,
         ),
         (
             "a rowspan header",
-            "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th rowspan=\"2\">R</th><td>1</td></tr><tr><td>2</td></tr></tbody></table>",
+            "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><th rowspan=\"2\">R</th><td>1</td></tr><tr><td>2</td></tr></tbody><tbody><tr><td>z</td></tr></tbody></table>",
             1,
         ),
         (
             // One slot standing for two columns.
             "a header spanning both ways",
-            "<table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><th rowspan=\"2\" colspan=\"2\">R</th><td>1</td></tr><tr><td>2</td></tr></tbody></table>",
+            "<table><thead><tr><th>a</th><th>b</th><th>c</th></tr></thead><tbody><tr><th rowspan=\"2\" colspan=\"2\">R</th><td>1</td></tr><tr><td>2</td></tr></tbody><tbody><tr><td>z</td></tr></tbody></table>",
             2,
         ),
     ] {
@@ -237,12 +240,13 @@ fn the_ast_keeps_the_partition_and_a_writer_reports_losing_it() {
 /// path. A loss report that fires on every table is one nobody reads.
 #[test]
 fn a_derivable_table_reports_no_writer_loss() {
-    let written = html_to_carve(
+    for html in [
         "<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
-        &HtmlImportOptions::default(),
-    )
-    .unwrap();
-    assert_eq!(written.report.diagnostics, vec![]);
+        "<table><tr><th>A</th><th>B</th></tr><tr><th>1</th><td>x</td></tr></table>",
+    ] {
+        let written = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+        assert_eq!(written.report.diagnostics, vec![], "{html}");
+    }
 }
 
 /// The field survives the wire in both directions.
