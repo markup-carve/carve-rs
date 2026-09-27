@@ -663,6 +663,10 @@ const IMPLEMENTED: &[&str] = &[
     "a-footnotes-marker-renders-its-authored-blocks-before-the-placed-section",
     "an-unplaced-footnotes-marker-keeps-its-authored-blocks-inside-the-div",
     "a-core-directive-kind-class-leads-authored-attributes",
+    // Added with the spec bump to carve 63c8631. All three documents of
+    // markup-carve/carve#2406 were rendered through this engine and diffed
+    // against their committed HTML before the category was listed here.
+    "an-attribute-line-under-an-attributed-sub-item-stays-in-that-item",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
