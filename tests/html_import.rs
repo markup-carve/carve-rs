@@ -1112,3 +1112,63 @@ fn every_diagnostic_carries_its_code_s_classification() {
     // nothing at all.
     assert!(seen >= shapes.len(), "only {seen} diagnostics walked");
 }
+
+/// A flattened block boundary is ONE space, merged with whitespace already at
+/// the join, and adjacent items with nothing between them still get one
+/// (carve-rs#2028).
+#[test]
+fn a_flattened_cell_boundary_is_one_space() {
+    for (html, expected) in [
+        (
+            "<table><tr><td>list: <ul><li>fruits<ul><li>apple</li></ul></li></ul></td></tr></table>",
+            "| list: fruits apple |\n",
+        ),
+        (
+            "<table><tr><td>\n  In this order:\n  <ol>\n <li>an optional <code>c</code> element,</li>\n <li>\n either one:\n <ul>\n <li>zero x</li></ul></li></ol></td></tr></table>",
+            "| In this order: an optional `c` element, either one: zero x |\n",
+        ),
+        (
+            "<table><tr><td><ul><li><a href=\"/v\">v</a></li><li><a href=\"/t\">t</a></li></ul></td></tr></table>",
+            "| [v](/v) [t](/t) |\n",
+        ),
+    ] {
+        let source = html_to_carve(html, &HtmlImportOptions::default())
+            .unwrap()
+            .value;
+        assert_eq!(source, expected, "{html}");
+    }
+}
+
+/// An empty paragraph carrying attributes is dropped with one row, rather
+/// than writing an attribute line the next block would take.
+#[test]
+fn an_attributed_empty_paragraph_is_dropped_with_a_row() {
+    let result = html_to_carve(
+        "<p>a</p><p class=\"mw-empty-elt\" id=\"x\"></p><p>b</p><p id=\"y\"><span></span></p><p></p><hr id=\"h\">",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(result.value, "a\n\nb\n\n{#h}\n---\n");
+    let rows: Vec<(&str, &str, &str)> = result
+        .report
+        .diagnostics
+        .iter()
+        .map(|d| (d.code.as_str(), d.message.as_str(), d.severity.as_str()))
+        .filter(|(_, m, _)| m.contains("<p>"))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "element-dropped",
+                "Dropped <p> holding no content",
+                "warning"
+            ),
+            (
+                "element-dropped",
+                "Dropped <p> holding no content",
+                "warning"
+            ),
+        ]
+    );
+}

@@ -2175,30 +2175,30 @@ impl<'a> Importer<'a> {
                 let tag = tag.expect("a media fallback tag is an element name");
                 out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
             } else {
-                let mut produced = self.block(handle, &path, depth + 1)?;
+                let produced = self.block(handle, &path, depth + 1)?;
                 // Carve source has no boundary between two definition lists, so
                 // an attribute-less one following another joins it (carve#2369).
-                if let (
-                    Some(BlockNode::DefinitionList(previous)),
-                    Some(BlockNode::DefinitionList(next)),
-                ) = (out.last_mut(), produced.first())
-                {
-                    if next.attrs.is_none() {
-                        let BlockNode::DefinitionList(next) = produced.remove(0) else {
-                            unreachable!("matched as a definition list above");
-                        };
-                        previous.items.extend(next.items);
-                        previous.loose |= next.loose;
-                        self.diag(
-                            HtmlImportDiagnosticCode::ElementUnwrapped,
-                            "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists".into(),
-                            HtmlImportSeverity::Info,
-                            &path,
-                            handle,
-                        );
+                // `produced` can hold two itself: a leading `<dd>`'s list lands
+                // ahead of the list its `<dl>` builds.
+                for block in produced {
+                    match (out.last_mut(), block) {
+                        (
+                            Some(BlockNode::DefinitionList(previous)),
+                            BlockNode::DefinitionList(next),
+                        ) if next.attrs.is_none() => {
+                            previous.items.extend(next.items);
+                            previous.loose |= next.loose;
+                            self.diag(
+                                HtmlImportDiagnosticCode::ElementUnwrapped,
+                                "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists".into(),
+                                HtmlImportSeverity::Info,
+                                &path,
+                                handle,
+                            );
+                        }
+                        (_, block) => out.push(block),
                     }
                 }
-                out.extend(produced);
             }
         } else {
             inline.push(handle.clone());
@@ -2370,12 +2370,27 @@ impl<'a> Importer<'a> {
         let comments_only = inline
             .iter()
             .any(|h| matches!(&h.data, NodeData::Comment { .. }))
-            && inline
-                .iter()
-                .all(|h| matches!(&h.data, NodeData::Comment { .. }) || dom_text_is_layout_only(h));
+            && inline.iter().all(|h| {
+                matches!(&h.data, NodeData::Comment { .. })
+                    || dom_text_is_layout_only(h)
+                    || Self::is_active_tag(h)
+            });
         if comments_only {
-            for handle in inline.iter() {
-                if let NodeData::Comment { contents } = &handle.data {
+            // An active element imports to nothing, so it cannot make the
+            // comment beside it inline (markup-carve/carve-rs#2029).
+            for (handle, path) in inline.iter().zip(inline_paths.iter()) {
+                // Charged as the inline walk would have charged it.
+                self.enter(depth + 1)?;
+                if Self::is_active_tag(handle) {
+                    let tag = Self::tag(handle).unwrap_or_default();
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementDropped,
+                        format!("Dropped active <{tag}> element"),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        handle,
+                    );
+                } else if let NodeData::Comment { contents } = &handle.data {
                     out.push(BlockNode::Comment(Comment {
                         block: true,
                         delimited: false,
@@ -2513,6 +2528,18 @@ impl<'a> Importer<'a> {
             // in the tree that the writer drops, so the two exits disagreed
             // about characters no reader can act on.
             let inlines = trim_edge_whitespace(inlines);
+            // No spelling holds an empty paragraph, and its attribute line
+            // would land on the next block, so the row covers the attributes.
+            if inlines.is_empty() && attrs.is_some() {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    format!("Dropped <{tag}> holding no content"),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(Vec::new());
+            }
             let candidate = lone_image(&inlines).map(|image| {
                 (
                     attrs.is_some(),
@@ -3699,6 +3726,12 @@ impl<'a> Importer<'a> {
             }
         }
         false
+    }
+
+    /// An element the import drops whole, whatever it holds.
+    fn is_active_tag(h: &Handle) -> bool {
+        Self::tag(h)
+            .is_some_and(|tag| matches!(tag.as_str(), "script" | "style" | "template" | "noscript"))
     }
 
     /// Whether a run of text is anything other than ASCII layout whitespace.
@@ -5195,12 +5228,14 @@ impl<'a> Importer<'a> {
         parent: &str,
         depth: usize,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
-        let mut out = Vec::new();
+        let mut out: Vec<InlineNode> = Vec::new();
+        // A BLOCK BOUNDARY IN AN INLINE SLOT SURVIVES ONLY IN THE BYTES (PART
+        // 11 §1b): ONE space, merging with layout already on either side, and
+        // a block that contributes nothing is not a side (carve-js `inlines`).
+        let mut previous_was_block = false;
         let flattening = handles
             .iter()
             .any(|h| Self::tag(h).as_deref().is_some_and(Self::is_block_tag));
-        let mut published = false;
-        let mut boundary_pending = false;
         for (i, h) in handles.iter().enumerate() {
             let tag = Self::tag(h).unwrap_or_else(|| {
                 // A comment names itself, the same way `child_path` spells it:
@@ -5216,47 +5251,28 @@ impl<'a> Importer<'a> {
                 Some(given) => given[i].clone(),
                 None => format!("{parent}/{tag}[{}]", i + 1),
             };
-            // `tag` is already the element's name, or the synthetic `text()` for a
-            // node that has none - and that is not a block tag, so this needs no
-            // second call to build the same String again.
-            let is_block = Self::is_block_tag(&tag);
-            if is_block && published {
-                boundary_pending = true;
-            }
+            let is_block = is_flattened_block(h);
             let mut produced = self.inline(h, &path, depth)?;
-            let contributes = !Self::inlines_are_blank(&produced);
-            if !contributes && flattening {
+            // Layout between flattened blocks is the boundary itself.
+            if flattening && Self::inlines_are_blank(&produced) {
                 continue;
             }
-            if contributes && boundary_pending {
-                // Plain-text layout at either edge shares the separator. Code and
-                // nonbreaking spaces remain content inside their own nodes.
-                while let Some(InlineNode::Text(text)) = out.last_mut() {
-                    text.value
-                        .truncate(text.value.trim_end_matches(is_layout_space).len());
-                    if !text.value.is_empty() {
-                        break;
-                    }
-                    out.pop();
-                }
-                for node in &mut produced {
-                    let InlineNode::Text(text) = node else {
-                        break;
-                    };
-                    let leading =
-                        text.value.len() - text.value.trim_start_matches(is_layout_space).len();
-                    text.value.drain(..leading);
-                    if !text.value.is_empty() {
-                        break;
-                    }
-                }
+            let at_boundary = previous_was_block || is_block;
+            if at_boundary && needs_separator(&out, &produced) {
                 out.push(InlineNode::text(" ".to_string()));
             }
-            out.extend(produced);
-            if contributes {
-                published = true;
-                boundary_pending = is_block;
+            if at_boundary && text_ends_with_layout(out.last()) {
+                if let Some(InlineNode::Text(first)) = produced.first_mut() {
+                    first.value = first.value.trim_start_matches(' ').to_string();
+                    if first.value.is_empty() {
+                        produced.remove(0);
+                    }
+                }
             }
+            if !produced.is_empty() {
+                previous_was_block = is_block;
+            }
+            out.extend(produced);
         }
         Ok(drop_space_after_hard_break(coalesce(hoist_edge_space(out))))
     }
@@ -5264,10 +5280,13 @@ impl<'a> Importer<'a> {
     /// (markup-carve/carve#1709).
     fn comment(&mut self, content: &str, path: &str, node: &Handle) -> Vec<InlineNode> {
         let closes_early = content.contains("%}");
-        let ends_the_run = content
-            .split('\n')
-            .skip(1)
-            .any(|line| line.chars().all(|c| c == ' ' || c == '\t'));
+        // A blank line lies BETWEEN two newlines; the edge segments sit beside
+        // the `{%` and `%}` delimiters (carve-js reads `\n[ \t]*\n`).
+        let segments: Vec<&str> = content.split('\n').collect();
+        let ends_the_run = segments.len() > 2
+            && segments[1..segments.len() - 1]
+                .iter()
+                .any(|line| line.chars().all(|c| c == ' ' || c == '\t'));
         if closes_early || ends_the_run {
             let why = if closes_early {
                 "holds the comment closer"
@@ -5355,7 +5374,7 @@ impl<'a> Importer<'a> {
         let Some(tag) = Self::tag(h) else {
             return Ok(Vec::new());
         };
-        if matches!(tag.as_str(), "script" | "style" | "template" | "noscript") {
+        if Self::is_active_tag(h) {
             self.diag(
                 HtmlImportDiagnosticCode::ElementDropped,
                 format!("Dropped active <{tag}> element"),
@@ -8188,4 +8207,36 @@ fn bullet_list(items: Vec<ListItem>, tight: bool) -> BlockNode {
         items,
         pos: None,
     })
+}
+
+/// The block-level elements whose boundary an inline flatten keeps as a
+/// separator, including the ones never top level (carve-js `isFlattenedBlock`).
+fn is_flattened_block(h: &Handle) -> bool {
+    Importer::tag(h).is_some_and(|tag| {
+        Importer::is_block_tag(&tag)
+            || matches!(
+                tag.as_str(),
+                "li" | "dt" | "dd" | "td" | "th" | "tr" | "caption" | "figcaption"
+            )
+    })
+}
+
+/// Whether a flattened block boundary needs a separator: not where either side
+/// is missing, is a hard break, or already has layout at the join. A no-break
+/// space is content (PART 11 §7), so it does not separate.
+fn needs_separator(before: &[InlineNode], after: &[InlineNode]) -> bool {
+    let (Some(last), Some(first)) = (before.last(), after.first()) else {
+        return false;
+    };
+    if matches!(last, InlineNode::HardBreak(_)) || matches!(first, InlineNode::HardBreak(_)) {
+        return false;
+    }
+    if matches!(last, InlineNode::Text(t) if t.value.ends_with([' ', '\t'])) {
+        return false;
+    }
+    !matches!(first, InlineNode::Text(t) if t.value.starts_with([' ', '\t']))
+}
+
+fn text_ends_with_layout(node: Option<&InlineNode>) -> bool {
+    matches!(node, Some(InlineNode::Text(t)) if t.value.ends_with([' ', '\t']))
 }
