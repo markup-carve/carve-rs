@@ -5,9 +5,9 @@ fn markdown_table_preserves_column_alignment() {
 }
 
 #[test]
-fn delimiter_matches_a_narrow_header_above_a_wider_body() {
+fn a_narrow_header_above_a_wider_body_is_padded() {
     assert_eq!(
         carve::to_markdown("| h |\n|---|\n| |x |\n"),
-        "| h |\n| --- |\n|  | x |\n"
+        "| h |  |\n| --- | --- |\n|  | x |\n"
     );
 }

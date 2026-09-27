@@ -1090,7 +1090,19 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         header_columns = width;
         Some(format!("| {} |", vec![""; width].join(" | ")))
     });
-    if let Some(header) = header {
+    if let Some(mut header) = header {
+        // GFM drops every body cell past the header's width, so a narrower
+        // header row gains empty cells up to the widest row (PART 11 §10n).
+        let width = node
+            .rows
+            .iter()
+            .map(|row| row.cells.len())
+            .max()
+            .unwrap_or(0);
+        while header_columns < width {
+            header.push_str("  |");
+            header_columns += 1;
+        }
         out.push_str(&header);
         out.push('\n');
         // The delimiter promotes the header row, so its width must match that
