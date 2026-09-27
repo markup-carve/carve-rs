@@ -146,13 +146,17 @@ fn a_resolved_crossref_never_carries_the_injected_permalink_anchor() {
 /// the class it carries: `[v1]{.section-number}` is valid source. An author's
 /// own span is authored content and stays in every derived label; a class-keyed
 /// strip would delete it.
+///
+/// The href reads `#v1-API` rather than `#API` from carve-rs#2038 on: the span's
+/// text feeds the heading id as any other authored text does, which is what
+/// carve-js publishes for this source.
 #[test]
 fn control_an_authored_section_number_span_survives_the_derivation() {
     let toc = TableOfContents::with_options(TableOfContentsOptions::default());
     let out = toc_html("# [v1]{.section-number} API\n", &[&toc]);
     assert_eq!(
         entry_line(&out),
-        "<li><a href=\"#API\"><span class=\"section-number\">v1</span> API</a></li>"
+        "<li><a href=\"#v1-API\"><span class=\"section-number\">v1</span> API</a></li>"
     );
 }
 

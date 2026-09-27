@@ -2338,7 +2338,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
         }
         BlockNode::Comment(comment) => {
             if comment.delimited {
-                format!("{{% {} %}}", comment.content)
+                format!("{{%{} %}}", pad_delimited(&comment.content))
             } else if comment.block {
                 render_block_comment(&comment.content)
             } else {
@@ -3520,7 +3520,9 @@ fn render_inline_body(
         // whitespace before the marker (it is not part of the text); the space
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
-        InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
+        InlineNode::Comment(c) if c.delimited => {
+            format!("{{%{} %}}", pad_delimited(&c.content))
+        }
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line
         // TRAILING whitespace, which PART 2 discards on the way back in and §7
@@ -4171,6 +4173,17 @@ fn render_frontmatter(frontmatter: &std::collections::BTreeMap<String, String>) 
     out
 }
 
+/// The text of a `{% ... %}` comment, with the opener's pad where one separates
+/// it from the text. A pad before a line break would be line-trailing whitespace
+/// the writer invented (markup-carve/carve#2425).
+fn pad_delimited(content: &str) -> String {
+    if content.starts_with('\n') {
+        content.to_string()
+    } else {
+        format!(" {content}")
+    }
+}
+
 fn render_block_comment(content: &str) -> String {
     let mut longest = 0usize;
     let mut current = 0usize;
@@ -4439,7 +4452,16 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     };
     let emit_classes = |parts: &mut Vec<String>| {
         for cls in &attrs.classes {
-            parts.push(format!(".{}", escape_attr_name_value(cls)));
+            // THE SHORTHAND ONLY REACHES WHAT A FENCE WORD REACHES. `.` takes the
+            // `explicit_identifier` (carve#2435), so `-col`, `w-1/2` and the empty
+            // class have no `.` spelling and take the key-value form the parser
+            // now folds back into this same slot (CARVE-P4-007). Written as `.`
+            // they were source this engine's own parser reads as a paragraph.
+            if crate::parse::is_css_identifier(cls) {
+                parts.push(format!(".{}", escape_attr_name_value(cls)));
+            } else {
+                parts.push(format!("class={}", quoted_attr_value(cls)));
+            }
         }
     };
     let emit_key = |parts: &mut Vec<String>, key: &str| {
@@ -4507,11 +4529,28 @@ fn is_language_tag(value: &str) -> bool {
         })
 }
 
+/// A value in the QUOTED form whatever it holds.
+///
+/// `unquoted_value` is `(letter | digit | '-' | '_' | '.' | ':')+`, so a class
+/// like `w-1/2` has no bare spelling and [`quote_attr_value`] hands one back
+/// anyway (carve#2440). The classes that reach the key-value form are exactly
+/// the ones `.` cannot spell, so this asks no questions and quotes - which is
+/// also the spelling carve#2435 ruled for the importer, `{class="-col"}`.
+fn quoted_attr_value(value: &str) -> String {
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('|', "\\|")
+    )
+}
+
 fn quote_attr_value(value: &str) -> String {
     if !value.is_empty()
         && value
             .chars()
-            .all(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\'' | '{' | '}' | '|'))
+            .all(|ch| !ch.is_whitespace() && !matches!(ch, '"' | '\'' | '\\' | '{' | '}' | '|'))
     {
         value.to_string()
     } else {

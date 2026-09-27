@@ -1690,6 +1690,12 @@ fn plain_inlines_typography_at(
             InlineNode::Emphasis(e) => {
                 out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
             }
+            // PART 9R R4: a derived text is taken before any render-stage
+            // injection, and this engine builds it after the hooks have run, so
+            // the `section-number` span has to be skipped here.
+            InlineNode::Span(s) if !s.injected => {
+                out.push_str(&plain_inlines_typography_at(&s.children, smart, depth + 1))
+            }
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it contributes
             // its content to a heading slug -- otherwise `` # !`Cat` `` would

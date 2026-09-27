@@ -15905,9 +15905,8 @@ fn is_attr_ident_part(b: u8) -> bool {
 /// (O(n²) on `[x]{`×n + `}`, `[x]{a `×n + `}`, `[x]{.a `×n + `}`, `[x]{k= `×n +
 /// `}`, …). It is a pure SKIP filter: it returns `true` ONLY when the payload is
 /// provably invalid; on a `}` (a candidate close), a newline, a quote, an
-/// escape, a `key=<value>` with a real value, or ANY non-ASCII byte (a possible
-/// Unicode-whitespace separator or non-ASCII content), it returns `false` and
-/// the unchanged scan/`parse_attrs` path decides -- so every accepted block, and
+/// escape, a `key=<value>` with a real value, or any non-ASCII byte, it returns
+/// `false` and the full scan/`parse_attrs` path decides. Every accepted block and
 /// its output, is byte-identical. A nested `{`/`[` (or any other invalid
 /// boundary byte) ends the walk, so each byte is visited O(1) times -> O(n)
 /// total. Deferring on non-ASCII keeps it correct without decoding chars (only
@@ -15920,9 +15919,7 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
     let mut i = brace + 1;
     while i < n {
         let c = bytes[i];
-        // Non-ASCII: a Unicode-whitespace separator, a non-ASCII value byte, or
-        // other subtle content. Defer to the full scan/parse (byte-identical;
-        // non-ASCII is never the repeated ASCII pathological shape).
+        // Defer non-ASCII content to the full parser.
         if !c.is_ascii() {
             return false;
         }
@@ -15931,9 +15928,8 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
             b'}' => return false,
             // A newline ends an inline block (read_attrs_at bails); defer.
             b'\n' => return false,
-            // Other ASCII whitespace separates tokens (attr_tokens treats
-            // char::is_whitespace as a separator); skip it and continue.
-            b' ' | b'\t' | 0x0B | 0x0C | b'\r' => i += 1,
+            // Skip space, tab, and carriage return; line feed defers above.
+            b' ' | b'\t' | b'\r' => i += 1,
             // Quotes and escapes are subtle -- defer.
             b'"' | b'\'' | b'\\' => return false,
             // `#id` / `.class`: an identifier MUST follow, else the token (and
@@ -15963,11 +15959,11 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
                     // next) leaves a dangling `=` -> invalid. A bare value
                     // (>=1 non-space) or a quoted value: defer (a valid bare
                     // value is consumed whole by the scan -> linear). Non-ASCII
-                    // after `=` (a value byte or Unicode space) also defers.
+                    // after `=` (a value byte) also defers.
                     match bytes.get(i + 1) {
                         None => return true,
                         Some(&b'}') => return true,
-                        Some(&v) if v.is_ascii() && v.is_ascii_whitespace() => return true,
+                        Some(b' ' | b'\t' | b'\r' | b'\n') => return true,
                         _ => return false,
                     }
                 }
@@ -16091,7 +16087,7 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-fn is_css_identifier(name: &str) -> bool {
+pub(crate) fn is_css_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -16144,7 +16140,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 None => match ch {
                     '\\' => escaped = true,
                     '"' | '\'' => quote = Some(ch),
-                    c if c.is_whitespace() && c != ' ' => return None,
+                    '\t' | '\r' | '\n' => return None,
                     _ => {}
                 },
             }
@@ -16154,7 +16150,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
         return None;
     }
     let mut attrs = Attrs::default();
-    for token in attr_tokens(src) {
+    for token in attr_tokens(src)? {
         if let Some(tag) = token.strip_prefix(':') {
             if !is_language_tag(tag) {
                 return None;
@@ -16197,6 +16193,11 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
             {
                 unescape_title(inner)
             } else {
+                if value.chars().any(|ch| {
+                    matches!(ch, '}' | '|' | '"' | '\'' | '\\' | ' ' | '\t' | '\r' | '\n')
+                }) {
+                    return None;
+                }
                 value.to_string()
             };
             if key == "id" {
@@ -16209,6 +16210,23 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                     attrs.order.push(AttrSlot::Id);
                 }
                 attrs.id = Some(value);
+            } else if key == "class" {
+                // `class=value` is a SPELLING OF THE CLASS SLOT, the same way
+                // `id=value` above is a spelling of the id slot (CARVE-P4-007):
+                // it appends to `classes` in source order and never enters
+                // `key_values`, so `{class=a .b}` is one `class="a b"` instead of
+                // two `class` attributes on one element (carve#2439). The two
+                // spellings stay distinct in SOURCE, because `.` reads the
+                // `explicit_identifier` a fence word does while a value reaches
+                // past it - `-col` is a class only the key-value form can spell.
+                // ONE `Class` entry for the merged slot, the way the `.` branch
+                // above records it: every class renders in a single `class`
+                // attribute, so a second entry would make the writer spell an
+                // attribute that does not exist.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(value);
             } else {
                 if !attrs.key_values.contains_key(key) {
                     attrs.order.push(AttrSlot::Key(key.to_string()));
@@ -16223,6 +16241,16 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                     attrs.order.push(AttrSlot::Id);
                 }
                 attrs.id = Some(String::new());
+            } else if token == "class" {
+                // And a bare boolean `class` feeds the class slot, because PART 4
+                // gives it the SAME empty-string AST value as `class=""` - which
+                // the branch above folds - so leaving it here would make two
+                // spellings of one documented value build different trees, and
+                // would keep the second `class` attribute CARVE-P4-007 removes.
+                if attrs.classes.is_empty() {
+                    attrs.order.push(AttrSlot::Class);
+                }
+                attrs.classes.push(String::new());
             } else {
                 // Boolean attribute: a bare word with no value, rendered name="".
                 // (Matched last so `k=v` is a key/value, not a bare `k`.)
@@ -16247,11 +16275,12 @@ fn is_language_tag(tag: &str) -> bool {
         })
 }
 
-fn attr_tokens(src: &str) -> Vec<String> {
+fn attr_tokens(src: &str) -> Option<Vec<String>> {
     let mut tokens = Vec::new();
     let mut buf = String::new();
     let mut quote: Option<char> = None;
     let mut escaped = false;
+    let mut closed_quote = false;
     for ch in src.chars() {
         if escaped {
             buf.push('\\');
@@ -16259,7 +16288,7 @@ fn attr_tokens(src: &str) -> Vec<String> {
             escaped = false;
             continue;
         }
-        if ch == '\\' {
+        if ch == '\\' && quote.is_some() {
             escaped = true;
             continue;
         }
@@ -16267,10 +16296,14 @@ fn attr_tokens(src: &str) -> Vec<String> {
             buf.push(ch);
             if ch == q {
                 quote = None;
+                closed_quote = true;
             }
             continue;
         }
         if ch == '"' || ch == '\'' {
+            if closed_quote || !matches!(buf.split_once('='), Some((_, ""))) {
+                return None;
+            }
             quote = Some(ch);
             buf.push(ch);
             continue;
@@ -16282,18 +16315,25 @@ fn attr_tokens(src: &str) -> Vec<String> {
         // `#` or `.`, manufacturing two attributes where the source has one
         // malformed one - `.a.b` now stays one token and fails `is_identifier`,
         // which is what makes the whole block literal.
-        if ch.is_whitespace() {
+        if matches!(ch, ' ' | '\t' | '\r' | '\n') {
+            closed_quote = false;
             if !buf.is_empty() {
                 tokens.push(std::mem::take(&mut buf));
             }
         } else {
+            if closed_quote {
+                return None;
+            }
             buf.push(ch);
         }
+    }
+    if quote.is_some() || escaped {
+        return None;
     }
     if !buf.is_empty() {
         tokens.push(buf);
     }
-    tokens
+    Some(tokens)
 }
 
 fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
@@ -22498,6 +22538,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::Span(s) if !s.injected => out.push_str(&plain_inlines_parse(&s.children)),
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
