@@ -186,13 +186,37 @@ pub(crate) fn ref_id(key: &str) -> String {
 /// (PART 12 §5: a generated heading id is a resolution result, because dedup
 /// makes it a function of the whole document rather than of the heading).
 pub(crate) fn assigned_heading_ids(doc: &Document, id_opts: HeadingIdOptions) -> Vec<String> {
+    assigned_heading_ids_with_policy(doc, id_opts, false).assigned
+}
+
+pub(crate) fn redundant_heading_ids(doc: &Document) -> BTreeSet<String> {
+    let seeder = assigned_heading_ids_with_policy(doc, HeadingIdOptions::PLAIN, true);
+    if !seeder.had_generated {
+        return BTreeSet::new();
+    }
+    seeder
+        .original_ids
+        .into_iter()
+        .zip(seeder.assigned)
+        .filter_map(|(current, fresh)| current.filter(|id| *id == fresh))
+        .collect()
+}
+
+fn assigned_heading_ids_with_policy(
+    doc: &Document,
+    id_opts: HeadingIdOptions,
+    ignore_generated: bool,
+) -> Seeder {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
         citation_index: BTreeMap::new(),
         id_opts,
         assigned: Vec::new(),
+        original_ids: Vec::new(),
+        had_generated: false,
         collect_explicit_only: true,
+        ignore_generated,
     };
     seeder.walk_blocks(&doc.children);
     for blocks in doc.footnote_defs.values() {
@@ -204,7 +228,7 @@ pub(crate) fn assigned_heading_ids(doc: &Document, id_opts: HeadingIdOptions) ->
         seeder.walk_blocks(blocks);
     }
 
-    seeder.assigned
+    seeder
 }
 
 fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistry {
@@ -214,7 +238,10 @@ fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistr
         citation_index: BTreeMap::new(),
         id_opts,
         assigned: Vec::new(),
+        original_ids: Vec::new(),
+        had_generated: false,
         collect_explicit_only: true,
+        ignore_generated: false,
     };
     // Pass A: reserve every explicit id across the whole document (body then
     // footnote defs), so heading auto-slugs in pass B can skip them regardless
@@ -246,10 +273,13 @@ struct Seeder {
     /// publishes a generated id (PART 12 §5, carve#750) without a second
     /// implementation of slug + dedup to drift from this one.
     assigned: Vec<String>,
+    original_ids: Vec<Option<String>>,
+    had_generated: bool,
     /// Pass A only reserves EXPLICIT ids (so the whole explicit-id set is known
     /// before any heading is numbered); heading + citation reservation run in
     /// pass B.
     collect_explicit_only: bool,
+    ignore_generated: bool,
 }
 
 impl Seeder {
@@ -260,11 +290,25 @@ impl Seeder {
         }
     }
 
+    fn heading_attrs<'a>(&self, h: &'a Heading) -> Option<&'a Attrs> {
+        h.attrs.as_ref().filter(|attrs| {
+            !self.ignore_generated || attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+        })
+    }
+
     /// Reserve the id the renderer will assign to this heading: the explicit
     /// attribute id or the text slug, numbered by the shared document-order
     /// counter (mirrors `render::next_heading_id`).
     fn reserve_heading_id(&mut self, h: &Heading) {
-        let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
+        if self.ignore_generated {
+            self.original_ids
+                .push(h.attrs.as_ref().and_then(|attrs| attrs.id.clone()));
+            self.had_generated |= h
+                .attrs
+                .as_ref()
+                .is_some_and(|attrs| attrs.id.is_some() && self.heading_attrs(h).is_none());
+        }
+        let explicit = self.heading_attrs(h).and_then(|attrs| attrs.id.clone());
         let has_explicit = explicit.is_some();
         let base = explicit.unwrap_or_else(|| {
             crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), self.id_opts)
@@ -305,7 +349,9 @@ impl Seeder {
                     // "has an explicit id claimed this?", could never see a
                     // heading's. `{#API-2}` on one heading plus a later
                     // `# API` then emitted `id="API-2"` twice (#335).
-                    self.reserve_attrs(&h.attrs);
+                    if self.heading_attrs(h).is_some() {
+                        self.reserve_attrs(&h.attrs);
+                    }
                 } else {
                     self.reserve_heading_id(h);
                 }
@@ -535,5 +581,54 @@ mod tests {
         registry.reserve("x-3");
         assert_eq!(registry.unique_id("x"), "x");
         assert_eq!(registry.unique_id("x"), "x-4");
+    }
+}
+
+#[cfg(test)]
+mod regenerated_tests {
+    use super::*;
+
+    fn heading(text: &str, id: &str, explicit: bool) -> BlockNode {
+        let mut doc = crate::parse(&format!("# {text}\n"));
+        let mut block = doc.children.remove(0);
+        let BlockNode::Heading(h) = &mut block else {
+            panic!("expected heading")
+        };
+        h.attrs = Some(Attrs {
+            id: Some(id.into()),
+            order: if explicit {
+                vec![AttrSlot::Id]
+            } else {
+                Vec::new()
+            },
+            ..Attrs::default()
+        });
+        block
+    }
+
+    #[test]
+    fn generated_ids_follow_headings_inside_every_seeder_container() {
+        let mut doc = crate::parse("");
+        doc.children.push(BlockNode::LineBlock(LineBlock {
+            attrs: None,
+            pos: None,
+            lines: None,
+            children: vec![heading("Nested", "Old", false)],
+        }));
+        doc.children.push(heading("Later", "Later", false));
+        doc.footnote_defs
+            .insert("n".into(), vec![heading("Note", "Note", false)]);
+        assert_eq!(
+            redundant_heading_ids(&doc),
+            BTreeSet::from(["Later".into(), "Note".into()])
+        );
+    }
+
+    #[test]
+    fn explicit_ids_still_reserve_generated_slug_candidates() {
+        let mut doc = crate::parse("");
+        doc.children.push(heading("Other", "Same", true));
+        doc.children.push(heading("Same", "Same-2", false));
+        assert!(redundant_heading_ids(&doc).contains("Same-2"));
     }
 }

@@ -111,9 +111,7 @@ enum EscapeMode {
 
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
-    // FIRST, before any pass reads the tree's shape: `redundant_heading_ids`
-    // clones the whole document and derived `Clone` has no ceiling
-    // (`crate::render_depth::refuse_if_too_deep`).
+    // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
     let _session = RenderSession::new();
     crate::render_loss::record_ruby_in_document(doc);
@@ -310,118 +308,9 @@ thread_local! {
 /// The ids a fresh parse would assign, for headings that carry an unslotted id.
 ///
 /// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
-/// over a copy with those ids removed, so this cannot answer differently from
-/// the parse it is predicting.
+/// with unslotted heading ids ignored, without cloning the document.
 pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
-    let mut stripped = doc.clone();
-    let mut had_any = false;
-    // The SAME two walks `assigned_heading_ids` makes, in the same order:
-    // `doc.children`, then the footnote definitions. Both halves are needed and
-    // in this order, because the answer is read off a POSITIONAL zip against
-    // that pass. Stopping at `doc.children` truncated the zip, so no heading in
-    // a footnote definition could ever be answered and every one of them was
-    // written back as authored source: `[^a]: # h` returned as `[^a]: {#h}`
-    // over an indented `# h`, the carve-rs#1105 shape in the one place this
-    // predicate could not see.
-    strip_generated_ids(&mut stripped.children, &mut had_any);
-    for blocks in stripped.footnote_defs.values_mut() {
-        strip_generated_ids(blocks, &mut had_any);
-    }
-    if !had_any {
-        return std::collections::BTreeSet::new();
-    }
-    let fresh = crate::document_ids::assigned_heading_ids(
-        &stripped,
-        crate::extension::HeadingIdOptions::PLAIN,
-    );
-    let mut present = Vec::new();
-    collect_heading_ids(&doc.children, &mut present);
-    for blocks in doc.footnote_defs.values() {
-        collect_heading_ids(blocks, &mut present);
-    }
-    present
-        .into_iter()
-        .zip(fresh)
-        .filter_map(|(current, fresh)| match current {
-            Some(id) if id == fresh => Some(id),
-            _ => None,
-        })
-        .collect()
-}
-
-fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
-    for block in blocks.iter_mut() {
-        if let BlockNode::Heading(h) = block {
-            if let Some(attrs) = h.attrs.as_mut() {
-                let unslotted = attrs.id.is_some()
-                    && !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id));
-                if unslotted {
-                    attrs.id = None;
-                    *had_any = true;
-                }
-            }
-        }
-        match block {
-            BlockNode::BlockQuote(b) => strip_generated_ids(&mut b.children, had_any),
-            BlockNode::Directive(d) => strip_generated_ids(&mut d.children, had_any),
-            BlockNode::Div(d) => strip_generated_ids(&mut d.children, had_any),
-            BlockNode::Section(d) => strip_generated_ids(&mut d.children, had_any),
-            BlockNode::Admonition(a) => strip_generated_ids(&mut a.children, had_any),
-            BlockNode::List(l) => {
-                for item in l.items.iter_mut() {
-                    strip_generated_ids(&mut item.children, had_any);
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut *f.target {
-                    strip_generated_ids(&mut b.children, had_any);
-                }
-            }
-            BlockNode::FigureGroup(g) => strip_generated_ids(&mut g.children, had_any),
-            BlockNode::DefinitionList(dl) => {
-                for entry in dl.items.iter_mut() {
-                    for definition in entry.definitions.iter_mut() {
-                        strip_generated_ids(&mut definition.children, had_any);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
-    for block in blocks {
-        if let BlockNode::Heading(h) = block {
-            out.push(h.attrs.as_ref().and_then(|a| a.id.clone()));
-        }
-        match block {
-            BlockNode::BlockQuote(b) => collect_heading_ids(&b.children, out),
-            BlockNode::Directive(d) => collect_heading_ids(&d.children, out),
-            BlockNode::Div(d) => collect_heading_ids(&d.children, out),
-            BlockNode::Section(d) => collect_heading_ids(&d.children, out),
-            BlockNode::Admonition(a) => collect_heading_ids(&a.children, out),
-            BlockNode::List(l) => {
-                for item in l.items.iter() {
-                    collect_heading_ids(&item.children, out);
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &*f.target {
-                    collect_heading_ids(&b.children, out);
-                }
-            }
-            BlockNode::FigureGroup(g) => collect_heading_ids(&g.children, out),
-            BlockNode::DefinitionList(dl) => {
-                for entry in dl.items.iter() {
-                    for definition in entry.definitions.iter() {
-                        collect_heading_ids(&definition.children, out);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    crate::document_ids::redundant_heading_ids(doc)
 }
 
 fn render_carve_unguarded(doc: &Document) -> String {
