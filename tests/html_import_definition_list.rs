@@ -273,3 +273,28 @@ fn the_definition_list_walk_pays_into_the_importers_limits() {
         carve::HtmlImportError::DepthLimit
     );
 }
+
+/// A leading `<dd>` holding a list is emitted ahead of the list its `<dl>`
+/// builds, and the two join like sibling lists, so the tree matches the source
+/// the writer produces.
+#[test]
+fn a_leading_description_list_joins_the_list_after_it() {
+    let html = "<dl><dd><dl><dt>x</dt><dd>y</dd></dl></dd><dt>t</dt><dd>d</dd></dl>";
+    let options = carve::HtmlImportOptions::default();
+    let result = carve::html_to_carve(html, &options).unwrap();
+    assert_eq!(result.value, ":: x\n: y\n:: t\n: d\n");
+    assert_eq!(
+        carve::render_carve(&carve::parse(&result.value)).unwrap(),
+        result.value
+    );
+    assert_eq!(
+        carve::html_to_ast(html, &options)
+            .unwrap()
+            .value
+            .children
+            .len(),
+        1
+    );
+    assert!(result.report.diagnostics.iter().any(|d| d.message
+        == "Merged <dl> into the definition list before it: Carve source has no boundary between two adjacent definition lists"));
+}
