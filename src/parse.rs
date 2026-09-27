@@ -1266,6 +1266,7 @@ fn extract_footnote_defs(
     // document was skipped. Tracked only to gate the opener.
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
+    let folded_into_term = term_folded_lines(&lines);
     // Built on the first CONTAINER-scoped opener and never for a document that
     // has none, which is every document that only ever writes `%%%` at column 0.
     let mut container_closers: Option<ContainerCommentClosers> = None;
@@ -1450,7 +1451,7 @@ fn extract_footnote_defs(
                     &mut probe_budget,
                     &mut unaffordable,
                 );
-            !(folds || unaffordable)
+            !(folds || unaffordable || folded_into_term.contains(&i))
         }) {
             let normalized_label = label_key(label);
             let first_for_label = !definition_keys.contains_key(&normalized_label);
@@ -2330,6 +2331,146 @@ fn line_folds_into_an_open_paragraph(
     after.ends_in_paragraph && before.levels == after.levels
 }
 
+/// Line indexes that fold into an open definition term (carve#2411): past the
+/// column of the term's marker, at the term's quote depth, with no blank line
+/// or container-column opener since the term. A list marker ends the term.
+pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usize> {
+    fn view_upto(raw: &str, limit: usize) -> (&str, usize) {
+        let mut view = raw;
+        let mut quotes = 0usize;
+        while quotes < limit {
+            let Some(rest) = strip_blockquote_prefix(trim_ascii_start(view)) else {
+                break;
+            };
+            view = rest;
+            quotes += 1;
+        }
+        (view, quotes)
+    }
+    fn view(raw: &str) -> (&str, usize) {
+        view_upto(raw, usize::MAX)
+    }
+    // Only a term folds anything, and the fence scans below are not free on a
+    // document of unterminated openers, which nesting re-reads per level.
+    if !lines
+        .iter()
+        .any(|raw| term_start_column(view(raw).0).is_some())
+    {
+        return std::collections::HashSet::new();
+    }
+    // Lines by the length of their leading `%` run, so finding the closer of a
+    // comment fence opened on `index` stays linear over many unclosed openers.
+    let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (k, raw) in lines.iter().enumerate() {
+        let run = trim_ascii_start(view(raw).0)
+            .bytes()
+            .take_while(|b| *b == b'%')
+            .count();
+        if run >= 3 {
+            runs.entry(run).or_default().push(k);
+        }
+    }
+    let comment_closer = |index: usize, fence_len: usize| {
+        let at = runs.get(&fence_len)?;
+        at.get(at.partition_point(|&k| k <= index)).copied()
+    };
+    let mut folded = std::collections::HashSet::new();
+    let mut term: Option<(usize, usize)> = None;
+    let mut index = 0;
+    while index < lines.len() {
+        // A `>` past an open term's column is term text, not a deeper quote.
+        if let Some((term_col, term_quotes)) = term {
+            let (at_term, quotes) = view_upto(lines[index], term_quotes);
+            let rest = trim_ascii_start(at_term);
+            if quotes == term_quotes
+                && !is_blank_line(at_term)
+                && indent_columns(at_term) > term_col
+                && strip_blockquote_prefix(rest).is_some()
+            {
+                folded.insert(index);
+                index += 1;
+                continue;
+            }
+        }
+        let (view_line, quotes) = view(lines[index]);
+        if is_blank_line(view_line) {
+            term = None;
+            index += 1;
+            continue;
+        }
+        let col = indent_columns(view_line);
+        let rest = trim_ascii_start(view_line);
+        let comment =
+            detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
+        if let Some((term_col, term_quotes)) = term {
+            if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
+                // A folded comment fence takes its body and closer with it.
+                let last = comment.unwrap_or(index);
+                folded.extend(index..=last);
+                index = last + 1;
+                continue;
+            }
+            if quotes != term_quotes
+                || item_block_opener(rest)
+                || is_list_marker(rest)
+                || rest.starts_with("%%")
+                || strip_definition_marker(rest).is_some()
+                || parse_link_def_line(rest).is_some()
+            {
+                term = None;
+            }
+        }
+        // A fence's payload holds no term.
+        if let Some(close) = comment {
+            index = close + 1;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(rest) {
+            index += 1;
+            while index < lines.len() {
+                let closes = is_fence_close(trim_ascii_start(view(lines[index]).0), open);
+                index += 1;
+                if closes {
+                    break;
+                }
+            }
+            continue;
+        }
+        // A term may follow list markers on its line; its column is then the
+        // item's content column.
+        if let Some(term_col) = term_start_column(view_line) {
+            term = Some((term_col, quotes));
+        }
+        index += 1;
+    }
+    folded
+}
+
+/// The column of a `:: ` term that opens this line, after any list or
+/// description markers.
+fn term_start_column(line: &str) -> Option<usize> {
+    let mut base = 0;
+    let mut rest = line;
+    loop {
+        let trimmed = trim_ascii_start(rest);
+        if is_definition_list_start(trimmed) {
+            return Some(base + indent_columns(rest));
+        }
+        if let Some((body, width)) = strip_definition_marker(trimmed) {
+            base += indent_columns(rest) + width;
+            rest = body;
+            continue;
+        }
+        let marker = detect_list_marker_full(rest)?;
+        let offset = (marker.content.as_ptr() as usize).checked_sub(rest.as_ptr() as usize)?;
+        if offset == 0 || offset > rest.len() {
+            return None;
+        }
+        base += rest[..offset].chars().count();
+        rest = &rest[offset..];
+    }
+}
+
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     extract_link_defs_with_guard(source, None)
 }
@@ -2392,6 +2533,7 @@ fn extract_link_defs_with_guard(
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
+    let folded_into_term = term_folded_lines(&all_lines);
     // See the note in `extract_footnote_defs`: lazy, so a document with no
     // container-scoped comment fence pays nothing for it.
     let mut container_closers: Option<ContainerCommentClosers> = None;
@@ -2665,7 +2807,7 @@ fn extract_link_defs_with_guard(
                         &mut unaffordable,
                     )
                 });
-            !(folds || unaffordable)
+            !(folds || unaffordable || folded_into_term.contains(&line_index))
         }) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
@@ -5555,6 +5697,8 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
     if trailing_newline {
         lines.push(String::new());
     }
+    // Dedenting keeps every line's `%` run, so this index outlives the edits.
+    let entry_closers = std::cell::OnceCell::new();
     let mut i = 0usize;
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut after_blank = false;
@@ -5731,7 +5875,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             // as an authored base of the outer body; the first line outside the
             // extent is deliberately classified by that outer body.
             if is_definition_list_start(&lines[i]) {
-                i = definition_entry_end(&lines, i, 0) + 1;
+                i = definition_entry_end(&lines, i, 0, &entry_closers) + 1;
                 after_blank = false;
                 paragraph_open = false;
                 block_at_minimum = true;
@@ -5977,13 +6121,32 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
     }
 }
 
+/// Line indexes by the length of their `%` run, for comment fence closers.
+fn comment_closers_by_run(lines: &[String]) -> HashMap<usize, Vec<usize>> {
+    let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (k, line) in lines.iter().enumerate() {
+        let run = trim_ascii_start(line)
+            .bytes()
+            .take_while(|b| *b == b'%')
+            .count();
+        if run >= 3 {
+            runs.entry(run).or_default().push(k);
+        }
+    }
+    runs
+}
+
 /// Last line owned by a definition entry authored at `base`.
-fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
+fn definition_entry_end(
+    lines: &[String],
+    start: usize,
+    base: usize,
+    closers: &std::cell::OnceCell<HashMap<usize, Vec<usize>>>,
+) -> usize {
     let mut end = start;
     let mut description_column = None;
     // A term has no content column, so a line past the list's base folds into
-    // an open term as text (carve#2411). List markers still interrupt it, and
-    // comments and link and footnote definitions keep their §10 I5 reading.
+    // an open term (carve#2411). Only a list marker still interrupts it.
     let mut term_open = true;
     let mut j = start + 1;
     while j < lines.len() {
@@ -6032,11 +6195,18 @@ fn definition_entry_end(lines: &[String], start: usize, base: usize) -> usize {
         }
         if term_open && column > base {
             let text = strip_leading_columns(candidate, column);
-            if !is_list_marker(&text)
-                && !text.starts_with("%%")
-                && parse_link_def_line(&text).is_none()
-                && parse_footnote_def_line(&text).is_none()
-            {
+            if !is_list_marker(&text) {
+                // A comment fence keeps its body and closer, whatever they look like.
+                if let Some(open) = detect_comment_fence_line(&text) {
+                    let at = closers
+                        .get_or_init(|| comment_closers_by_run(lines))
+                        .get(&open.fence_len);
+                    if let Some(close) =
+                        at.and_then(|at| at.get(at.partition_point(|&k| k <= j)).copied())
+                    {
+                        j = close;
+                    }
+                }
                 end = j;
                 j += 1;
                 continue;
@@ -12651,6 +12821,88 @@ fn is_definition_list_start(line: &str) -> bool {
         .is_some_and(|term| !is_blank_line(term))
 }
 
+/// Fold a term's continuation lines and parse its inline content.
+///
+/// A term folds a following plain line as a soft break, so a wrapped term line
+/// does not strand the definition; a blank line, a new marker (`::` / `:  `), a
+/// list marker or a block opener ends it. A comment past the container column
+/// stays a comment and does not end the term (carve#2411). As in a paragraph,
+/// inline content never reaches across it, so each run of lines between
+/// comments is parsed on its own.
+fn fold_term(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    first: String,
+    first_anchor: Option<Option<(usize, isize)>>,
+) -> Vec<InlineNode> {
+    enum Part {
+        Run(String, Option<Vec<Option<(usize, isize)>>>),
+        Comment(Comment),
+    }
+    let mut parts = vec![Part::Run(first, first_anchor.map(|anchor| vec![anchor]))];
+    while let Some(next) = cur.peek() {
+        if next.starts_with([' ', '\t']) && trim_ascii_start(next).starts_with("%%") {
+            match take_comment_block(cur, options) {
+                CommentBlock::Consumed(Some(node)) => {
+                    if let BlockNode::Comment(comment) = *node {
+                        parts.push(Part::Comment(comment));
+                    }
+                    continue;
+                }
+                CommentBlock::Consumed(None) => continue,
+                CommentBlock::NotAComment => {}
+            }
+        }
+        let Some(next) = cur.peek() else { break };
+        if is_blank_line(next)
+            || strip_lazy(next).strip_prefix(":: ").is_some()
+            || strip_definition_marker(strip_lazy(next)).is_some()
+            || is_list_marker(next)
+        {
+            break;
+        }
+        let owned = next.to_string();
+        if interrupts_paragraph(cur, &owned) {
+            break;
+        }
+        // A term's continuation line is a CONTENT LINE, so its trailing
+        // whitespace run does not reach the output - the same rule the term's
+        // FIRST line follows (markup-carve/carve#926, markup-carve/carve#1289).
+        // Spaces INSIDE a verbatim run end at its closing delimiter, so an
+        // all-space `` `  ` `` term is untouched by a trim that only ever sees
+        // the end of a line.
+        let line = trim_ascii_end(strip_lazy(&owned)).to_string();
+        let anchor = options
+            .positions
+            .then(|| inline_anchor_for_line(cur, cur.pos, &owned));
+        match parts.last_mut() {
+            Some(Part::Run(text, anchors)) => {
+                text.push('\n');
+                text.push_str(&line);
+                if let (Some(anchors), Some(anchor)) = (anchors.as_mut(), anchor) {
+                    anchors.push(anchor);
+                }
+            }
+            _ => parts.push(Part::Run(line, anchor.map(|anchor| vec![anchor]))),
+        }
+        cur.consume();
+    }
+    let mut children = Vec::new();
+    for (index, part) in parts.into_iter().enumerate() {
+        if index > 0 {
+            children.push(InlineNode::SoftBreak(Break { pos: None }));
+        }
+        match part {
+            Part::Comment(comment) => children.push(InlineNode::Comment(comment)),
+            Part::Run(text, Some(anchors)) => {
+                children.extend(parse_inline_lines_with_anchor(&text, options, anchors));
+            }
+            Part::Run(text, None) => children.extend(parse_inline_with_options(&text, options)),
+        }
+    }
+    children
+}
+
 fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let list_start = cur.pos;
     let mut items = Vec::new();
@@ -12679,42 +12931,10 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         // A term folds a following plain line like a heading (soft break), so a
         // wrapped term line does not strand the definition. A blank line, a new
         // marker (`::` / `:  `), a list marker, or a block opener ends the term.
-        let mut term_text = trim_ascii_end(term).to_string();
-        let mut term_anchors = options
+        let anchor = options
             .positions
-            .then(|| vec![inline_anchor_for_line(cur, term_start, term)]);
-        while let Some(next) = cur.peek() {
-            if is_blank_line(next)
-                || strip_lazy(next).strip_prefix(":: ").is_some()
-                || strip_definition_marker(strip_lazy(next)).is_some()
-                || is_list_marker(next)
-            {
-                break;
-            }
-            let owned = next.to_string();
-            if interrupts_paragraph(cur, &owned) {
-                break;
-            }
-            term_text.push('\n');
-            // A term's continuation line is a CONTENT LINE, so its trailing
-            // whitespace run does not reach the output - the same rule the
-            // term's FIRST line already follows two statements up, and the one
-            // markup-carve/carve#926 made general (markup-carve/carve#1289).
-            // Stripping here, at the source layer, is what keeps the exception
-            // intact: spaces INSIDE a verbatim run are the construct's content
-            // and end at its closing delimiter, so an all-space `` `  ` `` term
-            // is untouched by a trim that only ever sees the end of a line.
-            term_text.push_str(trim_ascii_end(strip_lazy(&owned)));
-            if let Some(term_anchors) = &mut term_anchors {
-                term_anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
-            }
-            cur.consume();
-        }
-        let children = if let Some(term_anchors) = term_anchors {
-            parse_inline_lines_with_anchor(&term_text, options, term_anchors)
-        } else {
-            parse_inline_with_options(&term_text, options)
-        };
+            .then(|| inline_anchor_for_line(cur, term_start, term));
+        let children = fold_term(cur, options, trim_ascii_end(term).to_string(), anchor);
         // The span covers the `:: ` marker and every line the term folded, the
         // same way a heading's covers its `#`.
         let mut terms = vec![DefinitionTerm {
@@ -12743,36 +12963,10 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             let next_source_line = cur.source_line(cur.pos);
             let next_start = cur.pos;
             cur.consume();
-            let mut text = trim_ascii_end(next_term).to_string();
-            let mut anchors = options
+            let anchor = options
                 .positions
-                .then(|| vec![inline_anchor_for_line(cur, next_start, next_term)]);
-            while let Some(following) = cur.peek() {
-                if is_blank_line(following)
-                    || strip_lazy(following).strip_prefix(":: ").is_some()
-                    || strip_definition_marker(strip_lazy(following)).is_some()
-                    || is_list_marker(following)
-                {
-                    break;
-                }
-                let owned = following.to_string();
-                if interrupts_paragraph(cur, &owned) {
-                    break;
-                }
-                text.push('\n');
-                // Same rule as the first term's continuation above: a CONSECUTIVE
-                // term folds its lines the same way, so it drops the same run.
-                text.push_str(trim_ascii_end(strip_lazy(&owned)));
-                if let Some(anchors) = &mut anchors {
-                    anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
-                }
-                cur.consume();
-            }
-            let children = if let Some(anchors) = anchors {
-                parse_inline_lines_with_anchor(&text, options, anchors)
-            } else {
-                parse_inline_with_options(&text, options)
-            };
+                .then(|| inline_anchor_for_line(cur, next_start, next_term));
+            let children = fold_term(cur, options, trim_ascii_end(next_term).to_string(), anchor);
             terms.push(DefinitionTerm {
                 attrs: source_line_attrs(None, next_source_line, options),
                 children,

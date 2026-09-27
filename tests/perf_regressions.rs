@@ -91,6 +91,28 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
 }
 
 #[test]
+fn unmatched_comment_fences_under_a_nested_term_parse_bounded() {
+    on_big_stack(|| {
+        let mut source = String::from(":: a\n: b\n  :: c\n");
+        for run in 3..3_003 {
+            source.push_str("    ");
+            source.push_str(&"%".repeat(run));
+            source.push('\n');
+        }
+
+        let start = Instant::now();
+        let html = carve::to_html(&source);
+
+        assert!(!html.is_empty(), "expected bounded output");
+        assert!(
+            start.elapsed().as_secs_f32() < MAX_SECS,
+            "unmatched comment fences under a term took {:?}",
+            start.elapsed()
+        );
+    });
+}
+
+#[test]
 fn long_single_paragraph_does_not_rescan_prior_lines() {
     let mut source = String::new();
     for i in 0..20_000 {
