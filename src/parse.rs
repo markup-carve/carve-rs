@@ -1520,6 +1520,17 @@ fn extract_footnote_defs(
                         break;
                     }
                     if is_blank_line(line) {
+                        if let Some(open) = note_fence {
+                            let (residue, consumed, synthetic) =
+                                slice_columns_mapped(line, open.content_col, true);
+                            def_lines.push(residue);
+                            def_line_map.push(Some(first_source_line + i));
+                            if positions {
+                                def_col_map.push(Some(consumed as isize - synthetic as isize));
+                            }
+                            i += 1;
+                            continue;
+                        }
                         let mut after_run = i + 1;
                         while after_run < lines.len() && is_blank_line(lines[after_run]) {
                             after_run += 1;
@@ -1529,10 +1540,12 @@ fn extract_footnote_defs(
                                 || is_plus_marker(lines[after_run]))
                         {
                             while i < after_run {
-                                def_lines.push(String::new());
+                                let (residue, consumed, synthetic) =
+                                    slice_columns_mapped(lines[i], body_indent, true);
+                                def_lines.push(residue);
                                 def_line_map.push(Some(first_source_line + i));
                                 if positions {
-                                    def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                                    def_col_map.push(Some(consumed as isize - synthetic as isize));
                                 }
                                 i += 1;
                             }
@@ -1617,7 +1630,8 @@ fn extract_footnote_defs(
                             if is_fence_close(trimmed, open) {
                                 note_fence = None;
                             }
-                        } else if let Some(open) = detect_fence_open(trimmed) {
+                        } else if let Some(mut open) = detect_fence_open(trimmed) {
+                            open.content_col = indent_columns(line);
                             note_fence = Some(open);
                         } else if let Some((label_part, target_part)) =
                             parse_link_def_line(trim_ascii_start(trimmed))
@@ -1796,10 +1810,13 @@ fn extract_footnote_defs(
                             }
                             if after < lines.len() && indent_columns(lines[after]) >= note_floor {
                                 while i < after {
-                                    def_lines.push(String::new());
+                                    let (residue, consumed, synthetic) =
+                                        slice_columns_mapped(lines[i], note_floor, true);
+                                    def_lines.push(residue);
                                     def_line_map.push(Some(first_source_line + i));
                                     if positions {
-                                        def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                                        def_col_map
+                                            .push(Some(consumed as isize - synthetic as isize));
                                     }
                                     i += 1;
                                 }
@@ -6095,6 +6112,13 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         }
         for (j, line) in lines.iter_mut().enumerate().take(end + 1).skip(i) {
             if is_blank_line(line) {
+                if code.is_some() {
+                    let (residue, consumed, synthetic) = slice_columns_mapped(line, base, true);
+                    *line = residue;
+                    if let Some(Some(col)) = source.col_map.get_mut(j) {
+                        *col += consumed as isize - synthetic as isize;
+                    }
+                }
                 continue;
             }
             *line = strip_leading_columns(line, base);
@@ -10503,7 +10527,7 @@ fn parse_list(
                     && fence_interrupts
             });
             if item_open_fence.is_some() || fence_open.is_none() || rejected_fence_has_closer {
-                track_collected_fence(&mut item_open_fence, &dedented, true);
+                track_collected_fence(&mut item_open_fence, &dedented, true, indent);
             } else {
                 item_unopened_fence_span = true;
             }
@@ -12005,10 +12029,11 @@ fn collect_indented_block_mapped_with(
             // path was fixed in #911 and this one was not, so `--html` (which
             // takes the plain path) and `--json`/`fmt` (which take this one)
             // parsed the same document differently (markup-carve/carve-rs#908).
-            // What lies past the content column is the code line's content
+            // What lies past the opener column is the code line's content
             // (PART 11 §7), so a line of spaces keeps that residue.
-            if fence.is_some() {
-                let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
+            if let Some(open) = fence {
+                let (residue, consumed, synthetic) =
+                    slice_columns_mapped(line, open.content_col.max(strip_cols), true);
                 lines.push(residue);
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
@@ -12257,7 +12282,7 @@ fn collect_indented_block_mapped_with(
         // ghost as a closer, the stack emptied one level early, and the marker
         // gate severed the very div this tracker exists to keep whole.
         let opaque_here = fence.is_some() || in_comment_span;
-        track_collected_fence(fence, &sliced, indent >= strip_cols);
+        track_collected_fence(fence, &sliced, indent >= strip_cols, indent);
         track_collected_colon_fence(
             &mut colon_open,
             &sliced,
@@ -12371,7 +12396,12 @@ fn item_body_fence_has_closer(
     false
 }
 
-fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_content_column: bool) {
+fn track_collected_fence(
+    fence: &mut Option<FenceOpen>,
+    dedented: &str,
+    at_content_column: bool,
+    opener_column: usize,
+) {
     if !at_content_column {
         return;
     }
@@ -12382,7 +12412,8 @@ fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_conte
             }
         }
         None => {
-            if let Some(open) = detect_fence_open(dedented) {
+            if let Some(mut open) = detect_fence_open(dedented) {
+                open.content_col = opener_column;
                 *fence = Some(open);
             }
         }
@@ -13170,9 +13201,9 @@ impl DefinitionBodyFence {
     }
 
     /// Follow the fence over one line collected at the body's column.
-    fn track(&mut self, dedented: &str) {
+    fn track(&mut self, dedented: &str, opener_column: usize) {
         let was_open = self.open.is_some();
-        track_collected_fence(&mut self.open, dedented, true);
+        track_collected_fence(&mut self.open, dedented, true, opener_column);
         // The closer is the line that took the fence from open to closed; any
         // other line at the column is content, and content after a closed block
         // opens a paragraph the fold can reach again.
@@ -13477,7 +13508,7 @@ fn collect_definition_body(
                     || detect_fence_open(&sliced).is_none()
                     || rejected_fence_has_closer
                 {
-                    fence.track(&sliced);
+                    fence.track(&sliced, indent);
                 }
                 // A line collected AT the body's column can be the closer of a
                 // nested lead fence (its content sits at or past the fence's
@@ -13633,6 +13664,19 @@ fn collect_definition_body(
             }
             break;
         }
+        if let Some(open) = fence.open {
+            let (residue, consumed, synthetic) =
+                slice_columns_mapped(line, open.content_col.max(content_column), true);
+            lines.push(residue);
+            line_map.push(cur.source_line(cur.pos));
+            col_map.push(
+                cur.source_col(cur.pos)
+                    .map(|col| col + consumed as isize - synthetic as isize),
+            );
+            reached.push(false);
+            cur.consume();
+            continue;
+        }
         // Blank line: absorb it as a paragraph separator ONLY when a later line
         // still continues the definition (form A); otherwise leave it for the
         // entry separator / outer block stream.
@@ -13644,9 +13688,14 @@ fn collect_definition_body(
             Some(after) if !is_blank_line(after) && indent_columns(after) >= content_column => {
                 folded_a_lazy_line = false;
                 for _ in 0..look {
-                    lines.push(String::new());
+                    let (residue, consumed, synthetic) =
+                        slice_columns_mapped(cur.lines[cur.pos], content_column, true);
+                    lines.push(residue);
                     line_map.push(cur.source_line(cur.pos));
-                    col_map.push(cur.source_col(cur.pos));
+                    col_map.push(
+                        cur.source_col(cur.pos)
+                            .map(|col| col + consumed as isize - synthetic as isize),
+                    );
                     reached.push(false);
                     cur.consume();
                 }
