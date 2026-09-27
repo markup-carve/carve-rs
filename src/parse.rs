@@ -20789,12 +20789,11 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
 }
 
 fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationIndex<'_>) {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(nodes.len());
     for node in std::mem::take(nodes) {
         match node {
             InlineNode::Text(text) => {
-                let mut parts = replace_abbreviations_in_text(&text.value, index, text.pos);
-                out.append(&mut parts);
+                append_abbreviations_in_text(text.value, index, text.pos, &mut out);
             }
             InlineNode::Emphasis(mut e) => {
                 apply_abbreviations_inline(&mut e.children, index);
@@ -20847,11 +20846,12 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
 /// no-break-space sentinel is one character standing in for two), and a node
 /// spanning more than one line has no single column to count from. Either way
 /// the pieces get no position rather than a derived-from-wrong one.
-fn replace_abbreviations_in_text(
-    text: &str,
+fn append_abbreviations_in_text(
+    text: String,
     index: &AbbreviationIndex<'_>,
     pos: Option<Pos>,
-) -> Vec<InlineNode> {
+    out: &mut Vec<InlineNode>,
+) {
     let anchor = pos.filter(|p| {
         p.start_line == p.end_line
             && p.end_offset.saturating_sub(p.start_offset) == text.chars().count()
@@ -20872,7 +20872,8 @@ fn replace_abbreviations_in_text(
             file: None,
         })
     };
-    let mut out = Vec::new();
+    let mut plain_start = 0;
+    let mut plain_chars = 0;
     let mut i = 0;
     while i < text.len() {
         let mut matched: Option<(&str, &str)> = None;
@@ -20880,8 +20881,8 @@ fn replace_abbreviations_in_text(
         if let Some(candidates) = index.get(&ch) {
             for (abbr, expansion) in candidates {
                 if text[i..].starts_with(abbr)
-                    && is_word_boundary(text, i)
-                    && is_word_boundary(text, i + abbr.len())
+                    && is_word_boundary(&text, i)
+                    && is_word_boundary(&text, i + abbr.len())
                 {
                     matched = Some((*abbr, *expansion));
                     break;
@@ -20889,6 +20890,12 @@ fn replace_abbreviations_in_text(
             }
         }
         if let Some((abbr, expansion)) = matched {
+            if plain_start < i {
+                out.push(InlineNode::Text(Text {
+                    value: text[plain_start..i].to_owned(),
+                    pos: span_from(plain_chars, chars_done - plain_chars),
+                }));
+            }
             let len = abbr.chars().count();
             out.push(InlineNode::Abbreviation(Abbreviation {
                 abbr: abbr.to_string(),
@@ -20897,25 +20904,24 @@ fn replace_abbreviations_in_text(
             }));
             chars_done += len;
             i += abbr.len();
+            plain_start = i;
+            plain_chars = chars_done;
             continue;
-        }
-        match out.last_mut() {
-            Some(InlineNode::Text(existing)) => {
-                existing.value.push(ch);
-                if let Some(p) = existing.pos.as_mut() {
-                    p.end_column += 1;
-                    p.end_offset += 1;
-                }
-            }
-            _ => out.push(InlineNode::Text(Text {
-                value: ch.to_string(),
-                pos: span_from(chars_done, 1),
-            })),
         }
         chars_done += 1;
         i += ch.len_utf8();
     }
-    out
+    if plain_start < text.len() {
+        let value = if plain_start == 0 {
+            text
+        } else {
+            text[plain_start..].to_owned()
+        };
+        out.push(InlineNode::Text(Text {
+            value,
+            pos: span_from(plain_chars, chars_done - plain_chars),
+        }));
+    }
 }
 
 fn is_word_boundary(text: &str, pos: usize) -> bool {
