@@ -125,3 +125,35 @@ fn the_encoder_refuses_an_api_tree_past_its_depth_budget() {
         assert!(error.to_string().contains("encoder's depth budget"));
     });
 }
+
+#[test]
+fn the_cli_ingests_two_hundred_containers_on_its_default_stack() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = "{\"type\":\"paragraph\",\"children\":[]}".to_owned();
+    for _ in 0..200 {
+        child = format!("{{\"type\":\"admonition\",\"kind\":\"note\",\"children\":[{child}]}}");
+    }
+    let source = format!("{{\"type\":\"document\",\"srcByteLength\":0,\"children\":[{child}]}}");
+    let mut process = Command::new(env!("CARGO_BIN_EXE_carve"))
+        .args(["--from-json", "--json", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    process
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(source.as_bytes())
+        .unwrap();
+    let output = process.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!output.stdout.is_empty());
+}

@@ -1077,6 +1077,7 @@ impl ContentColumns {
         let indent = indent_columns(line);
         let raw_trimmed = trim_ascii(line);
         let starts_block = is_heading_marker_line(raw_trimmed)
+            || standalone_attrs_block_len(&[raw_trimmed]).is_some()
             || raw_trimmed.starts_with('>')
             || detect_fence_open(raw_trimmed).is_some()
             || detect_thematic_break(raw_trimmed);
@@ -1868,7 +1869,7 @@ fn extract_footnote_defs(
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                     authored_base_at_start: false,
-                    reached: Vec::new(),
+                    reached: vec![true; def_lines.len()],
                     // A FOOTNOTE BODY carries authored base for its sublists, so
                     // a list marker past the body's content column anchors its
                     // span at the marker (markup-carve/carve#1980).
@@ -5687,7 +5688,11 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }) && lines
                     .get(i + 1)
                     .is_some_and(|next| !is_blank_line(next) && indent_columns(next) < column);
-                paragraph_open = colon_folds;
+                paragraph_open = colon_folds
+                    || (include_sublists
+                        && marker
+                            .as_ref()
+                            .is_some_and(|marker| line_starts_paragraph(marker.content)));
                 nested_columns.push(column);
                 after_blank = false;
                 block_at_minimum = false;
@@ -21998,19 +22003,12 @@ fn collect_heading_titles(
                     // cross-reference resolved to the wrong heading - or, once the
                     // renderer was fixed, to none at all (#335).
                     let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
-                    let mut count = scan.counts.get(&base).copied().unwrap_or(0);
-                    let id = loop {
-                        count += 1;
-                        let candidate = if count == 1 {
-                            base.clone()
-                        } else {
-                            format!("{base}-{count}")
-                        };
-                        if has_explicit || !explicit_ids.contains(&candidate) {
-                            break candidate;
-                        }
-                    };
-                    scan.counts.insert(base, count);
+                    let id = crate::document_ids::allocate_heading_id(
+                        base,
+                        has_explicit,
+                        scan.counts,
+                        |id| explicit_ids.contains(id),
+                    );
                     if let Some(assigned) = scan.assigned.as_deref_mut() {
                         assigned.push(id.clone());
                     }
@@ -24011,4 +24009,35 @@ mod promote_block_images_is_iterative {
             .expect("spawn");
         worker.join().expect("the pass must not overflow the stack");
     }
+}
+
+pub(crate) fn lint_opens_code_fence(line: &str) -> bool {
+    detect_fence_open(line).is_some()
+}
+pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
+    if !is_table_start(line) {
+        return Vec::new();
+    }
+    let (_, body) = split_row_attrs(line);
+    let content = strip_row_closing_pipe(body.strip_prefix('|').unwrap_or(body));
+    let prefix = content.as_ptr() as usize - line.as_ptr() as usize;
+    let offsets: Vec<_> = content
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain(std::iter::once(content.len()))
+        .collect();
+    split_table_cells_ranged(content)
+        .cells
+        .into_iter()
+        .filter_map(|cell| {
+            let start = offsets[cell.start];
+            let end = offsets[cell.end];
+            let raw = &content[start..end];
+            let (_, close) = read_attrs_at(raw.as_bytes(), 0, raw.rfind('}'))?;
+            raw.as_bytes()
+                .get(close)
+                .filter(|&&b| b"<>~^v?".contains(&b))
+                .map(|_| (prefix + start, close + 1))
+        })
+        .collect()
 }

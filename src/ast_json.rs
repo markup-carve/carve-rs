@@ -2820,193 +2820,37 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
     let obj = value.expect_object("block node")?;
     let ty = required_string(obj, "block node", "type")?;
     match ty {
-        "paragraph" => Ok(BlockNode::Paragraph(Paragraph {
-            attrs: optional_attrs(obj)?,
-            children: decode_inlines(required_array(obj, "paragraph", "children")?)?,
-            // Parse-internal and NOT on the wire: it records whether the
-            // paragraph's first line sat at its container's content column, and
-            // the only reader is the image-figure promotion, which runs during
-            // parsing and has already run by the time anything is serialized.
-            // The default is the conservative answer - `true` would be a claim
-            // about the source this tree no longer has, and the one thing it
-            // could still do is promote a figure the author did not write.
-            at_content_column: false,
-            // TRUSTED, and promotion runs only where it is ABSENT (PART 12
-            // section 23). Unlike `at_content_column` above, this IS on the
-            // wire: it is a resolution result the producer published, not a fact
-            // about source this tree no longer has. See
-            // `promote_ingested_block_images`, which fills in the absent case -
-            // absence means the producer did not run the phase, not that the
-            // paragraph is ordinary, so a tree is never refused for omitting it.
-            block_image: optional_bool(obj, "blockImage")?.unwrap_or(false),
-            pos: optional_pos(obj, "paragraph")?,
-        })),
-        "heading" => Ok(BlockNode::Heading(Heading {
-            attrs: optional_attrs(obj)?,
-            level: required_usize(obj, "heading", "level")? as u8,
-            children: decode_inlines(required_array(obj, "heading", "children")?)?,
-            pos: optional_pos(obj, "heading")?,
-        })),
-        "block_quote" => Ok(BlockNode::BlockQuote(BlockQuote {
-            attrs: optional_attrs(obj)?,
-            children: decode_blocks(required_array(obj, "block_quote", "children")?)?,
-            fenced: optional_bool(obj, "fenced")?.unwrap_or(false),
-            pos: optional_pos(obj, "block_quote")?,
-        })),
-        "list" => Ok(BlockNode::List(List {
-            attrs: optional_attrs(obj)?,
-            ordered: required_bool(obj, "list", "ordered")?,
-            tight: required_bool(obj, "list", "tight")?,
-            items: required_array(obj, "list", "items")?
-                .iter()
-                .map(decode_list_item)
-                .collect::<Result<_, _>>()?,
-            start: optional_usize(obj, "start")?,
-            ol_type: optional_string(obj, "olType")?
-                .map(decode_ol_type)
-                .transpose()?,
-            bare_marker: optional_bool(obj, "bareMarker")?.unwrap_or(false),
-            delim: optional_marker_char(obj, "delim")?,
-            bullet_char: optional_marker_char(obj, "bulletChar")?,
-            pos: optional_pos(obj, "list")?,
-        })),
-        "code_block" => Ok(BlockNode::CodeBlock(CodeBlock {
-            attrs: optional_attrs(obj)?,
-            lang: optional_string(obj, "lang")?.map(str::to_string),
-            // `header` only: `title` is not a name the schema gives this node,
-            // so the unknown-field check refused the payload before this could
-            // read it. A fallback that cannot fire is a check that cannot fail
-            // (carve-rs#820).
-            title: optional_string(obj, "header")?.map(str::to_string),
-            label: optional_string(obj, "label")?.map(str::to_string),
-            content: required_string(obj, "code_block", "content")?.to_string(),
-            pos: optional_pos(obj, "code_block")?,
-        })),
-        "thematic_break" => Ok(BlockNode::ThematicBreak(ThematicBreak {
-            marker: optional_thematic_break_marker(obj)?,
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "thematic_break")?,
-        })),
-        "table" => Ok(BlockNode::Table(decode_table(obj)?)),
+        "paragraph" => decode_block_paragraph(obj),
+        "heading" => decode_block_heading(obj),
+        "block_quote" => decode_block_block_quote(obj),
+        "list" => decode_block_list(obj),
+        "code_block" => decode_block_code_block(obj),
+        "thematic_break" => decode_block_thematic_break(obj),
+        "table" => decode_block_table(obj),
         "table_row" => Err(AstJsonError::new(
             "table_row is only valid inside table.rows",
         )),
         "table_cell" => Err(AstJsonError::new(
             "table_cell is only valid inside table_row.cells",
         )),
-        "admonition" => Ok(BlockNode::Admonition(Admonition {
-            attrs: optional_attrs(obj)?,
-            kind: required_string(obj, "admonition", "kind")?.to_string(),
-            title: optional_inlines(obj, "title")?,
-            label: optional_string(obj, "label")?.map(str::to_string),
-            children: decode_blocks(required_array(obj, "admonition", "children")?)?,
-            pos: optional_pos(obj, "admonition")?,
-        })),
+        "admonition" => decode_block_admonition(obj),
         // CARVE-P12-057. The `kind` is NOT re-checked against the six here: the
         // schema's enum is what refuses one outside them, and an engine that
         // second-guessed it would refuse a tree a later clause admits.
-        "directive" => Ok(BlockNode::Directive(Directive {
-            attrs: optional_attrs(obj)?,
-            kind: required_string(obj, "directive", "kind")?.to_string(),
-            title: optional_inlines(obj, "title")?,
-            label: optional_string(obj, "label")?.map(str::to_string),
-            children: decode_blocks(required_array(obj, "directive", "children")?)?,
-            pos: optional_pos(obj, "directive")?,
-        })),
-        "div" => Ok(BlockNode::Div(Div {
-            attrs: optional_attrs(obj)?,
-            label: optional_string(obj, "label")?.map(str::to_string),
-            children: decode_blocks(required_array(obj, "div", "children")?)?,
-            pos: optional_pos(obj, "div")?,
-        })),
-        "section" => Ok(BlockNode::Section(Section {
-            attrs: optional_attrs(obj)?,
-            level: optional_usize(obj, "level")?
-                .map(|level| {
-                    u8::try_from(level)
-                        .ok()
-                        .filter(|level| (1..=6).contains(level))
-                        .ok_or_else(|| AstJsonError::new("section.level must be between 1 and 6"))
-                })
-                .transpose()?,
-            children: decode_blocks(required_array(obj, "section", "children")?)?,
-            pos: optional_pos(obj, "section")?,
-        })),
-        "line_block" => Ok(BlockNode::LineBlock(LineBlock {
-            attrs: optional_attrs(obj)?,
-            children: decode_blocks(required_array(obj, "line_block", "children")?)?,
-            lines: decode_line_block_lines(obj)?,
-            pos: optional_pos(obj, "line_block")?,
-        })),
-        "definition_list" => Ok(BlockNode::DefinitionList(DefinitionList {
-            attrs: optional_attrs(obj)?,
-            items: decode_definition_entries(required_array(obj, "definition_list", "items")?)?,
-            // PART 12 §8 types this `const: true`, so `false` is spelled by
-            // ABSENCE and an explicit `false` is not the default arriving the
-            // long way - it is a value the schema does not name.
-            loose: optional_bool(obj, "loose")?.unwrap_or(false),
-            pos: optional_pos(obj, "definition_list")?,
-        })),
-        "figure" => Ok(BlockNode::Figure(Figure {
-            attrs: optional_attrs(obj)?,
-            target: Box::new(decode_figure_target(required_value(
-                obj, "figure", "target",
-            )?)?),
-            rendered_target: None,
-            caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
-            short_caption: optional_inlines(obj, "shortCaption")?,
-            pos: optional_pos(obj, "figure")?,
-        })),
-        "figure_group" => Ok(BlockNode::FigureGroup(FigureGroup {
-            attrs: optional_attrs(obj)?,
-            children: decode_blocks(required_array(obj, "figure_group", "children")?)?,
-            caption: optional_inlines(obj, "caption")?,
-            pos: optional_pos(obj, "figure_group")?,
-        })),
-        "link_reference_definition" => Ok(BlockNode::LinkReferenceDefinition(
-            LinkReferenceDefinition {
-                label: required_string(obj, "link_reference_definition", "label")?.to_string(),
-                href: required_string(obj, "link_reference_definition", "href")?.to_string(),
-                title: optional_string(obj, "title")?.map(str::to_string),
-                attrs: optional_attrs(obj)?,
-                pos: optional_pos(obj, "link_reference_definition")?,
-            },
-        )),
-        "citation_definition" => Ok(BlockNode::CitationDefinition(CitationDefinition {
-            key: required_string(obj, "citation_definition", "key")?.to_string(),
-            children: decode_inlines(required_array(obj, "citation_definition", "children")?)?,
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "citation_definition")?,
-        })),
-        "abbreviation_def" => Ok(BlockNode::AbbreviationDef(AbbreviationDef {
-            abbr: required_string(obj, "abbreviation_def", "abbr")?.to_string(),
-            expansion: required_string(obj, "abbreviation_def", "expansion")?.to_string(),
-            pos: optional_pos(obj, "abbreviation_def")?,
-        })),
-        "raw_block" => Ok(BlockNode::RawBlock(RawBlock {
-            format: required_string(obj, "raw_block", "format")?.to_string(),
-            content: required_string(obj, "raw_block", "content")?.to_string(),
-            pos: optional_pos(obj, "raw_block")?,
-        })),
-        "comment" => Ok(BlockNode::Comment(Comment {
-            block: required_bool(obj, "comment", "block")?,
-            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
-            content: required_string(obj, "comment", "content")?.to_string(),
-            pos: optional_pos(obj, "comment")?,
-        })),
-        "block_extension" => Ok(BlockNode::BlockExtension(BlockExtension {
-            name: required_string(obj, "block_extension", "name")?.to_string(),
-            version: optional_string(obj, "version")?.map(str::to_string),
-            fallback: Box::new(decode_block(required_value(
-                obj,
-                "block_extension",
-                "fallback",
-            )?)?),
-            payload: optional_payload(obj)?,
-            attrs: optional_attrs(obj)?,
-            pos: optional_pos(obj, "block_extension")?,
-        })),
-        "image" => Ok(BlockNode::BlockImage(decode_image(obj)?)),
+        "directive" => decode_block_directive(obj),
+        "div" => decode_block_div(obj),
+        "section" => decode_block_section(obj),
+        "line_block" => decode_block_line_block(obj),
+        "definition_list" => decode_block_definition_list(obj),
+        "figure" => decode_block_figure(obj),
+        "figure_group" => decode_block_figure_group(obj),
+        "link_reference_definition" => decode_block_link_reference_definition(obj),
+        "citation_definition" => decode_block_citation_definition(obj),
+        "abbreviation_def" => decode_block_abbreviation_def(obj),
+        "raw_block" => decode_block_raw_block(obj),
+        "comment" => decode_block_comment(obj),
+        "block_extension" => decode_block_block_extension(obj),
+        "image" => decode_block_image(obj),
         "frontmatter" => Err(AstJsonError::new(
             "frontmatter is only valid as a document child",
         )),
@@ -3017,6 +2861,252 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             "unknown block node type {other:?}"
         ))),
     }
+}
+
+fn decode_block_paragraph(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Paragraph(Paragraph {
+        attrs: optional_attrs(obj)?,
+        children: decode_inlines(required_array(obj, "paragraph", "children")?)?,
+        // Parse-internal and NOT on the wire: it records whether the
+        // paragraph's first line sat at its container's content column, and
+        // the only reader is the image-figure promotion, which runs during
+        // parsing and has already run by the time anything is serialized.
+        // The default is the conservative answer - `true` would be a claim
+        // about the source this tree no longer has, and the one thing it
+        // could still do is promote a figure the author did not write.
+        at_content_column: false,
+        // TRUSTED, and promotion runs only where it is ABSENT (PART 12
+        // section 23). Unlike `at_content_column` above, this IS on the
+        // wire: it is a resolution result the producer published, not a fact
+        // about source this tree no longer has. See
+        // `promote_ingested_block_images`, which fills in the absent case -
+        // absence means the producer did not run the phase, not that the
+        // paragraph is ordinary, so a tree is never refused for omitting it.
+        block_image: optional_bool(obj, "blockImage")?.unwrap_or(false),
+        pos: optional_pos(obj, "paragraph")?,
+    }))
+}
+
+fn decode_block_heading(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Heading(Heading {
+        attrs: optional_attrs(obj)?,
+        level: required_usize(obj, "heading", "level")? as u8,
+        children: decode_inlines(required_array(obj, "heading", "children")?)?,
+        pos: optional_pos(obj, "heading")?,
+    }))
+}
+
+fn decode_block_block_quote(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::BlockQuote(BlockQuote {
+        attrs: optional_attrs(obj)?,
+        children: decode_blocks(required_array(obj, "block_quote", "children")?)?,
+        fenced: optional_bool(obj, "fenced")?.unwrap_or(false),
+        pos: optional_pos(obj, "block_quote")?,
+    }))
+}
+
+fn decode_block_list(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::List(List {
+        attrs: optional_attrs(obj)?,
+        ordered: required_bool(obj, "list", "ordered")?,
+        tight: required_bool(obj, "list", "tight")?,
+        items: required_array(obj, "list", "items")?
+            .iter()
+            .map(decode_list_item)
+            .collect::<Result<_, _>>()?,
+        start: optional_usize(obj, "start")?,
+        ol_type: optional_string(obj, "olType")?
+            .map(decode_ol_type)
+            .transpose()?,
+        bare_marker: optional_bool(obj, "bareMarker")?.unwrap_or(false),
+        delim: optional_marker_char(obj, "delim")?,
+        bullet_char: optional_marker_char(obj, "bulletChar")?,
+        pos: optional_pos(obj, "list")?,
+    }))
+}
+
+fn decode_block_code_block(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::CodeBlock(CodeBlock {
+        attrs: optional_attrs(obj)?,
+        lang: optional_string(obj, "lang")?.map(str::to_string),
+        // `header` only: `title` is not a name the schema gives this node,
+        // so the unknown-field check refused the payload before this could
+        // read it. A fallback that cannot fire is a check that cannot fail
+        // (carve-rs#820).
+        title: optional_string(obj, "header")?.map(str::to_string),
+        label: optional_string(obj, "label")?.map(str::to_string),
+        content: required_string(obj, "code_block", "content")?.to_string(),
+        pos: optional_pos(obj, "code_block")?,
+    }))
+}
+
+fn decode_block_thematic_break(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::ThematicBreak(ThematicBreak {
+        marker: optional_thematic_break_marker(obj)?,
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "thematic_break")?,
+    }))
+}
+
+fn decode_block_table(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Table(decode_table(obj)?))
+}
+
+fn decode_block_admonition(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Admonition(Admonition {
+        attrs: optional_attrs(obj)?,
+        kind: required_string(obj, "admonition", "kind")?.to_string(),
+        title: optional_inlines(obj, "title")?,
+        label: optional_string(obj, "label")?.map(str::to_string),
+        children: decode_blocks(required_array(obj, "admonition", "children")?)?,
+        pos: optional_pos(obj, "admonition")?,
+    }))
+}
+
+fn decode_block_directive(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Directive(Directive {
+        attrs: optional_attrs(obj)?,
+        kind: required_string(obj, "directive", "kind")?.to_string(),
+        title: optional_inlines(obj, "title")?,
+        label: optional_string(obj, "label")?.map(str::to_string),
+        children: decode_blocks(required_array(obj, "directive", "children")?)?,
+        pos: optional_pos(obj, "directive")?,
+    }))
+}
+
+fn decode_block_div(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Div(Div {
+        attrs: optional_attrs(obj)?,
+        label: optional_string(obj, "label")?.map(str::to_string),
+        children: decode_blocks(required_array(obj, "div", "children")?)?,
+        pos: optional_pos(obj, "div")?,
+    }))
+}
+
+fn decode_block_section(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Section(Section {
+        attrs: optional_attrs(obj)?,
+        level: optional_usize(obj, "level")?
+            .map(|level| {
+                u8::try_from(level)
+                    .ok()
+                    .filter(|level| (1..=6).contains(level))
+                    .ok_or_else(|| AstJsonError::new("section.level must be between 1 and 6"))
+            })
+            .transpose()?,
+        children: decode_blocks(required_array(obj, "section", "children")?)?,
+        pos: optional_pos(obj, "section")?,
+    }))
+}
+
+fn decode_block_line_block(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::LineBlock(LineBlock {
+        attrs: optional_attrs(obj)?,
+        children: decode_blocks(required_array(obj, "line_block", "children")?)?,
+        lines: decode_line_block_lines(obj)?,
+        pos: optional_pos(obj, "line_block")?,
+    }))
+}
+
+fn decode_block_definition_list(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::DefinitionList(DefinitionList {
+        attrs: optional_attrs(obj)?,
+        items: decode_definition_entries(required_array(obj, "definition_list", "items")?)?,
+        // PART 12 §8 types this `const: true`, so `false` is spelled by
+        // ABSENCE and an explicit `false` is not the default arriving the
+        // long way - it is a value the schema does not name.
+        loose: optional_bool(obj, "loose")?.unwrap_or(false),
+        pos: optional_pos(obj, "definition_list")?,
+    }))
+}
+
+fn decode_block_figure(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Figure(Figure {
+        attrs: optional_attrs(obj)?,
+        target: Box::new(decode_figure_target(required_value(
+            obj, "figure", "target",
+        )?)?),
+        rendered_target: None,
+        caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
+        short_caption: optional_inlines(obj, "shortCaption")?,
+        pos: optional_pos(obj, "figure")?,
+    }))
+}
+
+fn decode_block_figure_group(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::FigureGroup(FigureGroup {
+        attrs: optional_attrs(obj)?,
+        children: decode_blocks(required_array(obj, "figure_group", "children")?)?,
+        caption: optional_inlines(obj, "caption")?,
+        pos: optional_pos(obj, "figure_group")?,
+    }))
+}
+
+fn decode_block_link_reference_definition(
+    obj: &Map<String, Json>,
+) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::LinkReferenceDefinition(
+        LinkReferenceDefinition {
+            label: required_string(obj, "link_reference_definition", "label")?.to_string(),
+            href: required_string(obj, "link_reference_definition", "href")?.to_string(),
+            title: optional_string(obj, "title")?.map(str::to_string),
+            attrs: optional_attrs(obj)?,
+            pos: optional_pos(obj, "link_reference_definition")?,
+        },
+    ))
+}
+
+fn decode_block_citation_definition(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::CitationDefinition(CitationDefinition {
+        key: required_string(obj, "citation_definition", "key")?.to_string(),
+        children: decode_inlines(required_array(obj, "citation_definition", "children")?)?,
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "citation_definition")?,
+    }))
+}
+
+fn decode_block_abbreviation_def(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::AbbreviationDef(AbbreviationDef {
+        abbr: required_string(obj, "abbreviation_def", "abbr")?.to_string(),
+        expansion: required_string(obj, "abbreviation_def", "expansion")?.to_string(),
+        pos: optional_pos(obj, "abbreviation_def")?,
+    }))
+}
+
+fn decode_block_raw_block(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::RawBlock(RawBlock {
+        format: required_string(obj, "raw_block", "format")?.to_string(),
+        content: required_string(obj, "raw_block", "content")?.to_string(),
+        pos: optional_pos(obj, "raw_block")?,
+    }))
+}
+
+fn decode_block_comment(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::Comment(Comment {
+        block: required_bool(obj, "comment", "block")?,
+        delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
+        content: required_string(obj, "comment", "content")?.to_string(),
+        pos: optional_pos(obj, "comment")?,
+    }))
+}
+
+fn decode_block_block_extension(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::BlockExtension(BlockExtension {
+        name: required_string(obj, "block_extension", "name")?.to_string(),
+        version: optional_string(obj, "version")?.map(str::to_string),
+        fallback: Box::new(decode_block(required_value(
+            obj,
+            "block_extension",
+            "fallback",
+        )?)?),
+        payload: optional_payload(obj)?,
+        attrs: optional_attrs(obj)?,
+        pos: optional_pos(obj, "block_extension")?,
+    }))
+}
+
+fn decode_block_image(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
+    Ok(BlockNode::BlockImage(decode_image(obj)?))
 }
 
 /// A block extension's payload.

@@ -216,13 +216,10 @@ fn render_layout_body(
                 return None;
             }
             let base = slugify_parse(title, options.heading_id_options());
-            let count = heading_counts.entry(base.clone()).or_insert(0);
-            *count += 1;
-            let id = if *count == 1 {
-                base
-            } else {
-                format!("{base}-{}", *count)
-            };
+            let id =
+                crate::document_ids::allocate_heading_id(base, false, &mut heading_counts, |_| {
+                    false
+                });
             layout_indent(&mut out, sections.len());
             out.push_str("<section id=\"");
             out.push_str(&crate::escape::escape_attr(&id));
@@ -703,6 +700,7 @@ fn render_layout_ordered_list(
             break;
         };
         if number != expected
+            || text == "+"
             || detect_heading(text).is_some()
             || detect_fence_open(text).is_some()
             || detect_container_open(text).is_some()

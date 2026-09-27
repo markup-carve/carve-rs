@@ -229,11 +229,10 @@ fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, id_opts: HeadingId
         .unwrap_or_else(|| {
             crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), id_opts)
         });
-    let count = counts.entry(base.clone()).or_insert(0);
-    *count += 1;
-    if *count == 1 {
-        base
-    } else {
-        format!("{base}-{count}")
-    }
+    crate::document_ids::allocate_heading_id(
+        base,
+        h.attrs.as_ref().is_some_and(|attrs| attrs.id.is_some()),
+        counts,
+        crate::document_ids::is_explicit_id,
+    )
 }

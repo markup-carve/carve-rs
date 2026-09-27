@@ -57,7 +57,7 @@ fn lint_reports_figure_group_panel_number() {
 }
 
 #[test]
-fn a_group_without_a_panel_placeholder_lints_clean() {
+fn a_group_without_a_panel_placeholder_only_reports_its_single_panel() {
     let source = "\
 ::: figure
 ![one](a.png)
@@ -65,7 +65,9 @@ fn a_group_without_a_panel_placeholder_lints_clean() {
 :::
 ^ Figure #: Group
 ";
-    assert_eq!(carve::lint_carve(source), vec![]);
+    let warnings = carve::lint_carve(source);
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].rule, "figure-group-single-panel");
 }
 
 #[test]
