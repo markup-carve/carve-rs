@@ -18,6 +18,8 @@ before the importer groups comments into blocks or inline runs. An empty
 `<x-el></x-el>` beside a comment contributes no inline content. For example,
 `<p>a</p><!--note--><x-el></x-el><p>b</p>` produces a fenced block comment
 between the paragraphs and an `element-dropped` diagnostic for `<x-el>`.
+An active element such as `<script>` or `<noscript>` is dropped whole, so it
+does not make a comment beside it inline either.
 A comment beside text stays inline. In roundtrip mode, the unknown element
 is preserved as raw HTML, so it and the adjacent comment form an inline run.
 

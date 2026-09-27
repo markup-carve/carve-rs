@@ -271,3 +271,44 @@ fn a_roundtrip_comment_beside_a_preserved_unknown_element_stays_inline() {
     assert_eq!(codes, ["raw-preserved"]);
     assert_eq!(carve::render_carve(&carve::parse(&value)).unwrap(), value);
 }
+
+#[test]
+fn an_active_element_does_not_make_a_comment_inline() {
+    for (html, expected) in [
+        (
+            "<div class=\"a\"><p>x</p></div><!--\nA b\n--><noscript><img src=\"a.png\" alt=\"\"></noscript>\n<div class=\"b\"><p>y</p></div>",
+            "::: a\nx\n:::\n\n%%%\n\nA b\n\n%%%\n\n::: b\ny\n:::\n",
+        ),
+        ("<p>x</p><!-- c --><script>1</script>\n<p>y</p>", "x\n\n%%%\n c \n%%%\n\ny\n"),
+    ] {
+        let (value, codes) = import(html, HtmlImportMode::Safe);
+        assert_eq!(value, expected, "{html}");
+        assert_eq!(codes, ["element-dropped"], "{html}");
+        assert_eq!(carve::render_carve(&carve::parse(&value)).unwrap(), value);
+    }
+}
+
+#[test]
+fn a_comment_with_edge_newlines_holds_no_blank_line() {
+    let (value, codes) = import("<p>x <!--\nA b\n--> y</p>", HtmlImportMode::Safe);
+    assert!(value.contains("\nA b\n %} y"), "{value}");
+    assert!(codes.is_empty(), "{codes:?}");
+    let (_, codes) = import("<p>x <!--a\n\nb--> y</p>", HtmlImportMode::Safe);
+    assert_eq!(codes, ["element-dropped"]);
+}
+
+#[test]
+fn a_comment_beside_active_elements_is_still_charged_against_the_node_limit() {
+    let html = format!(
+        "<p>a</p><!--c-->{}<p>b</p>",
+        "<script>1</script>".repeat(50)
+    );
+    let options = HtmlImportOptions {
+        max_nodes: 20,
+        ..Default::default()
+    };
+    assert!(matches!(
+        html_to_carve(&html, &options),
+        Err(carve::HtmlImportError::NodeLimit)
+    ));
+}

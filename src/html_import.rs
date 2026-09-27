@@ -2370,12 +2370,27 @@ impl<'a> Importer<'a> {
         let comments_only = inline
             .iter()
             .any(|h| matches!(&h.data, NodeData::Comment { .. }))
-            && inline
-                .iter()
-                .all(|h| matches!(&h.data, NodeData::Comment { .. }) || dom_text_is_layout_only(h));
+            && inline.iter().all(|h| {
+                matches!(&h.data, NodeData::Comment { .. })
+                    || dom_text_is_layout_only(h)
+                    || Self::is_active_tag(h)
+            });
         if comments_only {
-            for handle in inline.iter() {
-                if let NodeData::Comment { contents } = &handle.data {
+            // An active element imports to nothing, so it cannot make the
+            // comment beside it inline (markup-carve/carve-rs#2029).
+            for (handle, path) in inline.iter().zip(inline_paths.iter()) {
+                // Charged as the inline walk would have charged it.
+                self.enter(depth + 1)?;
+                if Self::is_active_tag(handle) {
+                    let tag = Self::tag(handle).unwrap_or_default();
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementDropped,
+                        format!("Dropped active <{tag}> element"),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        handle,
+                    );
+                } else if let NodeData::Comment { contents } = &handle.data {
                     out.push(BlockNode::Comment(Comment {
                         block: true,
                         delimited: false,
@@ -3699,6 +3714,12 @@ impl<'a> Importer<'a> {
             }
         }
         false
+    }
+
+    /// An element the import drops whole, whatever it holds.
+    fn is_active_tag(h: &Handle) -> bool {
+        Self::tag(h)
+            .is_some_and(|tag| matches!(tag.as_str(), "script" | "style" | "template" | "noscript"))
     }
 
     /// Whether a run of text is anything other than ASCII layout whitespace.
@@ -5264,10 +5285,13 @@ impl<'a> Importer<'a> {
     /// (markup-carve/carve#1709).
     fn comment(&mut self, content: &str, path: &str, node: &Handle) -> Vec<InlineNode> {
         let closes_early = content.contains("%}");
-        let ends_the_run = content
-            .split('\n')
-            .skip(1)
-            .any(|line| line.chars().all(|c| c == ' ' || c == '\t'));
+        // A blank line lies BETWEEN two newlines; the edge segments sit beside
+        // the `{%` and `%}` delimiters (carve-js reads `\n[ \t]*\n`).
+        let segments: Vec<&str> = content.split('\n').collect();
+        let ends_the_run = segments.len() > 2
+            && segments[1..segments.len() - 1]
+                .iter()
+                .any(|line| line.chars().all(|c| c == ' ' || c == '\t'));
         if closes_early || ends_the_run {
             let why = if closes_early {
                 "holds the comment closer"
@@ -5355,7 +5379,7 @@ impl<'a> Importer<'a> {
         let Some(tag) = Self::tag(h) else {
             return Ok(Vec::new());
         };
-        if matches!(tag.as_str(), "script" | "style" | "template" | "noscript") {
+        if Self::is_active_tag(h) {
             self.diag(
                 HtmlImportDiagnosticCode::ElementDropped,
                 format!("Dropped active <{tag}> element"),
