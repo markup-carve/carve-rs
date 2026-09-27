@@ -15905,9 +15905,8 @@ fn is_attr_ident_part(b: u8) -> bool {
 /// (O(n²) on `[x]{`×n + `}`, `[x]{a `×n + `}`, `[x]{.a `×n + `}`, `[x]{k= `×n +
 /// `}`, …). It is a pure SKIP filter: it returns `true` ONLY when the payload is
 /// provably invalid; on a `}` (a candidate close), a newline, a quote, an
-/// escape, a `key=<value>` with a real value, or ANY non-ASCII byte (a possible
-/// Unicode-whitespace separator or non-ASCII content), it returns `false` and
-/// the unchanged scan/`parse_attrs` path decides -- so every accepted block, and
+/// escape, a `key=<value>` with a real value, or any non-ASCII byte, it returns
+/// `false` and the full scan/`parse_attrs` path decides. Every accepted block and
 /// its output, is byte-identical. A nested `{`/`[` (or any other invalid
 /// boundary byte) ends the walk, so each byte is visited O(1) times -> O(n)
 /// total. Deferring on non-ASCII keeps it correct without decoding chars (only
@@ -15920,9 +15919,7 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
     let mut i = brace + 1;
     while i < n {
         let c = bytes[i];
-        // Non-ASCII: a Unicode-whitespace separator, a non-ASCII value byte, or
-        // other subtle content. Defer to the full scan/parse (byte-identical;
-        // non-ASCII is never the repeated ASCII pathological shape).
+        // Defer non-ASCII content to the full parser.
         if !c.is_ascii() {
             return false;
         }
@@ -15931,9 +15928,8 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
             b'}' => return false,
             // A newline ends an inline block (read_attrs_at bails); defer.
             b'\n' => return false,
-            // Other ASCII whitespace separates tokens (attr_tokens treats
-            // char::is_whitespace as a separator); skip it and continue.
-            b' ' | b'\t' | 0x0B | 0x0C | b'\r' => i += 1,
+            // Attribute separators are ASCII space, tab, and newline.
+            b' ' | b'\t' | b'\r' => i += 1,
             // Quotes and escapes are subtle -- defer.
             b'"' | b'\'' | b'\\' => return false,
             // `#id` / `.class`: an identifier MUST follow, else the token (and
@@ -15963,11 +15959,11 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
                     // next) leaves a dangling `=` -> invalid. A bare value
                     // (>=1 non-space) or a quoted value: defer (a valid bare
                     // value is consumed whole by the scan -> linear). Non-ASCII
-                    // after `=` (a value byte or Unicode space) also defers.
+                    // after `=` (a value byte) also defers.
                     match bytes.get(i + 1) {
                         None => return true,
                         Some(&b'}') => return true,
-                        Some(&v) if v.is_ascii() && v.is_ascii_whitespace() => return true,
+                        Some(b' ' | b'\t' | b'\r' | b'\n') => return true,
                         _ => return false,
                     }
                 }
@@ -16144,7 +16140,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 None => match ch {
                     '\\' => escaped = true,
                     '"' | '\'' => quote = Some(ch),
-                    c if c.is_whitespace() && c != ' ' => return None,
+                    '\t' | '\r' | '\n' => return None,
                     _ => {}
                 },
             }
@@ -16154,7 +16150,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
         return None;
     }
     let mut attrs = Attrs::default();
-    for token in attr_tokens(src) {
+    for token in attr_tokens(src)? {
         if let Some(tag) = token.strip_prefix(':') {
             if !is_language_tag(tag) {
                 return None;
@@ -16197,6 +16193,11 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
             {
                 unescape_title(inner)
             } else {
+                if value.chars().any(|ch| {
+                    matches!(ch, '}' | '|' | '"' | '\'' | '\\' | ' ' | '\t' | '\r' | '\n')
+                }) {
+                    return None;
+                }
                 value.to_string()
             };
             if key == "id" {
@@ -16247,11 +16248,12 @@ fn is_language_tag(tag: &str) -> bool {
         })
 }
 
-fn attr_tokens(src: &str) -> Vec<String> {
+fn attr_tokens(src: &str) -> Option<Vec<String>> {
     let mut tokens = Vec::new();
     let mut buf = String::new();
     let mut quote: Option<char> = None;
     let mut escaped = false;
+    let mut closed_quote = false;
     for ch in src.chars() {
         if escaped {
             buf.push('\\');
@@ -16259,7 +16261,7 @@ fn attr_tokens(src: &str) -> Vec<String> {
             escaped = false;
             continue;
         }
-        if ch == '\\' {
+        if ch == '\\' && quote.is_some() {
             escaped = true;
             continue;
         }
@@ -16267,10 +16269,14 @@ fn attr_tokens(src: &str) -> Vec<String> {
             buf.push(ch);
             if ch == q {
                 quote = None;
+                closed_quote = true;
             }
             continue;
         }
         if ch == '"' || ch == '\'' {
+            if closed_quote || !matches!(buf.split_once('='), Some((_, ""))) {
+                return None;
+            }
             quote = Some(ch);
             buf.push(ch);
             continue;
@@ -16282,18 +16288,25 @@ fn attr_tokens(src: &str) -> Vec<String> {
         // `#` or `.`, manufacturing two attributes where the source has one
         // malformed one - `.a.b` now stays one token and fails `is_identifier`,
         // which is what makes the whole block literal.
-        if ch.is_whitespace() {
+        if matches!(ch, ' ' | '\t' | '\r' | '\n') {
+            closed_quote = false;
             if !buf.is_empty() {
                 tokens.push(std::mem::take(&mut buf));
             }
         } else {
+            if closed_quote {
+                return None;
+            }
             buf.push(ch);
         }
+    }
+    if quote.is_some() || escaped {
+        return None;
     }
     if !buf.is_empty() {
         tokens.push(buf);
     }
-    tokens
+    Some(tokens)
 }
 
 fn parse_standalone_attrs(line: &str) -> Option<Attrs> {

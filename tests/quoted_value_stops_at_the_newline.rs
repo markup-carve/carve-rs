@@ -96,14 +96,11 @@ fn control_a_continuation_after_a_closed_quoted_value_is_still_one_block() {
 }
 
 #[test]
-fn control_an_escaped_quote_outside_a_value_opens_nothing() {
-    // A backslash escapes the next character wherever it sits, so `\"` in an
-    // UNQUOTED value neither opens a quoted value nor closes one. Reading it as
-    // an opener would refuse a block that is valid today, and the executable
-    // spec renders this one as an ordinary block.
+fn an_escape_in_an_unquoted_value_rejects_the_wrapped_block() {
+    // Unquoted values exclude backslashes and quotes (carve#2440).
     assert_eq!(
         to_html("{k=a\\\"x\n.b}\n\nparagraph\n").trim(),
-        "<p k=\"a\\&quot;x\" class=\"b\">paragraph</p>"
+        "<p>{k=a\"x\n.b}</p>\n<p>paragraph</p>"
     );
 }
 
