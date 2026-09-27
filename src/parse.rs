@@ -5389,8 +5389,8 @@ struct ResolvedBody {
 
 /// Fill in the children of a node [`open_container`] emitted hollow.
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
-    if let Some(last) = children.iter().rev().find_map(crate::ast_json::block_pos) {
-        if let Some(pos) = block_pos_mut(node) {
+    if let Some(pos) = block_pos_mut(node) {
+        if let Some(last) = children.iter().rev().find_map(crate::ast_json::block_pos) {
             if (last.end_line, last.end_column) > (pos.end_line, pos.end_column) {
                 pos.end_line = last.end_line;
                 pos.end_column = last.end_column;
@@ -9577,8 +9577,7 @@ fn parse_list(
                         )
                     });
                     if !renders_nothing {
-                        pending_blank = item_open_fence
-                            .is_some_and(|open| open.content_col > content_col)
+                        pending_blank = item_open_fence.is_some()
                             && cur.pos > 0
                             && is_blank_line(cur.lines[cur.pos - 1]);
                         if pending_blank {
@@ -10272,6 +10271,12 @@ fn parse_list(
             // double-loosen.
             if swallowed_blank_separator {
                 pending_blank = true;
+                blank_run = cur.lines[..cur.pos]
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .take_while(|line| is_blank_line(line))
+                    .count();
             }
             continue;
         }
@@ -15020,7 +15025,7 @@ fn container_span(
     options: &Options<'_>,
 ) -> Option<Pos> {
     let mut end = cur.pos;
-    if !closed {
+    if options.positions && !closed {
         while end > start + 1 && is_blank_line(cur.lines[end - 1]) {
             end -= 1;
         }

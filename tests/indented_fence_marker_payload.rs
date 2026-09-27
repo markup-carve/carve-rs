@@ -135,3 +135,19 @@ fn copied_blanks_do_not_extend_an_unfinished_div() {
         assert_eq!(position.unwrap().end_line, end);
     }
 }
+
+#[test]
+fn fence_separator_counts_do_not_depend_on_the_opener_column() {
+    for lead in ["- ```\n", "- head\n\n  ```\n", "- head\n\n   ```\n"] {
+        for blanks in [1, 3] {
+            let source = format!("{lead}   body\n{}- next\n", "\n".repeat(blanks));
+            let html = to_html(&source);
+            if blanks == 3 {
+                assert!(html.contains("</ul>\n<ul>"), "{source:?}: {html}");
+            } else {
+                assert!(html.contains("<li><p>next</p></li>"), "{source:?}: {html}");
+            }
+            assert_eq!(html, to_html(&to_carve(&source)));
+        }
+    }
+}
