@@ -135,3 +135,79 @@ fn adjacent_inline_children_are_not_joined_by_a_separator() {
     let src = migrated(&caption("<strong>a</strong><em>b</em>"));
     assert!(src.contains("^ *a*/b/"), "{src}");
 }
+
+#[test]
+fn flattened_cell_boundaries_use_one_layout_space() {
+    use carve::{parse, render_carve, HtmlImportMode};
+
+    for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        for (inner, expected) in [
+            (
+                "list: <ul><li>fruits<ul><li>apple</li></ul></li></ul>",
+                "list: fruits apple",
+            ),
+            (
+                "list:<ul><li> fruits <ul><li> apple</li></ul></li></ul>",
+                "list: fruits apple",
+            ),
+            (
+                "list: \n<ul><li> fruits \n<ul><li> apple</li></ul></li></ul>",
+                "list: fruits apple",
+            ),
+            ("<p>one </p> two", "one two"),
+            ("<p>one</p>two", "one two"),
+            ("<p>one </p><p> two</p>", "one two"),
+            ("<p>one </p><p> </p><p> two</p>", "one two"),
+            ("<p><code>a </code></p><p><code> b</code></p>", "`a ` ` b`"),
+            ("<p>one&nbsp;</p><p>&nbsp;two</p>", "one\u{a0} \u{a0}two"),
+        ] {
+            let html = format!("<table><tr><td>{inner}</td></tr></table>");
+            let result = html_to_carve(&html, &options).unwrap();
+            assert_eq!(
+                result.value,
+                format!("| {expected} |\n"),
+                "{mode:?}: {html}"
+            );
+            assert_eq!(render_carve(&parse(&result.value)).unwrap(), result.value);
+        }
+    }
+}
+
+#[test]
+fn flattening_the_nested_list_keeps_its_diagnostics() {
+    use carve::{HtmlImportDiagnosticCode, HtmlImportMode};
+
+    let html =
+        "<table><tr><td>list: <ul><li>fruits<ul><li>apple</li></ul></li></ul></td></tr></table>";
+    for mode in [HtmlImportMode::Safe, HtmlImportMode::Semantic] {
+        let result = html_to_carve(
+            html,
+            &HtmlImportOptions {
+                mode,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let rows = result.report.diagnostics;
+        assert_eq!(rows.len(), 4);
+        for row in &rows {
+            assert_eq!(row.code, HtmlImportDiagnosticCode::ElementUnwrapped);
+            assert_eq!(row.severity.as_str(), "info");
+        }
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.path.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "/table[1]/tr[1]/td[1]/ul[2]",
+                "/table[1]/tr[1]/td[1]/ul[2]/li[1]",
+                "/table[1]/tr[1]/td[1]/ul[2]/li[1]/ul[2]",
+                "/table[1]/tr[1]/td[1]/ul[2]/li[1]/ul[2]/li[1]",
+            ]
+        );
+    }
+}
