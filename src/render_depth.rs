@@ -304,7 +304,7 @@ fn push_block_children<'a>(
 /// The sequences one inline node holds, mirroring
 /// [`crate::include_walk::visit_inline_children`], and exhaustive for the same
 /// reason as above.
-fn push_inline_children<'a>(
+pub(crate) fn push_inline_children<'a>(
     node: &'a InlineNode,
     depth: usize,
     inlines: &mut Vec<(&'a InlineNode, usize)>,
