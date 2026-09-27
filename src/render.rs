@@ -2783,11 +2783,7 @@ fn render_named_container(
     let tag = if canonical { "aside" } else { "div" };
     let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
-            dedup_class_str(&format!(
-                "{} {}",
-                base,
-                sanitized_classes(&at.classes).join(" ")
-            )),
+            append_base_class(&base, &at.classes),
             render_attrs_after_class_for(at, tag),
         ),
         Some(at) => (base, render_attrs_after_class_for(at, tag)),
@@ -3018,11 +3014,7 @@ fn render_figure(
 fn class_first_attrs(base: &str, attrs: &Option<Attrs>) -> String {
     let (class, rest) = match attrs {
         Some(at) if !at.classes.is_empty() => (
-            dedup_class_str(&format!(
-                "{} {}",
-                base,
-                sanitized_classes(&at.classes).join(" ")
-            )),
+            merge_base_class(base, &at.classes),
             render_attrs_after_class(at),
         ),
         Some(at) => (base.to_string(), render_attrs_after_class(at)),
@@ -4121,26 +4113,39 @@ fn write_attr_class(out: &mut String, classes: &[String]) {
     out.push('"');
 }
 
-/// Dedup whitespace-separated classes, keeping first-occurrence order. Used
-/// where a structural base class is merged with author classes (§15).
-fn dedup_class_str(s: &str) -> String {
-    let mut seen: Vec<&str> = Vec::new();
-    for c in s.split_whitespace() {
-        if !seen.contains(&c) {
-            seen.push(c);
-        }
+/// A structural base class, then the author's sanitized entries appended whole.
+/// The base does not join the author's dedup pool, so `{.note}` on `::: note`
+/// opens `class="admonition note note"` - the typed-div merge keeps its type
+/// class ahead of the attribute line rather than merging into it (§15).
+fn append_base_class(base: &str, classes: &[String]) -> String {
+    let mut out = String::from(base);
+    for entry in sanitized_classes(classes) {
+        out.push(' ');
+        out.push_str(&entry);
     }
-    seen.join(" ")
+    out
+}
+
+/// The same merge where the base DOES take part in the dedup, as ONE entry: the
+/// block-attribute merge prepends it to the author's list (a figure group), and
+/// carve-js's inline base merge does the same. An entry is never split into
+/// names, so `{class="a  b"}` keeps its run.
+fn merge_base_class(base: &str, classes: &[String]) -> String {
+    let mut out = String::from(base);
+    for entry in sanitized_classes(classes) {
+        if entry == base {
+            continue;
+        }
+        out.push(' ');
+        out.push_str(&entry);
+    }
+    out
 }
 
 fn structural_attrs(base: &str, attrs: &Option<Attrs>) -> (String, String) {
     match attrs {
         Some(a) if !a.classes.is_empty() => (
-            dedup_class_str(&format!(
-                "{} {}",
-                base,
-                sanitized_classes(&a.classes).join(" ")
-            )),
+            merge_base_class(base, &a.classes),
             render_attrs_after_class(a),
         ),
         Some(a) => (base.to_string(), render_attrs_after_class(a)),
@@ -4396,12 +4401,10 @@ pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) ->
         return format!(" class=\"{}\"", escape_attr(base));
     };
     let merged = |classes: &[String]| -> String {
-        let joined = if classes.is_empty() {
-            base.to_string()
-        } else {
-            format!("{} {}", base, sanitized_classes(classes).join(" "))
-        };
-        format!(" class=\"{}\"", escape_attr(&dedup_class_str(&joined)))
+        format!(
+            " class=\"{}\"",
+            escape_attr(&merge_base_class(base, classes))
+        )
     };
     // No recorded order: the slots go in the canonical order, class first.
     if attrs.order.is_empty() {
