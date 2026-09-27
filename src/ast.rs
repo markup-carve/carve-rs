@@ -137,6 +137,7 @@ pub struct Frontmatter {
 /// in a debug build. The result depends on the shape of the tree, build profile,
 /// compiler, and caller's stack. No depth is guaranteed for arbitrary trees.
 /// These traits have no depth error and may overflow the stack on deeper trees.
+/// Use [`Document::summary`] for bounded diagnostic output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
@@ -168,7 +169,38 @@ pub struct Document {
     pub ingest_payload_len: usize,
 }
 
+/// A fixed-size view of a document for logging without recursive AST traversal.
+///
+/// Counts describe root collections, not descendants. Source bytes are the
+/// document's recorded value, which may be supplied by an ingested payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct DocumentSummary {
+    /// Blocks directly under the document, excluding descendants and footnotes.
+    pub root_blocks: usize,
+    /// Defined footnote labels, regardless of the size of their bodies.
+    pub footnote_definitions: usize,
+    /// Parsed frontmatter entries. Raw JSON and TOML frontmatter is not counted.
+    pub frontmatter_entries: usize,
+    /// Recorded [`Document::source_len`], normally zero for caller-built trees.
+    pub source_bytes: usize,
+}
+
 impl Document {
+    /// Summarize root metadata without reading node content or walking children.
+    ///
+    /// Formatting this value uses bounded stack and output even when the AST
+    /// has arbitrary depth. Use it instead of the recursive `Document` debug
+    /// representation when logging caller-built trees.
+    pub fn summary(&self) -> DocumentSummary {
+        DocumentSummary {
+            root_blocks: self.children.len(),
+            footnote_definitions: self.footnote_defs.len(),
+            frontmatter_entries: self.frontmatter.len(),
+            source_bytes: self.source_len,
+        }
+    }
+
     /// The length a per-render expansion budget may be sized from.
     ///
     /// The expansion budgets - abbreviations, the table of contents, the index -
