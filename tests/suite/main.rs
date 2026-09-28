@@ -274,6 +274,8 @@ mod a_line_comment_drops_trailing_whitespace;
 mod a_line_initial_code_payload_keeps_its_padding;
 #[path = "../a_link_policy_reads_the_host_a_browser_reads.rs"]
 mod a_link_policy_reads_the_host_a_browser_reads;
+#[path = "../a_lint_diagnostic_reads_the_line_it_reports_on.rs"]
+mod a_lint_diagnostic_reads_the_line_it_reports_on;
 #[path = "../a_list_marker_in_a_contained_comment_is_comment_text.rs"]
 mod a_list_marker_in_a_contained_comment_is_comment_text;
 #[path = "../a_literal_tilde_in_text_is_escaped.rs"]

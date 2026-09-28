@@ -4278,7 +4278,21 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             _ => {}
         }
         match block {
-            BlockNode::BlockQuote(n) => {
+            // A QUOTE HAS TWO SPELLINGS AND ONLY ONE OF THEM ENDS AT ITS LAST
+            // CHILD. `docs/ast-json-contract.md` reads §4's end rule as a
+            // statement about MARKUP - a container ends at the markup that
+            // closes it, and "ends at its last placed child" is the case for a
+            // container whose closer is IMPLICIT. The `>` prefix form has none,
+            // so its content's end is its extent; the `::: >` form has one, and
+            // every other colon fence spans it. Narrowed by kind alone, the
+            // fenced quote was shrunk off its own closer, so it read 1 to 2
+            // where a div, an admonition and a line block over the same three
+            // lines all read 1 to 3 - and `carve lint`, which reads the span to
+            // find the closer, then reported a closed container as unclosed
+            // (carve-rs#2099, and carve-php#2636 for the same reading). An
+            // emptied fenced quote is unaffected: it has no placed child, so the
+            // narrowing never reached it.
+            BlockNode::BlockQuote(n) if !n.fenced => {
                 let last = n
                     .children
                     .iter()

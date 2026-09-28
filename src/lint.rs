@@ -247,7 +247,7 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                                 && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v')
                         })
                     {
-                        out.push(LintWarning { line: index + 1, column: start + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
+                        out.push(LintWarning { line: index + 1, column: line[..start].chars().count() + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
                     }
                 }
                 i += 1;
@@ -257,7 +257,13 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
             .any(|k| line.contains(&format!("{k}=")))
         {
             let next = lines.get(index + 1).copied().unwrap_or("");
-            if next.trim_start().starts_with('|') {
+            // THE LINE HAS TO BE A BLOCK-ATTRIBUTE LINE, not merely hold a
+            // brace run. A `{…}` with text beside it attaches to nothing under
+            // PART 9 §15, so it is paragraph text and lists none of the table's
+            // column metadata - every rule below was reporting on a table that
+            // had not been configured at all (markup-carve/carve-rs#2099).
+            let attribute_line = trimmed.starts_with('{') && trimmed.trim_end().ends_with('}');
+            if attribute_line && next.trim_start().starts_with('|') {
                 let columns = next.matches('|').count().saturating_sub(1);
                 for key in ["aligns", "valigns", "widths"] {
                     let Some(key_at) = line.find(&format!("{key}=")) else {
@@ -273,10 +279,17 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                             .unwrap_or("")
                     };
                     let values: Vec<&str> = raw.split(',').collect();
+                    // A `LintWarning`'s `start` and `end` are byte offsets by
+                    // design, stated on the struct; its `column` is the number a
+                    // `Pos` carries, so a consumer can line a diagnostic up with
+                    // a node, and PART 12 §4 counts that in codepoints. These
+                    // rules passed the byte offset straight through, so one run
+                    // reported columns in two units on any line holding a
+                    // non-ASCII character (markup-carve/carve-rs#2099).
                     let push = |out: &mut Vec<LintWarning>, rule, message: String| {
                         out.push(LintWarning {
                             line: index + 1,
-                            column: key_at + 1,
+                            column: line[..key_at].chars().count() + 1,
                             rule,
                             message,
                             start: line_start + key_at,
