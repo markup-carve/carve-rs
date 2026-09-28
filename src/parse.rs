@@ -9674,7 +9674,9 @@ fn parse_list(
     // 506-comment-columns-and-surviving-list-items-6).
     //
     // True at the start because the lead-paragraph path is what the loop resumes
-    // from, and that path leaves a paragraph.
+    // from, and that path leaves a paragraph - which is exactly why that path has
+    // to SAY so rather than inherit: an item after a marker-line heading read the
+    // heading's answer and refused a lazy line of its own (carve-rs#2120).
     let mut item_paragraph_open = true;
     // A fence line the lead paragraph absorbed because no closer is written in
     // the item still opens a SPAN that runs to the item's end, so every later
@@ -10640,11 +10642,21 @@ fn parse_list(
             // marker-line content rather than a collected line - so the
             // collector's fenced-body guard is seeded from it (corpus 276).
             item_open_fence = detect_fence_open(marker.content);
+            // A MARKER-LINE BLOCK THAT LEAVES NOTHING OPEN ENDS THE ITEM. PART 1
+            // S4's otherwise has already ended it, so a line in the band between
+            // the list's base and the item's content column has nothing here to
+            // continue. The collection floor is what says so, as it does for an
+            // empty quote on the marker line (carve-rs#2120).
+            //
+            // The predicate is what the marker line leaves OPEN, not whether it
+            // holds a paragraph: a code fence or a colon container is open on one
+            // line and the band line below it is its payload.
+            let marker_block_leaves_content_open = item_open_fence.is_some()
+                || colon_fences_left_open(marker.content) > 0
+                || body_ends_with_open_paragraph(marker.content, options);
             let body_floor = if detect_comment_fence_line(marker.content).is_some()
                 || is_flush_line_comment(marker.content)
-                || heading_content_starts(marker.content)
-                || detect_thematic_break(marker.content)
-                || is_table_start(marker.content)
+                || !marker_block_leaves_content_open
             {
                 content_col.saturating_sub(1)
             } else {
@@ -10666,10 +10678,21 @@ fn parse_list(
             // ends no container, took the line into the verbatim body instead
             // (carve-rs#2096).
             if item_open_fence.is_none() {
-                fold_lazy_run_and_resume(
+                // IN THE BAND, not only at column 0. The floor above hands the
+                // band line to this fold instead of collecting it blind, and the
+                // fold is the thing that asks S4's question - so it has to be
+                // able to see a line the raised floor left behind (#2120).
+                let (lazy_column, list_base) = if marker_block_leaves_content_open {
+                    (0, 0)
+                } else {
+                    (content_col.saturating_sub(1), base_indent)
+                };
+                fold_lazy_run_and_resume_in_band(
                     cur,
                     &mut stream,
                     content_col,
+                    lazy_column,
+                    list_base,
                     |src, _below| {
                         if swallowed_blank_separator {
                             return false;
@@ -10724,6 +10747,22 @@ fn parse_list(
                     .take(3)
                     .take_while(|line| is_blank_line(line))
                     .count();
+            }
+            // The fold above had its chance: it takes the band line back when
+            // the body does hold an open paragraph. Left behind, the line
+            // reached nothing, so the LIST ends here rather than letting the
+            // outer loop read it as this item's lazy continuation.
+            if !marker_block_leaves_content_open
+                && cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent > base_indent
+                        && indent < content_col
+                })
+            {
+                break;
             }
             continue;
         }
@@ -10931,6 +10970,8 @@ fn parse_list(
                 stamp_source_line(&mut paragraph, line);
             }
         }
+        // This path's item IS a paragraph, so S4 has a paragraph for a lazy line.
+        item_paragraph_open = true;
         items.push(ListItem {
             attrs: item_attrs,
             checked: marker.checked,
