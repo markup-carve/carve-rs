@@ -9184,6 +9184,20 @@ fn parse_list(
     // opener may be the MARKER line, which the collectors never see, or a later
     // CONTINUATION line, after the item's paragraph state has reopened.
     let mut item_open_fence: Option<FenceOpen> = None;
+    // Does the current item still hold an OPEN PARAGRAPH for a lazy line?
+    //
+    // The comment exception below needs it. Section 24 C3 says a comment does
+    // not close the item, and that is right - but it does not reach the item
+    // either, so once the item holds no paragraph, PART 1 S4's otherwise has
+    // already ended it and both the comment and the line under it belong to the
+    // document. Asked unconditionally, the exception revived an item its own
+    // block had closed: `- # h` / `%% c` / `tail`, and the same over a fence, a
+    // table and an indented comment (markup-carve/carve-rs#2109, corpus
+    // 506-comment-columns-and-surviving-list-items-6).
+    //
+    // True at the start because the lead-paragraph path is what the loop resumes
+    // from, and that path leaves a paragraph.
+    let mut item_paragraph_open = true;
     // A fence line the lead paragraph absorbed because no closer is written in
     // the item still opens a SPAN that runs to the item's end, so every later
     // blank in the item is interior to it and loosens nothing (§17; the
@@ -9356,6 +9370,7 @@ fn parse_list(
                         last_consumed_line_below_column(cur, content_col),
                         options,
                     );
+                    item_paragraph_open = nested_leaves_paragraph_open;
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -9465,7 +9480,8 @@ fn parse_list(
                     continue;
                 }
             }
-            if !pending_blank && flush_comment_keeps_the_item_open(cur, line) {
+            if !pending_blank && item_paragraph_open && flush_comment_keeps_the_item_open(cur, line)
+            {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
                 // interrupter: below the open item's content column it closes
@@ -10100,6 +10116,9 @@ fn parse_list(
             if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
+            // A heading, a fence or a table on the marker line leaves the item
+            // holding no paragraph - see `item_paragraph_open`.
+            item_paragraph_open = body_ends_with_open_paragraph(&stream.source, options);
             let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
@@ -11533,6 +11552,17 @@ fn fold_lazy_run_and_resume_in_band(
         if cur.peek().map(str::to_string).is_some_and(|line| {
             indent_columns(&line) < content_col && line_comment_keeps_the_container_open(cur, &line)
         }) {
+            // ONLY WHILE THERE IS A PARAGRAPH FOR IT TO CLOSE. The exception is
+            // about a comment not ENDING the container, and a container with no
+            // open paragraph has already ended under PART 1 S4's otherwise - the
+            // comment never reached it, so the comment and the line beneath it
+            // are the document's. Asked after the comment had joined, the gate
+            // could not tell the two apart, so `- # h` / `%% c` / `tail` revived
+            // an item its own heading had closed, and the same over a fence, a
+            // table and an indented comment (markup-carve/carve-rs#2109).
+            if !open(nested, last_consumed_line_below_column(cur, content_col)) {
+                break;
+            }
             let line = cur.peek().unwrap();
             nested.push_newline_at(
                 trim_ascii_start(line).to_string(),
