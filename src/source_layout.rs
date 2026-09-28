@@ -19,13 +19,9 @@ fn escape_json(value: &str) -> String {
 
 /// Encode the opt-in PART 12 §13 source-layout sidecar. Default AST JSON is unchanged.
 pub fn to_source_layout_json(source: &str, doc: &Document) -> String {
-    let byte_at = |offset: usize| {
-        source
-            .chars()
-            .take(offset)
-            .map(char::len_utf8)
-            .sum::<usize>()
-    };
+    let mut byte_offsets: Vec<usize> = source.char_indices().map(|(offset, _)| offset).collect();
+    byte_offsets.push(source.len());
+    let byte_at = |offset: usize| byte_offsets.get(offset).copied().unwrap_or(source.len());
     let crlf = source.matches("\r\n").count();
     let without_crlf = source.replace("\r\n", "");
     let cr = without_crlf.matches('\r').count();

@@ -21,8 +21,18 @@ The API rejects overlapping, out-of-bounds, and non-UTF-8-boundary changes.
 That gives editors one validated update contract and prevents a malformed LSP
 change from corrupting parser state.
 
-The current draft establishes snapshot and edit semantics but still performs a
-full parse. `reused_previous_tree` is therefore `false`. The value now is a
-stable integration boundary for WASM and LSP work; block reuse, stable node
-identities, and partial diagnostics can be added without changing how callers
-submit edits or receive updates.
+Snapshots cache the previous document. A single edit inside a single-line plain
+paragraph reparses that paragraph and reuses the other blocks when the document
+contains only plain paragraphs. This subset accepts Unicode letters, numbers,
+combining marks, spaces, and sentence punctuation (`.`, `,`, `!`, `?`). Edits
+that introduce structure, newlines, or unsupported syntax use a full parse.
+
+`reused_previous_tree` reports whether unchanged blocks were reused.
+`parsed_source_bytes` counts bytes passed to the parser, including a failed
+local attempt before fallback. An empty edit set parses zero bytes for an eligible plain-paragraph document. Identity
+matching uses the cached old document instead of reparsing the old source.
+
+Source maps and snapshots still traverse or copy the document; this is not a
+constant-time update API. Codepoint-to-byte mapping uses one prefix index.
+Full parsing remains authoritative for references, headings, footnotes,
+containers, and multiple edits.
