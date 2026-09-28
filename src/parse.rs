@@ -2690,8 +2690,10 @@ fn extract_link_defs_with_guard(
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = authored_fence_col;
             open.quoted = raw_is_quoted;
-            let follows_open_paragraph =
-                line_index > 0 && !is_blank_line(all_lines[line_index - 1]);
+            // Definition placeholders mark block boundaries and open no paragraph.
+            let follows_open_paragraph = line_index > 0
+                && !is_blank_line(all_lines[line_index - 1])
+                && !is_definition_placeholder(all_lines[line_index - 1]);
             let suffix_max = if open.fence_char == b'`' {
                 backtick_closer_max[line_index + 1]
             } else {
@@ -5661,14 +5663,18 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }
             }
         } else if let Some(width) = colon {
+            // CARVE-P0-004, as the code arm above: the closer is measured from the
+            // authored base, so only the container's content column or that base
+            // closes. A run in the band between them is payload, and the extent
+            // must keep it rather than break and let the outer scan re-read it as
+            // an opener of its own. The comment fence is the deliberate exception
+            // and is left alone - both its delimiters carry a whitespace slot.
             let mut stack = vec![width];
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if !is_blank_line(candidate) && indent_columns(candidate) < base {
-                    break;
-                }
                 end = j;
-                if !is_blank_line(candidate) {
-                    let local = strip_leading_columns(candidate, base);
+                let column = indent_columns(candidate);
+                if !is_blank_line(candidate) && (column == 0 || column == base) {
+                    let local = strip_leading_columns(candidate, column);
                     let trimmed = trim_ascii(&local);
                     if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == b':') {
                         if stack.last() == Some(&trimmed.len()) {
@@ -5808,11 +5814,9 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }
                 continue;
             }
-            // The base dedent is all or nothing: a verbatim line that does not
-            // reach the base keeps what sits past the CONTAINER's column instead.
-            // Only a code fence carries such a line - every other opener's extent
-            // above breaks below the base.
-            if code.is_some() && indent_columns(line) < base {
+            // Payload below a code or colon fence's base keeps its residual
+            // indentation, so an in-band run cannot become a closer.
+            if (code.is_some() || colon.is_some()) && indent_columns(line) < base {
                 continue;
             }
             *line = Cow::Owned(strip_leading_columns(line, base));
@@ -13268,10 +13272,24 @@ fn collect_definition_body(
                 // Tracking one as a real fence would eject the next lazy line
                 // from the `<dd>` (corpus 367). Keep the established behavior
                 // when a closer is written in this body, as for lists.
-                let rejected_fence_has_closer = fence.open.is_none()
+                //
+                // §10 I4'S LOOKAHEAD IS CONDITIONAL ON A PARAGRAPH BEING OPEN,
+                // and a trailing blank clears it. Asked unconditionally, it
+                // declined an opener the block parser accepts, so the body folded
+                // the run below its own column in as verbatim payload
+                // (carve-rs#2092).
+                let paragraph_open = match lines.last() {
+                    Some(last) => !is_blank_line(last),
+                    None => seed.lines().last().is_some_and(|line| !is_blank_line(line)),
+                };
+                let accept_fence_opener = fence.open.is_none()
                     && detect_fence_open(&sliced).is_some_and(|open| {
-                        cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-                            && item_body_fence_has_closer(
+                        !paragraph_open
+                            || (cur.has_code_closer_after(
+                                cur.pos + 1,
+                                open.fence_char,
+                                open.fence_len,
+                            ) && item_body_fence_has_closer(
                                 &cur.lines[cur.pos + 1..],
                                 open,
                                 content_column,
@@ -13280,9 +13298,9 @@ fn collect_definition_body(
                                         && (is_definition_list_start(strip_lazy(line))
                                             || strip_definition_marker(strip_lazy(line)).is_some())
                                 },
-                            )
+                            ))
                     });
-                if rejected_fence_has_closer {
+                if accept_fence_opener && paragraph_open {
                     // The blank is MANUFACTURED, so it stands for no source
                     // line and takes no column. Pushing the sliced line's own
                     // column before the blank gave the blank that column and
@@ -13298,7 +13316,7 @@ fn collect_definition_body(
                     reached.push(true);
                 }
                 col_map.push(sliced_col);
-                if !rejected_fence_has_closer
+                if !accept_fence_opener
                     && fence.open.is_none()
                     && detect_fence_open(&sliced).is_some()
                 {
@@ -13306,7 +13324,7 @@ fn collect_definition_body(
                 }
                 if fence.open.is_some()
                     || detect_fence_open(&sliced).is_none()
-                    || rejected_fence_has_closer
+                    || accept_fence_opener
                 {
                     fence.track(&sliced, indent);
                 }
