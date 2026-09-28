@@ -76,6 +76,7 @@ struct CarveContext {
     braced_spans: Vec<(char, Option<usize>)>,
     /// The emphasis kinds open around the node being written.
     open_kinds: Vec<char>,
+    attribute_markers: HashMap<char, usize>,
     /// The brackets of the inline run being written, as (text node address,
     /// bracket ordinal in that node), and whether a run has claimed them.
     brackets: BracketScope,
@@ -1029,6 +1030,7 @@ fn render_with_escapes_once(
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
+        attribute_markers: HashMap::new(),
         brackets: BracketScope::default(),
         paired_closer_carry: std::cell::Cell::new(false),
         bracket_aliases: HashMap::new(),
@@ -3606,6 +3608,7 @@ fn render_inline_body(
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let kinds = emphasis_delimiters(emphasis.kind);
+            let before_attributes = ctx.attribute_markers.clone();
             ctx.open_kinds.extend_from_slice(kinds);
             let content = if writes_own_brackets(emphasis) {
                 render_bracketed_content(session, &emphasis.children, ctx)
@@ -3613,6 +3616,35 @@ fn render_inline_body(
                 render_inlines(session, &emphasis.children, ctx)
             };
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
+            let attributes_conflict = kinds.iter().any(|marker| {
+                ctx.attribute_markers.get(marker).copied().unwrap_or(0)
+                    > before_attributes.get(marker).copied().unwrap_or(0)
+            });
+            if attributes_conflict {
+                let body = if emphasis.kind == EmphasisKind::BoldItalic {
+                    let conflicts = |marker: char| {
+                        ctx.attribute_markers.get(&marker).copied().unwrap_or(0)
+                            > before_attributes.get(&marker).copied().unwrap_or(0)
+                    };
+                    let inner = if conflicts('/') {
+                        render_forced_emphasis("/", &content)
+                    } else {
+                        render_emphasis("/", &content, '*', '*')
+                    };
+                    if conflicts('*') {
+                        render_forced_emphasis("*", &inner)
+                    } else {
+                        render_emphasis("*", &inner, prev_char, next_char)
+                    }
+                } else if let Some(marker) = bare_delimiter(emphasis.kind) {
+                    render_forced_emphasis(marker, &content)
+                } else {
+                    String::new()
+                };
+                if !body.is_empty() {
+                    return format!("{}{}", body, render_inline_attrs(&emphasis.attrs, ctx));
+                }
+            }
             // An empty brace pair is not a construct, and `{--}` is the braced
             // en dash (markup-carve/carve#1608), so an empty mark has no spelling.
             if content.is_empty() && emphasis.kind != EmphasisKind::SmallCaps {
@@ -3631,7 +3663,7 @@ fn render_inline_body(
                     return format!(
                         "{}{}",
                         render_forced_emphasis(delim, &content),
-                        render_attrs(&emphasis.attrs)
+                        render_inline_attrs(&emphasis.attrs, ctx)
                     );
                 }
             }
@@ -3644,7 +3676,7 @@ fn render_inline_body(
                         return format!(
                             "{}{}",
                             render_forced_emphasis(delim, &content),
-                            render_attrs(&emphasis.attrs)
+                            render_inline_attrs(&emphasis.attrs, ctx)
                         );
                     }
                 }
@@ -3680,20 +3712,20 @@ fn render_inline_body(
                 // the shared attribute suffix below would then be appended.
                 EmphasisKind::SmallCaps => {
                     let flattened = escape_note_reference_label(&content, ctx);
-                    return match render_attrs(&emphasis.attrs) {
+                    return match render_inline_attrs(&emphasis.attrs, ctx) {
                         attrs if attrs.is_empty() => flattened,
                         attrs => format!("[{flattened}]{attrs}"),
                     };
                 }
             };
             let _ = delim;
-            format!("{body}{}", render_attrs(&emphasis.attrs))
+            format!("{body}{}", render_inline_attrs(&emphasis.attrs, ctx))
         }
         InlineNode::Code(code) => {
             let value = spell_verse_empty_lines(&code.value, ctx.line_block_depth > 0);
             if value.is_empty() {
                 // Its run length is chosen once the whole run is written.
-                format!("{EMPTY_CODE_MARK}{}", render_attrs(&code.attrs))
+                format!("{EMPTY_CODE_MARK}{}", render_inline_attrs(&code.attrs, ctx))
             } else {
                 format!(
                     "{}{}",
@@ -3703,19 +3735,21 @@ fn render_inline_body(
                             &value,
                             may_run_to_end
                                 && ctx.table_cell_depth == 0
-                                && render_attrs(&code.attrs).is_empty(),
+                                && render_inline_attrs(&code.attrs, ctx).is_empty(),
                             ctx.in_term,
                         ),
                         ctx
                     ),
-                    render_attrs(&code.attrs)
+                    render_inline_attrs(&code.attrs, ctx)
                 )
             }
         }
         InlineNode::Link(link) => render_link(session, link, ctx),
-        InlineNode::Image(image) => render_image(image),
+        InlineNode::Image(image) => {
+            render_image_with_attrs(image, render_inline_attrs(&image.attrs, ctx))
+        }
         InlineNode::Span(span) => {
-            let attrs = render_attrs(&span.attrs);
+            let attrs = render_inline_attrs(&span.attrs, ctx);
             format!(
                 "[{}]{}",
                 escape_note_reference_label(
@@ -3755,7 +3789,7 @@ fn render_inline_body(
                 &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
                 ctx
             ),
-            render_attrs(&math.attrs)
+            render_inline_attrs(&math.attrs, ctx)
         ),
         InlineNode::RawInline(raw) => {
             if raw.content.is_empty() {
@@ -3786,13 +3820,13 @@ fn render_inline_body(
             format!(
                 "!{}{}",
                 render_code(&content, ctx),
-                render_attrs(&lit.attrs)
+                render_inline_attrs(&lit.attrs, ctx)
             )
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
             escape_symbol_name(&symbol.name),
-            render_attrs(&symbol.attrs)
+            render_inline_attrs(&symbol.attrs, ctx)
         ),
         InlineNode::AutoLink(link) => {
             // Emit the raw autolink content verbatim (keeps a URI scheme like
@@ -3800,7 +3834,7 @@ fn render_inline_body(
             format!(
                 "<{}>{}",
                 escape_autolink_href(&link.text),
-                render_attrs(&link.attrs)
+                render_inline_attrs(&link.attrs, ctx)
             )
         }
         InlineNode::Mention(mention) => {
@@ -3817,7 +3851,7 @@ fn render_inline_body(
             ":{}[{}]{}",
             escape_identifier(&extension.name),
             render_inlines(session, &extension.children, ctx),
-            render_attrs(&extension.attrs)
+            render_inline_attrs(&extension.attrs, ctx)
         ),
         // The neighbour characters are the REAL ones, not `\0`: this arm writes
         // the abbreviation's own text into the same run as everything around
@@ -3859,12 +3893,12 @@ fn render_inline_body(
                     write_flat_bracket_run(footnote.id.as_deref().unwrap_or_default())
                 )
             };
-            format!("{body}{}", render_attrs(&footnote.attrs))
+            format!("{body}{}", render_inline_attrs(&footnote.attrs, ctx))
         }
         InlineNode::NonBreakingSpace(n) => {
             note_inserted(session, S_ESCAPED_SPACE);
             let body = escaped_space(session);
-            let attrs = render_attrs(&n.attrs);
+            let attrs = render_inline_attrs(&n.attrs, ctx);
             if attrs.is_empty() {
                 body
             } else {
@@ -3900,7 +3934,7 @@ fn render_inline_body(
                 );
                 return String::new();
             }
-            format!("{{+{content}+}}{}", render_attrs(&insert.attrs))
+            format!("{{+{content}+}}{}", render_inline_attrs(&insert.attrs, ctx))
         }
         InlineNode::CriticDelete(delete) => {
             ctx.open_kinds.push('-');
@@ -3913,15 +3947,17 @@ fn render_inline_body(
                 );
                 return String::new();
             }
-            format!("{{-{content}-}}{}", render_attrs(&delete.attrs))
+            format!("{{-{content}-}}{}", render_inline_attrs(&delete.attrs, ctx))
         }
         InlineNode::CriticSubstitute(sub) => {
             // The halves are inline content. Where one holds an arrow or a
             // closer of its own, PART 11 §2b's escalation escapes it: the
             // minimal form re-parses as a different tree and the narrowed unit
             // is written conservatively.
+            ctx.open_kinds.push('~');
             let old = render_inlines(session, &sub.old, ctx);
             let new = render_inlines(session, &sub.new, ctx);
+            ctx.open_kinds.pop();
             format!("{{~{old}~>{new}~}}")
         }
         InlineNode::CriticComment(comment) => {
@@ -4147,7 +4183,7 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     format!(
         "[{text}]({}{title}){}",
         escape_destination(&node.href),
-        render_attrs(&node.attrs)
+        render_inline_attrs(&node.attrs, ctx)
     )
 }
 
@@ -4192,6 +4228,10 @@ fn escape_note_reference_label(label: &str, ctx: &CarveContext) -> String {
 }
 
 fn render_image(node: &Image) -> String {
+    render_image_with_attrs(node, render_attrs(&node.attrs))
+}
+
+fn render_image_with_attrs(node: &Image, attrs: String) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
@@ -4212,7 +4252,7 @@ fn render_image(node: &Image) -> String {
         "![{}]({}{title}){}",
         escape_image_alt(&node.alt),
         escape_destination(&node.src),
-        render_attrs(&node.attrs)
+        attrs
     )
 }
 
@@ -4574,6 +4614,35 @@ fn refuse_attributes_on_sigil(attrs: &Option<Attrs>, node_type: &'static str) {
 }
 
 fn render_attrs(attrs: &Option<Attrs>) -> String {
+    render_attrs_with_markers(attrs, &[])
+}
+
+fn render_inline_attrs(attrs: &Option<Attrs>, ctx: &mut CarveContext) -> String {
+    let rendered = render_attrs_with_markers(attrs, &ctx.open_kinds);
+    for &marker in &ctx.open_kinds {
+        if attrs.as_ref().is_some_and(|attrs| {
+            attrs.id.as_ref().is_some_and(|id| id.contains(marker))
+                || attrs.classes.iter().any(|class| class.contains(marker))
+                || attrs
+                    .key_values
+                    .iter()
+                    .any(|(key, value)| key.contains(marker) || value.contains(marker))
+        }) {
+            *ctx.attribute_markers.entry(marker).or_default() += 1;
+        }
+    }
+    rendered
+}
+
+fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char]) -> String {
+    let conflicts = |value: &str| markers.iter().any(|&marker| value.contains(marker));
+    let quote = |value: &str| {
+        if conflicts(value) {
+            quoted_attr_value(value)
+        } else {
+            quote_attr_value(value)
+        }
+    };
     let Some(attrs) = attrs else {
         return String::new();
     };
@@ -4581,12 +4650,12 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     let id_as_key = attrs
         .id
         .as_ref()
-        .is_some_and(|id| !is_explicit_id_or_class_identifier(id));
+        .is_some_and(|id| !is_explicit_id_or_class_identifier(id) || conflicts(id));
     let mut seen_keys: Vec<&str> = Vec::new();
     let emit_id = |parts: &mut Vec<String>| {
         if let Some(id) = &attrs.id {
             if id_as_key {
-                parts.push(format!("id={}", quote_attr_value(id)));
+                parts.push(format!("id={}", quote(id)));
             } else {
                 parts.push(format!("#{}", escape_attr_name_value(id)));
             }
@@ -4599,7 +4668,7 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
             // class have no `.` spelling and take the key-value form the parser
             // now folds back into this same slot (CARVE-P4-007). Written as `.`
             // they were source this engine's own parser reads as a paragraph.
-            if crate::parse::is_css_identifier(cls) {
+            if crate::parse::is_css_identifier(cls) && !conflicts(cls) {
                 parts.push(format!(".{}", escape_attr_name_value(cls)));
             } else {
                 parts.push(format!("class={}", quoted_attr_value(cls)));
@@ -4614,7 +4683,7 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
             // breaks PART 11 §1 (carve#1137).
             if key == "lang" && is_language_tag(value) {
                 parts.push(format!(":{value}"));
-            } else if value.is_empty() && is_boolean_attr_name(key) {
+            } else if value.is_empty() && is_boolean_attr_name(key) && !conflicts(key) {
                 // PART 11 §6c: a value-less attribute comes back as the bare
                 // name, which is the production the language has for it. A key
                 // needing escaping has no bare spelling to fall back to, and
@@ -4622,11 +4691,7 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
                 // `is_boolean_attr_name`.
                 parts.push(escape_attr_key(key));
             } else {
-                parts.push(format!(
-                    "{}={}",
-                    escape_attr_key(key),
-                    quote_attr_value(value)
-                ));
+                parts.push(format!("{}={}", escape_attr_key(key), quote(value)));
             }
         }
     };
