@@ -3800,12 +3800,13 @@ fn render_inline_body(
                 return String::new();
             }
             let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
-            // The Markdown import oracle preserves backticks occurring inside
-            // raw HTML while retaining the one-backtick raw-inline spelling.
-            // HTML tags delimit that content independently, so widening this
-            // particular fence diverges from carve-js.
             let verbatim = if raw.format.eq_ignore_ascii_case("html") {
-                format!("`{content}`")
+                let fence = code_span_fence(&content);
+                if verbatim_needs_padding(&content) {
+                    format!("{fence} {content} {fence}")
+                } else {
+                    format!("{fence}{content}{fence}")
+                }
             } else {
                 render_code(&content, ctx)
             };
@@ -4486,6 +4487,14 @@ fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) 
         .join("\n")
 }
 
+fn verbatim_needs_padding(content: &str) -> bool {
+    content.starts_with('`')
+        || content.ends_with('`')
+        || (content.starts_with(' ')
+            && content.ends_with(' ')
+            && !content.chars().all(|c| c == ' '))
+}
+
 fn render_code(content: &str, ctx: &CarveContext) -> String {
     render_code_with_unclosed(content, false, ctx.in_term)
 }
@@ -4509,11 +4518,7 @@ fn render_code_with_unclosed(content: &str, allow_unclosed: bool, in_term: bool)
     // unchanged. Padding it instead grew the span by two spaces on every fmt
     // pass. One-sided space is left as-is (the parser only strips when both
     // sides are spaces).
-    let needs_pad = content.starts_with('`')
-        || content.ends_with('`')
-        || (content.starts_with(' ')
-            && content.ends_with(' ')
-            && !content.chars().all(|c| c == ' '));
+    let needs_pad = verbatim_needs_padding(content);
     let reason = if content
         .as_bytes()
         .windows(2)
@@ -6400,5 +6405,53 @@ mod tests {
             "<p><span class=b>[</span><a href=/x>edit</a><span class=b>]</span> a [x](y) b.</p>";
         let (probes, _) = search_cost(&paragraph.repeat(64));
         assert_eq!(probes, 0);
+    }
+}
+
+#[cfg(test)]
+mod raw_html_fence_tests {
+    #[test]
+    fn raw_html_backticks_survive_writing() {
+        for content in [
+            "<a href=\"`\">",
+            "<span title=\"``\">x</span>",
+            "<!-- `x` -->",
+            "`x`",
+        ] {
+            let value = serde_json::json!({
+                "type": "document", "srcByteLength": 0,
+                "children": [{"type": "paragraph", "children": [{
+                    "type": "raw_inline", "format": "html", "content": content
+                }]}]
+            });
+            let document = crate::from_json(&value.to_string()).unwrap();
+            let written = crate::render_carve(&document).unwrap();
+            let parsed = crate::parse(&written);
+            let crate::BlockNode::Paragraph(paragraph) = &parsed.children[0] else {
+                panic!("{written}");
+            };
+            let crate::InlineNode::RawInline(raw) = &paragraph.children[0] else {
+                panic!("{written}");
+            };
+            assert_eq!(raw.content, content);
+            assert_eq!(
+                crate::to_html(&written),
+                format!("<p>{content}</p>"),
+                "{written}"
+            );
+        }
+    }
+    #[test]
+    fn multiline_raw_html_keeps_importing() {
+        for source in [
+            "a <span\n  class=\"x\">y</span> b",
+            "a <b \nclass=\"x\">y</b> c",
+        ] {
+            let written = crate::markdown_to_carve(source);
+            assert!(
+                crate::to_html(&written).contains("class=\"x\">y</"),
+                "{written}"
+            );
+        }
     }
 }
