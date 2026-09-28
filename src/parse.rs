@@ -9916,7 +9916,34 @@ fn parse_list(
                     )
                 })
             });
-            let continuation = collect_indented_block_mapped(cur, base_indent, content_col);
+            // AN EMPTY QUOTE ON THE MARKER LINE HOLDS NO PARAGRAPH. A quote
+            // has no closer, so an empty one is finished where it stands, and
+            // PART 1 S4's otherwise has already ended the item - a line in the
+            // band between the list's base and the item's content column has
+            // nothing here to continue and belongs to the document. `. > a`
+            // folds as before, because there a paragraph really is open. The
+            // collection floor is what says so, as it does for a definition
+            // collected off the marker line (markup-carve/carve-rs#2096).
+            // A fence or a colon container written inside the quote is still
+            // OPEN on one line, and its payload is exactly the band line below
+            // it, so only a quote that leaves nothing at all open ends the item.
+            let mut innermost = marker.content;
+            while let Some(rest) = strip_blockquote_prefix(innermost) {
+                innermost = rest;
+            }
+            let quote_holds_a_paragraph = body_ends_with_open_paragraph(marker.content, options)
+                || colon_fences_left_open(marker.content) > 0
+                || detect_fence_open(innermost).is_some()
+                || detect_comment_fence_line(innermost).is_some();
+            let continuation = collect_indented_block_mapped(
+                cur,
+                if quote_holds_a_paragraph {
+                    base_indent
+                } else {
+                    content_col.saturating_sub(1)
+                },
+                content_col,
+            );
             if fence_after_quote && !continuation.source.is_empty() {
                 stream.push_newline_at(String::new(), None, None);
             }
@@ -9954,6 +9981,18 @@ fn parse_list(
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if !quote_holds_a_paragraph
+                && cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent > base_indent
+                        && indent < content_col
+                })
+            {
+                break;
+            }
             continue;
         }
         // Braces ALONE on the marker line are a block-attribute line for the

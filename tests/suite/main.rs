@@ -10,6 +10,8 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../a_band_line_under_an_empty_marker_line_quote_ends_the_item.rs"]
+mod a_band_line_under_an_empty_marker_line_quote_ends_the_item;
 #[path = "../a_bare_closer_does_not_reach_inside_a_link_destination.rs"]
 mod a_bare_closer_does_not_reach_inside_a_link_destination;
 #[path = "../a_bare_empty_paragraph_leaves_both_exits.rs"]
