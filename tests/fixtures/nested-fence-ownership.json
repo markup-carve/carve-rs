@@ -51,31 +51,36 @@
   },
   {
     "name": "control 10",
+    "source": "- a\n  - b\n    - c\n      text\n    ~~~\n      ```\n      p\n      ```\n    ~~~\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\ntext</li>\n        </ul>\n        <pre><code>  ```\n  p\n  ```\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "name": "control 11",
     "source": "- a\n  - b\n    ```\n    x\n    ```\n- c\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
   },
   {
-    "name": "control 11",
+    "name": "control 12",
     "source": "- a\n  - b\n\n    ```\n    x\n- c\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
   },
   {
-    "name": "control 12",
+    "name": "control 13",
     "source": "- a\n  - b\n    ```\n    :::\n    ```\n tail\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>:::\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
   },
   {
-    "name": "control 13",
+    "name": "control 14",
     "source": "- a\n  - b\n    ```\n    :::\n tail\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code></code>\n        <div>\n\n        </div>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
   },
   {
-    "name": "control 14",
+    "name": "control 15",
     "source": "- a\n  - b\n    - c\n\n      ```\n      p\n   x\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
   },
   {
-    "name": "control 15",
+    "name": "control 16",
     "source": "- a\n  - b\n\n\t```\n\tp\n ```\n\n\ttail\n",
     "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p><code></code></p>\n<p>tail</p>"
   }

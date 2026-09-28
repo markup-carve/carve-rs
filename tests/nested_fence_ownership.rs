@@ -38,7 +38,7 @@ fn nested_fence_ownership_matches_spec_509() {
 fn nested_fence_markers_payload_and_siblings() {
     let rows: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/nested-fence-ownership.json")).unwrap();
-    assert_eq!(rows.len(), 16);
+    assert_eq!(rows.len(), 17);
     for row in rows {
         for positions in [false, true] {
             let options = Options {

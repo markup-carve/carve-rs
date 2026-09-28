@@ -12389,7 +12389,7 @@ fn collect_indented_block_mapped_with(
     let mut closed_comment_span_above = false;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
-    let mut nested_item_column: Option<(usize, usize)> = None;
+    let mut nested_item_columns: Vec<(usize, usize)> = Vec::new();
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -12591,19 +12591,36 @@ fn collect_indented_block_mapped_with(
         if let Some(open) = nested_fence {
             if indent < open.content_col {
                 nested_fence = None;
-                nested_item_column = None;
+                nested_item_columns.clear();
             } else if indent == open.content_col && is_fence_close(trim_ascii_start(line), open) {
                 nested_fence = None;
             }
         } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
             if let Some(marker) = detect_list_marker_full(line) {
-                nested_item_column = marker_content_col(line).map(|column| (marker.indent, column));
-            } else if let Some((base, column)) = nested_item_column {
-                if indent < column && lines.last().is_some_and(|line| is_blank_line(line)) {
-                    nested_item_column = None;
+                while nested_item_columns
+                    .last()
+                    .is_some_and(|&(base, _)| base >= marker.indent)
+                {
+                    nested_item_columns.pop();
                 }
-                if indent == column && column > strip_cols {
-                    if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
+                if let Some(column) = marker_content_col(line) {
+                    nested_item_columns.push((marker.indent, column));
+                }
+            } else {
+                if lines.last().is_some_and(|line| is_blank_line(line)) {
+                    while nested_item_columns
+                        .last()
+                        .is_some_and(|&(_, column)| indent < column)
+                    {
+                        nested_item_columns.pop();
+                    }
+                }
+                if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
+                    if let Some(&(base, column)) = nested_item_columns
+                        .iter()
+                        .rev()
+                        .find(|&&(_, column)| indent == column && column > strip_cols)
+                    {
                         let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
                         let interrupts = !after_blank
                             && cur.has_code_closer_after(
