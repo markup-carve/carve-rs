@@ -1727,6 +1727,23 @@ fn extract_footnote_defs(
                         i += 1;
                         continue;
                     }
+                    // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS
+                    // IS NOT A COMMENT THAT ENDS THE BODY - see
+                    // `body_open_comment_run`. This host hides the payload
+                    // already at a delimiter REACHING the body's floor; the band
+                    // below it is what this covers.
+                    if detect_comment_fence_line_any_column(line).is_some()
+                        && closes_a_held_comment_span(&def_lines, line)
+                    {
+                        let kept = kept_comment_delimiter(line);
+                        if positions {
+                            def_col_map.push(stripped_col(Some(0), line, &kept));
+                        }
+                        def_lines.push(kept);
+                        def_line_map.push(Some(first_source_line + i));
+                        i += 1;
+                        continue;
+                    }
                     break;
                 }
             } else if !nested {
@@ -6896,6 +6913,89 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
 }
 
 /// The closer counterpart of `detect_comment_fence_line_any_column`.
+/// The run length of a comment span still OPEN in a container's collected
+/// lines, if one is (PART 9 §28, markup-carve/carve#2488).
+///
+/// A container's collector ends at a comment written below its content column,
+/// which is right for an OPENER and for the `%%` line form and wrong INSIDE a
+/// span the container already holds: §28 pairs the delimiters, indentation is
+/// part of neither (markup-carve/carve#2471), and everything between them is
+/// payload. Ending there SPLITS the span - the container's own parse then reads
+/// an opener with no closer, §28 makes that one line comment, and the payload
+/// reaches the page while both delimiters do not (markup-carve/carve-rs#2113).
+///
+/// Asked of the COLLECTED LINES rather than of a live fence tracker, because a
+/// tracker reads each line at its own frame's dedent while the answer must not
+/// turn on that: it is the same question about the same span either way.
+///
+/// A code fence's payload is opaque, so a `%%%` written inside one is content.
+///
+/// §10 I2: a list marker never interrupts, so it opens a container only where a
+/// block may begin. Both directions of getting that wrong publish a payload - an
+/// invented opaque body hides a real opener, and a missed one invents a span
+/// that claims a real delimiter as its closer - so the block-start flag is
+/// carried rather than assumed (markup-carve/carve#2505). A CLOSER is read from
+/// the line as written either way: a marker line starts a fresh item rather than
+/// closing the block already open.
+fn body_open_comment_run<S: AsRef<str>>(body_lines: &[S]) -> Option<usize> {
+    let mut code: Option<FenceOpen> = None;
+    let mut comment: Option<usize> = None;
+    let mut at_block_start = true;
+    for raw in body_lines {
+        let line = trim_ascii_start(strip_lazy(raw.as_ref()));
+        if let Some(open) = code {
+            if is_fence_close(line, open) {
+                code = None;
+                at_block_start = true;
+            }
+            continue;
+        }
+        if let Some(run) = comment {
+            if is_comment_fence_close(line, run) {
+                comment = None;
+                at_block_start = true;
+            }
+            continue;
+        }
+        if line.is_empty() {
+            at_block_start = true;
+            continue;
+        }
+        let opener = if at_block_start {
+            trim_ascii_start(innermost_marker_content(line))
+        } else {
+            line
+        };
+        at_block_start = false;
+        if let Some(open) = detect_fence_open(opener) {
+            code = Some(open);
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line(opener) {
+            comment = Some(open.fence_len);
+        }
+    }
+    comment
+}
+
+/// Is `line` the closer of a comment span the collected lines still hold?
+fn closes_a_held_comment_span<S: AsRef<str>>(body_lines: &[S], line: &str) -> bool {
+    body_open_comment_run(body_lines)
+        .is_some_and(|run| is_comment_fence_close_any_column(line, run))
+}
+
+/// A held span's delimiter as the container keeps it: ONE column of the authored
+/// indentation survives, so the container's own parse cannot read a delimiter
+/// written below its column back as an authored column-0 one.
+fn kept_comment_delimiter(line: &str) -> String {
+    let rest = trim_ascii_start(line);
+    if rest.len() == line.len() {
+        rest.to_string()
+    } else {
+        format!(" {rest}")
+    }
+}
+
 fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
@@ -12253,7 +12353,13 @@ fn collect_indented_block_mapped_with(
             }
             break;
         }
-        if indent <= parent_indent && !fence_owns_flush_left {
+        // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
+        // `body_open_comment_run`: this dedent ends the container, and a comment
+        // delimiter closing a span these lines already hold is not one.
+        if indent <= parent_indent
+            && !fence_owns_flush_left
+            && !closes_a_held_comment_span(&lines, line)
+        {
             break;
         }
         if definition_ended_paragraph && indent < strip_cols {
@@ -13709,6 +13815,22 @@ fn collect_definition_body(
                 || strip_definition_marker(strip_lazy(line)).is_some()
             {
                 break;
+            }
+            // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
+            // "a comment below the column" - see `body_open_comment_run`. The
+            // shape test comes first because the predicate walks the collected
+            // lines and a delimiter-shaped line is rare.
+            if detect_comment_fence_line_any_column(line).is_some() {
+                let mut probe: Vec<&str> = seed.lines().collect();
+                probe.extend(lines.iter().map(String::as_str));
+                if closes_a_held_comment_span(&probe, line) {
+                    lines.push(kept_comment_delimiter(line));
+                    line_map.push(cur.source_line(cur.pos));
+                    col_map.push(cur.source_col(cur.pos));
+                    reached.push(false);
+                    cur.consume();
+                    continue;
+                }
             }
             if fence.holds_no_paragraph() {
                 break;

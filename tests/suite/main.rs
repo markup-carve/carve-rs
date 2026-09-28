@@ -100,6 +100,8 @@ mod a_comment_keeps_the_space_that_separates_it;
 mod a_comment_leaf_begins_at_its_markup;
 #[path = "../a_comment_only_verse_line_is_removed_at_the_block_layer.rs"]
 mod a_comment_only_verse_line_is_removed_at_the_block_layer;
+#[path = "../a_comment_span_closer_below_the_column_is_still_its_closer.rs"]
+mod a_comment_span_closer_below_the_column_is_still_its_closer;
 #[path = "../a_const_valued_wire_field_is_checked_at_decode.rs"]
 mod a_const_valued_wire_field_is_checked_at_decode;
 #[path = "../a_consumed_caption_reports_what_it_dropped.rs"]
