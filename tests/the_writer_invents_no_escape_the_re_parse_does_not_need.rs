@@ -16,10 +16,11 @@
 //! output, because no automated check could see them.
 //!
 //! THE MEASUREMENT. For each corpus document take `to_carve`, then remove each
-//! backslash on its own; a backslash whose removal leaves BOTH the render and
-//! the canonical tree unchanged is an escape the re-parse never needed. The
-//! same count is taken on the SOURCE and subtracted, so an escape the author
-//! wrote and the writer merely carried through is not charged to the writer.
+//! escaped OPENER RUN whole; a run whose removal leaves BOTH the render and the
+//! canonical tree unchanged is an escape the re-parse never needed. The same
+//! count is taken on the SOURCE and subtracted, so an escape the author wrote
+//! and the writer merely carried through is not charged to the writer. The run
+//! is the unit because §2's is: see `escaped_opener_runs`.
 //!
 //! THE READING WHEN THIS WAS SEEDED, at spec `d164b12`: 72 invented escapes
 //! across 28 of 1341 documents - the same 28 slugs with the same 28 counts,
@@ -31,27 +32,28 @@
 //!
 //! THE READING NOW: 57 across 24, after PART 11 SECTION 2b bounded an escalation
 //! to the smallest unit that fails (markup-carve/carve#1516). The three engines
-//! still agree character for character. What did NOT retire is the two causes
-//! named on the ratchet below, and neither of them is the document scope.
+//! still agree character for character. What did NOT retire is the cause named
+//! on the ratchet below, and it is not a scope question at all.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// The two causes measured HERE, one of which every ratchet entry must name.
+/// The one cause measured HERE, which every ratchet entry must name.
 ///
-/// They were classified against this engine rather than inherited: the
-/// escalation branch in `render_carve_once` was instrumented to report, per
-/// document, whether the minimal and conservative passes agreed and which form
-/// it returned. An entry belonging to none of them is a cause nobody has looked
-/// at yet, which is a finding rather than a resident.
+/// It was classified against this engine rather than inherited: the escalation
+/// branch in `render_carve_once` was instrumented to report, per document,
+/// whether the minimal and conservative passes agreed and which form it
+/// returned. An entry belonging to it is a cause nobody has looked at yet,
+/// which is a finding rather than a resident.
 ///
-/// TWO HAVE BEEN RETIRED BY WORK. `escalation: ` went when PART 11 SECTION 2b
+/// THREE HAVE BEEN RETIRED. `escalation: ` went when PART 11 SECTION 2b
 /// narrowed the fallback from the document to the failing unit, and
 /// `unit scope: ` went when SECTION 2's test was taken per opener occurrence
-/// inside that unit (markup-carve/carve#1533). What is left is the two causes
-/// that are not scope questions at all.
-const IDLE_ESCAPE_CAUSES: &[&str] = &["opener run: ", "minimal class: "];
+/// inside that unit (markup-carve/carve#1533). `opener run: ` went when the
+/// sweep started asking SECTION 2's question of the OPENER rather than of the
+/// byte, which is the only one of the three the WRITER never had a part in.
+const IDLE_ESCAPE_CAUSES: &[&str] = &["minimal class: "];
 
 /// THE DEBT, NOT A BLESSING: documents where the writer emits an escape the
 /// re-parse does not need, with the exact count of invented escapes.
@@ -73,46 +75,36 @@ const IDLE_ESCAPE_CAUSES: &[&str] = &["opener run: ", "minimal class: "];
 /// search one level finer: 20 documents and 47 escapes retired, `\\{.note}`
 /// where the unit-scoped form wrote `\\{\\.note\\}`.
 ///
-/// OPENER RUN, three documents: SECTION 2's THE UNIT IS THE OPENER requires the
-/// WHOLE opener run escaped - `\\#\\# H` and not `\\## H`, `\\*\\*\\*` and not
-/// `\\***`. The sweep below removes ONE backslash at a time, so it reads the
-/// second `\\#` as idle: with the first still there no heading forms either way.
-/// These entries are a floor this measurement cannot go below while SECTION 2
-/// says what it says, and they are here to be seen rather than to be fixed. The
-/// occurrence search is why they are a floor rather than an accident: it offers
-/// a RUN back whole, so the half-escaped run SECTION 2 forbids is not a state
-/// it can reach.
+/// `opener run` WAS THE OTHER THREE AND IS GONE TOO, as an artifact of the
+/// SWEEP rather than of the writer. SECTION 2's THE UNIT IS THE OPENER requires
+/// the WHOLE opener run escaped - `\\#\\# H` and not `\\## H`, `\\*\\*\\*` and
+/// not `\\***`, and PART 11 SECTION 2b names the first of those as its own
+/// worked example. The sweep removed ONE backslash at a time, so every
+/// backslash in a load-bearing run answered "idle" on its own: with the others
+/// still there no heading formed either way. What that scored was the
+/// half-escaped run SECTION 2 forbids, which the occurrence search cannot even
+/// reach, so the three entries measured a spelling no writer was allowed to
+/// emit. The sweep now puts SECTION 2's own question to the run whole (see
+/// `escaped_opener_runs`) and the three read 0.
 ///
-/// MINIMAL CLASS, the other two: both passes agree, so nothing escalated, and
-/// the escape is still idle - once because a lone authored backslash before a
-/// non-escapable character is written back doubled where the bare one re-parses
-/// the same, once because the writer's own cell padding retired an authored
-/// escape it then kept.
+/// MINIMAL CLASS, the two that are left: both passes agree, so nothing
+/// escalated, and the escape is still idle - once because a lone authored
+/// backslash before a non-escapable character is written back doubled where the
+/// bare one re-parses the same, once because the writer's own cell padding
+/// retired an authored escape it then kept. Grouping cost
+/// `72-escape-coverage-2` two of its four as well, because a doubled backslash
+/// is ONE escape and the per-byte sweep judged its second half against
+/// whatever followed the pair.
 const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
     (
         "72-escape-coverage-2",
-        4,
-        "minimal class: a lone authored backslash before a non-escapable character is written back doubled, and bare it re-parses the same - `\\` x2, `a`, `«`",
-    ),
-    (
-        "103-heading-marker-column-zero-2",
         2,
-        "opener run: the heading opener `##` is escaped in full, and removing either backslash alone still leaves a paragraph",
-    ),
-    (
-        "132-thematic-break-requires-contiguous-markers-3",
-        3,
-        "opener run: the break opener `***` is escaped in full, and removing any one backslash alone still leaves a paragraph",
+        "minimal class: a lone authored backslash before a non-escapable character is written back doubled, and bare it re-parses the same",
     ),
     (
         "390-a-table-cell-s-marker-run-ends-at-a-space-5",
         1,
         "minimal class: an authored `\\=` is kept after the writer's own cell padding retired it - padded, the `=` no longer starts the cell",
-    ),
-    (
-        "396-an-idle-escape-does-not-spread-from-the-block-that-needed-one",
-        2,
-        "opener run: the heading opener `##` is escaped in full, and removing either backslash alone still leaves a paragraph",
     ),
 ];
 
@@ -130,8 +122,17 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
 ///
 /// carve-js and carve-php measure the same 5 with the same counts, and the
 /// three writers agree byte for byte on all 1358 corpus documents.
-const MEASURED_ESCAPES: usize = 12;
-const MEASURED_DOCUMENTS: usize = 5;
+///
+/// IT MOVED WITH THE MEASURE ONCE MORE. Asking SECTION 2's question of the
+/// OPENER rather than of the byte took it to 3 across 2 - the three `opener run`
+/// entries read 0 and are gone, and `72-escape-coverage-2` drops from 4 to 2
+/// where a doubled backslash was being judged twice (carve-php#2645 measures
+/// the same 3 across the same 2). Nothing in `src/` moved for it, which is the
+/// point: a writer-side change would have had to break the spec's own `.fmt`
+/// golden for `396-an-idle-escape-does-not-spread-from-the-block-that-needed-
+/// one`, which pins the fully escaped opener as canonical.
+const MEASURED_ESCAPES: usize = 3;
+const MEASURED_DOCUMENTS: usize = 2;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
@@ -259,27 +260,72 @@ fn fingerprint(source: &str) -> Option<String> {
 
 /// A document's IDLE escapes, counted PER ESCAPED CHARACTER - §2's "only if".
 ///
-/// Each backslash is removed on its own and the document re-measured. One whose
-/// removal leaves both the render and the canonical tree unchanged is counted
-/// under the character it was escaping. A removal that leaves a document the
-/// encoder refuses is not idle: the fingerprint is `None`, which matches
-/// nothing.
+/// Each OPENER RUN of backslashes is removed whole and the document
+/// re-measured. A run whose removal leaves both the render and the canonical
+/// tree unchanged is counted under the character it was escaping, once per
+/// backslash in it. A removal that leaves a document the encoder refuses is not
+/// idle: the fingerprint is `None`, which matches nothing.
 fn idle_escapes(source: &str) -> BTreeMap<char, usize> {
     let mut idle: BTreeMap<char, usize> = BTreeMap::new();
     let Some(base) = fingerprint(source) else {
         return idle;
     };
-    for (i, _) in source.char_indices().filter(|(_, c)| *c == '\\') {
-        let mut without = String::with_capacity(source.len() - 1);
-        without.push_str(&source[..i]);
-        without.push_str(&source[i + 1..]);
+    for (offsets, escaped) in escaped_opener_runs(source) {
+        let mut without = source.to_string();
+        for offset in offsets.iter().rev() {
+            without.remove(*offset);
+        }
         if fingerprint(&without).as_deref() != Some(base.as_str()) {
             continue;
         }
-        let escaped = source[i + 1..].chars().next().unwrap_or('\u{0}');
-        *idle.entry(escaped).or_insert(0) += 1;
+        *idle.entry(escaped).or_insert(0) += offsets.len();
     }
     idle
+}
+
+/// The backslash offsets of a source, grouped into OPENER RUNS.
+///
+/// §2's "only if" is asked of the OPENER, not the byte: where a construct opens
+/// on a run of characters the whole run is escaped, and `\\-\\-` is the escaped
+/// form of `--` exactly as `\\-` is of `-`. So a run's backslashes stand or fall
+/// together, and the question to put to the re-parse is whether the RUN is load
+/// bearing - not whether the run survives losing one backslash.
+///
+/// Removing them one at a time cannot ask that. Every backslash in a
+/// load-bearing run answers "idle" on its own, because the run is still broken
+/// by the ones that remain: `\\~\\~\\~` at column zero scored three idle escapes
+/// while the half-escaped `\\~~~` that score implies is the spelling §2 forbids.
+///
+/// A run is maximal and same-character: `\\~\\~\\~` is one, `\\~\\-` is two. A
+/// doubled backslash is consumed as the one escaped `\\` it is, because reading
+/// its second half as another opener would pair it with whatever follows the
+/// pair.
+fn escaped_opener_runs(source: &str) -> Vec<(Vec<usize>, char)> {
+    let bytes = source.as_bytes();
+    let mut runs: Vec<(Vec<usize>, char)> = Vec::new();
+    let mut i = 0usize;
+    while i < source.len() {
+        if bytes[i] != b'\\' {
+            i += 1;
+            continue;
+        }
+        let Some(escaped) = source[i + 1..].chars().next() else {
+            runs.push((vec![i], '\u{0}'));
+            i += 1;
+            continue;
+        };
+        let step = 1 + escaped.len_utf8();
+        let mut offsets = vec![i];
+        let mut next = i + step;
+        while bytes.get(next) == Some(&b'\\') && source[next + 1..].chars().next() == Some(escaped)
+        {
+            offsets.push(next);
+            next += step;
+        }
+        i = next;
+        runs.push((offsets, escaped));
+    }
+    runs
 }
 
 /// The idle escapes the WRITER added, over the ones the author already had.
@@ -451,6 +497,16 @@ fn the_idle_sweep_sees_an_invented_escape_and_keeps_a_needed_one() {
 
     // Needed: at column zero, bare it opens a quote.
     assert_eq!(idle_escapes("\\> a\n"), BTreeMap::new());
+
+    // AND THE SAME BOTH WAYS FOR A RUN, which a per-byte sweep could not ask:
+    // §2 escapes the whole opener, so the run stands or falls together. Mid-line
+    // `##` opens nothing and both escapes are idle; at column zero the run opens
+    // a heading and neither is. This is the half that was missing - with only
+    // the single-character cases above, a run could never look wrong.
+    assert_eq!(idle_escapes("a \\#\\# b\n"), BTreeMap::from([('#', 2)]));
+    assert_eq!(idle_escapes("\\#\\# H\n"), BTreeMap::new());
+    assert_eq!(idle_escapes("a \\~\\~\\~ b\n"), BTreeMap::from([('~', 3)]));
+    assert_eq!(idle_escapes("\\~\\~\\~\n\ntail\n"), BTreeMap::new());
 
     // And the count is backslashes that do nothing, not backslashes.
     assert_eq!(idle_escapes("a > b\n"), BTreeMap::new());

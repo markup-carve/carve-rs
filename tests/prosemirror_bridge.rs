@@ -785,6 +785,8 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let mut source_lossy: Vec<String> = Vec::new();
     let mut nbsp_only_degraded = Vec::new();
     let mut undeclared: Vec<String> = Vec::new();
+    // TEMPORARY, for the 71b51d00 bump attribution only.
+    let mut arrivals: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
         if path.extension().and_then(|v| v.to_str()) != Some("crv") {
@@ -830,6 +832,26 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
                 nbsp_only_degraded.push(path.file_name().unwrap().to_string_lossy().into_owned());
             }
             lossy += 1;
+            // TEMPORARY, for the 71b51d00 bump attribution only.
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if [
+                "506-",
+                "507-",
+                "508-",
+                "509-",
+                "510-",
+                "511-",
+                "41-line-blocks-10",
+            ]
+            .iter()
+            .any(|p| name.starts_with(p))
+            {
+                arrivals.push(format!(
+                    "{name} dropped={:?} degraded={:?}",
+                    pm.dropped.keys().collect::<Vec<_>>(),
+                    pm.degraded.keys().collect::<Vec<_>>()
+                ));
+            }
         }
     }
     // Reported ahead of the set comparison, because a name alone does not say
@@ -1460,9 +1482,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
     );
+    arrivals.sort();
     assert!(
         lossy <= LOSSY,
-        "reported-lossy documents rose from {LOSSY} to {lossy}"
+        "reported-lossy documents rose from {LOSSY} to {lossy}\nARRIVALS ({}):\n{}",
+        arrivals.len(),
+        arrivals.join("\n")
     );
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
     // exactly one of the two buckets, which is what this assertion is for -

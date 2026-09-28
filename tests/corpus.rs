@@ -678,6 +678,33 @@ const IMPLEMENTED: &[&str] = &[
     // against their committed HTML before the category was listed here;
     // carve-rs#2062 already measures the residue from the fence opener.
     "a-verbatim-line-keeps-what-sits-past-its-fence-opener-not-past-its-container",
+    // Added with the spec bump to carve 71b51d00. Forty-six documents across
+    // five categories, and the engine work for all five had already landed as
+    // its own pull request ahead of the pin - carve-rs#2118, #2121, #2122,
+    // #2123 and #2124 - so the red rows on the bump draft were this guard
+    // asking to be told rather than a divergence. Every document is checked
+    // byte for byte against its committed HTML by
+    // `all_implemented_corpus_pairs_match` the moment the category is listed
+    // here, which is what makes each line a claim and not a blessing. None is
+    // deferred, so KNOWN_GAPS stays empty.
+    //
+    // 507 is markup-carve/carve#2494: a list marker below a raised colon
+    // container folds into that container's open paragraph. Sixteen documents.
+    "a-list-marker-in-a-raised-colon-container-folds-into-its-open-paragraph",
+    // 508 is markup-carve/carve#2503: a comment span's closer below its host's
+    // column is still that span's delimiter. Six documents.
+    "a-comment-span-s-closer-below-its-host-s-column-stays-a-delimiter",
+    // 509 is markup-carve/carve#2509: a fence closer below a nested item's
+    // column ends containers down to the one that owns the fence. Twelve
+    // documents.
+    "a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-its-owner",
+    // 510 is markup-carve/carve#2510: a nested quoted term leaves no paragraph
+    // for a lazy line to continue. One document.
+    "a-nested-quoted-term-leaves-no-paragraph-for-a-lazy-line",
+    // 511 is markup-carve/carve#2514 with #2517, PART 0's continuation-claim
+    // rule: a closed fence establishes no claim, so an unmarked line after one
+    // leaves every quote. Eleven documents.
+    "a-fence-in-a-quote-stores-no-continuation-claim",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
