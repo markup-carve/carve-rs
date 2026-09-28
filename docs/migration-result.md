@@ -25,9 +25,15 @@ std::fs::write("document.crv", result.value)?;
 
 Version 2 reports use the same `Preserved`, `Normalized`, `Degraded`, and
 `Dropped` fidelity vocabulary as the other Carve engines. HTML retains its
-construct-specific diagnostics. Markdown, Djot, and BBCode emit a
-`fidelity-unverified` dropped/fallback warning on every import because those
-paths do not yet verify overall fidelity. Markdown also reports each blank GFM
+construct-specific diagnostics. 
+
+Markdown, Djot, and BBCode verify a narrow literal-text subset: empty input or
+Unicode letters and numbers separated by single ASCII spaces, with optional
+trailing line endings. When the imported text matches and no known loss was
+reported, `literal-text-verified` records preserved/exact evidence. All other
+inputs retain the dropped/fallback `fidelity-unverified` warning.
+
+Markdown also reports each blank GFM
 table row it drops as `structure-unspellable`. This deliberately
 fails closed at the worst-case outcome: byte differences are not evidence of
 semantic fidelity.

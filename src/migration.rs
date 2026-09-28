@@ -83,7 +83,40 @@ pub fn migrate_html(
     })
 }
 
-fn unverified(value: String, source_format: SourceFormat) -> MigrationResult {
+fn assessed(
+    source: &str,
+    value: String,
+    source_format: SourceFormat,
+    has_known_losses: bool,
+) -> MigrationResult {
+    static LITERAL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = LITERAL.get_or_init(|| {
+        regex::Regex::new(r"\A[\p{L}\p{N}]+(?: [\p{L}\p{N}]+)*\z").expect("literal text pattern")
+    });
+    let normalized = source.replace("\r\n", "\n").replace('\r', "\n");
+    let literal = normalized.trim_end_matches('\n');
+    if !has_known_losses
+        && (literal.is_empty() || pattern.is_match(literal))
+        && value.trim_end_matches('\n') == literal
+    {
+        return MigrationResult {
+            value,
+            report: MigrationReport {
+                schema_version: 2,
+                source_format,
+                mode: None,
+                adapter: None,
+                diagnostics: vec![MigrationDiagnostic {
+                    code: "literal-text-verified".to_owned(),
+                    message: "Verified the complete input as literal text.".to_owned(),
+                    severity: HtmlImportSeverity::Info,
+                    fidelity: MigrationFidelity::Preserved,
+                    confidence: MigrationConfidence::Exact,
+                    path: None,
+                }],
+            },
+        };
+    }
     let diagnostics = vec![MigrationDiagnostic {
         code: "fidelity-unverified".to_owned(),
         message: format!(
@@ -120,7 +153,7 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 /// Migrate Markdown while preserving a typed canonical-writer failure.
 pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
     let (value, losses) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
-    let mut result = unverified(value, SourceFormat::Markdown);
+    let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
     result
         .report
         .diagnostics
@@ -136,9 +169,32 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
-    unverified(djot_to_carve(source), SourceFormat::Djot)
+    assessed(source, djot_to_carve(source), SourceFormat::Djot, false)
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
-    Ok(unverified(bbcode_to_carve(source)?, SourceFormat::Bbcode))
+    Ok(assessed(
+        source,
+        bbcode_to_carve(source)?,
+        SourceFormat::Bbcode,
+        false,
+    ))
+}
+
+#[cfg(test)]
+mod evidence_tests {
+    use super::*;
+
+    #[test]
+    fn changed_output_or_known_loss_cannot_verify_literal_text() {
+        for (value, known_loss) in [("changed", false), ("hello", true)] {
+            let result = assessed(
+                "hello",
+                value.to_owned(),
+                SourceFormat::Markdown,
+                known_loss,
+            );
+            assert_eq!(result.report.diagnostics[0].code, "fidelity-unverified");
+        }
+    }
 }

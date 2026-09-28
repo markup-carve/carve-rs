@@ -65,8 +65,9 @@ when nesting is too deep or Carve cannot write the document.
 these errors. The importer parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's
 spelling: a setext heading comes back as `#`, an indented code block as a
-fence. It has no mode or adapter. `--report` emits a dropped/fallback
-`fidelity-unverified` finding, so `--check-loss` deliberately exits 1. A blank
+fence. It has no mode or adapter. Literal text covered by the
+[migration report](migration-result.md) exits 0 with `--check-loss`. Other
+inputs retain a dropped/fallback `fidelity-unverified` finding and exit 1. A blank
 GFM table row is dropped with a `structure-unspellable` warning in the migration
 report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics. An
 ordered task item keeps its marker as text, as in `1. [x] done`, because Carve
