@@ -18,12 +18,13 @@ fall back to the normal AST renderer without retracting partial output. This
 explicit boundary is valuable for low-allocation render services and makes
 fallback rates measurable instead of hiding them inside `to_html`.
 
-Accepted HTML is delivered in newline-terminated chunks, with any final
-unterminated line delivered last. Concatenating the chunks reproduces the
-renderer output exactly. Empty accepted output calls the sink once with an
-empty string. Sink failures propagate to the caller.
+Accepted HTML is delivered in UTF-8 chunks of at most 4096 bytes. Chunks end
+at newlines where possible; long lines span multiple chunks. Concatenating the
+chunks reproduces the renderer output exactly. Empty accepted output calls the
+sink once with an empty string. Sink panics propagate to the caller.
 
-The complete HTML string is buffered before the first callback. This API
-measures acceptance and controls delivery; parsing and rendering still finish
-before delivery starts. Borrowed events and unbuffered rendering remain future
-work.
+A validation pass discards output before any callback runs. A second pass writes
+directly to the bounded output buffer, without assembling the complete HTML
+string. Source line indexes and reference definitions still use memory
+proportional to the input. The borrowed layout subset is conservative;
+unsupported syntax and rendering options return `NeedsAst`.

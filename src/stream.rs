@@ -1,4 +1,4 @@
-use crate::{parse::try_layout_html, Options};
+use crate::{parse::try_layout_stream, Options};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamOutcome {
@@ -10,20 +10,15 @@ pub enum StreamOutcome {
 ///
 /// The sink is not called unless the fast path accepted the complete document,
 /// so a caller can safely run the AST renderer after `NeedsAst`.
-/// HTML is buffered before delivery in newline-terminated chunks.
+/// Validation discards output; a second pass emits UTF-8 chunks of at most 4096 bytes.
 pub fn try_render_html_streaming(
     source: &str,
     options: &Options<'_>,
     mut sink: impl FnMut(&str),
 ) -> StreamOutcome {
-    let Some(html) = try_layout_html(source, options) else {
-        return StreamOutcome::NeedsAst;
-    };
-    for chunk in html.split_inclusive('\n') {
-        sink(chunk);
+    if try_layout_stream(source, options, &mut sink) {
+        StreamOutcome::Complete
+    } else {
+        StreamOutcome::NeedsAst
     }
-    if html.is_empty() {
-        sink("");
-    }
-    StreamOutcome::Complete
 }
