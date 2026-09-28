@@ -1442,11 +1442,6 @@ fn extract_footnote_defs(
             } else {
                 Vec::new()
             };
-            // Multi-line continuation is only gathered for a TOP-LEVEL
-            // definition. A container-nested def is single-line here: its
-            // continuation would carry the container prefix and is left to
-            // normal block parsing, which the spec corpus does not pin.
-            //
             let body_indent = footnote_body_floor(lines[def_start_line - first_source_line]);
             let mut note_fence: Option<FenceOpen> = None;
             // The body column of the note a NESTED definition opened inside this
@@ -1725,42 +1720,49 @@ fn extract_footnote_defs(
                 // the same answer. Excluding text left this engine reading one
                 // floor for openers and another for prose, which is the
                 // two-answers-at-once state the fix above set out to end.
-                let prefix_cols = raw_def_line.chars().count() - def_line.chars().count();
+                let mut quote_depth = 0;
+                let mut inside = raw_def_line;
+                while let Some(rest) = strip_blockquote_prefix(inside) {
+                    quote_depth += 1;
+                    inside = rest;
+                }
+                let prefix_cols = inside.chars().count() - def_line.chars().count();
                 let note_floor = prefix_cols + footnote_body_floor(def_line);
-                //
-                // ENTERED ACROSS A BLANK RUN, because the loop below continues
-                // across one: §16 allows blank lines between a note body's
-                // chunks, so a body that resumes after one is still the note's.
-                // Testing only `lines[i]` refused the gather whenever the author
-                // left a blank line under the definition, which is the ordinary
-                // spelling of a multi-paragraph note.
-                let reaches_floor = |raw: &str| indent_columns(raw) >= note_floor;
+                // Measure indentation inside the note's existing quote host.
+                // A further quote marker is note content and stays in the body.
+                let content = |raw| strip_quote_levels(raw, quote_depth);
+                let reaches_floor =
+                    |raw| content(raw).is_some_and(|line| indent_columns(line) >= note_floor);
+                let blank = |raw| content(raw).is_some_and(is_blank_line);
                 let body_resumes = {
                     let mut at = i;
-                    while at < lines.len() && is_blank_line(lines[at]) {
+                    while at < lines.len() && blank(lines[at]) {
                         at += 1;
                     }
                     at < lines.len() && reaches_floor(lines[at])
                 };
                 if body_resumes {
                     while i < lines.len() {
-                        let line = lines[i];
-                        // The block ends where the container's body reclaims the
-                        // line: a blank, a line below the floor, or a new note.
+                        let raw = lines[i];
+                        let Some(line) = content(raw) else { break };
                         if is_blank_line(line) {
                             let mut after = i + 1;
-                            while after < lines.len() && is_blank_line(lines[after]) {
+                            while after < lines.len() && blank(lines[after]) {
                                 after += 1;
                             }
-                            if after < lines.len() && indent_columns(lines[after]) >= note_floor {
+                            if after < lines.len() && reaches_floor(lines[after]) {
                                 while i < after {
+                                    let raw = lines[i];
+                                    let line = content(raw).expect("checked quote prefix");
+                                    let prefix = raw.chars().count() - line.chars().count();
                                     let (residue, consumed, synthetic) =
-                                        slice_columns_mapped(lines[i], note_floor, true);
+                                        slice_columns_mapped(line, note_floor, true);
                                     def_lines.push(residue);
                                     def_line_map.push(Some(first_source_line + i));
                                     if positions {
-                                        def_col_map
-                                            .push(Some(consumed as isize - synthetic as isize));
+                                        def_col_map.push(Some(
+                                            (prefix + consumed) as isize - synthetic as isize,
+                                        ));
                                     }
                                     i += 1;
                                 }
@@ -1775,7 +1777,8 @@ fn extract_footnote_defs(
                         }
                         let dedented = strip_leading_columns(line, note_floor);
                         if positions {
-                            def_col_map.push(stripped_col(Some(0), line, &dedented));
+                            let prefix = raw.chars().count() - line.chars().count();
+                            def_col_map.push(stripped_col(Some(prefix as isize), line, &dedented));
                         }
                         def_lines.push(dedented);
                         def_line_map.push(Some(first_source_line + i));
@@ -3369,6 +3372,13 @@ fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
 thread_local! {
     pub(crate) static QUOTE_PREFIX_CALLS: std::cell::Cell<u64> =
         const { std::cell::Cell::new(0) };
+}
+
+fn strip_quote_levels(mut line: &str, depth: usize) -> Option<&str> {
+    for _ in 0..depth {
+        line = strip_blockquote_prefix(line)?;
+    }
+    Some(line)
 }
 
 fn strip_blockquote_prefix(line: &str) -> Option<&str> {
