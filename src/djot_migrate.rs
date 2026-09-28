@@ -429,6 +429,84 @@ fn convert_djot_block_markers(source: &str) -> String {
     lines.join("\n")
 }
 
+fn mask_djot_attributes(source: &str) -> String {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| {
+        let item = r#"(?:[.#][A-Za-z0-9_][A-Za-z0-9_-]*|[A-Za-z_][A-Za-z0-9_-]*=(?:"(?:\\.|[^"\\\n])*"|[A-Za-z0-9_:-]+))"#;
+        regex::Regex::new(&format!(r"^\s*{item}(?:\s+{item})*\s*$")).unwrap()
+    });
+    let mut masked = mask_code_and_destinations(source).into_bytes();
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    let mut checked = 0;
+    let mut block_start = true;
+    let mut last_block_end = None;
+    while i < bytes.len() {
+        if bytes[i] != b'{' || masked[i] != b'{' || is_escaped(bytes, i) {
+            i += 1;
+            continue;
+        }
+        let mut end = i + 1;
+        let mut quoted = false;
+        while end < bytes.len() {
+            match bytes[end] {
+                b'\n' if quoted || blank_line_follows(bytes, end) => break,
+                b'\\' => end += 1,
+                b'"' => quoted = !quoted,
+                b'{' | b'}' if !quoted => break,
+                _ => {}
+            }
+            end += 1;
+        }
+        for byte in &bytes[checked..i] {
+            if *byte == b'\n' {
+                block_start = true;
+            } else if !matches!(*byte, b' ' | b'\t') {
+                block_start = false;
+            }
+        }
+        checked = i;
+        let attached_span =
+            i > 0 && bytes[i - 1] == b']' && !bytes[i..end.min(bytes.len())].contains(&b'\n');
+        let attached_block = if block_start {
+            let after = source.get(end + 1..).unwrap_or("");
+            let (line_tail, following) = after.split_once('\n').unwrap_or((after, ""));
+            let boundary = match source[..i].rfind('\n') {
+                None => true,
+                Some(previous_end) => {
+                    let previous_start = source[..previous_end].rfind('\n').map_or(0, |at| at + 1);
+                    source[previous_start..previous_end].trim().is_empty()
+                        || last_block_end
+                            .is_some_and(|end| end >= previous_start && end < previous_end)
+                }
+            };
+            boundary
+                && line_tail.trim().is_empty()
+                && !following.split('\n').next().unwrap_or("").trim().is_empty()
+        } else {
+            false
+        };
+        if end < bytes.len()
+            && bytes[end] == b'}'
+            && (attached_span || attached_block)
+            && pattern.is_match(&source[i + 1..end])
+        {
+            for byte in &mut masked[i..=end] {
+                if *byte != b'\n' {
+                    *byte = 0;
+                }
+            }
+            if attached_block {
+                last_block_end = Some(end);
+            }
+            i = end + 1;
+        } else {
+            i = end.max(i + 1);
+        }
+    }
+    String::from_utf8(masked).expect("attribute masks preserve UTF-8 boundaries")
+}
+
 fn rewrite_djot_body(djot: &str) -> String {
     let source = convert_djot_block_markers(&djot.replace("\r\n", "\n").replace('\r', "\n"));
     // Before anything else, and deliberately as a same-length rewrite: `+` and
@@ -439,10 +517,9 @@ fn rewrite_djot_body(djot: &str) -> String {
     // works on whole lines: a blank-line run Djot reads as nothing is a list
     // boundary in Carve.
     let source = collapse_false_list_boundaries(&source);
-    // Escaping inserts backslashes, so the mask the delimiter rules scan is
-    // taken AFTER it rather than before.
-    let source = escape_plain_carve_syntax(&source, HandledDelimiters::DJOT);
-    let masked = mask_code_and_destinations(&source);
+    let masked = mask_djot_attributes(&source);
+    let source = escape_plain_carve_syntax_masked(&source, HandledDelimiters::DJOT, &masked);
+    let masked = mask_djot_attributes(&source);
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut taken: Vec<(char, usize, usize)> = Vec::new();
@@ -1242,6 +1319,14 @@ const BARE_DELIMITERS: &[u8] = b"/=~*_";
 /// literal text, given the delimiters that language HANDLES itself.
 pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters<'_>) -> String {
     let masked = mask_code_and_destinations(source);
+    escape_plain_carve_syntax_masked(source, handled, &masked)
+}
+
+fn escape_plain_carve_syntax_masked(
+    source: &str,
+    handled: HandledDelimiters<'_>,
+    masked: &str,
+) -> String {
     let mask = masked.as_bytes();
     let mut at: Vec<usize> = Vec::new();
 
@@ -2212,5 +2297,46 @@ mod attributed_strong_tests {
         ] {
             assert_eq!(crate::to_html(&super::djot_to_carve(source)), expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod attribute_list_tests {
+    use super::djot_to_carve;
+
+    #[test]
+    fn valid_attribute_lists_keep_their_delimiters() {
+        for source in [
+            "{#id .class}\nA paragraph\n",
+            "{#id .class\n  style=\"color:red\"}\nA paragraph\n",
+            "{#id}\n> Block quote\n",
+            "{#id}\n# Heading\n",
+            "[nested [span]{.blue}]{#ident}\n",
+            "[span]{title=\"_*#literal*\"}\n",
+        ] {
+            assert_eq!(djot_to_carve(source), source, "{source}");
+        }
+    }
+
+    #[test]
+    fn rejected_attributes_do_not_hide_paragraph_boundaries_or_later_spans() {
+        let source = "_a [x]{.a\n\n.b} b_";
+        assert!(!djot_to_carve(source).contains("/a"));
+        assert!(!crate::to_html(&djot_to_carve("para\n{#id}\nnext")).contains("id=\"id\""));
+        assert!(djot_to_carve("a { \"q\n[x]{title=\"_a_\"}").contains("[x]{title=\"_a_\"}"));
+        assert!(djot_to_carve("[x]{#a\n.b}").contains("\\#a"));
+        let invalid = "[x]{k=a*b*}";
+        assert_eq!(super::mask_djot_attributes(invalid), invalid);
+    }
+
+    #[test]
+    fn attributes_in_code_and_invalid_lists_remain_literal() {
+        for source in ["`[x]{#id}`", "```\n[x]{#id}\n```"] {
+            let written = djot_to_carve(source);
+            assert_eq!(crate::to_html(source), crate::to_html(&written));
+        }
+        assert_eq!(djot_to_carve("[span]{#a<b}"), "[span]\\{\\#a<b}");
+        assert_eq!(djot_to_carve("a #tag"), "a \\#tag");
+        assert_eq!(crate::to_html(&djot_to_carve("\\{#id}")), "<p>{#id}</p>");
     }
 }
