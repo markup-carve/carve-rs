@@ -25,6 +25,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Fences inside quoted lists and footnotes no longer absorb following unmarked lines (markup-carve/carve#2550).
+
 - Comment spans use their opener column when placing following list content, including spans opened on a marker line or below the item column (markup-carve/carve#2530).
 
 - Unquoted attribute values reject pipes, backslashes, and quotes while preserving Unicode whitespace as content; formatting quotes values containing backslashes (#2054).

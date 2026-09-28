@@ -8206,6 +8206,9 @@ struct NestedFenceReplay {
 
 #[derive(Default)]
 struct NestedLevel {
+    hosts: Vec<(usize, usize, bool)>,
+    host_fence: Option<(FenceOpen, usize)>,
+    pending: Option<(FenceOpen, usize)>,
     fence: Option<FenceOpen>,
     comment: Option<usize>,
     para: bool,
@@ -8223,7 +8226,8 @@ impl NestedFenceReplay {
             self.replay(lines, at);
         }
         let deepest = self.chain.last()?;
-        (deepest.fence.is_some() || deepest.by_fence).then_some(false)
+        (deepest.fence.is_some() || deepest.host_fence.is_some() || deepest.by_fence)
+            .then_some(false)
     }
 
     fn replay(&mut self, lines: &[SourceLine], at: usize) {
@@ -8236,6 +8240,21 @@ impl NestedFenceReplay {
         }
         let mut level = 0;
         loop {
+            if let Some((open, column)) = chain[level].host_fence {
+                if !is_blank_line(text) && indent_columns(text) < column {
+                    chain[level].host_fence = None;
+                } else {
+                    if indent_columns(text) == column
+                        && is_fence_close(trim_ascii_start(text), open)
+                    {
+                        chain[level].host_fence = None;
+                    }
+                    chain[level].by_fence = true;
+                    chain[level].para = false;
+                    chain.truncate(level + 1);
+                    return;
+                }
+            }
             if let Some(open) = chain[level].fence {
                 if is_fence_close(text, open) {
                     chain[level].fence = None;
@@ -8254,6 +8273,8 @@ impl NestedFenceReplay {
                 return;
             }
             if let Some(rest) = strip_blockquote_prefix(text) {
+                chain[level].hosts.clear();
+                chain[level].pending = None;
                 chain[level].para = false;
                 chain[level].by_fence = false;
                 if chain.len() == level + 1 {
@@ -8278,6 +8299,63 @@ impl NestedFenceReplay {
             chain.truncate(level + 1);
             let here = &mut chain[level];
             here.by_fence = false;
+            if !is_blank_line(text) {
+                let column = indent_columns(text);
+                let sibling = here
+                    .hosts
+                    .iter()
+                    .any(|&(marker, _, item)| marker == column && item);
+                while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
+                    here.hosts.pop();
+                }
+                let inside_item = here.hosts.last().is_some_and(|&(_, _, item)| item);
+                let mut inner = trim_ascii_start(text);
+                let mut col = column;
+                let mut block_start = false;
+                loop {
+                    if let Some(marker) = detect_list_marker_full(inner) {
+                        if here.para && !inside_item && !sibling {
+                            break;
+                        }
+                        let next = col + marker_content_col(inner).expect("matched list marker");
+                        here.hosts.push((col, next, true));
+                        col = next + indent_columns(marker.content);
+                        inner = trim_ascii_start(marker.content);
+                        block_start = true;
+                        continue;
+                    }
+                    if parse_footnote_def_line(inner).is_some() {
+                        here.hosts.push((col, col + 2, false));
+                    }
+                    break;
+                }
+                let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
+                if here.pending.is_some_and(|(_, col)| col > floor) {
+                    here.pending = None;
+                }
+                if let Some(open) = detect_fence_open(inner).filter(|_| floor > 0) {
+                    let paired = here.pending.is_some_and(|(pending, _)| {
+                        pending.fence_char == open.fence_char && open.fence_len >= pending.fence_len
+                    });
+                    if paired {
+                        here.pending = None;
+                    } else if col == floor
+                        && (block_start
+                            || !here.para
+                            || closer_ahead(lines, at, level, |l| {
+                                indent_columns(l) == floor
+                                    && is_fence_close(trim_ascii_start(l), open)
+                            }))
+                    {
+                        here.host_fence = Some((open, floor));
+                        here.para = false;
+                        here.by_fence = true;
+                        return;
+                    } else if col != floor {
+                        here.pending = Some((open, floor));
+                    }
+                }
+            }
             if let Some(open) = detect_fence_open(text) {
                 // At block start a fence opens with or without a closer; after
                 // a paragraph it needs one (§10), or it is inline verbatim.
@@ -8569,7 +8647,7 @@ fn collect_blockquote_body(
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        let fenced_below = if last_nested && may_hold_fence {
+        let fenced_below = if may_hold_fence {
             *nested_verdict.get_or_insert_with(|| nested_replay.verdict(&inner.lines))
         } else {
             None
@@ -14281,7 +14359,7 @@ fn collect_definition_body(
             // text too; a blank line ends the fence via the branch below.
             if nested_lead_fence.is_some() {
                 folded_a_lazy_line = false;
-                let framed = format!("{LAZY}{}", trim_ascii_start(line));
+                let framed = format!("{LAZY}{}", strip_lazy(trim_ascii_start(line)));
                 // `trim_ascii_start` drops the line's own indent, so the column
                 // is what was stripped and nothing more - the frame is not
                 // source text and no position reader counts it (carve-rs#1559,
