@@ -1,3 +1,4 @@
+use crate::common;
 use carve::*;
 
 fn quote_chain(levels: usize) -> BlockNode {
@@ -314,7 +315,10 @@ fn checked_operations_on_a_small_stack() {
     const CHILD: &str = "CARVE_CHECKED_AST_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let result = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "checked_operations_on_a_small_stack"])
+            .args([
+                "--exact",
+                &common::exact_test_name(module_path!(), "checked_operations_on_a_small_stack"),
+            ])
             .env(CHILD, "1")
             .output()
             .unwrap();

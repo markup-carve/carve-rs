@@ -18,7 +18,7 @@
 //! These tests therefore read back through `carve::from_json`, which is what a
 //! consumer sees and also proves the wire form the encoder wrote decodes.
 
-mod common;
+use crate::common;
 
 use carve::ast::*;
 use carve::Document;
