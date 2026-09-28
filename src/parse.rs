@@ -392,7 +392,7 @@ mod layout;
 mod source_map;
 use frontmatter::split_frontmatter;
 pub(crate) use frontmatter::{frontmatter_format_token, frontmatter_map, opens_frontmatter};
-pub(crate) use layout::try_layout_html;
+pub(crate) use layout::{try_layout_html, try_layout_stream};
 use source_map::{
     compose_mapped_source, first_mapped_line, map_pos_through_source, remap_source, LineBuffer,
     MappedSource, SourceLine,

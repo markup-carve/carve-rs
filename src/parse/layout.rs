@@ -1,6 +1,138 @@
 use super::*;
 use std::ops::Range;
 
+trait LayoutWrite: std::fmt::Write {
+    fn push_str(&mut self, text: &str) {
+        self.write_str(text).expect("HTML sink write");
+    }
+
+    fn push(&mut self, character: char) {
+        self.write_char(character).expect("HTML sink write");
+    }
+
+    fn escaped_text(&mut self, text: &str);
+    fn escaped_attr(&mut self, text: &str);
+}
+
+impl LayoutWrite for String {
+    fn escaped_text(&mut self, text: &str) {
+        crate::escape::write_escaped_text(self, text);
+    }
+
+    fn escaped_attr(&mut self, text: &str) {
+        crate::escape::write_escaped_attr(self, text);
+    }
+}
+
+struct DiscardHtml;
+
+impl std::fmt::Write for DiscardHtml {
+    fn write_str(&mut self, _: &str) -> std::fmt::Result {
+        Ok(())
+    }
+}
+
+impl LayoutWrite for DiscardHtml {
+    fn escaped_text(&mut self, _: &str) {}
+    fn escaped_attr(&mut self, _: &str) {}
+}
+
+struct HtmlSink<'a> {
+    sink: &'a mut dyn FnMut(&str),
+    buffer: String,
+    scratch: String,
+    wrote: bool,
+}
+
+impl HtmlSink<'_> {
+    fn escaped(&mut self, mut text: &str, attribute: bool) {
+        let mut escaped = std::mem::take(&mut self.scratch);
+        while !text.is_empty() {
+            let mut end = text.len().min(512);
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            escaped.clear();
+            if attribute {
+                crate::escape::write_escaped_attr(&mut escaped, &text[..end]);
+            } else {
+                crate::escape::write_escaped_text(&mut escaped, &text[..end]);
+            }
+            self.push_str(&escaped);
+            text = &text[end..];
+        }
+        self.scratch = escaped;
+    }
+
+    fn flush(&mut self) {
+        if !self.buffer.is_empty() {
+            (self.sink)(&self.buffer);
+            self.buffer.clear();
+            self.wrote = true;
+        }
+    }
+
+    fn finish(&mut self) {
+        self.flush();
+        if !self.wrote {
+            (self.sink)("");
+        }
+    }
+}
+
+impl std::fmt::Write for HtmlSink<'_> {
+    fn write_str(&mut self, mut text: &str) -> std::fmt::Result {
+        while !text.is_empty() {
+            let mut end = text.len().min(4096 - self.buffer.len());
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            if end == 0 {
+                self.flush();
+                continue;
+            }
+            if let Some(newline) = text[..end].find('\n') {
+                end = newline + 1;
+            }
+            self.buffer.push_str(&text[..end]);
+            text = &text[end..];
+            if self.buffer.len() == 4096 || self.buffer.ends_with('\n') {
+                self.flush();
+            }
+        }
+        Ok(())
+    }
+}
+
+impl LayoutWrite for HtmlSink<'_> {
+    fn escaped_text(&mut self, text: &str) {
+        self.escaped(text, false);
+    }
+    fn escaped_attr(&mut self, text: &str) {
+        self.escaped(text, true);
+    }
+}
+
+pub(crate) fn try_layout_stream(
+    source: &str,
+    options: &Options<'_>,
+    sink: &mut dyn FnMut(&str),
+) -> bool {
+    if try_layout_into(source, options, &mut DiscardHtml).is_none() {
+        return false;
+    }
+    let mut output = HtmlSink {
+        sink,
+        buffer: String::with_capacity(4096),
+        scratch: String::with_capacity(3072),
+        wrote: false,
+    };
+    let accepted = try_layout_into(source, options, &mut output);
+    assert!(accepted.is_some(), "validated layout remains accepted");
+    output.finish();
+    true
+}
+
 /// A block family accepted by the borrowed layout scanner.
 ///
 /// Keeping this taxonomy typed makes every widening measurable: a new scanner
@@ -73,6 +205,7 @@ impl AcceptanceCounters {
 
 struct LayoutOutput {
     html: String,
+    #[cfg_attr(not(test), allow(dead_code))]
     accepted: AcceptanceCounters,
 }
 
@@ -87,7 +220,23 @@ pub(crate) fn try_layout_html(source: &str, options: &Options<'_>) -> Option<Str
 }
 
 fn try_layout(source: &str, options: &Options<'_>) -> Option<LayoutOutput> {
-    if !source.is_ascii()
+    let mut html = String::with_capacity(source.len().saturating_mul(3));
+    let accepted = try_layout_into(source, options, &mut html)?;
+    Some(LayoutOutput { html, accepted })
+}
+
+fn try_layout_into(
+    source: &str,
+    options: &Options<'_>,
+    out: &mut impl LayoutWrite,
+) -> Option<AcceptanceCounters> {
+    if !options.extensions.is_empty()
+        || options.profile.is_some()
+        || options.source_lines
+        || !options.sections
+        || options.mode != crate::Mode::Interactive
+        || options.smart_typography != crate::extension::SmartTypographyMode::Glyph
+        || !source.is_ascii()
         || source.contains(['\0', '\t', '\u{0b}', '\u{0c}', '\r'])
         || source.starts_with("---")
         || source.contains("[^")
@@ -108,11 +257,10 @@ fn try_layout(source: &str, options: &Options<'_>) -> Option<LayoutOutput> {
         return None;
     }
     let (defs, definition_lines) = layout_link_defs(&lines)?;
-    let (rendered, _, _) =
-        with_active_link_defs(defs, || render_layout_body(&lines, source.len(), options));
+    let (rendered, _, _) = with_active_link_defs(defs, || render_layout_body(&lines, options, out));
     let mut output = rendered?;
     for line in definition_lines {
-        output.accepted.record(BlockLayout {
+        output.record(BlockLayout {
             event: LayoutEvent::LinkDefinition,
             consumed: line..line + 1,
             active_definition: true,
@@ -167,13 +315,9 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
 
 fn render_layout_body(
     lines: &[&str],
-    source_len: usize,
     options: &Options<'_>,
-) -> Option<LayoutOutput> {
-    // Section wrappers and indentation make representative HTML about 2.7x
-    // the source size. Reserve once so the hot path does not copy the entire
-    // nearly-complete document during geometric growth.
-    let mut out = String::with_capacity(source_len.saturating_mul(3));
+    out: &mut impl LayoutWrite,
+) -> Option<AcceptanceCounters> {
     let mut sections: Vec<usize> = Vec::new();
     let mut heading_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut accepted = AcceptanceCounters::default();
@@ -197,7 +341,7 @@ fn render_layout_body(
             while sections.last().is_some_and(|open| *open >= section_level) {
                 let depth = sections.len() - 1;
                 out.push('\n');
-                layout_indent(&mut out, depth);
+                layout_indent(out, depth);
                 out.push_str("</section>");
                 sections.pop();
             }
@@ -220,15 +364,14 @@ fn render_layout_body(
                 crate::document_ids::allocate_heading_id(base, false, &mut heading_counts, |_| {
                     false
                 });
-            layout_indent(&mut out, sections.len());
+            layout_indent(out, sections.len());
             out.push_str("<section id=\"");
-            out.push_str(&crate::escape::escape_attr(&id));
+            out.escaped_attr(&id);
             out.push_str("\">\n");
-            layout_indent(&mut out, sections.len() + 1);
-            use std::fmt::Write as _;
-            write!(&mut out, "<h{level}>").ok()?;
-            render_layout_inline(&mut out, title, options)?;
-            write!(&mut out, "</h{level}>").ok()?;
+            layout_indent(out, sections.len() + 1);
+            write!(out, "<h{level}>").ok()?;
+            render_layout_inline(out, title, options)?;
+            write!(out, "</h{level}>").ok()?;
             sections.push(section_level);
             accepted.record(BlockLayout {
                 event: LayoutEvent::Heading,
@@ -253,7 +396,7 @@ fn render_layout_body(
                 .position(|candidate| is_fence_close(candidate, open))?
                 + i
                 + 1;
-            layout_indent(&mut out, depth);
+            layout_indent(out, depth);
             out.push_str("<pre><code");
             let info = line[open.fence_len..].trim();
             if !info.is_empty() {
@@ -266,7 +409,7 @@ fn render_layout_body(
             }
             out.push('>');
             for content in &lines[i + 1..close] {
-                crate::escape::write_escaped_text(&mut out, content);
+                out.escaped_text(content);
                 out.push('\n');
             }
             // AN EMPTY PAYLOAD IS STILL A LINE. The loop above emits one newline
@@ -288,12 +431,12 @@ fn render_layout_body(
             continue;
         }
         if line.starts_with("- ") {
-            i = render_layout_list(lines, i, 0, depth, options, &mut out, &mut accepted)?;
+            i = render_layout_list(lines, i, 0, depth, options, out, &mut accepted)?;
             wrote = true;
             continue;
         }
         if thematic_break_marker(line).is_some() {
-            layout_indent(&mut out, depth);
+            layout_indent(out, depth);
             out.push_str("<hr>");
             accepted.record(BlockLayout {
                 event: LayoutEvent::ThematicBreak,
@@ -305,12 +448,12 @@ fn render_layout_body(
             continue;
         }
         if decimal_list_item(line).is_some() {
-            i = render_layout_ordered_list(lines, i, depth, options, &mut out, &mut accepted)?;
+            i = render_layout_ordered_list(lines, i, depth, options, out, &mut accepted)?;
             wrote = true;
             continue;
         }
         if line.starts_with("> ") {
-            layout_indent(&mut out, depth);
+            layout_indent(out, depth);
             out.push_str("<blockquote><p>");
             let mut end = i;
             while let Some(text) = lines[end].strip_prefix("> ") {
@@ -330,7 +473,7 @@ fn render_layout_body(
                 if end > i {
                     out.push('\n');
                 }
-                render_layout_inline(&mut out, text, options)?;
+                render_layout_inline(out, text, options)?;
                 end += 1;
                 if end == lines.len() {
                     break;
@@ -351,14 +494,14 @@ fn render_layout_body(
             continue;
         }
         if line.starts_with('|') {
-            i = render_layout_table(lines, i, depth, options, &mut out, &mut accepted)?;
+            i = render_layout_table(lines, i, depth, options, out, &mut accepted)?;
             wrote = true;
             continue;
         }
         if !is_layout_paragraph_line(line) {
             return None;
         }
-        layout_indent(&mut out, depth);
+        layout_indent(out, depth);
         out.push_str("<p>");
         let mut end = i;
         while end < lines.len() && !is_blank_line(lines[end]) {
@@ -368,7 +511,7 @@ fn render_layout_body(
             if end > i {
                 out.push('\n');
             }
-            render_layout_inline(&mut out, lines[end], options)?;
+            render_layout_inline(out, lines[end], options)?;
             end += 1;
         }
         out.push_str("</p>");
@@ -383,14 +526,11 @@ fn render_layout_body(
     while !sections.is_empty() {
         let depth = sections.len() - 1;
         out.push('\n');
-        layout_indent(&mut out, depth);
+        layout_indent(out, depth);
         out.push_str("</section>");
         sections.pop();
     }
-    Some(LayoutOutput {
-        html: out,
-        accepted,
-    })
+    Some(accepted)
 }
 
 fn is_layout_quote_line(text: &str) -> bool {
@@ -414,13 +554,17 @@ fn is_layout_paragraph_line(line: &str) -> bool {
         && parse_link_def_line(line).is_none()
 }
 
-fn layout_indent(out: &mut String, level: usize) {
+fn layout_indent(out: &mut impl LayoutWrite, level: usize) {
     for _ in 0..level {
         out.push_str("  ");
     }
 }
 
-fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> Option<()> {
+fn render_layout_inline(
+    out: &mut impl LayoutWrite,
+    text: &str,
+    options: &Options<'_>,
+) -> Option<()> {
     if layout_inline_needs_authoritative(text)
         || options.smart_typography != crate::extension::SmartTypographyMode::Glyph
     {
@@ -435,7 +579,7 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
             i += 1;
             continue;
         }
-        crate::escape::write_escaped_text(out, &text[plain..i]);
+        out.escaped_text(&text[plain..i]);
         match delimiter {
             b'*' | b'/' => {
                 let close = text[i + 1..].find(delimiter as char)? + i + 1;
@@ -473,7 +617,7 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
                     return None;
                 }
                 out.push_str("<code>");
-                crate::escape::write_escaped_text(out, code);
+                out.escaped_text(code);
                 out.push_str("</code>");
                 i = close + 1;
             }
@@ -514,11 +658,11 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
                     return None;
                 };
                 out.push_str("<a href=\"");
-                crate::escape::write_escaped_attr(out, &crate::escape::sanitize_url(&href));
+                out.escaped_attr(&crate::escape::sanitize_url(&href));
                 out.push('"');
                 if let Some(title) = title {
                     out.push_str(" title=\"");
-                    crate::escape::write_escaped_attr(out, &title);
+                    out.escaped_attr(&title);
                     out.push('"');
                 }
                 out.push('>');
@@ -530,7 +674,7 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
         }
         plain = i;
     }
-    crate::escape::write_escaped_text(out, &text[plain..]);
+    out.escaped_text(&text[plain..]);
     Some(())
 }
 
@@ -589,7 +733,7 @@ fn render_layout_list(
     indent: usize,
     depth: usize,
     options: &Options<'_>,
-    out: &mut String,
+    out: &mut impl LayoutWrite,
     accepted: &mut AcceptanceCounters,
 ) -> Option<usize> {
     layout_indent(out, depth);
@@ -682,14 +826,13 @@ fn render_layout_ordered_list(
     mut i: usize,
     depth: usize,
     options: &Options<'_>,
-    out: &mut String,
+    out: &mut impl LayoutWrite,
     accepted: &mut AcceptanceCounters,
 ) -> Option<usize> {
     let (start, _) = decimal_list_item(lines.get(i)?)?;
     layout_indent(out, depth);
     out.push_str("<ol");
     if start != 1 {
-        use std::fmt::Write as _;
         write!(out, " start=\"{start}\"").ok()?;
     }
     out.push('>');
@@ -792,7 +935,7 @@ fn render_layout_table(
     start: usize,
     depth: usize,
     options: &Options<'_>,
-    out: &mut String,
+    out: &mut impl LayoutWrite,
     accepted: &mut AcceptanceCounters,
 ) -> Option<usize> {
     let headers = layout_pipe_cells(lines.get(start)?)?;
