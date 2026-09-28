@@ -10004,14 +10004,37 @@ fn parse_list(
             if !items.is_empty() {
                 let last_item = items.len() - 1;
                 let sub_indent = marker.indent;
-                let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
-                fold_lazy_run_and_resume(
+                // Keep the collector's fence boundary when a descendant's body
+                // ends below this item's column. A fresh chunk must not reclaim it.
+                let mut stopped_fence = None;
+                let mut nested = collect_indented_block_mapped_with(
                     cur,
-                    &mut nested,
+                    base_indent,
                     content_col,
-                    |src, below| collected_body_takes_the_lazy_line(&src.source, below, options),
-                    |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
+                    false,
+                    &mut stopped_fence,
+                    false,
                 );
+                if stopped_fence.is_none() {
+                    fold_lazy_run_and_resume(
+                        cur,
+                        &mut nested,
+                        content_col,
+                        |src, below| {
+                            collected_body_takes_the_lazy_line(&src.source, below, options)
+                        },
+                        |cur| {
+                            collect_indented_block_mapped_with(
+                                cur,
+                                sub_indent - 1,
+                                content_col,
+                                false,
+                                &mut stopped_fence,
+                                false,
+                            )
+                        },
+                    );
+                }
                 if sublist_source_loosens_outer_item(&nested.source) {
                     tight = false;
                 }
@@ -10031,6 +10054,15 @@ fn parse_list(
                 // a genuine blank BETWEEN items keeps loosening.
                 pending_blank = false;
                 items[last_item].children.extend(nested_children);
+                if stopped_fence.is_some()
+                    && cur.peek().is_some_and(|line| {
+                        !is_blank_line(line)
+                            && detect_list_marker_full(line).is_none()
+                            && indent_columns(line) < content_col
+                    })
+                {
+                    break;
+                }
                 continue;
             }
             break;
@@ -12355,6 +12387,10 @@ fn collect_indented_block_mapped_with(
     // span OPENS - the closer line does not carry the opener's column.
     let mut span_reached_this_frame = false;
     let mut closed_comment_span_above = false;
+    // A descendant fence may open past this collector's strip column.
+    // Preserve that decision before the deferred child loses its lookahead.
+    let mut nested_item_column: Option<(usize, usize)> = None;
+    let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -12516,6 +12552,10 @@ fn collect_indented_block_mapped_with(
             }
             break;
         }
+        if nested_fence.is_some() && indent < strip_cols {
+            *fence = nested_fence;
+            break;
+        }
         // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
         // `body_open_comment_run`: this dedent ends the container, and a comment
         // delimiter closing a span these lines already hold is not one.
@@ -12547,6 +12587,56 @@ fn collect_indented_block_mapped_with(
         }
         if !colon_open.is_empty() && indent < strip_cols {
             break;
+        }
+        if let Some(open) = nested_fence {
+            if indent < open.content_col {
+                nested_fence = None;
+                nested_item_column = None;
+            } else if indent == open.content_col && is_fence_close(trim_ascii_start(line), open) {
+                nested_fence = None;
+            }
+        } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
+            if let Some(marker) = detect_list_marker_full(line) {
+                nested_item_column = marker_content_col(line).map(|column| (marker.indent, column));
+            } else if let Some((base, column)) = nested_item_column {
+                if indent < column && lines.last().is_some_and(|line| is_blank_line(line)) {
+                    nested_item_column = None;
+                }
+                if indent == column && column > strip_cols {
+                    if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
+                        let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
+                        let interrupts = !after_blank
+                            && cur.has_code_closer_after(
+                                cur.pos + 1,
+                                open.fence_char,
+                                open.fence_len,
+                            )
+                            && item_body_fence_has_closer(
+                                &cur.lines[cur.pos + 1..],
+                                open,
+                                column,
+                                |line, _| {
+                                    detect_list_marker_full(line)
+                                        .is_some_and(|marker| marker.indent <= base)
+                                },
+                            );
+                        if after_blank || interrupts {
+                            if !after_blank {
+                                // Preserve the accepted interruption when collection
+                                // ends before the closer reaches the child parser.
+                                lines.push(String::new());
+                                reached.push(true);
+                                if building_maps {
+                                    line_map.push(None);
+                                    col_map.push(None);
+                                }
+                            }
+                            open.content_col = column;
+                            nested_fence = Some(open);
+                        }
+                    }
+                }
+            }
         }
         let is_marker = detect_list_marker_full(line).is_some();
         if stop_at_content_column_marker

@@ -1571,3 +1571,6 @@ mod registry {
         assert!(stale.is_empty(), "registered but gone: {stale:?}");
     }
 }
+
+#[path = "../nested_fence_ownership.rs"]
+mod nested_fence_ownership;
