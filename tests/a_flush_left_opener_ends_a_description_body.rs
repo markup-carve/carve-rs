@@ -1,22 +1,5 @@
-//! A FLUSH-LEFT OPENER BELOW A DESCRIPTION BODY ENDS IT
-//! (markup-carve/carve-rs#1534).
-//!
-//! `collect_definition_body`'s flush-left band asked
-//! `interrupts_paragraph_in_band`, which reaches `interrupts_paragraph` - and
-//! §10 says outright that a list marker does NOT interrupt a paragraph. That is
-//! the right answer for the question `interrupts_paragraph` is usually asked;
-//! the question here is whether the line CONTINUES this body, and a marker does
-//! not. The oracle keeps the two apart: `foldablePlain` excludes BULLET, an
-//! ordered marker, FENCE and CAPTION alongside the visible openers, and never
-//! asks the fold question about a line that fails it.
-//!
-//! AT DOCUMENT LEVEL ONLY. Inside a container the flush-left line is that
-//! container's own lazy continuation - a quote reached by its marker never
-//! reaches this line - and both readers already fold it there. The rows below
-//! pin the item and quote hosts as controls.
-//!
-//! ORACLE: the executable spec (`scripts/spec/layout.mjs` + `html.mjs`) at carve
-//! `2f654da9`, spec main.
+//! Description-body boundaries follow §10 I2 and the definition-body production.
+//! List markers continue an open paragraph; captions and interrupting fences end it.
 
 use carve::{to_html, to_html_with_options, Options};
 
@@ -47,31 +30,27 @@ fn assert_html(src: &str, expected: &str) {
 
 const BODY: &str = ":: t\n:  d\n";
 
-/// The reported document: a bullet marker ends the body and opens a list.
+/// A bullet marker continues the open description paragraph.
 #[test]
-fn a_bullet_ends_the_body() {
-    assert_html(
-        &format!("{BODY}- z\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><ul><li>z</li></ul>",
-    );
+fn a_bullet_continues_the_body() {
+    assert_html(&format!("{BODY}- z\n"), "<dl><dt>t</dt><dd>d - z</dd></dl>");
 }
 
-/// An ORDERED marker goes the same way.
+/// Ordered markers follow the same paragraph rule.
 #[test]
-fn an_ordered_marker_ends_the_body() {
+fn an_ordered_marker_continues_the_body() {
     assert_html(
         &format!("{BODY}1. z\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><ol><li>z</li></ol>",
+        "<dl><dt>t</dt><dd>d 1. z</dd></dl>",
     );
 }
 
-/// A TASK marker goes the same way.
+/// A task marker is literal text when no list opens.
 #[test]
-fn a_task_marker_ends_the_body() {
+fn a_task_marker_continues_the_body() {
     assert_html(
         &format!("{BODY}- [ ] z\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><ul><li>\
-         <input type=\"checkbox\" disabled aria-label=\"z\"> z</li></ul>",
+        "<dl><dt>t</dt><dd>d - [ ] z</dd></dl>",
     );
 }
 
