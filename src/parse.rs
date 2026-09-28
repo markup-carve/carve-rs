@@ -2824,9 +2824,16 @@ fn extract_link_defs_with_guard(
                 continue;
             }
         }
+        // THE LINE'S OWN COLUMN, not the innermost container's. An opener at the
+        // document column ends every container above it, so a list open higher
+        // up says nothing about whether this is a line block - and asking
+        // `content_col` instead left `. r` / `::: |` / `[f]: t` collecting a
+        // definition out of verse text, where the block parser renders it
+        // (carve-rs#2096, the #491 family one column out). An INDENTED opener is
+        // still refused, for the reason `extract_footnote_defs` records.
         if in_comment_fence.is_none()
             && stripped.structural.is_empty()
-            && content_col == 0
+            && !line.starts_with([' ', '\t'])
             && !fence_line.starts_with([' ', '\t'])
         {
             if let Some(fence_len) = detect_line_block_open(fence_line) {
