@@ -8,6 +8,7 @@
 //! process rather than unwinding, so a thread that overflows takes the test
 //! binary with it - measuring this in-process reports nothing and kills the
 //! run, which is how the first version of this file failed.
+use crate::common;
 use std::process::Command;
 use std::thread;
 
@@ -144,7 +145,7 @@ fn fits_shaped(case: &str, kib: usize, depth: usize, shape: &str) -> bool {
         .env(SHAPE, shape)
         .env(STACK, kib.to_string())
         .arg("--exact")
-        .arg("child")
+        .arg(common::exact_test_name(module_path!(), "child"))
         .output()
         .expect("run the child");
     let text = String::from_utf8_lossy(&output.stdout);

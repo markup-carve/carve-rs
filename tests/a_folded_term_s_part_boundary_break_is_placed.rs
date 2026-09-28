@@ -1,5 +1,3 @@
-mod common;
-
 use carve::ast::*;
 
 fn terms(blocks: &[BlockNode]) -> Vec<&DefinitionTerm> {

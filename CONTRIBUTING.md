@@ -33,23 +33,36 @@ cargo nextest run -E 'not binary(perf_regressions)'
 cargo test --doc
 ```
 
-**Use nextest. Plain `cargo test` is not a slower version of the same run.** The
-suite is about 6100 test functions spread across some 670 separate test binaries.
-Nextest schedules every test from every binary through one queue; `cargo test`
-runs one binary at a time and parallelizes only inside it, so it alternates
-between a short burst of work and a serialization point, several hundred times.
-Measured: the whole suite finishes in about 5m44s under nextest, while a
-`cargo test` run over the same tests was around 10% through at 25 minutes. That
-is a different order of magnitude, not a longer wait.
+**Use nextest.** It is what CI runs, and it gives every test a process of its
+own, so a test that sets a small stack or re-executes its own binary cannot
+disturb its neighbors.
 
 Doctests need the second line because nextest does not run them, by design: they
 need a compiler invocation per test rather than a binary to schedule.
 `src/extensions/` carries worked examples as doctests, so dropping
 `cargo test --doc` would stop testing them while the run stayed green.
 
-To narrow a run, name the target: `cargo nextest run -E 'binary(corpus)'` or
-`cargo test --test corpus`. One trap worth knowing: `cargo build --tests --test X`
-does not narrow anything. `--tests` wins and builds every binary.
+### Where a test goes
+
+Almost every integration test compiles into ONE binary, `suite`
+(`tests/suite/main.rs`). One binary per file meant about 750 crates to compile
+and link on every CI run. `Cargo.toml` sets `autotests = false`, so a new
+`tests/foo.rs` is compiled only once it is registered:
+
+```rust
+#[path = "../foo.rs"]
+mod foo;
+```
+
+`registry::every_test_file_is_compiled` fails until that line exists. A file that
+needs shared helpers writes `use crate::common;` rather than `mod common;`.
+`perf_regressions`, `includes` and `include_conformance` stay separate targets,
+because CI selects them by name.
+
+To narrow a run, filter on the file's module: `cargo nextest run -E 'test(/^corpus::/)'`
+or `cargo test --test suite corpus::`. A test that re-runs its own binary with
+`--exact` has to name itself as `module::test`; `common::exact_test_name` builds
+that from `module_path!()`.
 
 ### The timing suite
 

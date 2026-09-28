@@ -79,3 +79,14 @@ pub fn corpus_dir() -> PathBuf {
 fn spec_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec")
 }
+
+/// The name libtest's `--exact` filter matches for `test` in the module that
+/// passes its own `module_path!()`. In the suite binary that is
+/// `file_stem::test`, not the bare function name, so a re-exec spelled with the
+/// bare name selects nothing.
+pub fn exact_test_name(module_path: &str, test: &str) -> String {
+    match module_path.split_once("::") {
+        Some((_, module)) => format!("{module}::{test}"),
+        None => test.to_string(),
+    }
+}

@@ -1,3 +1,4 @@
+use crate::common;
 use carve::{BlockNode, BlockQuote, ThematicBreak};
 
 #[test]
@@ -5,7 +6,10 @@ fn summary_is_bounded_for_a_deep_document() {
     const CHILD: &str = "CARVE_SUMMARY_TEST_CHILD";
     if std::env::var_os(CHILD).is_none() {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "summary_is_bounded_for_a_deep_document"])
+            .args([
+                "--exact",
+                &common::exact_test_name(module_path!(), "summary_is_bounded_for_a_deep_document"),
+            ])
             .env(CHILD, "1")
             .output()
             .unwrap();
