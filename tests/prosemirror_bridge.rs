@@ -785,8 +785,6 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let mut source_lossy: Vec<String> = Vec::new();
     let mut nbsp_only_degraded = Vec::new();
     let mut undeclared: Vec<String> = Vec::new();
-    // TEMPORARY, for the 71b51d00 bump attribution only.
-    let mut arrivals: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
         if path.extension().and_then(|v| v.to_str()) != Some("crv") {
@@ -832,26 +830,6 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
                 nbsp_only_degraded.push(path.file_name().unwrap().to_string_lossy().into_owned());
             }
             lossy += 1;
-            // TEMPORARY, for the 71b51d00 bump attribution only.
-            let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            if [
-                "506-",
-                "507-",
-                "508-",
-                "509-",
-                "510-",
-                "511-",
-                "41-line-blocks-10",
-            ]
-            .iter()
-            .any(|p| name.starts_with(p))
-            {
-                arrivals.push(format!(
-                    "{name} dropped={:?} degraded={:?}",
-                    pm.dropped.keys().collect::<Vec<_>>(),
-                    pm.degraded.keys().collect::<Vec<_>>()
-                ));
-            }
         }
     }
     // Reported ahead of the set comparison, because a name alone does not say
@@ -1476,18 +1454,47 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // and twenty lossy, each reporting the single cause `soft_break` with
     // nothing dropped - the kind hundreds of documents already carry, so no new
     // kind appeared. 1458/437 over 1895 files becomes 1463/457 over 1920.
-    const STRICT: usize = 1463;
-    const LOSSY: usize = 457;
+    //
+    // The pin moves on to carve 66d4ed19, and the whole delta is DOCUMENTS
+    // ARRIVING. Attributed structurally rather than by diffing two
+    // classification dumps, and here the structure settles it outright: the
+    // branch that carries this pin touches `tests/` only, so the engine is
+    // byte-identical to the one main runs, and the corpus diff between the two
+    // pins is 55 `.crv` files ADDED with none modified and none removed. A
+    // document whose source did not move, read by an engine that did not move,
+    // cannot change bucket - so no pre-existing document can be behind either
+    // number, and the reading at the old pin was 1467/457 over 1924 where the
+    // constants below said 1463/457. The floor had lagged the strict side by
+    // four; this raise closes that as well.
+    //
+    // Thirty-six of the 55 land in the strict set, and the two assertions above
+    // are what says so rather than a count: no new name reached `undeclared`
+    // and the declared source-lossy set held, so every one of the 36 writes
+    // back its canonical source unchanged.
+    //
+    // NINETEEN REPORT, and each one DEGRADES with nothing dropped. Eighteen
+    // report the single cause `soft_break`: `507-a-list-marker-in-a-raised-
+    // colon-container-folds-into-its-open-paragraph` 3 through 12 and 15,
+    // `509-a-fence-closer-below-a-nested-item-s-column-ends-containers-down-to-
+    // its-owner` 4, 5 and 10 through 12, and `511-a-fence-in-a-quote-stores-no-
+    // continuation-claim` 7 and 11. Every one of those is a container whose
+    // last block leaves no paragraph open for the line below it, so the line
+    // folds in and the boundary survives as a soft break - which is the thing
+    // the document exists to pin, so none of them can join the strict set while
+    // it does. The nineteenth is `41-line-blocks-10`, a new document in a
+    // category already listed, and it reports `smart_punctuation` alone. Both
+    // kinds are already declared unmapped and already carried by hundreds of
+    // documents here, so no new cause appears with this pin. 1463/457 becomes
+    // 1503/476 over 1979.
+    const STRICT: usize = 1503;
+    const LOSSY: usize = 476;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
     );
-    arrivals.sort();
     assert!(
         lossy <= LOSSY,
-        "reported-lossy documents rose from {LOSSY} to {lossy}\nARRIVALS ({}):\n{}",
-        arrivals.len(),
-        arrivals.join("\n")
+        "reported-lossy documents rose from {LOSSY} to {lossy}"
     );
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
     // exactly one of the two buckets, which is what this assertion is for -

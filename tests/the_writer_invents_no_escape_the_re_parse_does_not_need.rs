@@ -317,8 +317,7 @@ fn escaped_opener_runs(source: &str) -> Vec<(Vec<usize>, char)> {
         let step = 1 + escaped.len_utf8();
         let mut offsets = vec![i];
         let mut next = i + step;
-        while bytes.get(next) == Some(&b'\\') && source[next + 1..].chars().next() == Some(escaped)
-        {
+        while bytes.get(next) == Some(&b'\\') && source[next + 1..].starts_with(escaped) {
             offsets.push(next);
             next += step;
         }
