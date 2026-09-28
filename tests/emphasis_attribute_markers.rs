@@ -19,6 +19,8 @@ fn child_attribute_markers_survive_formatting() {
         assert_eq!(to_carve(&written), written, "{source}");
     }
     for source in [
+        r#"{~x[y]{key="~"}~>z~}"#,
+        r#"{~x~>y[z]{key="~"}~}"#,
         r#"/*[b]{key="/"}*/"#,
         r#"/*[b]{key="*"}*/"#,
         r#"{_[b]{id="a_"}_}"#,

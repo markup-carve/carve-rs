@@ -3954,8 +3954,10 @@ fn render_inline_body(
             // closer of its own, PART 11 §2b's escalation escapes it: the
             // minimal form re-parses as a different tree and the narrowed unit
             // is written conservatively.
+            ctx.open_kinds.push('~');
             let old = render_inlines(session, &sub.old, ctx);
             let new = render_inlines(session, &sub.new, ctx);
+            ctx.open_kinds.pop();
             format!("{{~{old}~>{new}~}}")
         }
         InlineNode::CriticComment(comment) => {
@@ -4618,7 +4620,14 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
 fn render_inline_attrs(attrs: &Option<Attrs>, ctx: &mut CarveContext) -> String {
     let rendered = render_attrs_with_markers(attrs, &ctx.open_kinds);
     for &marker in &ctx.open_kinds {
-        if rendered.contains(marker) {
+        if attrs.as_ref().is_some_and(|attrs| {
+            attrs.id.as_ref().is_some_and(|id| id.contains(marker))
+                || attrs.classes.iter().any(|class| class.contains(marker))
+                || attrs
+                    .key_values
+                    .iter()
+                    .any(|(key, value)| key.contains(marker) || value.contains(marker))
+        }) {
             *ctx.attribute_markers.entry(marker).or_default() += 1;
         }
     }
