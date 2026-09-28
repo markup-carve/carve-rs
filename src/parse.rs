@@ -1028,7 +1028,14 @@ impl ContentColumns {
             || standalone_attrs_block_len(&[raw_trimmed]).is_some()
             || raw_trimmed.starts_with('>')
             || detect_fence_open(raw_trimmed).is_some()
-            || detect_thematic_break(raw_trimmed);
+            || detect_thematic_break(raw_trimmed)
+            // THE TABLE, which §24 C3 names in the same block-opener set as the
+            // rest of this list and which was the one member missing. A row at
+            // the document column ends the list above it, so the columns that
+            // list opened are dead - left live, `* }` / `|b|` / `  [f]: t`
+            // collected a definition at a column nothing reaches any more, and
+            // the author's line vanished from the output (carve-rs#2096).
+            || is_table_start(raw_trimmed);
         if let Some(term_indent) = detect_prepass_def_term(line) {
             // A term opens the list (or re-opens it at a new indent). Its own
             // line has no content column: `:: t` holds the TERM, and only the
