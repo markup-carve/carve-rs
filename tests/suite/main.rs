@@ -10,6 +10,8 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../a_band_line_under_an_empty_marker_line_quote_ends_the_item.rs"]
+mod a_band_line_under_an_empty_marker_line_quote_ends_the_item;
 #[path = "../a_bare_closer_does_not_reach_inside_a_link_destination.rs"]
 mod a_bare_closer_does_not_reach_inside_a_link_destination;
 #[path = "../a_bare_empty_paragraph_leaves_both_exits.rs"]
@@ -76,6 +78,8 @@ mod a_code_blocks_last_newline_is_its_terminator;
 mod a_code_blocks_nbsp_sentinel_is_resolved;
 #[path = "../a_code_span_closer_is_searched_across_the_block.rs"]
 mod a_code_span_closer_is_searched_across_the_block;
+#[path = "../a_colon_container_keeps_a_band_payload_at_its_column.rs"]
+mod a_colon_container_keeps_a_band_payload_at_its_column;
 #[path = "../a_colon_fence_container_owns_a_link_def_past_its_column.rs"]
 mod a_colon_fence_container_owns_a_link_def_past_its_column;
 #[path = "../a_colon_followed_by_only_whitespace_is_not_a_description.rs"]
@@ -270,6 +274,8 @@ mod a_line_comment_drops_trailing_whitespace;
 mod a_line_initial_code_payload_keeps_its_padding;
 #[path = "../a_link_policy_reads_the_host_a_browser_reads.rs"]
 mod a_link_policy_reads_the_host_a_browser_reads;
+#[path = "../a_lint_diagnostic_reads_the_line_it_reports_on.rs"]
+mod a_lint_diagnostic_reads_the_line_it_reports_on;
 #[path = "../a_list_marker_in_a_contained_comment_is_comment_text.rs"]
 mod a_list_marker_in_a_contained_comment_is_comment_text;
 #[path = "../a_literal_tilde_in_text_is_escaped.rs"]

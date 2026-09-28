@@ -4278,7 +4278,21 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             _ => {}
         }
         match block {
-            BlockNode::BlockQuote(n) => {
+            // A QUOTE HAS TWO SPELLINGS AND ONLY ONE OF THEM ENDS AT ITS LAST
+            // CHILD. `docs/ast-json-contract.md` reads §4's end rule as a
+            // statement about MARKUP - a container ends at the markup that
+            // closes it, and "ends at its last placed child" is the case for a
+            // container whose closer is IMPLICIT. The `>` prefix form has none,
+            // so its content's end is its extent; the `::: >` form has one, and
+            // every other colon fence spans it. Narrowed by kind alone, the
+            // fenced quote was shrunk off its own closer, so it read 1 to 2
+            // where a div, an admonition and a line block over the same three
+            // lines all read 1 to 3 - and `carve lint`, which reads the span to
+            // find the closer, then reported a closed container as unclosed
+            // (carve-rs#2099, and carve-php#2636 for the same reading). An
+            // emptied fenced quote is unaffected: it has no placed child, so the
+            // narrowing never reached it.
+            BlockNode::BlockQuote(n) if !n.fenced => {
                 let last = n
                     .children
                     .iter()
@@ -5715,6 +5729,50 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 after_blank = false;
                 paragraph_open = false;
                 // The completed block lets the next authored opener rebase.
+                block_at_minimum = true;
+                continue;
+            }
+            // A COLON CONTAINER AT THE MINIMUM COLUMN OWNS ITS EXTENT TOO. It
+            // is not opaque, but its payload is still its own: CARVE-P0-004
+            // keeps a run in the band between the container's column and a
+            // fence base inside it at the authored column, and reading that run
+            // again as an authored base dedents it onto the container's column,
+            // where the container takes it as its closer. This pass runs twice
+            // over one item body - `item_body` and then `parse_item_chunk` - so
+            // the second run is where that happened (carve-rs#2095).
+            //
+            // The walk tracks colon widths only, as the base-past-zero arm
+            // below does.
+            if let Some(width) = detect_container_open(&lines[i])
+                .map(|open| open.fence_len)
+                .or_else(|| detect_quote_block_open(&lines[i]))
+            {
+                let mut stack = vec![width];
+                i += 1;
+                while i < lines.len() {
+                    let line = &lines[i];
+                    i += 1;
+                    if exact_colon_fence_len(line) == Some(*stack.last().unwrap()) {
+                        stack.pop();
+                        if stack.is_empty() {
+                            break;
+                        }
+                        continue;
+                    }
+                    if line.starts_with([' ', '\t']) || stack.len() >= MAX_NESTING_DEPTH {
+                        continue;
+                    }
+                    if let Some(len) = detect_container_open(line)
+                        .map(|open| open.fence_len)
+                        .or_else(|| detect_line_block_open(line))
+                        .or_else(|| detect_hardbreaks_block_open(line))
+                        .or_else(|| detect_quote_block_open(line))
+                    {
+                        stack.push(len);
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
                 block_at_minimum = true;
                 continue;
             }
@@ -9872,7 +9930,34 @@ fn parse_list(
                     )
                 })
             });
-            let continuation = collect_indented_block_mapped(cur, base_indent, content_col);
+            // AN EMPTY QUOTE ON THE MARKER LINE HOLDS NO PARAGRAPH. A quote
+            // has no closer, so an empty one is finished where it stands, and
+            // PART 1 S4's otherwise has already ended the item - a line in the
+            // band between the list's base and the item's content column has
+            // nothing here to continue and belongs to the document. `. > a`
+            // folds as before, because there a paragraph really is open. The
+            // collection floor is what says so, as it does for a definition
+            // collected off the marker line (markup-carve/carve-rs#2096).
+            // A fence or a colon container written inside the quote is still
+            // OPEN on one line, and its payload is exactly the band line below
+            // it, so only a quote that leaves nothing at all open ends the item.
+            let mut innermost = marker.content;
+            while let Some(rest) = strip_blockquote_prefix(innermost) {
+                innermost = rest;
+            }
+            let quote_holds_a_paragraph = body_ends_with_open_paragraph(marker.content, options)
+                || colon_fences_left_open(marker.content) > 0
+                || detect_fence_open(innermost).is_some()
+                || detect_comment_fence_line(innermost).is_some();
+            let continuation = collect_indented_block_mapped(
+                cur,
+                if quote_holds_a_paragraph {
+                    base_indent
+                } else {
+                    content_col.saturating_sub(1)
+                },
+                content_col,
+            );
             if fence_after_quote && !continuation.source.is_empty() {
                 stream.push_newline_at(String::new(), None, None);
             }
@@ -9910,6 +9995,18 @@ fn parse_list(
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if !quote_holds_a_paragraph
+                && cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent > base_indent
+                        && indent < content_col
+                })
+            {
+                break;
+            }
             continue;
         }
         // Braces ALONE on the marker line are a block-attribute line for the
