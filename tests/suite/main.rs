@@ -1574,3 +1574,6 @@ mod registry {
 
 #[path = "../nested_fence_ownership.rs"]
 mod nested_fence_ownership;
+
+#[path = "../container_boundaries.rs"]
+mod container_boundaries;

@@ -8103,8 +8103,11 @@ impl<'a> ParaOpen<'a> {
 }
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
-    let (span_start, inner) = collect_blockquote_body(cur, options);
-    let children = parse_mapped_source(&inner.into_source(), options);
+    let (span_start, parts) = collect_blockquote_body(cur, options);
+    let children = parts
+        .into_iter()
+        .flat_map(|part| parse_mapped_source(&part.into_source(), options))
+        .collect();
     boxed_blockquote_node(
         children,
         span_of(cur, span_start, cur.pos, options),
@@ -8346,7 +8349,11 @@ fn closer_ahead(
 }
 
 #[inline(never)]
-fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usize, LineBuffer) {
+fn collect_blockquote_body(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+) -> (usize, Vec<LineBuffer>) {
+    let mut parts = Vec::new();
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = ParaOpen::Closed;
@@ -8474,7 +8481,17 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                     inner.push_at(stripped.to_string(), source_line, stripped_at);
                     continue;
                 }
-                para_open = ParaOpen::from_line(stripped, inherited_absorption);
+                let nested_item_closes = !stripped.starts_with([' ', '\t'])
+                    && detect_list_marker_full(stripped).is_some()
+                    && !para_open.get()
+                    && detect_fence_open(innermost_marker_content(stripped)).is_none()
+                    && detect_container_open(innermost_marker_content(stripped)).is_none()
+                    && !body_ends_with_open_paragraph(stripped, options);
+                para_open = if nested_item_closes {
+                    ParaOpen::Closed
+                } else {
+                    ParaOpen::from_line(stripped, inherited_absorption)
+                };
                 // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
                 // the lines after its opener can tell it apart from prose that
                 // happens to start with a brace. `ParaOpen` is handed ONE line
@@ -8551,6 +8568,9 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 cur.pos += 1;
             }
             if !attached.lines.is_empty() {
+                if in_fence.take().is_some() {
+                    parts.push(std::mem::take(&mut inner));
+                }
                 // `inner` always holds the quote's first content line, so a
                 // leading blank separates the attached block from it.
                 inner.push_synthetic_blank();
@@ -8719,7 +8739,8 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
             source_col.map(|col| col + stripped_cols as isize),
         );
     }
-    (span_start, inner)
+    parts.push(inner);
+    (span_start, parts)
 }
 
 #[inline(never)]
@@ -10372,6 +10393,8 @@ fn parse_list(
             if detect_fence_open(inner_lead).is_some() {
                 while let Some((framed, removed)) = cur.peek().and_then(|line| {
                     (!is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && strip_blockquote_prefix(line).is_none()
                         && indent_columns(line) < content_col
                         && detect_list_marker_full(line).is_none())
                     .then(|| {
@@ -10394,6 +10417,7 @@ fn parse_list(
             } else if detect_container_open(inner_lead).is_some() {
                 while let Some(line) = cur.peek().and_then(|line| {
                     (!is_blank_line(line)
+                        && trim_ascii(line) != "+"
                         && indent_columns(line) < content_col
                         && detect_list_marker_full(line).is_none())
                     .then(|| line.to_string())
@@ -10618,6 +10642,9 @@ fn parse_list(
             item_open_fence = detect_fence_open(marker.content);
             let body_floor = if detect_comment_fence_line(marker.content).is_some()
                 || is_flush_line_comment(marker.content)
+                || heading_content_starts(marker.content)
+                || detect_thematic_break(marker.content)
+                || is_table_start(marker.content)
             {
                 content_col.saturating_sub(1)
             } else {
@@ -11077,7 +11104,9 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         if indent_columns(next) > 0 {
             return false;
         }
-        return is_list_marker(next) || interrupts_paragraph_with_rest(next, &[]);
+        return trim_ascii(next) == "+"
+            || is_list_marker(next)
+            || interrupts_paragraph_with_rest(next, &[]);
     }
     if is_table_start(content) {
         return true;
@@ -14176,14 +14205,8 @@ fn collect_definition_body(
                 line.to_string()
             };
             let below_the_column = indent > 0;
-            // A FLUSH-LEFT LINE THAT IS NOT PLAIN DOES NOT CONTINUE THE BODY.
-            // `interrupts_paragraph` answers a different question - §10 says a
-            // list marker does not interrupt a PARAGRAPH - but the question
-            // here is whether the line CONTINUES this body, and a marker does
-            // not. The oracle keeps the two apart: `foldablePlain` excludes
-            // BULLET, an ordered marker and CAPTION alongside the visible
-            // openers, and never asks the fold question about a line that
-            // fails it (markup-carve/carve-rs#1534).
+            // List markers do not interrupt the open paragraph (§10 I2).
+            // Fences and captions retain their separate boundary rules.
             let fence_interrupts = detect_fence_open(&owned).is_some_and(|open| {
                 open.lang_start < open.lang_end
                     || item_body_fence_has_closer(
@@ -14199,9 +14222,7 @@ fn collect_definition_body(
             });
             if !below_the_column
                 && cur.at_document_level
-                && (detect_list_marker_full(&owned).is_some()
-                    || fence_interrupts
-                    || caption_content(&owned).is_some())
+                && (fence_interrupts || caption_content(&owned).is_some())
             {
                 break;
             }
