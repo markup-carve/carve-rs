@@ -740,10 +740,13 @@ fn render_list_item(
     let mut out = String::new();
     for child in &item.children {
         let rendered = render_block(child, ctx, depth);
+        // BOTH predicates answer about the block whose markup actually opens
+        // this child's output, which a transparent wrapper is not.
+        let opener = opening_block(child);
         if tight
             && out.ends_with("\n\n")
-            && interrupts_a_paragraph(child, &rendered)
-            && !absorbs_below(&out, child)
+            && interrupts_a_paragraph(opener, &rendered)
+            && !absorbs_below(&out, opener)
         {
             out.pop();
         } else if out.ends_with('\n')
@@ -874,16 +877,28 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
             }
             !bare_marker_line(rendered.split('\n').next().unwrap_or_default())
         }
-        // A div is written as its children alone, so the block that meets the
-        // paragraph is its FIRST child and `rendered` still opens with that
-        // child's own bytes. A LABEL is written ahead of them as bold text,
-        // which interrupts nothing, so a labelled div keeps its separator.
-        BlockNode::Div(div) if div.label.as_deref().unwrap_or_default().is_empty() => div
-            .children
-            .first()
-            .is_some_and(|first| interrupts_a_paragraph(first, rendered)),
         _ => false,
     }
+}
+
+/// The block whose own markup opens this child's Markdown output.
+///
+/// A div with no label is written as its children alone, so the block that
+/// meets the text above is the first child of the outermost such wrapper, and
+/// `rendered` still begins with that block's own bytes. A LABEL is written
+/// ahead of the children as bold text, so a labelled div opens with itself.
+fn opening_block(node: &BlockNode) -> &BlockNode {
+    let mut node = node;
+    while let BlockNode::Div(div) = node {
+        if !div.label.as_deref().unwrap_or_default().is_empty() {
+            break;
+        }
+        match div.children.first() {
+            Some(first) => node = first,
+            None => break,
+        }
+    }
+    node
 }
 
 /// Whether a rendered table's second line is the delimiter row, which is what
