@@ -264,6 +264,71 @@ pub(super) fn collect(
         let i = text_runs.partition_point(|span| span.0 <= start);
         i > 0 && text_runs[i - 1].1 >= end
     };
+    let habits = [
+        (
+            "markdown-strong-double-star",
+            regex::Regex::new(r"\*\*([^*\s](?:[^*]*[^*\s])?)\*\*").unwrap(),
+            "Use single asterisks for Carve strong text.",
+        ),
+        (
+            "markdown-strikethrough-double-tilde",
+            regex::Regex::new(r"~~([^~\s](?:[^~]*[^~\s])?)~~").unwrap(),
+            "Use single tildes for Carve strikethrough.",
+        ),
+        (
+            "djot-superscript-caret",
+            regex::Regex::new(r"\^([^^\s](?:[^^]*[^^\s])?)\^").unwrap(),
+            "Use {^text^} for Carve superscript.",
+        ),
+        (
+            "djot-plus-bullet",
+            regex::Regex::new(r"(?m)^[ \t]*(\+)[ \t]+\S").unwrap(),
+            "Use a dash for a Carve list item.",
+        ),
+    ];
+    let blank_line = regex::Regex::new(r"\n[ \t]*\r?\n").unwrap();
+    for (rule, pattern, message) in &habits {
+        for captures in pattern.captures_iter(source) {
+            let m = captures
+                .get(if *rule == "djot-plus-bullet" { 1 } else { 0 })
+                .unwrap();
+            let slashes = source[..m.start()]
+                .bytes()
+                .rev()
+                .take_while(|b| *b == b'\\')
+                .count();
+            let width = if rule.starts_with("markdown-") { 2 } else { 1 };
+            if slashes % 2 == 1
+                || !in_text(m.start(), m.start() + width)
+                || !in_text(m.end() - width, m.end())
+            {
+                continue;
+            }
+            if blank_line.is_match(m.as_str()) {
+                continue;
+            }
+            if *rule == "djot-superscript-caret" {
+                let before = source[..m.start()].chars().next_back();
+                let inner = captures.get(1).unwrap().as_str();
+                if matches!(before, Some('{' | '['))
+                    || inner.starts_with('[')
+                    || inner.ends_with('[')
+                    || source[m.end()..].starts_with('}')
+                {
+                    continue;
+                }
+            }
+            let index = rows.partition_point(|row| row.start <= m.start()) - 1;
+            out.push(LintWarning {
+                line: index + 1,
+                column: source[rows[index].start..m.start()].chars().count() + 1,
+                start: m.start(),
+                end: m.end(),
+                rule,
+                message: (*message).into(),
+            });
+        }
+    }
     let folded: BTreeSet<_> = out
         .iter()
         .filter(|w| w.rule == "definition-term-block-folded")
@@ -284,7 +349,12 @@ pub(super) fn collect(
         }
         active.retain(|item| {
             if item.last < ln {
-                if ended.map_or(true, |old| item.last >= old.last) {
+                if ended.map_or(true, |old| {
+                    item.last > old.last
+                        || (item.last == old.last
+                            && (item.first < old.first
+                                || (item.first == old.first && item.content > old.content)))
+                }) {
                     ended = Some(item);
                 }
                 false
@@ -297,7 +367,7 @@ pub(super) fn collect(
         let (view, at) = quoted_view(row.text, owner.map_or(0, |i| i.quotes));
         let column = visual(&row.text[..at]);
         if let Some((owner_line, ch, width)) = open_fence {
-            if owner.is_some_and(|i| i.first == owner_line) {
+            if containing.is_some_and(|i| i.first == owner_line) {
                 let run = view.chars().take_while(|&c| c == ch).count();
                 if run >= width && view[run..].trim().is_empty() {
                     open_fence = None;
@@ -316,7 +386,8 @@ pub(super) fn collect(
         let fence_char = view
             .chars()
             .next()
-            .filter(|ch| matches!(ch, '`' | '~' | ':'));
+            .filter(|ch| matches!(ch, '`' | '~' | ':'))
+            .filter(|ch| view.chars().take_while(|c| c == ch).count() >= 3);
         if ignored.contains(&ln) && fence_char.is_none() {
             list_lines.insert(ln);
             continue;
@@ -355,7 +426,7 @@ pub(super) fn collect(
     let trailing = regex::Regex::new(r"(?:^|\s)(\{\s*[.#][^{}]*\})\s*$").unwrap();
     let raw = regex::Regex::new(r"^([ \t]*)(`{3,}|~{3,})[ \t]*raw[ \t]+\S+").unwrap();
     let fence_run = regex::Regex::new(r"^(`{3,}|~{3,})").unwrap();
-    let title = regex::Regex::new(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[].*)$"#).unwrap();
+    let title = regex::Regex::new(r#"^:{3,}[ \t]+[A-Za-z_][\w-]*[ \t]+([^"\[ \t].*)$"#).unwrap();
     let include = regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap();
     for (index, row) in rows.iter().enumerate() {
         let ln = index + 1;

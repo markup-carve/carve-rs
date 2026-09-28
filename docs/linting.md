@@ -36,9 +36,19 @@ flags with exit 2 rather than silently ignoring them.
 The line format and the exit codes match carve-js's `carve lint` exactly, so a
 script that parses one CLI parses the other. The `rule` id is shared across
 engines by contract; the message PROSE is not - the same trigger reports the
-same id everywhere, worded for each engine. The rule SETS also differ today:
-`unattached-block-attribute` exists here and not in carve-js, and several of
-carve-js's rules have no counterpart here.
+same id everywhere, worded for each engine.
+
+Default checks include `unattached-block-attribute` for attributes that reach
+no block, and these Markdown/Djot habits in literal text:
+
+| Rule | Source | Carve spelling |
+| --- | --- | --- |
+| `markdown-strong-double-star` | `**bold**` | `*bold*` |
+| `markdown-strikethrough-double-tilde` | `~~gone~~` | `~gone~` |
+| `djot-superscript-caret` | `^sup^` | `{^sup^}` |
+| `djot-plus-bullet` | `+ item` | `- item` |
+
+A plus line consumed by a table continuation does not trigger the bullet rule.
 
 The compact semantic span attribute rules (spec PART 9 §10):
 

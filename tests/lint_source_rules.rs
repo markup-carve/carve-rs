@@ -131,3 +131,134 @@ fn quoted_markup_gets_the_specific_warning_and_marker_span() {
         .unwrap();
     assert_eq!(&source[warning.start..warning.end], "{.");
 }
+
+#[test]
+fn speculative_list_parses_do_not_publish_attribute_warnings() {
+    let source = "- {.a\n  .b}\ntail\n";
+    let warnings: Vec<_> = lint_carve(source)
+        .into_iter()
+        .filter(|w| w.rule == "unattached-block-attribute")
+        .collect();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!((warnings[0].line, warnings[0].column), (1, 3));
+    assert_eq!(&source[warnings[0].start..warnings[0].end], "{.a\n  .b}");
+}
+
+#[test]
+fn invalid_alignment_marker_pairs_are_not_unpadded_runs() {
+    assert!(!lint_carve("|? lone |v? reversed |\n")
+        .iter()
+        .any(|w| w.rule == "table-alignment-run-padding"));
+    assert!(lint_carve("|>value |\n")
+        .iter()
+        .any(|w| w.rule == "table-alignment-run-padding"));
+}
+
+#[test]
+fn invalid_title_separator_is_not_an_unquoted_title() {
+    let warnings = lint_carve("::: note \t\"Title\"\nx\n:::\n");
+    assert!(warnings.iter().any(|w| w.rule == "block-marker-as-text"));
+    assert!(!warnings.iter().any(|w| w.rule == "fence-title-syntax"));
+}
+
+#[test]
+fn definition_markers_do_not_hide_later_list_warnings() {
+    let warnings = lint_carve("- intro\n\n  :: term\n  :  definition\n   > quote\n");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(
+        (warnings[0].rule, warnings[0].line),
+        ("list-item-block-overindented", 5)
+    );
+}
+
+#[test]
+fn fence_tracking_ends_with_the_owning_item() {
+    for fence in ["```", "~~~"] {
+        let warnings = lint_carve(&format!(
+            "- a\n  - b\n\n    {fence}\n    p\n {fence}\n\n    tail\n"
+        ));
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            (warnings[0].rule, warnings[0].line),
+            ("list-item-body-detached", 6)
+        );
+    }
+}
+
+#[test]
+fn migration_habits_use_codepoint_columns_and_skip_native_constructs() {
+    let warnings = lint_carve("+ bullet\n\né😀 **bold** ~~gone~~ ^word^\n");
+    for (rule, line, column) in [
+        ("djot-plus-bullet", 1, 1),
+        ("markdown-strong-double-star", 3, 4),
+        ("markdown-strikethrough-double-tilde", 3, 13),
+        ("djot-superscript-caret", 3, 22),
+    ] {
+        assert!(
+            warnings
+                .iter()
+                .any(|w| (w.rule, w.line, w.column) == (rule, line, column)),
+            "{warnings:?}"
+        );
+    }
+    for source in [
+        "`**code** ~~code~~ ^code^`\n",
+        "{^sup^}\n",
+        "\\^escaped^\n",
+        "| a | b |\n+ c | d |\n",
+        "[link](/^path^)\n",
+    ] {
+        assert!(
+            lint_carve(source).is_empty(),
+            "{source}: {:?}",
+            lint_carve(source)
+        );
+    }
+}
+
+#[test]
+fn a_comment_closer_at_the_host_boundary_hides_definitions() {
+    for source in [
+        "- item\n  %%%\n  [r]: /url\n%%%\n\n[use][r]\n",
+        "- item\n  %%%\n  [r]: /url\n  %%%\n\n[use][r]\n",
+    ] {
+        assert!(!carve::to_html(source).contains("href="));
+        assert!(lint_carve(source)
+            .iter()
+            .any(|w| w.rule == "unresolved-reference-link"));
+    }
+    assert!(carve::to_html("- item\n  %%%\n  [r]: /url\n\n[use][r]\n").contains("href="));
+}
+
+#[test]
+fn same_line_nested_markers_keep_their_own_columns() {
+    assert!(lint_carve("- > - x\n    [r]: /url\n\nSee [r][].\n").is_empty());
+    let warnings = lint_carve("- - x\n   [r]: /url\n\nSee [r][].\n");
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].rule, "list-item-body-detached");
+}
+
+#[test]
+fn habit_warnings_cross_inline_nodes_and_soft_breaks() {
+    for (source, rule) in [
+        ("a **b `c` d** e", "markdown-strong-double-star"),
+        ("a ~~b *c* d~~ e", "markdown-strikethrough-double-tilde"),
+        ("~~->~~ arrow", "markdown-strikethrough-double-tilde"),
+        ("x^a \"b\"^", "djot-superscript-caret"),
+        ("a ~~b\nc~~ d", "markdown-strikethrough-double-tilde"),
+        ("a ^b\nc^ d", "djot-superscript-caret"),
+    ] {
+        assert!(
+            lint_carve(source).iter().any(|w| w.rule == rule),
+            "{source}"
+        );
+    }
+    for source in ["a ~~b\n\nc~~ d", "a ^b\n\nc^ d", "{~~b~} x {~~c~}"] {
+        assert!(
+            !lint_carve(source)
+                .iter()
+                .any(|w| w.rule.starts_with("markdown-") || w.rule == "djot-superscript-caret"),
+            "{source}"
+        );
+    }
+}
