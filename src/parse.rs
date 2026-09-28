@@ -7180,43 +7180,18 @@ thread_local! {
         const { std::cell::Cell::new(0) };
 }
 
-/// Does a comment fence opened INSIDE a container close before that container
-/// ends?
+/// Find a comment closer within its host's extent.
 ///
-/// `comment_fence_close_index` answers "is there a closer of this length
-/// anywhere later", which is the whole question for a column-0 opener, whose
-/// body nothing bounds but the end of input. A fence inside a container is
-/// bounded by the container: a `%%%` written back at column 0 does not close it,
-/// because the block parser ended the item long before and reads the indented
-/// fence as an unterminated one-line comment. Entering the fence state on that
-/// far closer swallows every definition in between.
+/// An ordinary dedented line ends the container. A matching comment closer at
+/// that boundary still belongs to the comment, so the closer may equal the
+/// first dedented line (corpus 512). A closer after an earlier dedent belongs
+/// outside the container, and the opener degrades to a line comment.
 ///
-/// The container's extent is approximated the way the rest of this line-based
-/// pre-pass approximates: the first non-blank line that dedents past the fence's
-/// own column ends it, and blank lines are transparent. Only reached for a fence
-/// that is not at column 0, so a column-0 opener costs exactly what it did
-/// before.
+/// List markers inside the comment body do not end it (carve-rs#1053).
 ///
-/// INDEXED rather than scanned: one container can hold many openers, and
-/// walking it once per opener is O(m^3) work for an O(m^2) document - the
-/// quadratic shape this file's perf suite guards.
-///
-/// Two facts answer the question without the walk. `closer` is the first
-/// comment-fence closer of this exact width after the opener, from an index
-/// built once. `dedent` is the first non-blank line after it whose indent falls
-/// below the fence's column. The fence closes inside its container exactly when
-/// `closer < dedent`: a closer past the dedent is outside the container, and a
-/// dedented line that happens to be a closer is outside it too.
-///
-/// `dedent` is memoized per COLUMN, which is what makes a run of openers at one
-/// column cost a single walk between them rather than one each: once the first
-/// dedent below column `k` after line `p` is known, it is still the answer for
-/// every query point in `p..dedent`. Openers at different columns keep separate
-/// entries, so alternating columns do not evict each other.
-///
-/// A list MARKER inside the body is not a stop, and the block parser agrees:
-/// its content-column marker gate treats an open comment span as opaque, the
-/// way it treats a code fence, so both halves answer §28 alike (carve-rs#1053).
+/// Closer positions are indexed by fence width and quote depth. The first
+/// dedent is memoized per column so repeated openers do not rescan the same
+/// container body.
 #[derive(Default)]
 struct ContainerCommentClosers {
     /// Line index of every comment-fence closer, keyed by its exact `%` run AND
@@ -7273,7 +7248,7 @@ impl ContainerCommentClosers {
         let Some(closer) = self.next_closer(open_at, fence_len, 0) else {
             return false;
         };
-        closer < self.first_dedent(lines, open_at, open_col)
+        closer <= self.first_dedent(lines, open_at, open_col)
     }
 
     /// The quoted twin of `closes_in_column`. The blank line carries the bound:
@@ -11631,7 +11606,7 @@ fn trailing_marker_line_content(body: &str) -> Option<String> {
 /// and looking past it would find one that was never written
 /// (markup-carve/carve#1280).
 fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
-    let blocks = parse_blocks_with_options(body, options);
+    let blocks = probe_blocks(body, options);
     block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body), false)
 }
 

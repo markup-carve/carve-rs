@@ -235,8 +235,10 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                         start += 1;
                     }
                     let mut end = start;
-                    while matches!(bytes.get(end), Some(b'<' | b'>' | b'~' | b'^' | b'v'))
-                        && end - start < 2
+                    while matches!(
+                        bytes.get(end),
+                        Some(b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
+                    ) && end - start < 2
                     {
                         end += 1;
                     }
@@ -244,7 +246,7 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                         && bytes.get(end).is_some_and(|b| {
                             !b.is_ascii_whitespace()
                                 && *b != b'{'
-                                && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v')
+                                && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
                         })
                     {
                         out.push(LintWarning { line: index + 1, column: line[..start].chars().count() + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
