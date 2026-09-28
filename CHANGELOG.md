@@ -25,6 +25,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Comment spans use their opener column when placing following list content, including spans opened on a marker line or below the item column (markup-carve/carve#2530).
+
 - Unquoted attribute values reject pipes, backslashes, and quotes while preserving Unicode whitespace as content; formatting quotes values containing backslashes (#2054).
 
 - HTML import collapses plain-text layout whitespace at flattened block boundaries to one space, including nested lists in table cells (#2028).
