@@ -5387,8 +5387,43 @@ struct ResolvedBody {
     child_slot: usize,
 }
 
+fn trailing_verbatim_pos(mut block: &BlockNode) -> Option<&Pos> {
+    loop {
+        block = match block {
+            BlockNode::CodeBlock(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_)
+            | BlockNode::LineBlock(_) => return crate::ast_json::block_pos(block),
+            BlockNode::BlockQuote(node) => node.children.last()?,
+            BlockNode::Div(node) => node.children.last()?,
+            BlockNode::Admonition(node) => node.children.last()?,
+            BlockNode::Directive(node) => node.children.last()?,
+            BlockNode::FigureGroup(node) => node.children.last()?,
+            BlockNode::ExtensionCarrier(node) => node.children.last()?,
+            BlockNode::List(node) => node.items.last()?.children.last()?,
+            BlockNode::DefinitionList(node) => {
+                node.items.last()?.definitions.last()?.children.last()?
+            }
+            BlockNode::Figure(node) => match &*node.target {
+                FigureTarget::BlockQuote(quote) => quote.children.last()?,
+                _ => return None,
+            },
+            _ => return None,
+        };
+    }
+}
+
 /// Fill in the children of a node [`open_container`] emitted hollow.
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
+    if let Some(pos) = block_pos_mut(node) {
+        if let Some(last) = children.last().and_then(trailing_verbatim_pos) {
+            if (last.end_line, last.end_column) > (pos.end_line, pos.end_column) {
+                pos.end_line = last.end_line;
+                pos.end_column = last.end_column;
+                pos.end_offset = last.end_offset;
+            }
+        }
+    }
     match node {
         BlockNode::Admonition(n) => n.children = children,
         BlockNode::Directive(n) => n.children = children,
@@ -9568,8 +9603,7 @@ fn parse_list(
                         )
                     });
                     if !renders_nothing {
-                        pending_blank = item_open_fence
-                            .is_some_and(|open| open.content_col > content_col)
+                        pending_blank = item_open_fence.is_some()
                             && cur.pos > 0
                             && is_blank_line(cur.lines[cur.pos - 1]);
                         if pending_blank {
@@ -10263,6 +10297,12 @@ fn parse_list(
             // double-loosen.
             if swallowed_blank_separator {
                 pending_blank = true;
+                blank_run = cur.lines[..cur.pos]
+                    .iter()
+                    .rev()
+                    .take(3)
+                    .take_while(|line| is_blank_line(line))
+                    .count();
             }
             continue;
         }
@@ -14972,7 +15012,7 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             None
         };
         // Through the caption the cursor just consumed, like a figure's span.
-        let pos = span_of(cur, span_start, cur.pos, options);
+        let pos = container_span(cur, span_start, closed, options);
         return (
             boxed_figure_group(Vec::new(), caption, pos),
             ContainerBody {
@@ -14984,9 +15024,9 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             },
         );
     }
-    let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
+    let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
     // The span covers the opening fence through the closing one.
-    let pos = span_of(cur, span_start, cur.pos, options);
+    let pos = container_span(cur, span_start, closed, options);
     let title_anchor = open.title_col.and_then(|col| {
         Some((
             cur.source_line(span_start)?,
@@ -15002,6 +15042,23 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             in_group,
         },
     )
+}
+
+fn container_span(
+    cur: &LineCursor<'_>,
+    start: usize,
+    closed: bool,
+    options: &Options<'_>,
+) -> Option<Pos> {
+    let mut end = cur.pos;
+    if options.positions && !closed {
+        while end > start + 1 && is_blank_line(cur.lines[end - 1]) {
+            end -= 1;
+        }
+    }
+    // A verbatim child may own these blanks. Filling the children extends
+    // this span over that payload after the body has been parsed.
+    span_of(cur, start, end, options)
 }
 
 /// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and

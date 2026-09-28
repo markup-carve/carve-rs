@@ -1,4 +1,4 @@
-use carve::{to_carve, to_html, to_html_with_options, Options};
+use carve::{parse_with_options, to_carve, to_html, to_html_with_options, BlockNode, Options};
 
 #[test]
 fn markers_inside_authored_fences_are_payload() {
@@ -106,6 +106,52 @@ fn nested_fences_keep_trailing_blanks_at_eof() {
                 );
                 assert_eq!(html, to_html(&to_carve(&source)));
             }
+        }
+    }
+}
+
+#[test]
+fn copied_blanks_do_not_extend_an_unfinished_div() {
+    for (source, end) in [
+        ("- ::: d\n  b\n\ntail\n", 2),
+        ("> - ::: d\n>   b\n>\n> tail\n", 2),
+        ("- ::: d\n\n  ```\n  b\n\n", 5),
+        ("- ::: d\n  - a\n\n\ntail\n", 2),
+        ("- ::: figure\n  - a\n\n", 2),
+        ("- ::: d\n  - ```\n    body\n\n", 4),
+    ] {
+        let doc = parse_with_options(source, &Options::default().with_positions(true));
+        let block = match &doc.children[0] {
+            BlockNode::BlockQuote(quote) => &quote.children[0],
+            block => block,
+        };
+        let BlockNode::List(list) = block else {
+            panic!("expected list")
+        };
+        assert_eq!(list.pos.as_ref().unwrap().end_line, end);
+        assert_eq!(list.items[0].pos.as_ref().unwrap().end_line, end);
+        let position = match &list.items[0].children[0] {
+            BlockNode::Div(div) => div.pos.as_ref(),
+            BlockNode::Admonition(div) => div.pos.as_ref(),
+            BlockNode::FigureGroup(group) => group.pos.as_ref(),
+            _ => panic!("expected container"),
+        };
+        assert_eq!(position.unwrap().end_line, end);
+    }
+}
+
+#[test]
+fn fence_separator_counts_do_not_depend_on_the_opener_column() {
+    for lead in ["- ```\n", "- head\n\n  ```\n", "- head\n\n   ```\n"] {
+        for blanks in [1, 3] {
+            let source = format!("{lead}   body\n{}- next\n", "\n".repeat(blanks));
+            let html = to_html(&source);
+            if blanks == 3 {
+                assert!(html.contains("</ul>\n<ul>"), "{source:?}: {html}");
+            } else {
+                assert!(html.contains("<li><p>next</p></li>"), "{source:?}: {html}");
+            }
+            assert_eq!(html, to_html(&to_carve(&source)));
         }
     }
 }
