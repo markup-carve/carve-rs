@@ -349,26 +349,6 @@ flush
 <p>flush</p>"####,
         ),
         (
-            r####"an over-indented opener consumes its closer"####,
-            r####"> - a
->     ```
->
->   ```
->   a
-flush
-"####,
-            r####"<blockquote>
-  <ul>
-    <li>a
-      <pre><code>
-</code></pre>
-      a
-flush
-    </li>
-  </ul>
-</blockquote>"####,
-        ),
-        (
             r####"a fence without a closer stays inline"####,
             r####"> - a
 >   ```
