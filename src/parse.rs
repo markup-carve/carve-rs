@@ -12556,7 +12556,8 @@ fn collect_indented_block_mapped_with(
     // span OPENS - the closer line does not carry the opener's column.
     let mut span_reached_this_frame = comment_fence.is_some();
     let mut closed_comment_span_above = false;
-    let mut folded_code_after_comment = false;
+    let mut folded_code_span = false;
+    let mut folded_code_paragraph_open = false;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     let mut nested_item_columns: Vec<(usize, usize)> = Vec::new();
@@ -12571,7 +12572,7 @@ fn collect_indented_block_mapped_with(
             // parsed the same document differently (markup-carve/carve-rs#908).
             // What lies past the opener column is the code line's content
             // (PART 11 §7), so a line of spaces keeps that residue.
-            if fence.is_some() {
+            if fence.is_some() && !folded_code_span {
                 let (residue, consumed, synthetic) = slice_columns_mapped(line, strip_cols, true);
                 lines.push(residue);
                 if cur.line_map.is_some() {
@@ -12661,7 +12662,8 @@ fn collect_indented_block_mapped_with(
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
         let fence_owns_flush_left = (fence.is_some() && line.starts_with(LAZY))
-            || (folded_code_after_comment
+            || (folded_code_span
+                && folded_code_paragraph_open
                 && !is_list_marker(line)
                 && !interrupts_lazy_continuation_as_container(cur, line));
         // A `+` at an ancestor's marker column names only a flush-left block.
@@ -12906,7 +12908,10 @@ fn collect_indented_block_mapped_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
+        let (mut sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
+        if folded_code_span && indent < strip_cols && !sliced.starts_with(LAZY) {
+            sliced.insert_str(0, LAZY);
+        }
         definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
@@ -12938,15 +12943,38 @@ fn collect_indented_block_mapped_with(
         // interruption test. An unclosed code fence still folds into it.
         let after_below_comment = cur
             .closed_comment_location
-            .is_some_and(|(at, column)| at + 1 == cur.pos && column < strip_cols);
-        let rejected_code = after_below_comment
-            && detect_fence_open(fence_line).is_some_and(|open| {
-                !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+            .is_some_and(|(at, column)| at + 1 == cur.pos && column < strip_cols)
+            || cur.pos.checked_sub(1).is_some_and(|at| {
+                indent_columns(cur.lines[at]) < strip_cols
+                    && is_line_comment_any_column(cur.lines[at])
             });
-        if rejected_code {
-            folded_code_after_comment = true;
-        } else if !in_comment_span {
+        if !in_comment_span {
+            if fence.is_none() && after_below_comment {
+                folded_code_span = detect_fence_open(fence_line).is_some_and(|open| {
+                    !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                        || !item_body_fence_has_closer(
+                            &cur.lines[cur.pos + 1..],
+                            open,
+                            strip_cols,
+                            |line, _| {
+                                detect_list_marker_full(line)
+                                    .is_some_and(|marker| marker.indent <= parent_indent)
+                            },
+                        )
+                });
+            }
+            if folded_code_span && indent >= strip_cols {
+                let mut paragraph_line = innermost_marker_content(fence_line);
+                while let Some(rest) = strip_blockquote_prefix(paragraph_line) {
+                    paragraph_line = rest;
+                }
+                folded_code_paragraph_open = line_starts_paragraph(paragraph_line)
+                    || detect_fence_open(paragraph_line).is_some();
+            }
             track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            if fence.is_none() {
+                folded_code_span = false;
+            }
         }
         track_collected_colon_fence(
             &mut colon_open,

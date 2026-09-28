@@ -71,3 +71,60 @@ fn a_code_fence_after_a_below_column_comment_keeps_its_lazy_payload() {
         );
     }
 }
+
+#[test]
+fn folded_code_keeps_block_markers_as_payload() {
+    for payload in ["- not item", "1. not item", "%%%", "::: note", "# heading"] {
+        assert_html(
+            &format!("- item\n %%%\n hidden\n  %%%\n  ```\n  {payload}\n"),
+            &format!("<ul>\n  <li>item\n    <pre><code>{payload}\n</code></pre>\n  </li>\n</ul>"),
+        );
+    }
+}
+
+#[test]
+fn a_code_closer_outside_the_item_does_not_change_interruption() {
+    assert_html(
+        "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n\n%%%\n```\n%%%\n",
+        "<ul>\n  <li>item\n    <pre><code>tail\n\n</code></pre>\n  </li>\n</ul>",
+    );
+    assert_html(
+        "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n\n- other\n\n      ```\n",
+        "<ul>\n  <li><p>item</p>\n    <pre><code>tail\n\n</code></pre>\n  </li>\n  <li><p>other</p>\n    <pre><code>\n</code></pre>\n  </li>\n</ul>",
+    );
+}
+
+#[test]
+fn a_below_column_line_comment_keeps_the_same_code_fold() {
+    assert_html(
+        "- item\n %% c\n  ```\ntail\n",
+        "<ul>\n  <li>item\n    <pre><code>tail\n</code></pre>\n  </li>\n</ul>",
+    );
+}
+
+#[test]
+fn folded_code_payload_still_controls_later_lazy_continuation() {
+    for payload in ["# h", "::: note", "%% c", "x\n  # h"] {
+        let code = payload.replace("\n  ", "\n");
+        assert_html(
+            &format!("- item\n %%%\n hidden\n  %%%\n  ```\n  {payload}\ntail\n"),
+            &format!("<ul>\n  <li>item\n    <pre><code>{code}\n</code></pre>\n  </li>\n</ul>\n<p>tail</p>"),
+        );
+    }
+    for (payload, escaped) in [("- x", "- x"), ("> q", "&gt; q")] {
+        assert_html(
+            &format!("- item\n %% c\n  ```\n  {payload}\ntail\n"),
+            &format!(
+                "<ul>\n  <li>item\n    <pre><code>{escaped}\ntail\n</code></pre>\n  </li>\n</ul>"
+            ),
+        );
+    }
+}
+
+#[test]
+fn a_lazy_backtick_line_is_code_payload() {
+    assert_html(
+        "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n```\nafter\n",
+        "<ul>\n  <li>item\n    <pre><code>tail\n```\nafter\n</code></pre>\n  </li>\n</ul>",
+    );
+}
