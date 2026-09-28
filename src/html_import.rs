@@ -8203,10 +8203,10 @@ fn list_table_of(
     // The alignment each source cell was imported with, in grid order.
     let mut own = own_alignment.iter();
     let mut items = Vec::with_capacity(rows.len());
-    for (r, row) in rows.iter().enumerate() {
+    for (r, row) in rows.into_iter().enumerate() {
         let mut own_row = own.next().map(|v| v.iter()).into_iter().flatten();
         let mut cells = Vec::with_capacity(row.cells.len());
-        for (c, cell) in row.cells.iter().enumerate() {
+        for (c, cell) in row.cells.into_iter().enumerate() {
             if let Some(span) = cell.span {
                 let marker = if span == TableCellSpan::Rowspan {
                     "^"
@@ -8223,7 +8223,7 @@ fn list_table_of(
                 continue;
             }
             let (align, valign) = own_row.next().copied().unwrap_or((None, None));
-            let mut children = cell.blocks.clone().unwrap_or_default();
+            let mut children = cell.blocks.unwrap_or_default();
             // The escape is the writer's: a bare `^` or `<` item is a span
             // marker. The published tree holds the text, as it does for a
             // pipe-table cell.
@@ -8239,7 +8239,7 @@ fn list_table_of(
                     }
                 }
             }
-            let mut item_attrs = cell.attrs.clone().unwrap_or_default();
+            let mut item_attrs = cell.attrs.unwrap_or_default();
             let mut put = |key: &str, value: Option<String>| {
                 let Some(value) = value else { return };
                 if item_attrs.key_values.contains_key(key) {
