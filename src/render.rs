@@ -1416,7 +1416,7 @@ fn indent(out: &mut String, level: usize) {
 /// degrades the way that one does: to the text the author actually typed
 /// (`markup-carve/carve-rs#805`).
 fn charge_crossref_label(label: String, target: &str) -> String {
-    if crate::abbr_budget::try_spend(label.len()) {
+    if crate::abbr_budget::try_spend_label(label.len(), target) {
         return label;
     }
     let mut degraded = String::new();
@@ -3607,12 +3607,23 @@ fn render_inline_after(
             // carries what the author typed and renders here exactly as it does
             // in the heading itself (PART 9R R4). A caption target has no nodes
             // - its label is LABEL + NUMBER - so that one stays a string.
-            let resolved = state
-                .crossref_index
-                .resolve(&c.target)
-                .map(|(id, title)| (id.to_string(), title.to_string()));
+            let resolved = state.crossref_index.resolve(&c.target).map(|(id, title)| {
+                (
+                    id.to_string(),
+                    if crate::abbr_budget::label_rejected(&c.target) {
+                        String::new()
+                    } else {
+                        title.to_string()
+                    },
+                )
+            });
             if let Some((actual_id, title)) = resolved {
-                let label = state.crossref_index.label(&actual_id);
+                let rejected = crate::abbr_budget::label_rejected(&c.target);
+                let label = if rejected {
+                    None
+                } else {
+                    state.crossref_index.label(&actual_id)
+                };
                 let opens_anchor = state.link_depth == 0;
                 let mut text = String::new();
                 match &label {
@@ -3626,7 +3637,9 @@ fn render_inline_after(
                             state.link_depth -= 1;
                         }
                     }
-                    None => write_escaped_text(&mut text, &title),
+                    None => {
+                        write_escaped_text(&mut text, if rejected { &c.target } else { &title })
+                    }
                 }
                 let text = charge_crossref_label(text, &c.target);
                 if opens_anchor {

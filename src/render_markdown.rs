@@ -1984,7 +1984,16 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             let resolved = ctx
                 .crossref_index
                 .resolve(&crossref.target)
-                .map(|(id, title)| (id.to_string(), title.to_string()));
+                .map(|(id, title)| {
+                    (
+                        id.to_string(),
+                        if crate::abbr_budget::label_rejected(&crossref.target) {
+                            String::new()
+                        } else {
+                            title.to_string()
+                        },
+                    )
+                });
             match resolved {
                 // UNRESOLVED: the authored marker, kept readable rather than
                 // escaped into noise - a reader can still act on `</#nope>`.
@@ -1994,7 +2003,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 // the writer's own delimiters stay literal (carve-rs#807).
                 None => format!("</#{}>", escape_md_html(&strip_controls(&crossref.target))),
                 Some((id, title)) => {
-                    let label = ctx.crossref_index.label(&id);
+                    let rejected = crate::abbr_budget::label_rejected(&crossref.target);
+                    let label = if rejected {
+                        None
+                    } else {
+                        ctx.crossref_index.label(&id)
+                    };
                     // Written as link text below, where §8i escapes nothing.
                     let links = ctx.link_depth == 0 && ctx.heading_slugs.contains_key(&id);
                     if links {
@@ -2002,12 +2016,19 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     }
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
-                        None => escape_text(&strip_controls(&title)),
+                        None => escape_text(&strip_controls(if rejected {
+                            &crossref.target
+                        } else {
+                            &title
+                        })),
                     };
                     // Same expansion budget the abbreviation arm below spends,
                     // degrading to the authored target (carve-rs#805). See
                     // `crate::abbr_budget`.
-                    let text = if crate::abbr_budget::try_spend(resolved_len(&text)) {
+                    let text = if crate::abbr_budget::try_spend_label(
+                        resolved_len(&text),
+                        &crossref.target,
+                    ) {
                         text
                     } else {
                         escape_text(&strip_controls(&crossref.target))

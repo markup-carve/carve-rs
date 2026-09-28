@@ -29,7 +29,8 @@
 //! renderer functions, and avoids leaking state between successive renders on
 //! the same thread.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 
 /// Budget floor: abbreviation expansion may always contribute at least this
 /// many bytes, regardless of how small the input was.
@@ -44,6 +45,7 @@ thread_local! {
     /// on this thread. `None` means no render is active (calls to `try_spend`
     /// then conservatively use the floor budget).
     static REMAINING: Cell<Option<usize>> = const { Cell::new(None) };
+    static REJECTED_LABELS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
 }
 
 /// Compute the expansion budget for an input of `input_len` bytes.
@@ -56,6 +58,7 @@ fn budget_for(input_len: usize) -> usize {
 /// extension that renders sub-blocks - correctly stack and unwind).
 pub(crate) struct AbbrBudgetGuard {
     previous: Option<usize>,
+    previous_labels: BTreeSet<String>,
 }
 
 impl AbbrBudgetGuard {
@@ -71,13 +74,20 @@ impl AbbrBudgetGuard {
     pub(crate) fn for_document(doc: &crate::ast::Document) -> Self {
         let previous =
             REMAINING.with(|cell| cell.replace(Some(budget_for(doc.expansion_budget_len()))));
-        AbbrBudgetGuard { previous }
+        let previous_labels =
+            REJECTED_LABELS.with(|labels| std::mem::take(&mut *labels.borrow_mut()));
+        AbbrBudgetGuard {
+            previous,
+            previous_labels,
+        }
     }
 }
 
 impl Drop for AbbrBudgetGuard {
     fn drop(&mut self) {
         REMAINING.with(|cell| cell.set(self.previous));
+        REJECTED_LABELS
+            .with(|labels| *labels.borrow_mut() = std::mem::take(&mut self.previous_labels));
     }
 }
 
@@ -99,4 +109,20 @@ pub(crate) fn try_spend(cost: usize) -> bool {
         cell.set(Some(remaining - cost));
         true
     })
+}
+
+/// A rejected label cannot fit later because a failed charge exhausts the budget.
+pub(crate) fn label_rejected(target: &str) -> bool {
+    REJECTED_LABELS.with(|labels| labels.borrow().contains(target))
+}
+
+pub(crate) fn try_spend_label(cost: usize, target: &str) -> bool {
+    if try_spend(cost) {
+        true
+    } else {
+        REJECTED_LABELS.with(|labels| {
+            labels.borrow_mut().insert(target.to_owned());
+        });
+        false
+    }
 }
