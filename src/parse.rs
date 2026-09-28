@@ -9770,9 +9770,45 @@ fn parse_list(
                 }
                 if !items.is_empty() {
                     let last_item = items.len() - 1;
+                    // A BLOCK THAT INTERRUPTED THE ITEM'S LEAD PARAGRAPH ENDS THE
+                    // ITEM WHEN IT LEAVES NOTHING OPEN, the way a marker-line block
+                    // that leaves nothing open does (carve-rs#2127). There the
+                    // block stands on the marker line; here it was collected as a
+                    // chunk, and the collection took the band line before anything
+                    // could ask (carve-rs#2128). The FLOOR is what asks: raised,
+                    // the line is left for the fold below, which hands it back when
+                    // the chunk holds an open paragraph, and the end-of-list check
+                    // already under the fold reads what is left.
+                    //
+                    // A COMMENT IS EXEMPT (PART 9 SS24 C3). It renders nothing at
+                    // any column, so it closed nothing and the lead paragraph is
+                    // still there for the band line to continue. Any column, too -
+                    // the lead may be written PAST the content column and the slice
+                    // takes only the column off it (corpus 446-7).
+                    //
+                    // The lead must be AT or PAST the column. A band line that
+                    // opens the chunk itself sits under the raised floor, so the
+                    // collector would return nothing and leave the cursor put.
+                    let lead_at_column = slice_columns(line, content_col.min(indent), false);
+                    let lead_is_a_comment = detect_comment_fence_line_any_column(&lead_at_column)
+                        .is_some()
+                        || is_line_comment_any_column(&lead_at_column);
+                    let chunk_floor = if indent >= content_col
+                        && !lead_is_a_comment
+                        && a_band_line_ends_the_chunk(cur, base_indent, content_col)
+                        && !chunk_run_leaves_content_open(
+                            cur,
+                            content_col,
+                            &lead_at_column,
+                            options,
+                        ) {
+                        content_col.saturating_sub(1)
+                    } else {
+                        base_indent
+                    };
                     let mut nested = collect_item_continuation_block_mapped(
                         cur,
-                        base_indent,
+                        chunk_floor,
                         content_col,
                         &mut item_open_fence,
                     );
@@ -12277,6 +12313,81 @@ fn collect_trailing_lazy_through(
         );
         cur.consume();
     }
+}
+
+/// Is the line that ends this chunk a BAND line, strictly between the list's base
+/// and the item's content column?
+///
+/// The floor is raised only for one, so a chunk with nothing in the band collects
+/// exactly as it did. Without this the raise reached a chunk that opens with an
+/// attribute block and its target stopped being reachable, reported as unattached.
+///
+/// A COMMENT IS NOT ONE. It ends nothing at any column (PART 9 SS24 C3), so the
+/// question the raised floor asks is not about it, and the chunk keeps collecting
+/// through it as it always did. Left in, `- t` / `  # g` / ` %% c` / `  p` put `p`
+/// outside the list, where the oracle keeps it. That the two released engines put
+/// it outside is a divergence of its own and not this floor's to settle.
+///
+/// A blank ends the run: past one a below-column line ends the list through the
+/// ordinary dedent, which needs no floor.
+fn a_band_line_ends_the_chunk(cur: &LineCursor, base_indent: usize, content_col: usize) -> bool {
+    for candidate in &cur.lines[cur.pos..] {
+        if is_blank_line(candidate) {
+            return false;
+        }
+        let indent = indent_columns(candidate);
+        if indent >= content_col {
+            continue;
+        }
+        if detect_comment_fence_line_any_column(candidate).is_some()
+            || is_line_comment_any_column(candidate)
+        {
+            return false;
+        }
+        return indent > base_indent;
+    }
+    false
+}
+
+/// Does the chunk about to be collected leave something open for a band line to
+/// continue?
+///
+/// Read off the cursor WITHOUT consuming, because the answer decides the
+/// collection floor and the collection is what would otherwise take the band line
+/// (carve-rs#2128). Only the contiguous run at or past the content column is the
+/// chunk; a blank ends it, and a line below the column is the band line itself.
+///
+/// Three things a band line can continue, each answered where it can be seen:
+///
+/// - AN OPEN PARAGRAPH, asked of the LEAD alone. A quote holding one takes a
+///   continuation marker written in the band (corpus 435-14), and the fold hands
+///   an ordinary lazy line back anyway, so the lead is enough and stays cheap.
+/// - AN OPEN CODE FENCE, whose payload the band line is. Its opener is the lead,
+///   so the closer has to be looked for in the run.
+/// - AN OPEN COLON CONTAINER, the same way.
+///
+/// The run is scanned, never parsed, so this stays a linear read of lines the
+/// collector is about to walk regardless.
+fn chunk_run_leaves_content_open(
+    cur: &LineCursor,
+    content_col: usize,
+    lead_at_column: &str,
+    options: &Options<'_>,
+) -> bool {
+    if body_ends_with_open_paragraph(lead_at_column, options) {
+        return true;
+    }
+    let mut run: Vec<String> = Vec::new();
+    for candidate in &cur.lines[cur.pos..] {
+        if is_blank_line(candidate) || indent_columns(candidate) < content_col {
+            break;
+        }
+        run.push(slice_columns(candidate, content_col, false));
+    }
+    if let Some(open) = detect_fence_open(lead_at_column) {
+        return !run.iter().skip(1).any(|later| is_fence_close(later, open));
+    }
+    colon_fences_left_open(&run.join("\n")) > 0
 }
 
 fn collect_item_continuation_block_mapped(

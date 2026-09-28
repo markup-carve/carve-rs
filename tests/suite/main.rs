@@ -10,6 +10,8 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../a_band_line_under_a_block_that_interrupted_the_lead_paragraph.rs"]
+mod a_band_line_under_a_block_that_interrupted_the_lead_paragraph;
 #[path = "../a_band_line_under_a_marker_line_block_ends_the_item.rs"]
 mod a_band_line_under_a_marker_line_block_ends_the_item;
 #[path = "../a_band_line_under_an_empty_marker_line_quote_ends_the_item.rs"]
