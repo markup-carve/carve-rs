@@ -1988,11 +1988,10 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
         BlockNode::Paragraph(paragraph) => {
             let caption_can_open = render_attrs(&paragraph.attrs).is_empty()
                 && ctx.paragraph_starts_after_caption_host;
-            let body = guard_thematic_break_lines(&render_inlines_with_caption(
-                &paragraph.children,
-                ctx,
-                caption_can_open,
-            ));
+            let body = guard_thematic_break_lines(
+                &render_inlines_with_caption(&paragraph.children, ctx, caption_can_open),
+                ctx.line_block_depth > 0,
+            );
             with_block_attrs(&paragraph.attrs, &body)
         }
         BlockNode::CodeBlock(code) => {
@@ -5054,8 +5053,9 @@ fn protect_verbatim(content: &str) -> String {
 /// which is what the source said. The marker is a sentinel because normalize()
 /// trims the document's leading whitespace, which would silently undo the guard
 /// whenever the paragraph is the first block.
-fn guard_thematic_break_lines(body: &str) -> String {
-    if !body.contains('-') {
+fn guard_thematic_break_lines(body: &str, in_line_block: bool) -> String {
+    // Line-block bodies parse as inline content; padding would add a no-break space.
+    if in_line_block || !body.contains('-') {
         return body.to_string();
     }
     body.split('\n')
