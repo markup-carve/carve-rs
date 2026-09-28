@@ -2,6 +2,9 @@
 //!
 //! The public JSON representation is encoded separately in `ast_json`.
 
+mod checked;
+pub use checked::{AstDepthError, MAX_CHECKED_AST_DEPTH};
+
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 
@@ -137,7 +140,8 @@ pub struct Frontmatter {
 /// in a debug build. The result depends on the shape of the tree, build profile,
 /// compiler, and caller's stack. No depth is guaranteed for arbitrary trees.
 /// These traits have no depth error and may overflow the stack on deeper trees.
-/// Use [`Document::summary`] for bounded diagnostic output.
+/// Use [`Document::summary`] for bounded diagnostic output and
+/// [`Document::try_clone`] / [`Document::try_eq`] for checked operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
