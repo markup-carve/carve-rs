@@ -4,10 +4,10 @@ use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
 use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
-use crate::scoped_state::{CellScope, RefCellScope};
+mod session;
+use session::{CellScope, RenderSession};
 use std::borrow::Cow;
-use std::collections::BTreeSet;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// A definition the author wrote ON a definition list's description line.
 ///
@@ -111,15 +111,15 @@ enum EscapeMode {
 
 /// Render a tree as canonical Carve source.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
+    let session = &RenderSession::new();
     // Reject excessive depth before recursive preparation reads the tree.
     crate::render_depth::refuse_if_too_deep(doc, "carve")?;
-    let _session = RenderSession::new();
     crate::render_loss::record_ruby_in_document(doc);
     let one_run = text_as_one_run(doc);
     let doc = one_run.as_ref().unwrap_or(doc);
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
-    let output = protect_leading_bom(render_carve_unguarded(doc));
+    let output = protect_leading_bom(render_carve_unguarded(session, doc));
     if let Some(error) = source_watch.error() {
         return Err(error);
     }
@@ -289,22 +289,6 @@ fn protect_leading_bom(out: String) -> String {
     out
 }
 
-thread_local! {
-    /// Heading ids that a fresh parse would re-derive, so the writer must not
-    /// turn them into source.
-    ///
-    /// PART 12 §5 publishes a heading's slugged id and PART 11 §1 writes the
-    /// DOCUMENT back, so the two have to be told apart: an AUTHORED id carries
-    /// an `#id` slot, a GENERATED one carries none. Dropping every unslotted id
-    /// would be wrong as well - an ingested tree whose heading text was edited
-    /// carries an id the text no longer slugs to, and there the id is the only
-    /// place that information lives. So the test is MINIMAL FORM, the same one
-    /// PART 11 §4 uses for escapes: write it only where dropping it would
-    /// change the document (carve-js#741).
-    static REDUNDANT_IDS: std::cell::RefCell<std::collections::BTreeSet<String>> =
-        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
-}
-
 /// The ids a fresh parse would assign, for headings that carry an unslotted id.
 ///
 /// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
@@ -313,43 +297,43 @@ pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSe
     crate::document_ids::redundant_heading_ids(doc)
 }
 
-fn render_carve_unguarded(doc: &Document) -> String {
+fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
     // One render with the default sentinels. If the document turns out to
     // contain one of them itself, the counts disagree and the whole render is
-    // repeated with a character it does not contain (see SENTINELS). Only a
+    // repeated with a character it does not contain (see SENTINEL_DEFAULTS). Only a
     // document that actually holds a private-use sentinel pays for the second
     // pass, and nothing else changes: the retry runs the same code.
-    let first = render_carve_once(doc);
-    let current = SENTINELS.with(|s| s.get());
-    let inserted = INSERTED.with(|c| c.get());
-    let seen = SEEN.with(|c| c.get());
+    let first = render_carve_once(session, doc);
+    let current = session.sentinels.with(|s| s.get());
+    let inserted = session.inserted.with(|c| c.get());
+    let seen = session.seen.with(|c| c.get());
     if (0..SENTINEL_COUNT).all(|i| seen[i] <= inserted[i]) {
         return first;
     }
-    // Choose against the STAGED text: `first` has been through restore, so an
+    // Choose against the staged text: `first` has been through restore, so an
     // authored occurrence is no longer visible in it.
-    let staged = STAGED.with(|c| c.borrow().clone());
+    let staged = session.staged.with(|c| c.borrow().clone());
     let mut next = current;
     for i in 0..SENTINEL_COUNT {
         if seen[i] > inserted[i] {
             next[i] = free_sentinel(&staged, &next);
         }
     }
-    SENTINELS.with(|s| s.set(next));
-    let second = render_carve_once(doc);
-    SENTINELS.with(|s| s.set(SENTINEL_DEFAULTS));
-    second
+    session.sentinels.with(|s| s.set(next));
+    render_carve_once(session, doc)
 }
 
 /// One full render, with the insertion counters reset for it.
-fn render_carve_once(doc: &Document) -> String {
+fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     let redundant = redundant_heading_ids(doc);
-    REDUNDANT_IDS.with(|cell| *cell.borrow_mut() = redundant);
-    INSERTED.with(|c| c.set([0; SENTINEL_COUNT]));
-    SEEN.with(|c| c.set([0; SENTINEL_COUNT]));
-    STAGED.with(|c| c.borrow_mut().clear());
-    let minimal = render_with_escapes(doc, EscapeMode::Minimal);
-    let conservative = render_with_escapes(doc, EscapeMode::Conservative);
+    session
+        .redundant_ids
+        .with(|cell| *cell.borrow_mut() = redundant);
+    session.inserted.with(|c| c.set([0; SENTINEL_COUNT]));
+    session.seen.with(|c| c.set([0; SENTINEL_COUNT]));
+    session.staged.with(|c| c.borrow_mut().clear());
+    let minimal = render_with_escapes(session, doc, EscapeMode::Minimal);
+    let conservative = render_with_escapes(session, doc, EscapeMode::Conservative);
     if minimal == conservative {
         return minimal;
     }
@@ -364,12 +348,13 @@ fn render_carve_once(doc: &Document) -> String {
     // the decision here with the conservative form of the whole document. PART
     // 11 §2b says how far that fallback actually reaches: the smallest unit
     // whose minimal form fails, and §2's own test everywhere else.
-    narrow_escalation(doc, conservative, conservative_tree)
+    narrow_escalation(session, doc, conservative, conservative_tree)
 }
 
 /// The conservative form of the units that need it, and the minimal form of
 /// every other unit (PART 11 §2b).
 fn narrow_escalation(
+    session: &RenderSession,
     doc: &Document,
     conservative: String,
     conservative_tree: Option<Document>,
@@ -383,15 +368,19 @@ fn narrow_escalation(
     // How many units the document has is a property of the WALK, so it is
     // counted by walking: the pass below is the same conservative render, and
     // its agreeing with `conservative` is the first half of the control.
-    let discovered = render_with_escapes(doc, EscapeMode::Conservative);
-    let total = UNIT_COUNTER.with(|c| c.get());
+    let discovered = render_with_escapes(session, doc, EscapeMode::Conservative);
+    let total = session.pass.unit_counter.with(|c| c.get());
     if discovered != conservative || total == 0 {
         return conservative;
     }
 
     let all: Vec<usize> = (1..=total).collect();
-    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(all.iter().copied().collect()));
-    ASKED_UNITS.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
+    session
+        .escalated_units
+        .with(|cell| *cell.borrow_mut() = Some(all.iter().copied().collect()));
+    session
+        .asked_units
+        .with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
     // The control render also records where every unit sits, for the
     // windowed probes below. A document whose break spelling needs the
     // frontmatter fallback renders differently from its windows, so it keeps
@@ -402,17 +391,24 @@ fn narrow_escalation(
     #[cfg(test)]
     let windows_fit = windows_fit && !tests::WHOLE_DOCUMENT_PROBES.with(std::cell::Cell::get);
     let (control, layout) = if windows_fit {
-        let (control, layout) =
-            escape_window::record(|| render_with_escapes(doc, EscapeMode::Conservative));
+        let (control, layout) = escape_window::record(session, || {
+            render_with_escapes(session, doc, EscapeMode::Conservative)
+        });
         (control, Some(layout))
     } else {
-        (render_with_escapes(doc, EscapeMode::Conservative), None)
+        (
+            render_with_escapes(session, doc, EscapeMode::Conservative),
+            None,
+        )
     };
-    let asked = ASKED_UNITS
+    let asked = session
+        .asked_units
         .with(|cell| cell.borrow_mut().take())
         .unwrap_or_default();
     if control != conservative {
-        ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
+        session
+            .escalated_units
+            .with(|cell| *cell.borrow_mut() = None);
         return conservative;
     }
     let units: Vec<usize> = all
@@ -435,14 +431,16 @@ fn narrow_escalation(
     // render asks about a unit for every byte the two forms differ in, and they
     // differ or this is not running.
     let search = |local: bool| -> String {
-        ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some((1..=total).collect()));
+        session
+            .escalated_units
+            .with(|cell| *cell.borrow_mut() = Some((1..=total).collect()));
         let mut best = control.clone();
         // Eight times the depth of the halving, which is what narrowing four
         // independent failing units costs. See `budget` on `relax_units`.
         let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
         probe.begin_search(budget);
-        relax_units(&probe, local, &units, &mut best, &mut budget, None);
-        probe.settle(local, best)
+        relax_units(session, &probe, local, &units, &mut best, &mut budget, None);
+        probe.settle(session, local, best)
     };
     let mut best = search(true);
     if comparable_tree(&best).as_ref() != Some(&conservative_tree) {
@@ -453,8 +451,10 @@ fn narrow_escalation(
     // candidate character beside the one that needed it is escaped for nothing
     // -- `\{\.note\}` where §2 wants `\{.note}`. §2b bounds how far the fallback
     // reaches; this is what is left inside the bound (markup-carve/carve#1533).
-    narrow_occurrences(&probe, &mut best);
-    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
+    narrow_occurrences(session, &probe, &mut best);
+    session
+        .escalated_units
+        .with(|cell| *cell.borrow_mut() = None);
     best
 }
 
@@ -525,19 +525,19 @@ impl Probe<'_> {
         self.charged.set(self.charged.get() + bytes);
     }
 
-    fn render_window(&self, window: &escape_window::Window) -> String {
-        escape_window::render_pruned(window, || {
-            render_with_escapes_once(self.doc, EscapeMode::Conservative)
+    fn render_window(&self, session: &RenderSession, window: &escape_window::Window) -> String {
+        escape_window::render_pruned(session, window, || {
+            render_with_escapes_once(session, self.doc, EscapeMode::Conservative)
         })
     }
 
     /// Apply a relaxation and keep it when the tree still holds.
     fn keeps(
         &self,
+        session: &RenderSession,
         local: bool,
         units: impl IntoIterator<Item = usize>,
-        apply: impl FnOnce(),
-        undo: impl FnOnce(),
+        (apply, undo): (impl FnOnce(), impl FnOnce()),
         best: &mut String,
         rejected: Option<&str>,
     ) -> Verdict {
@@ -547,7 +547,7 @@ impl Probe<'_> {
             .filter(|_| local)
             .and_then(|layout| layout.window_for(units));
         let before = window.as_ref().and_then(|window| {
-            let before = self.render_window(window);
+            let before = self.render_window(session, window);
             (before.len() <= self.window_limit)
                 .then(|| comparable_tree(&before))
                 .flatten()
@@ -557,7 +557,7 @@ impl Probe<'_> {
         if let Some((window, before, before_len)) = before {
             #[cfg(test)]
             tests::WINDOW_PROBES.with(|n| n.set(n.get() + 1));
-            let after = self.render_window(window);
+            let after = self.render_window(session, window);
             self.charge(before_len + after.len());
             if comparable_tree(&after).as_ref() == Some(&before) {
                 return Verdict::Holds;
@@ -565,7 +565,7 @@ impl Probe<'_> {
             undo();
             return Verdict::Fails(None);
         }
-        let candidate = render_with_escapes(self.doc, EscapeMode::Conservative);
+        let candidate = render_with_escapes(session, self.doc, EscapeMode::Conservative);
         self.charge(candidate.len());
         if candidate_holds(&candidate, best, rejected, self.tree) {
             *best = candidate;
@@ -577,11 +577,11 @@ impl Probe<'_> {
 
     /// The whole document in the state a search finished in. A local search's
     /// `best` is only the last whole-document probe, so the state is rendered.
-    fn settle(&self, local: bool, best: String) -> String {
+    fn settle(&self, session: &RenderSession, local: bool, best: String) -> String {
         if !local {
             return best;
         }
-        render_with_escapes(self.doc, EscapeMode::Conservative)
+        render_with_escapes(session, self.doc, EscapeMode::Conservative)
     }
 }
 
@@ -590,16 +590,23 @@ impl Probe<'_> {
 /// control render, the unit-level result is kept. The search is bounded because
 /// every load-bearing occurrence can require another full render and parse.
 /// Where the budget binds, remaining occurrences stay escaped as §2 requires.
-fn narrow_occurrences(probe: &Probe, best: &mut String) {
+fn narrow_occurrences(session: &RenderSession, probe: &Probe, best: &mut String) {
     let unit_scoped = best.clone();
-    RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
-    OCCURRENCE_LOG.with(|cell| *cell.borrow_mut() = Some(Vec::new()));
-    let control = render_with_escapes(probe.doc, EscapeMode::Conservative);
-    let occurrences = OCCURRENCE_LOG
+    session
+        .relaxed_occurrences
+        .with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
+    session
+        .occurrence_log
+        .with(|cell| *cell.borrow_mut() = Some(Vec::new()));
+    let control = render_with_escapes(session, probe.doc, EscapeMode::Conservative);
+    let occurrences = session
+        .occurrence_log
         .with(|cell| cell.borrow_mut().take())
         .unwrap_or_default();
     if control != unit_scoped || occurrences.is_empty() {
-        RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
+        session
+            .relaxed_occurrences
+            .with(|cell| *cell.borrow_mut() = None);
         return;
     }
 
@@ -613,11 +620,13 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
     // separates them.
     let order: Vec<Occurrence> = occurrences.into_iter().rev().collect();
     let search = |local: bool| -> String {
-        RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
+        session
+            .relaxed_occurrences
+            .with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
         let mut best = unit_scoped.clone();
         let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
         probe.begin_search(budget);
-        relax_occurrences(probe, local, &order, &mut best, &mut budget, None);
+        relax_occurrences(session, probe, local, &order, &mut best, &mut budget, None);
         // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a
         // FIXPOINT. Relaxing occurrences is not monotone: an occurrence
         // rejected while a neighbour was still escaped can be free once that
@@ -631,12 +640,14 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
             if probe.exhausted(budget) {
                 break;
             }
-            if RELAXED_OCCURRENCES
+            if session
+                .relaxed_occurrences
                 .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(key)))
             {
                 continue;
             }
             relax_occurrences(
+                session,
                 probe,
                 local,
                 std::slice::from_ref(key),
@@ -645,19 +656,22 @@ fn narrow_occurrences(probe: &Probe, best: &mut String) {
                 None,
             );
         }
-        probe.settle(local, best)
+        probe.settle(session, local, best)
     };
     let mut narrowed = search(true);
     if comparable_tree(&narrowed).as_ref() != Some(probe.tree) {
         narrowed = search(false);
     }
     *best = narrowed;
-    RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
+    session
+        .relaxed_occurrences
+        .with(|cell| *cell.borrow_mut() = None);
 }
 
 /// Hand `group` its bare form where the document still holds, halving the group
 /// on failure.
 fn relax_occurrences(
+    session: &RenderSession,
     probe: &Probe,
     local: bool,
     group: &[Occurrence],
@@ -670,10 +684,13 @@ fn relax_occurrences(
     }
     probe.spend(budget);
     let verdict = probe.keeps(
+        session,
         local,
         group.iter().map(|&(unit, _, _)| unit),
-        || set_relaxed(group, true),
-        || set_relaxed(group, false),
+        (
+            || set_relaxed(session, group, true),
+            || set_relaxed(session, group, false),
+        ),
         best,
         rejected,
     );
@@ -685,8 +702,24 @@ fn relax_occurrences(
     }
     let half = group.len() / 2;
     let rejected = candidate.as_deref();
-    relax_occurrences(probe, local, &group[..half], best, budget, rejected);
-    relax_occurrences(probe, local, &group[half..], best, budget, rejected);
+    relax_occurrences(
+        session,
+        probe,
+        local,
+        &group[..half],
+        best,
+        budget,
+        rejected,
+    );
+    relax_occurrences(
+        session,
+        probe,
+        local,
+        &group[half..],
+        best,
+        budget,
+        rejected,
+    );
 }
 
 /// Whether `candidate` re-parses to `conservative_tree`.
@@ -715,8 +748,8 @@ fn candidate_holds(
     comparable_tree(candidate).as_ref() == Some(conservative_tree)
 }
 
-fn set_relaxed(group: &[Occurrence], relaxed: bool) {
-    RELAXED_OCCURRENCES.with(|cell| {
+fn set_relaxed(session: &RenderSession, group: &[Occurrence], relaxed: bool) {
+    session.relaxed_occurrences.with(|cell| {
         if let Some(set) = cell.borrow_mut().as_mut() {
             for key in group {
                 if relaxed {
@@ -743,6 +776,7 @@ fn set_relaxed(group: &[Occurrence], relaxed: bool) {
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
 fn relax_units(
+    session: &RenderSession,
     probe: &Probe,
     local: bool,
     units: &[usize],
@@ -755,10 +789,13 @@ fn relax_units(
     }
     probe.spend(budget);
     let verdict = probe.keeps(
+        session,
         local,
         units.iter().copied(),
-        || set_escalated(units, false),
-        || set_escalated(units, true),
+        (
+            || set_escalated(session, units, false),
+            || set_escalated(session, units, true),
+        ),
         best,
         rejected,
     );
@@ -770,12 +807,28 @@ fn relax_units(
     }
     let half = units.len() / 2;
     let rejected = candidate.as_deref();
-    relax_units(probe, local, &units[..half], best, budget, rejected);
-    relax_units(probe, local, &units[half..], best, budget, rejected);
+    relax_units(
+        session,
+        probe,
+        local,
+        &units[..half],
+        best,
+        budget,
+        rejected,
+    );
+    relax_units(
+        session,
+        probe,
+        local,
+        &units[half..],
+        best,
+        budget,
+        rejected,
+    );
 }
 
-fn set_escalated(units: &[usize], escalated: bool) {
-    ESCALATED_UNITS.with(|cell| {
+fn set_escalated(session: &RenderSession, units: &[usize], escalated: bool) {
+    session.escalated_units.with(|cell| {
         if let Some(set) = cell.borrow_mut().as_mut() {
             for unit in units {
                 if escalated {
@@ -933,28 +986,18 @@ fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionA
     out
 }
 
-thread_local! {
-    /// Whether a HYPHEN-spelled thematic break would be misread in this render.
-    ///
-    /// PART 11 §6 writes the marker the author used, now that the AST records it
-    /// (carve#976, carve-rs#843). The one document that gets another spelling is
-    /// the one whose emitted bytes would open a frontmatter block it does not
-    /// have, and `render_with_escapes` is where that is decided.
-    static HYPHEN_BREAKS_ARE_UNSAFE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// Render, and fall back to a break spelling that cannot be read as frontmatter
 /// when the finished bytes would be.
-fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
-    let authored = render_with_escapes_once(doc, escape_mode);
+fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: EscapeMode) -> String {
+    let authored = render_with_escapes_once(session, doc, escape_mode);
     if doc.frontmatter_raw.is_some()
         || !doc.frontmatter.is_empty()
         || !crate::parse::opens_frontmatter(&authored)
     {
         return authored;
     }
-    let _marker = CellScope::replace(&HYPHEN_BREAKS_ARE_UNSAFE, true);
-    let fallback = render_with_escapes_once(doc, escape_mode);
+    let _marker = CellScope::replace(&session.hyphen_breaks_are_unsafe, true);
+    let fallback = render_with_escapes_once(session, doc, escape_mode);
     if crate::parse::opens_frontmatter(&fallback) {
         authored
     } else {
@@ -962,20 +1005,12 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     }
 }
 
-fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
-    // PER PASS, like `written_in_place` above and for the same reason: the unit
-    // ordinals name positions in THIS walk, and a counter carried across passes
-    // would name a different node in each of them.
-    UNIT_COUNTER.with(|c| c.set(0));
-    // PER PASS for the same reason: `render_with_escapes` can render twice for
-    // the frontmatter fallback, and a counter carried across the two would
-    // number the second pass's runs on from the end of the first.
-    ESCAPE_CALL_INDEXES.with(|cell| cell.borrow_mut().clear());
-    OCCURRENCE_LOG.with(|cell| {
-        if let Some(log) = cell.borrow_mut().as_mut() {
-            log.clear();
-        }
-    });
+fn render_with_escapes_once(
+    session: &RenderSession,
+    doc: &Document,
+    escape_mode: EscapeMode,
+) -> String {
+    session.begin_pass();
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
@@ -1007,7 +1042,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     if let Some(raw) = &doc.frontmatter_raw {
         parts.push(render_raw_frontmatter(raw));
     } else if !doc.frontmatter.is_empty() {
-        parts.push(render_frontmatter(&doc.frontmatter));
+        parts.push(render_frontmatter(session, &doc.frontmatter));
     }
     // §7 puts hoisted definitions after the body, ordered among themselves by
     // source position, and PART 11 §6 binds the writer to the order the tree
@@ -1033,14 +1068,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         .enumerate()
     {
         let escape_window::Visit::Render(recorded) =
-            escape_window::visit(escape_window::ROOT, index)
+            escape_window::visit(session, escape_window::ROOT, index)
         else {
             continue;
         };
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
-                let text = render_block(child, &mut ctx);
+                let text = render_block(session, child, &mut ctx);
                 ctx.after_caption_host = hosts_caption(child);
                 if let BlockNode::List(list) = child {
                     separated_from_previous =
@@ -1063,7 +1098,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 {
                     String::new()
                 } else {
-                    render_footnote_def_source(label, blocks, &mut ctx)
+                    render_footnote_def_source(session, label, blocks, &mut ctx)
                 };
                 // A HOISTED DEFINITION IS A NON-LIST ENTRY and clears the pair
                 // state exactly as a non-list block does. Without this the
@@ -1078,10 +1113,10 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 text
             }
         };
-        escape_window::leave(recorded);
+        escape_window::leave(session, recorded);
         if !writes_nothing(&text) {
             rendered.push(if separated_from_previous && !rendered.is_empty() {
-                hard_list_boundary(&text)
+                hard_list_boundary(session, &text)
             } else {
                 text
             });
@@ -1098,7 +1133,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     if !rendered.is_empty() {
         parts.push(rendered.join("\n\n"));
     }
-    normalize(&parts.join("\n\n"))
+    normalize(session, &parts.join("\n\n"))
 }
 
 /// `conservative_tree` is the caller's single parse of the conservative form;
@@ -1395,10 +1430,10 @@ fn is_task_list(list: &List) -> bool {
 /// fatal for this one, which the rule says to keep. The squeeze cannot tell them
 /// apart from the text; only the writer knows, so the writer marks them and
 /// `restore_verbatim` turns each marker line back into the blank it stands for.
-fn hard_list_boundary(text: &str) -> String {
-    let blank = verbatim_blank();
-    note_inserted(S_BLANK);
-    note_inserted(S_BLANK);
+fn hard_list_boundary(session: &RenderSession, text: &str) -> String {
+    let blank = verbatim_blank(session);
+    note_inserted(session, S_BLANK);
+    note_inserted(session, S_BLANK);
     format!("{blank}\n{blank}\n{text}")
 }
 
@@ -1413,11 +1448,11 @@ fn hard_list_boundary(text: &str) -> String {
 /// §10i fixes the length at three whatever run the author wrote: the markers are
 /// not newlines, so `collapse_blank_lines` squeezes a decorative run past them
 /// and leaves this one alone.
-fn hard_list_boundary_in_a_tight_item(text: &str) -> String {
-    let blank = verbatim_blank();
-    note_inserted(S_BLANK);
-    note_inserted(S_BLANK);
-    note_inserted(S_BLANK);
+fn hard_list_boundary_in_a_tight_item(session: &RenderSession, text: &str) -> String {
+    let blank = verbatim_blank(session);
+    note_inserted(session, S_BLANK);
+    note_inserted(session, S_BLANK);
+    note_inserted(session, S_BLANK);
     format!("{blank}\n{blank}\n{blank}\n{text}")
 }
 
@@ -1538,15 +1573,19 @@ fn writes_nothing(text: &str) -> bool {
 
 /// A caption line's written form, or `None` where the run reaches the page as
 /// nothing.
-fn caption_row(caption: &[InlineNode], ctx: &mut CarveContext) -> Option<String> {
-    let written = render_inlines(caption, ctx);
+fn caption_row(
+    session: &RenderSession,
+    caption: &[InlineNode],
+    ctx: &mut CarveContext,
+) -> Option<String> {
+    let written = render_inlines(session, caption, ctx);
     if writes_nothing(&written) {
         return None;
     }
     Some(format!("^ {written}"))
 }
 
-fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
+fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
         return String::new();
@@ -1577,12 +1616,13 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     let mut separated_from_previous = false;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
-        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
+        else {
             continue;
         };
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
-        let text = render_block(block, ctx);
-        escape_window::leave(recorded);
+        let text = render_block(session, block, ctx);
+        escape_window::leave(session, recorded);
         ctx.after_caption_host = hosts_caption(block);
         if let BlockNode::List(list) = block {
             separated_from_previous =
@@ -1594,7 +1634,7 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
         }
         if !writes_nothing(&text) {
             rendered.push(if separated_from_previous && !rendered.is_empty() {
-                hard_list_boundary(&text)
+                hard_list_boundary(session, &text)
             } else {
                 text
             });
@@ -1641,9 +1681,13 @@ fn with_reset_colon_fence_depth<T>(
     out
 }
 
-fn render_inside_colon_container(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
+fn render_inside_colon_container(
+    session: &RenderSession,
+    blocks: &[BlockNode],
+    ctx: &mut CarveContext,
+) -> String {
     ctx.colon_fence_depth += 1;
-    let body = render_blocks(blocks, ctx);
+    let body = render_blocks(session, blocks, ctx);
     ctx.colon_fence_depth -= 1;
     body
 }
@@ -1663,6 +1707,7 @@ fn render_inside_colon_container(blocks: &[BlockNode], ctx: &mut CarveContext) -
 /// gone, so the neighbours' spans name it. Marked written the same way, so the
 /// document-level pass skips it and the label is not defined twice.
 fn definition_in_gap(
+    session: &RenderSession,
     before: &BlockNode,
     after: &BlockNode,
     ctx: &mut CarveContext,
@@ -1681,9 +1726,11 @@ fn definition_in_gap(
     // the gap render nothing and the document-level pass skip it too - the
     // definition disappeared from the document entirely.
     let written = match definition {
-        DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
+        DefinitionAtLine::Link(def) => {
+            render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
+        }
         DefinitionAtLine::Footnote(label, blocks) => {
-            render_footnote_def_source(&label, &blocks, ctx)
+            render_footnote_def_source(session, &label, &blocks, ctx)
         }
     };
     if written.is_empty() {
@@ -1699,15 +1746,21 @@ fn definition_in_gap(
 /// definition arm suppresses definitions that have already been written in
 /// place. This is shared by every marker-line container that collection can
 /// empty.
-fn definition_at_line(line: usize, ctx: &mut CarveContext) -> Option<String> {
+fn definition_at_line(
+    session: &RenderSession,
+    line: usize,
+    ctx: &mut CarveContext,
+) -> Option<String> {
     if ctx.written_in_place.contains(&line) {
         return None;
     }
     let definition = ctx.definitions_by_line.get(&line)?.clone();
     let written = match definition {
-        DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
+        DefinitionAtLine::Link(def) => {
+            render_block(session, &BlockNode::LinkReferenceDefinition(*def), ctx)
+        }
         DefinitionAtLine::Footnote(label, blocks) => {
-            render_footnote_def_source(&label, &blocks, ctx)
+            render_footnote_def_source(session, &label, &blocks, ctx)
         }
     };
     if written.is_empty() {
@@ -1732,15 +1785,15 @@ fn definition_at_line(line: usize, ctx: &mut CarveContext) -> Option<String> {
 /// block out of the item (markup-carve/carve-rs#1226). carve-js reached the
 /// same place, and moved the same marker into its own picked run, in
 /// markup-carve/carve-js#1289.
-fn marker_column() -> char {
-    sentinel(S_MARKER_COLUMN)
+fn marker_column(session: &RenderSession) -> char {
+    sentinel(session, S_MARKER_COLUMN)
 }
 
-fn at_marker_column(text: &str) -> String {
-    let marker = marker_column();
+fn at_marker_column(session: &RenderSession, text: &str) -> String {
+    let marker = marker_column(session);
     text.split('\n')
         .map(|line| {
-            note_inserted(S_MARKER_COLUMN);
+            note_inserted(session, S_MARKER_COLUMN);
             format!("{marker}{line}")
         })
         .collect::<Vec<_>>()
@@ -1763,9 +1816,14 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
     }
 }
 
-fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
+fn render_item_blocks(
+    session: &RenderSession,
+    blocks: &[BlockNode],
+    tight: bool,
+    ctx: &mut CarveContext,
+) -> String {
     if !tight {
-        return render_blocks(blocks, ctx);
+        return render_blocks(session, blocks, ctx);
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1781,12 +1839,13 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     let mut a_sub_list_already_opened = false;
     let list = blocks.as_ptr() as usize;
     for (index, block) in blocks.iter().enumerate() {
-        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
+        else {
             continue;
         };
         let next = blocks.get(index + 1);
-        let rendered = render_block(block, ctx);
-        escape_window::leave(recorded);
+        let rendered = render_block(session, block, ctx);
+        escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
             continue;
         }
@@ -1798,7 +1857,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             // that fixed in line_starts_paragraph, keeping it would insert a
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
-            if let Some(written) = definition_in_gap(prev_block, block, ctx) {
+            if let Some(written) = definition_in_gap(session, prev_block, block, ctx) {
                 out.push_str(&written);
                 out.push('\n');
                 // A definition written back BETWEEN the two blocks already ends
@@ -1820,7 +1879,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if matches!(block, BlockNode::List(_)) {
             if !separated && prev.is_some_and(|previous| adjacent_blocks_merge(previous, block)) {
-                out.push_str(&hard_list_boundary_in_a_tight_item(&rendered));
+                out.push_str(&hard_list_boundary_in_a_tight_item(session, &rendered));
             } else if !separated
                 && needs_a_blank_line_above(prev, prev_at_marker_column, a_sub_list_already_opened)
             {
@@ -1886,9 +1945,9 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
                 || closes_a_merging_run_above
                 || folds_into_the_paragraph_above)
         {
-            out.push_str(&at_marker_column("+"));
+            out.push_str(&at_marker_column(session, "+"));
             out.push('\n');
-            out.push_str(&at_marker_column(&rendered));
+            out.push_str(&at_marker_column(session, &rendered));
             prev = Some(block);
             prev_at_marker_column = true;
             continue;
@@ -1905,15 +1964,15 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 ///
 /// PART 11 §2b bounds an escalation to the smallest unit that fails, so the
 /// escape pass has to know which unit each escaped character belongs to.
-fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
+fn render_block(session: &RenderSession, node: &BlockNode, ctx: &mut CarveContext) -> String {
     let previous = ctx.escape_unit;
-    ctx.escape_unit = next_escape_unit();
-    let out = render_block_body(node, ctx);
+    ctx.escape_unit = next_escape_unit(session);
+    let out = render_block_body(session, node, ctx);
     ctx.escape_unit = previous;
     out
 }
 
-fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
+fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
         // PART 12 section 18: renders nothing where it sits, on this target as
         // on every other. The Carve writer parses without the Citations
@@ -1963,7 +2022,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // a heading, break nodes included - so a break collapses to a
             // single space here rather than corrupting the document it is
             // written back to. Matches carve-js.
-            let rendered = render_inlines(&heading.children, ctx);
+            let rendered = render_inlines(session, &heading.children, ctx);
             let text = collapse_breaks(trim_heading_edges(&rendered));
             let body = format!("{} {}", "#".repeat(heading.level as usize), text);
             // A generated id a fresh parse would re-derive is not the author's
@@ -1973,7 +2032,9 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 Some(attrs) => match attrs.id.as_ref() {
                     Some(id)
                         if !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
-                            && REDUNDANT_IDS.with(|cell| cell.borrow().contains(id)) =>
+                            && session
+                                .redundant_ids
+                                .with(|cell| cell.borrow().contains(id)) =>
                     {
                         let mut without = attrs.clone();
                         without.id = None;
@@ -1989,7 +2050,8 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let caption_can_open = render_attrs(&paragraph.attrs).is_empty()
                 && ctx.paragraph_starts_after_caption_host;
             let body = guard_thematic_break_lines(
-                &render_inlines_with_caption(&paragraph.children, ctx, caption_can_open),
+                session,
+                &render_inlines_with_caption(session, &paragraph.children, ctx, caption_can_open),
                 ctx.line_block_depth > 0,
             );
             with_block_attrs(&paragraph.attrs, &body)
@@ -2016,7 +2078,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 &attrs,
                 &format!(
                     "{fence}{info}\n{}\n{fence}",
-                    protect_verbatim(&code.content)
+                    protect_verbatim(session, &code.content)
                 ),
             )
         }
@@ -2028,11 +2090,12 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // carries the author's choice rather than the writer inferring one.
             if quote.fenced {
                 let fence = colon_fence_for(ctx);
-                let body = render_inside_colon_container(&quote.children, ctx);
+                let body = render_inside_colon_container(session, &quote.children, ctx);
                 return with_block_attrs(&quote.attrs, &format!("{fence} >\n{body}\n{fence}"));
             }
-            let inner =
-                with_reset_colon_fence_depth(ctx, |ctx| render_blocks(&quote.children, ctx));
+            let inner = with_reset_colon_fence_depth(ctx, |ctx| {
+                render_blocks(session, &quote.children, ctx)
+            });
             let body = inner
                 .split('\n')
                 .map(|line| {
@@ -2047,7 +2110,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             with_block_attrs(&quote.attrs, &body)
         }
         BlockNode::List(list) => {
-            let body = with_reset_colon_fence_depth(ctx, |ctx| render_list(list, ctx));
+            let body = with_reset_colon_fence_depth(ctx, |ctx| render_list(session, list, ctx));
             with_loose_key(list_needs_loose_key(list, &body), &list.attrs, &body)
         }
         // PART 11 §6 writes the marker the author used, now that the AST
@@ -2057,7 +2120,11 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
         // misread - see `render_with_escapes`, where that is decided.
         BlockNode::ThematicBreak(rule) => {
             let mut marker = rule.marker.unwrap_or('-');
-            if marker == '-' && HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.get()) {
+            if marker == '-'
+                && session
+                    .hyphen_breaks_are_unsafe
+                    .with(|unsafe_| unsafe_.get())
+            {
                 marker = '*';
             }
             with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
@@ -2107,7 +2174,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                     }
                 }
             }
-            with_block_attrs(&attrs, &render_table(table, ctx))
+            with_block_attrs(&attrs, &render_table(session, table, ctx))
         }
         BlockNode::Admonition(admonition) => {
             let title = admonition
@@ -2116,7 +2183,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .map(|title| {
                     format!(
                         " \"{}\"",
-                        escape_quoted_title(&render_inlines(title, ctx), "admonition")
+                        escape_quoted_title(&render_inlines(session, title, ctx), "admonition")
                     )
                 })
                 .unwrap_or_default();
@@ -2126,7 +2193,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(&admonition.children, ctx);
+            let body = render_inside_colon_container(session, &admonition.children, ctx);
             with_block_attrs(
                 &admonition.attrs,
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", admonition.kind),
@@ -2139,7 +2206,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .map(|title| {
                     format!(
                         " \"{}\"",
-                        escape_quoted_title(&render_inlines(title, ctx), "directive")
+                        escape_quoted_title(&render_inlines(session, title, ctx), "directive")
                     )
                 })
                 .unwrap_or_default();
@@ -2149,7 +2216,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(&directive.children, ctx);
+            let body = render_inside_colon_container(session, &directive.children, ctx);
             with_block_attrs(
                 &directive.attrs,
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", directive.kind),
@@ -2167,7 +2234,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // emits for a HardBreak would double it on re-parse.
             ctx.line_block_depth += 1;
             let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(&lb.children, ctx);
+            let body = render_inside_colon_container(session, &lb.children, ctx);
             ctx.line_block_depth -= 1;
             with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
         }
@@ -2178,26 +2245,29 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(&div.children, ctx);
+            let body = render_inside_colon_container(session, &div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
-        BlockNode::Section(section) => render_blocks(&section.children, ctx),
+        BlockNode::Section(section) => render_blocks(session, &section.children, ctx),
         BlockNode::DefinitionList(list) => {
-            let body =
-                with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx));
+            let body = with_reset_colon_fence_depth(ctx, |ctx| {
+                render_definition_list(session, &list.items, ctx)
+            });
             with_loose_key(list.loose, &list.attrs, &body)
         }
-        BlockNode::Figure(figure) => with_block_attrs(&figure.attrs, &render_figure(figure, ctx)),
+        BlockNode::Figure(figure) => {
+            with_block_attrs(&figure.attrs, &render_figure(session, figure, ctx))
+        }
         BlockNode::FigureGroup(group) => {
             // §10g: the authored form - the attribute line where attributes
             // exist, the bare opener, the children, the closer at the opener's
             // width, and the group caption as a `^ ` line AFTER the closer.
             let fence = colon_fence_for(ctx);
-            let body = render_inside_colon_container(&group.children, ctx);
+            let body = render_inside_colon_container(session, &group.children, ctx);
             let caption = group
                 .caption
                 .as_ref()
-                .and_then(|caption| caption_row(caption, ctx))
+                .and_then(|caption| caption_row(session, caption, ctx))
                 .map(|row| format!("\n{row}"))
                 .unwrap_or_default();
             with_block_attrs(
@@ -2212,7 +2282,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let body = if all_blank {
                 raw.content.clone()
             } else {
-                protect_verbatim(&raw.content)
+                protect_verbatim(session, &raw.content)
             };
             let separator = if all_blank { "" } else { "\n" };
             format!(
@@ -2232,7 +2302,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             if comment.delimited {
                 format!("{{%{} %}}", pad_delimited(&comment.content))
             } else if comment.block {
-                render_block_comment(&comment.content)
+                render_block_comment(session, &comment.content)
             } else {
                 let content = comment.content.trim_end_matches([' ', '\t']);
                 if content.is_empty() {
@@ -2248,10 +2318,13 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
         // 0.1 source spells none - so it writes the fallback, which is what the
         // node MEANS to a reader without the extension. The name, version and
         // payload are lost, which is the loss PART 12 §33 defines.
-        BlockNode::BlockExtension(n) => with_block_attrs(&n.attrs, &render_block(&n.fallback, ctx)),
-        BlockNode::ExtensionCarrier(extension) => {
-            with_block_attrs(&extension.attrs, &render_blocks(&extension.children, ctx))
+        BlockNode::BlockExtension(n) => {
+            with_block_attrs(&n.attrs, &render_block(session, &n.fallback, ctx))
         }
+        BlockNode::ExtensionCarrier(extension) => with_block_attrs(
+            &extension.attrs,
+            &render_blocks(session, &extension.children, ctx),
+        ),
     }
 }
 
@@ -2363,7 +2436,7 @@ fn with_block_attrs(attrs: &Option<Attrs>, body: &str) -> String {
     }
 }
 
-fn render_list(node: &List, ctx: &mut CarveContext) -> String {
+fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> String {
     ctx.list_depth += 1;
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
@@ -2374,7 +2447,8 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
     let bullet = node.bullet_char.unwrap_or('-');
     let items = node.items.as_ptr() as usize;
     for (idx, item) in node.items.iter().enumerate() {
-        let escape_window::Visit::Render(recorded) = escape_window::visit(items, idx) else {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(session, items, idx)
+        else {
             if node.ordered {
                 counter += 1;
             }
@@ -2415,11 +2489,14 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
             let restored = item
                 .pos
                 .as_ref()
-                .and_then(|pos| definition_at_line(pos.start_line, ctx));
+                .and_then(|pos| definition_at_line(session, pos.start_line, ctx));
             let restored_marker_definition = restored.is_some();
             (restored.unwrap_or_default(), restored_marker_definition)
         } else {
-            (render_item_blocks(&item.children, node.tight, ctx), false)
+            (
+                render_item_blocks(session, &item.children, node.tight, ctx),
+                false,
+            )
         };
         let trimmed_content = trim_non_nbsp(&content);
         if trimmed_content.is_empty()
@@ -2436,7 +2513,11 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         // item rather than only over the lines the loop strips - a tag the item
         // dropped would otherwise hide an authored occurrence behind a matching
         // insertion count, and answering from the item's own text cannot.
-        note_seen(S_MARKER_COLUMN, content.matches(marker_column()).count());
+        note_seen(
+            session,
+            S_MARKER_COLUMN,
+            content.matches(marker_column(session)).count(),
+        );
         let mut lines = if content.is_empty() {
             vec!["".to_string()]
         } else {
@@ -2453,10 +2534,10 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         // text of the marker line's paragraph.
         let continuation = " ".repeat(continuation_width);
         for line in lines {
-            if line.is_empty() || line.chars().eq([verbatim_blank()]) {
+            if line.is_empty() || line.chars().eq([verbatim_blank(session)]) {
                 out.push_str(&line);
                 out.push('\n');
-            } else if let Some(rest) = line.strip_prefix(marker_column()) {
+            } else if let Some(rest) = line.strip_prefix(marker_column(session)) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
                 out.push_str(&format!("{rest}\n"));
@@ -2470,7 +2551,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         if !node.tight && idx < node.items.len() - 1 && !ends_with_nested_list {
             out.push('\n');
         }
-        escape_window::leave(recorded);
+        escape_window::leave(session, recorded);
     }
     ctx.list_depth -= 1;
     trim_end_non_nbsp(&out).to_string()
@@ -2536,7 +2617,11 @@ fn roman_marker(mut n: usize) -> String {
 /// Every entry writes its own description line, so consecutive `::` lines never
 /// end up sharing one: a `<dl>` writes back as ONE list with the grouping it
 /// parsed from, and no term acquires the next entry's description.
-fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
+fn render_definition_list(
+    session: &RenderSession,
+    items: &[DefinitionItem],
+    ctx: &mut CarveContext,
+) -> String {
     let mut out: Vec<String> = Vec::new();
     // NO SEPARATING BLANK between entries. This used to emit one before the next
     // term whenever the previous body spanned more than its own `: ` line, to
@@ -2551,14 +2636,15 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
     // other engines.
     let list = items.as_ptr() as usize;
     for (index, item) in items.iter().enumerate() {
-        let escape_window::Visit::Render(recorded) = escape_window::visit(list, index) else {
+        let escape_window::Visit::Render(recorded) = escape_window::visit(session, list, index)
+        else {
             continue;
         };
         for term in &item.terms {
             // A comment opening a line must stay past the term's column, or it
             // would end the term (carve#2411).
             let outer_term = std::mem::replace(&mut ctx.in_term, true);
-            let rendered = render_inlines(term, ctx).replace("\n%%", "\n %%");
+            let rendered = render_inlines(session, term, ctx).replace("\n%%", "\n %%");
             ctx.in_term = outer_term;
             out.push(format!(":: {rendered}"));
         }
@@ -2569,7 +2655,7 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             // `:`, which re-parses into the term above it.
             if def.children.is_empty() {
                 let line = def.pos.as_ref().map(|pos| pos.start_line);
-                let written = line.and_then(|line| definition_at_line(line, ctx));
+                let written = line.and_then(|line| definition_at_line(session, line, ctx));
                 if let Some(written) = written {
                     let mut written_lines = written.split('\n');
                     out.push(format!(": {}", written_lines.next().unwrap_or_default()));
@@ -2581,7 +2667,7 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                     continue;
                 }
             }
-            let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
+            let body = trim_non_nbsp(&render_blocks(session, def, ctx)).to_string();
             if body.is_empty() {
                 out.push(": {empty}".to_string());
                 continue;
@@ -2592,7 +2678,7 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
                 out.push(format!("  {line}"));
             }
         }
-        escape_window::leave(recorded);
+        escape_window::leave(session, recorded);
     }
     out.join("\n")
 }
@@ -2612,7 +2698,7 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// AFTER a span would have to be written `|=< K`, read as an aligned header; and
 /// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
 /// first row is not a header cell and the row would fall out of the head.
-fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
+fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
     let mut rows = Vec::new();
     let header_row = node
         .rows
@@ -2641,7 +2727,7 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
-            cells.push(render_table_cell(cell, ctx, mark_header));
+            cells.push(render_table_cell(session, cell, ctx, mark_header));
         }
         ctx.cell_not_last = false;
         // A row whose every cell is blank is not a table row
@@ -2662,7 +2748,7 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     if let Some(row) = node
         .caption
         .as_ref()
-        .and_then(|caption| caption_row(caption, ctx))
+        .and_then(|caption| caption_row(session, caption, ctx))
     {
         rows.push(row);
     }
@@ -2694,7 +2780,12 @@ fn render_table_row(cells: &[String], attrs: &str) -> String {
     format!("|{}|{}", cells.join("|"), attrs)
 }
 
-fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> String {
+fn render_table_cell(
+    session: &RenderSession,
+    cell: &TableCell,
+    ctx: &mut CarveContext,
+    mark_header: bool,
+) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
         crate::render_carve_error::record_unspellable(
             "table_cell",
@@ -2750,12 +2841,13 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     ctx.table_cell_depth += 1;
     let mut content = match &cell.blocks {
         Some(blocks) => render_inlines(
+            session,
             &crate::render_plain::flatten_cell_block_inlines(blocks),
             ctx,
         ),
         None => match merge_break_layout(&cell.children) {
-            Some(merged) => render_inlines(&merged, ctx),
-            None => render_inlines(&cell.children, ctx),
+            Some(merged) => render_inlines(session, &merged, ctx),
+            None => render_inlines(session, &cell.children, ctx),
         },
     };
     ctx.table_cell_depth -= 1;
@@ -2832,17 +2924,21 @@ fn formatted_children(node: &mut InlineNode) -> Option<&mut Vec<InlineNode>> {
 }
 
 /// THE TARGET KEEPS ITS OWN ATTRIBUTES (ruling markup-carve/carve#1721).
-fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
+fn render_figure(session: &RenderSession, node: &Figure, ctx: &mut CarveContext) -> String {
     let target = match &*node.target {
         FigureTarget::Image(image) => render_image(image),
-        FigureTarget::Table(table) => render_block(&BlockNode::Table(table.clone()), ctx),
-        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx),
-        FigureTarget::CodeBlock(code) => render_block(&BlockNode::CodeBlock(code.clone()), ctx),
+        FigureTarget::Table(table) => render_block(session, &BlockNode::Table(table.clone()), ctx),
+        FigureTarget::BlockQuote(quote) => {
+            render_block(session, &BlockNode::BlockQuote(quote.clone()), ctx)
+        }
+        FigureTarget::CodeBlock(code) => {
+            render_block(session, &BlockNode::CodeBlock(code.clone()), ctx)
+        }
         FigureTarget::Paragraph(paragraph) => {
-            render_block(&BlockNode::Paragraph(paragraph.clone()), ctx)
+            render_block(session, &BlockNode::Paragraph(paragraph.clone()), ctx)
         }
     };
-    match caption_row(&node.caption, ctx) {
+    match caption_row(session, &node.caption, ctx) {
         Some(row) => format!("{target}\n{row}"),
         // A caption that writes nothing leaves the target on its own. What is
         // lost is the figure ROLE; what writing the bare `^` cost was worse -
@@ -2851,17 +2947,22 @@ fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
     }
 }
 
-fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
+fn render_footnote_def_source(
+    session: &RenderSession,
+    label: &str,
+    blocks: &[BlockNode],
+    ctx: &mut CarveContext,
+) -> String {
     // A bare `[^label]:` is paragraph text, not a definition. PART 11 §7b
     // gives an empty definition an explicit spelling so formatting preserves
     // the definition and references to it keep resolving.
     if blocks.is_empty() {
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
-    let raw_body = render_blocks(blocks, ctx);
+    let raw_body = render_blocks(session, blocks, ctx);
     if raw_body.lines().any(|line| {
         line.trim_start_matches([' ', '\t'])
-            .strip_prefix(sentinel(S_CODE_LINE))
+            .strip_prefix(sentinel(session, S_CODE_LINE))
             .is_some_and(|rest| rest.starts_with('>'))
     }) {
         crate::render_carve_error::record_unspellable(
@@ -2986,11 +3087,12 @@ fn isolate_directives(nodes: &[InlineNode]) -> Option<PreparedInlines> {
     })
 }
 
-fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
-    render_inlines_with_caption(nodes, ctx, false)
+fn render_inlines(session: &RenderSession, nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
+    render_inlines_with_caption(session, nodes, ctx, false)
 }
 
 fn render_inlines_with_caption(
+    session: &RenderSession,
     nodes: &[InlineNode],
     ctx: &mut CarveContext,
     caption_can_open: bool,
@@ -3051,10 +3153,14 @@ fn render_inlines_with_caption(
         std::mem::replace(&mut ctx.brackets, scope)
     });
     let out = match prepared {
-        Some(prepared) => {
-            render_nodes_with_verbatim(&prepared.nodes, ctx, caption_can_open, &prepared.verbatim)
-        }
-        None => render_nodes(nodes, ctx, caption_can_open),
+        Some(prepared) => render_nodes_with_verbatim(
+            session,
+            &prepared.nodes,
+            ctx,
+            caption_can_open,
+            &prepared.verbatim,
+        ),
+        None => render_nodes(session, nodes, ctx, caption_can_open),
     };
     if let Some(outer) = outer {
         ctx.brackets = outer;
@@ -3175,11 +3281,17 @@ pub(crate) fn empty_code_run_children_mut(
     }
 }
 
-fn render_nodes(nodes: &[InlineNode], ctx: &mut CarveContext, caption_can_open: bool) -> String {
-    render_nodes_with_verbatim(nodes, ctx, caption_can_open, &BTreeSet::new())
+fn render_nodes(
+    session: &RenderSession,
+    nodes: &[InlineNode],
+    ctx: &mut CarveContext,
+    caption_can_open: bool,
+) -> String {
+    render_nodes_with_verbatim(session, nodes, ctx, caption_can_open, &BTreeSet::new())
 }
 
 fn render_nodes_with_verbatim(
+    session: &RenderSession,
     nodes: &[InlineNode],
     ctx: &mut CarveContext,
     mut caption_can_open: bool,
@@ -3206,7 +3318,7 @@ fn render_nodes_with_verbatim(
         let opens_a_note = next_node_opens_a_note(
             nodes.get(idx + 1),
             ctx.note_content_depth > 0,
-            ctx.next_unit_escape_mode(),
+            ctx.next_unit_escape_mode(session),
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
         let braced_before = ctx.braced_spans.len();
@@ -3225,8 +3337,8 @@ fn render_nodes_with_verbatim(
         let is_text = matches!(node, InlineNode::Text(_)) && !verbatim.contains(&idx);
         ctx.paired_closer_carry.set(carried && is_text);
         let rendered = if layout_space {
-            note_inserted(S_STAGED_SPACE);
-            staged_space().to_string()
+            note_inserted(session, S_STAGED_SPACE);
+            staged_space(session).to_string()
         } else if verbatim.contains(&idx) {
             // The directive's own source, as the author wrote it: no escaping,
             // and no smart typography either, so a quoted path keeps its
@@ -3238,6 +3350,7 @@ fn render_nodes_with_verbatim(
             }
         } else {
             render_inline(
+                session,
                 node,
                 ctx,
                 prev,
@@ -3325,7 +3438,8 @@ fn render_nodes_with_verbatim(
             let inside_a_comment = idx
                 .checked_sub(1)
                 .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
-            if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(&out)) {
+            if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(session, &out))
+            {
                 out.push('\\');
             }
             if ends_the_stanza {
@@ -3394,6 +3508,7 @@ fn inline_hosts_caption(node: &InlineNode) -> bool {
 /// [`render_block`]).
 #[allow(clippy::too_many_arguments)]
 fn render_inline(
+    session: &RenderSession,
     node: &InlineNode,
     ctx: &mut CarveContext,
     prev_char: char,
@@ -3405,8 +3520,9 @@ fn render_inline(
     may_run_to_end: bool,
 ) -> String {
     let previous = ctx.escape_unit;
-    ctx.escape_unit = next_escape_unit();
+    ctx.escape_unit = next_escape_unit(session);
     let out = render_inline_body(
+        session,
         node,
         ctx,
         prev_char,
@@ -3423,6 +3539,7 @@ fn render_inline(
 
 #[allow(clippy::too_many_arguments)]
 fn render_inline_body(
+    session: &RenderSession,
     node: &InlineNode,
     ctx: &mut CarveContext,
     prev_char: char,
@@ -3445,7 +3562,10 @@ fn render_inline_body(
         // A comment fence folded into a term: every line one column past the
         // term's, so the fence stays in the term (carve#2411).
         InlineNode::Comment(c) if c.block => {
-            format!(" {}", render_block_comment(&c.content).replace('\n', "\n "))
+            format!(
+                " {}",
+                render_block_comment(session, &c.content).replace('\n', "\n ")
+            )
         }
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line
@@ -3467,10 +3587,11 @@ fn render_inline_body(
         InlineNode::Comment(c) if c.content.starts_with('%') => format!("%%{}", c.content),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
-            &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
+            session,
+            &resolve_nbsp_placeholder(session, &text.value, ctx.line_block_depth > 0),
             &|ordinal| ctx.bracket_role(text as *const Text as usize, ordinal),
             &ctx.paired_closer_carry,
-            ctx.escape_mode_here(),
+            ctx.escape_mode_here(session),
             ctx.escape_unit,
             // Does this node's first character sit at the start of a block
             // line? Only there can a `^` be read back as a caption marker.
@@ -3492,9 +3613,9 @@ fn render_inline_body(
             let kinds = emphasis_delimiters(emphasis.kind);
             ctx.open_kinds.extend_from_slice(kinds);
             let content = if writes_own_brackets(emphasis) {
-                render_bracketed_content(&emphasis.children, ctx)
+                render_bracketed_content(session, &emphasis.children, ctx)
             } else {
-                render_inlines(&emphasis.children, ctx)
+                render_inlines(session, &emphasis.children, ctx)
             };
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
             // An empty brace pair is not a construct, and `{--}` is the braced
@@ -3582,6 +3703,7 @@ fn render_inline_body(
                 format!(
                     "{}{}",
                     guard_code_lines(
+                        session,
                         &render_code_with_unclosed(
                             &value,
                             may_run_to_end
@@ -3595,13 +3717,16 @@ fn render_inline_body(
                 )
             }
         }
-        InlineNode::Link(link) => render_link(link, ctx),
+        InlineNode::Link(link) => render_link(session, link, ctx),
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => {
             let attrs = render_attrs(&span.attrs);
             format!(
                 "[{}]{}",
-                escape_note_reference_label(&render_bracketed_content(&span.children, ctx), ctx),
+                escape_note_reference_label(
+                    &render_bracketed_content(session, &span.children, ctx),
+                    ctx
+                ),
                 if attrs.is_empty() { "{}" } else { &attrs }
             )
         }
@@ -3609,6 +3734,7 @@ fn render_inline_body(
             let flattened = r.flattened();
             if r.attrs.is_some() {
                 render_inlines(
+                    session,
                     &[InlineNode::Span(Span {
                         attrs: r.attrs.clone(),
                         children: flattened,
@@ -3618,7 +3744,7 @@ fn render_inline_body(
                     ctx,
                 )
             } else {
-                render_inlines(&flattened, ctx)
+                render_inlines(session, &flattened, ctx)
             }
         }
         // CARVE-P12-051: the writer preserves the formula and loses `label` and
@@ -3695,7 +3821,7 @@ fn render_inline_body(
         InlineNode::Extension(extension) => format!(
             ":{}[{}]{}",
             escape_identifier(&extension.name),
-            render_inlines(&extension.children, ctx),
+            render_inlines(session, &extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
         // The neighbour characters are the REAL ones, not `\0`: this arm writes
@@ -3705,10 +3831,11 @@ fn render_inline_body(
         // ingested abbreviation ending in `^` before a bracket run came back
         // bare - bytes that re-parse as an inline note.
         InlineNode::Abbreviation(abbr) => escape_text(
+            session,
             &abbr.abbr,
             &|ordinal| ctx.bracket_role(abbr as *const Abbreviation as usize, ordinal),
             &std::cell::Cell::new(false),
-            ctx.escape_mode_here(),
+            ctx.escape_mode_here(session),
             ctx.escape_unit,
             false,
             false,
@@ -3728,7 +3855,7 @@ fn render_inline_body(
                 // DISABLED, so a `^[` or a `[^` written inside it is ordinary
                 // text on the way back in and the writer owes it no escape.
                 ctx.note_content_depth += 1;
-                let content = render_bracketed_content(inline, ctx);
+                let content = render_bracketed_content(session, inline, ctx);
                 ctx.note_content_depth -= 1;
                 format!("^[{content}]")
             } else {
@@ -3740,8 +3867,8 @@ fn render_inline_body(
             format!("{body}{}", render_attrs(&footnote.attrs))
         }
         InlineNode::NonBreakingSpace(n) => {
-            note_inserted(S_ESCAPED_SPACE);
-            let body = escaped_space();
+            note_inserted(session, S_ESCAPED_SPACE);
+            let body = escaped_space(session);
             let attrs = render_attrs(&n.attrs);
             if attrs.is_empty() {
                 body
@@ -3769,7 +3896,7 @@ fn render_inline_body(
         }
         InlineNode::CriticInsert(insert) => {
             ctx.open_kinds.push('+');
-            let content = render_inlines(&insert.children, ctx);
+            let content = render_inlines(session, &insert.children, ctx);
             ctx.open_kinds.pop();
             if content.is_empty() {
                 crate::render_carve_error::record_unspellable(
@@ -3782,7 +3909,7 @@ fn render_inline_body(
         }
         InlineNode::CriticDelete(delete) => {
             ctx.open_kinds.push('-');
-            let content = render_inlines(&delete.children, ctx);
+            let content = render_inlines(session, &delete.children, ctx);
             ctx.open_kinds.pop();
             if content.is_empty() {
                 crate::render_carve_error::record_unspellable(
@@ -3798,8 +3925,8 @@ fn render_inline_body(
             // closer of its own, PART 11 §2b's escalation escapes it: the
             // minimal form re-parses as a different tree and the narrowed unit
             // is written conservatively.
-            let old = render_inlines(&sub.old, ctx);
-            let new = render_inlines(&sub.new, ctx);
+            let old = render_inlines(session, &sub.old, ctx);
+            let new = render_inlines(session, &sub.new, ctx);
             format!("{{~{old}~>{new}~}}")
         }
         InlineNode::CriticComment(comment) => {
@@ -3902,13 +4029,17 @@ fn writes_own_brackets(emphasis: &Emphasis) -> bool {
 
 /// Content written between a construct's own `[` and `]`, with its lone
 /// brackets escaped in every form (PART 11 §5).
-fn render_bracketed_content(children: &[InlineNode], ctx: &mut CarveContext) -> String {
+fn render_bracketed_content(
+    session: &RenderSession,
+    children: &[InlineNode],
+    ctx: &mut CarveContext,
+) -> String {
     let unclaimed = BracketScope {
         bracketed: true,
         ..BracketScope::default()
     };
     let outer = std::mem::replace(&mut ctx.brackets, unclaimed);
-    let out = render_inlines(children, ctx);
+    let out = render_inlines(session, children, ctx);
     ctx.brackets = outer;
     out
 }
@@ -4002,7 +4133,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     scope
 }
 
-fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
+fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> String {
     if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
     }
@@ -4011,7 +4142,8 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
             return format!("</#{}>", escape_crossref_target(target));
         }
     }
-    let text = escape_note_reference_label(&render_bracketed_content(&node.children, ctx), ctx);
+    let text =
+        escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
     let title = node
         .title
         .as_ref()
@@ -4093,13 +4225,16 @@ fn render_raw_frontmatter(raw: &crate::ast::Frontmatter) -> String {
     format!("---{}\n{}\n---", raw.format, raw.content)
 }
 
-fn render_frontmatter(frontmatter: &std::collections::BTreeMap<String, String>) -> String {
+fn render_frontmatter(
+    session: &RenderSession,
+    frontmatter: &std::collections::BTreeMap<String, String>,
+) -> String {
     let mut out = String::from("---");
     for (key, value) in frontmatter {
         out.push('\n');
         out.push_str(key);
         out.push_str(": ");
-        out.push_str(&protect_verbatim(value));
+        out.push_str(&protect_verbatim(session, value));
     }
     out.push_str("\n---");
     out
@@ -4116,7 +4251,7 @@ fn pad_delimited(content: &str) -> String {
     }
 }
 
-fn render_block_comment(content: &str) -> String {
+fn render_block_comment(session: &RenderSession, content: &str) -> String {
     let mut longest = 0usize;
     let mut current = 0usize;
     for ch in content.chars() {
@@ -4128,7 +4263,7 @@ fn render_block_comment(content: &str) -> String {
         }
     }
     let fence = "%".repeat(3.max(longest + 1));
-    format!("{fence}\n{}\n{fence}", protect_verbatim(content))
+    format!("{fence}\n{}\n{fence}", protect_verbatim(session, content))
 }
 
 // Superscript and subscript have no bare delimiter form -- always emit the
@@ -4287,7 +4422,7 @@ fn code_span_fence(content: &str) -> String {
     safe_fence(content, 1)
 }
 
-fn guard_code_lines(written: &str, ctx: &CarveContext) -> String {
+fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) -> String {
     if ctx.line_block_depth > 0 {
         return written.to_owned();
     }
@@ -4306,8 +4441,8 @@ fn guard_code_lines(written: &str, ctx: &CarveContext) -> String {
                     );
                     return line.to_owned();
                 }
-                note_inserted(S_CODE_LINE);
-                format!("{}{line}", sentinel(S_CODE_LINE))
+                note_inserted(session, S_CODE_LINE);
+                format!("{}{line}", sentinel(session, S_CODE_LINE))
             } else {
                 line.to_owned()
             }
@@ -4602,104 +4737,6 @@ const S_ESCAPED_SPACE: usize = 3;
 const S_STAGED_SPACE: usize = 4;
 const S_STAGED_TAB: usize = 5;
 
-thread_local! {
-    static SENTINELS: std::cell::Cell<[char; SENTINEL_COUNT]> =
-        const { std::cell::Cell::new(SENTINEL_DEFAULTS) };
-    /// How many of each the writer inserted during the current render.
-    static INSERTED: std::cell::Cell<[usize; SENTINEL_COUNT]> =
-        const { std::cell::Cell::new([0; SENTINEL_COUNT]) };
-    /// How many of each were actually PRESENT just before the pass that
-    /// CONSUMES them ran - restore for five of them, the list writer's own line
-    /// loop for the marker column. Counted there and not at the end, because by
-    /// the time the render returns an authored one has already been eaten and is
-    /// indistinguishable from never having been there.
-    static SEEN: std::cell::Cell<[usize; SENTINEL_COUNT]> =
-        const { std::cell::Cell::new([0; SENTINEL_COUNT]) };
-    /// The pre-restore text, kept so a replacement can be chosen against what
-    /// the document actually holds.
-    static STAGED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
-    /// How many escape units the CURRENT pass has handed out (PART 11 §2b).
-    static UNIT_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// The units written in the conservative form, when the writer is deciding
-    /// unit by unit rather than document by document.
-    ///
-    /// `None` means the whole pass follows `ctx.escape_mode`, which is what the
-    /// two exploratory renders in `render_carve_once` do. `Some` is §2b's pass:
-    /// a unit in the set is escaped in full, every other unit is emitted by §2's
-    /// own test, and for a character nothing needs that means bare.
-    static ESCALATED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
-        const { std::cell::RefCell::new(None) };
-    /// Where the writer records the unit a character it is escaping belongs to.
-    ///
-    /// `Some` only for `narrow_escalation`'s control render, which uses it to
-    /// learn which units the escape arms actually ask about -- see the comment
-    /// there. `None` everywhere else, so no other render pays for the
-    /// bookkeeping.
-    static ASKED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
-        const { std::cell::RefCell::new(None) };
-    /// The occurrences handed back their bare form by the search (PART 11 §2).
-    ///
-    /// `None` means every candidate in an escalated unit is escaped, which is
-    /// §2b's per-unit knob and the control the occurrence search is verified
-    /// against.
-    static RELAXED_OCCURRENCES: std::cell::RefCell<Option<HashSet<Occurrence>>> =
-        const { std::cell::RefCell::new(None) };
-    /// Where a pass records the occurrences it visited, in emission order.
-    static OCCURRENCE_LOG: std::cell::RefCell<Option<Vec<Occurrence>>> =
-        const { std::cell::RefCell::new(None) };
-    /// How many escaped runs each unit has written in this pass.
-    static ESCAPE_CALL_INDEXES: std::cell::RefCell<HashMap<usize, usize>> =
-        std::cell::RefCell::new(HashMap::new());
-    /// The decision the last candidate site took, so a RUN can inherit it.
-    static LAST_OCCURRENCE_RELAXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// Whether each paired `[` was last written escaped, for its closer. The
-    /// two sit in different units whenever a nested construct separates them,
-    /// and as separate knobs neither could be relaxed alone.
-    static ESCAPED_OPENERS: std::cell::RefCell<HashMap<(usize, usize), bool>> =
-        std::cell::RefCell::new(HashMap::new());
-}
-
-/// Owns the ambient state of one render, restoring an enclosing render on exit.
-struct RenderSession {
-    _redundant_ids: RefCellScope<BTreeSet<String>>,
-    _marker: CellScope<bool>,
-    _sentinels: CellScope<[char; SENTINEL_COUNT]>,
-    _inserted: CellScope<[usize; SENTINEL_COUNT]>,
-    _seen: CellScope<[usize; SENTINEL_COUNT]>,
-    _staged: RefCellScope<String>,
-    _units: CellScope<usize>,
-    _escalated: RefCellScope<Option<HashSet<usize>>>,
-    _asked: RefCellScope<Option<HashSet<usize>>>,
-    _relaxed: RefCellScope<Option<HashSet<Occurrence>>>,
-    _log: RefCellScope<Option<Vec<Occurrence>>>,
-    _indexes: RefCellScope<HashMap<usize, usize>>,
-    _last: CellScope<bool>,
-    _openers: RefCellScope<HashMap<(usize, usize), bool>>,
-    _window: escape_window::Session,
-}
-
-impl RenderSession {
-    fn new() -> Self {
-        Self {
-            _redundant_ids: RefCellScope::replace(&REDUNDANT_IDS, BTreeSet::new()),
-            _marker: CellScope::replace(&HYPHEN_BREAKS_ARE_UNSAFE, false),
-            _sentinels: CellScope::replace(&SENTINELS, SENTINEL_DEFAULTS),
-            _inserted: CellScope::replace(&INSERTED, [0; SENTINEL_COUNT]),
-            _seen: CellScope::replace(&SEEN, [0; SENTINEL_COUNT]),
-            _staged: RefCellScope::replace(&STAGED, String::new()),
-            _units: CellScope::replace(&UNIT_COUNTER, 0),
-            _escalated: RefCellScope::replace(&ESCALATED_UNITS, None),
-            _asked: RefCellScope::replace(&ASKED_UNITS, None),
-            _relaxed: RefCellScope::replace(&RELAXED_OCCURRENCES, None),
-            _log: RefCellScope::replace(&OCCURRENCE_LOG, None),
-            _indexes: RefCellScope::replace(&ESCAPE_CALL_INDEXES, HashMap::new()),
-            _last: CellScope::replace(&LAST_OCCURRENCE_RELAXED, false),
-            _openers: RefCellScope::replace(&ESCAPED_OPENERS, HashMap::new()),
-            _window: escape_window::Session::new(),
-        }
-    }
-}
-
 /// One candidate site the escape search can offer back.
 ///
 /// THE UNIT, THE RUN AND THE OFFSET, all three. The offset alone is not a key:
@@ -4712,8 +4749,8 @@ impl RenderSession {
 type Occurrence = (usize, usize, usize);
 
 /// The index of the run about to be escaped, within `unit`.
-fn next_escape_call_index(unit: usize) -> usize {
-    ESCAPE_CALL_INDEXES.with(|cell| {
+fn next_escape_call_index(session: &RenderSession, unit: usize) -> usize {
+    session.pass.escape_call_indexes.with(|cell| {
         let mut map = cell.borrow_mut();
         let index = map.entry(unit).or_insert(0);
         let current = *index;
@@ -4736,29 +4773,32 @@ fn next_escape_call_index(unit: usize) -> usize {
 /// half-escaped run §2 calls "a shape that happens to work rather than one that
 /// says what it means". So a candidate repeating the character before it
 /// inherits that character's decision instead of taking one.
-fn occurrence_is_relaxed(key: Occurrence, continues_run: bool) -> bool {
+fn occurrence_is_relaxed(session: &RenderSession, key: Occurrence, continues_run: bool) -> bool {
     if continues_run {
-        return LAST_OCCURRENCE_RELAXED.with(std::cell::Cell::get);
+        return session.last_occurrence_relaxed.with(std::cell::Cell::get);
     }
-    OCCURRENCE_LOG.with(|cell| {
+    session.occurrence_log.with(|cell| {
         if let Some(log) = cell.borrow_mut().as_mut() {
             log.push(key);
         }
     });
-    let relaxed = RELAXED_OCCURRENCES
+    let relaxed = session
+        .relaxed_occurrences
         .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(&key)));
-    LAST_OCCURRENCE_RELAXED.with(|cell| cell.set(relaxed));
+    session
+        .last_occurrence_relaxed
+        .with(|cell| cell.set(relaxed));
     relaxed
 }
 
 /// Claim the next unit ordinal for the node about to render.
-fn next_escape_unit() -> usize {
-    let next = UNIT_COUNTER.with(|c| {
+fn next_escape_unit(session: &RenderSession) -> usize {
+    let next = session.pass.unit_counter.with(|c| {
         let next = c.get() + 1;
         c.set(next);
         next
     });
-    escape_window::claimed(next);
+    escape_window::claimed(session, next);
     next
 }
 
@@ -4782,41 +4822,43 @@ impl CarveContext {
     }
 
     /// Which form a character written by `unit` takes (PART 11 §2b).
-    fn escape_mode_for(&self, unit: usize) -> EscapeMode {
-        ASKED_UNITS.with(|cell| {
+    fn escape_mode_for(&self, session: &RenderSession, unit: usize) -> EscapeMode {
+        session.asked_units.with(|cell| {
             if let Some(asked) = cell.borrow_mut().as_mut() {
                 asked.insert(unit);
             }
         });
-        ESCALATED_UNITS.with(|cell| match cell.borrow().as_ref() {
-            None => self.escape_mode,
-            Some(escalated) => {
-                if escalated.contains(&unit) {
-                    EscapeMode::Conservative
-                } else {
-                    EscapeMode::Minimal
+        session
+            .escalated_units
+            .with(|cell| match cell.borrow().as_ref() {
+                None => self.escape_mode,
+                Some(escalated) => {
+                    if escalated.contains(&unit) {
+                        EscapeMode::Conservative
+                    } else {
+                        EscapeMode::Minimal
+                    }
                 }
-            }
-        })
+            })
     }
 
     /// Which form the character being written now takes.
-    fn escape_mode_here(&self) -> EscapeMode {
-        self.escape_mode_for(self.escape_unit)
+    fn escape_mode_here(&self, session: &RenderSession) -> EscapeMode {
+        self.escape_mode_for(session, self.escape_unit)
     }
 
     /// The mode of the node that is about to claim the next ordinal.
-    fn next_unit_escape_mode(&self) -> EscapeMode {
-        self.escape_mode_for(UNIT_COUNTER.with(|c| c.get()) + 1)
+    fn next_unit_escape_mode(&self, session: &RenderSession) -> EscapeMode {
+        self.escape_mode_for(session, session.pass.unit_counter.with(|c| c.get()) + 1)
     }
 }
 
-fn sentinel(which: usize) -> char {
-    SENTINELS.with(|s| s.get()[which])
+fn sentinel(session: &RenderSession, which: usize) -> char {
+    session.sentinels.with(|s| s.get()[which])
 }
 
-fn note_inserted(which: usize) {
-    INSERTED.with(|c| {
+fn note_inserted(session: &RenderSession, which: usize) {
+    session.inserted.with(|c| {
         let mut n = c.get();
         n[which] += 1;
         c.set(n);
@@ -4825,35 +4867,35 @@ fn note_inserted(which: usize) {
 
 /// Record sentinels standing in the assembled document, at the site that is
 /// about to consume them.
-fn note_seen(which: usize, count: usize) {
+fn note_seen(session: &RenderSession, which: usize, count: usize) {
     if count == 0 {
         return;
     }
-    SEEN.with(|c| {
+    session.seen.with(|c| {
         let mut n = c.get();
         n[which] += count;
         c.set(n);
     });
 }
 
-fn verbatim_blank() -> char {
-    sentinel(S_BLANK)
+fn verbatim_blank(session: &RenderSession) -> char {
+    sentinel(session, S_BLANK)
 }
 
-fn thematic_guard() -> char {
-    sentinel(S_GUARD)
+fn thematic_guard(session: &RenderSession) -> char {
+    sentinel(session, S_GUARD)
 }
 
-fn escaped_space() -> String {
-    sentinel(S_ESCAPED_SPACE).to_string()
+fn escaped_space(session: &RenderSession) -> String {
+    sentinel(session, S_ESCAPED_SPACE).to_string()
 }
 
-fn staged_space() -> char {
-    sentinel(S_STAGED_SPACE)
+fn staged_space(session: &RenderSession) -> char {
+    sentinel(session, S_STAGED_SPACE)
 }
 
-fn staged_tab() -> char {
-    sentinel(S_STAGED_TAB)
+fn staged_tab(session: &RenderSession) -> char {
+    sentinel(session, S_STAGED_TAB)
 }
 
 fn free_sentinel(text: &str, taken: &[char; SENTINEL_COUNT]) -> char {
@@ -4862,16 +4904,16 @@ fn free_sentinel(text: &str, taken: &[char; SENTINEL_COUNT]) -> char {
         .unwrap_or('\u{f8ff}')
 }
 
-fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
+fn resolve_nbsp_placeholder(session: &RenderSession, text: &str, in_line_block: bool) -> String {
     if !in_line_block {
-        let marker = escaped_space();
+        let marker = escaped_space(session);
         for _ in text.matches(crate::NBSP_PLACEHOLDER) {
-            note_inserted(S_ESCAPED_SPACE);
+            note_inserted(session, S_ESCAPED_SPACE);
         }
         return text.replace(crate::NBSP_PLACEHOLDER, &marker);
     }
     text.split('\n')
-        .map(stage_line_block_layout)
+        .map(|line| stage_line_block_layout(session, line))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -4885,7 +4927,7 @@ fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
 /// escaped spaces are the one form that changes - `a\ \ b` is written back as
 /// `a  b` - because inside a line block those are the same document: both parse
 /// to the same pair of placeholders.
-fn stage_line_block_layout(line: &str) -> String {
+fn stage_line_block_layout(session: &RenderSession, line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut seen_content = false;
     let mut chars = line.chars().peekable();
@@ -4905,28 +4947,28 @@ fn stage_line_block_layout(line: &str) -> String {
 
         if !seen_content || run >= 2 {
             for _ in 0..run {
-                note_inserted(S_STAGED_SPACE);
-                out.push(staged_space());
+                note_inserted(session, S_STAGED_SPACE);
+                out.push(staged_space(session));
             }
         } else {
             // A single placeholder mid-line is an escaped space, not layout.
-            note_inserted(S_ESCAPED_SPACE);
-            out.push_str(&escaped_space());
+            note_inserted(session, S_ESCAPED_SPACE);
+            out.push_str(&escaped_space(session));
         }
     }
 
     out
 }
 
-fn normalize(text: &str) -> String {
+fn normalize(session: &RenderSession, text: &str) -> String {
     // Count the escaped-space marker BEFORE the replace below consumes it.
     // Everything else is counted further down, just before `restore_verbatim`,
     // but this one is resolved first and would already be gone by then - which
     // is exactly how an authored U+E010 went on being eaten after the other
     // four were fixed (carve-rs#630).
-    let marker = escaped_space();
-    STAGED.with(|c| c.borrow_mut().push_str(text));
-    SEEN.with(|c| {
+    let marker = escaped_space(session);
+    session.staged.with(|c| c.borrow_mut().push_str(text));
+    session.seen.with(|c| {
         let mut n = c.get();
         n[S_ESCAPED_SPACE] += text.matches(&marker).count();
         c.set(n);
@@ -4942,7 +4984,7 @@ fn normalize(text: &str) -> String {
     let mut expanded = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
-        if ch == sentinel(S_ESCAPED_SPACE) {
+        if ch == sentinel(session, S_ESCAPED_SPACE) {
             expanded.push('\\');
             if !matches!(chars.peek(), None | Some('\n')) {
                 expanded.push(' ');
@@ -4983,9 +5025,9 @@ fn normalize(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let staged = trim_non_nbsp(&collapse_blank_lines(&lines)).to_string();
-    let current = SENTINELS.with(|s| s.get());
-    STAGED.with(|c| c.borrow_mut().push_str(&staged));
-    SEEN.with(|c| {
+    let current = session.sentinels.with(|s| s.get());
+    session.staged.with(|c| c.borrow_mut().push_str(&staged));
+    session.seen.with(|c| {
         let mut n = c.get();
         for i in 0..SENTINEL_COUNT {
             // Two are counted elsewhere, both because this text is past the
@@ -4998,7 +5040,7 @@ fn normalize(text: &str) -> String {
         }
         c.set(n);
     });
-    format!("{}\n", restore_verbatim(&staged))
+    format!("{}\n", restore_verbatim(session, &staged))
 }
 
 /// Whole-document normalization (trailing-whitespace strip, blank-line
@@ -5007,12 +5049,12 @@ fn normalize(text: &str) -> String {
 /// (carve-js issue 340). Sentinel-encode the vulnerable bytes before the
 /// content joins the document string; `normalize` restores them at the end.
 /// Markers are allocated from characters absent from the document.
-fn protect_verbatim(content: &str) -> String {
+fn protect_verbatim(session: &RenderSession, content: &str) -> String {
     let mut lines = Vec::new();
     for line in content.split('\n') {
         if line.is_empty() {
-            note_inserted(S_BLANK);
-            lines.push(verbatim_blank().to_string());
+            note_inserted(session, S_BLANK);
+            lines.push(verbatim_blank(session).to_string());
             continue;
         }
         let stripped = line.trim_end_matches([' ', '\t']);
@@ -5020,11 +5062,11 @@ fn protect_verbatim(content: &str) -> String {
             .chars()
             .map(|ch| {
                 if ch == ' ' {
-                    note_inserted(S_STAGED_SPACE);
-                    staged_space()
+                    note_inserted(session, S_STAGED_SPACE);
+                    staged_space(session)
                 } else {
-                    note_inserted(S_STAGED_TAB);
-                    staged_tab()
+                    note_inserted(session, S_STAGED_TAB);
+                    staged_tab(session)
                 }
             })
             .collect();
@@ -5053,7 +5095,7 @@ fn protect_verbatim(content: &str) -> String {
 /// which is what the source said. The marker is a sentinel because normalize()
 /// trims the document's leading whitespace, which would silently undo the guard
 /// whenever the paragraph is the first block.
-fn guard_thematic_break_lines(body: &str, in_line_block: bool) -> String {
+fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block: bool) -> String {
     // Line-block bodies parse as inline content; padding would add a no-break space.
     if in_line_block || !body.contains('-') {
         return body.to_string();
@@ -5062,8 +5104,8 @@ fn guard_thematic_break_lines(body: &str, in_line_block: bool) -> String {
         .map(|line| {
             let trimmed = line.trim_end_matches([' ', '\t']);
             if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
-                note_inserted(S_GUARD);
-                format!("{}{line}", thematic_guard())
+                note_inserted(session, S_GUARD);
+                format!("{}{line}", thematic_guard(session))
             } else {
                 line.to_string()
             }
@@ -5073,11 +5115,11 @@ fn guard_thematic_break_lines(body: &str, in_line_block: bool) -> String {
 }
 
 /// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
-fn restore_verbatim(text: &str) -> String {
+fn restore_verbatim(session: &RenderSession, text: &str) -> String {
     let text = text
         .split('\n')
         .map(|line| {
-            if let Some((prefix, rest)) = line.split_once(sentinel(S_CODE_LINE)) {
+            if let Some((prefix, rest)) = line.split_once(sentinel(session, S_CODE_LINE)) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
                     let guarded = if rest.starts_with('[') {
                         format!("{prefix} ")
@@ -5089,7 +5131,7 @@ fn restore_verbatim(text: &str) -> String {
                     return format!("{guarded}{rest}");
                 }
             }
-            line.replace(sentinel(S_CODE_LINE), "")
+            line.replace(sentinel(session, S_CODE_LINE), "")
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -5105,13 +5147,13 @@ fn restore_verbatim(text: &str) -> String {
             //
             // Drop the marker. A marker sitting next to real text is left alone,
             // which is the point.
-            let prefix = line.trim_end_matches(verbatim_blank());
+            let prefix = line.trim_end_matches(verbatim_blank(session));
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
             {
                 return prefix.trim_end_matches([' ', '\t']).to_string();
             }
-            let line = match line.strip_prefix(thematic_guard()) {
+            let line = match line.strip_prefix(thematic_guard(session)) {
                 Some(rest) => format!(" {rest}"),
                 None => line.to_string(),
             };
@@ -5135,7 +5177,7 @@ fn restore_verbatim(text: &str) -> String {
             // RESIDUE, stated rather than implied: an authored run of two or more,
             // or a single one at the start or end of a line, still collides. That
             // needs the insertion counts.
-            restore_staged_runs(&line)
+            restore_staged_runs(session, &line)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -5147,9 +5189,9 @@ fn restore_verbatim(text: &str) -> String {
 /// A leading run is measured past the container prefix the host may have added
 /// before this runs (spaces, tabs, `>`), the same allowance the blank-line marker
 /// makes a few lines above.
-fn restore_staged_runs(line: &str) -> String {
+fn restore_staged_runs(session: &RenderSession, line: &str) -> String {
     let chars: Vec<char> = line.chars().collect();
-    let staged = |c: char| c == staged_space() || c == staged_tab();
+    let staged = |c: char| c == staged_space(session) || c == staged_tab(session);
     let prefix_end = chars
         .iter()
         .position(|&c| !(c == ' ' || c == '\t' || c == '>'))
@@ -5170,7 +5212,11 @@ fn restore_staged_runs(line: &str) -> String {
         let writer_inserted = start == prefix_end || i == chars.len() || run >= 2;
         for &ch in &chars[start..i] {
             if writer_inserted {
-                out.push(if ch == staged_space() { ' ' } else { '\t' });
+                out.push(if ch == staged_space(session) {
+                    ' '
+                } else {
+                    '\t'
+                });
             } else {
                 out.push(ch);
             }
@@ -5491,6 +5537,7 @@ fn next_node_opens_a_note(
 
 #[allow(clippy::too_many_arguments)]
 fn escape_text(
+    session: &RenderSession,
     text: &str,
     bracket_role: &dyn Fn(usize) -> BracketRole,
     paired_closer_carry: &std::cell::Cell<bool>,
@@ -5521,7 +5568,7 @@ fn escape_text(
     // PART 11 §2's decision is taken per OPENER OCCURRENCE, so every candidate
     // site in this run gets an index the search can address it by
     // (markup-carve/carve#1533).
-    let call = next_escape_call_index(unit);
+    let call = next_escape_call_index(session, unit);
     let mut at_line_start = opens_block_line;
     let mut chars = text.char_indices().peekable();
     let mut previous = previous_boundary;
@@ -5620,18 +5667,27 @@ fn escape_text(
         // never offered.
         let escaped = if let (']', Some(opener)) = (ch, role.opener) {
             // A paired closer follows its opener, which may sit in another unit.
-            let escaped =
-                ESCAPED_OPENERS.with(|cell| cell.borrow().get(&opener).copied().unwrap_or(false));
-            LAST_OCCURRENCE_RELAXED.with(|cell| cell.set(!escaped));
+            let escaped = session
+                .escaped_openers
+                .with(|cell| cell.borrow().get(&opener).copied().unwrap_or(false));
+            session
+                .last_occurrence_relaxed
+                .with(|cell| cell.set(!escaped));
             escaped
         } else {
             let offered = mode == EscapeMode::Conservative && candidate && !unconditional;
             let relaxed = offered
-                && occurrence_is_relaxed((unit, call, offset), offset > 0 && previous == ch);
+                && occurrence_is_relaxed(
+                    session,
+                    (unit, call, offset),
+                    offset > 0 && previous == ch,
+                );
             unconditional || (offered && !relaxed && !colon_cannot_open)
         };
         if ch == '[' {
-            ESCAPED_OPENERS.with(|cell| cell.borrow_mut().insert(role.key, escaped));
+            session
+                .escaped_openers
+                .with(|cell| cell.borrow_mut().insert(role.key, escaped));
         }
         if escaped {
             out.push('\\');
@@ -6116,7 +6172,7 @@ fn needs_comment_space(emitted: &str) -> bool {
 /// THE LAST BODY LINE, the remaining consequence, is decided by the caller: it
 /// is a fact about the break's place in the stanza, not about the bytes on its
 /// line.
-fn verse_break_needs_backslash(emitted: &str) -> bool {
+fn verse_break_needs_backslash(session: &RenderSession, emitted: &str) -> bool {
     let line = match emitted.rfind('\n') {
         Some(at) => &emitted[at + 1..],
         None => emitted,
@@ -6124,7 +6180,7 @@ fn verse_break_needs_backslash(emitted: &str) -> bool {
     if line.is_empty() {
         return true;
     }
-    if line.ends_with(sentinel(S_ESCAPED_SPACE)) {
+    if line.ends_with(sentinel(session, S_ESCAPED_SPACE)) {
         return true;
     }
     line.ends_with(' ') && !line.ends_with("  ")
@@ -6171,21 +6227,6 @@ mod tests {
         pub(super) static PARSED_BYTES: Cell<usize> = const { Cell::new(0) };
         pub(super) static WHOLE_DOCUMENT_PROBES: Cell<bool> = const { Cell::new(false) };
         pub(super) static PROBE_PARSES: Cell<usize> = const { Cell::new(0) };
-    }
-
-    #[test]
-    fn nested_render_uses_fresh_state_and_restores_its_caller() {
-        use super::*;
-        let _outer = RenderSession::new();
-        HYPHEN_BREAKS_ARE_UNSAFE.with(|flag| flag.set(true));
-        UNIT_COUNTER.with(|count| count.set(42));
-        STAGED.with(|text| text.borrow_mut().push_str("outer"));
-        let doc = crate::parse("---\n");
-        let rendered = render_carve(&doc).expect("render succeeds");
-        assert_eq!(rendered.trim(), "---");
-        assert!(HYPHEN_BREAKS_ARE_UNSAFE.with(Cell::get));
-        assert_eq!(UNIT_COUNTER.with(Cell::get), 42);
-        STAGED.with(|text| assert_eq!(&*text.borrow(), "outer"));
     }
 
     /// Probes and parses of the escalation search while `html` is imported.
@@ -6245,6 +6286,7 @@ mod tests {
     /// flattened inside emphasis, whose nodes the writer clones.
     #[test]
     fn the_bracket_scan_reaches_through_transparent_nodes() {
+        let session = &super::RenderSession::new();
         for (inline, escaped) in [
             (
                 r#"{"type":"substitution","old":[{"type":"text","value":"["}],"new":[{"type":"text","value":"x"}]}"#,
@@ -6285,7 +6327,7 @@ mod tests {
                 r#"{{"type":"document","children":[{{"type":"paragraph","children":[{{"type":"span","attrs":{{"classes":["c"]}},"children":[{inline}]}}]}}],"srcByteLength":0}}"#
             );
             let doc = crate::from_json(&json).expect("decode AST");
-            let minimal = super::render_with_escapes(&doc, super::EscapeMode::Minimal);
+            let minimal = super::render_with_escapes(session, &doc, super::EscapeMode::Minimal);
             assert!(minimal.contains(escaped), "{inline}: {minimal}");
         }
     }
