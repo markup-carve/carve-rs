@@ -282,6 +282,23 @@ fn a_div_wrapping_a_nested_list_drops_the_separator() {
 }
 
 #[test]
+fn a_quote_in_a_div_under_a_quote_keeps_the_separator() {
+    // The block ABOVE answers too, and it answers about the same unwrapped
+    // opener: glued, the two quotes merge into one and a block is lost.
+    let source = "- x\n+\n> q\n+\n:::\n> r\n:::\n";
+    assert_eq!(carve::to_markdown(source), "- x\n  > q\n\n  > r\n");
+    assert_eq!(count_quotes(&reads_back_children(source)), 2);
+}
+
+#[test]
+fn a_table_in_a_div_under_a_quote_keeps_the_separator() {
+    let source = "- x\n+\n> q\n+\n:::\n| a |\n|---|\n:::\n";
+    let children = reads_back_children(source);
+    assert_eq!(count_quotes(&children), 1);
+    assert_eq!(count_tables(&children), 1);
+}
+
+#[test]
 fn a_labelled_div_keeps_the_separator() {
     // THE CONTROL. The label is written ahead of the children as a paragraph of
     // bold text, and a paragraph interrupts nothing - glued, it would be read
