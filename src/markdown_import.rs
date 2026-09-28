@@ -875,6 +875,13 @@ impl Builder {
                 block_image: false,
                 pos: None,
             })),
+            Frame::Heading(level, children) if children.is_empty() => {
+                self.block(BlockNode::RawBlock(RawBlock {
+                    format: "html".to_string(),
+                    content: format!("<h{level}></h{level}>"),
+                    pos: None,
+                }));
+            }
             Frame::Heading(level, children) => self.block(BlockNode::Heading(Heading {
                 attrs: None,
                 level,
