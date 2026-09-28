@@ -874,6 +874,14 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
             }
             !bare_marker_line(rendered.split('\n').next().unwrap_or_default())
         }
+        // A div is written as its children alone, so the block that meets the
+        // paragraph is its FIRST child and `rendered` still opens with that
+        // child's own bytes. A LABEL is written ahead of them as bold text,
+        // which interrupts nothing, so a labelled div keeps its separator.
+        BlockNode::Div(div) if div.label.as_deref().unwrap_or_default().is_empty() => div
+            .children
+            .first()
+            .is_some_and(|first| interrupts_a_paragraph(first, rendered)),
         _ => false,
     }
 }
