@@ -905,19 +905,38 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             let resolved = ctx
                 .crossref_index
                 .resolve(&crossref.target)
-                .map(|(id, title)| (id.to_string(), title.to_string()));
+                .map(|(id, title)| {
+                    (
+                        id.to_string(),
+                        if crate::abbr_budget::label_rejected(&crossref.target) {
+                            String::new()
+                        } else {
+                            title.to_string()
+                        },
+                    )
+                });
             match resolved {
                 None => format!("</#{}>", strip_terminal_controls(&crossref.target)),
                 Some((id, title)) => {
-                    let label = ctx.crossref_index.label(&id);
+                    let rejected = crate::abbr_budget::label_rejected(&crossref.target);
+                    let label = if rejected {
+                        None
+                    } else {
+                        ctx.crossref_index.label(&id)
+                    };
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
-                        None => strip_terminal_controls(&title),
+                        None => strip_terminal_controls(if rejected {
+                            &crossref.target
+                        } else {
+                            &title
+                        }),
                     };
                     // Same expansion budget the abbreviation arm below spends,
                     // degrading to the authored target (carve-rs#805). See
                     // `crate::abbr_budget`.
-                    let text = if crate::abbr_budget::try_spend(text.len()) {
+                    let text = if crate::abbr_budget::try_spend_label(text.len(), &crossref.target)
+                    {
                         text
                     } else {
                         strip_terminal_controls(&crossref.target)

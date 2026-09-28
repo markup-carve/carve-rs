@@ -134,14 +134,23 @@ fn render_crossref(target: &str, depth: usize) -> String {
     // it. A caption target has no nodes - its label is LABEL + NUMBER - so that
     // one is still a string.
     let resolved = CROSSREF_INDEX.with(|index| {
-        index
-            .borrow()
-            .resolve(target)
-            .map(|(id, title)| (id.to_string(), title.to_string()))
+        index.borrow().resolve(target).map(|(id, title)| {
+            (
+                id.to_string(),
+                if crate::abbr_budget::label_rejected(target) {
+                    String::new()
+                } else {
+                    title.to_string()
+                },
+            )
+        })
     });
     let Some((id, title)) = resolved else {
         return format!("</#{}>", strip_controls(target));
     };
+    if crate::abbr_budget::label_rejected(target) {
+        return strip_controls(target);
+    }
     let text = match CROSSREF_INDEX.with(|index| index.borrow().label(&id)) {
         Some(nodes) => render_inlines_stateful(&nodes, depth + 1),
         None => strip_controls(&title),
@@ -149,7 +158,7 @@ fn render_crossref(target: &str, depth: usize) -> String {
     // Same expansion budget the abbreviation construct spends in the other
     // targets, degrading to the authored target (carve-rs#805). See
     // `crate::abbr_budget`.
-    if crate::abbr_budget::try_spend(text.len()) {
+    if crate::abbr_budget::try_spend_label(text.len(), target) {
         text
     } else {
         strip_controls(target)

@@ -33,7 +33,14 @@ use crate::ast::{BlockNode, FigureTarget};
 pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
-    let converted = rewrite_djot_body(&convert_definition_lists(body));
+    let (held, prefix, spans) = protect_attributed_strong(body);
+    let converted = rewrite_djot_body(&convert_definition_lists(&held));
+    let restore = regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
+    let converted = restore
+        .replace_all(&converted, |caps: &regex::Captures<'_>| {
+            spans[caps[1].parse::<usize>().unwrap()].clone()
+        })
+        .into_owned();
 
     if frontmatter.is_empty() {
         converted
@@ -42,6 +49,63 @@ pub fn djot_to_carve(djot: &str) -> String {
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
     }
+}
+
+fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| regex::Regex::new(r#"\*([^*\n{}]+)(\{(?:\s*(?:[.#][^\s{}"=]+|[\w:-]+=(?:"(?:\\.|[^"\\])*"|[^\s{}"]+)))+\s*\})([^*\n{}]*)\*"#).unwrap());
+    let masked = mask_code_and_destinations(source);
+    let mut prefix = "\0DJOTSTRONG".to_string();
+    while source.contains(&prefix) {
+        prefix.push('\0');
+    }
+    let mut attribute_token = "\0DJOTATTR\0".to_string();
+    while source.contains(&attribute_token) {
+        attribute_token.push('\0');
+    }
+    let mut spans = Vec::new();
+    let held = pattern
+        .replace_all(source, |caps: &regex::Captures<'_>| {
+            let whole = caps.get(0).unwrap();
+            let start = whole.start();
+            let end = whole.end();
+            if masked.as_bytes().get(start) != Some(&b'*')
+                || masked.as_bytes().get(end - 1) != Some(&b'*')
+                || caps[3].ends_with('\\')
+                || (start > 0 && matches!(source.as_bytes()[start - 1], b'\\' | b'*'))
+                || source.as_bytes().get(end) == Some(&b'*')
+                || source[start + 1..]
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_whitespace)
+                || source[..end - 1]
+                    .chars()
+                    .next_back()
+                    .is_some_and(char::is_whitespace)
+            {
+                return whole.as_str().to_string();
+            }
+            let before = &caps[1];
+            let word_start = before
+                .rfind(|c: char| c.is_whitespace() || "*{}[]`_~^".contains(c))
+                .map_or(0, |i| i + before[i..].chars().next().unwrap().len_utf8());
+            if word_start == before.len() {
+                return whole.as_str().to_string();
+            }
+            let body = rewrite_djot_body(&format!(
+                "{}[{}]{}{}",
+                &before[..word_start],
+                &before[word_start..],
+                attribute_token,
+                &caps[3]
+            ));
+            let span = format!("{{*{}*}}", body.replace(&attribute_token, &caps[2]));
+            let key = format!("{prefix}{}\0", spans.len());
+            spans.push(span);
+            key
+        })
+        .into_owned();
+    (held, prefix, spans)
 }
 
 /// Site generators conventionally remove a leading YAML envelope before Djot
@@ -2125,5 +2189,28 @@ mod escape_corpus {
             escape_plain_carve_syntax("a \\:rocket: b", HandledDelimiters::DJOT),
             "a \\:rocket: b"
         );
+    }
+}
+
+#[cfg(test)]
+mod attributed_strong_tests {
+    #[test]
+    fn attributes_do_not_close_strong_delimiters() {
+        for (source, expected) in [
+            (
+                "a *word{#id key=\"*\"}*",
+                "<p>a <strong><span id=\"id\" key=\"*\">word</span></strong></p>",
+            ),
+            (
+                "*more words{#id key=\"*\"} here*",
+                "<p><strong>more <span id=\"id\" key=\"*\">words</span> here</strong></p>",
+            ),
+            (
+                "`*word{#id key=\"*\"}*`",
+                "<p><code>*word{#id key=\"*\"}*</code></p>",
+            ),
+        ] {
+            assert_eq!(crate::to_html(&super::djot_to_carve(source)), expected);
+        }
     }
 }

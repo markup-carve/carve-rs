@@ -170,3 +170,17 @@ fn an_ordinary_document_renders_every_label_in_full() {
         3
     );
 }
+
+#[test]
+fn rejected_labels_reset_between_renders() {
+    let source = amplification_source(10_000, 1_600);
+    let doc = carve::parse(&source);
+    let first = carve::to_html(&source);
+    assert_eq!(carve::to_html(&source), first);
+    let markdown = carve::render_markdown(&doc).unwrap();
+    assert_eq!(carve::render_markdown(&doc).unwrap(), markdown);
+    let plain = carve::render_plain_text(&doc).unwrap();
+    assert_eq!(carve::render_plain_text(&doc).unwrap(), plain);
+    let ansi = carve::render_ansi(&doc).unwrap();
+    assert_eq!(carve::render_ansi(&doc).unwrap(), ansi);
+}
