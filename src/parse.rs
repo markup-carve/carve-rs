@@ -8203,6 +8203,148 @@ impl QuotedEntryScan {
     }
 }
 
+/// Whether a fence leaves the innermost quote of a collected body without an
+/// open paragraph, or `None` when no fence decided it.
+///
+/// `ParaOpen` reads one line on its own. At the quote's own level `in_fence`
+/// carries the fence, but one level down a fence opener read alone looks like
+/// paragraph text whenever no closer follows it: a fence at the start of a
+/// nested quote was taken for inline verbatim, and the line below folded into
+/// the outer quote (markup-carve/carve-rs#2117). This replays the body with a
+/// fence and paragraph state per nesting level, asked only for a lazy line
+/// after a nested quoted line.
+///
+/// INCREMENTAL. Each line is replayed once however often a lazy line asks. That
+/// is exact because a closer lookahead stops at the first line that leaves the
+/// quote, and the line that asks is such a line.
+#[derive(Default)]
+struct NestedFenceReplay {
+    scanned: usize,
+    chain: Vec<NestedLevel>,
+}
+
+#[derive(Default)]
+struct NestedLevel {
+    fence: Option<FenceOpen>,
+    comment: Option<usize>,
+    para: bool,
+    by_fence: bool,
+}
+
+impl NestedFenceReplay {
+    fn verdict(&mut self, lines: &[SourceLine]) -> Option<bool> {
+        if self.chain.is_empty() {
+            self.chain.push(NestedLevel::default());
+        }
+        while self.scanned < lines.len() {
+            let at = self.scanned;
+            self.scanned += 1;
+            self.replay(lines, at);
+        }
+        let deepest = self.chain.last()?;
+        (deepest.fence.is_some() || deepest.by_fence).then_some(false)
+    }
+
+    fn replay(&mut self, lines: &[SourceLine], at: usize) {
+        let chain = &mut self.chain;
+        let mut text = lines[at].text.as_str();
+        // A lazy line was taken only because a paragraph was open, and it
+        // continues that paragraph.
+        if text.starts_with(LAZY) {
+            return;
+        }
+        let mut level = 0;
+        loop {
+            if let Some(open) = chain[level].fence {
+                if is_fence_close(text, open) {
+                    chain[level].fence = None;
+                    chain[level].by_fence = true;
+                }
+                chain.truncate(level + 1);
+                return;
+            }
+            // Comment contents are not syntax. A comment never overrides the
+            // one-line reading, so it leaves `by_fence` alone.
+            if let Some(len) = chain[level].comment {
+                if is_comment_fence_close(text, len) {
+                    chain[level].comment = None;
+                }
+                chain.truncate(level + 1);
+                return;
+            }
+            if let Some(rest) = strip_blockquote_prefix(text) {
+                chain[level].para = false;
+                chain[level].by_fence = false;
+                if chain.len() == level + 1 {
+                    chain.push(NestedLevel::default());
+                }
+                text = rest;
+                level += 1;
+                continue;
+            }
+            // A line short of the deepest quote continues that quote's open
+            // paragraph unless it interrupts one.
+            let deepest_open = chain.last().is_some_and(|l| l.para && l.fence.is_none());
+            if chain.len() > level + 1 && deepest_open && !is_blank_line(text) {
+                let interrupts = match detect_fence_open(text) {
+                    Some(open) => closer_ahead(lines, at, level, |l| is_fence_close(l, open)),
+                    None => interrupts_paragraph_with_rest(text, &[]),
+                };
+                if !interrupts {
+                    return;
+                }
+            }
+            chain.truncate(level + 1);
+            let here = &mut chain[level];
+            here.by_fence = false;
+            if let Some(open) = detect_fence_open(text) {
+                // At block start a fence opens with or without a closer; after
+                // a paragraph it needs one (§10), or it is inline verbatim.
+                if !here.para || closer_ahead(lines, at, level, |l| is_fence_close(l, open)) {
+                    here.fence = Some(open);
+                    here.para = false;
+                    here.by_fence = true;
+                    return;
+                }
+            }
+            if let Some(comment) = detect_comment_fence_line(text) {
+                let len = comment.fence_len;
+                if closer_ahead(lines, at, level, |l| is_comment_fence_close(l, len)) {
+                    here.comment = Some(len);
+                }
+            }
+            here.para = ParaOpen::from_line(text, false).get();
+            return;
+        }
+    }
+}
+
+/// Does a line matching `closes` follow line `from` at nesting `level`, before
+/// the quote at that level ends?
+fn closer_ahead(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    closes: impl Fn(&str) -> bool,
+) -> bool {
+    for line in &lines[from + 1..] {
+        let mut text = line.text.as_str();
+        if text.starts_with(LAZY) {
+            return false;
+        }
+        for _ in 0..level {
+            match strip_blockquote_prefix(text) {
+                Some(rest) => text = rest,
+                None => return false,
+            }
+        }
+        if closes(text) {
+            return true;
+        }
+    }
+    false
+}
+
 #[inline(never)]
 fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usize, LineBuffer) {
     let span_start = cur.pos;
@@ -8235,11 +8377,22 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
     // meeting a line that could CLOSE an attribute block has proved the same for
     // every line it passed - see `quoted_attrs_block_len`.
     let mut attrs_scan_floor: usize = 0;
+    // The last quoted line reached a nested quote, so `para_open` may have read a
+    // fence one level down as prose; see `NestedFenceReplay`.
+    let mut last_nested = false;
+    let mut nested_verdict: Option<Option<bool>> = None;
+    let mut nested_replay = NestedFenceReplay::default();
+    // No replay without a fence to find: every level of a quote ladder would
+    // otherwise walk its whole body once.
+    let mut may_hold_fence = false;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
             cur.consume();
+            nested_verdict = None;
+            last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
+            may_hold_fence = may_hold_fence || stripped.contains("```") || stripped.contains("~~~");
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
@@ -8397,6 +8550,7 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 inner.push_synthetic_blank();
                 para_open = ParaOpen::Closed;
                 table = TableRun::default();
+                last_nested = false;
             }
             continue;
         }
@@ -8409,10 +8563,19 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open.get() || is_blank_line(line) || caption_content(line).is_some() || {
-            let line_owned = line.to_string();
-            interrupts_lazy_continuation(cur, &line_owned)
-        } {
+        let fenced_below = if last_nested && may_hold_fence {
+            *nested_verdict.get_or_insert_with(|| nested_replay.verdict(&inner.lines))
+        } else {
+            None
+        };
+        if !fenced_below.unwrap_or_else(|| para_open.get())
+            || is_blank_line(line)
+            || caption_content(line).is_some()
+            || {
+                let line_owned = line.to_string();
+                interrupts_lazy_continuation(cur, &line_owned)
+            }
+        {
             break;
         }
         // NESTED, A VISIBLE BLOCK OPENER INTERRUPTS AT ANY COLUMN. A quote inside
@@ -24176,6 +24339,31 @@ mod quote_prefix_calls {
         let (large_src, large_work) = ladder_of(200, "Note: at 12:30, see https://example.com");
         assert_proportional(
             "a depth ladder of colon-bearing prose",
+            Measured {
+                work: small_work,
+                calls: calls_for(small_src),
+            },
+            Measured {
+                work: large_work,
+                calls: calls_for(large_src),
+            },
+            16,
+        );
+    }
+
+    /// A depth ladder ending in one lazy line must not replay the body at every
+    /// level: with no fence in it there is nothing to replay for.
+    #[test]
+    fn a_depth_ladder_ending_in_a_lazy_line_costs_strips_in_proportion_to_its_markers() {
+        let with_lazy = |depth: usize| {
+            let (mut src, work) = ladder(depth);
+            src.push_str("lazy\n");
+            (src, work)
+        };
+        let (small_src, small_work) = with_lazy(100);
+        let (large_src, large_work) = with_lazy(200);
+        assert_proportional(
+            "depth ladder ending in a lazy line",
             Measured {
                 work: small_work,
                 calls: calls_for(small_src),
