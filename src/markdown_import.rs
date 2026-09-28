@@ -750,9 +750,15 @@ impl Builder {
                     // the rest is the author's metadata, which Carve's fence
                     // has no slot for.
                     CodeBlockKind::Fenced(info) => info
-                        .split_whitespace()
+                        .trim_matches([' ', '\t'])
+                        .split([' ', '\t'])
                         .next()
-                        .filter(|word| !word.is_empty())
+                        .filter(|word| {
+                            !word.is_empty()
+                                && word
+                                    .bytes()
+                                    .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
+                        })
                         .map(str::to_string),
                     CodeBlockKind::Indented => None,
                 },

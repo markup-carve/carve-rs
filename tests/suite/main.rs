@@ -1598,3 +1598,5 @@ mod markdown_empty_headings;
 mod a_quoted_container_fence_stores_no_lazy_claim;
 #[path = "../djot_word_attributes.rs"]
 mod djot_word_attributes;
+#[path = "../markdown_fence_language.rs"]
+mod markdown_fence_language;
