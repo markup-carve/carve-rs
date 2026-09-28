@@ -41,6 +41,8 @@ pub(crate) const ABBR_EXPANSION_BUDGET_BASE: usize = 1_000_000;
 pub(crate) const ABBR_EXPANSION_BUDGET_FACTOR: usize = 8;
 
 thread_local! {
+    #[cfg(test)]
+    static MEASURED_LABEL_BYTES: Cell<usize> = const { Cell::new(0) };
     /// Remaining abbreviation-expansion bytes for the render currently running
     /// on this thread. `None` means no render is active (calls to `try_spend`
     /// then conservatively use the floor budget).
@@ -117,6 +119,8 @@ pub(crate) fn label_rejected(target: &str) -> bool {
 }
 
 pub(crate) fn try_spend_label(cost: usize, target: &str) -> bool {
+    #[cfg(test)]
+    MEASURED_LABEL_BYTES.with(|bytes| bytes.set(bytes.get().saturating_add(cost)));
     if try_spend(cost) {
         true
     } else {
@@ -124,5 +128,35 @@ pub(crate) fn try_spend_label(cost: usize, target: &str) -> bool {
             labels.borrow_mut().insert(target.to_owned());
         });
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MEASURED_LABEL_BYTES;
+
+    #[test]
+    fn rejected_crossref_labels_stop_rendering_on_every_target() {
+        let source = format!("# A{}\n\n{}\n", "!".repeat(9_999), "</#A> ".repeat(3_000));
+        let doc = crate::parse(&source);
+        for target in 0..4 {
+            MEASURED_LABEL_BYTES.with(|bytes| bytes.set(0));
+            let output = match target {
+                0 => crate::to_html(&source),
+                1 => crate::render_plain_text(&doc).unwrap(),
+                2 => crate::render_markdown(&doc).unwrap(),
+                _ => crate::render_ansi(&doc).unwrap(),
+            };
+            assert!(!output.is_empty());
+            let measured = MEASURED_LABEL_BYTES.with(|bytes| bytes.get());
+            assert!(
+                measured > 1_000_000,
+                "target {target} did not exhaust the budget"
+            );
+            assert!(
+                measured < 2_000_000,
+                "target {target} rendered {measured} label bytes"
+            );
+        }
     }
 }
