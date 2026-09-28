@@ -7586,11 +7586,21 @@ fn settle_empty_code_spans(
     }
 }
 
-const NESTED_SAME_KIND_UNWRAPPED: &str = "Unwrapped an inline element nested in one of its own kind: a span inside a span of the same kind has no Carve spelling, so its content is written in the outer one";
+pub(crate) const NESTED_SAME_KIND_UNWRAPPED: &str = "Unwrapped an inline element nested in one of its own kind: a span inside a span of the same kind has no Carve spelling, so its content is written in the outer one";
 
 /// Unwrap each inner span of a same-kind nesting the writer refuses (ruling
-/// markup-carve/carve#2066), one render at a time until none is left.
-fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importer) {
+/// markup-carve/carve#2066), naming the candidate marks it took.
+///
+/// THE CONDITION IS THE WRITER'S, asked by rendering rather than guessed from
+/// the shape: `note_braced_span` reports the spans it could not spell, and only
+/// those come off. A structural test would also have to model which delimiters
+/// a kind shares (`BoldItalic` carries two) and that the braced form shares the
+/// stack, and a second reading of that rule is the thing worth not writing.
+///
+/// Every span must carry a candidate mark, which is what makes it addressable
+/// here: the HTML importer stamps one as it builds, and
+/// [`unwrap_same_kind_spans_for_writing`] stamps a document that has none.
+fn unwrap_refused_same_kind_spans(document: &mut Document) -> Vec<usize> {
     let mut nested = false;
     let mut probe = |nodes: &mut Vec<InlineNode>, _: bool| {
         nested |= holds_same_kind_nesting(nodes, &mut Vec::new());
@@ -7600,7 +7610,7 @@ fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importe
     }
     for_each_inline_run(&mut document.children, &mut probe);
     if !nested || render_carve(document).is_ok() {
-        return;
+        return Vec::new();
     }
     let refused: HashSet<usize> = crate::render_carve_error::take_nested_same_kind()
         .into_iter()
@@ -7620,7 +7630,11 @@ fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importe
     }
     for_each_inline_run(&mut document.children, &mut unwrap);
     unwrapped.sort_unstable();
-    for index in unwrapped {
+    unwrapped
+}
+
+fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importer) {
+    for index in unwrap_refused_same_kind_spans(document) {
         let (node, path) = importer.braced_kind_spans[index].clone();
         importer.diag(
             HtmlImportDiagnosticCode::StructureUnspellable,
@@ -7629,6 +7643,47 @@ fn unwrap_nested_same_kind_spans(document: &mut Document, importer: &mut Importe
             &path,
             &node,
         );
+    }
+}
+
+/// The same unwrapping for a document built without candidate marks, as one
+/// loss message per span taken.
+///
+/// An importer that hands the writer's refusal to the caller converts NOTHING:
+/// `carve migrate --from markdown` exited 2 and wrote no file for a document
+/// whose only unspellable construct was one `*(*foo*)*` (carve-rs#2098). The
+/// ruling the HTML importer already follows (markup-carve/carve#2066) answers
+/// it, so the two importers answer it the same way and with the same code.
+pub(crate) fn unwrap_same_kind_spans_for_writing(document: &mut Document) -> Vec<String> {
+    let mut next = 0usize;
+    let mut stamp = |nodes: &mut Vec<InlineNode>, _: bool| stamp_span_marks(nodes, &mut next);
+    for blocks in document.footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut stamp);
+    }
+    for_each_inline_run(&mut document.children, &mut stamp);
+    let unwrapped = unwrap_refused_same_kind_spans(document);
+    for blocks in document.footnote_defs.values_mut() {
+        for_each_inline_run(blocks, &mut |nodes, _| strip_span_marks(nodes));
+    }
+    for_each_inline_run(&mut document.children, &mut |nodes, _| {
+        strip_span_marks(nodes)
+    });
+    vec![NESTED_SAME_KIND_UNWRAPPED.to_owned(); unwrapped.len()]
+}
+
+/// Give every span under `nodes` a candidate mark, numbering from `next`.
+fn stamp_span_marks(nodes: &mut [InlineNode], next: &mut usize) {
+    for node in nodes {
+        if let InlineNode::Emphasis(Emphasis { pos, .. })
+        | InlineNode::CriticInsert(CriticInsert { pos, .. })
+        | InlineNode::CriticDelete(CriticDelete { pos, .. }) = node
+        {
+            *pos = Some(candidate_mark(*next));
+            *next += 1;
+        }
+        if let Some((_, children)) = crate::render_carve::empty_code_run_children_mut(node) {
+            stamp_span_marks(children, next);
+        }
     }
 }
 
