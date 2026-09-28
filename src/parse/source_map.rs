@@ -1,31 +1,36 @@
 use crate::ast::Pos;
 
-#[derive(Default)]
-pub(super) struct LineBuffer {
-    pub(super) lines: Vec<String>,
-    pub(super) line_map: Vec<Option<usize>>,
-    /// Codepoints the container took from the front of each line, parallel to
-    /// `lines`. Kept in lockstep by `push_at`: a shifted entry would hand a
-    /// nested block a WRONG column, which is worse than the `None` an absent
-    /// entry produces.
-    pub(super) col_map: Vec<Option<isize>>,
-    /// Whether the LAST line pushed was a synthetic blank rather than one the
-    /// author wrote. `into_source` needs the difference: a real trailing blank
-    /// is content and must survive the round trip, a synthetic one is
-    /// scaffolding and must not (markup-carve/carve-rs#908).
-    pub(super) last_is_synthetic: bool,
+enum LineOrigin {
+    Mapped(usize),
+    Unmapped,
+    Synthetic,
 }
 
-/// Give every line already pushed a slot before `source_line` takes its own.
-///
-/// A buffer that never maps a line keeps an EMPTY map, which is what an
-/// unpositioned parse wants and what the guard at each call site preserves. On
-/// its own that guard also DROPPED an unmapped line written before the first
-/// mapped one, and every later entry then answered for the line above it: a
-/// manufactured blank in front of a container body shifted the block under it
-/// one line down, so a fenced code block reported its own content line as its
-/// whole extent (markup-carve/carve-rs#1833). The column map has been parallel
-/// to the lines all along - this is the line map catching up.
+pub(super) struct SourceLine {
+    pub(super) text: String,
+    origin: LineOrigin,
+    pub(super) stripped: Option<isize>,
+}
+
+impl SourceLine {
+    pub(super) fn source_line(&self) -> Option<usize> {
+        match self.origin {
+            LineOrigin::Mapped(line) => Some(line),
+            LineOrigin::Unmapped | LineOrigin::Synthetic => None,
+        }
+    }
+
+    pub(super) fn is_synthetic(&self) -> bool {
+        matches!(self.origin, LineOrigin::Synthetic)
+    }
+}
+
+#[derive(Default)]
+pub(super) struct LineBuffer {
+    pub(super) lines: Vec<SourceLine>,
+}
+
+/// Keep earlier unmapped lines aligned when a mapped source gains its first origin.
 fn pad_line_map(line_map: &mut Vec<Option<usize>>, lines: usize, source_line: Option<usize>) {
     if source_line.is_some() && line_map.len() + 1 < lines {
         line_map.resize(lines - 1, None);
@@ -33,43 +38,65 @@ fn pad_line_map(line_map: &mut Vec<Option<usize>>, lines: usize, source_line: Op
 }
 
 impl LineBuffer {
-    pub(super) fn push(&mut self, line: String, source_line: Option<usize>) {
-        self.push_at(line, source_line, None)
-    }
-
-    /// Like `push`, recording how many codepoints were stripped from the front
-    /// of the line by the enclosing container.
-    pub(super) fn push_at(
-        &mut self,
-        line: String,
-        source_line: Option<usize>,
-        stripped: Option<isize>,
-    ) {
-        self.last_is_synthetic = false;
-        self.lines.push(line);
-        pad_line_map(&mut self.line_map, self.lines.len(), source_line);
-        if source_line.is_some() || !self.line_map.is_empty() {
-            self.line_map.push(source_line);
-        }
-        self.col_map.push(stripped);
+    pub(super) fn push_at(&mut self, text: String, origin: Option<usize>, stripped: Option<isize>) {
+        self.lines.push(SourceLine {
+            text,
+            origin: origin.map_or(LineOrigin::Unmapped, LineOrigin::Mapped),
+            stripped,
+        });
     }
 
     pub(super) fn push_synthetic_blank(&mut self) {
-        self.push(String::new(), None);
-        self.last_is_synthetic = true;
+        self.lines.push(SourceLine {
+            text: String::new(),
+            origin: LineOrigin::Synthetic,
+            stripped: None,
+        });
+    }
+
+    pub(super) fn parser_lines(&self) -> Vec<&str> {
+        let mut lines: Vec<&str> = self.lines.iter().map(|line| line.text.as_str()).collect();
+        if self
+            .lines
+            .last()
+            .is_some_and(|line| line.is_synthetic() && line.text.is_empty())
+        {
+            lines.pop();
+        }
+        lines
     }
 
     pub(super) fn into_source(self) -> MappedSource {
-        let ends_in_authored_blank =
-            !self.last_is_synthetic && self.lines.last().is_some_and(|line| line.is_empty());
-        let mut source = self.lines.join("\n");
+        let ends_in_authored_blank = self
+            .lines
+            .last()
+            .is_some_and(|line| !line.is_synthetic() && line.text.is_empty());
+        let mapped = self.lines.iter().any(|line| line.source_line().is_some());
+        let mut source =
+            String::with_capacity(self.lines.iter().map(|line| line.text.len() + 1).sum());
+        let mut line_map = if mapped {
+            Vec::with_capacity(self.lines.len())
+        } else {
+            Vec::new()
+        };
+        let mut col_map = Vec::with_capacity(self.lines.len());
+        for (index, line) in self.lines.into_iter().enumerate() {
+            if index > 0 {
+                source.push('\n');
+            }
+            source.push_str(&line.text);
+            if mapped {
+                line_map.push(line.source_line());
+            }
+            col_map.push(line.stripped);
+        }
         if ends_in_authored_blank {
             source.push('\n');
         }
         MappedSource {
-            col_map: self.col_map,
+            col_map,
             source,
-            line_map: self.line_map,
+            line_map,
             authored_base_at_start: false,
             reached: Vec::new(),
             sublists_carry_authored_base: false,

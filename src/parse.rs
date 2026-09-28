@@ -11,6 +11,7 @@ use crate::extension::{
 use crate::include_walk::{block_pos_mut, inline_pos_mut};
 use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
 use crate::source_positions::CodepointLineStarts;
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use unicode_normalization::UnicodeNormalization;
@@ -227,9 +228,16 @@ thread_local! {
 /// `positions`), since a span is what makes a diagnostic locatable and there is
 /// nothing useful to report without one.
 pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T, Vec<Pos>) {
-    let previous = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(Some(Vec::new())));
+    struct CollectorGuard(Option<Vec<Pos>>);
+    impl Drop for CollectorGuard {
+        fn drop(&mut self) {
+            UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(self.0.take()));
+        }
+    }
+    let guard = CollectorGuard(UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(Some(Vec::new()))));
     let out = f();
-    let collected = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(previous));
+    let collected = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.take());
+    drop(guard);
     (out, collected.unwrap_or_default())
 }
 
@@ -387,7 +395,7 @@ pub(crate) use frontmatter::{frontmatter_format_token, frontmatter_map, opens_fr
 pub(crate) use layout::try_layout_html;
 use source_map::{
     compose_mapped_source, first_mapped_line, map_pos_through_source, remap_source, LineBuffer,
-    MappedSource,
+    MappedSource, SourceLine,
 };
 #[derive(Clone, Copy)]
 enum ParseMode {
@@ -4574,11 +4582,8 @@ fn parse_eof_closed_colon_ladder(
 /// reaches the cap. Flattening is the LAST step at that depth: nothing recurses
 /// after it, so the inline pass can have the budget back (carve-rs#530).
 fn parse_flattened_inline(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    let saved = NESTING_DEPTH.with(Cell::get);
-    NESTING_DEPTH.with(|d| d.set(0));
-    let out = parse_inline_with_options(text, options);
-    NESTING_DEPTH.with(|d| d.set(saved));
-    out
+    let _depth = DepthScope::set(0);
+    parse_inline_with_options(text, options)
 }
 
 /// `parse_flattened_inline` with the per-line anchors that place what it
@@ -4592,11 +4597,8 @@ fn parse_flattened_inline_with_anchors(
     options: &Options<'_>,
     anchors: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
-    let saved = NESTING_DEPTH.with(Cell::get);
-    NESTING_DEPTH.with(|d| d.set(0));
-    let out = parse_inline_lines_with_anchor(text, options, anchors);
-    NESTING_DEPTH.with(|d| d.set(saved));
-    out
+    let _depth = DepthScope::set(0);
+    parse_inline_lines_with_anchor(text, options, anchors)
 }
 
 /// The source line and stripped-column maps for a run of lines, parallel to the
@@ -4740,8 +4742,7 @@ fn parse_unpositioned_colon_body(
     options: &Options<'_>,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    let source = inner.into_source();
-    let lines: Vec<&str> = source.source.lines().collect();
+    let lines = inner.parser_lines();
     let mut cursor = LineCursor::new_with_cols(&lines, None, None);
     parse_blocks(&mut cursor, options, pending)
 }
@@ -4752,17 +4753,21 @@ fn parse_positioned_capped_colon_body(
     options: &Options<'_>,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    let source = inner.into_source();
+    let lines = inner.parser_lines();
+    let line_map: Vec<_> = inner.lines.iter().map(|line| line.source_line()).collect();
+    let col_map: Vec<_> = inner.lines.iter().map(|line| line.stripped).collect();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
-        return parse_mapped_source_at_level_into(&source, options, false, false, pending);
+        let mut cursor = Box::new(LineCursor::new_with_cols(
+            &lines,
+            Some(&line_map),
+            options.positions.then_some(col_map.as_slice()),
+        ));
+        return parse_blocks(&mut cursor, options, pending);
     }
-
-    let lines: Vec<&str> = source.source.lines().collect();
     if lines.iter().all(|line| is_blank_line(line)) {
         return Vec::new();
     }
-
-    flattened_paragraphs(&lines, Some((&source.line_map, &source.col_map)), options)
+    flattened_paragraphs(&lines, Some((&line_map, &col_map)), options)
 }
 
 /// For each fence char, `vec[len]` is one past the index of the LAST line that
@@ -5386,9 +5391,9 @@ fn parse_item_chunk(
 /// include them under carve#1729's shared rule.
 fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool) {
     let trailing_newline = source.source.ends_with('\n');
-    let mut lines: Vec<String> = source.source.lines().map(str::to_string).collect();
+    let mut lines: Vec<Cow<'_, str>> = source.source.lines().map(Cow::Borrowed).collect();
     if trailing_newline {
-        lines.push(String::new());
+        lines.push(Cow::Borrowed(""));
     }
     // Dedenting keeps every line's `%` run, so this index outlives the edits.
     let entry_closers = std::cell::OnceCell::new();
@@ -5796,7 +5801,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             if is_blank_line(line) {
                 if code.is_some() {
                     let (residue, consumed, synthetic) = slice_columns_mapped(line, base, true);
-                    *line = residue;
+                    *line = Cow::Owned(residue);
                     if let Some(Some(col)) = source.col_map.get_mut(j) {
                         *col += consumed as isize - synthetic as isize;
                     }
@@ -5810,7 +5815,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             if code.is_some() && indent_columns(line) < base {
                 continue;
             }
-            *line = strip_leading_columns(line, base);
+            *line = Cow::Owned(strip_leading_columns(line, base));
             if let Some(Some(col)) = source.col_map.get_mut(j) {
                 // Source columns are visual columns, not byte offsets. A tab
                 // crossing the authored base can remove one byte while moving
@@ -5825,20 +5830,21 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         // this a RUN of authored openers rebased only its first member.
         block_at_minimum = true;
     }
-    if trailing_newline && lines.last().is_some_and(String::is_empty) {
+    if trailing_newline && lines.last().is_some_and(|line| line.is_empty()) {
         lines.pop();
     }
-    source.source = lines.join("\n");
+    let mut rebased = lines.join("\n");
     if trailing_newline {
-        source.source.push('\n');
+        rebased.push('\n');
     }
+    source.source = rebased;
 }
 
 /// Line indexes by the length of their `%` run, for comment fence closers.
-fn comment_closers_by_run(lines: &[String]) -> HashMap<usize, Vec<usize>> {
+fn comment_closers_by_run(lines: &[impl AsRef<str>]) -> HashMap<usize, Vec<usize>> {
     let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
     for (k, line) in lines.iter().enumerate() {
-        let run = trim_ascii_start(line)
+        let run = trim_ascii_start(line.as_ref())
             .bytes()
             .take_while(|b| *b == b'%')
             .count();
@@ -5851,7 +5857,7 @@ fn comment_closers_by_run(lines: &[String]) -> HashMap<usize, Vec<usize>> {
 
 /// Last line owned by a definition entry authored at `base`.
 fn definition_entry_end(
-    lines: &[String],
+    lines: &[impl AsRef<str>],
     start: usize,
     base: usize,
     closers: &std::cell::OnceCell<HashMap<usize, Vec<usize>>>,
@@ -5863,19 +5869,19 @@ fn definition_entry_end(
     let mut term_open = true;
     let mut j = start + 1;
     while j < lines.len() {
-        let candidate = &lines[j];
+        let candidate = lines[j].as_ref();
         if is_blank_line(candidate) {
             term_open = false;
             let mut ahead = j + 1;
-            while ahead < lines.len() && is_blank_line(&lines[ahead]) {
+            while ahead < lines.len() && is_blank_line(lines[ahead].as_ref()) {
                 ahead += 1;
             }
             if ahead >= lines.len() {
                 break;
             }
-            let next_column = indent_columns(&lines[ahead]);
+            let next_column = indent_columns(lines[ahead].as_ref());
             let next_local =
-                (next_column >= base).then(|| strip_leading_columns(&lines[ahead], base));
+                (next_column >= base).then(|| strip_leading_columns(lines[ahead].as_ref(), base));
             let continues = description_column.is_some_and(|column| next_column >= column)
                 || (next_column == base
                     && next_local.as_deref().is_some_and(|line| {
@@ -7809,9 +7815,9 @@ struct QuotedEntryScan {
 }
 
 impl QuotedEntryScan {
-    fn advance(&mut self, lines: &[String]) {
+    fn advance(&mut self, lines: &[SourceLine]) {
         while self.scanned < lines.len() {
-            let line = &lines[self.scanned];
+            let line = &lines[self.scanned].text;
             self.scanned += 1;
             // A BLANK ONLY LOOSENS THE LIST, so the open half survives it and
             // a `:` below is still the open description's own continuation.
@@ -8054,10 +8060,6 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 // leading blank separates the attached block from it.
                 inner.push_synthetic_blank();
                 inner.lines.extend(attached.lines);
-                inner.line_map.extend(attached.line_map);
-                // Must extend in lockstep with `lines`: a col_map that lags by
-                // one entry hands every later block a wrong column.
-                inner.col_map.extend(attached.col_map);
                 inner.push_synthetic_blank();
                 para_open = ParaOpen::Closed;
                 table = TableRun::default();
@@ -13200,9 +13202,11 @@ fn collect_definition_body(
                 lines.push(String::new());
                 line_map.push(None);
                 col_map.push(None);
-                lines.extend(attached.lines);
-                line_map.extend(attached.line_map);
-                col_map.extend(attached.col_map);
+                for line in attached.lines {
+                    line_map.push(line.source_line());
+                    lines.push(line.text);
+                    col_map.push(line.stripped);
+                }
                 // A `+` block is pulled in FLUSH LEFT, so it has no residual
                 // for the rebase to read either way.
                 reached.resize(lines.len(), false);
@@ -15393,9 +15397,9 @@ fn place_line_block_breaks_into(
                     // content begins. Both are 1-based, matching every other
                     // span.
                     let pos = match (
-                        lines.line_map.get(k).copied().flatten(),
+                        lines.lines.get(k).and_then(|line| line.source_line()),
                         end_cols.get(k).copied().flatten(),
-                        lines.line_map.get(k + 1).copied().flatten(),
+                        lines.lines.get(k + 1).and_then(|line| line.source_line()),
                         start_cols.get(k + 1).copied().flatten(),
                     ) {
                         (Some(start_line), Some(end_col), Some(end_line), Some(next_col)) => {
@@ -15529,10 +15533,8 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let base_indent = leading_ws_columns(opener);
     cur.consume();
     let mut stanzas: Vec<Stanza> = Vec::new();
-    let mut stanza: Vec<String> = Vec::new();
+    let mut stanza = LineBuffer::default();
     let mut source_columns = Vec::new();
-    let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
-    let mut stanza_col_map: Vec<Option<isize>> = Vec::new();
     let mut stanza_end_cols: Vec<Option<isize>> = Vec::new();
     let mut stanza_start_cols: Vec<Option<isize>> = Vec::new();
     let mut stanza_comments: Vec<(usize, Comment)> = Vec::new();
@@ -15550,19 +15552,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let line_at = cur.pos;
         cur.consume();
         if is_blank_line(line) {
-            if !stanza.is_empty() {
+            if !stanza.lines.is_empty() {
                 let at = stanza_start.take();
                 let end_cols = std::mem::take(&mut stanza_end_cols);
                 let start_cols = std::mem::take(&mut stanza_start_cols);
                 stanzas.push(Stanza {
                     source_columns: std::mem::take(&mut source_columns),
-                    lines: LineBuffer {
-                        lines: std::mem::take(&mut stanza),
-                        line_map: std::mem::take(&mut stanza_line_map),
-                        col_map: std::mem::take(&mut stanza_col_map),
-                        // Built line by line from the source; nothing synthetic.
-                        last_is_synthetic: false,
-                    },
+                    lines: std::mem::take(&mut stanza),
                     at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
                     end_cols,
                     start_cols,
@@ -15589,7 +15585,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let mut columns = Vec::new();
         let expanded = expand_line_block_ws(&stripped, options.positions.then_some(&mut columns));
         source_columns.push(columns);
-        stanza_col_map.push(stripped_col(cur.source_col(line_at), line, &stripped));
+        let stripped_columns = stripped_col(cur.source_col(line_at), line, &stripped);
         // Where this line ENDS in the source, recorded whatever the indent
         // check decided. A hard break is the newline ENDING a line, not content
         // on it, and tab expansion does not move a line ending -- so the break's
@@ -15615,7 +15611,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 _ => None,
             };
             stanza_comments.push((
-                stanza.len(),
+                stanza.lines.len(),
                 Comment {
                     block: false,
                     delimited: false,
@@ -15623,23 +15619,16 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     pos,
                 },
             ));
-            stanza.push(String::new());
+            stanza.push_at(String::new(), source_line, stripped_columns);
         } else {
-            stanza.push(expanded);
+            stanza.push_at(expanded, source_line, stripped_columns);
         }
-        stanza_line_map.push(source_line);
     }
-    if !stanza.is_empty() {
+    if !stanza.lines.is_empty() {
         let at = stanza_start.take();
         stanzas.push(Stanza {
             source_columns,
-            lines: LineBuffer {
-                lines: stanza,
-                line_map: stanza_line_map,
-                col_map: stanza_col_map,
-                // Built line by line from the source; nothing synthetic.
-                last_is_synthetic: false,
-            },
+            lines: stanza,
             at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
             end_cols: stanza_end_cols,
             start_cols: stanza_start_cols,
@@ -15658,12 +15647,11 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                  start_cols,
                  comments,
              }| {
-                let source_line = lines.line_map.first().copied().flatten();
+                let source_line = lines.lines.first().and_then(|line| line.source_line());
                 let anchors: Vec<Option<(usize, isize)>> = lines
-                    .line_map
+                    .lines
                     .iter()
-                    .zip(lines.col_map.iter())
-                    .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
+                    .map(|line| Some((line.source_line()?, line.stripped?)))
                     .collect();
                 // AT EVERY DEPTH (PART 9 section 23, markup-carve/carve#1351).
                 // See `harden_verse_breaks` for why the test is node kind and
@@ -15673,7 +15661,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     &lines
                         .lines
                         .iter()
-                        .map(|l| strip_lazy(l))
+                        .map(|l| strip_lazy(&l.text))
                         .collect::<Vec<_>>()
                         .join("\n"),
                     options,
@@ -23897,4 +23885,38 @@ pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
                 .map(|_| (prefix + start, close + 1))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod collector_scope_tests {
+    use super::*;
+
+    #[test]
+    fn an_unwinding_nested_collector_restores_its_parent() {
+        let (_, outer) = collecting_unattached_block_attrs(|| {
+            note_unattached_block_attrs(Some(Pos {
+                start_line: 1,
+                ..Pos::default()
+            }));
+            let result = std::panic::catch_unwind(|| {
+                collecting_unattached_block_attrs(|| {
+                    note_unattached_block_attrs(Some(Pos {
+                        start_line: 2,
+                        ..Pos::default()
+                    }));
+                    panic!("extension failed");
+                });
+            });
+            assert!(result.is_err());
+            note_unattached_block_attrs(Some(Pos {
+                start_line: 3,
+                ..Pos::default()
+            }));
+        });
+        assert_eq!(
+            outer.iter().map(|pos| pos.start_line).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert!(UNATTACHED_BLOCK_ATTRS.with(|slot| slot.borrow().is_none()));
+    }
 }
