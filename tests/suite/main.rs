@@ -202,6 +202,8 @@ mod a_directive_title_is_walked_like_an_admonitions;
 mod a_display_equation_carries_its_label_and_number;
 #[path = "../a_document_level_rebuild_keeps_a_trailing_blank.rs"]
 mod a_document_level_rebuild_keeps_a_trailing_blank;
+#[path = "../a_fence_in_a_nested_quote_leaves_no_lazy_claim.rs"]
+mod a_fence_in_a_nested_quote_leaves_no_lazy_claim;
 #[path = "../a_fence_opener_drops_its_trailing_tab.rs"]
 mod a_fence_opener_drops_its_trailing_tab;
 #[path = "../a_fenced_block_quote.rs"]
