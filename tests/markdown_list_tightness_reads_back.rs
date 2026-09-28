@@ -270,3 +270,22 @@ fn a_dropped_child_leaves_the_paragraph_where_it_was() {
     assert_eq!(carve::to_markdown(source), "- a\n  - b\n");
     assert!(reads_back_tight(source));
 }
+
+#[test]
+fn a_div_wrapping_a_nested_list_drops_the_separator() {
+    // The div writes nothing of its own, so the block that meets the paragraph
+    // is the nested list inside it and the item stays tight.
+    let source = "- a\n  :::\n\n  - b\n  :::\n";
+    assert!(tight_in_source(source));
+    assert_eq!(carve::to_markdown(source), "- a\n  - b\n");
+    assert!(reads_back_tight(source));
+}
+
+#[test]
+fn a_labelled_div_keeps_the_separator() {
+    // THE CONTROL. The label is written ahead of the children as a paragraph of
+    // bold text, and a paragraph interrupts nothing - glued, it would be read
+    // as more text of the item's own paragraph.
+    let source = "- a\n  ::: [L]\n\n  - b\n  :::\n";
+    assert_eq!(carve::to_markdown(source), "- a\n\n  **L**\n\n  - b\n");
+}
