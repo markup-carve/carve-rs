@@ -8391,6 +8391,7 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
             let at = cur.pos;
             cur.consume();
             nested_verdict = None;
+            let after_nested = last_nested && may_hold_fence;
             last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
             may_hold_fence = may_hold_fence || stripped.contains("```") || stripped.contains("~~~");
             // The quote marker (and its optional space) is a pure prefix, so the
@@ -8417,7 +8418,14 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 // every quoted line is the walk this defers.
             } else if let Some(open) = detect_fence_open(stripped) {
                 table = TableRun::default();
-                if !para_open.get() {
+                // The line above reached a nested quote, so its fence may be
+                // what the paragraph ended on.
+                let fenced_below = if after_nested {
+                    nested_replay.verdict(&inner.lines)
+                } else {
+                    None
+                };
+                if !fenced_below.unwrap_or_else(|| para_open.get()) {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;

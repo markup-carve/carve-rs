@@ -61,6 +61,18 @@ fn a_fence_closed_one_level_down_after_a_paragraph() {
 }
 
 #[test]
+fn a_fence_back_at_the_outer_level_opens_after_a_nested_fence() {
+    // The nested fence left no paragraph, so the outer fence opens at block
+    // start without a closer, and `y` leaves the quote rather than joining it.
+    assert_eq!(
+        html("> a\n> > ```\n> ```\ny\n"),
+        format!(
+            "<blockquote>\n  <p>a</p>\n  <blockquote>\n    {EMPTY_CODE}\n  </blockquote>\n  {EMPTY_CODE}\n</blockquote>\n<p>y</p>"
+        )
+    );
+}
+
+#[test]
 fn control_a_fence_with_no_closer_after_a_paragraph_is_inline_text() {
     // §10: after a paragraph a fence interrupts only with a closer ahead, so the
     // paragraph stays open and `c` continues it.
