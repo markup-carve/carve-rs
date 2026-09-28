@@ -784,6 +784,8 @@ mod comment_body_is_relative_to_its_fence;
 mod comment_does_not_revive_a_closed_item;
 #[path = "../comment_in_list_item.rs"]
 mod comment_in_list_item;
+#[path = "../comment_span_opener_column.rs"]
+mod comment_span_opener_column;
 #[path = "../comparable_footnote_defs.rs"]
 mod comparable_footnote_defs;
 #[path = "../conformance_regressions.rs"]

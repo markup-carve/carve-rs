@@ -3729,6 +3729,8 @@ struct LineCursor<'a> {
     /// which collects into its own `MappedSource`.
     sublists_carry_authored_base: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
+    /// Last consumed comment closer and the column of its opener.
+    closed_comment_location: Option<(usize, usize)>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
 
@@ -3749,6 +3751,7 @@ impl<'a> LineCursor<'a> {
             reached: None,
             sublists_carry_authored_base: false,
             comment_closer_last_index: None,
+            closed_comment_location: None,
             code_closer_last_index: None,
         }
     }
@@ -11596,25 +11599,21 @@ fn collected_body_takes_the_lazy_line(
         || nested_ends_with_heading(src, options)
 }
 
-/// Whether the line JUST CONSUMED was written BELOW the container's content
-/// column.
-///
-/// §24 C3's comment exception turns on the column, and the collected body
-/// cannot say what it was: the body is DEDENTED by whatever each line supplied,
-/// up to the content column, so a line at column 1 under a content column of 2
-/// and one at column 2 both arrive flush.
-///
-/// Read from the CURSOR rather than from the collector's `col_map`, which looks
-/// like it carries this and does not: the map is only built when positions are
-/// on, so on the plain `--html` path it is EMPTY and every answer read from it
-/// would be the same one. That is a check that cannot fire, and it is the same
-/// reason the `after_blank` test beside the quote path reads the line just
-/// consumed instead of the collected text.
+/// Whether the last consumed content belongs below this container's column.
+/// A comment closer inherits its opener's column (CARVE-P9-053). The cursor
+/// keeps that column even when position tracking is disabled.
 fn last_consumed_line_below_column(cur: &LineCursor, content_col: usize) -> bool {
     if content_col == 0 || cur.pos == 0 {
         return false;
     }
-    indent_columns(cur.lines[cur.pos - 1]) < content_col
+    let column = cur
+        .closed_comment_location
+        .filter(|(closer, _)| *closer == cur.pos - 1)
+        .map_or_else(
+            || indent_columns(cur.lines[cur.pos - 1]),
+            |(_, column)| column,
+        );
+    column < content_col
 }
 
 /// The marker-line CONTENT of a collected body whose last line opens a list
@@ -12527,8 +12526,14 @@ fn collect_indented_block_mapped_with(
     let mut reached: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
-    let mut comment_fence: Option<(usize, usize)> = None;
-    let mut comment_fence_strip: Option<usize> = None;
+    let marker_comment = cur
+        .pos
+        .checked_sub(1)
+        .and_then(|at| detect_list_marker_full(cur.lines[at]))
+        .and_then(|marker| detect_comment_fence_line(marker.content))
+        .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
+    let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
+    let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
     let mut definition_ended_paragraph = false;
     // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
     // PART 9 SS28 degrades it to a line comment, so a frame one level in ends at
@@ -12549,8 +12554,9 @@ fn collect_indented_block_mapped_with(
     // there is nothing left for a line to continue, so this frame ends for a
     // line that reached nothing (markup-carve/carve-rs#1531). Recorded when the
     // span OPENS - the closer line does not carry the opener's column.
-    let mut span_reached_this_frame = false;
+    let mut span_reached_this_frame = comment_fence.is_some();
     let mut closed_comment_span_above = false;
+    let mut folded_code_after_comment = false;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     let mut nested_item_columns: Vec<(usize, usize)> = Vec::new();
@@ -12654,7 +12660,10 @@ fn collect_indented_block_mapped_with(
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
-        let fence_owns_flush_left = fence.is_some() && line.starts_with(LAZY);
+        let fence_owns_flush_left = (fence.is_some() && line.starts_with(LAZY))
+            || (folded_code_after_comment
+                && !is_list_marker(line)
+                && !interrupts_lazy_continuation_as_container(cur, line));
         // A `+` at an ancestor's marker column names only a flush-left block.
         // When the following line is indented, the marker contributes nothing
         // and must not close this nested list's open paragraph.
@@ -12725,6 +12734,7 @@ fn collect_indented_block_mapped_with(
         // delimiter closing a span these lines already hold is not one.
         if indent <= parent_indent
             && !fence_owns_flush_left
+            && !comment_fence.is_some_and(|(run, _)| is_comment_fence_close_any_column(line, run))
             && !closes_a_held_comment_span(&lines, line)
         {
             break;
@@ -12839,8 +12849,9 @@ fn collect_indented_block_mapped_with(
             block_indent = Some(indent);
         }
         let was_in_comment_span = comment_fence_strip.is_some();
-        if let Some((fence_len, _)) = comment_fence {
+        if let Some((fence_len, opener_column)) = comment_fence {
             if is_comment_fence_close_any_column(line, fence_len) {
+                cur.closed_comment_location = Some((cur.pos, opener_column));
                 comment_fence = None;
                 closed_comment_span_above |= span_reached_this_frame;
                 span_reached_this_frame = false;
@@ -12923,7 +12934,20 @@ fn collect_indented_block_mapped_with(
         } else {
             &sliced
         };
-        track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+        // A below-column comment retains the paragraph used by I4's
+        // interruption test. An unclosed code fence still folds into it.
+        let after_below_comment = cur
+            .closed_comment_location
+            .is_some_and(|(at, column)| at + 1 == cur.pos && column < strip_cols);
+        let rejected_code = after_below_comment
+            && detect_fence_open(fence_line).is_some_and(|open| {
+                !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+            });
+        if rejected_code {
+            folded_code_after_comment = true;
+        } else if !in_comment_span {
+            track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+        }
         track_collected_colon_fence(
             &mut colon_open,
             &sliced,

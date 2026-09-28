@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-comment-span-opened-below-every-content-column-is-located-there",
+    "a-comment-span-s-closer-column-does-not-move-the-item-s-ownership",
     "a-bare-colon-opener-in-a-description-body-is-an-opener",
     "a-bare-colon-run-interrupts-a-paragraph-whether-or-not-a-line-follows-it",
     "a-caption-s-placeholder-is-any-that-does-not-begin-a-tag",
