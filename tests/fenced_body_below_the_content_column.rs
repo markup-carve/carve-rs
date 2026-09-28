@@ -81,12 +81,20 @@ fn a_closer_below_the_content_column_is_not_this_fences_closer() {
 
 #[test]
 fn a_closed_fence_leaves_nothing_to_guard() {
-    // THE CONTROL for the rule's scope. Once the closer has run, the item holds
-    // no open fenced body and a below-column line folds in exactly as it always
-    // did. A guard written on "this item once held a fence" fails here.
+    // THE CONTROL for the rule's scope, and it is NOT that the line folds in.
+    // Once the closer has run the item holds no open fenced body - so it holds
+    // nothing at all, and PART 1 S4's otherwise has already ended it. The band
+    // line belongs to the document (carve-rs#2128).
+    //
+    // This expectation used to read `y` inside the item, and it was this engine
+    // alone: the oracle (`scripts/spec/layout.mjs` plus `scripts/spec/html.mjs`
+    // at markup-carve/carve 66d4ed19), carve-js 8ad6d7691 and carve-php
+    // ab0648469 all place the paragraph after the list. What the rule's scope
+    // actually excludes is a line the fence would have owned as PAYLOAD, which
+    // the test above this one covers.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n  ```\n y\n")),
-        "<ul> <li>a <pre><code>b </code></pre> y </li> </ul>"
+        "<ul> <li>a <pre><code>b </code></pre> </li> </ul> <p>y</p>"
     );
 }
 
