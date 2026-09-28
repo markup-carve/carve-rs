@@ -224,6 +224,33 @@ fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
 }
 
 #[test]
+fn a_marker_ladder_parses_without_a_pass_per_level() {
+    let _guard = perf_guard();
+    // A MARKER LADDER IS A DIFFERENT BRANCH from the indented nesting below, and
+    // it re-parses its own remaining body at every level. So anything that reads
+    // that body once per item costs one full pass per level: an `item_paragraph_open`
+    // read added there took 14 s on 20 levels of `- ` against 6 ms without it,
+    // while the indented guard below stayed at 28 ms and the 6926-test suite
+    // stayed green (carve-rs#2120).
+    let source = "- ".repeat(22) + "a\n";
+    assert!(
+        source.len() < 64,
+        "the input must stay tiny: {}",
+        source.len()
+    );
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(html.contains("<li>a"), "{html}");
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "a 22-level marker ladder took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
 fn deeply_nested_list_parse_is_bounded() {
     on_big_stack(|| {
         // Finding 1: deeply nested lists collect-and-reparse the tail per level.
