@@ -288,23 +288,27 @@ pub(super) fn collect(
     ];
     let blank_line = regex::Regex::new(r"\n[ \t]*\r?\n").unwrap();
     for (rule, pattern, message) in &habits {
-        for captures in pattern.captures_iter(source) {
+        let mut search = 0;
+        while let Some(captures) = pattern.captures_at(source, search) {
             let m = captures
                 .get(if *rule == "djot-plus-bullet" { 1 } else { 0 })
                 .unwrap();
+            search = m.end();
             let slashes = source[..m.start()]
                 .bytes()
                 .rev()
                 .take_while(|b| *b == b'\\')
                 .count();
             let width = if rule.starts_with("markdown-") { 2 } else { 1 };
-            if slashes % 2 == 1
-                || !in_text(m.start(), m.start() + width)
-                || !in_text(m.end() - width, m.end())
-            {
+            if slashes % 2 == 1 {
+                continue;
+            }
+            if !in_text(m.start(), m.start() + width) || !in_text(m.end() - width, m.end()) {
+                search = m.start() + 1;
                 continue;
             }
             if blank_line.is_match(m.as_str()) {
+                search = m.start() + 1;
                 continue;
             }
             if *rule == "djot-superscript-caret" {
@@ -315,6 +319,7 @@ pub(super) fn collect(
                     || inner.ends_with('[')
                     || source[m.end()..].starts_with('}')
                 {
+                    search = m.start() + 1;
                     continue;
                 }
             }

@@ -235,8 +235,10 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                         start += 1;
                     }
                     let mut end = start;
-                    while matches!(bytes.get(end), Some(b'<' | b'>' | b'~' | b'^' | b'v' | b'?'))
-                        && end - start < 2
+                    while matches!(
+                        bytes.get(end),
+                        Some(b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
+                    ) && end - start < 2
                     {
                         end += 1;
                     }

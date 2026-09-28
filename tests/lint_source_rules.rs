@@ -262,3 +262,20 @@ fn habit_warnings_cross_inline_nodes_and_soft_breaks() {
         );
     }
 }
+
+#[test]
+fn rejected_habit_candidates_do_not_hide_later_spans() {
+    for (source, line, column) in [
+        ("x 2^10 in para\n\nand x^2^ later", 3, 6),
+        ("a ~~b\n\nc~~d~~ e", 3, 2),
+        ("a `~~b`~~c~~ d", 1, 8),
+    ] {
+        let warnings = lint_carve(source);
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.line == line && w.column == column),
+            "{source}: {warnings:?}"
+        );
+    }
+}

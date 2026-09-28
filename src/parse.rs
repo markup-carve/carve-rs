@@ -7187,6 +7187,8 @@ thread_local! {
 /// first dedented line (corpus 512). A closer after an earlier dedent belongs
 /// outside the container, and the opener degrades to a line comment.
 ///
+/// List markers inside the comment body do not end it (carve-rs#1053).
+///
 /// Closer positions are indexed by fence width and quote depth. The first
 /// dedent is memoized per column so repeated openers do not rescan the same
 /// container body.
