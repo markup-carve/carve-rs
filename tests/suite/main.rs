@@ -76,6 +76,8 @@ mod a_code_blocks_last_newline_is_its_terminator;
 mod a_code_blocks_nbsp_sentinel_is_resolved;
 #[path = "../a_code_span_closer_is_searched_across_the_block.rs"]
 mod a_code_span_closer_is_searched_across_the_block;
+#[path = "../a_colon_container_keeps_a_band_payload_at_its_column.rs"]
+mod a_colon_container_keeps_a_band_payload_at_its_column;
 #[path = "../a_colon_fence_container_owns_a_link_def_past_its_column.rs"]
 mod a_colon_fence_container_owns_a_link_def_past_its_column;
 #[path = "../a_colon_followed_by_only_whitespace_is_not_a_description.rs"]

@@ -5718,6 +5718,50 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 block_at_minimum = true;
                 continue;
             }
+            // A COLON CONTAINER AT THE MINIMUM COLUMN OWNS ITS EXTENT TOO. It
+            // is not opaque, but its payload is still its own: CARVE-P0-004
+            // keeps a run in the band between the container's column and a
+            // fence base inside it at the authored column, and reading that run
+            // again as an authored base dedents it onto the container's column,
+            // where the container takes it as its closer. This pass runs twice
+            // over one item body - `item_body` and then `parse_item_chunk` - so
+            // the second run is where that happened (carve-rs#2095).
+            //
+            // The walk tracks colon widths only, as the base-past-zero arm
+            // below does.
+            if let Some(width) = detect_container_open(&lines[i])
+                .map(|open| open.fence_len)
+                .or_else(|| detect_quote_block_open(&lines[i]))
+            {
+                let mut stack = vec![width];
+                i += 1;
+                while i < lines.len() {
+                    let line = &lines[i];
+                    i += 1;
+                    if exact_colon_fence_len(line) == Some(*stack.last().unwrap()) {
+                        stack.pop();
+                        if stack.is_empty() {
+                            break;
+                        }
+                        continue;
+                    }
+                    if line.starts_with([' ', '\t']) || stack.len() >= MAX_NESTING_DEPTH {
+                        continue;
+                    }
+                    if let Some(len) = detect_container_open(line)
+                        .map(|open| open.fence_len)
+                        .or_else(|| detect_line_block_open(line))
+                        .or_else(|| detect_hardbreaks_block_open(line))
+                        .or_else(|| detect_quote_block_open(line))
+                    {
+                        stack.push(len);
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
+                block_at_minimum = true;
+                continue;
+            }
             // A definition entry at the container minimum remains the
             // innermost owner for its exact extent. Skip that extent so a
             // structural payload at the description column is not reconsidered
