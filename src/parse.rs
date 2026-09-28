@@ -9594,7 +9594,20 @@ fn parse_list(
                     continue;
                 }
             }
-            if !pending_blank && item_paragraph_open && flush_comment_keeps_the_item_open(cur, line)
+            // AN OPEN FENCE MAKES THE BODY VERBATIM, so a `%%` line in it is not
+            // a comment and §24 C3's column exemption has nothing to exempt.
+            // Below the content column the line reached nothing at all, so S4's
+            // otherwise ends the item and its fence rather than taking the line
+            // as payload - which is the answer the two `item_open_fence` guards
+            // above already give every other shape (carve-rs#2096). A separate
+            // condition from `item_paragraph_open`, which asks whether a
+            // paragraph is left at all: a verbatim body holds none, and a line
+            // below the column reaches neither.
+            let fence_body_is_verbatim_here = item_open_fence.is_some() && indent < content_col;
+            if !pending_blank
+                && !fence_body_is_verbatim_here
+                && item_paragraph_open
+                && flush_comment_keeps_the_item_open(cur, line)
             {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
@@ -10205,23 +10218,31 @@ fn parse_list(
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
-            fold_lazy_run_and_resume(
-                cur,
-                &mut stream,
-                content_col,
-                |src, _below| {
-                    if swallowed_blank_separator {
-                        return false;
-                    }
-                    let src = &src.source;
-                    if marker_line_was_the_whole_block {
-                        return body_ends_with_open_paragraph(src, options);
-                    }
-                    body_ends_with_open_paragraph(src, options)
-                        || nested_ends_with_heading(src, options)
-                },
-                |cur| collect_indented_block_mapped(cur, base_indent, content_col),
-            );
+            // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
+            // above already has it. A fenced body is verbatim and holds no
+            // paragraph, so there is nothing below the content column for the
+            // fold to reach - and its comment arm, which is right that a comment
+            // ends no container, took the line into the verbatim body instead
+            // (carve-rs#2096).
+            if item_open_fence.is_none() {
+                fold_lazy_run_and_resume(
+                    cur,
+                    &mut stream,
+                    content_col,
+                    |src, _below| {
+                        if swallowed_blank_separator {
+                            return false;
+                        }
+                        let src = &src.source;
+                        if marker_line_was_the_whole_block {
+                            return body_ends_with_open_paragraph(src, options);
+                        }
+                        body_ends_with_open_paragraph(src, options)
+                            || nested_ends_with_heading(src, options)
+                    },
+                    |cur| collect_indented_block_mapped(cur, base_indent, content_col),
+                );
+            }
             // A blank absorbed inside the marker-line block's continuation that
             // is followed by a plain paragraph loosens the item (§17 L1), the
             // same rule the plain-continuation branch applies -- e.g. a
