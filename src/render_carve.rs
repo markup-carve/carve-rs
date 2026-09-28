@@ -2052,6 +2052,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
             let body = guard_thematic_break_lines(
                 session,
                 &render_inlines_with_caption(session, &paragraph.children, ctx, caption_can_open),
+                ctx.line_block_depth > 0,
             );
             with_block_attrs(&paragraph.attrs, &body)
         }
@@ -5094,8 +5095,9 @@ fn protect_verbatim(session: &RenderSession, content: &str) -> String {
 /// which is what the source said. The marker is a sentinel because normalize()
 /// trims the document's leading whitespace, which would silently undo the guard
 /// whenever the paragraph is the first block.
-fn guard_thematic_break_lines(session: &RenderSession, body: &str) -> String {
-    if !body.contains('-') {
+fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block: bool) -> String {
+    // Line-block bodies parse as inline content; padding would add a no-break space.
+    if in_line_block || !body.contains('-') {
         return body.to_string();
     }
     body.split('\n')
