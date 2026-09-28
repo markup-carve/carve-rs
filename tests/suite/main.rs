@@ -1593,3 +1593,6 @@ mod emphasis_attribute_markers;
 
 #[path = "../markdown_empty_headings.rs"]
 mod markdown_empty_headings;
+
+#[path = "../a_quoted_container_fence_stores_no_lazy_claim.rs"]
+mod a_quoted_container_fence_stores_no_lazy_claim;

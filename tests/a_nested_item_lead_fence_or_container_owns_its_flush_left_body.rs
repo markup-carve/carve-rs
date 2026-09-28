@@ -56,11 +56,10 @@ fn a_three_deep_ladder_owns_the_body_at_the_innermost_item() {
 }
 
 #[test]
-fn a_quoted_item_lead_fence_owns_its_body() {
+fn a_quoted_item_fence_requires_marked_body_lines() {
     assert_eq!(
         flat("> - ``` x\ncode\n```\n"),
-        "<blockquote> <ul> <li> \
-         <pre><code class=\"language-x\">code ``` </code></pre> </li> </ul> </blockquote>",
+        "<blockquote> <ul> <li> <pre><code class=\"language-x\"> </code></pre> </li> </ul> </blockquote> <p>code <code></code></p>",
     );
 }
 
