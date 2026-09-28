@@ -5573,6 +5573,23 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 block_at_minimum = false;
                 continue;
             }
+            // Verse lines are inline content, including indented block markers.
+            // Only the line block's own closer ends this opaque body.
+            if let Some(width) = detect_line_block_open(&lines[i]) {
+                i += 1;
+                while i < lines.len() {
+                    let closes = exact_colon_fence_len(&lines[i]) == Some(width);
+                    i += 1;
+                    if closes {
+                        break;
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
+                // The completed block lets the next authored opener rebase.
+                block_at_minimum = true;
+                continue;
+            }
             // A definition entry at the container minimum remains the
             // innermost owner for its exact extent. Skip that extent so a
             // structural payload at the description column is not reconsidered
@@ -5622,6 +5639,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             .is_none()
             .then(|| detect_comment_fence_line(&opener))
             .flatten();
+        let line_block = detect_line_block_open(&opener);
         let colon = if code.is_none() && comment.is_none() {
             detect_container_open(&opener)
                 .map(|open| open.fence_len)
@@ -5658,6 +5676,19 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                         &strip_leading_columns(candidate, base),
                         open.fence_len,
                     )
+                {
+                    break;
+                }
+            }
+        } else if let Some(width) = line_block {
+            // Rebase the opener and its whole body together. Other colon widths
+            // are verse content and do not open nested containers.
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                end = j;
+                let column = indent_columns(candidate);
+                if (column == 0 || column == base)
+                    && exact_colon_fence_len(&strip_leading_columns(candidate, column))
+                        == Some(width)
                 {
                     break;
                 }
@@ -5816,7 +5847,19 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             }
             // Payload below a code or colon fence's base keeps its residual
             // indentation, so an in-band run cannot become a closer.
-            if (code.is_some() || colon.is_some()) && indent_columns(line) < base {
+            if (code.is_some() || colon.is_some() || line_block.is_some())
+                && indent_columns(line) < base
+            {
+                continue;
+            }
+            if line_block.is_some() {
+                let (residue, consumed, synthetic) = slice_columns_mapped(line, base, true);
+                *line = Cow::Owned(residue);
+                if let Some(Some(col)) = source.col_map.get_mut(j) {
+                    // Positions count authored codepoints, excluding the spaces
+                    // synthesized when a tab crosses the reference column.
+                    *col += consumed as isize - synthetic as isize;
+                }
                 continue;
             }
             *line = Cow::Owned(strip_leading_columns(line, base));
@@ -6011,7 +6054,7 @@ pub(crate) fn opens_block_for_term_lint(line: &str) -> bool {
 /// openers, and a non-opener still folds - so the question the band asks is
 /// "is this an opener", and these two kinds stop being one there.
 ///
-/// PARAMETERIZED RATHER THAN COPIED. A second list of the same twelve arms is
+/// PARAMETERIZED RATHER THAN COPIED. A second copy of the opener set is
 /// how one rule acquires two spellings and they drift; the band's exclusion is
 /// one argument, and every other caller keeps the full set.
 ///
@@ -6027,6 +6070,7 @@ fn item_block_opener_with_invisible_arms(line: &str, invisible_arms: bool) -> bo
         || is_definition_list_start(line)
         || detect_container_open(line).is_some()
         || detect_quote_block_open(line).is_some()
+        || detect_line_block_open(line).is_some()
         || (invisible_arms && parse_footnote_def_line(line).is_some())
         || (invisible_arms && parse_standalone_attrs(line).is_some())
         || detect_block_image(line).is_some()
