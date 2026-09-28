@@ -33,7 +33,8 @@ use crate::ast::{BlockNode, FigureTarget};
 pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
-    let (held, prefix, spans) = protect_attributed_strong(body);
+    let folded = fold_heading_continuations(body);
+    let (held, prefix, spans) = protect_attributed_strong(&folded);
     let converted = rewrite_djot_body(&convert_definition_lists(&held));
     let restore = regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
     let converted = restore
@@ -49,6 +50,64 @@ pub fn djot_to_carve(djot: &str) -> String {
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
     }
+}
+
+fn fold_heading_continuations(source: &str) -> String {
+    static BLOCK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let block = BLOCK.get_or_init(|| regex::Regex::new(
+        r"^(?:[#>|{]|[-*+][ \t]|[0-9]+[.)][ \t]|:[ \t]|:{2,}|\([0-9a-zA-Z]+\)[ \t]|[`~]{3,}|\^[ \t]|%{3,}|\[[^\]\n]*\]:|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)"
+    ).unwrap());
+    let masked = mask_code_and_destinations(source);
+    let masks: Vec<_> = masked.split('\n').collect();
+    let lines: Vec<_> = source.split('\n').collect();
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let level = line.bytes().take_while(|byte| *byte == b'#').count();
+        if (i > 0 && !lines[i - 1].trim().is_empty())
+            || !(1..=6).contains(&level)
+            || line.as_bytes().get(level) != Some(&b' ')
+            || masks[i].as_bytes().first() != Some(&b'#')
+            || line[level..].trim().is_empty()
+        {
+            result.push(line.to_string());
+            i += 1;
+            continue;
+        }
+        let prefix = format!("{} ", "#".repeat(level));
+        let mut folded = line.to_string();
+        i += 1;
+        while i < lines.len() {
+            if folded
+                .bytes()
+                .rev()
+                .take_while(|byte| *byte == b'\\')
+                .count()
+                % 2
+                == 1
+            {
+                break;
+            }
+            let next = lines[i].trim_start_matches([' ', '\t']);
+            let part = if let Some(text) = next.strip_prefix(&prefix) {
+                if text.trim().is_empty() {
+                    break;
+                }
+                text.trim_start_matches(' ')
+            } else {
+                if next.trim().is_empty() || block.is_match(next) {
+                    break;
+                }
+                next
+            };
+            folded.push(' ');
+            folded.push_str(part);
+            i += 1;
+        }
+        result.push(folded);
+    }
+    result.join("\n")
 }
 
 fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
@@ -2338,5 +2397,64 @@ mod attribute_list_tests {
         assert_eq!(djot_to_carve("[span]{#a<b}"), "[span]\\{\\#a<b}");
         assert_eq!(djot_to_carve("a #tag"), "a \\#tag");
         assert_eq!(crate::to_html(&djot_to_carve("\\{#id}")), "<p>{#id}</p>");
+    }
+}
+
+#[cfg(test)]
+mod heading_continuation_tests {
+    use super::djot_to_carve;
+
+    #[test]
+    fn headings_fold_matching_markers_and_lazy_lines() {
+        for (source, expected) in [
+            ("# Heading\n# continued\n", "# Heading continued\n"),
+            ("# Heading\nlazy\n", "# Heading lazy\n"),
+            (
+                "# Heading\nlazy\n# more\nlazy\n\ntext\n",
+                "# Heading lazy more lazy\n\ntext\n",
+            ),
+            ("## A\n## B\nC", "## A B C"),
+            ("# A\n  # B\n  C", "# A B C"),
+            ("# A\n    B", "# A B"),
+        ] {
+            assert_eq!(djot_to_carve(source), expected);
+        }
+    }
+
+    #[test]
+    fn headings_stop_at_blocks_and_leave_code_alone() {
+        for next in [
+            "",
+            "## B",
+            "#",
+            "- item",
+            "1. item",
+            "> quote",
+            "```",
+            "~~~",
+            "{.class}",
+            "[r]: /url",
+            "::: div",
+            "  - item",
+            "***",
+            "---",
+            "* * *",
+            "^ x",
+            "%%%",
+        ] {
+            let source = format!("# A\n{next}\n");
+            assert_eq!(
+                djot_to_carve(&source),
+                format!("# A\n{}", djot_to_carve(&format!("{next}\n")))
+            );
+        }
+        for source in [
+            "```\n# A\n# B\n```\n",
+            "`x\n# A\n# B\ny`\n",
+            "para\n# A\nB\n",
+            "# A\\\nB\n",
+        ] {
+            assert_eq!(djot_to_carve(source), source);
+        }
     }
 }
