@@ -134,6 +134,8 @@ mod a_continuation_marker_attaches_one_block;
 mod a_continuation_marker_attaches_only_a_flush_left_block;
 #[path = "../a_continuation_rows_open_run_spans_it.rs"]
 mod a_continuation_rows_open_run_spans_it;
+#[path = "../a_crossref_label_built_from_an_expansion_degrades_to_its_target.rs"]
+mod a_crossref_label_built_from_an_expansion_degrades_to_its_target;
 #[path = "../a_dd_hosted_note_absorbs_an_opener_at_its_floor.rs"]
 mod a_dd_hosted_note_absorbs_an_opener_at_its_floor;
 #[path = "../a_declining_extension_keeps_the_authored_attributes.rs"]
