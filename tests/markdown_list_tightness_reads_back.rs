@@ -316,11 +316,7 @@ fn a_labelled_div_keeps_the_separator() {
 
 #[test]
 fn a_div_wrapped_paragraph_after_a_nested_list_keeps_its_blank_line() {
-    // A nested list is the one block this target writes with no blank behind it,
-    // so this seam is the only place a blank can be put back. The div spells
-    // nothing, so the block that meets the nested list is the paragraph inside
-    // it - and glued, cmark-gfm reads `p` as lazy continuation of item `b`, so
-    // the paragraph reaches the output nowhere (carve-rs#2136).
+    // Without the separator, the div's paragraph becomes continuation of `b`.
     let source = "- a\n\n  - b\n  :::\n  p\n  :::\n";
     assert_eq!(carve::to_markdown(source), "- a\n  - b\n\n  p\n");
     let children = reads_back_children(source);

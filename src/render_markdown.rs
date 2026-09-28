@@ -740,8 +740,7 @@ fn render_list_item(
     let mut out = String::new();
     for child in &item.children {
         let rendered = render_block(child, ctx, depth);
-        // ALL THREE predicates answer about the block whose markup actually
-        // opens this child's output, which a transparent wrapper is not.
+        // Check the block that opens the rendered output through any div wrappers.
         let opener = opening_block(child);
         if tight
             && out.ends_with("\n\n")
@@ -773,13 +772,9 @@ fn render_list_item(
 /// The tail has to be able to TAKE lazy text, which a bare marker and a heading
 /// cannot, so those stay glued and the item stays tight.
 ///
-/// `below` is the block that OPENS the child's output, not the child. A div is
-/// written as its children alone, so matching on the child's kind answered about
-/// a wrapper that spells nothing and a div-wrapped paragraph after a nested list
-/// went out glued: the reader took it as more text of the last nested item and
-/// the paragraph reached the output nowhere (carve-rs#2136). This is the third of
-/// the three predicates to be handed the opening block; carve-rs#2133 and
-/// carve-rs#2135 did the other two.
+/// `below` is the opening block after unwrapping unlabelled divs. Checking the
+/// wrapper itself would omit the separator and merge its paragraph into the
+/// preceding nested item (carve-rs#2136).
 fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
     if !matches!(
         below,
