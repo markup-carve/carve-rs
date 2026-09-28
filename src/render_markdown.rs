@@ -160,7 +160,52 @@ fn render_markdown_once(
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
-    normalize(&format!("{out}{footnotes}"))
+    let body = normalize(&format!("{out}{footnotes}"));
+    match render_frontmatter(doc) {
+        None => body,
+        // A document that is only frontmatter has no body to separate it from,
+        // and `normalize` returns a bare newline for one.
+        Some(frontmatter) if body == "\n" => format!("{frontmatter}\n"),
+        Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
+    }
+}
+
+/// PART 11 §10r: frontmatter is emitted first, with the format token wherever
+/// the format is not `yaml`, and the content verbatim.
+///
+/// Built outside `normalize`, whose blank-line collapse and escape resolution
+/// must not reach metadata the clause requires verbatim. Only the Trojan-Source
+/// overrides and isolates go, which every other byte on this target loses too.
+///
+/// The raw block first and the parsed map second, the precedence `render_carve`
+/// already uses: the map is the fallback for a document built through the API
+/// rather than parsed.
+fn render_frontmatter(doc: &Document) -> Option<String> {
+    let strip = |text: &str| -> String {
+        text.chars()
+            .filter(|c| !crate::escape::is_bidi_control(*c))
+            .collect()
+    };
+    if let Some(raw) = &doc.frontmatter_raw {
+        let format = if raw.format == "yaml" {
+            ""
+        } else {
+            raw.format.as_str()
+        };
+        return Some(format!("---{format}\n{}\n---", strip(&raw.content)));
+    }
+    if doc.frontmatter.is_empty() {
+        return None;
+    }
+    let mut out = String::from("---");
+    for (key, value) in &doc.frontmatter {
+        out.push('\n');
+        out.push_str(&strip(key));
+        out.push_str(": ");
+        out.push_str(&strip(value));
+    }
+    out.push_str("\n---");
+    Some(out)
 }
 
 struct MarkdownContext {
