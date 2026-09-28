@@ -11646,13 +11646,20 @@ fn line_comment_keeps_the_container_open(cur: &mut LineCursor<'_>, line: &str) -
 /// A cheap peek, kept separate because the open-paragraph test that follows it
 /// reparses the whole collected subtree: it must run only when there is a lazy
 /// line pending, else deeply nested lists blow up.
+///
+/// AS A CONTAINER, because that is the only thing this runs for: the paragraph
+/// the line would fold into belongs to a container, and §7 recognizes an
+/// abbreviation definition only as a direct child of the DOCUMENT. Asked at
+/// document level, `*[A]: b` interrupted a marker-line block's paragraph and
+/// was collected, where `- a` on the plain-paragraph path next to it folded the
+/// same line in - two paths, one construct, two answers (carve-rs#2096).
 fn lazy_line_pending(cur: &mut LineCursor) -> bool {
     let Some(line) = cur.peek() else { return false };
     let line = line.to_string();
     !is_blank_line(&line)
         && indent_columns(&line) == 0
         && !is_list_marker(&line)
-        && !interrupts_paragraph(cur, &line)
+        && !interrupts_paragraph_as_container(cur, &line)
 }
 
 /// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
@@ -11782,8 +11789,14 @@ fn collect_trailing_lazy_through(
             || (is_list_marker(line) && indent_columns(line) <= list_base)
             || trim_ascii(line) == "+"
             || {
+                // AS A CONTAINER: this collector runs only for a line folding
+                // into a container's open paragraph, and §7 recognizes an
+                // abbreviation definition only as a direct child of the
+                // document. Asked at document level it ended the fold, so `- >q`
+                // / `*[A]: b` dropped the author's line and defined an
+                // abbreviation where the sibling paths fold it (carve-rs#2096).
                 let line_owned = line.to_string();
-                interrupts_lazy_continuation(cur, &line_owned)
+                interrupts_lazy_continuation_as_container(cur, &line_owned)
             }
         {
             break;
@@ -12869,7 +12882,13 @@ fn fold_term(
             break;
         }
         let owned = next.to_string();
-        if interrupts_paragraph(cur, &owned) {
+        // AS A CONTAINER, which waives the abbreviation arm. A term's
+        // continuation is a position for INLINE CONTENT, not for a block, so §7
+        // never gets to recognize `*[A]: b` there - and it is a content line at
+        // the document column too, which is why this cannot ask
+        // `at_document_level`. Asked as a paragraph, `:: t` / `*[A]: b` lost the
+        // author's second line and defined an abbreviation (carve-rs#2096).
+        if interrupts_paragraph_as_container(cur, &owned) {
             break;
         }
         // A term's continuation line is a CONTENT LINE, so its trailing
