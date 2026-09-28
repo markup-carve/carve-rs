@@ -18,10 +18,36 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+    Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
+};
 
 use crate::ast::*;
 use crate::render_carve;
+
+fn markdown_destination(destination: &str, email: bool) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(destination.len());
+    if email {
+        encoded.push_str("mailto:");
+    }
+    for byte in destination.bytes() {
+        if byte <= b' '
+            || byte >= 0x7f
+            || matches!(
+                byte,
+                b'"' | b'<' | b'>' | b'[' | b'\\' | b']' | b'`' | b'{' | b'|' | b'}'
+            )
+        {
+            encoded.push('%');
+            encoded.push(HEX[(byte >> 4) as usize] as char);
+            encoded.push(HEX[(byte & 15) as usize] as char);
+        } else {
+            encoded.push(byte as char);
+        }
+    }
+    encoded
+}
 
 /// The title of a link or image with no destination, which has no slot left to
 /// carry it, kept on a span the way the HTML importer keeps it (carve-rs#1738).
@@ -731,16 +757,19 @@ impl Builder {
             Tag::Strong => Frame::Emphasis(EmphasisKind::Strong, Vec::new()),
             Tag::Strikethrough => Frame::Emphasis(EmphasisKind::Strike, Vec::new()),
             Tag::Link {
-                dest_url, title, ..
+                dest_url,
+                title,
+                link_type,
+                ..
             } => Frame::Link {
-                href: dest_url.to_string(),
+                href: markdown_destination(&dest_url, link_type == LinkType::Email),
                 title: optional(&title),
                 children: Vec::new(),
             },
             Tag::Image {
                 dest_url, title, ..
             } => Frame::Image {
-                src: dest_url.to_string(),
+                src: markdown_destination(&dest_url, false),
                 title: optional(&title),
                 alt: String::new(),
             },
@@ -1534,5 +1563,25 @@ mod tests {
     #[test]
     fn an_empty_document_stays_empty() {
         assert_eq!(markdown_to_carve("").trim(), "");
+    }
+}
+
+#[cfg(test)]
+mod destination_encoding_tests {
+    #[test]
+    fn destinations_keep_uri_encoding_and_email_schemes() {
+        for (source, expected) in [
+            ("<foo@bar.example.com>", "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"),
+            ("<foo+special@Bar.baz-bar0.com>", "<p><a href=\"mailto:foo+special@Bar.baz-bar0.com\">foo+special@Bar.baz-bar0.com</a></p>"),
+            ("<https://example.com?find=\\*>", "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>"),
+            ("<https://foo.bar.`baz>`", "<p><a href=\"https://foo.bar.%60baz\">https://foo.bar.`baz</a>`</p>"),
+            ("[x](<a b>)", "<p><a href=\"a%20b\">x</a></p>"),
+            ("[x](<é/中?q=a&b=c>)", "<p><a href=\"%C3%A9/%E4%B8%AD?q=a&amp;b=c\">x</a></p>"),
+            ("a ![x](<a b>)", "<p>a <img src=\"a%20b\" alt=\"x\"></p>"),
+            ("[x](a%20b)", "<p><a href=\"a%20b\">x</a></p>"),
+            ("[x](<a'b>)", "<p><a href=\"a&apos;b\">x</a></p>"),
+        ] {
+            assert_eq!(crate::to_html(&super::markdown_to_carve(source)), expected, "{source}");
+        }
     }
 }
