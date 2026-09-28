@@ -2485,25 +2485,20 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
                 format!("{bullet}{item_attrs} ")
             };
         }
-        let (mut content, restored_marker_definition) = if item.children.is_empty() {
-            let restored = item
-                .pos
+        let mut content = if item.children.is_empty() {
+            item.pos
                 .as_ref()
-                .and_then(|pos| definition_at_line(session, pos.start_line, ctx));
-            let restored_marker_definition = restored.is_some();
-            (restored.unwrap_or_default(), restored_marker_definition)
+                .and_then(|pos| definition_at_line(session, pos.start_line, ctx))
+                .unwrap_or_default()
         } else {
-            (
-                render_item_blocks(session, &item.children, node.tight, ctx),
-                false,
-            )
+            render_item_blocks(session, &item.children, node.tight, ctx)
         };
-        let trimmed_content = trim_non_nbsp(&content);
-        if trimmed_content.is_empty()
-            || (!restored_marker_definition
-                && trimmed_content.starts_with("[^")
-                && trimmed_content.contains(": "))
-        {
+        // EMPTINESS is the only thing that earns `+`. A second, text-shaped test
+        // (content starts with `[^` and holds a colon-space) stood for "the item
+        // spelled a footnote definition that collection hoisted" - but collection
+        // always empties the item, so that test could only fire on authored
+        // inline content, and it replaced the whole item with `+` (carve-rs#2097).
+        if trim_non_nbsp(&content).is_empty() {
             content = "+".to_string();
         }
         let content = trim_non_nbsp(&content).to_string();
