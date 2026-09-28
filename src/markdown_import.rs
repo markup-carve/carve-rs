@@ -26,6 +26,9 @@ use crate::ast::*;
 use crate::render_carve;
 
 fn markdown_destination(destination: &str, email: bool) -> String {
+    if is_empty_destination(destination) {
+        return destination.to_string();
+    }
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut encoded = String::with_capacity(destination.len());
     if email {
@@ -1571,6 +1574,10 @@ mod destination_encoding_tests {
     #[test]
     fn destinations_keep_uri_encoding_and_email_schemes() {
         for (source, expected) in [
+            ("[x](< >)", "<p>x</p>"),
+            ("![y](< >)", "<p>y</p>"),
+            ("[x](a%zz)", "<p><a href=\"a%zz\">x</a></p>"),
+            ("[x](mailto:a@b.example)", "<p><a href=\"mailto:a@b.example\">x</a></p>"),
             ("<foo@bar.example.com>", "<p><a href=\"mailto:foo@bar.example.com\">foo@bar.example.com</a></p>"),
             ("<foo+special@Bar.baz-bar0.com>", "<p><a href=\"mailto:foo+special@Bar.baz-bar0.com\">foo+special@Bar.baz-bar0.com</a></p>"),
             ("<https://example.com?find=\\*>", "<p><a href=\"https://example.com?find=%5C*\">https://example.com?find=\\*</a></p>"),
