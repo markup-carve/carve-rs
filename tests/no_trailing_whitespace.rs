@@ -15,7 +15,7 @@
 //! enforced by `carries_verbatim_content` below; until corpus 505 arrived it was
 //! stated here and absent from the code, because no document reached the shape.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::path::Path;

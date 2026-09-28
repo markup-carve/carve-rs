@@ -25,7 +25,7 @@
 //! that has stopped describing the corpus does not, which is what
 //! `COVERAGE_FLOOR` bounds.
 
-mod common;
+use crate::common;
 
 use std::collections::BTreeMap;
 use std::fs;

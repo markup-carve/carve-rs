@@ -19,7 +19,7 @@
 //! `from_json` -> `prepare_document_for_render` -> `render_*` pipeline is the
 //! reachable case.
 
-mod common;
+use crate::common;
 
 use carve::extensions::table_of_contents::TocPlacement;
 

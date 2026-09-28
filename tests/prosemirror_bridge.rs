@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-mod common;
+use crate::common;
 
 const SCHEMA_MAP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),

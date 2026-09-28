@@ -16,9 +16,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-  # ~400 integration-test binaries dominate the test job via compile and
-  # link time; line-tables-only keeps file:line in backtraces at a fraction
-  # of the cost of full debug info.
+  # The test binaries dominate the test job via compile and link time;
+  # line-tables-only keeps file:line in backtraces at a fraction of the cost
+  # of full debug info.
   CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
   # OPTIMIZE THE CODE UNDER TEST. Measured on run 32074060975 with a warm
   # cache, `cargo build --all-targets` takes 40s and `cargo test` takes
