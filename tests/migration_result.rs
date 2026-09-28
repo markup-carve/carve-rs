@@ -99,3 +99,59 @@ fn html_loss_is_classified_for_callers() {
         .expect("the colliding semantic attribute cannot be represented");
     assert_eq!(diagnostic.fidelity, MigrationFidelity::Dropped);
 }
+
+#[test]
+fn literal_text_has_exact_evidence_and_other_constructs_remain_unverified() {
+    for source in [
+        "",
+        "hello",
+        "plain text",
+        "Grüße 123",
+        "日本語",
+        "hello\r\n\r\n",
+    ] {
+        for result in [
+            migrate_markdown(source),
+            migrate_djot(source),
+            migrate_bbcode(source).unwrap(),
+        ] {
+            assert_eq!(result.report.diagnostics.len(), 1, "{source:?}");
+            let row = &result.report.diagnostics[0];
+            assert_eq!(row.code, "literal-text-verified", "{source:?}");
+            assert_eq!(row.fidelity, MigrationFidelity::Preserved);
+            assert_eq!(row.confidence, MigrationConfidence::Exact);
+        }
+    }
+    for source in [
+        "# heading",
+        "*bold*",
+        "[b]text[/b]",
+        "a\nb",
+        "    code",
+        "1. item",
+        "a  b",
+        "a\tb",
+        "hello!",
+        " hello",
+        "hello ",
+        "a\u{00a0}b",
+        "e\u{0301}",
+        "a\r\nb",
+        "a\rb",
+    ] {
+        for result in [
+            migrate_markdown(source),
+            migrate_djot(source),
+            migrate_bbcode(source).unwrap(),
+        ] {
+            assert!(
+                result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source:?}"
+            );
+        }
+    }
+}

@@ -134,6 +134,29 @@ fn non_html_reports_fail_closed_when_fidelity_is_unverified() {
     assert_eq!(value["diagnostics"][0]["confidence"], "fallback");
 }
 
+#[test]
+fn literal_text_evidence_controls_the_cli_loss_gate() {
+    for format in ["markdown", "djot", "bbcode"] {
+        for (source, expected) in [("hello", 0), ("hello!", 1)] {
+            assert_eq!(
+                exit_code(&["migrate", "--from", format, "--check-loss"], source),
+                expected
+            );
+            let (_, report, ok) = run(&["migrate", "--from", format, "--report", "-"], source);
+            assert!(ok);
+            let report: serde_json::Value = serde_json::from_str(&report).unwrap();
+            assert_eq!(
+                report["diagnostics"][0]["code"],
+                if expected == 0 {
+                    "literal-text-verified"
+                } else {
+                    "fidelity-unverified"
+                }
+            );
+        }
+    }
+}
+
 // ------------------------------------------------------- exit codes (#1276)
 
 /// A USAGE ERROR EXITS 2, NOT 1.
