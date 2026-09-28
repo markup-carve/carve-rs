@@ -72,7 +72,13 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
 ) -> Result<(String, Vec<String>), crate::RenderCarveError> {
-    let (document, losses) = markdown_to_ast_with_losses(markdown)?;
+    let (mut document, mut losses) = markdown_to_ast_with_losses(markdown)?;
+    // ONLY ON THE WRITING PATH, as the HTML importer does it: the AST keeps the
+    // nesting the source carried, and only a Carve SPELLING has to give it up
+    // (carve-rs#2098).
+    losses.extend(crate::html_import::unwrap_same_kind_spans_for_writing(
+        &mut document,
+    ));
     render_carve(&document).map(|value| (value, losses))
 }
 

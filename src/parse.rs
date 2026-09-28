@@ -1028,7 +1028,14 @@ impl ContentColumns {
             || standalone_attrs_block_len(&[raw_trimmed]).is_some()
             || raw_trimmed.starts_with('>')
             || detect_fence_open(raw_trimmed).is_some()
-            || detect_thematic_break(raw_trimmed);
+            || detect_thematic_break(raw_trimmed)
+            // THE TABLE, which §24 C3 names in the same block-opener set as the
+            // rest of this list and which was the one member missing. A row at
+            // the document column ends the list above it, so the columns that
+            // list opened are dead - left live, `* }` / `|b|` / `  [f]: t`
+            // collected a definition at a column nothing reaches any more, and
+            // the author's line vanished from the output (carve-rs#2096).
+            || is_table_start(raw_trimmed);
         if let Some(term_indent) = detect_prepass_def_term(line) {
             // A term opens the list (or re-opens it at a new indent). Its own
             // line has no content column: `:: t` holds the TERM, and only the
@@ -1207,6 +1214,8 @@ fn extract_footnote_defs(
     // Fence state for the note-body walk below, declared per definition since a
     // fence cannot span two notes.
     let mut in_fence: Option<FenceOpen> = None;
+    // Whether that fence has a closer, which decides whether a dedent ends it.
+    let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content, so a definition-shaped line inside
     // one is text. Without this the line was extracted here and never reached
     // the block parser, so it vanished from the output (#491). carve-js keeps it
@@ -1218,6 +1227,7 @@ fn extract_footnote_defs(
     // document was skipped. Tracked only to gate the opener.
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
+    let closer_maxima = fence_closer_suffix_maxima(&lines);
     let folded_into_term = term_folded_lines(&lines);
     // Built on the first CONTAINER-scoped opener and never for a document that
     // has none, which is every document that only ever writes `%%%` at column 0.
@@ -1284,13 +1294,17 @@ fn extract_footnote_defs(
             continue;
         }
         if let Some(open) = in_fence {
-            body.push(lines[i].to_string());
-            body_line_map.push(Some(first_source_line + i));
-            if is_fence_close(fence_line, open) {
+            if prepass_fence_ends_above(lines[i], open, fence_closer_ahead) {
                 in_fence = None;
+            } else {
+                body.push(lines[i].to_string());
+                body_line_map.push(Some(first_source_line + i));
+                if is_fence_close(fence_line, open) {
+                    in_fence = None;
+                }
+                i += 1;
+                continue;
             }
-            i += 1;
-            continue;
         }
         // Only a TOP-LEVEL, unindented opener. Two things this pre-pass cannot
         // do are both fatal if it guesses:
@@ -1366,7 +1380,14 @@ fn extract_footnote_defs(
             }
         }
         if let Some(open) = detect_fence_open(fence_line) {
-            in_fence = Some(open);
+            // §10 I4, as `extract_link_defs_with_guard`: an unterminated fence
+            // interrupts no open paragraph, so going opaque here hid every
+            // definition below one from collection (carve-rs#2096).
+            let fence = prepass_fence_opens(&lines, i, open, &closer_maxima);
+            if fence.opens {
+                in_fence = Some(open);
+                fence_closer_ahead = fence.closer_ahead;
+            }
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
             i += 1;
@@ -2443,6 +2464,164 @@ fn term_start_column(line: &str) -> Option<usize> {
     }
 }
 
+/// Suffix maxima of the closing fence run a definition pre-pass can still meet
+/// at or after each line, as `(backtick, tilde)`.
+///
+/// `[i]` bounds every opener above `i` in O(1), so the exact scan runs only
+/// where a compatible closer really exists. Without it, N unterminated marker
+/// lines each scanned the remaining N lines (`perf_regressions`).
+fn fence_closer_suffix_maxima(lines: &[&str]) -> (Vec<usize>, Vec<usize>) {
+    let mut backtick = vec![0usize; lines.len() + 1];
+    let mut tilde = vec![0usize; lines.len() + 1];
+    for index in (0..lines.len()).rev() {
+        backtick[index] = backtick[index + 1];
+        tilde[index] = tilde[index + 1];
+        let mut candidate = trim_ascii_start(lines[index]);
+        while let Some(rest) = strip_blockquote_prefix(candidate) {
+            candidate = trim_ascii_start(rest);
+        }
+        let Some(&fence_char) = candidate.as_bytes().first() else {
+            continue;
+        };
+        if fence_char != b'`' && fence_char != b'~' {
+            continue;
+        }
+        let run = candidate
+            .as_bytes()
+            .iter()
+            .take_while(|byte| **byte == fence_char)
+            .count();
+        if run < 3
+            || !candidate[run..]
+                .bytes()
+                .all(|byte| byte == b' ' || byte == b'\t')
+        {
+            continue;
+        }
+        if fence_char == b'`' {
+            backtick[index] = backtick[index].max(run);
+        } else {
+            tilde[index] = tilde[index].max(run);
+        }
+    }
+    (backtick, tilde)
+}
+
+/// Does the line above `index` leave a paragraph open for §10 I4 to ask about?
+///
+/// Three shapes open none. A blank line ends one. A collected definition's
+/// placeholder marks a block boundary and never was a paragraph (carve-rs#2092).
+/// And §24 C3 makes a `%%` comment close the paragraph AT ANY COLUMN, so the
+/// fence below it interrupts nothing - which is the whole condition the
+/// lookahead is guarding (carve-rs#2096).
+fn prepass_paragraph_open_above(lines: &[&str], index: usize) -> bool {
+    if index == 0 {
+        return false;
+    }
+    let above = lines[index - 1];
+    // AND IT HAS TO BE A PARAGRAPH THIS LINE COULD CONTINUE. A line indented
+    // PAST this one belonged to a container this line leaves, so whatever it left
+    // open closed with that container and nothing here can interrupt it: a
+    // column-0 fence under a note body's `   a` really opens, which is what the
+    // block parser reads and what the sentinel guard pins.
+    !is_blank_line(above)
+        && indent_columns(above) <= indent_columns(lines[index])
+        && !is_definition_placeholder(above)
+        && !is_line_comment_any_column(above)
+        && !prepass_definition_line(above)
+}
+
+/// Is `line` a definition, in any of the three spellings?
+///
+/// The COLLECTED form already answers no above - that is what the placeholder is
+/// for - and the uncollected form has to answer the same, or the pass disagrees
+/// with itself depending on which pre-pass ran first. A definition is a block
+/// and opens no paragraph, so a fence under one interrupts nothing and really
+/// opens: without this, a fence written under a definition inside a note body
+/// lost its payload and the definition below it was collected out of verbatim.
+fn prepass_definition_line(line: &str) -> bool {
+    let bare = trim_ascii_start(line);
+    parse_footnote_def_line(bare).is_some()
+        || parse_link_def_line(bare).is_some_and(|(label, target)| {
+            !label.starts_with('@') && !trim_ascii(target).is_empty()
+        })
+        || detect_abbreviation_def(bare).is_some()
+}
+
+/// Is there a line below `index` that closes `open`?
+///
+/// The suffix maximum answers no in O(1); the scan runs only where a compatible
+/// run really exists.
+fn prepass_fence_closer_ahead(
+    lines: &[&str],
+    index: usize,
+    open: FenceOpen,
+    maxima: &(Vec<usize>, Vec<usize>),
+) -> bool {
+    let suffix_max = if open.fence_char == b'`' {
+        maxima.0[index + 1]
+    } else {
+        maxima.1[index + 1]
+    };
+    suffix_max >= open.fence_len
+        && lines[index + 1..].iter().any(|candidate| {
+            let kept = if open.quoted {
+                strip_prepass_blockquote_prefix(candidate).unwrap_or(candidate)
+            } else {
+                candidate
+            };
+            let kept = strip_container_prefixes_keep_indent(kept);
+            let indent = leading_ws(&kept);
+            let candidate = if indent >= open.content_col {
+                &kept[open.content_col..]
+            } else {
+                kept.as_str()
+            };
+            is_fence_close(candidate, open)
+        })
+}
+
+/// Whether a fence opener on `lines[index]` really opens a fence for a
+/// definition pre-pass, and whether a closer is waiting for it.
+///
+/// §10 I4: an UNTERMINATED fence cannot interrupt an open paragraph. Going
+/// opaque there hides every definition below it from collection, so the pass
+/// must stay open instead (`:` / ` ``` ` / `[A]: b`). With no paragraph above,
+/// or with a closer ahead, the fence is real and its body is verbatim.
+fn prepass_fence_opens(
+    lines: &[&str],
+    index: usize,
+    open: FenceOpen,
+    maxima: &(Vec<usize>, Vec<usize>),
+) -> PrepassFence {
+    let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
+    PrepassFence {
+        opens: closer_ahead || !prepass_paragraph_open_above(lines, index),
+        closer_ahead,
+    }
+}
+
+struct PrepassFence {
+    opens: bool,
+    closer_ahead: bool,
+}
+
+/// Does an open fence END above `line` because the line leaves its container?
+///
+/// An UNTERMINATED fence ends where its host does (PART 1 S4's otherwise), so a
+/// line below the fence's own content column is no longer its payload and a
+/// definition written there still has to be collected: `. ~~~` / `[d]: u` reads
+/// the definition at the document's column (carve-rs#2096). A fence with a
+/// closer ahead keeps everything down to that closer, flush-left payload
+/// included, so only the unterminated one asks.
+fn prepass_fence_ends_above(line: &str, open: FenceOpen, closer_ahead: bool) -> bool {
+    !closer_ahead
+        && !open.quoted
+        && open.content_col > 0
+        && !is_blank_line(line)
+        && indent_columns(line) < open.content_col
+}
+
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     extract_link_defs_with_guard(source, None)
 }
@@ -2470,6 +2649,8 @@ fn extract_link_defs_with_guard(
     let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
+    // Whether that fence has a closer, which decides whether a dedent ends it.
+    let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
     // inline_content, newline`), so a definition-shaped line inside one is text,
     // not a definition. Without this the line was extracted here and never
@@ -2509,44 +2690,7 @@ fn extract_link_defs_with_guard(
     // See the note in `extract_footnote_defs`: lazy, so a document with no
     // container-scoped comment fence pays nothing for it.
     let mut container_closers: Option<ContainerCommentClosers> = None;
-    // Suffix maxima make the "could this opener close later?" rejection O(1).
-    // The exact scan below is then needed only when a compatible closer really
-    // exists; once found, the fence state makes all intervening opener-shaped
-    // lines opaque. Without this index, N unterminated marker lines each scanned
-    // the remaining N lines (perf_regressions).
-    let mut backtick_closer_max = vec![0usize; all_lines.len() + 1];
-    let mut tilde_closer_max = vec![0usize; all_lines.len() + 1];
-    for index in (0..all_lines.len()).rev() {
-        backtick_closer_max[index] = backtick_closer_max[index + 1];
-        tilde_closer_max[index] = tilde_closer_max[index + 1];
-        let mut candidate = trim_ascii_start(all_lines[index]);
-        while let Some(rest) = strip_blockquote_prefix(candidate) {
-            candidate = trim_ascii_start(rest);
-        }
-        let Some(&fence_char) = candidate.as_bytes().first() else {
-            continue;
-        };
-        if fence_char != b'`' && fence_char != b'~' {
-            continue;
-        }
-        let run = candidate
-            .as_bytes()
-            .iter()
-            .take_while(|byte| **byte == fence_char)
-            .count();
-        if run < 3
-            || !candidate[run..]
-                .bytes()
-                .all(|byte| byte == b' ' || byte == b'\t')
-        {
-            continue;
-        }
-        if fence_char == b'`' {
-            backtick_closer_max[index] = backtick_closer_max[index].max(run);
-        } else {
-            tilde_closer_max[index] = tilde_closer_max[index].max(run);
-        }
-    }
+    let closer_maxima = fence_closer_suffix_maxima(&all_lines);
     // See `extract_footnote_defs`: the line the `after_term` gate asks about.
     let mut previous_non_blank = "";
     for (line_index, line) in all_lines.iter().copied().enumerate() {
@@ -2592,26 +2736,30 @@ fn extract_link_defs_with_guard(
             continue;
         }
         if let Some(open) = in_fence {
-            body.push(std::borrow::Cow::Borrowed(line));
-            // CLOSER: strip a blockquote prefix only when the fence was opened
-            // quoted, and NEVER a list marker. A fence closer is a continuation
-            // line of pure indentation, so a literal marker line inside a
-            // document-level code sample stays content.
-            let close_kept = if open.quoted {
-                strip_prepass_blockquote_prefix(line).unwrap_or(line)
-            } else {
-                line
-            };
-            let close_indent = leading_ws(close_kept);
-            let close_line = if close_indent >= open.content_col {
-                &close_kept[open.content_col..]
-            } else {
-                close_kept
-            };
-            if is_fence_close(close_line, open) {
+            if prepass_fence_ends_above(line, open, fence_closer_ahead) {
                 in_fence = None;
+            } else {
+                body.push(std::borrow::Cow::Borrowed(line));
+                // CLOSER: strip a blockquote prefix only when the fence was opened
+                // quoted, and NEVER a list marker. A fence closer is a continuation
+                // line of pure indentation, so a literal marker line inside a
+                // document-level code sample stays content.
+                let close_kept = if open.quoted {
+                    strip_prepass_blockquote_prefix(line).unwrap_or(line)
+                } else {
+                    line
+                };
+                let close_indent = leading_ws(close_kept);
+                let close_line = if close_indent >= open.content_col {
+                    &close_kept[open.content_col..]
+                } else {
+                    close_kept
+                };
+                if is_fence_close(close_line, open) {
+                    in_fence = None;
+                }
+                continue;
             }
-            continue;
         }
         // OPENER: strip container prefixes (blockquote AND list marker), then
         // re-base to the current list-item content column. This recognizes a
@@ -2676,9 +2824,16 @@ fn extract_link_defs_with_guard(
                 continue;
             }
         }
+        // THE LINE'S OWN COLUMN, not the innermost container's. An opener at the
+        // document column ends every container above it, so a list open higher
+        // up says nothing about whether this is a line block - and asking
+        // `content_col` instead left `. r` / `::: |` / `[f]: t` collecting a
+        // definition out of verse text, where the block parser renders it
+        // (carve-rs#2096, the #491 family one column out). An INDENTED opener is
+        // still refused, for the reason `extract_footnote_defs` records.
         if in_comment_fence.is_none()
             && stripped.structural.is_empty()
-            && content_col == 0
+            && !line.starts_with([' ', '\t'])
             && !fence_line.starts_with([' ', '\t'])
         {
             if let Some(fence_len) = detect_line_block_open(fence_line) {
@@ -2690,37 +2845,10 @@ fn extract_link_defs_with_guard(
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = authored_fence_col;
             open.quoted = raw_is_quoted;
-            // Definition placeholders mark block boundaries and open no paragraph.
-            let follows_open_paragraph = line_index > 0
-                && !is_blank_line(all_lines[line_index - 1])
-                && !is_definition_placeholder(all_lines[line_index - 1]);
-            let suffix_max = if open.fence_char == b'`' {
-                backtick_closer_max[line_index + 1]
-            } else {
-                tilde_closer_max[line_index + 1]
-            };
-            let closes_ahead = follows_open_paragraph
-                && suffix_max >= open.fence_len
-                && all_lines[line_index + 1..].iter().any(|candidate| {
-                    let kept = if open.quoted {
-                        strip_prepass_blockquote_prefix(candidate).unwrap_or(candidate)
-                    } else {
-                        candidate
-                    };
-                    let kept = strip_container_prefixes_keep_indent(kept);
-                    let indent = leading_ws(&kept);
-                    let candidate = if indent >= open.content_col {
-                        &kept[open.content_col..]
-                    } else {
-                        kept.as_str()
-                    };
-                    is_fence_close(candidate, open)
-                });
-            // An unterminated fence cannot interrupt an open paragraph. Do not
-            // make the pre-pass opaque in that case: later definitions still
-            // need collecting (`:\n```\n[A]: b`).
-            if !follows_open_paragraph || closes_ahead {
+            let fence = prepass_fence_opens(&all_lines, line_index, open, &closer_maxima);
+            if fence.opens {
                 in_fence = Some(open);
+                fence_closer_ahead = fence.closer_ahead;
             }
             body.push(std::borrow::Cow::Borrowed(line));
             continue;
@@ -9480,7 +9608,20 @@ fn parse_list(
                     continue;
                 }
             }
-            if !pending_blank && item_paragraph_open && flush_comment_keeps_the_item_open(cur, line)
+            // AN OPEN FENCE MAKES THE BODY VERBATIM, so a `%%` line in it is not
+            // a comment and §24 C3's column exemption has nothing to exempt.
+            // Below the content column the line reached nothing at all, so S4's
+            // otherwise ends the item and its fence rather than taking the line
+            // as payload - which is the answer the two `item_open_fence` guards
+            // above already give every other shape (carve-rs#2096). A separate
+            // condition from `item_paragraph_open`, which asks whether a
+            // paragraph is left at all: a verbatim body holds none, and a line
+            // below the column reaches neither.
+            let fence_body_is_verbatim_here = item_open_fence.is_some() && indent < content_col;
+            if !pending_blank
+                && !fence_body_is_verbatim_here
+                && item_paragraph_open
+                && flush_comment_keeps_the_item_open(cur, line)
             {
                 // A collected definition at this container's column zero is
                 // not the comment exception below. It is a column-scoped I5
@@ -10091,23 +10232,31 @@ fn parse_list(
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
-            fold_lazy_run_and_resume(
-                cur,
-                &mut stream,
-                content_col,
-                |src, _below| {
-                    if swallowed_blank_separator {
-                        return false;
-                    }
-                    let src = &src.source;
-                    if marker_line_was_the_whole_block {
-                        return body_ends_with_open_paragraph(src, options);
-                    }
-                    body_ends_with_open_paragraph(src, options)
-                        || nested_ends_with_heading(src, options)
-                },
-                |cur| collect_indented_block_mapped(cur, base_indent, content_col),
-            );
+            // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
+            // above already has it. A fenced body is verbatim and holds no
+            // paragraph, so there is nothing below the content column for the
+            // fold to reach - and its comment arm, which is right that a comment
+            // ends no container, took the line into the verbatim body instead
+            // (carve-rs#2096).
+            if item_open_fence.is_none() {
+                fold_lazy_run_and_resume(
+                    cur,
+                    &mut stream,
+                    content_col,
+                    |src, _below| {
+                        if swallowed_blank_separator {
+                            return false;
+                        }
+                        let src = &src.source;
+                        if marker_line_was_the_whole_block {
+                            return body_ends_with_open_paragraph(src, options);
+                        }
+                        body_ends_with_open_paragraph(src, options)
+                            || nested_ends_with_heading(src, options)
+                    },
+                    |cur| collect_indented_block_mapped(cur, base_indent, content_col),
+                );
+            }
             // A blank absorbed inside the marker-line block's continuation that
             // is followed by a plain paragraph loosens the item (§17 L1), the
             // same rule the plain-continuation branch applies -- e.g. a
@@ -11511,13 +11660,20 @@ fn line_comment_keeps_the_container_open(cur: &mut LineCursor<'_>, line: &str) -
 /// A cheap peek, kept separate because the open-paragraph test that follows it
 /// reparses the whole collected subtree: it must run only when there is a lazy
 /// line pending, else deeply nested lists blow up.
+///
+/// AS A CONTAINER, because that is the only thing this runs for: the paragraph
+/// the line would fold into belongs to a container, and §7 recognizes an
+/// abbreviation definition only as a direct child of the DOCUMENT. Asked at
+/// document level, `*[A]: b` interrupted a marker-line block's paragraph and
+/// was collected, where `- a` on the plain-paragraph path next to it folded the
+/// same line in - two paths, one construct, two answers (carve-rs#2096).
 fn lazy_line_pending(cur: &mut LineCursor) -> bool {
     let Some(line) = cur.peek() else { return false };
     let line = line.to_string();
     !is_blank_line(&line)
         && indent_columns(&line) == 0
         && !is_list_marker(&line)
-        && !interrupts_paragraph(cur, &line)
+        && !interrupts_paragraph_as_container(cur, &line)
 }
 
 /// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
@@ -11647,8 +11803,14 @@ fn collect_trailing_lazy_through(
             || (is_list_marker(line) && indent_columns(line) <= list_base)
             || trim_ascii(line) == "+"
             || {
+                // AS A CONTAINER: this collector runs only for a line folding
+                // into a container's open paragraph, and §7 recognizes an
+                // abbreviation definition only as a direct child of the
+                // document. Asked at document level it ended the fold, so `- >q`
+                // / `*[A]: b` dropped the author's line and defined an
+                // abbreviation where the sibling paths fold it (carve-rs#2096).
                 let line_owned = line.to_string();
-                interrupts_lazy_continuation(cur, &line_owned)
+                interrupts_lazy_continuation_as_container(cur, &line_owned)
             }
         {
             break;
@@ -12734,7 +12896,13 @@ fn fold_term(
             break;
         }
         let owned = next.to_string();
-        if interrupts_paragraph(cur, &owned) {
+        // AS A CONTAINER, which waives the abbreviation arm. A term's
+        // continuation is a position for INLINE CONTENT, not for a block, so §7
+        // never gets to recognize `*[A]: b` there - and it is a content line at
+        // the document column too, which is why this cannot ask
+        // `at_document_level`. Asked as a paragraph, `:: t` / `*[A]: b` lost the
+        // author's second line and defined an abbreviation (carve-rs#2096).
+        if interrupts_paragraph_as_container(cur, &owned) {
             break;
         }
         // A term's continuation line is a CONTENT LINE, so its trailing
