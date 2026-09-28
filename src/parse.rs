@@ -9261,12 +9261,16 @@ fn parse_list(
                     );
                     nested.authored_base_at_start |= authored_overindented_opener;
                     if item_open_fence.is_none() {
-                        fold_lazy_run_and_resume(
+                        fold_lazy_run_and_resume_in_band(
                             cur,
                             &mut nested,
                             content_col,
+                            content_col.saturating_sub(1),
+                            base_indent,
                             |src, below| {
-                                collected_body_takes_the_lazy_line(&src.source, below, options)
+                                let mut rebased = src.clone();
+                                rebase_overindented_blocks(&mut rebased, false);
+                                collected_body_takes_the_lazy_line(&rebased.source, below, options)
                             },
                             |cur| {
                                 collect_item_continuation_block_mapped(
@@ -11455,6 +11459,18 @@ fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
     content_col: usize,
+    open: impl FnMut(&MappedSource, bool) -> bool,
+    resume: impl FnMut(&mut LineCursor) -> MappedSource,
+) {
+    fold_lazy_run_and_resume_in_band(cur, nested, content_col, 0, 0, open, resume);
+}
+
+fn fold_lazy_run_and_resume_in_band(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    content_col: usize,
+    lazy_column: usize,
+    list_base: usize,
     mut open: impl FnMut(&MappedSource, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
@@ -11481,7 +11497,7 @@ fn fold_lazy_run_and_resume(
             // below would stop the fold here - and the container is still open,
             // which is the whole point of the exception. Resume against the
             // sub-list's own column exactly as the plain lazy path does.
-            collect_trailing_lazy(cur, nested);
+            collect_trailing_lazy_through(cur, nested, lazy_column, list_base);
             let before_resume = cur.pos;
             nested.append(resume(cur));
             let next_is_comment = cur
@@ -11493,7 +11509,20 @@ fn fold_lazy_run_and_resume(
             }
             continue;
         }
-        if !lazy_line_pending(cur) {
+        // A marker between the host's base and content columns can fold into
+        // an open paragraph inside a raised colon container (carve#2474).
+        let pending = if lazy_column == 0 {
+            lazy_line_pending(cur)
+        } else {
+            cur.peek().map(str::to_string).is_some_and(|line| {
+                let indent = indent_columns(&line);
+                !is_blank_line(&line)
+                    && indent <= lazy_column
+                    && !(is_list_marker(&line) && indent <= list_base)
+                    && !interrupts_lazy_continuation(cur, &line)
+            })
+        };
+        if !pending {
             break;
         }
         // The column the run ended at, taken before the fold consumes anything.
@@ -11502,7 +11531,7 @@ fn fold_lazy_run_and_resume(
             break;
         }
         let before = cur.pos;
-        collect_trailing_lazy(cur, nested);
+        collect_trailing_lazy_through(cur, nested, lazy_column, list_base);
         if cur.pos == before {
             break;
         }
@@ -11514,13 +11543,9 @@ fn fold_lazy_run_and_resume(
     }
 }
 
-fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
-    collect_trailing_lazy_through(cur, nested, 0, 0);
-}
-
 /// Fold lazy lines down to a container's own base column.
 ///
-/// Most callers parse at document column zero and use `collect_trailing_lazy`.
+/// Most callers parse at document column zero and pass zero for both columns.
 /// A flush comment can keep an INDENTED list open too, where a line at that
 /// list's base column is still below its content column and therefore lazy.
 ///

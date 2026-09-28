@@ -1,0 +1,82 @@
+[
+  {
+    "name": "::: column 0",
+    "source": "- head\n\n      :::\n      a\n- second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a</p>\n    </div>\n  </li>\n  <li>second</li>\n</ul>"
+  },
+  {
+    "name": "::: note column 0",
+    "source": "- head\n\n      ::: note\n      a\n- second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n  <li>second</li>\n</ul>"
+  },
+  {
+    "name": "::: column 1",
+    "source": "- head\n\n      :::\n      a\n - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: note column 1",
+    "source": "- head\n\n      ::: note\n      a\n - second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: column 2",
+    "source": "- head\n\n      :::\n      a\n  - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: note column 2",
+    "source": "- head\n\n      ::: note\n      a\n  - second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: column 4",
+    "source": "- head\n\n      :::\n      a\n    - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: note column 4",
+    "source": "- head\n\n      ::: note\n      a\n    - second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: column 6",
+    "source": "- head\n\n      :::\n      a\n      - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: note column 6",
+    "source": "- head\n\n      ::: note\n      a\n      - second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: column 8",
+    "source": "- head\n\n      :::\n      a\n        - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a\n- second</p>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "::: note column 8",
+    "source": "- head\n\n      ::: note\n      a\n        - second\n",
+    "html": "<ul>\n  <li>head\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\n- second</p>\n    </aside>\n  </li>\n</ul>"
+  },
+  {
+    "name": "closed",
+    "source": "- head\n\n      :::\n      a\n      :::\n  - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a</p>\n    </div>\n    <ul>\n      <li>second</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "name": "empty",
+    "source": "- head\n\n      :::\n  - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <ul>\n        <li>second</li>\n      </ul>\n    </div>\n  </li>\n</ul>"
+  },
+  {
+    "name": "code",
+    "source": "- head\n\n      :::\n      ```\n      :::\n      ```\n      a\n  - second\n      :::\n  - third\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <pre><code>:::\n</code></pre>\n      <p>a\n- second</p>\n    </div>\n    <ul>\n      <li>third</li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "name": "blank-exit",
+    "source": "- head\n\n      :::\n      a\n\n - second\n",
+    "html": "<ul>\n  <li>head\n    <div>\n      <p>a</p>\n    </div>\n  </li>\n</ul>\n<ul>\n  <li>second</li>\n</ul>"
+  }
+]
