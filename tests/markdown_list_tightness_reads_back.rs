@@ -197,6 +197,13 @@ fn count_quotes(children: &[BlockNode]) -> usize {
         .count()
 }
 
+fn count_paragraphs(children: &[BlockNode]) -> usize {
+    children
+        .iter()
+        .filter(|child| matches!(child, BlockNode::Paragraph(_)))
+        .count()
+}
+
 fn count_tables(children: &[BlockNode]) -> usize {
     children
         .iter()
@@ -305,4 +312,17 @@ fn a_labelled_div_keeps_the_separator() {
     // as more text of the item's own paragraph.
     let source = "- a\n  ::: [L]\n\n  - b\n  :::\n";
     assert_eq!(carve::to_markdown(source), "- a\n\n  **L**\n\n  - b\n");
+}
+
+#[test]
+fn a_div_wrapped_paragraph_after_a_nested_list_keeps_its_blank_line() {
+    // Without the separator, the div's paragraph becomes continuation of `b`.
+    let source = "- a\n\n  - b\n  :::\n  p\n  :::\n";
+    assert_eq!(carve::to_markdown(source), "- a\n  - b\n\n  p\n");
+    let children = reads_back_children(source);
+    assert_eq!(
+        count_paragraphs(&children),
+        2,
+        "the item's own text and the div's paragraph are both blocks of it"
+    );
 }

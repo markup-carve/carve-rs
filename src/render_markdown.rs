@@ -740,8 +740,7 @@ fn render_list_item(
     let mut out = String::new();
     for child in &item.children {
         let rendered = render_block(child, ctx, depth);
-        // BOTH predicates answer about the block whose markup actually opens
-        // this child's output, which a transparent wrapper is not.
+        // Check the block that opens the rendered output through any div wrappers.
         let opener = opening_block(child);
         if tight
             && out.ends_with("\n\n")
@@ -751,7 +750,7 @@ fn render_list_item(
             out.pop();
         } else if out.ends_with('\n')
             && !out.ends_with("\n\n")
-            && swallowed_by_a_lazy_line(&out, child)
+            && swallowed_by_a_lazy_line(&out, opener)
         {
             out.push('\n');
         }
@@ -772,6 +771,10 @@ fn render_list_item(
 ///
 /// The tail has to be able to TAKE lazy text, which a bare marker and a heading
 /// cannot, so those stay glued and the item stays tight.
+///
+/// `below` is the opening block after unwrapping unlabelled divs. Checking the
+/// wrapper itself would omit the separator and merge its paragraph into the
+/// preceding nested item (carve-rs#2136).
 fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
     if !matches!(
         below,
