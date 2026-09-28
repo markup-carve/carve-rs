@@ -1588,3 +1588,6 @@ mod container_boundaries;
 
 #[path = "../emphasis_attribute_markers.rs"]
 mod emphasis_attribute_markers;
+
+#[path = "../markdown_empty_headings.rs"]
+mod markdown_empty_headings;
