@@ -1727,6 +1727,23 @@ fn extract_footnote_defs(
                         i += 1;
                         continue;
                     }
+                    // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS
+                    // IS NOT A COMMENT THAT ENDS THE BODY - see
+                    // `body_open_comment_run`. This host hides the payload
+                    // already at a delimiter REACHING the body's floor; the band
+                    // below it is what this covers.
+                    if detect_comment_fence_line_any_column(line).is_some()
+                        && closes_a_held_comment_span(&def_lines, line)
+                    {
+                        let kept = kept_comment_delimiter(line);
+                        if positions {
+                            def_col_map.push(stripped_col(Some(0), line, &kept));
+                        }
+                        def_lines.push(kept);
+                        def_line_map.push(Some(first_source_line + i));
+                        i += 1;
+                        continue;
+                    }
                     break;
                 }
             } else if !nested {
@@ -4278,7 +4295,21 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             _ => {}
         }
         match block {
-            BlockNode::BlockQuote(n) => {
+            // A QUOTE HAS TWO SPELLINGS AND ONLY ONE OF THEM ENDS AT ITS LAST
+            // CHILD. `docs/ast-json-contract.md` reads §4's end rule as a
+            // statement about MARKUP - a container ends at the markup that
+            // closes it, and "ends at its last placed child" is the case for a
+            // container whose closer is IMPLICIT. The `>` prefix form has none,
+            // so its content's end is its extent; the `::: >` form has one, and
+            // every other colon fence spans it. Narrowed by kind alone, the
+            // fenced quote was shrunk off its own closer, so it read 1 to 2
+            // where a div, an admonition and a line block over the same three
+            // lines all read 1 to 3 - and `carve lint`, which reads the span to
+            // find the closer, then reported a closed container as unclosed
+            // (carve-rs#2099, and carve-php#2636 for the same reading). An
+            // emptied fenced quote is unaffected: it has no placed child, so the
+            // narrowing never reached it.
+            BlockNode::BlockQuote(n) if !n.fenced => {
                 let last = n
                     .children
                     .iter()
@@ -5718,6 +5749,50 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 block_at_minimum = true;
                 continue;
             }
+            // A COLON CONTAINER AT THE MINIMUM COLUMN OWNS ITS EXTENT TOO. It
+            // is not opaque, but its payload is still its own: CARVE-P0-004
+            // keeps a run in the band between the container's column and a
+            // fence base inside it at the authored column, and reading that run
+            // again as an authored base dedents it onto the container's column,
+            // where the container takes it as its closer. This pass runs twice
+            // over one item body - `item_body` and then `parse_item_chunk` - so
+            // the second run is where that happened (carve-rs#2095).
+            //
+            // The walk tracks colon widths only, as the base-past-zero arm
+            // below does.
+            if let Some(width) = detect_container_open(&lines[i])
+                .map(|open| open.fence_len)
+                .or_else(|| detect_quote_block_open(&lines[i]))
+            {
+                let mut stack = vec![width];
+                i += 1;
+                while i < lines.len() {
+                    let line = &lines[i];
+                    i += 1;
+                    if exact_colon_fence_len(line) == Some(*stack.last().unwrap()) {
+                        stack.pop();
+                        if stack.is_empty() {
+                            break;
+                        }
+                        continue;
+                    }
+                    if line.starts_with([' ', '\t']) || stack.len() >= MAX_NESTING_DEPTH {
+                        continue;
+                    }
+                    if let Some(len) = detect_container_open(line)
+                        .map(|open| open.fence_len)
+                        .or_else(|| detect_line_block_open(line))
+                        .or_else(|| detect_hardbreaks_block_open(line))
+                        .or_else(|| detect_quote_block_open(line))
+                    {
+                        stack.push(len);
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
+                block_at_minimum = true;
+                continue;
+            }
             // A definition entry at the container minimum remains the
             // innermost owner for its exact extent. Skip that extent so a
             // structural payload at the description column is not reconsidered
@@ -6838,6 +6913,89 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
 }
 
 /// The closer counterpart of `detect_comment_fence_line_any_column`.
+/// The run length of a comment span still OPEN in a container's collected
+/// lines, if one is (PART 9 §28, markup-carve/carve#2488).
+///
+/// A container's collector ends at a comment written below its content column,
+/// which is right for an OPENER and for the `%%` line form and wrong INSIDE a
+/// span the container already holds: §28 pairs the delimiters, indentation is
+/// part of neither (markup-carve/carve#2471), and everything between them is
+/// payload. Ending there SPLITS the span - the container's own parse then reads
+/// an opener with no closer, §28 makes that one line comment, and the payload
+/// reaches the page while both delimiters do not (markup-carve/carve-rs#2113).
+///
+/// Asked of the COLLECTED LINES rather than of a live fence tracker, because a
+/// tracker reads each line at its own frame's dedent while the answer must not
+/// turn on that: it is the same question about the same span either way.
+///
+/// A code fence's payload is opaque, so a `%%%` written inside one is content.
+///
+/// §10 I2: a list marker never interrupts, so it opens a container only where a
+/// block may begin. Both directions of getting that wrong publish a payload - an
+/// invented opaque body hides a real opener, and a missed one invents a span
+/// that claims a real delimiter as its closer - so the block-start flag is
+/// carried rather than assumed (markup-carve/carve#2505). A CLOSER is read from
+/// the line as written either way: a marker line starts a fresh item rather than
+/// closing the block already open.
+fn body_open_comment_run<S: AsRef<str>>(body_lines: &[S]) -> Option<usize> {
+    let mut code: Option<FenceOpen> = None;
+    let mut comment: Option<usize> = None;
+    let mut at_block_start = true;
+    for raw in body_lines {
+        let line = trim_ascii_start(strip_lazy(raw.as_ref()));
+        if let Some(open) = code {
+            if is_fence_close(line, open) {
+                code = None;
+                at_block_start = true;
+            }
+            continue;
+        }
+        if let Some(run) = comment {
+            if is_comment_fence_close(line, run) {
+                comment = None;
+                at_block_start = true;
+            }
+            continue;
+        }
+        if line.is_empty() {
+            at_block_start = true;
+            continue;
+        }
+        let opener = if at_block_start {
+            trim_ascii_start(innermost_marker_content(line))
+        } else {
+            line
+        };
+        at_block_start = false;
+        if let Some(open) = detect_fence_open(opener) {
+            code = Some(open);
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line(opener) {
+            comment = Some(open.fence_len);
+        }
+    }
+    comment
+}
+
+/// Is `line` the closer of a comment span the collected lines still hold?
+fn closes_a_held_comment_span<S: AsRef<str>>(body_lines: &[S], line: &str) -> bool {
+    body_open_comment_run(body_lines)
+        .is_some_and(|run| is_comment_fence_close_any_column(line, run))
+}
+
+/// A held span's delimiter as the container keeps it: ONE column of the authored
+/// indentation survives, so the container's own parse cannot read a delimiter
+/// written below its column back as an authored column-0 one.
+fn kept_comment_delimiter(line: &str) -> String {
+    let rest = trim_ascii_start(line);
+    if rest.len() == line.len() {
+        rest.to_string()
+    } else {
+        format!(" {rest}")
+    }
+}
+
 fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
@@ -8045,6 +8203,148 @@ impl QuotedEntryScan {
     }
 }
 
+/// Whether a fence leaves the innermost quote of a collected body without an
+/// open paragraph, or `None` when no fence decided it.
+///
+/// `ParaOpen` reads one line on its own. At the quote's own level `in_fence`
+/// carries the fence, but one level down a fence opener read alone looks like
+/// paragraph text whenever no closer follows it: a fence at the start of a
+/// nested quote was taken for inline verbatim, and the line below folded into
+/// the outer quote (markup-carve/carve-rs#2117). This replays the body with a
+/// fence and paragraph state per nesting level, asked only for a lazy line
+/// after a nested quoted line.
+///
+/// INCREMENTAL. Each line is replayed once however often a lazy line asks. That
+/// is exact because a closer lookahead stops at the first line that leaves the
+/// quote, and the line that asks is such a line.
+#[derive(Default)]
+struct NestedFenceReplay {
+    scanned: usize,
+    chain: Vec<NestedLevel>,
+}
+
+#[derive(Default)]
+struct NestedLevel {
+    fence: Option<FenceOpen>,
+    comment: Option<usize>,
+    para: bool,
+    by_fence: bool,
+}
+
+impl NestedFenceReplay {
+    fn verdict(&mut self, lines: &[SourceLine]) -> Option<bool> {
+        if self.chain.is_empty() {
+            self.chain.push(NestedLevel::default());
+        }
+        while self.scanned < lines.len() {
+            let at = self.scanned;
+            self.scanned += 1;
+            self.replay(lines, at);
+        }
+        let deepest = self.chain.last()?;
+        (deepest.fence.is_some() || deepest.by_fence).then_some(false)
+    }
+
+    fn replay(&mut self, lines: &[SourceLine], at: usize) {
+        let chain = &mut self.chain;
+        let mut text = lines[at].text.as_str();
+        // A lazy line was taken only because a paragraph was open, and it
+        // continues that paragraph.
+        if text.starts_with(LAZY) {
+            return;
+        }
+        let mut level = 0;
+        loop {
+            if let Some(open) = chain[level].fence {
+                if is_fence_close(text, open) {
+                    chain[level].fence = None;
+                    chain[level].by_fence = true;
+                }
+                chain.truncate(level + 1);
+                return;
+            }
+            // Comment contents are not syntax. A comment never overrides the
+            // one-line reading, so it leaves `by_fence` alone.
+            if let Some(len) = chain[level].comment {
+                if is_comment_fence_close(text, len) {
+                    chain[level].comment = None;
+                }
+                chain.truncate(level + 1);
+                return;
+            }
+            if let Some(rest) = strip_blockquote_prefix(text) {
+                chain[level].para = false;
+                chain[level].by_fence = false;
+                if chain.len() == level + 1 {
+                    chain.push(NestedLevel::default());
+                }
+                text = rest;
+                level += 1;
+                continue;
+            }
+            // A line short of the deepest quote continues that quote's open
+            // paragraph unless it interrupts one.
+            let deepest_open = chain.last().is_some_and(|l| l.para && l.fence.is_none());
+            if chain.len() > level + 1 && deepest_open && !is_blank_line(text) {
+                let interrupts = match detect_fence_open(text) {
+                    Some(open) => closer_ahead(lines, at, level, |l| is_fence_close(l, open)),
+                    None => interrupts_paragraph_with_rest(text, &[]),
+                };
+                if !interrupts {
+                    return;
+                }
+            }
+            chain.truncate(level + 1);
+            let here = &mut chain[level];
+            here.by_fence = false;
+            if let Some(open) = detect_fence_open(text) {
+                // At block start a fence opens with or without a closer; after
+                // a paragraph it needs one (§10), or it is inline verbatim.
+                if !here.para || closer_ahead(lines, at, level, |l| is_fence_close(l, open)) {
+                    here.fence = Some(open);
+                    here.para = false;
+                    here.by_fence = true;
+                    return;
+                }
+            }
+            if let Some(comment) = detect_comment_fence_line(text) {
+                let len = comment.fence_len;
+                if closer_ahead(lines, at, level, |l| is_comment_fence_close(l, len)) {
+                    here.comment = Some(len);
+                }
+            }
+            here.para = ParaOpen::from_line(text, false).get();
+            return;
+        }
+    }
+}
+
+/// Does a line matching `closes` follow line `from` at nesting `level`, before
+/// the quote at that level ends?
+fn closer_ahead(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    closes: impl Fn(&str) -> bool,
+) -> bool {
+    for line in &lines[from + 1..] {
+        let mut text = line.text.as_str();
+        if text.starts_with(LAZY) {
+            return false;
+        }
+        for _ in 0..level {
+            match strip_blockquote_prefix(text) {
+                Some(rest) => text = rest,
+                None => return false,
+            }
+        }
+        if closes(text) {
+            return true;
+        }
+    }
+    false
+}
+
 #[inline(never)]
 fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usize, LineBuffer) {
     let span_start = cur.pos;
@@ -8077,11 +8377,23 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
     // meeting a line that could CLOSE an attribute block has proved the same for
     // every line it passed - see `quoted_attrs_block_len`.
     let mut attrs_scan_floor: usize = 0;
+    // The last quoted line reached a nested quote, so `para_open` may have read a
+    // fence one level down as prose; see `NestedFenceReplay`.
+    let mut last_nested = false;
+    let mut nested_verdict: Option<Option<bool>> = None;
+    let mut nested_replay = NestedFenceReplay::default();
+    // No replay without a fence to find: every level of a quote ladder would
+    // otherwise walk its whole body once.
+    let mut may_hold_fence = false;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
             cur.consume();
+            nested_verdict = None;
+            let after_nested = last_nested && may_hold_fence;
+            last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
+            may_hold_fence = may_hold_fence || stripped.contains("```") || stripped.contains("~~~");
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
@@ -8106,7 +8418,14 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 // every quoted line is the walk this defers.
             } else if let Some(open) = detect_fence_open(stripped) {
                 table = TableRun::default();
-                if !para_open.get() {
+                // The line above reached a nested quote, so its fence may be
+                // what the paragraph ended on.
+                let fenced_below = if after_nested {
+                    nested_replay.verdict(&inner.lines)
+                } else {
+                    None
+                };
+                if !fenced_below.unwrap_or_else(|| para_open.get()) {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;
@@ -8239,6 +8558,7 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
                 inner.push_synthetic_blank();
                 para_open = ParaOpen::Closed;
                 table = TableRun::default();
+                last_nested = false;
             }
             continue;
         }
@@ -8251,10 +8571,19 @@ fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usiz
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open.get() || is_blank_line(line) || caption_content(line).is_some() || {
-            let line_owned = line.to_string();
-            interrupts_lazy_continuation(cur, &line_owned)
-        } {
+        let fenced_below = if last_nested && may_hold_fence {
+            *nested_verdict.get_or_insert_with(|| nested_replay.verdict(&inner.lines))
+        } else {
+            None
+        };
+        if !fenced_below.unwrap_or_else(|| para_open.get())
+            || is_blank_line(line)
+            || caption_content(line).is_some()
+            || {
+                let line_owned = line.to_string();
+                interrupts_lazy_continuation(cur, &line_owned)
+            }
+        {
             break;
         }
         // NESTED, A VISIBLE BLOCK OPENER INTERRUPTS AT ANY COLUMN. A quote inside
@@ -9683,14 +10012,37 @@ fn parse_list(
             if !items.is_empty() {
                 let last_item = items.len() - 1;
                 let sub_indent = marker.indent;
-                let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
-                fold_lazy_run_and_resume(
+                // Keep the collector's fence boundary when a descendant's body
+                // ends below this item's column. A fresh chunk must not reclaim it.
+                let mut stopped_fence = None;
+                let mut nested = collect_indented_block_mapped_with(
                     cur,
-                    &mut nested,
+                    base_indent,
                     content_col,
-                    |src, below| collected_body_takes_the_lazy_line(&src.source, below, options),
-                    |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
+                    false,
+                    &mut stopped_fence,
+                    false,
                 );
+                if stopped_fence.is_none() {
+                    fold_lazy_run_and_resume(
+                        cur,
+                        &mut nested,
+                        content_col,
+                        |src, below| {
+                            collected_body_takes_the_lazy_line(&src.source, below, options)
+                        },
+                        |cur| {
+                            collect_indented_block_mapped_with(
+                                cur,
+                                sub_indent - 1,
+                                content_col,
+                                false,
+                                &mut stopped_fence,
+                                false,
+                            )
+                        },
+                    );
+                }
                 if sublist_source_loosens_outer_item(&nested.source) {
                     tight = false;
                 }
@@ -9710,6 +10062,15 @@ fn parse_list(
                 // a genuine blank BETWEEN items keeps loosening.
                 pending_blank = false;
                 items[last_item].children.extend(nested_children);
+                if stopped_fence.is_some()
+                    && cur.peek().is_some_and(|line| {
+                        !is_blank_line(line)
+                            && detect_list_marker_full(line).is_none()
+                            && indent_columns(line) < content_col
+                    })
+                {
+                    break;
+                }
                 continue;
             }
             break;
@@ -9872,7 +10233,34 @@ fn parse_list(
                     )
                 })
             });
-            let continuation = collect_indented_block_mapped(cur, base_indent, content_col);
+            // AN EMPTY QUOTE ON THE MARKER LINE HOLDS NO PARAGRAPH. A quote
+            // has no closer, so an empty one is finished where it stands, and
+            // PART 1 S4's otherwise has already ended the item - a line in the
+            // band between the list's base and the item's content column has
+            // nothing here to continue and belongs to the document. `. > a`
+            // folds as before, because there a paragraph really is open. The
+            // collection floor is what says so, as it does for a definition
+            // collected off the marker line (markup-carve/carve-rs#2096).
+            // A fence or a colon container written inside the quote is still
+            // OPEN on one line, and its payload is exactly the band line below
+            // it, so only a quote that leaves nothing at all open ends the item.
+            let mut innermost = marker.content;
+            while let Some(rest) = strip_blockquote_prefix(innermost) {
+                innermost = rest;
+            }
+            let quote_holds_a_paragraph = body_ends_with_open_paragraph(marker.content, options)
+                || colon_fences_left_open(marker.content) > 0
+                || detect_fence_open(innermost).is_some()
+                || detect_comment_fence_line(innermost).is_some();
+            let continuation = collect_indented_block_mapped(
+                cur,
+                if quote_holds_a_paragraph {
+                    base_indent
+                } else {
+                    content_col.saturating_sub(1)
+                },
+                content_col,
+            );
             if fence_after_quote && !continuation.source.is_empty() {
                 stream.push_newline_at(String::new(), None, None);
             }
@@ -9910,6 +10298,18 @@ fn parse_list(
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if !quote_holds_a_paragraph
+                && cur.peek().is_some_and(|line| {
+                    let indent = indent_columns(line);
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent > base_indent
+                        && indent < content_col
+                })
+            {
+                break;
+            }
             continue;
         }
         // Braces ALONE on the marker line are a block-attribute line for the
@@ -11995,6 +12395,10 @@ fn collect_indented_block_mapped_with(
     // span OPENS - the closer line does not carry the opener's column.
     let mut span_reached_this_frame = false;
     let mut closed_comment_span_above = false;
+    // A descendant fence may open past this collector's strip column.
+    // Preserve that decision before the deferred child loses its lookahead.
+    let mut nested_item_columns: Vec<(usize, usize)> = Vec::new();
+    let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -12156,7 +12560,17 @@ fn collect_indented_block_mapped_with(
             }
             break;
         }
-        if indent <= parent_indent && !fence_owns_flush_left {
+        if nested_fence.is_some() && indent < strip_cols {
+            *fence = nested_fence;
+            break;
+        }
+        // A CLOSER IS PART OF THE SPAN, NOT A DEDENT. See
+        // `body_open_comment_run`: this dedent ends the container, and a comment
+        // delimiter closing a span these lines already hold is not one.
+        if indent <= parent_indent
+            && !fence_owns_flush_left
+            && !closes_a_held_comment_span(&lines, line)
+        {
             break;
         }
         if definition_ended_paragraph && indent < strip_cols {
@@ -12181,6 +12595,73 @@ fn collect_indented_block_mapped_with(
         }
         if !colon_open.is_empty() && indent < strip_cols {
             break;
+        }
+        if let Some(open) = nested_fence {
+            if indent < open.content_col {
+                nested_fence = None;
+                nested_item_columns.clear();
+            } else if indent == open.content_col && is_fence_close(trim_ascii_start(line), open) {
+                nested_fence = None;
+            }
+        } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
+            if let Some(marker) = detect_list_marker_full(line) {
+                while nested_item_columns
+                    .last()
+                    .is_some_and(|&(base, _)| base >= marker.indent)
+                {
+                    nested_item_columns.pop();
+                }
+                if let Some(column) = marker_content_col(line) {
+                    nested_item_columns.push((marker.indent, column));
+                }
+            } else {
+                if lines.last().is_some_and(|line| is_blank_line(line)) {
+                    while nested_item_columns
+                        .last()
+                        .is_some_and(|&(_, column)| indent < column)
+                    {
+                        nested_item_columns.pop();
+                    }
+                }
+                if let Some(mut open) = detect_fence_open(trim_ascii_start(line)) {
+                    if let Some(&(base, column)) = nested_item_columns
+                        .iter()
+                        .rev()
+                        .find(|&&(_, column)| indent == column && column > strip_cols)
+                    {
+                        let after_blank = lines.last().is_some_and(|line| is_blank_line(line));
+                        let interrupts = !after_blank
+                            && cur.has_code_closer_after(
+                                cur.pos + 1,
+                                open.fence_char,
+                                open.fence_len,
+                            )
+                            && item_body_fence_has_closer(
+                                &cur.lines[cur.pos + 1..],
+                                open,
+                                column,
+                                |line, _| {
+                                    detect_list_marker_full(line)
+                                        .is_some_and(|marker| marker.indent <= base)
+                                },
+                            );
+                        if after_blank || interrupts {
+                            if !after_blank {
+                                // Preserve the accepted interruption when collection
+                                // ends before the closer reaches the child parser.
+                                lines.push(String::new());
+                                reached.push(true);
+                                if building_maps {
+                                    line_map.push(None);
+                                    col_map.push(None);
+                                }
+                            }
+                            open.content_col = column;
+                            nested_fence = Some(open);
+                        }
+                    }
+                }
+            }
         }
         let is_marker = detect_list_marker_full(line).is_some();
         if stop_at_content_column_marker
@@ -13612,6 +14093,22 @@ fn collect_definition_body(
                 || strip_definition_marker(strip_lazy(line)).is_some()
             {
                 break;
+            }
+            // A COMMENT DELIMITER CLOSING A SPAN THIS BODY ALREADY HOLDS IS NOT
+            // "a comment below the column" - see `body_open_comment_run`. The
+            // shape test comes first because the predicate walks the collected
+            // lines and a delimiter-shaped line is rare.
+            if detect_comment_fence_line_any_column(line).is_some() {
+                let mut probe: Vec<&str> = seed.lines().collect();
+                probe.extend(lines.iter().map(String::as_str));
+                if closes_a_held_comment_span(&probe, line) {
+                    lines.push(kept_comment_delimiter(line));
+                    line_map.push(cur.source_line(cur.pos));
+                    col_map.push(cur.source_col(cur.pos));
+                    reached.push(false);
+                    cur.consume();
+                    continue;
+                }
             }
             if fence.holds_no_paragraph() {
                 break;
@@ -23957,6 +24454,31 @@ mod quote_prefix_calls {
         let (large_src, large_work) = ladder_of(200, "Note: at 12:30, see https://example.com");
         assert_proportional(
             "a depth ladder of colon-bearing prose",
+            Measured {
+                work: small_work,
+                calls: calls_for(small_src),
+            },
+            Measured {
+                work: large_work,
+                calls: calls_for(large_src),
+            },
+            16,
+        );
+    }
+
+    /// A depth ladder ending in one lazy line must not replay the body at every
+    /// level: with no fence in it there is nothing to replay for.
+    #[test]
+    fn a_depth_ladder_ending_in_a_lazy_line_costs_strips_in_proportion_to_its_markers() {
+        let with_lazy = |depth: usize| {
+            let (mut src, work) = ladder(depth);
+            src.push_str("lazy\n");
+            (src, work)
+        };
+        let (small_src, small_work) = with_lazy(100);
+        let (large_src, large_work) = with_lazy(200);
+        assert_proportional(
+            "depth ladder ending in a lazy line",
             Measured {
                 work: small_work,
                 calls: calls_for(small_src),

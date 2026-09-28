@@ -1,0 +1,87 @@
+[
+  {
+    "name": "-  depth 2",
+    "source": "- a\n  - a\n    ```\n    p\nx\n    ```\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "-  depth 4",
+    "source": "- a\n  - a\n    - a\n      - a\n        ```\n        p\nx\n        ```\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>a\n        <ul>\n          <li>a\n            <ul>\n              <li>a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "1.  depth 2",
+    "source": "1. a\n   1. a\n      ```\n      p\nx\n      ```\n",
+    "html": "<ol>\n  <li>a\n    <ol>\n      <li>a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ol>\n  </li>\n</ol>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "1.  depth 4",
+    "source": "1. a\n   1. a\n      1. a\n         1. a\n            ```\n            p\nx\n            ```\n",
+    "html": "<ol>\n  <li>a\n    <ol>\n      <li>a\n        <ol>\n          <li>a\n            <ol>\n              <li>a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ol>\n          </li>\n        </ol>\n      </li>\n    </ol>\n  </li>\n</ol>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "10.  depth 2",
+    "source": "10. a\n    10. a\n        ```\n        p\nx\n        ```\n",
+    "html": "<ol start=\"10\">\n  <li>a\n    <ol start=\"10\">\n      <li>a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ol>\n  </li>\n</ol>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "10.  depth 4",
+    "source": "10. a\n    10. a\n        10. a\n            10. a\n                ```\n                p\nx\n                ```\n",
+    "html": "<ol start=\"10\">\n  <li>a\n    <ol start=\"10\">\n      <li>a\n        <ol start=\"10\">\n          <li>a\n            <ol start=\"10\">\n              <li>a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ol>\n          </li>\n        </ol>\n      </li>\n    </ol>\n  </li>\n</ol>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "- [x]  depth 2",
+    "source": "- [x] a\n  - [x] a\n    ```\n    p\nx\n    ```\n",
+    "html": "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul>\n      <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "- [x]  depth 4",
+    "source": "- [x] a\n  - [x] a\n    - [x] a\n      - [x] a\n        ```\n        p\nx\n        ```\n",
+    "html": "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul>\n      <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <ul>\n          <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n            <ul>\n              <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "-{.item}  depth 2",
+    "source": "-{.item} a\n  -{.item} a\n    ```\n    p\nx\n    ```\n",
+    "html": "<ul>\n  <li class=\"item\">a\n    <ul>\n      <li class=\"item\">a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "-{.item}  depth 4",
+    "source": "-{.item} a\n  -{.item} a\n    -{.item} a\n      -{.item} a\n        ```\n        p\nx\n        ```\n",
+    "html": "<ul>\n  <li class=\"item\">a\n    <ul>\n      <li class=\"item\">a\n        <ul>\n          <li class=\"item\">a\n            <ul>\n              <li class=\"item\">a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+  },
+  {
+    "name": "control 10",
+    "source": "- a\n  - b\n    - c\n      text\n    ~~~\n      ```\n      p\n      ```\n    ~~~\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\ntext</li>\n        </ul>\n        <pre><code>  ```\n  p\n  ```\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"
+  },
+  {
+    "name": "control 11",
+    "source": "- a\n  - b\n    ```\n    x\n    ```\n- c\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+  },
+  {
+    "name": "control 12",
+    "source": "- a\n  - b\n\n    ```\n    x\n- c\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n  <li>c</li>\n</ul>"
+  },
+  {
+    "name": "control 13",
+    "source": "- a\n  - b\n    ```\n    :::\n    ```\n tail\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>:::\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "name": "control 14",
+    "source": "- a\n  - b\n    ```\n    :::\n tail\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code></code>\n        <div>\n\n        </div>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+  },
+  {
+    "name": "control 15",
+    "source": "- a\n  - b\n    - c\n\n      ```\n      p\n   x\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <pre><code>p\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n    x\n  </li>\n</ul>"
+  },
+  {
+    "name": "control 16",
+    "source": "- a\n  - b\n\n\t```\n\tp\n ```\n\n\ttail\n",
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p><code></code></p>\n<p>tail</p>"
+  }
+]
