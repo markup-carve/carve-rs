@@ -148,6 +148,7 @@ which the published crate does not carry.
 - `Document::summary()` provides fixed-size metadata for logging without traversing or exposing AST content (#2048).
 - AST JSON errors expose their kind, unknown-field path, and syntax location while preserving their display messages and serde error causes (#2044).
 - HTML import recognizes explicit code-language hints on code blocks and Sphinx, GitHub and MediaWiki wrappers, with validated tokens and deterministic fallback (#2023, markup-carve/carve#2387).
+- Nested lists scan less and HTML import copies fewer buffers (#2219).
 
 ## [0.1.6] - 2026-09-18
 
