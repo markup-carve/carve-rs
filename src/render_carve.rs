@@ -4183,7 +4183,16 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
 
     /// Pair the sequence, leaving out the openers `escaped` names. Reports each
     /// pair in closing order and the openers still unclosed at the end.
-    fn resolve(seq: &[Bracket], escaped: &HashSet<(usize, usize)>) -> Reading {
+    ///
+    /// `escapes_crossing_closer` is the second reading. There a pair that still
+    /// crosses has its `]` escaped, and an escaped `]` answers nothing, so the
+    /// opener it fell through to stays open for the next `]` instead of being
+    /// spent on it (carve-rs#2214).
+    fn resolve(
+        seq: &[Bracket],
+        escaped: &HashSet<(usize, usize)>,
+        escapes_crossing_closer: bool,
+    ) -> Reading {
         let mut open: Vec<Open> = Vec::new();
         let mut pairs = Vec::new();
         for &(key, host, opens) in seq {
@@ -4193,6 +4202,9 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                 }
             } else if let Some(opener) = open.pop() {
                 pairs.push((opener, (key, host)));
+                if escapes_crossing_closer && opener.1 != host {
+                    open.push(opener);
+                }
             }
         }
         (pairs, open.into_iter().map(|(key, _)| key).collect())
@@ -4216,13 +4228,13 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     // decide it - which brackets survive is not known until the run is complete -
     // and leaving it undecided is what made the formatter non-idempotent: `fmt`
     // ran pass two itself and escaped one more bracket every time (carve-rs#2209).
-    let (first, _) = resolve(&seq, &HashSet::new());
+    let (first, _) = resolve(&seq, &HashSet::new(), false);
     for (opener, closer) in first {
         if opener.1 != closer.1 {
             scope.crossing_openers.insert(opener.0);
         }
     }
-    let (second, unclosed) = resolve(&seq, &scope.crossing_openers);
+    let (second, unclosed) = resolve(&seq, &scope.crossing_openers, true);
     for (opener, closer) in second {
         if opener.1 == closer.1 {
             scope.paired_closers.insert(closer.0);
@@ -5817,10 +5829,16 @@ fn escape_text(
         // verbatim run, the unconditional set -- is not a candidate and is
         // never offered.
         let escaped = if let (']', Some(opener)) = (ch, role.opener) {
-            // A paired closer follows its opener, which may sit in another unit.
-            let escaped = session
-                .escaped_openers
-                .with(|cell| cell.borrow().get(&opener).copied().unwrap_or(false));
+            // A paired closer follows its opener, which may sit in another unit
+            // -- unless the second reading already owes this `]` an escape of
+            // its own. Bracketed content keeps `closer_openers`, so without
+            // this the mirror answered for every closer and the crossing escape
+            // never reached one inside a link label or a span
+            // (carve-rs#2215).
+            let escaped = role.crossing_closer
+                || session
+                    .escaped_openers
+                    .with(|cell| cell.borrow().get(&opener).copied().unwrap_or(false));
             session
                 .last_occurrence_relaxed
                 .with(|cell| cell.set(!escaped));
