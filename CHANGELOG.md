@@ -379,5 +379,5 @@ which the published crate does not carry.
   (markup-carve/carve-rs#1572, markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
   before that item, converging its `carve` output with carve-js and carve-php.
 
-[0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...HEAD
+[0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6
