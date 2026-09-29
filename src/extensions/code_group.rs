@@ -273,20 +273,22 @@ impl CodeGroup {
     ) -> String {
         let level = ctx.level();
         let pad = ctx.indent(level);
-        let inner_pad = ctx.indent(level + 1);
+        // Extensions §13.6: only the wrapper's own two tags take the ambient
+        // indentation. Every line between them is the cross-impl contract at
+        // column 0, and a panel closes on a line this function does not pad.
         let mut html = format!("{pad}<div{}>\n", render_attrs_for(attrs, "div"));
 
         for (index, item) in items.iter().enumerate() {
             let input_id = ctx.unique_id(&format!("{group_id}-tab-{}", index + 1));
             html.push_str(&format!(
-                "{inner_pad}<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
+                "<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
                 ctx.escape_attr(group_id),
                 ctx.escape_attr(&input_id),
                 ctx.escape_attr(&self.opts.radio_class),
                 if item.selected { " checked" } else { "" },
             ));
             html.push_str(&format!(
-                "{inner_pad}<label for=\"{}\" class=\"{}\">{}</label>\n",
+                "<label for=\"{}\" class=\"{}\">{}</label>\n",
                 ctx.escape_attr(&input_id),
                 ctx.escape_attr(&self.opts.label_class),
                 ctx.escape_html(&item.label),
@@ -301,7 +303,7 @@ impl CodeGroup {
         // `labels` key because the string is DERIVED from the document.
         for item in items {
             html.push_str(&format!(
-                "{inner_pad}<div class=\"{}\" role=\"group\" aria-label=\"{}\">",
+                "<div class=\"{}\" role=\"group\" aria-label=\"{}\">",
                 ctx.escape_attr(&self.opts.panel_class),
                 ctx.escape_attr(&item.label),
             ));
@@ -331,7 +333,6 @@ impl CodeGroup {
     ) -> String {
         let level = ctx.level();
         let pad = ctx.indent(level);
-        let inner_pad = ctx.indent(level + 1);
 
         // Both ids per panel are computed ONCE and reused by the two loops, so
         // a bumped generated id keeps the aria-controls / aria-labelledby
@@ -354,7 +355,7 @@ impl CodeGroup {
                 // inside a `<form>` submitted the form instead of switching
                 // panels - the one interaction this mode exists to provide,
                 // traded for the one thing the page never asked for.
-                "{inner_pad}<button type=\"button\" role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
+                "<button type=\"button\" role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
                  aria-controls=\"{}\" class=\"{}\"{}>{}</button>\n",
                 ctx.escape_attr(tab_id),
                 if item.selected { "true" } else { "false" },
@@ -371,7 +372,7 @@ impl CodeGroup {
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
-                "{inner_pad}<div role=\"tabpanel\" id=\"{}\" aria-labelledby=\"{}\" \
+                "<div role=\"tabpanel\" id=\"{}\" aria-labelledby=\"{}\" \
                  class=\"{}\"{}>",
                 ctx.escape_attr(panel_id),
                 ctx.escape_attr(tab_id),
@@ -770,5 +771,35 @@ mod tests {
     fn an_unrelated_explicit_id_does_not_renumber_the_group() {
         let out = html(&format!("# H {{#codegroup}}\n\n{TWO_PANELS}"));
         assert!(out.contains("name=\"codegroup-1\""), "{out}");
+    }
+
+    /// Extensions §13.6: the wrapper's own two tags take the ambient
+    /// indentation, and every line between them is the cross-impl contract at
+    /// COLUMN 0. The second document opens a heading section first, so the
+    /// wrapper is indented and a padded inner line shows - at top level the
+    /// ambient column is 0 and this class cannot appear.
+    #[test]
+    fn inner_lines_sit_at_column_zero_wherever_the_group_was_written() {
+        for source in [TWO_PANELS.to_string(), format!("# H\n\n{TWO_PANELS}")] {
+            for out in [html(&source), aria_html(&source)] {
+                let inner: Vec<&str> = out
+                    .lines()
+                    .filter(|line| {
+                        let line = line.trim_start();
+                        line.starts_with("<input")
+                            || line.starts_with("<label")
+                            || line.starts_with("<button")
+                            || line.contains("code-group-panel")
+                    })
+                    .collect();
+                assert!(inner.len() >= 2, "no inner lines to measure: {out}");
+                for line in inner {
+                    assert!(
+                        !line.starts_with(' '),
+                        "an inner line is indented: {line:?} in {out}"
+                    );
+                }
+            }
+        }
     }
 }
