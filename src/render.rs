@@ -1241,7 +1241,7 @@ fn render_footnotes_section(
         }
         if let Some(label) = label {
             out.push_str("\n  <p class=\"div-label\">");
-            out.push_str(&escape_text(&label));
+            out.push_str(&render_container_label(&label, options));
             out.push_str("</p>");
         }
     } else {
@@ -2867,7 +2867,7 @@ fn render_named_container(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"div-label\">");
-        out.push_str(&escape_text(label));
+        out.push_str(&render_container_label(label, options));
         out.push_str("</p>");
     }
     let rendered = rendered_children(children, level + 1, options, state);
@@ -2937,7 +2937,7 @@ fn render_div(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"div-label\">");
-        out.push_str(&escape_text(label));
+        out.push_str(&render_container_label(label, options));
         out.push_str("</p>");
     }
     let children = rendered_children(&d.children, level + 1, options, state);
@@ -3254,6 +3254,26 @@ fn render_image(out: &mut String, img: &Image) {
 
 pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Options<'_>) -> String {
     render_inlines_at_link_depth(nodes, options, 0)
+}
+
+/// A container label's inline run, rendered.
+///
+/// ITS CONTENT IS AN INLINE RUN, not the characters the author typed: a container
+/// label is a delimited region parsed as `inline_content` (`carve#2604`'s
+/// definition, ruled on markup-carve/carve#2572). Escaping it instead published
+/// `a /b/` where every other inline host publishes `a <em>b</em>`, and it made one
+/// host answer two ways, since a trailing `%%` comment in a label is already read
+/// as a run and cut there.
+///
+/// Every `<p class="div-label">` goes through here - the core floor and the
+/// extensions that write their own - so the caption floor has one answer rather
+/// than one per writer. See [`crate::parse::parse_container_label_inlines`] for
+/// where the run stops.
+pub(crate) fn render_container_label(label: &str, options: &Options<'_>) -> String {
+    render_inlines_with_options(
+        &crate::parse::parse_container_label_inlines(label, options),
+        options,
+    )
 }
 
 /// Render inline nodes that will be placed INSIDE an anchor the caller emits.

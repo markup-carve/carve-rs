@@ -50,15 +50,19 @@ fn a_label_without_a_separator_keeps_its_percent_signs() {
 }
 
 /// A backtick run is opaque to the marker (`carve#2547`), so the rule must not
-/// delete text an author wrote inside one. An UNCLOSED run reaches the end of
-/// the label, which is where the oracle's own inline run for a label ends.
+/// delete text an author wrote inside one - and the run then PUBLISHES as the
+/// verbatim span it is, because the label holds an inline run (carve#2572).
 #[test]
 fn a_labels_backtick_run_is_opaque_to_the_marker() {
-    assert_eq!(label_of(&to_html(":::[`%% x`]\nbody\n:::\n")), "`%% x`");
     assert_eq!(
-        label_of(&to_html(":::[a ` b %% c]\nbody\n:::\n")),
-        "a ` b %% c"
+        label_of(&to_html(":::[`%% x`]\nbody\n:::\n")),
+        "<code>%% x</code>"
     );
+    // AN UNCLOSED RUN SWALLOWS THE LABEL'S CLOSER. The `label` production takes a
+    // balanced run and the opener reads it with the reader's own scan
+    // (markup-carve/carve#2576), so this line is prose - which is what a link's
+    // text does with the same bytes.
+    assert!(!to_html(":::[a ` b %% c]\nbody\n:::\n").contains("div-label"));
 }
 
 /// Every host that surfaces an unconsumed label reads the same rule: the core
@@ -110,29 +114,32 @@ fn a_label_and_an_inline_run_read_the_same_comment() {
     }
 }
 
-/// A `%%` SCOPED INSIDE A CLOSED INLINE CONSTRUCT IS NOT A TRAILING COMMENT and
-/// the label keeps it.
+/// A `%%` SCOPED INSIDE A CLOSED INLINE CONSTRUCT IS NOT A TRAILING COMMENT, and
+/// the label now publishes the construct rather than the characters around it.
 ///
 /// The clause's marker consumes every character up to the line break. In
-/// `{+a %% secret+}` the construct's closer follows the marker, so the parser
-/// scopes the comment inside the insertion and it never reaches the line break.
-/// A label is authored text, so the only two answers available are the text as
-/// written and a cut at the marker - and the cut would delete `secret+}` and
-/// leave a construct with no closer. Publishing the text is the answer that
-/// loses nothing.
+/// `{+a %% secret+}` the construct's closer follows the marker, so the comment is
+/// scoped inside the insertion and never reaches the line break: nothing is cut,
+/// and the run publishes `<ins>a</ins>` exactly as a paragraph holding the same
+/// text does. While the label was authored text the two answers available were
+/// the text as written and a cut that would have deleted `secret+}` - the gap
+/// `markup-carve/carve#2572` closed.
 ///
-/// A paragraph hides the comment because it RENDERS the insertion's children,
-/// which a label cannot do while it is text rather than an inline run. That gap
-/// is `markup-carve/carve#2572`, and closing it removes this case rather than
-/// changing the answer to it.
+/// THE OTHER TWO ENGINES DO NOT AGREE HERE YET. carve-js cuts the label STRING at
+/// the marker without skipping the construct, so it stores `{+a` and publishes
+/// that - a truncation its own paragraph does not make. Filed rather than copied;
+/// the corpus pins the space and tab spellings (category 518) and not this one.
 #[test]
 fn a_marker_inside_a_closed_construct_is_not_trailing() {
     assert_eq!(
         label_of(&to_html(":::[{+a %% secret+}]\nbody\n:::\n")),
-        "{+a %% secret+}"
+        "<ins>a</ins>"
     );
     // A marker AFTER the closer is trailing, and does cut.
-    assert_eq!(label_of(&to_html(":::[{+a+} %% t]\nbody\n:::\n")), "{+a+}");
+    assert_eq!(
+        label_of(&to_html(":::[{+a+} %% t]\nbody\n:::\n")),
+        "<ins>a</ins>"
+    );
 }
 
 /// THE ENUMERATION IS MEASURED, NOT ASSUMED.
@@ -146,6 +153,10 @@ fn a_marker_inside_a_closed_construct_is_not_trailing() {
 ///
 /// A term is the reference host because its run begins mid-line, as a label's
 /// does, and corpus 518-3 and 518-4 pin both of the clause's spellings there.
+///
+/// The cut is then checked against WHAT A PARAGRAPH PUBLISHES for the surviving
+/// text rather than against its escaped characters: the label is an inline run
+/// now, so cut and published are two questions and each gets its own oracle.
 #[test]
 fn a_label_cuts_where_the_inline_rule_says_it_cuts() {
     use carve::{InlineNode, Options};
@@ -192,7 +203,6 @@ fn a_label_cuts_where_the_inline_rule_says_it_cuts() {
         "plain text",
         "`%% x`",
         "a `%% x` b",
-        "a ` b %% c",
         "``%% x`` %% c",
         "a `x` %% c",
         "{% %% hidden %} after",
@@ -209,23 +219,28 @@ fn a_label_cuts_where_the_inline_rule_says_it_cuts() {
         "a \\%% c",
         "\\%% c",
         "a `x\\` %% c",
-        // A `]` cannot appear in a label at all - it closes the slot - so a link
-        // and a bracketed span have no label spelling to compare.
+        // A `]` closes the slot, so a link and a bracketed span have no label
+        // spelling to compare.
         "*b* %% c",
         "x{.cls} %% c",
     ] {
-        let expected = match comment_offset(text) {
+        let cut = match comment_offset(text) {
             Some(at) => text[..at].trim_end_matches([' ', '\t']),
             None => text,
         };
-        let escaped = expected
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;");
+        // WHAT A PARAGRAPH PUBLISHES FOR THE CUT TEXT. The label holds an inline
+        // run (`markup-carve/carve#2572`), so the escaped-text form this used to
+        // assert is no longer the answer for any of these - and the run's own
+        // publisher is what it has to agree with, not a second copy of it.
+        let paragraph = carve::to_html(&format!("{cut}\n"));
+        let expected = paragraph
+            .strip_prefix("<p>")
+            .and_then(|rest| rest.strip_suffix("</p>"))
+            .unwrap_or("");
         assert_eq!(
             carve::to_html(&format!(":::[{text}]\nbody\n:::\n")),
-            format!("<div>\n  <p class=\"div-label\">{escaped}</p>\n  <p>body</p>\n</div>"),
-            "text: {text:?} expected label {expected:?}"
+            format!("<div>\n  <p class=\"div-label\">{expected}</p>\n  <p>body</p>\n</div>"),
+            "text: {text:?} cut to {cut:?}"
         );
     }
 }

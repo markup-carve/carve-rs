@@ -104,9 +104,12 @@ fn a_label_shaped_paragraph_further_down_is_not_lifted() {
 }
 
 #[test]
-fn a_label_paragraph_holding_markup_is_not_lifted() {
-    // The field is a raw `String` and the writer emits it raw, so lifting a
-    // paragraph holding markup would flatten it and lose it without a word.
+fn a_label_paragraph_holding_markup_is_lifted() {
+    // MARKUP HAS A SPELLING ON THE OPENER NOW. The label is an inline run
+    // (`markup-carve/carve#2572`), so the paragraph's inline content is written
+    // back as the label's SOURCE and the container keeps its element. The lift
+    // used to refuse anything but text, because the label published escaped and
+    // carrying a `<strong>` back would have flattened it without a word.
     let html = "<div class=\"figure\"><p class=\"div-label\">a <em>b</em></p><p>Body.</p></div>";
     let options = HtmlImportOptions {
         mode: HtmlImportMode::Roundtrip,
@@ -114,11 +117,31 @@ fn a_label_paragraph_holding_markup_is_not_lifted() {
     };
     let written = html_to_carve(html, &options).expect("import").value;
 
-    assert!(!written.starts_with("::: figure ["), "{written}");
-    assert!(
-        written.contains("/b/"),
-        "the emphasis was flattened: {written}"
+    assert_eq!(written, "::: figure [a /b/]\nBody.\n:::\n");
+    // AND THE WRITTEN LABEL PUBLISHES THE RUN IT CAME OFF, which is the half a
+    // source comparison cannot state: the `<em>` has to survive the return trip,
+    // not merely acquire a spelling.
+    assert_eq!(
+        to_html(&written),
+        "<div class=\"figure\">\n  <p class=\"div-label\">a <em>b</em></p>\n  <p>Body.</p>\n</div>"
     );
+}
+
+#[test]
+fn a_label_paragraph_with_no_carve_spelling_is_not_lifted() {
+    // THE REFUSAL THAT REMAINS. An empty `<code>` has no Carve source while its
+    // open backtick run does not end, so the writer says so and the paragraph
+    // stays in the body - where the ordinary walk reports what it costs, exactly
+    // as it did before the label was a run.
+    let html =
+        "<div class=\"figure\"><p class=\"div-label\">a <code></code> b</p><p>Body.</p></div>";
+    let options = HtmlImportOptions {
+        mode: HtmlImportMode::Roundtrip,
+        ..Default::default()
+    };
+    let written = html_to_carve(html, &options).expect("import").value;
+
+    assert!(!written.starts_with("::: figure ["), "{written}");
 }
 
 #[test]

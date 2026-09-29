@@ -292,6 +292,62 @@ fn probing() -> bool {
     PROBING.with(|p| p.get())
 }
 
+thread_local! {
+    // Set while a CONTAINER LABEL's inline run is being scanned. An extension's
+    // inline matcher belongs to the parse that registered it, and this scan runs
+    // at RENDER time from an AST field, with no parse of its own to belong to -
+    // so a matcher must not fire here. carve-js pins the same answer by scanning
+    // a label through a session that carries no matchers at all.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static IN_CONTAINER_LABEL: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII guard for [`IN_CONTAINER_LABEL`], with [`ProbeGuard`]'s discipline.
+struct ContainerLabelGuard {
+    previous: bool,
+}
+
+impl ContainerLabelGuard {
+    fn enter() -> ContainerLabelGuard {
+        ContainerLabelGuard {
+            previous: IN_CONTAINER_LABEL.with(|f| f.replace(true)),
+        }
+    }
+}
+
+impl Drop for ContainerLabelGuard {
+    fn drop(&mut self) {
+        IN_CONTAINER_LABEL.with(|f| f.set(self.previous));
+    }
+}
+
+/// The inline nodes of a CONTAINER LABEL - a div's, an admonition's, a
+/// directive's or a fence's unconsumed `[label]`.
+///
+/// `CARVE-P9-041` used to ENUMERATE the hosts that have an inline run and named a
+/// div label among them; `carve#2604` replaced the enumeration with a definition,
+/// under which a container label is a delimited region parsed as `inline_content`
+/// in its own right. So the label publishes that run and not the characters the
+/// author typed (ruled on markup-carve/carve#2572).
+///
+/// THE LABEL STAYS A STRING IN THE AST, the way the oracle's own layout tree
+/// holds it, so the scan happens where it is rendered and the interchange shape
+/// does not move. What that costs is stated on the ticket: a reference, a
+/// footnote reference and an abbreviation inside a label cannot resolve, because
+/// resolution is a document pass over the tree and there is no run in the tree to
+/// visit. Each renders as the text the author wrote, which is what every engine
+/// does with an unresolved one anyway.
+///
+/// No positions: the label reaches this from an AST field, which carries no
+/// offset of its own, and PART 12 section 4 forbids inventing one.
+pub(crate) fn parse_container_label_inlines(label: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    let _label = ContainerLabelGuard::enter();
+    let _depth = DepthScope::set(0);
+    parse_inline_with_options(label, options)
+}
+
 /// Parse `source` to ANSWER A QUESTION about it, not to publish it.
 ///
 /// What such a parse notices about attributes it could not place is a fact about
@@ -7559,17 +7615,15 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         if (has_lang || title_start.is_some()) && !separated {
             return None;
         }
-        i += 1;
-        let start = i;
-        while i < bytes.len() && bytes[i] != b']' {
-            i += 1;
-        }
-        if i >= bytes.len() {
-            return None;
-        }
-        label_start = Some(start);
-        label_end = Some(i);
-        i += 1;
+        // The fence info line's label is the colon opener's `label` production,
+        // so it closes where `parse_bare_label` closes one: balanced, escape-aware
+        // and opaque inside a verbatim span. Written flat here, the two spellings
+        // of the one production disagreed, and `[a `]` b]` lost its label on a
+        // fence while keeping it on a div (markup-carve/carve#2576).
+        let (_, end) = read_bracketed(bytes, i)?;
+        label_start = Some(i + 1);
+        label_end = Some(end - 1);
+        i = end;
     }
     // Must be only whitespace after the info string
     while i < bytes.len() && bytes[i] == b' ' {
@@ -15891,9 +15945,11 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         None
     };
     let label = if after.starts_with('[') {
-        let close = after.find(']')?;
-        let label = after[1..close].to_string();
-        if !trim_ascii(&after[close + 1..]).is_empty() {
+        // Balanced, escape-aware and opaque inside a verbatim span, for the
+        // reason `parse_bare_label` gives: this is the same `label` production,
+        // and the two spellings of it have to close in the same place.
+        let (label, end) = read_bracketed(after.as_bytes(), 0)?;
+        if !trim_ascii(&after[end..]).is_empty() {
             return None;
         }
         Some(label)
@@ -15913,12 +15969,20 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     })
 }
 
+/// The glued `:::[label]` form's label, closed where the READER's own bracket
+/// scan closes it rather than at the first `]`.
+///
+/// `label` takes a BALANCED run (markup-carve/carve#2576), so a nested bracket,
+/// an escaped `]` and a `]` inside a verbatim span all belong to the label - and
+/// an UNCLOSED backtick run swallows the closer and leaves the line as prose,
+/// which is what a link's text does with the same bytes. A first-`]` scan is a
+/// second spelling of that production and disagreed with it on all four.
 fn parse_bare_label(s: &str) -> Option<String> {
-    let close = s.find(']')?;
-    if !s.starts_with('[') || !s[close + 1..].trim().is_empty() {
+    let (label, after) = read_bracketed(s.as_bytes(), 0)?;
+    if !s[after..].trim().is_empty() {
         return None;
     }
-    Some(s[1..close].to_string())
+    Some(label)
 }
 
 /// The slot is the source VERBATIM and the first `"` closes it, per
@@ -21821,6 +21885,11 @@ fn match_emphasis(
 
 fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option<InlineMatch> {
     if options.extensions.is_empty() {
+        return None;
+    }
+    // See `IN_CONTAINER_LABEL`: a label's run is scanned at render time, so no
+    // matcher is in scope for it.
+    if IN_CONTAINER_LABEL.with(|f| f.get()) {
         return None;
     }
     if !text.is_char_boundary(pos) {
