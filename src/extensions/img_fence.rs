@@ -321,7 +321,7 @@ fn source_fallback(code: &CodeBlock) -> String {
         _ => String::new(),
     };
     format!(
-        "<pre><code{}>{}\n</code></pre>",
+        "<pre><code{}>{}</code></pre>",
         lang_attr,
         escape_text(&code.content)
     )

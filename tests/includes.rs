@@ -165,7 +165,7 @@ fn fragment_containment_keeps_an_unclosed_child_fence_from_swallowing_parent() {
     assert!(result.warnings.is_empty());
     assert!(result
         .html
-        .contains("<pre><code class=\"language-js\">let x = 1;\n</code></pre>"));
+        .contains("<pre><code class=\"language-js\">let x = 1;</code></pre>"));
     assert!(result.html.contains("<p>After.</p>"));
 }
 

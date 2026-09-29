@@ -283,7 +283,7 @@ fn code_block_carries_language_and_literal_text() {
     );
     assert_eq!(
         value.pointer("/content/0/content/0/text"),
-        Some(&json!("let x = 1;"))
+        Some(&json!("let x = 1;\n"))
     );
     assert!(report.dropped.is_empty());
 }
@@ -1512,8 +1512,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // documents here already carry, with nothing dropped. Classifying all 2097 at
     // both readings found no other document moving, so 1613/484 becomes 1612/485
     // and the pair still covers the corpus exactly.
-    const STRICT: usize = 1612;
-    const LOSSY: usize = 485;
+    // The bcdcba4b pin adds 37 documents: 25 strict and 12 with reported loss.
+    const STRICT: usize = 1637;
+    const LOSSY: usize = 497;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

@@ -90,7 +90,7 @@ fn a_code_closer_outside_the_item_does_not_change_interruption() {
     );
     assert_html(
         "- item\n %%%\n hidden\n  %%%\n  ```\ntail\n\n- other\n\n      ```\n",
-        "<ul>\n  <li><p>item</p>\n    <pre><code>tail\n\n</code></pre>\n  </li>\n  <li><p>other</p>\n    <pre><code>\n</code></pre>\n  </li>\n</ul>",
+        "<ul>\n  <li><p>item</p>\n    <pre><code>tail\n\n</code></pre>\n  </li>\n  <li><p>other</p>\n    <pre><code></code></pre>\n  </li>\n</ul>",
     );
 }
 
@@ -170,7 +170,7 @@ fn a_closed_nested_fence_still_ends_at_the_dedent() {
             };
             assert_html(
                 &format!("- a\n  - b\n{}%% c\n    {fence}\ntail\n    {fence}\n", " ".repeat(column)),
-                &format!("<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail\n{closer}</p>"),
+                &format!("<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail\n{closer}</p>"),
             );
         }
     }
@@ -196,7 +196,7 @@ fn a_fence_below_the_nested_column_is_lazy_code_payload() {
 fn a_comment_at_the_outer_column_keeps_the_closed_fence_in_the_inner_item() {
     assert_html(
         "- - b\n  %% c\n    ```\ntail\n    ```\n",
-        "<ul>\n  <li>\n    <ul>\n      <li>b\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail\n<code></code></p>",
+        "<ul>\n  <li>\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail\n<code></code></p>",
     );
 }
 

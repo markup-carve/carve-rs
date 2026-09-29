@@ -25,6 +25,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Code block content preserves literal payload line endings, including EOF without a final break. Empty fences contain no newline, and canonical writing reports `field-unspellable` when it must add a payload break (#2191).
+
 - ANSI output preserves every code payload line, including trailing blank lines (markup-carve/carve-js#2357).
 
 - Unmarked, indented block openers fold into an open quote paragraph inside list items, footnotes, and definition bodies (#2183).

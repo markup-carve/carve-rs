@@ -383,7 +383,10 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         // first when both are present, matching the div's order. Ported from
         // carve-js#1044.
         BlockNode::CodeBlock(code) => {
-            let body = format!("{}\n\n", strip_controls(&code.content));
+            let body = format!(
+                "{}\n\n",
+                strip_controls(code.content.strip_suffix('\n').unwrap_or(&code.content))
+            );
             let body = prepend_label(body, code.label.as_deref());
             prepend_label(body, code.title.as_deref())
         }

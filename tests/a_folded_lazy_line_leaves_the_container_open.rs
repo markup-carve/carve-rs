@@ -125,7 +125,7 @@ fn control_a_code_fence_body_is_not_a_paragraph_at_all() {
     // follows it - the answer corpus 276 pins, unchanged here.
     assert_eq!(
         html("- ```\nx\n```\n"),
-        "<ul>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+        "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
     );
 }
 

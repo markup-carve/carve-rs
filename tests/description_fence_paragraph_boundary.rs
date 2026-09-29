@@ -4,7 +4,7 @@ use carve::{to_html, to_html_with_options, Options};
 #[test]
 fn c2092_dd_at_column() {
     let source = ":: t\n:  head\n\n   ```\n   a\n```\n";
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>head</p>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<pre><code>\n</code></pre>";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>head</p>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<pre><code></code></pre>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),
@@ -37,7 +37,7 @@ fn c2092_dd_no_blank() {
 #[test]
 fn c2092_reach_dd_code_base3_close0() {
     let source = ":: t\n:  head\n\n   ```\n   a\n```\n";
-    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>head</p>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<pre><code>\n</code></pre>";
+    let expected = "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>head</p>\n    <pre><code>a\n</code></pre>\n  </dd>\n</dl>\n<pre><code></code></pre>";
     assert_eq!(to_html(source), expected);
     assert_eq!(
         to_html_with_options(source, &Options::default().with_positions(true)),

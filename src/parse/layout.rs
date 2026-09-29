@@ -421,7 +421,7 @@ fn render_layout_body(
             //
             // This branch only reaches a CLOSED fence: the scanner hands an
             // unterminated one back to the authoritative pipeline, which is where
-            // the unterminated fence's own ending is added.
+            // physical payload endings are preserved.
             out.push_str("</code></pre>");
             accepted.record(BlockLayout {
                 event: LayoutEvent::CodeFence,
@@ -1199,11 +1199,9 @@ mod layout_html_tests {
         // above writes its ending. The pair is what says the spellings diverge
         // rather than one of them merely having moved.
         assert_eq!(crate::to_html("```\n\n```\n"), "<pre><code>\n</code></pre>");
-        // An UNTERMINATED fence keeps its ending even with no body line: it runs
-        // to the end of its container instead of to a closer, which corpus 276
-        // pins. The scanner hands one back, so this reads the authoritative path.
+        // The fallback also leaves a zero-line payload empty.
         assert!(try_layout_html("- ```\nx\n```\n", &Options::default()).is_none());
-        assert!(crate::to_html("- ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
+        assert!(crate::to_html("- ```\nx\n```\n").contains("<pre><code></code></pre>"));
     }
 
     #[test]

@@ -418,11 +418,12 @@ fn apply_naming(attrs: &mut Attrs, opts: &FencedRenderOptions) {
 fn interactive_html(code: &crate::ast::CodeBlock, opts: &FencedRenderOptions) -> String {
     let mut attrs = merged_attrs(code, opts);
     apply_naming(&mut attrs, opts);
+    let content = code.content.strip_suffix('\n').unwrap_or(&code.content);
     let body = match opts.content_mode {
-        ContentMode::Text => escape_text_keep_gt(&code.content),
+        ContentMode::Text => escape_text_keep_gt(content),
         ContentMode::Json => format!(
             "<script type=\"application/json\">{}</script>",
-            guard_script_close(&code.content)
+            guard_script_close(content)
         ),
     };
     // The configured tag decides whether a text-alignment `align` becomes its
@@ -458,7 +459,7 @@ fn static_html(
         let element = format!(
             "<div{}>{}</div>",
             render_attrs(aligned.as_ref().unwrap_or(&attrs)),
-            build(&code.content)
+            build(code.content.strip_suffix('\n').unwrap_or(&code.content))
         );
         return wrap_figure(element, opts);
     }
@@ -471,7 +472,7 @@ fn static_html(
         None => String::new(),
     };
     format!(
-        "<pre{}><code{}>{}\n</code></pre>",
+        "<pre{}><code{}>{}</code></pre>",
         render_attrs(&attrs),
         lang_attr,
         escape_text(&code.content),

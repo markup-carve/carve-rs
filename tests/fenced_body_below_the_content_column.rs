@@ -38,7 +38,7 @@ fn a_below_column_line_closes_the_item_and_leaves_the_code_block_empty() {
     // Corpus 276 row 2, one column in.
     assert_eq!(
         squash(&to_html("- ```\n x\n ```\n")),
-        "<ul> <li> <pre><code> </code></pre> </li> </ul> <p>x <code></code></p>"
+        "<ul> <li> <pre><code></code></pre> </li> </ul> <p>x <code></code></p>"
     );
 }
 
@@ -48,7 +48,7 @@ fn the_ordered_marker_column_is_the_items_own() {
     // for the same reason - the column is read off the marker, not fixed at 2.
     assert_eq!(
         squash(&to_html("1. ```\n x\n ```\n")),
-        "<ol> <li> <pre><code> </code></pre> </li> </ol> <p>x <code></code></p>"
+        "<ol> <li> <pre><code></code></pre> </li> </ol> <p>x <code></code></p>"
     );
 }
 
@@ -121,12 +121,12 @@ fn a_below_column_marker_is_a_below_column_line() {
     // Reading the marker first nested it inside the item the open fence closes.
     assert_eq!(
         squash(&to_html("- ```\n - b\n ```\n")),
-        "<ul> <li> <pre><code> </code></pre> </li> </ul> \
+        "<ul> <li> <pre><code></code></pre> </li> </ul> \
          <ul> <li>b <code></code></li> </ul>"
     );
     assert_eq!(
         squash(&to_html("- ```\n 1. b\n ```\n")),
-        "<ul> <li> <pre><code> </code></pre> </li> </ul> \
+        "<ul> <li> <pre><code></code></pre> </li> </ul> \
          <ol> <li>b <code></code></li> </ol>"
     );
     assert_eq!(
@@ -138,7 +138,7 @@ fn a_below_column_marker_is_a_below_column_line() {
     // sibling-marker break has always given.
     assert_eq!(
         squash(&to_html("- ```\n- b\n ```\n")),
-        "<ul> <li> <pre><code> </code></pre> </li> <li>b <code></code></li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> <li>b <code></code></li> </ul>"
     );
 }
 

@@ -67,7 +67,7 @@ fn a_blank_line_ends_the_fence_and_a_new_entry_follows() {
 fn the_single_item_control_is_unchanged() {
     assert_eq!(
         flat("- ``` x\ncode\n```\n"),
-        "<ul> <li> <pre><code class=\"language-x\"> </code></pre> </li> </ul> \
+        "<ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> \
          <p>code <code></code></p>"
     );
 }

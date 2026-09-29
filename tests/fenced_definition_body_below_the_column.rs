@@ -40,7 +40,7 @@ fn a_fence_on_the_marker_line_with_a_below_column_body_closes_the_definition() {
     let out = html(":: t\n:  ```\nbody\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n</dl>\n<p>body\n<code></code></p>"
     );
     assert_eq!(out, definition_of(&html("- ```\nbody\n```\n")));
 }
@@ -158,17 +158,17 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
     let out = html(":: t\n:  ```\n:  d\n```\n");
     assert_eq!(
         out,
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
     assert_eq!(
         html("- ```\n- d\n```\n"),
-        "<ul>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n  <li>d\n<code></code></li>\n</ul>"
+        "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n  <li>d\n<code></code></li>\n</ul>"
     );
 
     // A TERM marker there opens the next entry, for the same reason.
     assert_eq!(
         html(":: t\n:  ```\n:: u\n:  d\n```\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>\n</code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code></code></pre>\n  </dd>\n  <dt>u</dt>\n  <dd>d\n<code></code></dd>\n</dl>"
     );
 }
 
@@ -179,6 +179,6 @@ fn control_a_below_column_marker_is_classified_in_the_surviving_list() {
 fn control_the_block_quote_spelling_is_unchanged() {
     assert_eq!(
         html("> ```\nbody\n```\n"),
-        "<blockquote>\n  <pre><code>\n</code></pre>\n</blockquote>\n<p>body\n<code></code></p>"
+        "<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>body\n<code></code></p>"
     );
 }

@@ -13,14 +13,8 @@ fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
 }
 
-/// An UNTERMINATED empty fence keeps the ending of the line it runs to, because
-/// it ends at its container rather than at a closer it never met.
-const UNCLOSED_EMPTY_CODE: &str = "<pre><code>\n</code></pre>";
-
-/// A CLOSED empty fence has no payload line to end, so it publishes no
-/// character - `code_content` preserved literally, markup-carve/carve#2560 with
-/// corpus 524, read here as carve-rs#2162. One constant used to serve both, which
-/// is what let the two spellings read the same.
+/// Both ways of ending a zero-line fence publish an empty payload.
+const UNCLOSED_EMPTY_CODE: &str = "<pre><code></code></pre>";
 const CLOSED_EMPTY_CODE: &str = "<pre><code></code></pre>";
 
 #[test]

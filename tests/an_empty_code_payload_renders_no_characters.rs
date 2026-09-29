@@ -1,18 +1,4 @@
-//! `code_content` is any text until the matching fence, preserved literally, and
-//! zero lines preserved literally is zero characters. So a CLOSED empty code
-//! fence publishes no newline, while the one-blank-line spelling keeps its own
-//! (markup-carve/carve#2560, corpus category 524, carve-rs#2162).
-//!
-//! An UNTERMINATED fence is the other side of it. That one ends at its container
-//! rather than at a closer it never met, and its line ending survives - corpus
-//! 276 pins it for a fence opened on a list-marker line whose body sits below the
-//! content column.
-//!
-//! The neighbouring precedent is carve-rs#2159, which gave the RAW block's
-//! zero-line and one-blank payloads different encodings under a normative MUST
-//! NOT. This is the same distinction for the code fence, and it is carried the
-//! same way: `content` holds its own trailing newline once every line in it is
-//! blank, which is the only thing joining cannot say.
+//! Empty code fences contain no payload, regardless of how they end.
 
 use carve::{parse, to_carve, to_html, to_markdown, BlockNode};
 
@@ -47,12 +33,12 @@ fn a_blank_payload_keeps_its_lines() {
     assert_eq!(html("```\n\n\n```\n"), "<pre><code>\n\n</code></pre>");
 }
 
-/// A payload with content is unaffected, including one whose last line is blank.
+/// Nonempty payloads include the final line ending.
 #[test]
-fn a_payload_with_content_is_unaffected() {
-    assert_eq!(payload("```\nx\n```\n"), "x");
+fn a_payload_with_content_keeps_its_line_endings() {
+    assert_eq!(payload("```\nx\n```\n"), "x\n");
     assert_eq!(html("```\nx\n```\n"), "<pre><code>x\n</code></pre>");
-    assert_eq!(payload("```\nx\n\n```\n"), "x\n");
+    assert_eq!(payload("```\nx\n\n```\n"), "x\n\n");
     assert_eq!(html("```\nx\n\n```\n"), "<pre><code>x\n\n</code></pre>");
     assert_eq!(html("```\n\nx\n```\n"), "<pre><code>\nx\n</code></pre>");
 }
@@ -75,16 +61,17 @@ fn every_host_reads_the_same_way() {
     assert!(html("::: note\n```\n```\n:::\n").contains("<pre><code></code></pre>"));
 }
 
-/// The UNTERMINATED fence keeps its ending, which is the reading corpus 276
-/// pins and the one this must not take away.
+/// Container termination and a closer both leave a zero-line payload empty.
 #[test]
-fn an_unterminated_empty_fence_keeps_its_line() {
-    assert!(html("- ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
-    assert!(html("> ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
-    assert!(html("> > ```\nc\n").contains("<pre><code>\n</code></pre>"));
-    // And the closed one beside it, at the same depth, so the pair says the two
-    // diverge rather than one of them having moved.
-    assert!(html("> > ```\n> > ```\ny\n").contains("<pre><code></code></pre>"));
+fn an_unterminated_empty_fence_has_no_payload() {
+    for source in [
+        "- ```\nx\n```\n",
+        "> ```\nx\n```\n",
+        "> > ```\nc\n",
+        "> > ```\n> > ```\ny\n",
+    ] {
+        assert!(html(source).contains("<pre><code></code></pre>"));
+    }
 }
 
 /// Both spellings round trip through the Carve writer, which could only spell one

@@ -571,32 +571,16 @@ pub struct CodeBlock {
     pub lang: Option<String>,
     pub title: Option<String>,
     pub label: Option<String>,
-    /// The payload's lines joined by a line feed.
-    ///
-    /// A payload whose every line is BLANK carries its own trailing line feed as
-    /// well, because joining cannot otherwise tell zero lines from one blank one
-    /// and `code_content` is any text until the matching fence preserved
-    /// literally - so a closed empty fence publishes nothing while the one-blank
-    /// spelling keeps its newline (markup-carve/carve#2560, corpus 524). An
-    /// unterminated fence carries it too: it ends at its container rather than at
-    /// a closer, and corpus 276 pins the line. `fenced_payload_needs_ending` is how
-    /// a writer asks which case it has.
+    /// Literal payload text, including each authored line ending.
+    /// Empty fences contain no characters; EOF can leave the last line unterminated.
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
 
-/// Does a fenced payload still need the line ending after its LAST line written
-/// for it?
-///
-/// False for the two shapes that spell their own endings inside the payload: the
-/// one with no line at all, and the one whose every line is blank. Writing an
-/// ending for either turned a zero-line payload into a one-blank one, and a
-/// one-blank payload into two (carve-rs#2162).
-///
-/// One predicate for the code fence and the raw block, because it is one rule:
-/// both carry their own trailing newline once every line in them is blank, and
-/// both lost a line when a writer added an ending anyway (carve-rs#2168).
+/// Whether a raw block payload needs its final line ending supplied by a writer.
+/// Raw blocks encode all-blank payloads with their ending already present.
+/// Code blocks carry literal text and do not use this convention.
 pub fn fenced_payload_needs_ending(content: &str) -> bool {
     !content.chars().all(|ch| ch == '\n')
 }

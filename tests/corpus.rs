@@ -770,6 +770,10 @@ const IMPLEMENTED: &[&str] = &[
     // of which carve-rs#2170 answered - they arrived with the pin declared in
     // BEHIND_ON_PAIR and that declaration is gone with the fix.
     "a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim",
+    "a-container-label-publishes-its-inline-run",
+    "a-fence-after-a-footnote-quote-has-its-own-base",
+    "a-footnote-body-whose-every-block-renders-nothing-is-an-empty-body",
+    "an-opener-under-a-quote-in-a-nested-host-opens-at-one-column-only",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
