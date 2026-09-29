@@ -340,7 +340,10 @@ fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
         if !label.is_empty() {
             lines.push(format!(
                 "  <p class=\"div-label\">{}</p>",
-                ctx.escape_html(label)
+                ctx.escape_html(crate::parse::label_without_trailing_comment(
+                    label,
+                    ctx.options,
+                ))
             ));
         }
     }

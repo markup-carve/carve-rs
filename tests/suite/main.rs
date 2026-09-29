@@ -124,6 +124,8 @@ mod a_container_ends_at_its_last_placed_child;
 mod a_container_ends_at_the_markup_that_closes_it;
 #[path = "../a_container_ends_where_its_last_block_leaves_no_paragraph_open.rs"]
 mod a_container_ends_where_its_last_block_leaves_no_paragraph_open;
+#[path = "../a_container_label_reads_the_trailing_comment_rule.rs"]
+mod a_container_label_reads_the_trailing_comment_rule;
 #[path = "../a_container_label_survives_an_html_import.rs"]
 mod a_container_label_survives_an_html_import;
 #[path = "../a_container_starts_at_its_opening_markup.rs"]
