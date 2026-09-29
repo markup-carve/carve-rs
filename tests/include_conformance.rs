@@ -63,6 +63,13 @@ use json::Value;
 /// closed retires its row instead of reading as coverage.
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
+/// Exact HTML corrections pending in the shared vectors, retired when the pin agrees.
+const HTML_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
+    "i04-fragment-containment-unclosed-fence",
+    "Literal child EOF payload (markup-carve/carve#2603, implemented by carve#2616)",
+    "<p>Before.</p>\n<pre><code class=\"language-js\">let x = 1;</code></pre>\n<p>After.</p>",
+)];
+
 // ---------------------------------------------------------------------------
 // Vector location
 // ---------------------------------------------------------------------------
@@ -513,14 +520,14 @@ fn compare(name: &str, vector: &Value, run: &RunResult) -> Vec<String> {
     let mut diffs = Vec::new();
 
     let exp_html = expected["html"].as_str().expect("expected.html");
-    // CARVE-P12-064 preserves the child's physical EOF. The reference golden
-    // predates that rule; retire this assertion when the golden catches up.
-    let exp_html = if name == "i04-fragment-containment-unclosed-fence" {
-        let ahead = "<p>Before.</p>\n<pre><code class=\"language-js\">let x = 1;</code></pre>\n<p>After.</p>";
+    let exp_html = if let Some((_, reason, ahead)) =
+        HTML_AHEAD_OF_PIN.iter().find(|(slug, _, _)| *slug == name)
+    {
         assert_ne!(
-            exp_html, ahead,
-            "remove the retired code payload expectation"
+            exp_html, *ahead,
+            "{name}: remove its retired HTML_AHEAD_OF_PIN entry"
         );
+        eprintln!("{name}: ahead of the shared golden ({reason})");
         ahead
     } else {
         exp_html
@@ -699,6 +706,12 @@ fn include_conformance_vectors_match_carve_js_goldens() {
     // feature the filesystem vectors are skipped, and the count is asserted
     // rather than printed: a skip rule with a typo would otherwise skip
     // everything and the suite would go green having checked nothing.
+    for (name, _, _) in HTML_AHEAD_OF_PIN {
+        assert!(
+            seen.iter().any(|slug| slug == name),
+            "HTML_AHEAD_OF_PIN names missing vector {name}"
+        );
+    }
     let compared = passed + documented.len() + failures.len();
     assert_eq!(
         compared + skipped_filesystem,

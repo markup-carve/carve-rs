@@ -64,6 +64,10 @@ impl SourceEndingGuard {
         let last = (!source.is_empty() && !source.ends_with('\n')).then(|| source.lines().count());
         Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(last)))
     }
+
+    fn fragment() -> Self {
+        Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(None)))
+    }
 }
 
 impl Drop for SourceEndingGuard {
@@ -390,7 +394,7 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
 /// the wrong way.
 fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let _probing = ProbeGuard::enter();
-    let _source_ending = SourceEndingGuard::install(source);
+    let _source_ending = SourceEndingGuard::fragment();
     parse_blocks_with_options_at_level(source, options, true)
 }
 
@@ -3698,7 +3702,9 @@ fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
-    let _source_ending = SourceEndingGuard::install(source);
+    // Fragments have local line numbers and may omit collection separators.
+    // Only a whole-document entry point can identify physical EOF.
+    let _source_ending = SourceEndingGuard::fragment();
     parse_blocks_with_options_at_level(source, options, false)
 }
 

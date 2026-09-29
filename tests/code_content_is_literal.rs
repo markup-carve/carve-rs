@@ -149,3 +149,62 @@ fn diagnostic_caps_count_each_unterminated_payload() {
         assert_eq!(report.truncated, cap < 2);
     }
 }
+
+struct FragmentHost;
+
+impl carve::CarveExtension for FragmentHost {
+    fn name(&self) -> &'static str {
+        "fragment-host"
+    }
+
+    fn match_block(
+        &self,
+        lines: &[&str],
+        start: usize,
+        ctx: &carve::MatcherContext<'_>,
+    ) -> Option<carve::BlockMatch> {
+        if lines.get(start) != Some(&"@@@") {
+            return None;
+        }
+        let end = start + 1 + lines[start + 1..].iter().position(|line| *line == "@@@")?;
+        Some(carve::BlockMatch {
+            node: BlockNode::Div(carve::Div {
+                attrs: None,
+                label: None,
+                children: ctx.parse_blocks(&lines[start + 1..end].join("\n")),
+                pos: None,
+            }),
+            lines_consumed: end - start + 1,
+        })
+    }
+}
+
+#[test]
+fn extension_fragments_do_not_claim_the_documents_eof() {
+    for positions in [false, true] {
+        let options = Options::default()
+            .with_extension(&FragmentHost)
+            .with_positions(positions);
+        for source in [
+            "@@@\n```\na\n@@@\n",
+            "@@@\n```\na\n@@@",
+            "@@@\n```\na\n@@@\n\n```\nb",
+        ] {
+            let doc = carve::parse_with_options(source, &options);
+            let mut actual = Vec::new();
+            contents(&serde_json::from_str(&to_json(&doc)).unwrap(), &mut actual);
+            let expected = if source.ends_with('b') {
+                vec!["a\n", "b"]
+            } else {
+                vec!["a\n"]
+            };
+            assert_eq!(actual, expected, "{source:?} positions={positions}");
+            assert_eq!(
+                carve::conversion_diagnostics(&doc, 100)
+                    .unwrap()
+                    .total_diagnostics,
+                usize::from(source.ends_with('b'))
+            );
+        }
+    }
+}
