@@ -707,6 +707,71 @@ const IMPLEMENTED: &[&str] = &[
     // rule: a closed fence establishes no claim, so an unmarked line after one
     // leaves every quote. Eleven documents.
     "a-fence-in-a-quote-stores-no-continuation-claim",
+    // Added with the spec bump to carve 89157529, which brings fourteen
+    // categories and 97 documents. The corpus diff between the two pins is 97
+    // `.crv` files ADDED with none modified and none removed, plus one `.html`
+    // golden modified - corpus 372, from markup-carve/carve#2574, which
+    // carve-rs#2159 already answers.
+    //
+    // Every document of every category below was rendered through this engine and
+    // diffed against its committed HTML before the category was listed here, and
+    // `all_implemented_corpus_pairs_match` re-runs that comparison the moment the
+    // line exists, which is what makes each one a claim rather than a blessing.
+    // Each line names the upstream merge that brought the category, read off the
+    // commit that added its first document.
+    //
+    // 514 is markup-carve/carve#2544: a fence a container inside a quote holds
+    // open stores no continuation claim, at every depth. Twelve documents.
+    "a-fence-a-container-inside-a-quote-holds-open-stores-no-claim",
+    // 515 is markup-carve/carve#2549: a nested marker comment's ownership does
+    // not depend on where its closer sits. Five documents.
+    "a-nested-marker-comment-keeps-its-own-ownership",
+    // 516 is markup-carve/carve#2547: stripping a heading's comment preserves the
+    // inline spans around it. Eight documents.
+    "a-heading-comment-preserves-code-span-content",
+    // 517 is markup-carve/carve#2558: list tightness is read at every column the
+    // item's paragraph text reaches, so a band paragraph after an invisible line
+    // leaves the item loose. Five documents, and carve-rs#2143 pinned them.
+    "a-band-paragraph-after-an-invisible-line-leaves-the-item-loose",
+    // 518 is markup-carve/carve#2562: a trailing comment takes a tab, a run start
+    // and its whole separator, in every inline host. Thirteen documents, and
+    // carve-rs#2158 is the change that made the two label rows match.
+    "a-trailing-comment-takes-a-tab-a-run-start-and-its-whole-separator",
+    // 520 is markup-carve/carve#2569: a raw block whose target does not match is
+    // dropped rather than written as text, and takes no line in the container that
+    // held it. Eight documents, and carve-rs#2154 made them match.
+    "a-dropped-raw-block-takes-no-line-in-the-container-that-holds-it",
+    // 521 is markup-carve/carve#2574: a zero-line raw payload and a one-blank one
+    // are not the same block. Nine documents, and carve-rs#2159 made them match.
+    "a-zero-line-and-a-one-blank-raw-payload-are-not-the-same-block",
+    // 522 is markup-carve/carve#2577: PART 8 resolves a bracket run before an
+    // emphasis marker, so a marker inside a link's label is label text. Three
+    // documents, and carve-rs#2161 made the one that failed match.
+    "an-emphasis-marker-does-not-pair-across-a-link-bracket",
+    // 523 is markup-carve/carve#2577 as well: a link title crosses a soft wrap and
+    // an attribute value does not, which forked the two ohm character classes. Six
+    // documents, all already conformant here.
+    "a-link-title-crosses-a-soft-wrap-and-an-attribute-value-does-not",
+    // 524 is markup-carve/carve#2560, pinned by #2579: zero lines preserved
+    // literally is zero characters, so a closed empty code fence publishes no
+    // newline. Two documents, and carve-rs#2162 made the one that failed match.
+    "an-empty-code-payload-renders-no-characters",
+    // 525 is markup-carve/carve#2586: a link inside a span's label keeps its
+    // destination. Nine documents, all already conformant here.
+    "a-link-inside-a-span-s-label-keeps-its-destination",
+    // 526 is markup-carve/carve#2589: a quoted attribute value and a quoted title
+    // escape different sets. Ten documents, all already conformant here.
+    "a-quoted-value-and-a-quoted-title-escape-different-sets",
+    // 527 is markup-carve/carve#2589 as well: a tab does not open the title slot.
+    // Three documents, all already conformant here.
+    "a-tab-does-not-open-the-title-slot",
+    // 519 is listed too, so the one document of it this engine answers is compared
+    // rather than skipped. The three it does not are carve-rs#2170 and are
+    // declared in BEHIND_ON_PAIR.
+    //
+    // 519 is markup-carve/carve#2563: a fence shifted inside a quoted item owns its
+    // payload, so an unmarked line after it ends the quote. Four documents.
+    "a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
@@ -793,6 +858,44 @@ fn expected_corpus_size() -> usize {
 /// leaving a declaration that no longer declares anything.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
+/// Pairs this engine renders differently from the pinned corpus because it has
+/// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
+///
+/// A category holding a document this engine already answers cannot go in
+/// `KNOWN_GAPS`, which is all-or-nothing: `a_known_gap_still_fails` refuses a
+/// deferred document that matches, and it is right to. Leaving the category out of
+/// IMPLEMENTED instead compares NONE of it, so a pin bump lands green while
+/// asserting nothing about the documents beside the ones that fail. So the
+/// category is listed and the individual failing pairs are declared here.
+///
+/// Each entry fails in BOTH directions, exactly as an `AHEAD_OF_PIN` entry does:
+/// the output must equal what this engine produces today, so an unrelated
+/// regression is still caught on a pair the corpus can no longer speak for, and it
+/// must still DIFFER from the golden, so the entry has to be deleted in the commit
+/// that fixes the rule rather than left behind as a declaration that no longer
+/// declares anything.
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
+    // carve-rs#2170, from markup-carve/carve#2563. A fence shifted inside a
+    // quoted item does not own its payload, so the unmarked line after it is
+    // swallowed into the payload instead of ending the quote. The fourth document
+    // of category 519 already matches, which is why the category is listed.
+    (
+        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim",
+        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
+        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\nflush\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    ),
+    (
+        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim-2",
+        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
+        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\nz\nb\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    ),
+    (
+        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim-3",
+        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
+        "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        x\nflush\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    ),
+];
+
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
     let dir = corpus_dir();
@@ -813,6 +916,16 @@ fn check_pair(slug: &str) {
         return;
     }
 
+    if let Some((_, reason, behind)) = BEHIND_ON_PAIR.iter().find(|(name, _, _)| name == slug) {
+        pretty_assert_eq(&format!("{slug} ({reason})"), behind.trim(), actual.trim());
+        assert_ne!(
+            expected.trim(),
+            actual.trim(),
+            "{slug} now matches the pinned corpus: delete its BEHIND_ON_PAIR entry",
+        );
+        return;
+    }
+
     pretty_assert_eq(slug, expected.trim(), actual.trim());
 }
 
@@ -829,6 +942,47 @@ fn ahead_of_pin_names_only_cases_the_corpus_has() {
     assert!(
         orphaned.is_empty(),
         "AHEAD_OF_PIN names case(s) the corpus does not have: {orphaned:?}",
+    );
+}
+
+#[test]
+fn behind_on_pair_names_only_cases_the_corpus_has() {
+    // The same orphan trap as AHEAD_OF_PIN's: a declaration left behind after an
+    // upstream rename matches no case, runs no assertion, and reads as coverage.
+    let pairs = corpus_pairs();
+    let orphaned: Vec<_> = BEHIND_ON_PAIR
+        .iter()
+        .map(|(slug, _, _)| *slug)
+        .filter(|slug| !pairs.iter().any(|p| p == slug))
+        .collect();
+    assert!(
+        orphaned.is_empty(),
+        "BEHIND_ON_PAIR names case(s) the corpus does not have: {orphaned:?}",
+    );
+}
+
+#[test]
+fn every_behind_on_pair_case_is_reached() {
+    // `check_pair` only runs for a pair `is_implemented_pair` accepts, and
+    // KNOWN_GAPS wins over IMPLEMENTED, so an entry whose category is deferred or
+    // unlisted executes NEITHER of its two assertions. Declaring the pair is the
+    // whole reason its category is listed; this is what proves it.
+    let pairs = corpus_pairs();
+    let mut unreachable = Vec::new();
+    for (slug, _, _) in BEHIND_ON_PAIR {
+        let category = base_category(slug, &pairs);
+        if KNOWN_GAPS.contains(&category) {
+            unreachable.push(format!("{slug} (category deferred in KNOWN_GAPS)"));
+        } else if !IMPLEMENTED.contains(&category) {
+            unreachable.push(format!("{slug} (category absent from IMPLEMENTED)"));
+        }
+        if AHEAD_OF_PIN.iter().any(|(name, _, _)| name == slug) {
+            unreachable.push(format!("{slug} (also declared AHEAD_OF_PIN)"));
+        }
+    }
+    assert!(
+        unreachable.is_empty(),
+        "BEHIND_ON_PAIR entr(ies) that `check_pair` never reaches: {unreachable:?}",
     );
 }
 
