@@ -98,6 +98,10 @@ struct BracketScope {
     lone: HashSet<(usize, usize)>,
     /// A `]` the bracket scan pairs with an earlier `[`.
     paired_closers: HashSet<(usize, usize)>,
+    /// The `[` of a pair whose two brackets sit under DIFFERENT formatting
+    /// nodes. The run between them would isolate the delimiters it crosses, so
+    /// the OPENER carries the escape (markup-carve/carve-php#2756).
+    crossing_openers: HashSet<(usize, usize)>,
     /// In bracketed content, each paired `]` mapped to its `[`.
     closer_openers: HashMap<(usize, usize), (usize, usize)>,
     /// Every node the scan read.
@@ -4088,39 +4092,58 @@ fn render_bracketed_content(
 /// inline extension's content is not bracketed because its reader stops at the
 /// first `]`. Only bracketed content has lone brackets to escape, and a run
 /// holding an empty code span is left to the search (PART 11 §5).
+///
+/// A pair whose brackets sit under different formatting nodes is recorded as
+/// CROSSING, and the escape falls on its opener: PART 8 resolves the bracket run
+/// first, so a run spanning a formatting boundary isolates the delimiter inside
+/// it. `host` is the node the text under it belongs to - the run's own container
+/// at the top, and the nested construct below it.
 fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
+    /// An open `[`: where the scope keys it, and the host it was read under.
+    type Open = ((usize, usize), usize);
+
     fn walk(
         nodes: &[InlineNode],
-        open: &mut Vec<(usize, usize)>,
+        host: usize,
+        open: &mut Vec<Open>,
         scope: &mut BracketScope,
     ) -> bool {
         for node in nodes {
+            let nested = node as *const InlineNode as usize;
             match node {
                 InlineNode::Code(code) if code.value.is_empty() => return false,
                 InlineNode::Text(text) => {
-                    pair(text as *const Text as usize, &text.value, open, scope)
+                    pair(text as *const Text as usize, &text.value, host, open, scope)
                 }
                 InlineNode::Abbreviation(abbr) => {
                     pair(
                         abbr as *const Abbreviation as usize,
                         &abbr.abbr,
+                        host,
                         open,
                         scope,
                     );
                 }
                 // Written as `[content]{attrs}`: a bracketed run of its own.
                 InlineNode::Emphasis(emphasis) if writes_own_brackets(emphasis) => {}
-                InlineNode::Emphasis(emphasis) if !walk(&emphasis.children, open, scope) => {
+                InlineNode::Emphasis(emphasis)
+                    if !walk(&emphasis.children, nested, open, scope) =>
+                {
                     return false;
                 }
-                InlineNode::CriticInsert(insert) if !walk(&insert.children, open, scope) => {
+                InlineNode::CriticInsert(insert)
+                    if !walk(&insert.children, nested, open, scope) =>
+                {
                     return false;
                 }
-                InlineNode::CriticDelete(delete) if !walk(&delete.children, open, scope) => {
+                InlineNode::CriticDelete(delete)
+                    if !walk(&delete.children, nested, open, scope) =>
+                {
                     return false;
                 }
                 InlineNode::CriticSubstitute(sub)
-                    if !walk(&sub.old, open, scope) || !walk(&sub.new, open, scope) =>
+                    if !walk(&sub.old, nested, open, scope)
+                        || !walk(&sub.new, nested, open, scope) =>
                 {
                     return false;
                 }
@@ -4128,7 +4151,9 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                 // span, which is a bracketed run of its own.
                 InlineNode::Ruby(ruby) if ruby.attrs.is_none() => {
                     for pair in &ruby.pairs {
-                        if !walk(&pair.base, open, scope) || !walk(&pair.annotation, open, scope) {
+                        if !walk(&pair.base, nested, open, scope)
+                            || !walk(&pair.annotation, nested, open, scope)
+                        {
                             return false;
                         }
                     }
@@ -4138,14 +4163,20 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         }
         true
     }
-    fn pair(at: usize, value: &str, open: &mut Vec<(usize, usize)>, scope: &mut BracketScope) {
+    fn pair(at: usize, value: &str, host: usize, open: &mut Vec<Open>, scope: &mut BracketScope) {
         scope.keyed.insert(at);
         let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
         for (ordinal, ch) in brackets.enumerate() {
             if ch == '[' {
-                open.push((at, ordinal));
-            } else if let Some(opener) = open.pop() {
-                scope.paired_closers.insert((at, ordinal));
+                open.push(((at, ordinal), host));
+            } else if let Some((opener, opener_host)) = open.pop() {
+                if opener_host == host {
+                    scope.paired_closers.insert((at, ordinal));
+                } else {
+                    // The `]` answers an escaped `[`, so it closes no run and
+                    // the `(` behind it opens no destination.
+                    scope.crossing_openers.insert(opener);
+                }
                 scope.closer_openers.insert((at, ordinal), opener);
             } else {
                 scope.lone.insert((at, ordinal));
@@ -4157,14 +4188,14 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         ..BracketScope::default()
     };
     let mut open = Vec::new();
-    if !walk(nodes, &mut open, &mut scope) {
+    if !walk(nodes, 0, &mut open, &mut scope) {
         return BracketScope {
             claimed: true,
             ..BracketScope::default()
         };
     }
     if bracketed {
-        scope.lone.extend(open);
+        scope.lone.extend(open.into_iter().map(|(key, _)| key));
     } else {
         scope.lone.clear();
         scope.closer_openers.clear();
@@ -4887,6 +4918,7 @@ impl CarveContext {
         }
         BracketRole {
             lone: self.brackets.lone.contains(&(at, ordinal)),
+            crossing_opener: self.brackets.crossing_openers.contains(&(at, ordinal)),
             paired_closer: self.brackets.paired_closers.contains(&(at, ordinal)),
             key: (at, ordinal),
             opener: self.brackets.closer_openers.get(&(at, ordinal)).copied(),
@@ -5699,6 +5731,7 @@ fn escape_text(
             && after_paired_closer
             && crate::parse::opens_inline_link_target(&text[offset..]);
         let unconditional = role.lone
+            || role.crossing_opener
             || opens_a_destination
             || matches!(ch, '\\' | '`' | '"' | '\'')
             || extension_colon_at == Some(offset)
@@ -5778,6 +5811,8 @@ fn escape_text(
 #[derive(Default, Clone, Copy)]
 struct BracketRole {
     lone: bool,
+    /// The `[` of a pair that crosses a formatting boundary.
+    crossing_opener: bool,
     paired_closer: bool,
     /// This bracket, as the scope keys it.
     key: (usize, usize),

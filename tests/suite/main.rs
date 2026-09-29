@@ -58,6 +58,8 @@ mod a_boolean_attribute_does_not_start_with_an_underscore;
 mod a_boundary_line_inside_an_open_fence;
 #[path = "../a_braced_span_in_a_braced_span_of_its_kind_is_unspellable.rs"]
 mod a_braced_span_in_a_braced_span_of_its_kind_is_unspellable;
+#[path = "../a_bracket_pair_across_a_formatting_boundary_escapes_its_opener.rs"]
+mod a_bracket_pair_across_a_formatting_boundary_escapes_its_opener;
 #[path = "../a_bullet_task_item_reads_its_box.rs"]
 mod a_bullet_task_item_reads_its_box;
 #[path = "../a_captioned_fence_keeps_its_renderer.rs"]
