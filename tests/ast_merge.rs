@@ -153,13 +153,13 @@ fn bounds_a_wide_ambiguous_sibling_list() {
             .collect::<Vec<_>>()
             .join("\n\n")
     };
-    let started = std::time::Instant::now();
     let result = merge_ast(
         &parse(&source("base-")),
         &parse(&source("ours-")),
         &parse(&source("theirs-")),
     )
     .unwrap();
+    // The bound itself is pinned by a count in `src/ast_merge.rs`; this only
+    // pins that a refused pairing still reports the conflict (carve-rs#2190).
     assert!(matches!(result, MergeResult::Conflicts(_)));
-    assert!(started.elapsed() < std::time::Duration::from_secs(5));
 }
