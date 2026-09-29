@@ -1624,3 +1624,6 @@ mod comment_payload_columns;
 
 #[path = "../a_nested_quote_keeps_unmarked_openers.rs"]
 mod a_nested_quote_keeps_unmarked_openers;
+
+#[path = "../ansi_code_payload_lines.rs"]
+mod ansi_code_payload_lines;
