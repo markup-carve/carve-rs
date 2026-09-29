@@ -1807,7 +1807,10 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     }
     out.push('>');
     write_escaped_text_nbsp(out, &c.content);
-    out.push_str("\n</code></pre>");
+    if crate::ast::code_payload_needs_ending(&c.content) {
+        out.push('\n');
+    }
+    out.push_str("</code></pre>");
 }
 
 fn attrs_has_key(attrs: &Option<Attrs>, key: &str) -> bool {

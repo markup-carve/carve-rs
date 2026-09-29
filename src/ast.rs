@@ -571,9 +571,30 @@ pub struct CodeBlock {
     pub lang: Option<String>,
     pub title: Option<String>,
     pub label: Option<String>,
+    /// The payload's lines joined by a line feed.
+    ///
+    /// A payload whose every line is BLANK carries its own trailing line feed as
+    /// well, because joining cannot otherwise tell zero lines from one blank one
+    /// and `code_content` is any text until the matching fence preserved
+    /// literally - so a closed empty fence publishes nothing while the one-blank
+    /// spelling keeps its newline (markup-carve/carve#2560, corpus 524). An
+    /// unterminated fence carries it too: it ends at its container rather than at
+    /// a closer, and corpus 276 pins the line. `code_payload_needs_ending` is how
+    /// a writer asks which case it has.
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+/// Does a code payload still need the line ending after its LAST line written
+/// for it?
+///
+/// False for the two shapes that spell their own endings inside
+/// [`CodeBlock::content`]: the payload with no line at all, and the payload whose
+/// every line is blank. Writing one for either turned a zero-line payload into a
+/// one-blank one, and a one-blank payload into two (carve-rs#2162).
+pub fn code_payload_needs_ending(content: &str) -> bool {
+    !content.chars().all(|ch| ch == '\n')
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

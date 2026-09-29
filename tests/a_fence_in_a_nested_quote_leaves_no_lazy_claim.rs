@@ -13,13 +13,21 @@ fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
 }
 
-const EMPTY_CODE: &str = "<pre><code>\n</code></pre>";
+/// An UNTERMINATED empty fence keeps the ending of the line it runs to, because
+/// it ends at its container rather than at a closer it never met.
+const UNCLOSED_EMPTY_CODE: &str = "<pre><code>\n</code></pre>";
+
+/// A CLOSED empty fence has no payload line to end, so it publishes no
+/// character - `code_content` preserved literally, markup-carve/carve#2560 with
+/// corpus 524, read here as carve-rs#2162. One constant used to serve both, which
+/// is what let the two spellings read the same.
+const CLOSED_EMPTY_CODE: &str = "<pre><code></code></pre>";
 
 #[test]
 fn an_unterminated_fence_at_the_start_of_a_nested_quote() {
     assert_eq!(
         html("> > ```\nc\n"),
-        format!("<blockquote>\n  <blockquote>\n    {EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>c</p>")
+        format!("<blockquote>\n  <blockquote>\n    {UNCLOSED_EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>c</p>")
     );
 }
 
@@ -28,7 +36,7 @@ fn a_nested_quote_opened_under_a_paragraph() {
     assert_eq!(
         html("> a\n> > ```\nc\n"),
         format!(
-            "<blockquote>\n  <p>a</p>\n  <blockquote>\n    {EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>c</p>"
+            "<blockquote>\n  <p>a</p>\n  <blockquote>\n    {UNCLOSED_EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>c</p>"
         )
     );
 }
@@ -45,7 +53,7 @@ fn a_line_inside_an_open_nested_fence() {
 fn a_closed_fence_at_the_start_of_a_nested_quote() {
     assert_eq!(
         html("> > ```\n> > ```\ny\n"),
-        format!("<blockquote>\n  <blockquote>\n    {EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>y</p>")
+        format!("<blockquote>\n  <blockquote>\n    {CLOSED_EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>y</p>")
     );
 }
 
@@ -55,7 +63,7 @@ fn a_fence_closed_one_level_down_after_a_paragraph() {
     assert_eq!(
         html("> > a\n> > ```\n> > ```\ny\n"),
         format!(
-            "<blockquote>\n  <blockquote>\n    <p>a</p>\n    {EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>y</p>"
+            "<blockquote>\n  <blockquote>\n    <p>a</p>\n    {CLOSED_EMPTY_CODE}\n  </blockquote>\n</blockquote>\n<p>y</p>"
         )
     );
 }
@@ -67,7 +75,7 @@ fn a_fence_back_at_the_outer_level_opens_after_a_nested_fence() {
     assert_eq!(
         html("> a\n> > ```\n> ```\ny\n"),
         format!(
-            "<blockquote>\n  <p>a</p>\n  <blockquote>\n    {EMPTY_CODE}\n  </blockquote>\n  {EMPTY_CODE}\n</blockquote>\n<p>y</p>"
+            "<blockquote>\n  <p>a</p>\n  <blockquote>\n    {UNCLOSED_EMPTY_CODE}\n  </blockquote>\n  {UNCLOSED_EMPTY_CODE}\n</blockquote>\n<p>y</p>"
         )
     );
 }
