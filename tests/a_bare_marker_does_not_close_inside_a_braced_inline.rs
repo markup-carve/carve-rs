@@ -77,7 +77,11 @@ fn a_code_span_is_still_hidden() {
     assert_eq!(html("~`a~b`~"), "<p><s><code>a~b</code></s></p>");
 }
 
+/// A link LABEL was not hidden either, until markup-carve/carve#2577 ruled that
+/// PART 8 resolves a bracket run before an emphasis marker. It is a bracket run
+/// that hides the marker here rather than a braced inline, which is
+/// carve-rs#2161 and corpus category 522.
 #[test]
-fn a_link_label_is_not_hidden() {
-    assert_eq!(html("~[a~](b)"), "<p><s>[a</s>](b)</p>");
+fn a_link_label_hides_a_marker_too() {
+    assert_eq!(html("~[a~](b)"), "<p>~<a href=\"b\">a~</a></p>");
 }

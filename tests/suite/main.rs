@@ -1600,6 +1600,8 @@ mod markdown_empty_headings;
 mod a_bracket_run_bounds_its_trailing_comment;
 #[path = "../a_quoted_container_fence_stores_no_lazy_claim.rs"]
 mod a_quoted_container_fence_stores_no_lazy_claim;
+#[path = "../an_emphasis_marker_pairs_inside_one_bracket_run.rs"]
+mod an_emphasis_marker_pairs_inside_one_bracket_run;
 #[path = "../an_empty_raw_payload_is_written_back_empty.rs"]
 mod an_empty_raw_payload_is_written_back_empty;
 #[path = "../djot_word_attributes.rs"]

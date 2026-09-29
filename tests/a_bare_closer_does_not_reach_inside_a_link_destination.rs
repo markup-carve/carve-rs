@@ -1,7 +1,11 @@
 //! E2a names a link destination and an autolink opaque to a bare closer,
-//! alongside code spans and braced inlines (markup-carve/carve#2046). The link
-//! LABEL is not, and a raw inline's format token is opaque only as itself
-//! (markup-carve/carve-rs#1652).
+//! alongside code spans and braced inlines (markup-carve/carve#2046). A raw
+//! inline's format token is opaque only as itself (markup-carve/carve-rs#1652).
+//!
+//! The LABEL was not opaque either, until markup-carve/carve#2577 ruled that
+//! PART 8 resolves a bracket run before an emphasis marker. A marker inside a
+//! run is that run's content, so it cannot answer an opener outside it - corpus
+//! category 522, and carve-rs#2161 here.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim_end().to_string()
@@ -60,9 +64,12 @@ fn parentheses_inside_the_destination_balance() {
     );
 }
 
+/// Changed by markup-carve/carve#2577, which this engine read as
+/// carve-rs#2161: the closer sits inside the label's run, so the run keeps it
+/// and the opener finds no partner. Corpus 522 pins the `/` spelling of it.
 #[test]
-fn a_link_label_still_closes() {
-    assert_eq!(html("~[a~](b)\n"), "<p><s>[a</s>](b)</p>");
+fn a_marker_inside_a_link_label_does_not_close() {
+    assert_eq!(html("~[a~](b)\n"), "<p>~<a href=\"b\">a~</a></p>");
 }
 
 #[test]
