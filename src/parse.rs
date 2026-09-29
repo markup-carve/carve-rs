@@ -1864,7 +1864,7 @@ fn extract_footnote_defs(
                     // span at the marker (markup-carve/carve#1980).
                     sublists_carry_authored_base: true,
                 };
-                rebase_overindented_blocks(&mut definition_source, true);
+                rebase_overindented_blocks(&mut definition_source, true, options);
                 defs.insert(label.to_string(), definition_source);
             }
             // Leave the container's structural prefix (or a blank line at top
@@ -2140,6 +2140,7 @@ struct OpenFrame {
     /// Whether the innermost node the chain reached is a paragraph. Read from
     /// the chain rather than re-derived, so the two always describe one walk.
     ends_in_paragraph: bool,
+    contains_quote: bool,
 }
 
 /// The child level a block holds, for the last-child walk [`open_frame`] makes.
@@ -2188,12 +2189,14 @@ fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
     let mut frame = OpenFrame {
         levels: Vec::new(),
         ends_in_paragraph: false,
+        contains_quote: false,
     };
     let mut blocks = blocks;
     loop {
         let Some(last) = blocks.last() else {
             return frame;
         };
+        frame.contains_quote |= matches!(last, BlockNode::BlockQuote(_));
         let kind = std::mem::discriminant(last);
         frame.ends_in_paragraph = kind == paragraph;
         frame.levels.push((ProbeLevel::Blocks(kind), blocks.len()));
@@ -5493,8 +5496,9 @@ fn item_body(
     mut source: MappedSource,
     attrs: Option<Attrs>,
     drop_empty_paragraphs: bool,
+    options: &Options<'_>,
 ) -> Vec<BlockNode> {
-    rebase_overindented_blocks(&mut source, false);
+    rebase_overindented_blocks(&mut source, false, options);
     deferred.push(ItemBody {
         item,
         chunk: Chunk::Source(source),
@@ -5526,7 +5530,7 @@ fn parse_item_chunk(
     carried: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let mut rebased = source.clone();
-    rebase_overindented_blocks(&mut rebased, false);
+    rebase_overindented_blocks(&mut rebased, false, options);
     parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
 }
 
@@ -5534,14 +5538,24 @@ fn parse_item_chunk(
 /// been stripped. List-item calls leave sublists alone because their residual
 /// indentation expresses another list level; definition and footnote bodies
 /// include them under carve#1729's shared rule.
-fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool) {
+fn rebase_overindented_blocks(
+    source: &mut MappedSource,
+    include_sublists: bool,
+    options: &Options<'_>,
+) {
     let trailing_newline = source.source.ends_with('\n');
     let mut lines: Vec<Cow<'_, str>> = source.source.lines().map(Cow::Borrowed).collect();
     if trailing_newline {
         lines.push(Cow::Borrowed(""));
     }
+    // No authored base can move when every line already starts at column zero.
+    // This also keeps a quote replay's one-line probes from replaying again.
+    if !lines.iter().any(|line| line.starts_with([' ', '\t'])) {
+        return;
+    }
     // Dedenting keeps every line's `%` run, so this index outlives the edits.
     let entry_closers = std::cell::OnceCell::new();
+    let quote_lines = std::cell::OnceCell::new();
     let mut i = 0usize;
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut after_blank = false;
@@ -5685,6 +5699,25 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             continue;
         }
         if base == 0 {
+            if strip_blockquote_prefix(&lines[i]).is_some() {
+                // Unmarked continuations belong to the quote before their
+                // residual indentation can become another block's base.
+                let original =
+                    quote_lines.get_or_init(|| source.source.lines().collect::<Vec<_>>());
+                let mut cursor = LineCursor::new_with_cols(original, None, None);
+                cursor.pos = i;
+                cursor.in_item_body = !include_sublists;
+                cursor.reached = Some(&source.reached);
+                {
+                    let _probing = ProbeGuard::enter();
+                    collect_blockquote_body(&mut cursor, options);
+                }
+                i = cursor.pos;
+                after_blank = false;
+                paragraph_open = false;
+                block_at_minimum = true;
+                continue;
+            }
             // An opaque group already at the container's minimum column owns
             // its payload. Do not reconsider a fence-shaped payload line as a
             // separate authored-base opener.
@@ -8680,34 +8713,6 @@ fn collect_blockquote_body(
         {
             break;
         }
-        // NESTED, A VISIBLE BLOCK OPENER INTERRUPTS AT ANY COLUMN. A quote inside
-        // a list item is re-parsed on the item body, which was dedented by the
-        // item's content column, so a heading, rule, table, term or fence the
-        // author wrote past that column arrives here INDENTED - and the flush-left
-        // block tests would miss it, folding into the quote a line the executable
-        // spec makes a block in the enclosing item (markup-carve/carve-rs#1538).
-        // Top-level (`at_document_level`) the same over-indented opener IS lazy
-        // text, so the trimmed retest is gated on the context: pure `> - x` /
-        // `    # h` folds, wrapped `- > - x` / `    # h` does not. Caption and
-        // the invisible-construct arms are deliberately NOT retested - captions
-        // fold, and a comment renders nothing at any column.
-        if !cur.at_document_level {
-            let trimmed = trim_ascii_start(line);
-            if trimmed.len() < line.len() {
-                let owned = trimmed.to_string();
-                // Clear `in_item_body` for the retest: the marker-at-content-column
-                // arm is about the line's ACTUAL column, and a list marker folded
-                // lazily never interrupts (§10 I2). Only the genuine block openers -
-                // heading, rule, table, term, fence, colon fence - should break.
-                let saved = cur.in_item_body;
-                cur.in_item_body = false;
-                let interrupts = interrupts_paragraph_as_container(cur, &owned);
-                cur.in_item_body = saved;
-                if interrupts {
-                    break;
-                }
-            }
-        }
         let source_line = cur.source_line(cur.pos);
         // A lazy continuation line carries no quote marker, so nothing was
         // stripped from it beyond what an outer container already took.
@@ -9921,7 +9926,7 @@ fn parse_list(
                             base_indent,
                             |src, below| {
                                 let mut rebased = src.clone();
-                                rebase_overindented_blocks(&mut rebased, false);
+                                rebase_overindented_blocks(&mut rebased, false, options);
                                 collected_body_takes_the_lazy_line(&rebased.source, below, options)
                             },
                             |cur| {
@@ -9953,7 +9958,7 @@ fn parse_list(
                     // live in the following chunk (notably a sub-list), so
                     // waiting for `parse_item_chunk` would drop the attributes
                     // before they can be carried across that boundary.
-                    rebase_overindented_blocks(&mut nested, false);
+                    rebase_overindented_blocks(&mut nested, false, options);
                     let nested_leaves_paragraph_open = nested_ends_with_open_paragraph_rebased(
                         &nested,
                         last_consumed_line_below_column(cur, content_col),
@@ -10109,7 +10114,7 @@ fn parse_list(
                     // first: a comment ends the paragraph above it (§10) while
                     // leaving its container open.
                     collect_trailing_lazy_through(cur, &mut nested, base_indent, base_indent);
-                    let children = item_body(deferred, last_item, nested, None, false);
+                    let children = item_body(deferred, last_item, nested, None, false, options);
                     items[last_item].children.extend(children);
                     continue;
                 }
@@ -10186,7 +10191,7 @@ fn parse_list(
                 if held.is_some() {
                     pending_attrs_pos = None;
                 }
-                let nested_children = item_body(deferred, last_item, nested, held, false);
+                let nested_children = item_body(deferred, last_item, nested, held, false, options);
                 // The blank BEFORE this sub-list is consumed by it and must not
                 // survive to loosen a later sibling marker (§17 L2: a blank
                 // before an item's sub-block keeps the item tight). Without
@@ -10422,7 +10427,7 @@ fn parse_list(
                 tight = false;
             }
             stream.authored_base_at_start |= after_blank;
-            let children = item_body(deferred, items.len(), stream, None, false);
+            let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -10472,7 +10477,7 @@ fn parse_list(
             if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
-            let children = item_body(deferred, items.len(), stream, None, false);
+            let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -10693,7 +10698,7 @@ fn parse_list(
             if sublist_source_loosens_outer_item(&stream.source) {
                 tight = false;
             }
-            let children = item_body(deferred, items.len(), stream, None, false);
+            let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -10727,7 +10732,7 @@ fn parse_list(
         if is_collected_definition_placeholder(marker.content) {
             let nested =
                 collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
-            let children = item_body(deferred, items.len(), nested, None, true);
+            let children = item_body(deferred, items.len(), nested, None, true, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -10831,7 +10836,7 @@ fn parse_list(
             // A heading, a fence or a table on the marker line leaves the item
             // holding no paragraph - see `item_paragraph_open`.
             item_paragraph_open = body_ends_with_open_paragraph(&stream.source, options);
-            let children = item_body(deferred, items.len(), stream, None, false);
+            let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -11768,7 +11773,7 @@ fn nested_ends_with_open_paragraph_rebased(
     options: &Options<'_>,
 ) -> bool {
     let mut rebased = nested.clone();
-    rebase_overindented_blocks(&mut rebased, false);
+    rebase_overindented_blocks(&mut rebased, false, options);
     nested_ends_with_open_paragraph(
         &rebased.source,
         trailing_below_column,
@@ -14096,7 +14101,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
-            rebase_overindented_blocks(&mut body, true);
+            rebase_overindented_blocks(&mut body, true, options);
             // A DEFINITION BODY carries authored base for its sublists, so a list
             // marker past the body's content column anchors its span at the
             // marker rather than at the placing indent (markup-carve/carve#1980,
@@ -14218,7 +14223,7 @@ impl DefinitionBodyFence {
 /// Same `rebase_overindented_blocks` the caller runs on the finished body, over
 /// a throwaway `MappedSource` carrying no maps: the fold question needs the
 /// TEXT, and the real body keeps its own positions.
-fn body_as_read(source: String, reached: Vec<bool>) -> String {
+fn body_as_read(source: String, reached: Vec<bool>, options: &Options<'_>) -> String {
     let mut probe = MappedSource {
         source,
         line_map: Vec::new(),
@@ -14229,7 +14234,7 @@ fn body_as_read(source: String, reached: Vec<bool>) -> String {
         reached,
         sublists_carry_authored_base: false,
     };
-    rebase_overindented_blocks(&mut probe, true);
+    rebase_overindented_blocks(&mut probe, true, options);
     probe.source
 }
 
@@ -14271,47 +14276,17 @@ fn body_ends_with_an_attribute_line(source: &str) -> bool {
     }
 }
 
-/// `marker_line_is_the_whole_body` is true while nothing has been collected at
-/// the body's own column, so `source` is the `:  ` marker line's content and
-/// nothing else. THAT is the half PART 1 S4 rules on (markup-carve/carve#1280,
-/// carve-rs#1049): the marker line's content is the body's FIRST BLOCK, so
-/// `:  # H` writes a heading there exactly as `:  ` plus an indented `# H`
-/// would, and a block that leaves no open paragraph leaves none wherever it was
-/// written. Ask S4's one question and let the answer decide.
-///
-/// The enumeration below answered it from a LIST of kinds instead, and the list
-/// disagreed with itself: a table, a thematic break and an attribute block ended
-/// the body, while a HEADING and a COMMENT folded - and the LIST spelling of
-/// both of those ends, in this same engine, one clause over. So the same
-/// document got two answers depending on which of the five kinds sat on the
-/// marker.
-///
-/// Once lines ARE collected at the body's content column the clause leaves the
-/// question deliberately open - corpus 75-list-nesting-and-looseness-4 pins the
-/// folding answer for the list spelling of that half - so that path keeps the
-/// enumeration, exactly as the list path does one call site over.
-fn definition_body_takes_the_fold(
-    source: &str,
-    marker_line_is_the_whole_body: bool,
-    options: &Options<'_>,
-) -> bool {
+/// Whether the body can accept a lazy line, and whether its open paragraph
+/// lies inside a surviving quote. Both answers use the same parsed blocks.
+fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
     if body_ends_with_an_unnoded_interrupter(source) {
-        return false;
-    }
-    // S4's question, asked of the WHOLE body. `body_ends_with_open_paragraph`
-    // is the same predicate the list's marker-line path asks, and it does NOT
-    // look past a trailing run of comments: there the open paragraph would have
-    // to be one written EARLIER on the marker line, and here the comment IS the
-    // marker line, so there is no earlier paragraph for it to leave open
-    // (`:  %% c` / `tail`, matching `- %% c` / `tail`).
-    if if marker_line_is_the_whole_body {
-        body_ends_with_open_paragraph(source, options)
-    } else {
-        nested_ends_with_open_paragraph(source, false, false, options)
-    } {
-        return true;
+        return (false, false);
     }
     let blocks = probe_blocks(source, options);
+    if block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(source), false) {
+        let frame = open_frame(&blocks);
+        return (true, frame.contains_quote && frame.ends_in_paragraph);
+    }
     let mut end = blocks.len();
     // Past a trailing run of comments, for the reason
     // `nested_ends_with_open_paragraph` gives: a comment renders nothing, so it
@@ -14320,7 +14295,7 @@ fn definition_body_takes_the_fold(
         end -= 1;
     }
     if end == 0 {
-        return false;
+        return (false, false);
     }
     // NO HEADING ARM. There used to be one, folding a flush-left line into a
     // body whose last block is a heading written AT the content column, on the
@@ -14329,19 +14304,22 @@ fn definition_body_takes_the_fold(
     // the body's own block content, §10 I1 closes the paragraph for either, and
     // the follower has nothing left to fold into. Corpus 444 rows 4 and 15 are
     // that half, and this engine was the only reader still folding them.
-    matches!(
-        blocks[end - 1],
-        // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
-        // `image_is_block` makes a bare image line a block ONLY when the
-        // next line does not fold, and a `^ ` caption is an inline
-        // continuation a following line extends. Both are decided by the
-        // line AFTER the body, which is exactly the line this predicate is
-        // being asked about and which the collected source therefore does
-        // not contain yet. Reading the block off a body that stops one line
-        // early turned `:  ![a](i.png)` / `lazy` into a standalone image
-        // plus a top-level paragraph, where the list twin folds - the same
-        // read-the-body-so-far trap the fence guard exists to avoid.
-        BlockNode::BlockImage(_) | BlockNode::Figure(_)
+    (
+        matches!(
+            blocks[end - 1],
+            // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
+            // `image_is_block` makes a bare image line a block ONLY when the
+            // next line does not fold, and a `^ ` caption is an inline
+            // continuation a following line extends. Both are decided by the
+            // line AFTER the body, which is exactly the line this predicate is
+            // being asked about and which the collected source therefore does
+            // not contain yet. Reading the block off a body that stops one line
+            // early turned `:  ![a](i.png)` / `lazy` into a standalone image
+            // plus a top-level paragraph, where the list twin folds - the same
+            // read-the-body-so-far trap the fence guard exists to avoid.
+            BlockNode::BlockImage(_) | BlockNode::Figure(_)
+        ),
+        false,
     )
 }
 
@@ -14363,6 +14341,7 @@ fn collect_definition_body(
     // lines after each fold would make a long paragraph quadratic. Other ways
     // of extending the body clear this hint because they may open a block.
     let mut folded_a_lazy_line = false;
+    let mut folded_into_quote = false;
     // Seeded from the marker line's own content: does the body's LEAD open a
     // code fence NESTED past a list marker? Its verbatim body is the flush-left
     // lines below, which cannot close it - but an INDENTED closer written at or
@@ -14614,19 +14593,25 @@ fn collect_definition_body(
                 // at the body's column 0 by construction, so it reaches.
                 let mut probe_reached = vec![true; seed.lines().count()];
                 probe_reached.extend_from_slice(&reached);
-                so_far = body_as_read(so_far, probe_reached);
+                so_far = body_as_read(so_far, probe_reached, options);
             }
-            // NOTHING HAS BEEN COLLECTED AT THE BODY'S COLUMN YET, so the body
-            // is the marker line's own content and S4's one question is asked of
-            // it directly (PART 1 S4, ruled uniform in markup-carve/carve#1280).
-            // That is the half `marker_line_was_the_whole_block` answers for a
-            // list item one call site over; a definition body IS such a
-            // container (markup-carve/carve#956) and the container KIND is not a
-            // parameter of the rule (markup-carve/carve#920).
-            if !folded_a_lazy_line
-                && !definition_body_takes_the_fold(&so_far, lines.is_empty(), options)
-            {
-                break;
+            if !folded_a_lazy_line {
+                let (takes_fold, quoted) = definition_body_fold(&so_far, options);
+                if !takes_fold {
+                    break;
+                }
+                folded_into_quote = quoted;
+            }
+            // A surviving quote owns the unmarked line before the definition
+            // body's column can classify its residue (CARVE-P0-004).
+            if indent > 0 && folded_into_quote && !trim_ascii_start(line).starts_with("%%") {
+                folded_a_lazy_line = true;
+                lines.push(line.to_string());
+                line_map.push(cur.source_line(cur.pos));
+                col_map.push(cur.source_col(cur.pos));
+                reached.push(false);
+                cur.consume();
+                continue;
             }
             // Below the body's column, a recognized structural opener returns
             // to the surviving outer container. Ordinary prose is still the

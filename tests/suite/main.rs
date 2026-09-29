@@ -1621,3 +1621,6 @@ mod markdown_fence_language;
 mod a_shifted_fence_in_a_quoted_host_holds_its_payload;
 #[path = "../comment_payload_columns.rs"]
 mod comment_payload_columns;
+
+#[path = "../a_nested_quote_keeps_unmarked_openers.rs"]
+mod a_nested_quote_keeps_unmarked_openers;

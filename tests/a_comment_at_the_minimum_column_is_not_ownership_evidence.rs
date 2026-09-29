@@ -97,7 +97,7 @@ fn a_plain_line_at_the_minimum_column_still_licenses_the_rebase() {
     // THE CONTROL FOR THE FLAG ITSELF (carve-rs#1415). Only a comment stops
     // being evidence; an ordinary block at the body's own column still is, and
     // the opener below it still rebases into that body.
-    for above in ["> q", "# a", "| A |"] {
+    for above in ["# a", "| A |"] {
         let output = both_paths(&format!("[^a]: {above}\n      # h\n\nsee[^a]\n"));
         assert!(
             output.contains("<h1 id=\"h\">h</h1>"),

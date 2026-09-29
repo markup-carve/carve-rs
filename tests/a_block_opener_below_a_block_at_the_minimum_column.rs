@@ -1,36 +1,22 @@
-//! A recognized block opener written over-indented inside a body that HAS a
-//! minimum content column is that body's block, not lazy text folding into
-//! whatever the line above left open.
-//!
-//! PART 9 §24 C3's authored-base clause states it without asking for a
-//! paragraph: "A recognized block opener AT OR PAST a definition body's
-//! column 3 or a footnote body's column 2 belongs to that body. Its authored
-//! visual column is the local `block_base` for that one block."
-//!
-//! The engine asked for a paragraph anyway, so a quote, a heading or a table
-//! written at the body's own column left the opener below it unrebased - and a
-//! quote then swallowed it as a lazy continuation (carve-rs#1415). carve-js and
-//! carve-php open the block in every shape below.
+//! A surviving quote owns its unmarked paragraph continuations. Other blocks
+//! at the host's minimum column allow a following opener to take its authored
+//! base (carve-rs#2183).
 
 fn html(source: &str) -> String {
     carve::to_html(source).trim().to_string()
 }
 
 #[test]
-fn a_block_opener_below_a_quote_line_in_a_footnote_body_opens() {
+fn a_block_opener_below_an_open_quote_paragraph_folds() {
     for (body, expected) in [
         (
             "::: >\n      b\n      :::",
-            "<blockquote><p>b</p></blockquote>",
+            "<blockquote><p>q\n::: &gt;\nb\n:::</p></blockquote>",
         ),
-        ("# h", "<h1 id=\"h\">h</h1>"),
-        ("| A |", "<table>"),
+        ("# h", "<blockquote><p>q\n# h</p></blockquote>"),
+        ("| A |", "<blockquote><p>q\n| A |</p></blockquote>"),
     ] {
         let output = html(&format!("[^a]: > q\n      {body}\n\nsee[^a]\n"));
-        assert!(
-            output.contains("<blockquote><p>q</p></blockquote>"),
-            "{body:?}: {output}"
-        );
         assert!(output.contains(expected), "{body:?}: {output}");
     }
 }
@@ -51,10 +37,12 @@ fn the_line_above_does_not_have_to_be_a_quote() {
 }
 
 #[test]
-fn a_run_of_openers_rebases_every_member() {
+fn a_run_of_openers_keeps_folding_into_the_quote() {
     let output = html("[^a]: > q\n      # h\n      # i\n\nsee[^a]\n");
-    assert!(output.contains("<h1 id=\"h\">h</h1>"), "{output}");
-    assert!(output.contains("<h1 id=\"i\">i</h1>"), "{output}");
+    assert!(
+        output.contains("<blockquote><p>q\n# h\n# i</p></blockquote>"),
+        "{output}"
+    );
 }
 
 #[test]
@@ -62,11 +50,7 @@ fn a_definition_body_and_a_list_item_spell_the_same_rule() {
     for source in [":: t\n:  > q\n       # h\n", "- > q\n      # h\n"] {
         let output = html(source);
         assert!(
-            output.contains("<blockquote><p>q</p></blockquote>"),
-            "{source:?}: {output}"
-        );
-        assert!(
-            output.contains("<h1 id=\"h\">h</h1>"),
+            output.contains("<blockquote><p>q\n# h</p></blockquote>"),
             "{source:?}: {output}"
         );
     }
@@ -74,9 +58,6 @@ fn a_definition_body_and_a_list_item_spell_the_same_rule() {
 
 #[test]
 fn an_over_indented_line_that_opens_nothing_still_folds() {
-    // The other side of the boundary. Only a RECOGNIZED opener takes an
-    // authored base; ordinary over-indented text is still the lazy
-    // continuation it always was.
     for source in [
         "[^a]: > q\n      plain\n\nsee[^a]\n",
         ":: t\n:  > q\n       plain\n",
