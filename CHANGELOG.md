@@ -25,6 +25,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- ANSI output preserves every code payload line, including trailing blank lines (markup-carve/carve-js#2357).
+
 - Unmarked, indented block openers fold into an open quote paragraph inside list items, footnotes, and definition bodies (#2183).
 
 - Fenced comments retain payload indentation beyond the host content column. Formatting preserves those columns, including comments folded into definition terms (markup-carve/carve#2535).

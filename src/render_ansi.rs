@@ -336,7 +336,12 @@ fn render_code_block(
     if let Some(lang) = lang {
         out.push_str(&format!("{}\n", style(&format!("┌── {lang} "), DIM)));
     }
-    for line in content.strip_suffix('\n').unwrap_or(content).split('\n') {
+    let payload = if fenced_payload_needs_ending(content) {
+        content
+    } else {
+        content.strip_suffix('\n').unwrap_or(content)
+    };
+    for line in payload.split('\n').filter(|_| !content.is_empty()) {
         out.push_str(&format!(
             "{}\n",
             style(&format!("  {line}"), FG_BRIGHT_WHITE)
