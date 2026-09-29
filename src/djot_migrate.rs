@@ -34,8 +34,9 @@ pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
     let folded = fold_heading_continuations(body);
-    let (held, prefix, spans) = protect_attributed_strong(&folded);
-    let converted = rewrite_djot_body(&convert_definition_lists(&held));
+    let (held, prefix, mut spans) = protect_attributed_strong(&folded);
+    let words = protect_attributed_words(&held, &prefix, &mut spans);
+    let converted = rewrite_djot_body(&convert_definition_lists(&words));
     let restore = regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
     let converted = restore
         .replace_all(&converted, |caps: &regex::Captures<'_>| {
@@ -50,6 +51,190 @@ pub fn djot_to_carve(djot: &str) -> String {
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
     }
+}
+
+fn quote_djot_attribute(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
+    let bytes = source.as_bytes();
+    let mut parts = Vec::new();
+    let mut i = start + 1;
+    while i < bytes.len() {
+        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
+            if bytes[i] == b'\n' && blank_line_follows(bytes, i) {
+                return None;
+            }
+            i += 1;
+        }
+        if bytes.get(i) == Some(&b'}') {
+            return (!parts.is_empty()).then(|| (i + 1, format!("{{{}}}", parts.join(" "))));
+        }
+        if bytes.get(i) == Some(&b'%') {
+            let mut end = i + 1;
+            while end < bytes.len() && !matches!(bytes[end], b'%' | b'}') {
+                end += 1;
+            }
+            if end == bytes.len()
+                || source[i..end]
+                    .match_indices('\n')
+                    .any(|(at, _)| blank_line_follows(bytes, i + at))
+            {
+                return None;
+            }
+            i = if bytes[end] == b'%' { end + 1 } else { end };
+            continue;
+        }
+        let bare_end = |from: usize| {
+            let mut end = from;
+            for ch in source[from..].chars() {
+                if ch.is_whitespace() || "{}%\"'=<>".contains(ch) {
+                    break;
+                }
+                end += ch.len_utf8();
+            }
+            end
+        };
+        if matches!(bytes.get(i), Some(b'#' | b'.')) {
+            let kind = bytes[i] as char;
+            i += 1;
+            let from = i;
+            i = bare_end(i);
+            if i == from {
+                return None;
+            }
+            let value = &source[from..i];
+            let identifier = value
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'-')
+                && value.as_bytes()[0] != b'-';
+            parts.push(if identifier {
+                format!("{kind}{value}")
+            } else {
+                format!(
+                    "{}={}",
+                    if kind == '#' { "id" } else { "class" },
+                    quote_djot_attribute(value)
+                )
+            });
+        } else {
+            let key_start = i;
+            if !bytes.get(i).is_some_and(|ch| ch.is_ascii_alphabetic()) {
+                return None;
+            }
+            i += 1;
+            while bytes
+                .get(i)
+                .is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'_' | b'-'))
+            {
+                i += 1;
+            }
+            if bytes.get(i) != Some(&b'=') {
+                return None;
+            }
+            i += 1;
+            let key = &source[key_start..i];
+            let from = i;
+            if bytes.get(i) == Some(&b'"') {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    if matches!(bytes[i], b'\n' | b'\r') {
+                        return None;
+                    }
+                    if bytes[i] == b'\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                if bytes.get(i) != Some(&b'"') {
+                    return None;
+                }
+                i += 1;
+                parts.push(format!("{key}{}", &source[from..i]));
+            } else {
+                i = bare_end(i);
+                if i == from {
+                    return None;
+                }
+                parts.push(format!("{key}{}", quote_djot_attribute(&source[from..i])));
+            }
+        }
+        if i < bytes.len() {
+            let next = source[i..].chars().next()?;
+            if !next.is_whitespace() && next != '}' && next != '%' {
+                return None;
+            }
+        }
+    }
+    None
+}
+
+fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
+    let masked = mask_code_and_destinations(source);
+    let bytes = source.as_bytes();
+    let mut output = String::new();
+    let mut cursor = 0;
+    let mut i = 0;
+    let last_close = source.rfind('}');
+    let last_delimiters = b"_*~^".map(|ch| source.rfind(ch as char));
+    while last_close.is_some_and(|end| i <= end) {
+        if bytes[i] != b'{' || masked.as_bytes()[i] != b'{' || is_escaped(bytes, i) {
+            i += 1;
+            continue;
+        }
+        let Some((end, attrs)) = read_djot_word_attributes(source, i) else {
+            i += 1;
+            continue;
+        };
+        let mut word = i;
+        if i > 0 && masked.as_bytes()[i - 1] == bytes[i - 1] && !b"`*_~^]}>".contains(&bytes[i - 1])
+        {
+            for (at, ch) in source[cursor..i].char_indices().rev() {
+                if ch.is_whitespace()
+                    || "\"'{}[]`\0)>|".contains(ch)
+                    || masked.as_bytes()[cursor + at] != bytes[cursor + at]
+                {
+                    break;
+                }
+                word = cursor + at;
+            }
+        }
+        if let Some(closer) = bytes.get(end).filter(|ch| b"_*~^".contains(ch)) {
+            if let Some(at) = (word..i)
+                .rev()
+                .find(|at| bytes[*at] == *closer && !is_escaped(bytes, *at))
+            {
+                word = at + 1;
+            }
+        } else if word < i
+            && b"_*~^".contains(&bytes[word])
+            && last_delimiters[b"_*~^".iter().position(|ch| *ch == bytes[word]).unwrap()]
+                .is_some_and(|at| at >= end)
+        {
+            word = i;
+        }
+        if word > 0
+            && bytes[word - 1] == b'{'
+            && bytes.get(word).is_some_and(|ch| b"+-=".contains(ch))
+        {
+            word += 1;
+        }
+        if word < i {
+            output.push_str(&source[cursor..word]);
+            output.push_str(&format!("{prefix}{}\0", spans.len()));
+            let converted = rewrite_djot_body(&format!("x {}", &source[word..i]));
+            let body = &converted[2..];
+            spans.push(format!(
+                "[{}{body}]{attrs}",
+                if body.starts_with('^') { "\\" } else { "" }
+            ));
+            cursor = end;
+        }
+        i = end;
+    }
+    output.push_str(&source[cursor..]);
+    output
 }
 
 fn fold_heading_continuations(source: &str) -> String {
