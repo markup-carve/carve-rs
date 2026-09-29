@@ -780,8 +780,8 @@ mod colon_fence_separator_is_a_space;
 mod comment_at_column_zero_keeps_item_open;
 #[path = "../comment_below_content_column_keeps_item_open.rs"]
 mod comment_below_content_column_keeps_item_open;
-#[path = "../comment_body_is_relative_to_its_fence.rs"]
-mod comment_body_is_relative_to_its_fence;
+#[path = "../comment_body_is_relative_to_its_host.rs"]
+mod comment_body_is_relative_to_its_host;
 #[path = "../comment_does_not_revive_a_closed_item.rs"]
 mod comment_does_not_revive_a_closed_item;
 #[path = "../comment_in_list_item.rs"]
@@ -1612,3 +1612,6 @@ mod an_empty_raw_payload_is_written_back_empty;
 mod djot_word_attributes;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
+
+#[path = "../comment_payload_columns.rs"]
+mod comment_payload_columns;

@@ -2666,7 +2666,7 @@ fn render_definition_list(
             // A comment opening a line must stay past the term's column, or it
             // would end the term (carve#2411).
             let outer_term = std::mem::replace(&mut ctx.in_term, true);
-            let rendered = render_inlines(session, term, ctx).replace("\n%%", "\n %%");
+            let rendered = render_inlines(session, term, ctx);
             ctx.in_term = outer_term;
             out.push(format!(":: {rendered}"));
         }
@@ -3415,13 +3415,11 @@ fn render_nodes_with_verbatim(
         // At a line start a joined `%%%` would open a comment fence, so a
         // comment folded into a term keeps its separator there (carve#2411).
         if let InlineNode::Comment(c) = node {
-            if ctx.in_term
-                && !c.delimited
-                && !c.block
-                && c.content.starts_with('%')
-                && out.ends_with('\n')
-            {
-                rendered = format!("%% {}", c.content);
+            if ctx.in_term && !c.delimited && !c.block && out.ends_with('\n') {
+                if c.content.starts_with('%') {
+                    rendered = format!("%% {}", c.content);
+                }
+                rendered.insert(0, ' ');
             }
         }
         // A BARE OPENER IS DECIDED ON THE EMITTED BYTES too: emphasis, links and
@@ -3581,13 +3579,11 @@ fn render_inline_body(
         InlineNode::Comment(c) if c.delimited => {
             format!("{{%{} %}}", pad_delimited(&c.content))
         }
-        // A comment fence folded into a term: every line one column past the
-        // term's, so the fence stays in the term (carve#2411).
+        // Only the delimiters need padding to stay inside the term.
         InlineNode::Comment(c) if c.block => {
-            format!(
-                " {}",
-                render_block_comment(session, &c.content).replace('\n', "\n ")
-            )
+            let rendered = render_block_comment(session, &c.content);
+            let (body, closer) = rendered.rsplit_once('\n').unwrap();
+            format!(" {body}\n {closer}")
         }
         // An EMPTY comment is the marker and nothing else. The space after the
         // marker separates it from content, and with no content it is line

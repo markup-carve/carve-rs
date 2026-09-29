@@ -25,6 +25,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Fenced comments retain payload indentation beyond the host content column. Formatting preserves those columns, including comments folded into definition terms (markup-carve/carve#2535).
+
 - Markdown import keeps code blocks when a language hint is unsupported. It omits the whole hint instead of shortening it to a different language or producing an invalid fence (markup-carve/carve#2522).
 
 - Unterminated code fences after below-column comments keep lazy payload inside nested list items (#2146).
