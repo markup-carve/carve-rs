@@ -1596,6 +1596,8 @@ mod emphasis_attribute_markers;
 #[path = "../markdown_empty_headings.rs"]
 mod markdown_empty_headings;
 
+#[path = "../a_bracket_run_bounds_its_trailing_comment.rs"]
+mod a_bracket_run_bounds_its_trailing_comment;
 #[path = "../a_quoted_container_fence_stores_no_lazy_claim.rs"]
 mod a_quoted_container_fence_stores_no_lazy_claim;
 #[path = "../djot_word_attributes.rs"]
