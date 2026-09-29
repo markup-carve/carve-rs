@@ -1876,6 +1876,10 @@ fn render_list_item(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    #[cfg(test)]
+    LIST_OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow_mut().insert(out as *const String as usize);
+    });
     indent(out, level);
     out.push_str("<li");
     // PART 10 §11. Structural, so it leads the authored attributes (§1).
@@ -1916,107 +1920,46 @@ fn render_list_item(
     // stays bare rather than becoming a fresh <p> -- matching carve-js and the
     // executable-spec oracle. The first inlineable part shares the <li> line
     // (after any checkbox); later inlineable parts sit at the child column.
-    enum Part {
-        Inline(String),
-        Block(String),
-    }
-    let parts: Vec<Part> = item
-        .children
-        .iter()
-        .map(|child| {
-            if let BlockNode::Paragraph(p) = child {
-                let mut html = String::new();
-                render_inlines(&mut html, &p.children, options, state);
-                // A tight item's paragraph renders bare -- unless it carries
-                // AUTHORED attributes, which have nowhere to go without the
-                // `<p>`. Reachable since a brace-only list-marker line became a
-                // block attribute line (§15 A8): `- {.c}` / `  text` must not
-                // silently drop the class. Matches carve-js.
-                if tight && !has_authored_attrs(&p.attrs) {
-                    Part::Inline(html)
-                } else {
-                    Part::Inline(format!("<p{}>{html}</p>", render_attrs_for(&p.attrs, "p")))
-                }
-            } else {
-                let mut block = String::new();
-                render_block(&mut block, child, level + 1, options, state);
-                Part::Block(block)
+    // The checkbox belongs to the item, including a block-first item.
+    out.push_str(&checkbox);
+    let mut visible = 0;
+    let mut first_inline = false;
+    for child in &item.children {
+        if let BlockNode::Paragraph(p) = child {
+            let mut html = String::new();
+            render_inlines(&mut html, &p.children, options, state);
+            // Authored paragraph attributes require their own wrapper even in a tight item.
+            if !tight || has_authored_attrs(&p.attrs) {
+                html = format!("<p{}>{html}</p>", render_attrs_for(&p.attrs, "p"));
             }
-        })
-        .filter(|part| match part {
-            // A block that renders to NOTHING contributes no line (#429), and
-            // an item is not the exception: a comment or an abbreviation
-            // definition inside one used to leave the `\n` and the child
-            // indentation behind, so `- a` / `  %% c` published
-            // `<li>a    </li>` where carve-js, carve-php and the spec publish
-            // `<li>a</li>` (carve-rs#532).
-            //
-            // `is_empty`, NOT `trim().is_empty()` - the same distinction the
-            // Inline arm makes below, and for a sharper reason here. Every block
-            // this arm means to drop renders the EMPTY string: a comment, an
-            // abbreviation definition and a raw block the target drops all
-            // return without indenting. A raw block whose format MATCHES renders
-            // its payload, and a payload of nothing or of one blank line is
-            // whitespace - which the clause keeps apart from an absent block
-            // (CARVE-P2-022, corpus 521). Trimming made the item the one host
-            // that could not tell those two from a comment, and it dropped the
-            // slot the container hosts already publish.
-            Part::Block(html) => !html.is_empty(),
-            // A PARAGRAPH that renders to nothing is the same case (#429), and
-            // the exemption here was the reason it still showed: a `+`-attached
-            // block whose whole content was a collected definition or a comment
-            // parses to an empty paragraph, which survived as an empty Inline
-            // and published a stray blank line inside the `<li>` - the "trace" a
-            // collected definition must not leave (carve-rs#670, corpus 226).
-            //
-            // `is_empty`, NOT `trim().is_empty()`: Rust's `trim` takes Unicode
-            // whitespace, so a no-break space would be dropped as blank, and an
-            // item holding one is an item with content.
-            Part::Inline(html) => !html.is_empty(),
-        })
-        .collect();
-    if parts.is_empty() {
-        out.push_str(&checkbox);
+            // Whitespace is content; only an empty rendering removes the slot.
+            if html.is_empty() {
+                continue;
+            }
+            if visible == 0 {
+                first_inline = true;
+            } else {
+                out.push('\n');
+                indent(out, level + 1);
+            }
+            out.push_str(&html);
+        } else {
+            // Append nested blocks directly so ancestors do not copy their HTML.
+            // Roll back the separator when a block emits nothing.
+            let start = out.len();
+            out.push('\n');
+            let body_start = out.len();
+            render_block(out, child, level + 1, options, state);
+            if out.len() == body_start {
+                out.truncate(start);
+                continue;
+            }
+        }
+        visible += 1;
+    }
+    if visible == 0 || (visible == 1 && first_inline) {
         out.push_str("</li>");
         return;
-    }
-    match &parts[0] {
-        Part::Inline(html) => {
-            out.push_str(&checkbox);
-            out.push_str(html);
-        }
-        Part::Block(html) => {
-            // THE CHECKBOX IS A PROPERTY OF THE ITEM, NOT OF ITS FIRST BLOCK.
-            // It is written directly after the `<li>` opener whatever the
-            // marker line goes on to open, and nothing about that block
-            // reaches it. Only the CONTENT moves: it sits beside the checkbox
-            // when the first block renders inline, and on its own indented
-            // line below it when it does not. Deciding the checkbox's
-            // placement from the block that follows it wrote it at column 0,
-            // outside the indentation every other child of an `<li>` gets, for
-            // every non-paragraph lead -- a quote, a heading, a thematic
-            // break, a fence, a `:::` div, a table row (carve#1381,
-            // corpus 363).
-            out.push_str(&checkbox);
-            out.push('\n');
-            out.push_str(html);
-        }
-    }
-    if parts.len() == 1 {
-        if let Part::Inline(_) = &parts[0] {
-            out.push_str("</li>");
-            return;
-        }
-    }
-    for part in parts.iter().skip(1) {
-        out.push('\n');
-        match part {
-            Part::Inline(html) => {
-                indent(out, level + 1);
-                out.push_str(html);
-            }
-            Part::Block(html) => out.push_str(html),
-        }
     }
     out.push('\n');
     indent(out, level);
@@ -4626,4 +4569,33 @@ pub(crate) fn allocate_dashes(n: usize) -> String {
     out.push_str(&EM.repeat(em));
     out.push_str(&EN.repeat(en));
     out
+}
+
+#[cfg(test)]
+thread_local! {
+    static LIST_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+#[cfg(test)]
+mod nested_list_output_buffers {
+    #[test]
+    fn nested_lists_append_to_one_output_buffer() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let source = format!("{}end\n", "- ".repeat(192));
+                let doc = crate::parse(&source);
+                super::LIST_OUTPUT_BUFFERS.with(|buffers| buffers.borrow_mut().clear());
+                let html = crate::render_html(&doc).unwrap();
+                assert_eq!(html.matches("<ul>").count(), 192);
+                assert_eq!(
+                    super::LIST_OUTPUT_BUFFERS.with(|buffers| buffers.borrow().len()),
+                    1
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
