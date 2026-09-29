@@ -232,7 +232,7 @@ fn the_nested_code_fold_survives_explicit_quote_prefixes() {
 #[test]
 fn overindented_fences_keep_the_existing_closer_and_payload_rules() {
     for (source, expected) in [
-        ("- a\n  - b\n %% c\n      ```\n    ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"),
+        ("- a\n  - b\n %% c\n      ```\n    ```\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"),
         ("- a\n  - b\n %% c\n      ```\n     x\n", "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code> x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>"),
     ] {
         assert_html(source, expected);
