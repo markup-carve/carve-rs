@@ -6025,9 +6025,10 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             }
         }
         let comment_close = comment.and_then(|open| {
-            lines.iter().enumerate().skip(i + 1).find_map(|(j, line)| {
-                is_comment_fence_close_any_column(line, open.fence_len).then_some(j)
-            })
+            let at = entry_closers
+                .get_or_init(|| comment_closers_by_run(&lines))
+                .get(&open.fence_len);
+            at.and_then(|at| at.get(at.partition_point(|&k| k <= i)).copied())
         });
         for (j, line) in lines.iter_mut().enumerate().take(end + 1).skip(i) {
             if comment_close.is_some_and(|close| j > i && j < close) {
