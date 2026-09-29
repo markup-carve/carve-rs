@@ -119,19 +119,27 @@ fn a_pair_inside_one_host_is_untouched() {
     assert_eq!(imported("<p>[<ins>a</ins>](b)</p>"), "[{+a+}]\\(b)\n");
 }
 
-/// WHY THE RENDER CHECKS COULD NOT SEE THIS. A critic mark reads back through
-/// the run, so all three spellings of the nested shape render alike and only the
-/// writer's own agreement separates them. The superscript host is the opposite
-/// case: the run isolates its delimiter, the render changes, and that is why the
-/// emphasis families were already spelled the way carve-php spells them.
+/// WHY THE RENDER CHECKS COULD NOT SEE THIS, and why they can now. While a
+/// critic mark still read back through the run, all three spellings of the
+/// nested shape rendered alike and only the writer's own agreement separated
+/// them. carve-rs#2212 made the run bound the critic family the way it already
+/// bounded a superscript, so the unescaped spelling renders as its own text and
+/// the two the writers emit are the ones that keep the mark.
 #[test]
-fn the_three_critic_spellings_render_alike() {
-    for src in ["[[{+a]+}]\n", "[\\[{+a]+}]\n", "[\\[{+a\\]+}]\n"] {
+fn only_the_escaped_spellings_still_carry_the_mark() {
+    // Both spellings whose closer still sits outside the opener's run, and the
+    // one the importer writes. Measured against carve-php at b9dec26cf, which
+    // reads all three the same way.
+    for src in ["[[{+a]+}]\n", "[\\[{+a]+}]\n"] {
         assert_eq!(
             render_html(&parse(src)).unwrap(),
-            "<p>[[<ins>a]</ins>]</p>",
+            "<p>[[{+a]+}]</p>",
             "{src:?}"
         );
     }
+    assert_eq!(
+        render_html(&parse("[\\[{+a\\]+}]\n")).unwrap(),
+        "<p>[[<ins>a]</ins>]</p>"
+    );
     assert_eq!(render_html(&parse("[{^a]^}\n")).unwrap(), "<p>[{^a]^}</p>");
 }
