@@ -102,6 +102,11 @@ struct BracketScope {
     /// nodes. The run between them would isolate the delimiters it crosses, so
     /// the OPENER carries the escape (markup-carve/carve-php#2756).
     crossing_openers: HashSet<(usize, usize)>,
+    /// A `]` whose own `[` is escaped and which therefore falls through to an
+    /// OUTER opener across the same boundary. It takes an escape too, or the
+    /// writer's next pass escapes that outer opener instead and the formatter
+    /// stops agreeing with itself (carve-rs#2209).
+    crossing_closers: HashSet<(usize, usize)>,
     /// In bracketed content, each paired `]` mapped to its `[`.
     closer_openers: HashMap<(usize, usize), (usize, usize)>,
     /// Every node the scan read.
@@ -4101,11 +4106,13 @@ fn render_bracketed_content(
 fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     /// An open `[`: where the scope keys it, and the host it was read under.
     type Open = ((usize, usize), usize);
+    /// One bracket in document order: its key, its host, and whether it opens.
+    type Bracket = ((usize, usize), usize, bool);
 
     fn walk(
         nodes: &[InlineNode],
         host: usize,
-        open: &mut Vec<Open>,
+        open: &mut Vec<Bracket>,
         scope: &mut BracketScope,
     ) -> bool {
         for node in nodes {
@@ -4163,39 +4170,74 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         }
         true
     }
-    fn pair(at: usize, value: &str, host: usize, open: &mut Vec<Open>, scope: &mut BracketScope) {
+    fn pair(at: usize, value: &str, host: usize, seq: &mut Vec<Bracket>, scope: &mut BracketScope) {
         scope.keyed.insert(at);
         let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
         for (ordinal, ch) in brackets.enumerate() {
-            if ch == '[' {
-                open.push(((at, ordinal), host));
-            } else if let Some((opener, opener_host)) = open.pop() {
-                if opener_host == host {
-                    scope.paired_closers.insert((at, ordinal));
-                } else {
-                    // The `]` answers an escaped `[`, so it closes no run and
-                    // the `(` behind it opens no destination.
-                    scope.crossing_openers.insert(opener);
-                }
-                scope.closer_openers.insert((at, ordinal), opener);
-            } else {
-                scope.lone.insert((at, ordinal));
-            }
+            seq.push(((at, ordinal), host, ch == '['));
         }
     }
+
+    /// Pair the sequence, leaving out the openers `escaped` names. Reports each
+    /// pair in closing order and the openers still unclosed at the end.
+    fn resolve(
+        seq: &[Bracket],
+        escaped: &HashSet<(usize, usize)>,
+    ) -> (Vec<(Open, Open)>, Vec<(usize, usize)>) {
+        let mut open: Vec<Open> = Vec::new();
+        let mut pairs = Vec::new();
+        for &(key, host, opens) in seq {
+            if opens {
+                if !escaped.contains(&key) {
+                    open.push((key, host));
+                }
+            } else if let Some(opener) = open.pop() {
+                pairs.push((opener, (key, host)));
+            }
+        }
+        (pairs, open.into_iter().map(|(key, _)| key).collect())
+    }
+
     let mut scope = BracketScope {
         claimed: true,
         ..BracketScope::default()
     };
-    let mut open = Vec::new();
-    if !walk(nodes, 0, &mut open, &mut scope) {
+    let mut seq = Vec::new();
+    if !walk(nodes, 0, &mut seq, &mut scope) {
         return BracketScope {
             claimed: true,
             ..BracketScope::default()
         };
     }
+    // PASS ONE names the crossing openers. PASS TWO asks again with those
+    // openers GONE, because that is the run the reader will see: a `]` whose own
+    // `[` is escaped falls through to the outer opener, and where that outer pair
+    // crosses the same boundary the CLOSER takes the escape. One pass cannot
+    // decide it - which brackets survive is not known until the run is complete -
+    // and leaving it undecided is what made the formatter non-idempotent: `fmt`
+    // ran pass two itself and escaped one more bracket every time (carve-rs#2209).
+    let (first, _) = resolve(&seq, &HashSet::new());
+    for (opener, closer) in first {
+        if opener.1 != closer.1 {
+            scope.crossing_openers.insert(opener.0);
+        }
+    }
+    let (second, unclosed) = resolve(&seq, &scope.crossing_openers);
+    for (opener, closer) in second {
+        if opener.1 == closer.1 {
+            scope.paired_closers.insert(closer.0);
+        } else {
+            scope.crossing_closers.insert(closer.0);
+        }
+        scope.closer_openers.insert(closer.0, opener.0);
+    }
+    for &(key, _, opens) in &seq {
+        if !opens && !scope.closer_openers.contains_key(&key) {
+            scope.lone.insert(key);
+        }
+    }
     if bracketed {
-        scope.lone.extend(open.into_iter().map(|(key, _)| key));
+        scope.lone.extend(unclosed);
     } else {
         scope.lone.clear();
         scope.closer_openers.clear();
@@ -4919,6 +4961,7 @@ impl CarveContext {
         BracketRole {
             lone: self.brackets.lone.contains(&(at, ordinal)),
             crossing_opener: self.brackets.crossing_openers.contains(&(at, ordinal)),
+            crossing_closer: self.brackets.crossing_closers.contains(&(at, ordinal)),
             paired_closer: self.brackets.paired_closers.contains(&(at, ordinal)),
             key: (at, ordinal),
             opener: self.brackets.closer_openers.get(&(at, ordinal)).copied(),
@@ -5732,6 +5775,7 @@ fn escape_text(
             && crate::parse::opens_inline_link_target(&text[offset..]);
         let unconditional = role.lone
             || role.crossing_opener
+            || role.crossing_closer
             || opens_a_destination
             || matches!(ch, '\\' | '`' | '"' | '\'')
             || extension_colon_at == Some(offset)
@@ -5813,6 +5857,8 @@ struct BracketRole {
     lone: bool,
     /// The `[` of a pair that crosses a formatting boundary.
     crossing_opener: bool,
+    /// The `]` of such a pair, where an outer opener survives to answer it.
+    crossing_closer: bool,
     paired_closer: bool,
     /// This bracket, as the scope keys it.
     key: (usize, usize),
