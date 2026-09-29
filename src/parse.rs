@@ -18707,11 +18707,11 @@ fn parse_inline_context(
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
     let has_brackets = has_link_trigger || text.contains("![");
-    // A `%%` marker inside a bracket run needs the same matches to find the run's
-    // own end (CARVE-P9-041, markup-carve/carve#2576), and a bare `[a %% x]`
-    // opens no construct, so that consumer has its own gate.
-    let comment_needs_run_end = text.contains("%%") && text.contains('[');
-    let bracket_matches = if has_brackets || comment_needs_run_end {
+    // Two readers need the matches for a run that opens NO construct, so the
+    // precompute answers for every `[`: a `%%` marker inside a bracket run ends
+    // at the run's closer (CARVE-P9-041, markup-carve/carve#2576), and an
+    // emphasis delimiter does not pair across one (PART 8, carve#2577).
+    let bracket_matches = if text.contains('[') {
         compute_bracket_matches(bytes)
     } else {
         Vec::new()
@@ -24346,6 +24346,10 @@ fn find_emphasis_close(
         .copied()
         .filter(|&(_, close)| close > from)
         .collect();
+    // The run the OPENER sits in, as (content start, closer), or none outside
+    // every run. Its identity, not the depth: two sibling runs give the same
+    // depth, so `[a /b] [c d/]` would pair across the gap between them.
+    let opener_run = runs.last().copied();
     let mut j = from;
     while j < bytes.len() {
         if failed.is_some_and(|f| f[j]) {
@@ -24446,6 +24450,18 @@ fn find_emphasis_close(
             }
         }
         if ch == delim {
+            // PART 8 resolves a bracket run before an emphasis marker, so a
+            // marker inside a run is that run's content and cannot answer an
+            // opener outside it - nor the reverse (markup-carve/carve#2577,
+            // carve-rs#2161). `runs` holds the runs open here and it was seeded
+            // with the runs open at the OPENER, so the innermost run agreeing
+            // is the two delimiters sharing one. Not whether a run is open at
+            // all: a pair both of whose halves sit inside one still pairs, and a
+            // run BETWEEN two halves has been popped by the time we get here.
+            if runs.last().copied() != opener_run {
+                j += 1;
+                continue;
+            }
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
             if is_carve_ws(prev) {
                 j += 1;
