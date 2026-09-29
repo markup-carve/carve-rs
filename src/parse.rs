@@ -5734,6 +5734,14 @@ fn rebase_overindented_blocks(
         if reaches_container && nested_columns.last().is_some_and(|column| base < *column) {
             block_at_minimum = true;
         }
+        // A comment below a descendant's column leaves that item available.
+        if is_line_comment_any_column(&lines[i])
+            && nested_columns.last().is_some_and(|column| base < *column)
+        {
+            paragraph_open = false;
+            i += 1;
+            continue;
+        }
         while nested_columns.last().is_some_and(|column| base < *column) {
             nested_columns.pop();
         }
@@ -5913,12 +5921,11 @@ fn rebase_overindented_blocks(
             }
             paragraph_open = line_starts_paragraph(&lines[i]);
             after_blank = false;
-            // A COMMENT IS NOT OWNERSHIP EVIDENCE. It renders nothing at any
-            // column (§24 C3), so a line at the container's minimum column that
-            // is only a comment does not put the scan back in the container's
-            // coordinate system - and the below-column opener under it was
-            // never the container's (markup-carve/carve-rs#1517).
-            block_at_minimum = !is_line_comment_any_column(&lines[i]);
+            // A comment reaching this frame closes its paragraph. A lower
+            // comment preserves the owner established before it; the next
+            // opener must still reach this frame to use that evidence.
+            block_at_minimum =
+                block_at_minimum || reaches_container || !is_line_comment_any_column(&lines[i]);
             i += 1;
             continue;
         }
@@ -5933,7 +5940,8 @@ fn rebase_overindented_blocks(
         if i > 0
             && !after_blank
             && !paragraph_open
-            && !block_at_minimum
+            && !(block_at_minimum
+                && (reaches_container || !is_line_comment_any_column(&lines[i - 1])))
             && !source.authored_base_at_start
         {
             i += 1;
@@ -10704,14 +10712,14 @@ fn parse_list(
                     collect_trailing_lazy_through(
                         cur,
                         &mut stream,
-                        nested_content_col.saturating_sub(1),
+                        content_col.saturating_sub(1),
                         base_indent,
                     );
                     let before_block = cur.pos;
                     stream.append(collect_indented_block_mapped(
                         cur,
-                        nested_content_col - 1,
-                        nested_content_col,
+                        content_col - 1,
+                        content_col,
                     ));
                     ended_on_blank =
                         cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);

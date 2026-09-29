@@ -1635,3 +1635,6 @@ mod comments_preserve_list_content_column;
 
 #[path = "../code_content_is_literal.rs"]
 mod code_content_is_literal;
+
+#[path = "../container_ownership.rs"]
+mod container_ownership;
