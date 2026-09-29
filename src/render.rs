@@ -427,6 +427,31 @@ fn is_all_blank_html_raw(block: &BlockNode) -> bool {
             && raw.content.chars().all(|c| c == '\n'))
 }
 
+/// Render a raw block whose format the HTML target drops, reporting whether
+/// `block` was one.
+///
+/// CARVE-P2-022 ties the payload's newline to the format matching the output
+/// format: an `=html` payload "contributes its newline when the raw format
+/// matches the output format", and anything else is DROPPED. Nothing reaches
+/// the output, so no separating line is owed either - the same standing the
+/// document's two root loops already give a comment or a hoisted definition.
+/// The drop still has to be observable (CARVE-P2-024), so the block goes
+/// through `render_block` into a sink rather than being skipped outright.
+fn render_dropped_raw_block(
+    block: &BlockNode,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) -> bool {
+    if !matches!(block, BlockNode::RawBlock(raw) if raw.format != "html") {
+        return false;
+    }
+    let mut sink = String::new();
+    render_block(&mut sink, block, level, options, state);
+    debug_assert!(sink.is_empty(), "a dropped raw block renders nothing");
+    true
+}
+
 /// Render a container's children, dropping the ones that render to nothing.
 ///
 /// A comment, a comment block, an abbreviation definition and a non-HTML raw
@@ -518,6 +543,10 @@ fn render_document_blocks(
                 | BlockNode::LinkReferenceDefinition(_)
                 | BlockNode::CitationDefinition(_)
         ) {
+            i += 1;
+            continue;
+        }
+        if render_dropped_raw_block(&nodes[i], 0, options, state) {
             i += 1;
             continue;
         }
@@ -1384,6 +1413,10 @@ fn render_section(
                 | BlockNode::LinkReferenceDefinition(_)
                 | BlockNode::CitationDefinition(_)
         ) {
+            i += 1;
+            continue;
+        }
+        if render_dropped_raw_block(&nodes[i], level + 1, options, state) {
             i += 1;
             continue;
         }
