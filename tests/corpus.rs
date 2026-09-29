@@ -765,12 +765,10 @@ const IMPLEMENTED: &[&str] = &[
     // 527 is markup-carve/carve#2589 as well: a tab does not open the title slot.
     // Three documents, all already conformant here.
     "a-tab-does-not-open-the-title-slot",
-    // 519 is listed too, so the one document of it this engine answers is compared
-    // rather than skipped. The three it does not are carve-rs#2170 and are
-    // declared in BEHIND_ON_PAIR.
-    //
     // 519 is markup-carve/carve#2563: a fence shifted inside a quoted item owns its
-    // payload, so an unmarked line after it ends the quote. Four documents.
+    // payload, so an unmarked line after it ends the quote. Four documents, three
+    // of which carve-rs#2170 answered - they arrived with the pin declared in
+    // BEHIND_ON_PAIR and that declaration is gone with the fix.
     "a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim",
 ];
 
@@ -874,27 +872,11 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// must still DIFFER from the golden, so the entry has to be deleted in the commit
 /// that fixes the rule rather than left behind as a declaration that no longer
 /// declares anything.
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
-    // carve-rs#2170, from markup-carve/carve#2563. A fence shifted inside a
-    // quoted item does not own its payload, so the unmarked line after it is
-    // swallowed into the payload instead of ending the quote. The fourth document
-    // of category 519 already matches, which is why the category is listed.
-    (
-        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim",
-        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\nflush\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
-    ),
-    (
-        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim-2",
-        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
-        "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>x\nz\nb\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
-    ),
-    (
-        "519-a-shifted-fence-in-a-quoted-item-stores-no-continuation-claim-3",
-        "carve-rs#2170: a shifted fence in a quoted item keeps the claim",
-        "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        x\nflush\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
-    ),
-];
+///
+/// Empty again. Its three entries were corpus 519's first three documents, and
+/// carve-rs#2170 made them match, so the `assert_ne!` in `check_pair` is what
+/// removed them.
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

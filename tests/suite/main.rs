@@ -1617,5 +1617,7 @@ mod djot_word_attributes;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
 
+#[path = "../a_shifted_fence_in_a_quoted_host_holds_its_payload.rs"]
+mod a_shifted_fence_in_a_quoted_host_holds_its_payload;
 #[path = "../comment_payload_columns.rs"]
 mod comment_payload_columns;
