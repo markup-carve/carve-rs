@@ -10,7 +10,7 @@
 fn a_comment_below_the_content_column_ends_a_fenced_item() {
     assert_eq!(
         carve::to_html(". ~~~\n%% c\n"),
-        "<ol>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ol>"
+        "<ol>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ol>"
     );
 }
 
@@ -18,7 +18,7 @@ fn a_comment_below_the_content_column_ends_a_fenced_item() {
 fn and_what_follows_it_parses_at_the_document_level() {
     assert_eq!(
         carve::to_html(". ~~~\n%% c\nz\n"),
-        "<ol>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ol>\n<p>z</p>"
+        "<ol>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ol>\n<p>z</p>"
     );
 }
 
@@ -26,7 +26,7 @@ fn and_what_follows_it_parses_at_the_document_level() {
 fn a_closer_below_the_column_does_not_bring_the_item_back() {
     assert_eq!(
         carve::to_html("- a\n\n  ```\n%% c\n  ```\n"),
-        "<ul>\n  <li>a\n    <pre><code>\n</code></pre>\n  </li>\n</ul>\n<p><code></code></p>"
+        "<ul>\n  <li>a\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p><code></code></p>"
     );
 }
 
@@ -42,7 +42,7 @@ fn payload_then_a_comment_then_a_closer() {
 fn a_marker_line_fence_over_a_definition() {
     assert_eq!(
         carve::to_html(". ~~~\n[d]: u\n"),
-        "<ol>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ol>"
+        "<ol>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ol>"
     );
 }
 

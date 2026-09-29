@@ -1805,9 +1805,6 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     }
     out.push('>');
     write_escaped_text_nbsp(out, &c.content);
-    if crate::ast::fenced_payload_needs_ending(&c.content) {
-        out.push('\n');
-    }
     out.push_str("</code></pre>");
 }
 

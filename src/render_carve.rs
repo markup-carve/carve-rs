@@ -2076,25 +2076,11 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 }
                 _ => code.attrs.clone(),
             };
-            // The payload's own lines, then the ending after its LAST line. An
-            // EMPTY payload has no line and writes none: carve-rs#2162 gave the
-            // parser the zero-line and one-blank distinction, so the writer can
-            // spell both now (markup-carve/carve#2560).
-            //
-            // An all-blank payload carries its trailing newline IN `content`,
-            // which is how it says how many lines it has. `protect_verbatim`
-            // stages one sentinel per line and counts them by splitting, so it is
-            // handed the payload WITHOUT that ending or it stages a line too many.
-            // Staging still happens: a blank line bypassing it is what
-            // carve-rs#2168 is on the raw side.
+            // Staging takes lines without their final separator.
             let payload = if code.content.is_empty() {
                 String::new()
             } else {
-                let lines = code
-                    .content
-                    .strip_suffix('\n')
-                    .filter(|_| !crate::ast::fenced_payload_needs_ending(&code.content))
-                    .unwrap_or(&code.content);
+                let lines = code.content.strip_suffix('\n').unwrap_or(&code.content);
                 format!("{}\n", protect_verbatim(session, lines))
             };
             with_block_attrs(&attrs, &format!("{fence}{info}\n{payload}{fence}"))
@@ -5239,9 +5225,11 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             {
                 return prefix.trim_end_matches([' ', '\t']).to_string();
             }
-            let line = match line.strip_prefix(thematic_guard(session)) {
-                Some(rest) => format!(" {rest}"),
-                None => line.to_string(),
+            let line = match line.split_once(thematic_guard(session)) {
+                Some((prefix, rest)) if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) => {
+                    format!("{prefix} {rest}")
+                }
+                _ => line.to_string(),
             };
             // The staged pair IS positional, once you read both insertion sites
             // together rather than looking for one position:

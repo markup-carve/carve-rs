@@ -68,7 +68,7 @@ fn a_closer_at_either_column_ends_the_fence() {
 }
 
 /// The canonical opener, at the host's content column, is unchanged. This is the
-/// control that says the fix widened the reading rather than moving it.
+/// A container ending an empty fence contributes no payload characters.
 #[test]
 fn an_opener_at_the_content_column_is_unchanged() {
     assert_eq!(
@@ -81,9 +81,9 @@ fn an_opener_at_the_content_column_is_unchanged() {
 /// break: it runs to the end of its container and the end supplies it. Corpus 276
 /// pins that, and this is here so the fix cannot take it away.
 #[test]
-fn an_unterminated_empty_fence_still_owns_its_line() {
-    assert!(html("- ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
-    assert!(html("> ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
+fn an_unterminated_empty_fence_has_no_payload() {
+    assert!(html("- ```\nx\n```\n").contains("<pre><code></code></pre>"));
+    assert!(html("> ```\nx\n```\n").contains("<pre><code></code></pre>"));
 }
 
 /// A quoted host with no fence at all still takes its lazy line, so the change did

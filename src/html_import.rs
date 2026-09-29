@@ -2628,10 +2628,7 @@ impl<'a> Importer<'a> {
                 .find(|n| Self::tag(n).as_deref() == Some("code"))
                 .unwrap_or(h);
             let lang = self.code_language(h, code);
-            let mut content = Self::text(code);
-            if content.ends_with('\n') {
-                content.pop();
-            }
+            let content = Self::text(code);
             return Ok(vec![BlockNode::CodeBlock(CodeBlock {
                 attrs,
                 lang,

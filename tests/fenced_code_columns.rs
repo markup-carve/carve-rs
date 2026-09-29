@@ -28,7 +28,7 @@ fn code_blocks(src: &str) -> Vec<CodeBlock> {
 fn opener_at_document_column_zero_opens_fence() {
     let blocks = code_blocks("```\nx\n```");
     assert_eq!(blocks.len(), 1);
-    assert_eq!(blocks[0].content, "x");
+    assert_eq!(blocks[0].content, "x\n");
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn opener_at_list_item_content_column_opens_fence() {
 fn opener_one_column_past_list_item_content_column_uses_its_authored_base() {
     let blocks = code_blocks("- x\n   ```\n   y\n   ```");
     assert_eq!(blocks.len(), 1);
-    assert_eq!(blocks[0].content, "y");
+    assert_eq!(blocks[0].content, "y\n");
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn opener_at_block_quote_content_column_opens_fence() {
 fn indented_closer_is_code_content_not_a_delimiter() {
     let blocks = code_blocks("```\nx\n ```\ny\n```");
     assert_eq!(blocks.len(), 1);
-    assert_eq!(blocks[0].content, "x\n ```\ny");
+    assert_eq!(blocks[0].content, "x\n ```\ny\n");
 }
 
 #[test]

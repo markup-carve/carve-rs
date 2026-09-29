@@ -56,7 +56,7 @@ fn a_body_that_is_only_blank_lines_keeps_them() {
 fn control_the_shapes_that_never_had_a_trailing_blank() {
     assert_eq!(code("```\nx\n```\n"), "x\n");
     assert_eq!(code("```\nx\n"), "x\n");
-    assert_eq!(code("```\nx"), "x\n");
+    assert_eq!(code("```\nx"), "x");
     assert_eq!(code("```\nx\n\ny\n"), "x\n\ny\n");
 }
 

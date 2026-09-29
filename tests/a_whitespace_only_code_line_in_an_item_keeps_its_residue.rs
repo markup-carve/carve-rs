@@ -18,13 +18,13 @@ fn code(source: &str) -> String {
 #[test]
 fn the_residue_past_the_content_column_is_content() {
     for (source, content) in [
-        ("- ```\n  a\n    \n  b\n  ```\n", "a\n  \nb"),
-        ("- - ```\n    a\n       \n    b\n    ```\n", "a\n   \nb"),
+        ("- ```\n  a\n    \n  b\n  ```\n", "a\n  \nb\n"),
+        ("- - ```\n    a\n       \n    b\n    ```\n", "a\n   \nb\n"),
         (
             "- a\n  - ```\n    x\n       \n    y\n    ```\n",
-            "x\n   \ny",
+            "x\n   \ny\n",
         ),
-        ("> - ```\n>   a\n>     \n>   b\n>   ```\n", "a\n  \nb"),
+        ("> - ```\n>   a\n>     \n>   b\n>   ```\n", "a\n  \nb\n"),
     ] {
         assert_eq!(code(source), content, "{source:?}");
     }
@@ -32,8 +32,8 @@ fn the_residue_past_the_content_column_is_content() {
 
 #[test]
 fn a_line_no_wider_than_the_content_column_is_empty() {
-    assert_eq!(code("- ```\n  a\n  \n  b\n  ```\n"), "a\n\nb");
-    assert_eq!(code("- ```\n  a\n \n  b\n  ```\n"), "a\n\nb");
+    assert_eq!(code("- ```\n  a\n  \n  b\n  ```\n"), "a\n\nb\n");
+    assert_eq!(code("- ```\n  a\n \n  b\n  ```\n"), "a\n\nb\n");
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn an_imported_whitespace_line_is_a_fmt_fixed_point() {
     )
     .unwrap()
     .value;
-    assert_eq!(code(&written), "a\n \nb");
+    assert_eq!(code(&written), "a\n \nb\n");
     assert_eq!(to_carve(&written), written);
 }
 

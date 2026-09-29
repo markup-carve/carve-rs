@@ -39,7 +39,14 @@ fn shared_language_cases() {
             let source = html_to_carve(html, &options).unwrap().value;
             let reparsed: Value =
                 serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
-            assert_eq!(blocks(&reparsed), actual, "{} {mode:?}", case["name"]);
+            let mut canonical = actual.clone();
+            for block in &mut canonical {
+                let content = block["content"].as_str().unwrap();
+                if !content.is_empty() && !content.ends_with('\n') {
+                    block["content"] = Value::String(format!("{content}\n"));
+                }
+            }
+            assert_eq!(blocks(&reparsed), canonical, "{} {mode:?}", case["name"]);
         }
     }
 }

@@ -59,7 +59,7 @@ fn a_three_deep_ladder_owns_the_body_at_the_innermost_item() {
 fn a_quoted_item_fence_requires_marked_body_lines() {
     assert_eq!(
         flat("> - ``` x\ncode\n```\n"),
-        "<blockquote> <ul> <li> <pre><code class=\"language-x\"> </code></pre> </li> </ul> </blockquote> <p>code <code></code></p>",
+        "<blockquote> <ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> </blockquote> <p>code <code></code></p>",
     );
 }
 
@@ -161,7 +161,7 @@ fn a_single_level_lead_fence_is_unchanged() {
     // fence renders empty and the body leaks. Correct here, wrong only nested.
     assert_eq!(
         flat("- ``` x\ncode\n```\n"),
-        "<ul> <li> <pre><code class=\"language-x\"> </code></pre> </li> </ul> \
+        "<ul> <li> <pre><code class=\"language-x\"></code></pre> </li> </ul> \
          <p>code <code></code></p>",
     );
 }

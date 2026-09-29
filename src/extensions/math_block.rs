@@ -130,9 +130,10 @@ fn transform_blocks(
                 // Static-with-renderer: the build renderer's verbatim SSR output
                 // (display = true). Else (interactive, or static with no math
                 // renderer): the `\[…\]` source with the body HTML-escaped.
+                let content = code.content.strip_suffix('\n').unwrap_or(&code.content);
                 let body = match math_renderer {
-                    Some(build) => build(&code.content, true),
-                    None => format!("\\[{}\\]", crate::escape::escape_text(&code.content)),
+                    Some(build) => build(content, true),
+                    None => format!("\\[{}\\]", crate::escape::escape_text(content)),
                 };
                 let html = format!(
                     "<div class=\"{}\"{}>{}</div>",

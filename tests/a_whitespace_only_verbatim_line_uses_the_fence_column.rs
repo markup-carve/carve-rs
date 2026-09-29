@@ -25,55 +25,66 @@ fn inspect(node: &serde_json::Value, source_len: usize, content: &mut Vec<String
 #[test]
 fn whitespace_only_verbatim_lines_keep_the_residue_past_the_fence_column() {
     for (source, expected) in [
-        ("```\na\n  \nb\n```\n", "a\n  \nb"),
-        ("- item\n\n  ```\n  a\n  \n  b\n  ```\n", "a\n\nb"),
-        ("- item\n\n    ```\n    a\n    \n    b\n    ```\n", "a\n\nb"),
+        ("```\na\n  \nb\n```\n", "a\n  \nb\n"),
+        ("- item\n\n  ```\n  a\n  \n  b\n  ```\n", "a\n\nb\n"),
+        (
+            "- item\n\n    ```\n    a\n    \n    b\n    ```\n",
+            "a\n\nb\n",
+        ),
         (
             "- item\n\n    ```\n    a\n      \n    b\n    ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "x[^1]\n\n[^1]: note\n\n    ```\n    a\n      \n    b\n    ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "x[^1]\n\n[^1]: note\n\n      ```\n      a\n      \n      b\n      ```\n",
-            "a\n\nb",
+            "a\n\nb\n",
         ),
         (
             "x[^1]\n\n[^1]: note\n\n      ```\n      a\n        \n      b\n      ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "- - item\n\n    ```\n    a\n      \n    b\n    ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "- - item\n\n      ```\n      a\n      \n      b\n      ```\n",
-            "a\n\nb",
+            "a\n\nb\n",
         ),
         (
             "- - item\n\n      ```\n      a\n        \n      b\n      ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             ":: t\n:  d\n\n     ```\n     a\n       \n     b\n     ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "> - item\n>\n>     ```\n>     a\n>       \n>     b\n>     ```\n",
-            "a\n  \nb",
+            "a\n  \nb\n",
         ),
         (
             "- item\n\n    ```\n    a\n     \n    b\n    ```\n",
-            "a\n \nb",
+            "a\n \nb\n",
         ),
-        ("- item\n\n   ```\n   a\n\t\n   b\n   ```\n", "a\n \nb"),
-        ("- item\n\n    ```\n    a\n  \n    b\n    ```\n", "a\n\nb"),
+        ("- item\n\n   ```\n   a\n\t\n   b\n   ```\n", "a\n \nb\n"),
+        ("- item\n\n    ```\n    a\n  \n    b\n    ```\n", "a\n\nb\n"),
         ("- ```\n  a\n\t", "a\n  "),
-        (":: t\n:  d\n\n   ```\n   a\n\t\n   b\n   ```\n", "a\n \nb"),
+        (
+            ":: t\n:  d\n\n   ```\n   a\n\t\n   b\n   ```\n",
+            "a\n \nb\n",
+        ),
     ] {
         for input in [source.to_string(), to_carve(source)] {
+            let expected = if input == source {
+                expected.to_owned()
+            } else {
+                format!("{}\n", expected.strip_suffix('\n').unwrap_or(expected))
+            };
             for options in [Options::default(), Options::default().with_positions(true)] {
                 let json = to_json_with_options(&input, &options);
                 let mut content = Vec::new();
@@ -84,12 +95,12 @@ fn whitespace_only_verbatim_lines_keep_the_residue_past_the_fence_column() {
                 );
                 assert!(!content.is_empty(), "{input:?}");
                 assert!(
-                    content.iter().all(|code| code == expected),
+                    content.iter().all(|code| code == &expected),
                     "{input:?}: {content:?}"
                 );
             }
             assert!(
-                to_html(&input).contains(&format!("<pre><code>{expected}\n</code></pre>")),
+                to_html(&input).contains(&format!("<pre><code>{expected}</code></pre>")),
                 "{input:?}"
             );
         }

@@ -17,11 +17,11 @@ fn squash(s: &str) -> String {
 fn an_unterminated_fence_on_a_marker_line_opens_a_code_block() {
     assert_eq!(
         squash(&to_html("* ```")),
-        "<ul> <li> <pre><code> </code></pre> </li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> </ul>"
     );
     assert_eq!(
         squash(&to_html("- ```")),
-        "<ul> <li> <pre><code> </code></pre> </li> </ul>"
+        "<ul> <li> <pre><code></code></pre> </li> </ul>"
     );
 }
 
@@ -29,8 +29,7 @@ fn an_unterminated_fence_on_a_marker_line_opens_a_code_block() {
 fn the_three_containers_agree() {
     // The point of the fix: one construct, one reading. The top level and the
     // block quote were already right.
-    // The space is the code block's trailing newline, squashed.
-    let expected = "<pre><code> </code></pre>";
+    let expected = "<pre><code></code></pre>";
 
     assert_eq!(squash(&to_html("```")), expected);
     assert!(squash(&to_html("> ```")).contains(expected));

@@ -395,7 +395,7 @@ impl CodeGroup {
         let attrs = strip_selected(item.block.attrs.as_ref());
 
         format!(
-            "<pre{}><code{lang_attr}>{}\n</code></pre>\n",
+            "<pre{}><code{lang_attr}>{}</code></pre>\n",
             render_attrs(&attrs),
             ctx.escape_html(&item.block.content),
         )

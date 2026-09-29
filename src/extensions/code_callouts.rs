@@ -190,7 +190,7 @@ fn render_code(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
         .map(|l| format!(" class=\"language-{l}\""))
         .unwrap_or_default();
     format!(
-        "{pad}<pre{title}{attrs}><code{lang}>{body}\n</code></pre>",
+        "{pad}<pre{title}{attrs}><code{lang}>{body}</code></pre>",
         attrs = render_attrs(&c.attrs)
     )
 }

@@ -65,6 +65,6 @@ fn a_lone_unterminated_fence_still_opens_a_code_block() {
     assert_eq!(squash(&to_html("```\nx\n")), "<pre><code>x </code></pre>");
     assert_eq!(
         squash(&to_html("> ```\n")),
-        "<blockquote> <pre><code> </code></pre> </blockquote>"
+        "<blockquote> <pre><code></code></pre> </blockquote>"
     );
 }

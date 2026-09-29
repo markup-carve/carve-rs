@@ -108,6 +108,17 @@ pub fn conversion_diagnostics(
                         None,
                         "Carve source has no explicit section wrapper",
                     )),
+                    Some("code_block")
+                        if object.get("content").and_then(Value::as_str).is_some_and(
+                            |content| !content.is_empty() && !content.ends_with('\n'),
+                        ) =>
+                    {
+                        losses.push((
+                            ConversionDiagnosticCode::FieldUnspellable,
+                            Some("content"),
+                            "A closed code fence requires a final payload line ending",
+                        ));
+                    }
                     Some("math") => {
                         if object.contains_key("label") {
                             losses.push((

@@ -945,9 +945,7 @@ impl Builder {
                 lang,
                 title: None,
                 label: None,
-                // The parser hands the body with its closing newline; the node
-                // holds the body, and the writer supplies the fence lines.
-                content: content.strip_suffix('\n').unwrap_or(&content).to_string(),
+                content,
                 pos: None,
             })),
             // The frame has already been popped, so the raw block folds into

@@ -158,8 +158,7 @@ fn a_marker_line_that_leaves_something_open_is_untouched() {
         concat!(
             "<ol>\n",
             "  <li>\n",
-            "    <pre><code>\n",
-            "</code></pre>\n",
+            "    <pre><code></code></pre>\n",
             "  </li>\n",
             "</ol>\n",
             "<p>z</p>",

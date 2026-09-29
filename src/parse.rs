@@ -52,6 +52,34 @@ impl Drop for PlaceholderGuard {
     }
 }
 
+thread_local! {
+    static UNTERMINATED_SOURCE_LINE: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+/// Retain the physical EOF through container collection and nested parses.
+struct SourceEndingGuard(Option<usize>);
+
+impl SourceEndingGuard {
+    fn install(source: &str) -> Self {
+        let last = (!source.is_empty() && !source.ends_with('\n')).then(|| source.lines().count());
+        Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(last)))
+    }
+
+    fn fragment() -> Self {
+        Self(UNTERMINATED_SOURCE_LINE.with(|slot| slot.replace(None)))
+    }
+}
+
+impl Drop for SourceEndingGuard {
+    fn drop(&mut self) {
+        UNTERMINATED_SOURCE_LINE.with(|slot| slot.set(self.0));
+    }
+}
+
+fn needs_source_ending_map() -> bool {
+    UNTERMINATED_SOURCE_LINE.with(|slot| slot.get().is_some())
+}
+
 /// Two private-use code points `source` does not contain.
 ///
 /// The allocation itself is [`crate::sentinel_run`], shared with the site that
@@ -366,6 +394,7 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
 /// the wrong way.
 fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let _probing = ProbeGuard::enter();
+    let _source_ending = SourceEndingGuard::fragment();
     parse_blocks_with_options_at_level(source, options, true)
 }
 
@@ -521,6 +550,7 @@ fn parse_with_options_mode_and_index(
     let original = source;
     let normalized = normalize_source(source);
     let source = normalized.as_ref();
+    let _source_ending = SourceEndingGuard::install(source);
     // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
     // them. Every entry point funnels through here, and the guard restores the
     // previous pair on the way out, so a parse nested inside another one - a
@@ -3672,6 +3702,9 @@ fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    // Fragments have local line numbers and may omit collection separators.
+    // Only a whole-document entry point can identify physical EOF.
+    let _source_ending = SourceEndingGuard::fragment();
     parse_blocks_with_options_at_level(source, options, false)
 }
 
@@ -3718,9 +3751,8 @@ fn parse_blocks_with_options_at_level_into_reached(
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
 
-    // The line map serves two features now: the source-line render option, and
-    // PART 12 positions. Either one asking for it is enough.
-    let want_lines = options.source_lines || options.positions;
+    // Physical EOF needs line origins even when positions are not requested.
+    let want_lines = options.source_lines || options.positions || needs_source_ending_map();
     let line_map: Vec<Option<usize>> = if want_lines {
         (1..=lines.len()).map(Some).collect()
     } else {
@@ -4617,7 +4649,7 @@ fn parse_mapped_source_at_level_into(
     in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    if !options.source_lines && !options.positions {
+    if !options.source_lines && !options.positions && !needs_source_ending_map() {
         return parse_unpositioned_mapped_source(
             source,
             options,
@@ -4736,7 +4768,7 @@ fn parse_eof_closed_colon_ladder(
         if opens.len() > available {
             flattened_paragraphs(tail, None, options)
         } else {
-            let tail_source = tail.join("\n");
+            let tail_source = joined_source(tail);
             parse_blocks_with_options(&tail_source, options)
         }
     };
@@ -4949,6 +4981,7 @@ fn parse_capped_colon_body_into(
 ) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
+        && !needs_source_ending_map()
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
         return parse_unpositioned_colon_body(inner, options, pending);
@@ -7665,13 +7698,13 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
         .zip(open.label_end)
         .map(|(start, end)| open_line[start..end].to_string());
     let mut content_lines: Vec<String> = Vec::new();
-    let mut closed = false;
+    let mut last_payload_line = None;
     while let Some(line) = cur.peek() {
         if is_fence_close(line, open) {
             cur.consume();
-            closed = true;
             break;
         }
+        last_payload_line = cur.source_line(cur.pos);
         cur.consume();
         content_lines.push(line.to_string());
     }
@@ -7700,19 +7733,13 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             .map(|l| strip_lazy(l))
             .collect::<Vec<_>>()
             .join("\n");
-        // The same tie the raw branch above breaks, for the same reason: joining
-        // cannot tell zero payload lines from one blank one, and `code_content`
-        // is any text until the matching fence PRESERVED LITERALLY - zero lines
-        // preserved literally is zero characters, so a CLOSED empty fence
-        // publishes no newline while the one-blank spelling keeps its own
-        // (markup-carve/carve#2560, corpus 524).
-        //
-        // An UNTERMINATED fence still publishes one. It runs to the end of its
-        // container rather than to a closer it never met, and the spec's own
-        // reader appends the ending on that branch unconditionally - corpus 276
-        // pins it for a fence opened on a list-marker line whose body sits below
-        // the content column, which leaves the payload empty.
-        if content_lines.iter().all(String::is_empty) && (!content_lines.is_empty() || !closed) {
+        // Container collection can synthesize a final separator. The original
+        // line map distinguishes that separator from an authored payload break.
+        let unterminated = UNTERMINATED_SOURCE_LINE.with(|slot| {
+            slot.get()
+                .is_some_and(|last| last_payload_line == Some(last))
+        });
+        if !content_lines.is_empty() && !unterminated {
             content.push('\n');
         }
         BlockNode::CodeBlock(CodeBlock {
