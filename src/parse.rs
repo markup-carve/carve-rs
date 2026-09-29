@@ -12176,6 +12176,28 @@ fn trailing_comment_content(raw: &str) -> &str {
         .trim_end_matches([' ', '\t'])
 }
 
+/// Where the trailing `%%` comment whose text starts at `at` ends: the index of
+/// the line break, or of the closer of the innermost bracket run holding it,
+/// whichever comes first. `None` is a comment that reaches the end of the text
+/// with neither bound, which no closer can follow.
+///
+/// `CARVE-P9-041` gives the marker "all remaining characters up to the line
+/// break", and the line is bounded by the INLINE RUN hosting the marker: a
+/// bracket run ends at its own closer, so a comment inside one cannot take that
+/// `]` (markup-carve/carve#2576, markup-carve/carve-rs#2160). Were it able to,
+/// `::: note [a %% x]` would never complete its opener and the container would
+/// lose every child it holds.
+///
+/// Two scans read this rule - the inline loop and the emphasis closing scan -
+/// and one spelling is how a rule with two keeps half of itself.
+fn trailing_comment_end(bytes: &[u8], at: usize, run_close: Option<usize>) -> Option<usize> {
+    let newline = bytes[at..].iter().position(|&b| b == b'\n').map(|p| at + p);
+    match (newline, run_close) {
+        (Some(newline), Some(close)) => Some(newline.min(close)),
+        (bound, None) | (None, bound) => bound,
+    }
+}
+
 /// A container label without the trailing comment `CARVE-P9-041` consumes.
 ///
 /// The clause grants a trailing `%%` marker three properties in EVERY inline
@@ -18685,7 +18707,11 @@ fn parse_inline_context(
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
     let has_brackets = has_link_trigger || text.contains("![");
-    let bracket_matches = if has_brackets {
+    // A `%%` marker inside a bracket run needs the same matches to find the run's
+    // own end (CARVE-P9-041, markup-carve/carve#2576), and a bare `[a %% x]`
+    // opens no construct, so that consumer has its own gate.
+    let comment_needs_run_end = text.contains("%%") && text.contains('[');
+    let bracket_matches = if has_brackets || comment_needs_run_end {
         compute_bracket_matches(bytes)
     } else {
         Vec::new()
@@ -18731,6 +18757,10 @@ fn parse_inline_context(
             }
         }
     }
+    // The widened gate cannot reach a construct parser: every reader of `matches`
+    // and `openers` needs a `](`, `][`, `]{` or `![` at the position it examines,
+    // and `comment_needs_run_end` only fires where `has_brackets` found none of
+    // those anywhere in the text.
     let bounds = InlineBounds {
         matches: &bracket_matches,
         openers: &bracket_openers,
@@ -18747,9 +18777,26 @@ fn parse_inline_context(
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
     let mut buf_src_delta: isize = 0;
+    // The bracket runs open at this position, innermost last, as (content start,
+    // closer index). CARVE-P9-041 gives a trailing `%%` marker the rest of the
+    // line, and the line is bounded by the inline run hosting the marker: a
+    // bracket run ends at its own closer, so a comment inside one cannot take the
+    // `]` (markup-carve/carve#2576). The same bound names where the run BEGINS,
+    // which is where the clause asks for no separator before the marker.
+    let mut open_runs: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
+        while open_runs.last().is_some_and(|&(_, close)| i >= close) {
+            open_runs.pop();
+        }
+        if c == b'[' {
+            if let Some(&close) = bracket_matches.get(i) {
+                if close != NO_BRACKET_MATCH {
+                    open_runs.push((i + 1, close));
+                }
+            }
+        }
         if c == 0 {
             flush_text(
                 &mut out,
@@ -18890,11 +18937,17 @@ fn parse_inline_context(
             }
         }
 
-        // Trailing line comment: `%%` at start of line or after whitespace runs
-        // to end of line and is dropped (`text %% comment`).
+        // Trailing line comment: `%%` at the start of the inline run or after
+        // whitespace runs to the end of the line and is dropped
+        // (`text %% comment`). A bracket run open here is the host: the marker
+        // needs no separator at its start, and takes nothing past its closer.
+        let run_start = open_runs.last().map_or(0, |&(start, _)| start);
         if c == b'%'
             && bytes.get(i + 1) == Some(&b'%')
-            && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
+            && (i == run_start
+                || bytes[i - 1] == b' '
+                || bytes[i - 1] == b'\t'
+                || bytes[i - 1] == b'\n')
         {
             // Popping from the END keeps the buffer equal to the source it
             // started at - `flush_text` measures the span as
@@ -18905,10 +18958,8 @@ fn parse_inline_context(
                 buf.pop();
             }
             let comment_start = i;
-            match bytes[i..].iter().position(|&b| b == b'\n') {
-                Some(p) => i += p,
-                None => i = bytes.len(),
-            }
+            i = trailing_comment_end(bytes, i + 2, open_runs.last().map(|&(_, close)| close))
+                .unwrap_or(bytes.len());
             // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
             // `comment` node and carve-js and carve-php both emit one here, so a
             // tree that records what the author wrote cannot drop it
@@ -19495,6 +19546,7 @@ fn parse_inline_context(
             in_footnote,
             &mut emphasis_no_close,
             &bounds,
+            &open_runs,
             positions,
             base,
         ) {
@@ -21563,6 +21615,7 @@ fn match_emphasis(
     in_footnote: bool,
     no_close: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
+    open_runs: &[(usize, usize)],
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
 ) -> Option<(InlineNode, usize)> {
@@ -21662,7 +21715,7 @@ fn match_emphasis(
             return None;
         }
     }
-    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
+    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds, open_runs)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
     Some((
@@ -24246,6 +24299,7 @@ fn cached_find_emphasis_close(
     delim: u8,
     memo: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
+    open_runs: &[(usize, usize)],
 ) -> Option<usize> {
     let idx = emphasis_delim_index(delim);
     if memo.failed[idx].as_ref().is_some_and(|f| f[from]) {
@@ -24259,6 +24313,7 @@ fn cached_find_emphasis_close(
         delim,
         memo,
         bounds,
+        open_runs,
         failed.as_deref(),
         &mut visited,
     );
@@ -24272,15 +24327,25 @@ fn cached_find_emphasis_close(
     close
 }
 
+#[allow(clippy::too_many_arguments)]
 fn find_emphasis_close(
     bytes: &[u8],
     from: usize,
     delim: u8,
     memo: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
+    open_runs: &[(usize, usize)],
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
 ) -> Option<usize> {
+    // The runs still open at `from`, then whatever this scan opens itself. A
+    // `%%` marker inside one ends at its closer, so the delimiter after that
+    // closer is still reachable (`*[a %% x]*`). See `trailing_comment_end`.
+    let mut runs: Vec<(usize, usize)> = open_runs
+        .iter()
+        .copied()
+        .filter(|&(_, close)| close > from)
+        .collect();
     let mut j = from;
     while j < bytes.len() {
         if failed.is_some_and(|f| f[j]) {
@@ -24288,6 +24353,16 @@ fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
+        while runs.last().is_some_and(|&(_, close)| j >= close) {
+            runs.pop();
+        }
+        if ch == b'[' {
+            if let Some(&close) = bounds.matches.get(j) {
+                if close != NO_BRACKET_MATCH {
+                    runs.push((j + 1, close));
+                }
+            }
+        }
         if ch == b'\\' && j + 1 < bytes.len() {
             j += 2;
             continue;
@@ -24347,9 +24422,12 @@ fn find_emphasis_close(
                 continue;
             }
         }
-        if ch == b'%' && bytes.get(j + 1) == Some(&b'%') && (j == 0 || is_carve_ws(bytes[j - 1])) {
-            let newline = bytes[j + 2..].iter().position(|&byte| byte == b'\n')?;
-            j += newline + 3;
+        let run = runs.last().copied();
+        if ch == b'%'
+            && bytes.get(j + 1) == Some(&b'%')
+            && (j == run.map_or(0, |(start, _)| start) || is_carve_ws(bytes[j - 1]))
+        {
+            j = trailing_comment_end(bytes, j + 2, run.map(|(_, close)| close))?;
             continue;
         }
         // A raw inline's format block is not a braced highlight: the main
