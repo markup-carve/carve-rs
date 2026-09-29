@@ -648,7 +648,7 @@ pub trait CarveExtension {
     /// render [`Options`] AND the *effective* [`Mode`] for the actual target
     /// format. An extension that emits its final HTML here (the carve-rs
     /// transform model for `FencedRender` / `MathBlock`) branches on
-    /// `ctx.mode()` / `ctx.is_static()` and consults `ctx.options().renderers`.
+    /// `ctx.mode()` / `ctx.is_static()` and consults `ctx.options.renderers`.
     ///
     /// The effective mode is `Interactive` for the Markdown / plain-text / ANSI
     /// renderers regardless of `Options::mode` - static rendering is an
@@ -821,7 +821,10 @@ pub(crate) fn directive_tokens(
     if let Some(label) = &node.label {
         tokens.push(format!(
             "{pad}<p class=\"div-label\">{}</p>",
-            escape_text(label)
+            escape_text(crate::parse::label_without_trailing_comment(
+                label,
+                ctx.options,
+            ))
         ));
     }
     tokens

@@ -130,7 +130,7 @@ impl CarveExtension for Spoiler {
             let label_line = match &node.label {
                 Some(l) => format!(
                     "{inner_pad}<p class=\"div-label\">{}</p>\n",
-                    ctx.escape_html(l)
+                    ctx.escape_html(crate::parse::label_without_trailing_comment(l, ctx.options))
                 ),
                 None => String::new(),
             };

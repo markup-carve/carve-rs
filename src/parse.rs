@@ -12167,6 +12167,67 @@ fn is_flush_line_comment(line: &str) -> bool {
     line.starts_with("%%") && detect_comment_fence_line(line).is_none()
 }
 
+/// The text of a trailing `%%` comment: one separating space or tab off the
+/// front, trailing spaces and tabs off the back.
+fn trailing_comment_content(raw: &str) -> &str {
+    raw.strip_prefix(' ')
+        .or_else(|| raw.strip_prefix('\t'))
+        .unwrap_or(raw)
+        .trim_end_matches([' ', '\t'])
+}
+
+/// A container label without the trailing comment `CARVE-P9-041` consumes.
+///
+/// The clause grants a trailing `%%` marker three properties in EVERY inline
+/// host: a tab separates as a space does, a marker that starts the inline run
+/// needs no separator before it, and the marker, the rest of the line and the
+/// whole separating run before it produce no output. A `[label]` is a leaf
+/// host - its run begins mid-line, so nothing at the block layer covers a `%%`
+/// there (markup-carve/carve#2552, merged as carve#2562).
+///
+/// A label is carried as authored text rather than as a parsed inline run, so
+/// it never reaches the loop that reads this rule for every other host. What it
+/// must NOT do is read the rule a second time from scratch. Three rounds of
+/// review found three more constructs whose body may spell a `%%` that is not a
+/// marker - a backtick run, a delimited comment `{% ... %}`, an editorial
+/// comment `{# ... #}` - and each one missed DELETES visible label text. The
+/// list is not the kind of thing to get right by enumeration.
+///
+/// So the run itself arbitrates. The label is parsed as inlines, which is the
+/// one reader that knows what is opaque to a marker; if that yields no trailing
+/// comment the label is returned whole. Only the CUT has to be recovered, and a
+/// candidate `%%` is confirmed by whether the text after it normalizes to the
+/// content the parser recorded. A non-delimited comment reaches the end of its
+/// line and a label is one line, so there is at most one to find.
+///
+/// If a label ever becomes an inline run this disappears, which is open and
+/// unruled as markup-carve/carve#2572: carve-js publishes the authored text
+/// here exactly as this engine does, and only the oracle renders the run.
+pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Options<'_>) -> &'a str {
+    let Some(content) = parse_inline_with_options(label, options)
+        .into_iter()
+        .find_map(|node| match node {
+            InlineNode::Comment(comment) if !comment.delimited => Some(comment.content),
+            _ => None,
+        })
+    else {
+        return label;
+    };
+    let bytes = label.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] != b'%' || bytes.get(i + 1) != Some(&b'%') {
+            continue;
+        }
+        if !(i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t') {
+            continue;
+        }
+        if trailing_comment_content(&label[i + 2..]) == content {
+            return label[..i].trim_end_matches([' ', '\t']);
+        }
+    }
+    label
+}
+
 /// Does a flush-left comment at THIS frame's column 0 leave the item open?
 ///
 /// §24 C3's comment exception names both spellings in one breath - the `%%`
@@ -18863,12 +18924,7 @@ fn parse_inline_context(
                 &mut buf_src_delta,
             );
             let raw = String::from_utf8_lossy(&bytes[comment_start + 2..i]);
-            let content = raw
-                .strip_prefix(' ')
-                .or_else(|| raw.strip_prefix('\t'))
-                .unwrap_or(&raw)
-                .trim_end_matches([' ', '\t'])
-                .to_string();
+            let content = trailing_comment_content(&raw).to_string();
             out.push(InlineNode::Comment(Comment {
                 block: false,
                 delimited: false,

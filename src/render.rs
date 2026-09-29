@@ -13,7 +13,7 @@ use crate::escape::{
 use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
 };
-use crate::parse::{label_key, unwrap_nested_anchors};
+use crate::parse::{label_key, label_without_trailing_comment, unwrap_nested_anchors};
 use crate::table_spans::{
     colspan_target, compute_colspans, compute_rowspans, consumed_rowspan_cols,
 };
@@ -1253,7 +1253,9 @@ fn render_footnotes_section(
         }
         if let Some(label) = label {
             out.push_str("\n  <p class=\"div-label\">");
-            out.push_str(&escape_text(&label));
+            out.push_str(&escape_text(label_without_trailing_comment(
+                &label, options,
+            )));
             out.push_str("</p>");
         }
     } else {
@@ -2865,7 +2867,7 @@ fn render_named_container(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"div-label\">");
-        out.push_str(&escape_text(label));
+        out.push_str(&escape_text(label_without_trailing_comment(label, options)));
         out.push_str("</p>");
     }
     let rendered = rendered_children(children, level + 1, options, state);
@@ -2935,7 +2937,7 @@ fn render_div(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"div-label\">");
-        out.push_str(&escape_text(label));
+        out.push_str(&escape_text(label_without_trailing_comment(label, options)));
         out.push_str("</p>");
     }
     let children = rendered_children(&d.children, level + 1, options, state);
