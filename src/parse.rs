@@ -5024,18 +5024,6 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         // below instead of swallowing to EOF.
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
             let span_start = cur.pos;
-            // A body line's indentation is measured FROM ITS FENCE, not from
-            // column 0. Stored absolute, a fence that sits at a column - which
-            // it may, since #585 keeps a below-content-column span's own
-            // columns - hands the writer a body already carrying the fence's
-            // indent, and the writer adds the fence column on top: corpus 186
-            // came back with `x` one column deeper than carve-js and carve-php
-            // write it (carve-rs#601, markup-carve/carve#653).
-            //
-            // The strip is capped at each line's own indent, so a body line
-            // shallower than its fence keeps what it has rather than eating
-            // into its text.
-            let fence_indent = indent_columns(line);
             let mut content = Vec::new();
             if !open.tail.is_empty() {
                 content.push(open.tail);
@@ -5046,11 +5034,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
                 if is_comment_fence_close_any_column(line, open.fence_len) {
                     break;
                 }
-                content.push(slice_columns(
-                    line,
-                    fence_indent.min(indent_columns(line)),
-                    false,
-                ));
+                content.push(line.to_string());
             }
 
             // A comment is a LEAF, so its span begins at the `%` markup, not in
@@ -5871,7 +5855,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                     break;
                 }
             }
-        } else if let Some(open) = comment {
+        } else if let Some(ref open) = comment {
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
                 if !is_blank_line(candidate) && indent_columns(candidate) < base {
                     break;
@@ -6040,7 +6024,15 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }
             }
         }
+        let comment_close = comment.and_then(|open| {
+            lines.iter().enumerate().skip(i + 1).find_map(|(j, line)| {
+                is_comment_fence_close_any_column(line, open.fence_len).then_some(j)
+            })
+        });
         for (j, line) in lines.iter_mut().enumerate().take(end + 1).skip(i) {
+            if comment_close.is_some_and(|close| j > i && j < close) {
+                continue;
+            }
             if is_blank_line(line) {
                 if code.is_some() {
                     let (residue, consumed, synthetic) = slice_columns_mapped(line, base, true);
@@ -12881,7 +12873,8 @@ fn collect_indented_block_mapped_with_columns(
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
-        let fence_owns_flush_left = (fence.is_some() && line.starts_with(LAZY))
+        let fence_owns_flush_left = ((fence.is_some() || comment_fence.is_some())
+            && line.starts_with(LAZY))
             || (folded_code_span
                 && folded_code_paragraph_open
                 && (!is_list_marker(line) || indent > parent_indent)
@@ -13138,8 +13131,18 @@ fn collect_indented_block_mapped_with_columns(
             *fence = None;
         }
         let lazy_code_line = folded_code_span && indent < folded_code_column;
+        let comment_payload = was_in_comment_span && comment_fence.is_some();
+        let payload_line = if comment_payload {
+            strip_lazy(line)
+        } else {
+            line
+        };
+        let framed_comment_payload = comment_payload
+            && (line.starts_with(LAZY)
+                || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
         let stripped = match (in_comment_span, comment_fence_strip) {
             _ if lazy_code_line => indent,
+            (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
             (true, Some(span_strip)) => span_strip.min(indent),
             _ if stranded_plus_is_lazy_text => indent.saturating_sub(1),
             _ => dedent_for_collection(line, indent, strip_cols),
@@ -13147,8 +13150,8 @@ fn collect_indented_block_mapped_with_columns(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let (mut sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
-        if lazy_code_line && !sliced.starts_with(LAZY) {
+        let (mut sliced, consumed, synthetic) = slice_columns_mapped(payload_line, stripped, true);
+        if (lazy_code_line || framed_comment_payload) && !sliced.starts_with(LAZY) {
             sliced.insert_str(0, LAZY);
         }
         definition_ended_paragraph = is_collected_definition_placeholder(&sliced);

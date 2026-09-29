@@ -1612,3 +1612,6 @@ mod an_empty_raw_payload_is_written_back_empty;
 mod djot_word_attributes;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
+
+#[path = "../comment_payload_columns.rs"]
+mod comment_payload_columns;

@@ -1,0 +1,192 @@
+[
+  {
+    "name": "document",
+    "source": "  %%%\n  x\n%%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "deeper document",
+    "source": "  %%%\n    x\n  %%%\n",
+    "expected": [
+      "    x"
+    ]
+  },
+  {
+    "name": "shallower document",
+    "source": "  %%%\n x\n%%%\n",
+    "expected": [
+      " x"
+    ]
+  },
+  {
+    "name": "document tabs",
+    "source": "\t%%%\n\tx\n%%%\n",
+    "expected": [
+      "\tx"
+    ]
+  },
+  {
+    "name": "description",
+    "source": ":: t\n:  head\n\n     %%%\n     x\n%%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "description deeper",
+    "source": ":: t\n:  head\n\n     %%%\n       x\n  %%%\n",
+    "expected": [
+      "    x"
+    ]
+  },
+  {
+    "name": "item",
+    "source": "- head\n\n    %%%\n    x\n%%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "ordered below",
+    "source": "1. item\n  %%%\n  hidden\n   %%%\ntail\n",
+    "expected": [
+      "hidden"
+    ]
+  },
+  {
+    "name": "unordered below",
+    "source": "- a\n %%% n\n x\n %%%\n tail\n",
+    "expected": [
+      "n\nx"
+    ]
+  },
+  {
+    "name": "below with deeper payload",
+    "source": "- a\n %%% n\n    x\n %%%\n tail\n",
+    "expected": [
+      "n\n  x"
+    ]
+  },
+  {
+    "name": "partial tab",
+    "source": "- a\n %%% n\n\tx\n %%%\n tail\n",
+    "expected": [
+      "n\n  x"
+    ]
+  },
+  {
+    "name": "folded term",
+    "source": ":: term\n  %%%\n  x\n  %%%\n:  def\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "quoted",
+    "source": ">   %%%\n>   x\n> %%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "nested item",
+    "source": "- outer\n  - head\n\n      %%%\n      x\n    %%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "note",
+    "source": "see[^f]\n\n[^f]: head\n\n    %%%\n    x\n  %%%\n",
+    "expected": [
+      "  x"
+    ]
+  },
+  {
+    "name": "whitespace payload",
+    "source": "  %%%\n \n  x  \n   \n%%%\n",
+    "expected": [
+      " \n  x  \n   "
+    ]
+  },
+  {
+    "name": "two spans",
+    "source": "- head\n\n    %%%\n    a\n%%%\n    %%%\n    b\n    %%%\n\n  tail\n",
+    "expected": [
+      "  a",
+      "  b"
+    ]
+  },
+  {
+    "name": "term percent payload %%",
+    "source": ":: t\n  %%%\n%%\n  %%%\n:  d\n",
+    "expected": [
+      "%%"
+    ]
+  },
+  {
+    "name": "term percent payload %% x",
+    "source": ":: t\n  %%%\n%% x\n  %%%\n:  d\n",
+    "expected": [
+      "%% x"
+    ]
+  },
+  {
+    "name": "term percent payload %%%%",
+    "source": ":: t\n  %%%\n%%%%\n  %%%\n:  d\n",
+    "expected": [
+      "%%%%"
+    ]
+  },
+  {
+    "name": "nested term",
+    "source": "- a\n  :: t\n    %%%\n  x\n    %%%\n  :  d\n",
+    "expected": [
+      "x"
+    ]
+  },
+  {
+    "name": "nested below unordered",
+    "source": "- a\n  - b\n %%%\n  x\n %%%\n",
+    "expected": [
+      "x"
+    ]
+  },
+  {
+    "name": "nested below ordered",
+    "source": "1. a\n    - b\n  %%%\n    x\n  %%%\n",
+    "expected": [
+      "x"
+    ]
+  },
+  {
+    "name": "nested block-shaped payload # h",
+    "source": "- a\n  - b\n %%%\n # h\n %%%\n",
+    "expected": [
+      "# h"
+    ]
+  },
+  {
+    "name": "nested block-shaped payload - x",
+    "source": "- a\n  - b\n %%%\n - x\n %%%\n",
+    "expected": [
+      "- x"
+    ]
+  },
+  {
+    "name": "nested block-shaped payload > q",
+    "source": "- a\n  - b\n %%%\n > q\n %%%\n",
+    "expected": [
+      "> q"
+    ]
+  },
+  {
+    "name": "loose nested term",
+    "source": "- a\n\n  :: t\n    %%%\n  x\n    %%%\n  :  d\n",
+    "expected": [
+      "x"
+    ]
+  }
+]
