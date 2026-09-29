@@ -14,7 +14,11 @@ fn fence_languages_survive_import() {
             "``` f&ouml;&ouml;\nfoo\n```\n",
             "<pre><code>foo\n</code></pre>",
         ),
-        ("````;\n````\n", "<pre><code>\n</code></pre>"),
+        // A closed fence with no payload line, which imports to `` ``` `` plus
+        // its closer and publishes no character - markup-carve/carve#2560 with
+        // corpus 524, read here as carve-rs#2162. It is also what the Markdown
+        // source says, so the import got closer to it.
+        ("````;\n````\n", "<pre><code></code></pre>"),
         (
             "```=html\n<script>x</script>\n```",
             "<pre><code>&lt;script&gt;x&lt;/script&gt;\n</code></pre>",

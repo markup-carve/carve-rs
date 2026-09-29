@@ -7582,9 +7582,11 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
         .zip(open.label_end)
         .map(|(start, end)| open_line[start..end].to_string());
     let mut content_lines: Vec<String> = Vec::new();
+    let mut closed = false;
     while let Some(line) = cur.peek() {
         if is_fence_close(line, open) {
             cur.consume();
+            closed = true;
             break;
         }
         cur.consume();
@@ -7610,16 +7612,32 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             pos,
         })
     } else {
+        let mut content = content_lines
+            .iter()
+            .map(|l| strip_lazy(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        // The same tie the raw branch above breaks, for the same reason: joining
+        // cannot tell zero payload lines from one blank one, and `code_content`
+        // is any text until the matching fence PRESERVED LITERALLY - zero lines
+        // preserved literally is zero characters, so a CLOSED empty fence
+        // publishes no newline while the one-blank spelling keeps its own
+        // (markup-carve/carve#2560, corpus 524).
+        //
+        // An UNTERMINATED fence still publishes one. It runs to the end of its
+        // container rather than to a closer it never met, and the spec's own
+        // reader appends the ending on that branch unconditionally - corpus 276
+        // pins it for a fence opened on a list-marker line whose body sits below
+        // the content column, which leaves the payload empty.
+        if content_lines.iter().all(String::is_empty) && (!content_lines.is_empty() || !closed) {
+            content.push('\n');
+        }
         BlockNode::CodeBlock(CodeBlock {
             attrs: None,
             lang,
             title,
             label,
-            content: content_lines
-                .iter()
-                .map(|l| strip_lazy(l))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            content,
             pos,
         })
     }

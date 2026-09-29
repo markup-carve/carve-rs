@@ -412,14 +412,16 @@ fn render_layout_body(
                 out.escaped_text(content);
                 out.push('\n');
             }
-            // AN EMPTY PAYLOAD IS STILL A LINE. The loop above emits one newline
-            // per body line, so with no body lines it emits nothing at all and an
-            // empty fence came back `<pre><code></code></pre>` where the
-            // authoritative pipeline renders `<pre><code>\n</code></pre>` - the
-            // shape corpus 276 pins for an empty code block.
-            if close == i + 1 {
-                out.push('\n');
-            }
+            // AN EMPTY PAYLOAD IS NO LINE. The loop above emits one newline per
+            // body line, so with no body lines it emits nothing - which is what
+            // `code_content` preserved literally comes to, and what corpus 524
+            // pins (markup-carve/carve#2560, carve-rs#2162). The repair that used
+            // to add a newline here read an empty payload as one empty line, and
+            // that made the two spellings converge.
+            //
+            // This branch only reaches a CLOSED fence: the scanner hands an
+            // unterminated one back to the authoritative pipeline, which is where
+            // the unterminated fence's own ending is added.
             out.push_str("</code></pre>");
             accepted.record(BlockLayout {
                 event: LayoutEvent::CodeFence,
@@ -1164,14 +1166,17 @@ mod layout_html_tests {
     }
 
     #[test]
-    fn an_empty_fence_payload_still_emits_its_line() {
-        // Corpus 276 pins `<pre><code>\n</code></pre>` for an empty code block.
-        // The body loop emits one newline per line, so with no lines it emitted
-        // none and dropped the payload's only line.
+    fn an_empty_fence_payload_emits_no_line() {
+        // markup-carve/carve#2560 with corpus 524, read here as carve-rs#2162:
+        // `code_content` is any text until the matching fence preserved
+        // literally, and zero lines preserved literally is zero characters. The
+        // body loop emits one newline per line, so with no lines it emits none,
+        // which is exactly right - a repair used to add one here and made the
+        // zero-line and one-blank spellings converge.
         //
-        // Path against path, for the same reason as above. Here the scanner DOES
-        // still claim the document, so this also pins that the repair kept it on
-        // the fast path instead of bailing out of it.
+        // Path against path, for the same reason as above: the scanner still
+        // claims each of these, so this pins the reading AND that it stayed on
+        // the fast path rather than bailing out of it.
         for source in [
             "```\n```\n",
             "```rs\n```\n",
@@ -1188,15 +1193,17 @@ mod layout_html_tests {
                 "source:\n{source}"
             );
         }
-        assert_eq!(crate::to_html("```\n```\n"), "<pre><code>\n</code></pre>");
-        // The near miss for THIS repair, and the reason the condition is
-        // `close == i + 1` and nothing wider: a fence holding ONE blank body line
-        // already emits that newline through the loop above, and renders
-        // identically to the empty one. The two shapes converge - which is the
-        // point, an empty payload IS one empty line - so the added newline must
-        // fire only when the loop wrote nothing at all. Any wider condition
-        // doubles it here.
+        assert_eq!(crate::to_html("```\n```\n"), "<pre><code></code></pre>");
+        // The shape that must NOT lose its newline, and the reason the two are
+        // asserted side by side: ONE blank body line is a line, and the loop
+        // above writes its ending. The pair is what says the spellings diverge
+        // rather than one of them merely having moved.
         assert_eq!(crate::to_html("```\n\n```\n"), "<pre><code>\n</code></pre>");
+        // An UNTERMINATED fence keeps its ending even with no body line: it runs
+        // to the end of its container instead of to a closer, which corpus 276
+        // pins. The scanner hands one back, so this reads the authoritative path.
+        assert!(try_layout_html("- ```\nx\n```\n", &Options::default()).is_none());
+        assert!(crate::to_html("- ```\nx\n```\n").contains("<pre><code>\n</code></pre>"));
     }
 
     #[test]

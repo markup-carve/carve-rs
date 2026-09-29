@@ -2076,18 +2076,28 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 }
                 _ => code.attrs.clone(),
             };
-            // NOT given the raw block's treatment below, deliberately. A code
-            // fence's zero-line and one-blank payloads BOTH parse to an empty
-            // `content`, so the writer has nothing to tell them apart with: the
-            // separator spells one of the two and dropping it spells the other.
-            // The distinction has to reach the AST first, which is carve-rs#2162.
-            with_block_attrs(
-                &attrs,
-                &format!(
-                    "{fence}{info}\n{}\n{fence}",
-                    protect_verbatim(session, &code.content)
-                ),
-            )
+            // The payload's own lines, then the ending after its LAST line. An
+            // EMPTY payload has no line and writes none: carve-rs#2162 gave the
+            // parser the zero-line and one-blank distinction, so the writer can
+            // spell both now (markup-carve/carve#2560).
+            //
+            // An all-blank payload carries its trailing newline IN `content`,
+            // which is how it says how many lines it has. `protect_verbatim`
+            // stages one sentinel per line and counts them by splitting, so it is
+            // handed the payload WITHOUT that ending or it stages a line too many.
+            // Staging still happens: a blank line bypassing it is what
+            // carve-rs#2168 is on the raw side.
+            let payload = if code.content.is_empty() {
+                String::new()
+            } else {
+                let lines = code
+                    .content
+                    .strip_suffix('\n')
+                    .filter(|_| !crate::ast::code_payload_needs_ending(&code.content))
+                    .unwrap_or(&code.content);
+                format!("{}\n", protect_verbatim(session, lines))
+            };
+            with_block_attrs(&attrs, &format!("{fence}{info}\n{payload}{fence}"))
         }
         BlockNode::BlockQuote(quote) => {
             // Written back in the spelling it was read in

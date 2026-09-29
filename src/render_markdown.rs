@@ -351,7 +351,16 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
                     info.push_str(&format!(" [{cleaned}]"));
                 }
             }
-            format!("{}{}\n{}\n{}\n\n", fence, info, content, fence)
+            // The payload's own ending, which the two self-spelling shapes
+            // already carry (carve-rs#2162). Writing one unconditionally gave an
+            // unterminated empty fence two blank payload lines where the document
+            // has one.
+            let ending = if crate::ast::code_payload_needs_ending(&content) {
+                "\n"
+            } else {
+                ""
+            };
+            format!("{fence}{info}\n{content}{ending}{fence}\n\n")
         }
         BlockNode::BlockQuote(quote) => {
             let outer = ctx.previous_list.take();
