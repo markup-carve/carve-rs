@@ -4108,6 +4108,9 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     type Open = ((usize, usize), usize);
     /// One bracket in document order: its key, its host, and whether it opens.
     type Bracket = ((usize, usize), usize, bool);
+    /// One reading of a run: its pairs in closing order, then the openers left
+    /// unclosed at the end.
+    type Reading = (Vec<(Open, Open)>, Vec<(usize, usize)>);
 
     fn walk(
         nodes: &[InlineNode],
@@ -4180,10 +4183,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
 
     /// Pair the sequence, leaving out the openers `escaped` names. Reports each
     /// pair in closing order and the openers still unclosed at the end.
-    fn resolve(
-        seq: &[Bracket],
-        escaped: &HashSet<(usize, usize)>,
-    ) -> (Vec<(Open, Open)>, Vec<(usize, usize)>) {
+    fn resolve(seq: &[Bracket], escaped: &HashSet<(usize, usize)>) -> Reading {
         let mut open: Vec<Open> = Vec::new();
         let mut pairs = Vec::new();
         for &(key, host, opens) in seq {
