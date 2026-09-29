@@ -2076,6 +2076,11 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 }
                 _ => code.attrs.clone(),
             };
+            // NOT given the raw block's treatment below, deliberately. A code
+            // fence's zero-line and one-blank payloads BOTH parse to an empty
+            // `content`, so the writer has nothing to tell them apart with: the
+            // separator spells one of the two and dropping it spells the other.
+            // The distinction has to reach the AST first, which is carve-rs#2162.
             with_block_attrs(
                 &attrs,
                 &format!(
@@ -2280,13 +2285,23 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            let all_blank = !raw.content.is_empty() && raw.content.chars().all(|c| c == '\n');
-            let body = if all_blank {
+            // The separator spells the end of the payload's LAST line, so a
+            // payload with no line to end takes none. A payload of blank lines
+            // already carries its own newlines and an EMPTY one carries nothing,
+            // which is the same answer for the same reason - and `chars().all`
+            // is true of the empty string, so it is one condition.
+            //
+            // Splitting them wrote a newline for the empty payload, which turned
+            // a zero-line payload into a one-blank one. Those are different
+            // blocks since markup-carve/carve#2574 (carve-rs#2159), so the round
+            // trip changed the document (carve-rs#2166).
+            let literal = raw.content.chars().all(|c| c == '\n');
+            let body = if literal {
                 raw.content.clone()
             } else {
                 protect_verbatim(session, &raw.content)
             };
-            let separator = if all_blank { "" } else { "\n" };
+            let separator = if literal { "" } else { "\n" };
             format!(
                 "{fence}={}\n{}{separator}{fence}",
                 escape_format(&raw.format),
