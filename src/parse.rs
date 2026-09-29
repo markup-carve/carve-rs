@@ -8218,8 +8218,16 @@ struct NestedFenceReplay {
 #[derive(Default)]
 struct NestedLevel {
     hosts: Vec<(usize, usize, bool)>,
-    host_fence: Option<(FenceOpen, usize)>,
-    pending: Option<(FenceOpen, usize)>,
+    /// The fence a quoted host holds open, as (opener, the host's content column,
+    /// the opener's own column). The two columns differ when the opener is
+    /// SHIFTED past its host, and a closer at either one ends it.
+    ///
+    /// A shifted opener used to be parked in a `pending` slot instead, which left
+    /// the host's paragraph open over the payload, so a flush-left line folded
+    /// into it (carve-rs#2170). Section 24 C3 asks a processor to NAME such an
+    /// opener rather than refuse it, so the host holds its payload exactly as it
+    /// holds a canonical one. Ported from carve-js#2356, which landed first.
+    host_fence: Option<(FenceOpen, usize, usize)>,
     fence: Option<FenceOpen>,
     comment: Option<usize>,
     para: bool,
@@ -8251,12 +8259,15 @@ impl NestedFenceReplay {
         }
         let mut level = 0;
         loop {
-            if let Some((open, column)) = chain[level].host_fence {
-                if !is_blank_line(text) && indent_columns(text) < column {
+            if let Some((open, floor, opener)) = chain[level].host_fence {
+                if !is_blank_line(text) && indent_columns(text) < floor {
                     chain[level].host_fence = None;
                 } else {
-                    if indent_columns(text) == column
-                        && is_fence_close(trim_ascii_start(text), open)
+                    // A closer at the host's column or at the opener's own ends
+                    // it, which is what lets an over-indented opener consume a
+                    // dedented closer. A column BETWEEN the two closes nothing.
+                    let at = indent_columns(text);
+                    if (at == floor || at == opener) && is_fence_close(trim_ascii_start(text), open)
                     {
                         chain[level].host_fence = None;
                     }
@@ -8285,7 +8296,6 @@ impl NestedFenceReplay {
             }
             if let Some(rest) = strip_blockquote_prefix(text) {
                 chain[level].hosts.clear();
-                chain[level].pending = None;
                 chain[level].para = false;
                 chain[level].by_fence = false;
                 if chain.len() == level + 1 {
@@ -8341,29 +8351,23 @@ impl NestedFenceReplay {
                     break;
                 }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
-                if here.pending.is_some_and(|(_, col)| col > floor) {
-                    here.pending = None;
-                }
                 if let Some(open) = detect_fence_open(inner).filter(|_| floor > 0) {
-                    let paired = here.pending.is_some_and(|(pending, _)| {
-                        pending.fence_char == open.fence_char && open.fence_len >= pending.fence_len
-                    });
-                    if paired {
-                        here.pending = None;
-                    } else if col == floor
-                        && (block_start
-                            || !here.para
-                            || closer_ahead(lines, at, level, |l| {
-                                indent_columns(l) == floor
-                                    && is_fence_close(trim_ascii_start(l), open)
-                            }))
+                    // The host holds the fence whether the opener sits AT its
+                    // content column or past it. A fence after an open paragraph
+                    // still needs a closer ahead (section 10), and that closer may
+                    // be at either column.
+                    if block_start
+                        || !here.para
+                        || closer_ahead(lines, at, level, |l| {
+                            let seen = indent_columns(l);
+                            (seen == floor || seen == col)
+                                && is_fence_close(trim_ascii_start(l), open)
+                        })
                     {
-                        here.host_fence = Some((open, floor));
+                        here.host_fence = Some((open, floor, col));
                         here.para = false;
                         here.by_fence = true;
                         return;
-                    } else if col != floor {
-                        here.pending = Some((open, floor));
                     }
                 }
             }

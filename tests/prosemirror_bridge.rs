@@ -1504,8 +1504,16 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // so no new cause appears with this pin. 1503/476 becomes 1613/484, and the
     // strict side is pinned at what it measures rather than at a floor that had
     // lagged it by 21.
-    const STRICT: usize = 1613;
-    const LOSSY: usize = 484;
+    //
+    // carve-rs#2170 moves ONE document, and the engine rather than the pin did it:
+    // corpus 519-2 leaves the strict set for the reported one. Its correct reading
+    // ends the quoted host's fence at the flush-left line, which leaves a folded
+    // line behind it, and a folded line is a `soft_break` - the kind hundreds of
+    // documents here already carry, with nothing dropped. Classifying all 2097 at
+    // both readings found no other document moving, so 1613/484 becomes 1612/485
+    // and the pair still covers the corpus exactly.
+    const STRICT: usize = 1612;
+    const LOSSY: usize = 485;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
