@@ -18,7 +18,7 @@ which the published crate does not carry.
 - A display equation carries its label and its number (#1862).
 - `RenderLoss.format` is optional, and a checked render result carries totals by loss code (#1859, #1868).
 - `Document` implements `Drop`, so field moves, by-value destructuring and struct update syntax no longer compile: borrow the fields, or `std::mem::take` a mutable document (#1887, #1916).
-- The raw-keep report names a non-handler injection sink `injection-sink`, the spelling the spec and the other two engines use (#1881, #1883).
+- The raw-keep report names a non-handler injection sink `injection-sink`, the spelling the spec and the other two engines use, not `active-content` (#1881, #1883).
 - `HtmlImportOptions.max_depth` cannot raise HTML import past the 128-level `MAX_HTML_IMPORT_DEPTH` ceiling; a lower value still narrows it (#1907).
 - Markdown conversion gains fallible `try_markdown_to_ast`, `try_markdown_to_carve` and `try_migrate_markdown`; the older entry points panic where excessive nesting or the canonical writer prevents conversion (#1875, #1877, #1884).
 - The CLI rejects a non-UTF-8 argument as a usage error naming the argument, exit 2, instead of panicking with exit 101 (#1834, #1835).
@@ -31,7 +31,7 @@ which the published crate does not carry.
 - A tree stored under the old U+E000 marker emits that character raw into HTML, with no error and no version signal, because the AST contract stays `1.0`; reparsing the source is the only remedy (#1981).
 - `TableRowGroups` adds `head_attrs` and `foot_attrs`, so a downstream struct literal initializes both to `None` when unused (#1989).
 - `Table.row_groups` becomes `Option<Box<TableRowGroups>>`, keeping section metadata off every block node (#1989).
-- The render-loss `code` enum is closed at the two codes that name a whole dropped node, so `--allow-loss` takes two names rather than three (#1994).
+- The render-loss `code` enum is closed at the two codes that name a whole dropped node, so a consumer matching `table-section-attributes-dropped` no longer sees it and `--allow-loss` takes two names rather than three (#1994).
 - A discarded table section attribute reports as `field-unspellable` on the conversion-diagnostics channel instead (#1994).
 - HTML import writes a link's or a span's edge whitespace outside the construct, so `<a href="/x"> x</a>` imports as a space ahead of `[x](/x)`; whitespace-only content and a no-break space stay inside (#1999, markup-carve/carve#2361).
 - The canonical writer always escapes an unpaired `[` or `]` among the text brackets a construct writes between its own brackets, and a `(` directly after a bare `]`. Rendered bytes change; the tree that output rereads to does not (#1995, markup-carve/carve#2357).
@@ -45,7 +45,7 @@ which the published crate does not carry.
 - A fenced code block inside a description body carries a position, so the description and the list around it reach the fence's closer (#1837).
 - A reference definition reads its destination the way an inline link tail does, with the trailing attribute block read after the destination and the title (#1792).
 - A destination that reaches whitespace with an unclosed parenthesis is refused instead of publishing an unbalanced `href` (#1794).
-- Emphasis pairs where the source pairs it: a form feed is content in the bold-italic guard, a bare delimiter is refused against a tab as against a space, and a marker pairs inside one bracket run rather than across a link's brackets (#1810, #1811, #1814, #2161, #2169, #2173, #2179).
+- Emphasis pairs where the source pairs it: a form feed is content in the bold-italic guard, a bare delimiter is refused against a tab as against a space for `/`, `*`, `_`, `~` and `=`, and a marker pairs inside one bracket run rather than across a link's brackets (#1810, #1811, #1814, #2161, #2169, #2173, #2179).
 - A combined emphasis token's trailing attribute block is written on the outer `<strong>`, which the HTML renderer used to drop (#2174).
 - A `::` line with an empty term and trailing whitespace folds into an open description body, and a comment or a definition past a term's column folds into the term (#1815, #2058).
 - A fence closer counts only at the fence's authored base or its container's column, and a nested fence ends an outer one and a quote's lazy continuation (#1816, #1821, #2067, #2068, #2078).
@@ -89,7 +89,7 @@ which the published crate does not carry.
 - Multiline elements and code inside an imported table cell stay on one Carve row, with the loss reported where content must be flattened (#1910, #1931).
 - An unsupported block element is replaced by its children in place, so the headings, lists and code blocks inside a custom or unknown tag survive with only the wrapper reporting `element-unwrapped` (#1990).
 - A list with no `<li>` is dropped with one `element-dropped` row at `warning` covering its attributes, while stray children move ahead of where the list stood (#1993, markup-carve/carve#2367).
-- A container title the quoted slot cannot spell becomes the body's first paragraph reported as `structure-unspellable`, so an import that used to fail the whole document completes (#2004).
+- A container title the quoted slot cannot spell becomes the body's first paragraph reported as `structure-unspellable`, so an import that used to fail the whole document with `SourceUnspellable` completes (#2004).
 - HTML import reads a `<math>` with no TeX as its text where its tokens read in order, rather than dropping the formula, and keeps one space where an `mspace` separates two letters or digits (#1999, #2000).
 - A formula whose MathML the page hides imports once, through its fallback image's `alt`; a fraction or a script still drops (markup-carve/carve#2361).
 - HTML import keeps a table cell's alignment in every mode, drops a multi-line comment in a cell with its row, and lets a raw block in a cell contribute nothing (#2007, #2011, #2012, #2013, #2015, #2017, #2019).
