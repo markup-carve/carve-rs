@@ -140,3 +140,20 @@ fn a_placed_last_child_still_narrows_the_end() {
     assert_eq!(nth("::: |\ntab\tgap\n%%\n:::\n", "paragraph", 0), (6, 16));
     assert_eq!(nth("::: |\na\nb\n:::\n", "paragraph", 0), (6, 9));
 }
+
+/// carve-rs#2165. A fenced quote owns its `:::` closer wherever it stands, so
+/// captioning one must not move its end back to its last child.
+#[test]
+fn a_fenced_quote_reaches_its_closer_as_a_figure_target() {
+    let captioned = "::: >\nStay hungry, stay foolish.\n:::\n^ Steve Jobs\n";
+
+    assert_eq!(nth(captioned, "block_quote", 0), (0, 36));
+    assert_eq!(nth(captioned, "figure", 0), (0, 49));
+    assert_eq!(nth("::: >\nhello\n:::\n", "block_quote", 0), (0, 15));
+    assert_eq!(nth("::: >\n:::\n^ cap\n", "block_quote", 0), (0, 9));
+}
+
+#[test]
+fn a_prefixed_quote_as_a_figure_target_still_ends_at_its_last_child() {
+    assert_eq!(nth("> hi\n^ cap\n", "block_quote", 0), (0, 4));
+}

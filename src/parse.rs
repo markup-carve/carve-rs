@@ -4311,14 +4311,20 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             BlockNode::Figure(n) => {
                 if let FigureTarget::BlockQuote(q) = &mut *n.target {
                     narrow_to_last_placed_child(&mut q.children, lines);
-                    let last = q
-                        .children
-                        .iter()
-                        .rev()
-                        .find_map(crate::ast_json::block_pos)
-                        .cloned();
-                    if let Some(pos) = q.pos.as_mut() {
-                        narrow_container_end(pos, last, lines, true);
+                    // A FENCED quote owns its `:::` closer, so it ends after it
+                    // rather than at its last child (CARVE-P12-014). Narrowing
+                    // here made the same construct answer one way standalone
+                    // and another as a figure target (carve-rs#2165).
+                    if !q.fenced {
+                        let last = q
+                            .children
+                            .iter()
+                            .rev()
+                            .find_map(crate::ast_json::block_pos)
+                            .cloned();
+                        if let Some(pos) = q.pos.as_mut() {
+                            narrow_container_end(pos, last, lines, true);
+                        }
                     }
                 }
             }
