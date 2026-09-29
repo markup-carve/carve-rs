@@ -313,6 +313,16 @@ fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
 
     let mut lines: Vec<String> = Vec::new();
 
+    // `<caption>` is the first thing a `<table>` may hold; `<colgroup>` follows
+    // it. Emitting the widths first puts the caption where the HTML table
+    // content model does not admit one.
+    if let Some(summary) = &node.summary {
+        let rendered = ctx.render_inlines(summary);
+        if !rendered.trim().is_empty() {
+            lines.push(format!("  <caption>{rendered}</caption>"));
+        }
+    }
+
     if columns.iter().any(|c| c.2.is_some()) {
         let cols = columns
             .iter()
@@ -325,25 +335,22 @@ fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
         lines.push(format!("  <colgroup>\n{cols}\n  </colgroup>"));
     }
 
-    if let Some(summary) = &node.summary {
-        let rendered = ctx.render_inlines(summary);
-        if !rendered.trim().is_empty() {
-            lines.push(format!("  <caption>{rendered}</caption>"));
-        }
-    }
-    // Graceful degradation: a grouping `[label]` is uncommon on a list-table,
-    // but it must never be silently dropped. The table renderer consumes the
-    // node, so the core caption floor never runs; surface the label here as the
-    // same `<p class="div-label">` caption the floor would emit (after the
-    // title `<caption>` when both are present).
-    if let Some(label) = node.label.as_deref() {
-        if !label.is_empty() {
-            lines.push(format!(
-                "  <p class=\"div-label\">{}</p>",
+    // Graceful degradation: nothing consumes a grouping `[label]` on a
+    // list-table, and the spec's `docs/graceful-degradation.md` forbids
+    // dropping it. A `<table>` admits no `<p>`, and its one caption slot is
+    // already the title's, so the label PRECEDES the table - the shape
+    // CARVE-P9-072 states for a region whose element cannot hold a paragraph.
+    let label = node
+        .label
+        .as_deref()
+        .filter(|label| !label.is_empty())
+        .map(|label| {
+            format!(
+                "<p class=\"div-label\">{}</p>\n",
                 ctx.render_container_label(label)
-            ));
-        }
-    }
+            )
+        })
+        .unwrap_or_default();
 
     let head_rows = grid.len().min(header_rows);
     let crosses_group = grid.iter().enumerate().any(|(row, cells)| {
@@ -375,7 +382,7 @@ fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
             .join("\n");
         lines.push(format!("  <tbody>\n{body}\n  </tbody>"));
         let attrs = table_attrs(node.attrs.as_ref(), ctx);
-        return format!("<table{attrs}>\n{}\n</table>", lines.join("\n"));
+        return format!("{label}<table{attrs}>\n{}\n</table>", lines.join("\n"));
     }
 
     // One row per line, as in every other section (PART 10 §7,
@@ -444,7 +451,7 @@ fn render_table(node: &ExtensionCarrier, ctx: &RenderContext<'_>) -> String {
 
     let attrs = table_attrs(node.attrs.as_ref(), ctx);
 
-    format!("<table{attrs}>\n{}\n</table>", lines.join("\n"))
+    format!("{label}<table{attrs}>\n{}\n</table>", lines.join("\n"))
 }
 
 /// Render one grid row as a `<tr>...</tr>`. Mirrors carve-js `renderRow`: emit
