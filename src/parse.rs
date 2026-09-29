@@ -10238,7 +10238,12 @@ fn parse_list(
                         },
                     );
                 }
-                if sublist_source_loosens_outer_item(&nested.source) {
+                let continuation_loosens = if marker.indent < content_col {
+                    continuation_source_loosens(&nested.source, false)
+                } else {
+                    sublist_source_loosens_outer_item(&nested.source)
+                };
+                if continuation_loosens {
                     tight = false;
                 }
                 let held = pending_attrs.take();
