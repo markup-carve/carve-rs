@@ -197,6 +197,7 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
     let base_kinds = bs.iter().map(|i| kind(&base[*i])).collect::<Vec<_>>();
     let side_kinds = ss.iter().map(|i| kind(&side[*i])).collect::<Vec<_>>();
     if bs.len().saturating_mul(ss.len()) <= 1_000_000 {
+        record_pairings(bs.len().saturating_mul(ss.len()));
         let mut table = vec![vec![0usize; ss.len() + 1]; bs.len() + 1];
         for i in (0..bs.len()).rev() {
             for j in (0..ss.len()).rev() {
@@ -237,6 +238,22 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
         .collect();
     found
 }
+
+// Counts the candidate pairings the kind-LCS table allocates. Without a count
+// the only way to observe the bound firing is a wall clock, which measures
+// machine load rather than the merge (carve-rs#2190).
+#[cfg(test)]
+thread_local! {
+    static PAIRINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn record_pairings(count: usize) {
+    PAIRINGS.with(|cell| cell.set(cell.get() + count));
+}
+
+#[cfg(not(test))]
+fn record_pairings(_count: usize) {}
 
 fn anchor(index: usize, matched: &SideMatch, length: usize) -> (isize, isize) {
     let before = (0..index)
@@ -619,4 +636,39 @@ fn merge_ast_inner(
         root.insert("srcByteLength".into(), Json::from(0));
     }
     Ok(MergeResult::Merged(from_json(&value_to_json(&merged))?))
+}
+
+#[cfg(test)]
+mod bound_tests {
+    use super::*;
+    use crate::parse;
+
+    fn pairings_for(width: usize) -> usize {
+        let source = |prefix: &str| {
+            (0..width)
+                .map(|index| format!("{prefix}{index}"))
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        };
+        PAIRINGS.with(|cell| cell.set(0));
+        let result = merge_ast(
+            &parse(&source("base-")),
+            &parse(&source("ours-")),
+            &parse(&source("theirs-")),
+        )
+        .unwrap();
+        assert!(matches!(result, MergeResult::Conflicts(_)));
+        PAIRINGS.with(std::cell::Cell::get)
+    }
+
+    #[test]
+    fn a_narrow_ambiguous_sibling_list_is_paired_by_the_table() {
+        // Two sides, so each one pairs 5x5 against the base.
+        assert_eq!(pairings_for(5), 50);
+    }
+
+    #[test]
+    fn a_wide_ambiguous_sibling_list_is_refused_by_the_bound() {
+        assert_eq!(pairings_for(1001), 0);
+    }
 }
