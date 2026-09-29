@@ -2093,7 +2093,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 let lines = code
                     .content
                     .strip_suffix('\n')
-                    .filter(|_| !crate::ast::code_payload_needs_ending(&code.content))
+                    .filter(|_| !crate::ast::fenced_payload_needs_ending(&code.content))
                     .unwrap_or(&code.content);
                 format!("{}\n", protect_verbatim(session, lines))
             };
@@ -2295,28 +2295,28 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            // The separator spells the end of the payload's LAST line, so a
-            // payload with no line to end takes none. A payload of blank lines
-            // already carries its own newlines and an EMPTY one carries nothing,
-            // which is the same answer for the same reason - and `chars().all`
-            // is true of the empty string, so it is one condition.
+            // The payload's own lines, then the ending after its LAST line. An
+            // EMPTY payload has no line and writes none (carve-rs#2166).
             //
-            // Splitting them wrote a newline for the empty payload, which turned
-            // a zero-line payload into a one-blank one. Those are different
-            // blocks since markup-carve/carve#2574 (carve-rs#2159), so the round
-            // trip changed the document (carve-rs#2166).
-            let literal = raw.content.chars().all(|c| c == '\n');
-            let body = if literal {
-                raw.content.clone()
+            // An all-blank payload carries its trailing ending IN `content`,
+            // which is how it says how many lines it has, so
+            // `protect_verbatim` is handed the payload WITHOUT that ending or it
+            // stages a line too many. Everything goes through the staging now: a
+            // blank line that bypassed it reached the pass that folds a run of
+            // blank lines, so two authored blank lines came back as one and three
+            // as one (carve-rs#2168). The code fence never had that bug because
+            // its payload was always staged.
+            let payload = if raw.content.is_empty() {
+                String::new()
             } else {
-                protect_verbatim(session, &raw.content)
+                let lines = raw
+                    .content
+                    .strip_suffix('\n')
+                    .filter(|_| !crate::ast::fenced_payload_needs_ending(&raw.content))
+                    .unwrap_or(&raw.content);
+                format!("{}\n", protect_verbatim(session, lines))
             };
-            let separator = if literal { "" } else { "\n" };
-            format!(
-                "{fence}={}\n{}{separator}{fence}",
-                escape_format(&raw.format),
-                body
-            )
+            format!("{fence}={}\n{payload}{fence}", escape_format(&raw.format))
         }
         BlockNode::AbbreviationDef(abbr) => {
             format!(

@@ -821,10 +821,7 @@ pub(crate) fn directive_tokens(
     if let Some(label) = &node.label {
         tokens.push(format!(
             "{pad}<p class=\"div-label\">{}</p>",
-            escape_text(crate::parse::label_without_trailing_comment(
-                label,
-                ctx.options,
-            ))
+            escape_text(label)
         ));
     }
     tokens

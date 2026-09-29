@@ -4708,7 +4708,7 @@ fn parse_eof_closed_colon_ladder(
                     title: open
                         .title
                         .map(|title| parse_inline_with_options(&title, options)),
-                    label: open.label,
+                    label: container_open_label(open.label, options),
                     children,
                     pos: None,
                 })
@@ -4719,7 +4719,7 @@ fn parse_eof_closed_colon_ladder(
                     title: open
                         .title
                         .map(|title| parse_inline_with_options(&title, options)),
-                    label: open.label,
+                    label: container_open_label(open.label, options),
                     children,
                     pos: None,
                 })
@@ -4727,7 +4727,7 @@ fn parse_eof_closed_colon_ladder(
         } else {
             BlockNode::Div(Div {
                 attrs: open.attrs,
-                label: open.label,
+                label: container_open_label(open.label, options),
                 children,
                 pos: None,
             })
@@ -12243,7 +12243,7 @@ fn trailing_comment_end(bytes: &[u8], at: usize, run_close: Option<usize>) -> Op
 /// If a label ever becomes an inline run this disappears, which is open and
 /// unruled as markup-carve/carve#2572: carve-js publishes the authored text
 /// here exactly as this engine does, and only the oracle renders the run.
-pub(crate) fn label_without_trailing_comment<'a>(label: &'a str, options: &Options<'_>) -> &'a str {
+fn label_without_trailing_comment<'a>(label: &'a str, options: &Options<'_>) -> &'a str {
     let Some(content) = parse_inline_with_options(label, options)
         .into_iter()
         .find_map(|node| match node {
@@ -15763,6 +15763,25 @@ struct ContainerOpen {
     attrs: Option<Attrs>,
 }
 
+/// A container opener's label as every consumer of the node sees it: without the
+/// trailing comment `CARVE-P9-041` consumes.
+///
+/// Cut HERE rather than at each consumer. Six render sites read the rule after
+/// carve-rs#2158, and four more publishers did not - the AST serializer, and the
+/// Markdown, plain-text and ANSI targets - so `--json` announced a label the HTML
+/// in the same build had dropped, and the three targets printed the comment
+/// (carve-rs#2163). A list of consumers is the wrong place for a rule about the
+/// value: the node now carries the cut label and a consumer added later cannot
+/// leak what the author hid.
+///
+/// carve-js and carve-php both cut at parse time, and neither reproduces the
+/// comment when writing the label back either. That is the convention this
+/// matches. Carrying the comment as a node instead needs the label to BE an
+/// inline run, which is open as markup-carve/carve#2572.
+fn container_open_label(label: Option<String>, options: &Options<'_>) -> Option<String> {
+    label.map(|label| label_without_trailing_comment(&label, options).to_string())
+}
+
 fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
@@ -15947,7 +15966,7 @@ fn boxed_container_node(
                 title: open.title.map(|title| {
                     parse_inline_lines_with_anchor(&title, options, vec![title_anchor])
                 }),
-                label: open.label,
+                label: container_open_label(open.label, options),
                 children,
                 pos,
             }));
@@ -15958,14 +15977,14 @@ fn boxed_container_node(
             title: open
                 .title
                 .map(|title| parse_inline_lines_with_anchor(&title, options, vec![title_anchor])),
-            label: open.label,
+            label: container_open_label(open.label, options),
             children,
             pos,
         }))
     } else {
         Box::new(BlockNode::Div(Div {
             attrs: open.attrs,
-            label: open.label,
+            label: container_open_label(open.label, options),
             children,
             pos,
         }))
