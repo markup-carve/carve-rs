@@ -362,6 +362,20 @@ struct Importer<'a> {
     sibling_index: SiblingIndex,
 }
 
+/// Where the walk's reportable state stood before a measurement that rewinds.
+/// See [`Importer::mark`].
+#[derive(Clone, Copy)]
+struct ImporterMark {
+    nodes: usize,
+    diagnostics: usize,
+    turned_away: Option<(usize, usize)>,
+    unspellable: usize,
+    displaced_figure_attrs: usize,
+    lone_image_paragraphs: usize,
+    empty_code_spans: usize,
+    braced_kind_spans: usize,
+}
+
 /// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
 /// the classic range. Past it the additive form grows without bound - the
 /// marker for position `n` carries `n / 1000` copies of `m` - and `start` is an
@@ -3254,24 +3268,28 @@ impl<'a> Importer<'a> {
         {
             return Ok((None, body, body_paths));
         }
-        // TEXT ONLY. The field is a raw `String` and the writer emits it raw, so
-        // lifting a paragraph holding markup would flatten the markup and lose
-        // it without a word.
-        let element_children = body[at].children.borrow();
-        if element_children.iter().any(|c| Self::tag(c).is_some()) {
-            return Ok((None, body.clone(), body_paths));
-        }
-        let text = Self::text(&body[at]);
-        drop(element_children);
-        // A LABEL HOLDING `]` OR A LINE BREAK HAS NO SPELLING. Every reader of
-        // this run takes it up to the first `]`, with no balance and no escape
-        // (see `write_flat_bracket_run`), so writing one back would not read as
-        // a label at all - it would take the container's own opener line with
-        // it. Left as a paragraph, which is what it already is.
-        if text.contains(']') || text.contains('\n') {
+        let label_path = body_paths[at].clone();
+        // ITS INLINE CONTENT, WRITTEN BACK AS THE LABEL'S SOURCE. The label is an
+        // inline run (ruled on markup-carve/carve#2572), so markup in it has a
+        // spelling on the opener and the paragraph lifts whole. This used to
+        // refuse anything but text, because the label published escaped and
+        // lifting a `<strong>` would have flattened it without a word.
+        let kids: Vec<Handle> = body[at].children.borrow().clone();
+        let Some(text) = self.container_label_source(&kids, &label_path, depth)? else {
+            return Ok((None, body, body_paths));
+        };
+        // AND NOTHING THE OPENER CANNOT SPELL. `]` closes the label and a newline
+        // ends the opener line, so neither can ride back out - a label carrying
+        // one would be written into source that re-reads as something else.
+        // Whatever else an inline run can spell, the parser answers for; see
+        // `container_label_reads_back`. Left as a paragraph, which is what it
+        // already is.
+        if text.contains(']')
+            || text.contains('\n')
+            || !crate::render_carve::container_label_reads_back(&text)
+        {
             return Ok((None, body, body_paths));
         }
-        let label_path = body_paths[at].clone();
         // The element itself, for the same reason the title charges for its
         // own: it is a DOM node `max_nodes` is counting, and a lift that reads
         // past it without charging lets a document process more than the limit.
@@ -3311,6 +3329,60 @@ impl<'a> Importer<'a> {
             rest_paths.push(child_path);
         }
         Ok((Some(text), rest, rest_paths))
+    }
+
+    /// The Carve source of a container label, read off the inline content of the
+    /// `<p class="div-label">` the renderer degraded it to. `None` when the writer
+    /// has no spelling for it - see
+    /// [`container_label_source`](crate::render_carve::container_label_source).
+    ///
+    /// A THROWAWAY WALK, REWOUND IN FULL. Its only result is a string: the node
+    /// budget is charged once by the `charge_subtree` call the lift already makes,
+    /// and every diagnostic this walk files would be filed a second time by the
+    /// body walk when the lift is refused - two identical rows for one element,
+    /// and the report's cap spent twice.
+    ///
+    /// At `depth + 2`, which is where the body walk would reach these children:
+    /// the container hands its body to `blocks_at(.., depth + 1)`, and that enters
+    /// each child at `depth + 2`.
+    fn container_label_source(
+        &mut self,
+        kids: &[Handle],
+        label_path: &str,
+        depth: usize,
+    ) -> Result<Option<String>, HtmlImportError> {
+        let mark = self.mark();
+        let walked = self.inlines(kids, label_path, depth + 2);
+        self.restore(mark);
+        Ok(crate::render_carve::container_label_source(&walked?))
+    }
+
+    /// Where the walk's reportable state stands, for a measurement that rewinds.
+    fn mark(&self) -> ImporterMark {
+        ImporterMark {
+            nodes: self.nodes,
+            diagnostics: self.diagnostics.len(),
+            turned_away: self.turned_away,
+            unspellable: self.unspellable.len(),
+            displaced_figure_attrs: self.displaced_figure_attrs.len(),
+            lone_image_paragraphs: self.lone_image_paragraphs.len(),
+            empty_code_spans: self.empty_code_spans.len(),
+            braced_kind_spans: self.braced_kind_spans.len(),
+        }
+    }
+
+    /// Undo everything a marked measurement recorded. See [`Importer::mark`].
+    fn restore(&mut self, mark: ImporterMark) {
+        self.nodes = mark.nodes;
+        self.diagnostics.truncate(mark.diagnostics);
+        self.turned_away = mark.turned_away;
+        self.unspellable.truncate(mark.unspellable);
+        self.displaced_figure_attrs
+            .truncate(mark.displaced_figure_attrs);
+        self.lone_image_paragraphs
+            .truncate(mark.lone_image_paragraphs);
+        self.empty_code_spans.truncate(mark.empty_code_spans);
+        self.braced_kind_spans.truncate(mark.braced_kind_spans);
     }
 
     fn details(

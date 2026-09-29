@@ -253,14 +253,28 @@ fn the_label_brings_the_fence_back_in_every_mode() {
 
 /// THE OVER-WIDENING CONTROL. The test is what the div actually KEPT, not what
 /// its markup looked like - the same distinction `style="color:red"` draws on
-/// the attribute side. A label paragraph holding markup is refused by the lift
-/// (the field is raw and flattening it would lose the markup), so nothing was
-/// kept and the div unwraps exactly as it did before.
+/// the attribute side. A label paragraph the lift REFUSES leaves nothing kept, so
+/// the div unwraps exactly as it did before.
+///
+/// The refusal here is "no Carve source": an empty `<code>` has none while its
+/// open backtick run does not end. Markup in a label is no longer a refusal - it
+/// has a spelling on the opener since `markup-carve/carve#2572` - so the control
+/// moved to a shape that still refuses, for a reason of its own rather than the
+/// same one as the `]` case below.
 #[test]
 fn a_label_paragraph_the_lift_refuses_does_not_bring_the_fence_back() {
+    let html = "<div><p class=\"div-label\">a <code></code> b</p><p>Body.</p></div>";
+
+    assert_eq!(imported(html), "{.div-label}\na  b\n\nBody.\n");
+}
+
+/// AND THE NEAR MISS ON THE OTHER SIDE OF THAT BOUNDARY: the same div whose label
+/// paragraph the lift ACCEPTS keeps its fence, because now it kept something.
+#[test]
+fn a_markup_label_the_lift_accepts_keeps_the_fence() {
     let html = "<div><p class=\"div-label\">a <em>b</em></p><p>Body.</p></div>";
 
-    assert_eq!(imported(html), "{.div-label}\na /b/\n\nBody.\n");
+    assert_eq!(imported(html), "::: [a /b/]\nBody.\n:::\n");
 }
 
 /// The same control for the other refusal: a label holding `]` has no spelling,

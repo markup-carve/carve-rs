@@ -130,7 +130,7 @@ impl CarveExtension for Spoiler {
             let label_line = match &node.label {
                 Some(l) => format!(
                     "{inner_pad}<p class=\"div-label\">{}</p>\n",
-                    ctx.escape_html(l)
+                    ctx.render_container_label(l)
                 ),
                 None => String::new(),
             };

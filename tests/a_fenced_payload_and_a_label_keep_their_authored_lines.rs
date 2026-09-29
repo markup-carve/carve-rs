@@ -121,10 +121,11 @@ fn issue_2163_an_opaque_construct_keeps_its_text() {
         "a%%b and 50%%"
     );
     assert_eq!(container_label(":::[`%% x`]\nbody\n:::\n"), "`%% x`");
-    assert_eq!(
-        container_label(":::[a ` b %% c]\nbody\n:::\n"),
-        "a ` b %% c"
-    );
+    // AN UNCLOSED RUN SWALLOWS THE CLOSER, so the line has no label to cut: the
+    // `label` production takes a balanced run and the opener's scan is the
+    // reader's own (markup-carve/carve#2576), which leaves this prose - what a
+    // link's text does with the same bytes.
+    assert!(!to_html(":::[a ` b %% c]\nbody\n:::\n").contains("div-label"));
 }
 
 /// A label with no comment at all is untouched, in every publisher.

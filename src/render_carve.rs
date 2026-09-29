@@ -6030,6 +6030,57 @@ pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
     }
 }
 
+/// A container label's source, written from the inline content of the
+/// `<p class="div-label">` the HTML renderer degraded it to, or `None` when the
+/// writer has no spelling for it.
+///
+/// The label is an inline run (ruled on markup-carve/carve#2572), so markup in
+/// it HAS a spelling on the opener and the paragraph can be lifted whole. The
+/// importer used to refuse anything but text, because the label published
+/// escaped and lifting a `<strong>` would have flattened it without a word.
+///
+/// NO SPELLING IS A REFUSAL, NOT A FAILURE. An empty `<code>` has no Carve
+/// source while its open run does not end, and the writer says so; the paragraph
+/// then stays in the body, where the ordinary walk reports the loss exactly as it
+/// did before the label was a run. A depth refusal takes the same exit: what it
+/// means is that this run cannot be written, which is the one thing the caller
+/// asked.
+pub(crate) fn container_label_source(inlines: &[InlineNode]) -> Option<String> {
+    let probe = Document {
+        frontmatter: Default::default(),
+        frontmatter_raw: None,
+        footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
+        children: vec![BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: inlines.to_vec(),
+            at_content_column: true,
+            block_image: false,
+            pos: None,
+        })],
+        source_len: 0,
+        ingest_payload_len: 0,
+    };
+    render_carve(&probe)
+        .ok()
+        .map(|source| source.trim_end().to_string())
+}
+
+/// Does the opener `::: [label]` read that label back?
+///
+/// The two characters an opener cannot carry are refused by name at the call
+/// site, because each has its own reason. Everything else is asked of the PARSER,
+/// for the reason [`quoted_title_is_spellable`] gives: enumerating the spellings
+/// that break an opener is a second copy of the grammar and goes stale. An empty
+/// code span writes two backticks, which turn the opener into a paragraph.
+pub(crate) fn container_label_reads_back(label: &str) -> bool {
+    let source = format!("::: [{label}]\nx\n:::\n");
+    matches!(
+        crate::parse::parse(&source).children.as_slice(),
+        [BlockNode::Div(div)] if div.label.as_deref() == Some(label)
+    )
+}
+
 /// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a
 /// footnote's `[^id]` in both its definition and its references.
 fn write_flat_bracket_run(text: &str) -> &str {

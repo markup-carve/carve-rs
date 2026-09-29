@@ -821,7 +821,7 @@ pub(crate) fn directive_tokens(
     if let Some(label) = &node.label {
         tokens.push(format!(
             "{pad}<p class=\"div-label\">{}</p>",
-            escape_text(label)
+            crate::render::render_container_label(label, ctx.options)
         ));
     }
     tokens
@@ -850,6 +850,13 @@ impl<'a> RenderContext<'a> {
 
     pub fn render_inlines(&self, nodes: &[InlineNode]) -> String {
         crate::render::render_inlines_with_options(nodes, self.options)
+    }
+
+    /// A container label's inline run, rendered - what an extension writing its
+    /// own `<p class="div-label">` puts inside it. Escaping the label instead
+    /// published the author's characters where the core floor publishes a run.
+    pub fn render_container_label(&self, label: &str) -> String {
+        crate::render::render_container_label(label, self.options)
     }
 
     /// [`RenderContext::render_inlines`], for nodes the caller is about to place
