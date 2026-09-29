@@ -2372,10 +2372,7 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
     // comment fence opened on `index` stays linear over many unclosed openers.
     let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
     for (k, raw) in lines.iter().enumerate() {
-        let run = trim_ascii_start(view(raw).0)
-            .bytes()
-            .take_while(|b| *b == b'%')
-            .count();
+        let run = comment_fence_width(trim_ascii_start(view(raw).0));
         if run >= 3 {
             runs.entry(run).or_default().push(k);
         }
@@ -6090,10 +6087,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
 fn comment_closers_by_run(lines: &[impl AsRef<str>]) -> HashMap<usize, Vec<usize>> {
     let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
     for (k, line) in lines.iter().enumerate() {
-        let run = trim_ascii_start(line.as_ref())
-            .bytes()
-            .take_while(|b| *b == b'%')
-            .count();
+        let run = comment_fence_width(trim_ascii_start(line.as_ref()));
         if run >= 3 {
             runs.entry(run).or_default().push(k);
         }
@@ -6884,10 +6878,7 @@ fn comment_fence_close_index(lines: &[&str]) -> std::collections::HashMap<usize,
         // Leading whitespace is not part of the delimiter (an indented closer
         // closes an indented opener), but nothing else is stripped: the note
         // above is why a `> %%%` must not answer for a top-level opener.
-        let run = trim_ascii_end(trim_ascii_start(line))
-            .bytes()
-            .take_while(|b| *b == b'%')
-            .count();
+        let run = comment_fence_width(trim_ascii_end(trim_ascii_start(line)));
         if run >= 3 {
             last.insert(run, i);
         }
@@ -7219,10 +7210,7 @@ impl ContainerCommentClosers {
             // Depth 0 is exactly the set this index held before depth was
             // tracked, so every column-scoped query answers as it did.
             let (depth, _, rest) = prepass_quote_scope(line);
-            let run = trim_ascii_end(trim_ascii_start(rest))
-                .bytes()
-                .take_while(|byte| *byte == b'%')
-                .count();
+            let run = comment_fence_width(trim_ascii_end(trim_ascii_start(rest)));
             if run >= 3 {
                 by_width.entry((run, depth)).or_default().push(index);
             }
@@ -7325,9 +7313,24 @@ impl ContainerCommentClosers {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static COMMENT_FENCE_BYTES: Cell<u64> = const { Cell::new(0) };
+}
+
+fn comment_fence_width(line: &str) -> usize {
+    let width = line.bytes().take_while(|b| *b == b'%').count();
+    #[cfg(test)]
+    COMMENT_FENCE_BYTES.with(|count| {
+        // Include the first non-percent byte that stops the scan, if present.
+        count.set(count.get() + (width + usize::from(width < line.len())) as u64);
+    });
+    width
+}
+
 fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
     let line = trim_ascii_end(line);
-    let fence_len = line.bytes().take_while(|b| *b == b'%').count();
+    let fence_len = comment_fence_width(line);
     if fence_len < 3 {
         return None;
     }
@@ -7341,7 +7344,7 @@ fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
 /// ignored and discarded.
 fn is_comment_fence_close(line: &str, fence_len: usize) -> bool {
     let line = trim_ascii_end(line);
-    line.bytes().take_while(|b| *b == b'%').count() == fence_len
+    comment_fence_width(line) == fence_len
 }
 
 fn detect_thematic_break(line: &str) -> bool {
@@ -25316,5 +25319,39 @@ mod collector_scope_tests {
             vec![1, 3]
         );
         assert!(UNATTACHED_BLOCK_ATTRS.with(|slot| slot.borrow().is_none()));
+    }
+}
+
+#[cfg(test)]
+mod comment_fence_work {
+    use super::COMMENT_FENCE_BYTES;
+
+    fn measure(n: usize) -> (u64, u64) {
+        let mut source = String::new();
+        for width in 3..n + 3 {
+            source.push_str(&"%".repeat(width));
+            source.push_str(" x\n");
+        }
+        COMMENT_FENCE_BYTES.with(|count| count.set(0));
+        assert_eq!(crate::to_html(&source), "");
+        let scanned = COMMENT_FENCE_BYTES.with(|count| count.get());
+        (source.len() as u64, scanned)
+    }
+
+    #[test]
+    fn unterminated_comment_fence_openers_scan_proportional_bytes() {
+        // Widths grow with the opener count, so input bytes grow quadratically.
+        // A suffix rescan per opener adds another factor; count both opener
+        // and closer scans to detect it without depending on machine load.
+        let (small_bytes, small_scanned) = measure(64);
+        let (large_bytes, large_scanned) = measure(128);
+        assert!(small_scanned >= small_bytes && large_scanned >= large_bytes,
+            "the counter must observe the input: {small_scanned}/{small_bytes}, {large_scanned}/{large_bytes}");
+        assert!(
+            large_scanned <= 16 * large_bytes,
+            "comment fence scans visited {large_scanned} bytes for {large_bytes} input bytes"
+        );
+        assert!(large_scanned * small_bytes * 10 <= small_scanned * large_bytes * 11,
+            "comment fence work per byte grew: {small_scanned}/{small_bytes}, {large_scanned}/{large_bytes}");
     }
 }

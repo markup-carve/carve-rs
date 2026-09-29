@@ -5,11 +5,12 @@ use std::time::Instant;
 
 /// Serializes the TIMING tests in this file against each other.
 ///
-/// Every test here measures wall clock, and `cargo test` runs the tests in a
-/// binary on parallel threads - so 34 timing tests spend their measurements
+/// The timing tests here measure wall clock, and `cargo test` runs the tests in a
+/// binary on parallel threads - so timing tests spend their measurements
 /// competing with each other for cores. That is the whole cause of the flake in
 /// carve-rs#523: `unterminated_comment_fence_openers_parse_in_near_linear_time`
 /// failed 2 of 8 full-file runs and 0 of 6 with `--test-threads=1`.
+/// That comment-fence guard now counts work in `src/parse.rs` (#2181).
 ///
 /// More rounds does not fix it, which is worth recording because it is the
 /// obvious move: median-of-five measured 3 of 8 failures against main's 2 of 8.
@@ -706,7 +707,7 @@ fn flat_unclosed_strong_openers_parse_in_near_linear_time() {
     assert_near_linear(flat_unclosed_strong, "flat-unclosed-strong");
 }
 
-/// The code-fence twin of the `%%%` case below.
+/// The code-fence twin of the counted `%%%` guard in `src/parse.rs`.
 ///
 /// `comment_closer_last_index` was added to make an unterminated `%%%` opener
 /// answer from an index instead of scanning to the end of the input. Code
@@ -725,65 +726,6 @@ fn unterminated_code_fence_openers_in_a_container_parse_in_near_linear_time() {
     };
 
     assert_near_linear(build, "unterminated-code-fence-in-container");
-}
-
-#[test]
-fn unterminated_comment_fence_openers_parse_in_near_linear_time() {
-    let build = |n: usize| {
-        let mut source = String::new();
-        for len in 3..n + 3 {
-            for _ in 0..len {
-                source.push('%');
-            }
-            source.push_str(" x\n");
-        }
-        source
-    };
-
-    let _guard = perf_guard();
-    let small = 500;
-    let large = 1000;
-    let small_source = build(small);
-    let large_source = build(large);
-
-    let _ = carve::to_html(&small_source);
-    let _ = carve::to_html(&large_source);
-
-    let time_once = |source: &str| {
-        let start = Instant::now();
-        let _ = carve::to_html(source);
-        start.elapsed().as_secs_f64()
-    };
-    let mut small_samples = Vec::new();
-    let mut large_samples = Vec::new();
-    for _ in 0..3 {
-        small_samples.push(time_once(&small_source));
-        large_samples.push(time_once(&large_source));
-    }
-    let median = |mut xs: Vec<f64>| {
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        xs[xs.len() / 2]
-    };
-    let large_samples_for_ceiling = large_samples.clone();
-    let small_per_byte = median(small_samples) / small_source.len() as f64;
-    let large_per_byte = median(large_samples) / large_source.len() as f64;
-
-    let ratio = large_per_byte / small_per_byte.max(f64::MIN_POSITIVE);
-    // Measured on this input: 0.73 answering from the width index, versus just
-    // under 2.0 with a scan to end of input per opener. The old 2.0 bound sat
-    // exactly at that boundary, so it PASSED the scan version - it only took 162
-    // seconds to do it. Hence both a tighter ratio and a wall-clock ceiling: the
-    // ceiling is ~100x the observed time, loose enough not to flake on a shared
-    // runner but nowhere near a full rescan.
-    assert!(
-        ratio < 1.2,
-        "unterminated-comment-fence per-byte cost grew {ratio:.2}x"
-    );
-    let large_elapsed = median(large_samples_for_ceiling);
-    assert!(
-        large_elapsed < 30.0,
-        "unterminated-comment-fence parse took {large_elapsed:.1}s; a per-opener rescan is likely back"
-    );
 }
 
 #[test]
