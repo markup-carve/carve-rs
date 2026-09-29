@@ -1642,3 +1642,6 @@ mod code_content_is_literal;
 
 #[path = "../container_ownership.rs"]
 mod container_ownership;
+
+#[path = "../an_escaped_crossing_closer_leaves_its_opener_open.rs"]
+mod an_escaped_crossing_closer_leaves_its_opener_open;
