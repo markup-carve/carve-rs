@@ -12,9 +12,8 @@
 //! ORACLE: the executable spec (`scripts/spec/layout.mjs` + `html.mjs`) at carve
 //! `2f654da9`, spec main.
 //!
-//! NOT IN SCOPE: a flush-left LIST MARKER below the span. It is the
-//! below-column-marker family of markup-carve/carve-rs#1514 and is unmoved here
-//! - `a_marker_follower_is_1514_and_does_not_move` pins that.
+//! Retained markers below the selected item's content column stay text
+//! (markup-carve/carve#2619).
 
 use carve::{to_html, to_html_with_options, Options};
 
@@ -141,15 +140,12 @@ fn a_second_span_left_open_still_ends_it() {
     assert_html("- - x\n    %%% x\n    %%%\n    %%% y\n # h\n", INNER_ENDS);
 }
 
-/// OUT OF SCOPE, PINNED SO IT CANNOT MOVE SILENTLY: a flush-left list marker
-/// below the span is markup-carve/carve-rs#1514's family. The oracle makes it a
-/// SIBLING of the inner item; this engine still opens a fresh list, before and
-/// after.
+/// Retention does not lower the content column for a child list.
 #[test]
-fn a_marker_follower_is_1514_and_does_not_move() {
+fn a_retained_marker_below_the_content_column_stays_text() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n - m\n",
-        "<ul><li><ul><li>x</li></ul><ul><li>m</li></ul></li></ul>",
+        "<ul><li><ul><li>x</li></ul> - m</li></ul>",
     );
 }
 
@@ -174,6 +170,6 @@ fn a_span_that_reached_nothing_ends_nothing() {
 fn a_line_reaching_an_ancestor_keeps_the_frame_open() {
     assert_html(
         "- - x\n    %%% x\n    %%%\n   - m\n",
-        "<ul><li><ul><li>x<ul><li>m</li></ul></li></ul></li></ul>",
+        "<ul><li><ul><li>x - m</li></ul></li></ul>",
     );
 }

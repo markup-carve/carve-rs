@@ -13200,6 +13200,9 @@ fn collect_indented_block_mapped_with_columns(
             *fence = None;
         }
         let lazy_code_line = folded_code_span && indent < folded_code_column;
+        // A retained marker below this body's column cannot open a child list.
+        let lazy_list_marker =
+            !in_comment_span && fence.is_none() && indent < strip_cols && is_list_marker(line);
         let comment_payload = was_in_comment_span && comment_fence.is_some();
         let payload_line = if comment_payload {
             strip_lazy(line)
@@ -13210,7 +13213,7 @@ fn collect_indented_block_mapped_with_columns(
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
         let stripped = match (in_comment_span, comment_fence_strip) {
-            _ if lazy_code_line => indent,
+            _ if lazy_code_line || lazy_list_marker => indent,
             (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
             (true, Some(span_strip)) => span_strip.min(indent),
             _ if stranded_plus_is_lazy_text => indent.saturating_sub(1),
@@ -13220,7 +13223,9 @@ fn collect_indented_block_mapped_with_columns(
             comment_fence_strip = None;
         }
         let (mut sliced, consumed, synthetic) = slice_columns_mapped(payload_line, stripped, true);
-        if (lazy_code_line || framed_comment_payload) && !sliced.starts_with(LAZY) {
+        if (lazy_code_line || framed_comment_payload || lazy_list_marker)
+            && !sliced.starts_with(LAZY)
+        {
             sliced.insert_str(0, LAZY);
         }
         definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
