@@ -148,6 +148,7 @@ which the published crate does not carry.
 - `Document::summary()` provides fixed-size metadata for logging without traversing or exposing AST content (#2048).
 - AST JSON errors expose their kind, unknown-field path, and syntax location while preserving their display messages and serde error causes (#2044).
 - HTML import recognizes explicit code-language hints on code blocks and Sphinx, GitHub and MediaWiki wrappers, with validated tokens and deterministic fallback (#2023, markup-carve/carve#2387).
+- Nested lists scan less and HTML import copies fewer buffers (#2219).
 
 ## [0.1.6] - 2026-09-18
 
@@ -378,5 +379,5 @@ which the published crate does not carry.
   (markup-carve/carve-rs#1572, markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
   before that item, converging its `carve` output with carve-js and carve-php.
 
-[0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...HEAD
+[0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6
