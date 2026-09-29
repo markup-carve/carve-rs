@@ -10594,8 +10594,9 @@ fn parse_list(
             // column. Using the outer `content_col` assigned a following line
             // between the two columns to the outer item instead (#1424).
             let nested_content_col = content_col + innermost_marker_content_col(marker.content);
+            let innermost_content = innermost_marker_content(marker.content);
             let nested_definition_ended_paragraph =
-                is_collected_definition_placeholder(innermost_marker_content(marker.content));
+                is_collected_definition_placeholder(innermost_content);
             let mut stream = item_marker_source(cur, marker.content, item_at);
             // A code fence or a colon container opened on this NESTED lead takes
             // the flush-left lines below it, exactly as the single-level item
@@ -10609,7 +10610,7 @@ fn parse_list(
             // a line reaching the outer column is the outer item's, a sibling
             // marker starts a new item, and a blank ends the run - which is where
             // the single-level readings stop too.
-            let inner_lead = trim_ascii_start(innermost_marker_content(marker.content));
+            let inner_lead = trim_ascii_start(innermost_content);
             if detect_fence_open(inner_lead).is_some() {
                 while let Some((framed, removed)) = cur.peek().and_then(|line| {
                     (!is_blank_line(line)
@@ -10657,8 +10658,7 @@ fn parse_list(
             } else {
                 base_indent
             };
-            let nested_lead_is_continuation =
-                trim_ascii(innermost_marker_content(marker.content)) == "+";
+            let nested_lead_is_continuation = trim_ascii(innermost_content) == "+";
             last_item_bare_continuation = nested_lead_is_continuation;
             if nested_lead_is_continuation {
                 stream.append(collect_indented_block_mapped_after_continuation(
@@ -11577,6 +11577,8 @@ fn innermost_marker_content_col(mut line: &str) -> usize {
 }
 
 fn innermost_marker_content(mut line: &str) -> &str {
+    #[cfg(test)]
+    INNERMOST_CONTENT_SCANS.with(|count| count.set(count.get() + 1));
     while let Some(marker) = detect_list_marker_full(line) {
         line = marker.content;
     }
@@ -25458,5 +25460,35 @@ mod comment_fence_work {
         );
         assert!(large_scanned * small_bytes * 10 <= small_scanned * large_bytes * 11,
             "comment fence work per byte grew: {small_scanned}/{small_bytes}, {large_scanned}/{large_bytes}");
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static INNERMOST_CONTENT_SCANS: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+mod nested_list_content_scans {
+    #[test]
+    // A constant-factor guard: marker suffix lengths still grow with depth.
+    fn each_marker_body_reuses_its_innermost_content_scan() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                for depth in [32, 64, 128, 192] {
+                    super::INNERMOST_CONTENT_SCANS.with(|count| count.set(0));
+                    let source = format!("{}end\n", "- ".repeat(depth));
+                    let html = crate::to_html(&source);
+                    assert_eq!(html.matches("<ul>").count(), depth);
+                    assert_eq!(
+                        super::INNERMOST_CONTENT_SCANS.with(|count| count.get()),
+                        depth - 1
+                    );
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

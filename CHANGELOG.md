@@ -124,6 +124,8 @@ which the published crate does not carry.
 
 ### Improvements
 
+- HTML list rendering appends nested blocks directly to the output instead of copying each child buffer through its ancestors. Nested list parsing also reuses the innermost marker content across its ownership checks.
+
 - `to_ast_envelope_json` and `from_ast_envelope_json` read and write the versioned AST interchange envelope (#1963).
 - `AstEnvelopeError` separates a newer contract, an unimplemented required extension and a foreign vocabulary from a tree that would not decode; a major too large for a machine integer is a version refusal too (#1966).
 - A spanning table cell publishes its resolved extent, and a rowspan crossing a row-group boundary renders in one body group (#1850, #1854, markup-carve/carve#2224).
