@@ -74,7 +74,7 @@ fn every_following_line_kind_stays_in_the_item() {
         ),
         (
             "- x\n  %%% x\n - y\n",
-            "<ul>\n  <li>x\n    <ul>\n      <li>y</li>\n    </ul>\n  </li>\n</ul>",
+            "<ul>\n  <li>x\n    - y\n  </li>\n</ul>",
         ),
     ] {
         assert_eq!(both_paths(src), expected, "{src:?}");

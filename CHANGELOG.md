@@ -10,7 +10,6 @@ Entries for 0.1.5 and earlier are archived in
 which the published crate does not carry.
 
 ## [Unreleased]
-
 ### Changed
 
 - Abbreviation expansion reuses unchanged text and appends split spans directly to the inline output.
@@ -24,6 +23,9 @@ which the published crate does not carry.
 - HTML import recognizes explicit code-language hints on code blocks and Sphinx, GitHub and MediaWiki wrappers, with validated tokens and deterministic fallback (markup-carve/carve#2387).
 
 ### Fixed
+
+- Keep retained list markers below the item's content column as text after
+  comments. A comment no longer lets an under-indented marker open a child list.
 
 - ANSI output preserves every code payload line, including trailing blank lines (markup-carve/carve-js#2357).
 
