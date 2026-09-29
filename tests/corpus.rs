@@ -858,23 +858,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open",
-        "Retained markers below the content column stay text (markup-carve/carve#2619).",
-        "<ul>\n  <li>a\n    - s\n  </li>\n</ul>",
-    ),
-    (
-        "277-a-below-column-marker-after-a-comment-where-no-paragraph-is-open-2",
-        "Retained markers below the content column stay text (markup-carve/carve#2619).",
-        "<ul>\n  <li>a\n    1. o\n  </li>\n</ul>",
-    ),
-    (
-        "517-a-band-paragraph-after-an-invisible-line-leaves-the-item-loose-5",
-        "Retained markers below the content column stay text (markup-carve/carve#2619).",
-        "<ul>\n  <li><p>t</p>\n    <p>- b</p>\n  </li>\n  <li><p>s</p></li>\n</ul>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

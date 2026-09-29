@@ -64,11 +64,7 @@ use json::Value;
 const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 /// Exact HTML corrections pending in the shared vectors, retired when the pin agrees.
-const HTML_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "i04-fragment-containment-unclosed-fence",
-    "Literal child EOF payload (markup-carve/carve#2603, implemented by carve#2616)",
-    "<p>Before.</p>\n<pre><code class=\"language-js\">let x = 1;</code></pre>\n<p>After.</p>",
-)];
+const HTML_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 // ---------------------------------------------------------------------------
 // Vector location
