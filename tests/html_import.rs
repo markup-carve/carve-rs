@@ -142,22 +142,12 @@ struct AheadOfPin {
 // messages this engine writes, and markup-carve/carve#2454 took the message out
 // of the contract and out of the fixtures, so there was nothing left for the
 // entry to be a statement about.
-const AHEAD_OF_PIN: &[AheadOfPin] = &[AheadOfPin {
-    fixture: "paren-after-a-closed-bracket",
-    // markup-carve/carve#2577, read here as carve-rs#2161: PART 8 resolves a
-    // bracket run before an emphasis marker, so a marker inside a run cannot
-    // answer an opener outside it. The fixture's fourth paragraph escapes the
-    // `(` and leaves `[/a]` a run, which USED to re-parse as `[` plus an
-    // emphasis holding `a](b)`. Under the ruling the closing `/` sits outside
-    // that run and pairs with nothing, so the minimal escape moved to the `]`:
-    // with no run there, the emphasis pairs and the document round trips. The
-    // engine is right and the shared fixture predates the ruling.
-    reason: "markup-carve/carve#2577 moved the minimal escape from the paren to the bracket",
-    carve: Some(
-        "[a]\\(b) and f(x) and (see above) and [a] (b) and [a](b c)\n\n[[a]\\(u)]{.c}\n\n[`a`]\\(b)\n\n[/a\\](b)/\n\n[a]\\(b(xy)d) and [a]()\n",
-    ),
-    ast: None,
-}];
+//
+// Its `paren-after-a-closed-bracket` entry recorded this engine escaping the
+// `]` where the fixture escapes the `[`. Both spellings conform, so the entry
+// died to a canonical-form decision rather than to a fix: the fixture is the
+// cross-engine contract for importer output, and this engine now writes it.
+const AHEAD_OF_PIN: &[AheadOfPin] = &[];
 
 /// The two fields that record WHERE a node was written rather than what it is.
 ///
