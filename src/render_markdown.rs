@@ -355,7 +355,7 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             // already carry (carve-rs#2162). Writing one unconditionally gave an
             // unterminated empty fence two blank payload lines where the document
             // has one.
-            let ending = if crate::ast::code_payload_needs_ending(&content) {
+            let ending = if crate::ast::fenced_payload_needs_ending(&content) {
                 "\n"
             } else {
                 ""

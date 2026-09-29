@@ -1598,6 +1598,8 @@ mod markdown_empty_headings;
 
 #[path = "../a_bracket_run_bounds_its_trailing_comment.rs"]
 mod a_bracket_run_bounds_its_trailing_comment;
+#[path = "../a_fenced_payload_and_a_label_keep_their_authored_lines.rs"]
+mod a_fenced_payload_and_a_label_keep_their_authored_lines;
 #[path = "../a_marked_image_keeps_its_wrapper_through_prosemirror.rs"]
 mod a_marked_image_keeps_its_wrapper_through_prosemirror;
 #[path = "../a_quoted_container_fence_stores_no_lazy_claim.rs"]
