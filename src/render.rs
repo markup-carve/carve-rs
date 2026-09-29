@@ -399,7 +399,6 @@ fn render_blocks(
 ) -> String {
     let mut out = String::new();
     let mut first = true;
-    let mut previous_owns_separator = false;
     for block in nodes {
         if matches!(
             block,
@@ -410,21 +409,13 @@ fn render_blocks(
         ) {
             continue;
         }
-        if !first && !previous_owns_separator {
+        if !first {
             out.push('\n');
         }
         render_block(&mut out, block, level, options, state);
-        previous_owns_separator = is_all_blank_html_raw(block);
         first = false;
     }
     out
-}
-
-fn is_all_blank_html_raw(block: &BlockNode) -> bool {
-    matches!(block, BlockNode::RawBlock(raw)
-        if raw.format == "html"
-            && !raw.content.is_empty()
-            && raw.content.chars().all(|c| c == '\n'))
 }
 
 /// Render a raw block whose format the HTML target drops, reporting whether
@@ -529,7 +520,6 @@ fn render_document_blocks(
     let mut out = String::with_capacity(source_len.saturating_add(source_len / 2));
     let mut i = 0;
     let mut first = true;
-    let mut previous_owns_separator = false;
     while i < nodes.len() {
         // Skipped BEFORE the separating newline, or a block that renders to
         // nothing leaves a blank line where it stood. An abbreviation
@@ -550,10 +540,9 @@ fn render_document_blocks(
             i += 1;
             continue;
         }
-        if !first && !previous_owns_separator {
+        if !first {
             out.push('\n');
         }
-        let owns_separator = is_all_blank_html_raw(&nodes[i]);
         if matches!(nodes[i], BlockNode::Heading(_)) && options.sections {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
@@ -561,7 +550,6 @@ fn render_document_blocks(
             render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
-        previous_owns_separator = owns_separator;
         first = false;
     }
     out
@@ -1964,7 +1952,18 @@ fn render_list_item(
             // indentation behind, so `- a` / `  %% c` published
             // `<li>a    </li>` where carve-js, carve-php and the spec publish
             // `<li>a</li>` (carve-rs#532).
-            Part::Block(html) => !html.trim().is_empty(),
+            //
+            // `is_empty`, NOT `trim().is_empty()` - the same distinction the
+            // Inline arm makes below, and for a sharper reason here. Every block
+            // this arm means to drop renders the EMPTY string: a comment, an
+            // abbreviation definition and a raw block the target drops all
+            // return without indenting. A raw block whose format MATCHES renders
+            // its payload, and a payload of nothing or of one blank line is
+            // whitespace - which the clause keeps apart from an absent block
+            // (CARVE-P2-022, corpus 521). Trimming made the item the one host
+            // that could not tell those two from a comment, and it dropped the
+            // slot the container hosts already publish.
+            Part::Block(html) => !html.is_empty(),
             // A PARAGRAPH that renders to nothing is the same case (#429), and
             // the exemption here was the reason it still showed: a `+`-attached
             // block whose whole content was a collected definition or a comment
