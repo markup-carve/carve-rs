@@ -132,6 +132,12 @@ it is not a `{caption=...}` attribute):
 renders `<caption>Quarterly results</caption>`. The title is flattened to
 escaped plain text.
 
+A grouping `[label]` on the opener has no consumer here, so it falls to the
+caption floor and renders as a `<p class="div-label">` IMMEDIATELY BEFORE the
+`<table>`. A `<table>` admits no `<p>` and its one `<caption>` slot belongs to
+the title, which is the shape `CARVE-P9-072` states for a region whose element
+cannot hold a paragraph.
+
 ### Header rows and columns
 
 `{header-rows=N}` and `{header-cols=N}` go on the line PRECEDING the opener (a

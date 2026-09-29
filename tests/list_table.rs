@@ -81,14 +81,16 @@ fn caption_escapes_html_special_chars() {
 #[test]
 fn grouping_label_surfaces_as_caption_floor() {
     // A grouping `[label]` on a list-table must not be silently dropped when the
-    // extension consumes the block: it surfaces as the same `<p class="div-label">`
-    // the core caption floor would emit, after the title `<caption>`.
+    // extension consumes the block (docs/graceful-degradation.md). A `<table>`
+    // admits no `<p>` and its one caption slot belongs to the title, so the
+    // label PRECEDES the table - CARVE-P9-072's form for a region whose element
+    // cannot hold a paragraph.
     assert_eq!(
         h("::: list-table \"Cap\" [Lbl]\n- - A\n:::"),
         [
+            "<p class=\"div-label\">Lbl</p>",
             "<table>",
             "  <caption>Cap</caption>",
-            "  <p class=\"div-label\">Lbl</p>",
             "  <tbody>",
             "    <tr><td>A</td></tr>",
             "  </tbody>",
@@ -99,6 +101,28 @@ fn grouping_label_surfaces_as_caption_floor() {
     // The label is escaped.
     assert!(h("::: list-table [<b>x</b>]\n- - A\n:::")
         .contains("<p class=\"div-label\">&lt;b&gt;x&lt;/b&gt;</p>"));
+}
+
+#[test]
+fn the_caption_precedes_the_column_widths() {
+    // HTML's table content model is `caption?, colgroup*, ...`, so emitting the
+    // widths first would put the caption where no caption may appear.
+    assert_eq!(
+        h("{widths=\"30,70\"}\n::: list-table \"Cap\"\n- - A\n  - B\n:::"),
+        [
+            "<table>",
+            "  <caption>Cap</caption>",
+            "  <colgroup>",
+            "    <col style=\"width: 30%;\">",
+            "    <col style=\"width: 70%;\">",
+            "  </colgroup>",
+            "  <tbody>",
+            "    <tr><td>A</td><td>B</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
 }
 
 #[test]
