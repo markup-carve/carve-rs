@@ -27,6 +27,8 @@ which the published crate does not carry.
 
 - Markdown import keeps code blocks when a language hint is unsupported. It omits the whole hint instead of shortening it to a different language or producing an invalid fence (markup-carve/carve#2522).
 
+- Unterminated code fences after below-column comments keep lazy payload inside nested list items (#2146).
+
 - Fences inside quoted lists and footnotes no longer absorb following unmarked lines (markup-carve/carve#2550).
 
 - Comment spans use their opener column when placing following list content, including spans opened on a marker line or below the item column (markup-carve/carve#2530).

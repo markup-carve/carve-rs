@@ -10130,13 +10130,15 @@ fn parse_list(
                 // Keep the collector's fence boundary when a descendant's body
                 // ends below this item's column. A fresh chunk must not reclaim it.
                 let mut stopped_fence = None;
-                let mut nested = collect_indented_block_mapped_with(
+                let mut nested_columns = Vec::new();
+                let mut nested = collect_indented_block_mapped_with_columns(
                     cur,
                     base_indent,
                     content_col,
                     false,
                     &mut stopped_fence,
                     false,
+                    &mut nested_columns,
                 );
                 if stopped_fence.is_none() {
                     fold_lazy_run_and_resume(
@@ -10147,13 +10149,14 @@ fn parse_list(
                             collected_body_takes_the_lazy_line(&src.source, below, options)
                         },
                         |cur| {
-                            collect_indented_block_mapped_with(
+                            collect_indented_block_mapped_with_columns(
                                 cur,
                                 sub_indent - 1,
                                 content_col,
                                 false,
                                 &mut stopped_fence,
                                 false,
+                                &mut nested_columns,
                             )
                         },
                     );
@@ -12581,6 +12584,27 @@ fn collect_indented_block_mapped_with(
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
 ) -> MappedSource {
+    collect_indented_block_mapped_with_columns(
+        cur,
+        parent_indent,
+        strip_cols,
+        stop_at_content_column_marker,
+        fence,
+        lead_is_continuation,
+        &mut Vec::new(),
+    )
+}
+
+// Descendant columns survive a collection restart after a below-column comment.
+fn collect_indented_block_mapped_with_columns(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+    stop_at_content_column_marker: bool,
+    fence: &mut Option<FenceOpen>,
+    lead_is_continuation: bool,
+    nested_item_columns: &mut Vec<(usize, usize)>,
+) -> MappedSource {
     let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     // ONE COLLECTOR FOR BOTH PATHS. Without a `line_map` there is nothing to
     // map, so both maps stay empty and the rest of the walk is the walk the
@@ -12635,10 +12659,27 @@ fn collect_indented_block_mapped_with(
     let mut span_reached_this_frame = comment_fence.is_some();
     let mut closed_comment_span_above = false;
     let mut folded_code_span = false;
+    let mut folded_code_column = strip_cols;
     let mut folded_code_paragraph_open = false;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
-    let mut nested_item_columns: Vec<(usize, usize)> = Vec::new();
+    // A marker-line ladder opens descendants before collection begins.
+    let mut marker_line_columns = Vec::new();
+    if let Some(previous) = cur.pos.checked_sub(1) {
+        let mut lead = cur.lines[previous];
+        let mut offset = 0;
+        while let Some(marker) = detect_list_marker_full(lead) {
+            let Some(width) = marker_content_col(lead) else {
+                break;
+            };
+            let column = offset + width;
+            if column > strip_cols {
+                marker_line_columns.push(column);
+            }
+            offset = column;
+            lead = marker.content;
+        }
+    }
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -12742,7 +12783,7 @@ fn collect_indented_block_mapped_with(
         let fence_owns_flush_left = (fence.is_some() && line.starts_with(LAZY))
             || (folded_code_span
                 && folded_code_paragraph_open
-                && !is_list_marker(line)
+                && (!is_list_marker(line) || indent > parent_indent)
                 && !interrupts_lazy_continuation_as_container(cur, line));
         // A `+` at an ancestor's marker column names only a flush-left block.
         // When the following line is indented, the marker contributes nothing
@@ -12978,7 +13019,26 @@ fn collect_indented_block_mapped_with(
             && lines
                 .last()
                 .is_some_and(|line| detect_list_marker_full(line).is_some());
+        // A block reached by an ancestor ends the inner fold. A marker
+        // between item columns remains lazy text of the inner item.
+        let at_ancestor_column = indent == strip_cols
+            || nested_item_columns
+                .iter()
+                .any(|&(_, column)| column == indent)
+            || marker_line_columns.contains(&indent);
+        if folded_code_span
+            && indent < folded_code_column
+            && indent >= strip_cols
+            && ((is_list_marker(line) && at_ancestor_column)
+                || (!is_list_marker(line)
+                    && interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line))))
+        {
+            folded_code_span = false;
+            *fence = None;
+        }
+        let lazy_code_line = folded_code_span && indent < folded_code_column;
         let stripped = match (in_comment_span, comment_fence_strip) {
+            _ if lazy_code_line => indent,
             (true, Some(span_strip)) => span_strip.min(indent),
             _ if stranded_plus_is_lazy_text => indent.saturating_sub(1),
             _ => dedent_for_collection(line, indent, strip_cols),
@@ -12987,7 +13047,7 @@ fn collect_indented_block_mapped_with(
             comment_fence_strip = None;
         }
         let (mut sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
-        if folded_code_span && indent < strip_cols && !sliced.starts_with(LAZY) {
+        if lazy_code_line && !sliced.starts_with(LAZY) {
             sliced.insert_str(0, LAZY);
         }
         definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
@@ -13001,22 +13061,6 @@ fn collect_indented_block_mapped_with(
         // ghost as a closer, the stack emptied one level early, and the marker
         // gate severed the very div this tracker exists to keep whole.
         let opaque_here = fence.is_some() || in_comment_span;
-        // Match the authored fence column before rebasing the collected body.
-        // Markers inside that body must reach the rebase pass as payload.
-        let fence_line = if let Some(open) = fence.as_ref() {
-            if indent == open.content_col {
-                trim_ascii_start(line)
-            } else {
-                &sliced
-            }
-        } else if stop_at_content_column_marker
-            && indent > strip_cols
-            && (lines.is_empty() || lines.last().is_some_and(|line| is_blank_line(line)))
-        {
-            trim_ascii_start(line)
-        } else {
-            &sliced
-        };
         // A below-column comment retains the paragraph used by I4's
         // interruption test. An unclosed code fence still folds into it.
         let after_below_comment = cur
@@ -13026,14 +13070,45 @@ fn collect_indented_block_mapped_with(
                 indent_columns(cur.lines[at]) < strip_cols
                     && is_line_comment_any_column(cur.lines[at])
             });
+        let at_descendant_column = after_below_comment
+            && nested_item_columns
+                .iter()
+                .map(|&(_, column)| column)
+                .chain(marker_line_columns.iter().copied())
+                .any(|column| column == indent && column > strip_cols);
+        // Match the authored fence column before rebasing the collected body.
+        // Markers inside that body must reach the rebase pass as payload.
+        let fence_line = if let Some(open) = fence.as_ref() {
+            if indent == open.content_col {
+                trim_ascii_start(line)
+            } else {
+                &sliced
+            }
+        } else if at_descendant_column {
+            // Keep a descendant's folded fence visible to this collector so
+            // its below-column payload reaches the deferred inner item.
+            trim_ascii_start(line)
+        } else if stop_at_content_column_marker
+            && indent > strip_cols
+            && (lines.is_empty() || lines.last().is_some_and(|line| is_blank_line(line)))
+        {
+            trim_ascii_start(line)
+        } else {
+            &sliced
+        };
         if !in_comment_span {
             if fence.is_none() && after_below_comment {
+                folded_code_column = if at_descendant_column {
+                    indent
+                } else {
+                    strip_cols
+                };
                 folded_code_span = detect_fence_open(fence_line).is_some_and(|open| {
                     !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                         || !item_body_fence_has_closer(
                             &cur.lines[cur.pos + 1..],
                             open,
-                            strip_cols,
+                            folded_code_column,
                             |line, _| {
                                 detect_list_marker_full(line)
                                     .is_some_and(|marker| marker.indent <= parent_indent)
@@ -13041,7 +13116,7 @@ fn collect_indented_block_mapped_with(
                         )
                 });
             }
-            if folded_code_span && indent >= strip_cols {
+            if folded_code_span && indent >= folded_code_column {
                 let mut paragraph_line = innermost_marker_content(fence_line);
                 while let Some(rest) = strip_blockquote_prefix(paragraph_line) {
                     paragraph_line = rest;
