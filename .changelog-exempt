@@ -9,3 +9,11 @@
 1932: comments only; no parser, writer or lint behavior moved.
 1933: comments only; benchmark snapshots and corpus counts removed from source.
 1960: a performance regression that shipped nowhere. #1916 introduced the iterative Document teardown in this same unreleased window and cost about 11% on a small document; this recovers it. No consumer ever installed the slower form, and #1916's own breaking entry already describes the teardown.
+2016: the escape-narrowing probes are windowed rather than rerun. The decisions, the budget spent and the output are unchanged; #1995's entry covers the escape count a reader can see.
+2047: canonical-writer state moved behind a scope guard and an interrupted probe restores it. No output moved.
+2049: the parser and the lint reader share one typed codepoint line index instead of each building its own. No behavior moved.
+2055: a spec corpus pin bump whose engine change is nil; the corpus is a test artifact and nothing shipped moved with it.
+2081: abbreviation expansion reuses its text storage. Same output, fewer allocations, and the entry it briefly carried described the allocation rather than anything a consumer sees.
+2085: parser source mapping and line buffers moved into their own module. No behavior moved.
+2100: the canonical render session owns its pass state instead of a free-standing scope guard. No output moved.
+2182: a wall-clock parser guard in the test suite became a counter of the work the parser does. The counter is read by the test; parse output is unchanged.
