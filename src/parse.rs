@@ -12832,7 +12832,9 @@ fn collect_indented_block_mapped_with_columns(
                 // guard once needed redundant.
                 let threshold = strip_cols;
                 let _ = bi;
-                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
+                let continues = k < cur.lines.len()
+                    && (indent_columns(cur.lines[k]) >= threshold
+                        || (comment_fence.is_some() && cur.lines[k].starts_with(LAZY)));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.

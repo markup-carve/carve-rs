@@ -188,5 +188,19 @@
     "expected": [
       "x"
     ]
+  },
+  {
+    "name": "nested below-column blank payload",
+    "source": "- a\n  - b\n %%%\n\n      y\n %%%\n",
+    "expected": [
+      "\n  y"
+    ]
+  },
+  {
+    "name": "nested below-column interior blank payload",
+    "source": "- a\n  - b\n %%%\n  x\n\n      y\n %%%\n",
+    "expected": [
+      "x\n\n  y"
+    ]
   }
 ]
