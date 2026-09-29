@@ -118,6 +118,9 @@ which the published crate does not carry.
 - The plain-text escaper freezes a hash after an ampersand, so numeric-reference text cannot become a Carve tag (#1841).
 - Imported source is a `fmt` fixed point for four more shapes, and code-span values and table-cell spacing are preserved (#2024, #2025, #2070).
 - Retained marker and semantic attribute reports carry the severity and subject every other report gets, and migration reports verify the literal text they name (#2082, #2091).
+- An extension container places its own output where the element can hold it: a list-table's grouping label precedes the table rather than sitting inside it, a code group's inner lines are written at column 0, and a nested code-group or tabs wrapper opens and closes at one column (#2200, #2202, #2207, markup-carve/carve#2632).
+- A fenced quote keeps its closer when it is a figure target (#2201).
+- The HTML importer escapes the opening bracket of a pair that crosses a formatting boundary, and decides that escape on the completed run, so its output re-reads as the document it was given and formatting it twice is stable (#2206, #2211, markup-carve/carve#2577).
 
 ### Improvements
 
