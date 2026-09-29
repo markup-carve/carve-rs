@@ -87,9 +87,25 @@ fn a_footnote_reference_is_no_link() {
     assert_eq!(html("~[^n](b~) c~\n"), "<p><s>[^n](b</s>) c~</p>");
 }
 
+/// An angle-wrapped destination is opaque like any other. Carve takes it
+/// LITERALLY - the href is `<b~>`, brackets and all - so it is a destination and
+/// E2a hides it. The closing scan refused one on the premise that it could not be,
+/// and a marker inside it then closed there (carve-rs#2174).
 #[test]
-fn an_angle_wrapped_destination_still_closes() {
-    assert_eq!(html("~[a](<b~>) c\n"), "<p><s>[a](&lt;b</s>&gt;) c</p>");
+fn an_angle_wrapped_destination_is_opaque_too() {
+    assert_eq!(
+        html("~[a](<b~>) c\n"),
+        "<p>~<a href=\"&lt;b~&gt;\">a</a> c</p>"
+    );
+    // Balanced parens inside it too.
+    assert_eq!(
+        html("~[a](<b(c~)d>) e\n"),
+        "<p>~<a href=\"&lt;b(c~)d&gt;\">a</a> e</p>"
+    );
+    // A space outside a title is still no destination, so the link does not
+    // resolve - and the marker still finds no partner, because the run holds the
+    // one after it (carve-rs#2161). Measured against the oracle, not assumed.
+    assert_eq!(html("~[a](<b ~>) c\n"), "<p>~[a](&lt;b ~&gt;) c</p>");
 }
 
 #[test]

@@ -13452,13 +13452,14 @@ fn detect_block_image(line: &str) -> Option<Image> {
         return None;
     }
     let bytes = line.as_bytes();
-    let bracket_matches = compute_bracket_matches(bytes);
+    let (bracket_matches, bracket_run_at) = compute_bracket_matches(bytes);
     // Block-image detection runs once on a single line (not in a per-position
     // loop), so full-slice last-occurrence scans are fine here.
     let bracket_openers = compute_bracket_openers(&bracket_matches);
     let bounds = InlineBounds {
         matches: &bracket_matches,
         openers: &bracket_openers,
+        run_at: &bracket_run_at,
         last_close_paren: bytes.iter().rposition(|&b| b == b')'),
         last_close_brace: bytes.iter().rposition(|&b| b == b'}'),
         last_close_bracket: bytes.iter().rposition(|&b| b == b']'),
@@ -18383,6 +18384,9 @@ struct InlineBounds<'a> {
     /// Matching `]` index for every `[` (see `compute_bracket_matches`); empty
     /// when the text contains no bracket construct trigger.
     matches: &'a [usize],
+    /// For each position, the `[` of the innermost bracket run holding it (see
+    /// `compute_bracket_matches`). Empty alongside `matches`.
+    run_at: &'a [usize],
     /// The `[` that each `]` closes, for the scan that hides a link
     /// destination (E2a). Empty alongside `matches`.
     openers: &'a [usize],
@@ -18666,6 +18670,28 @@ impl InlineBounds<'_> {
 
     /// True when a `>` occurs at or after `pos`.
     #[inline]
+    /// The `[` of the innermost bracket run holding `pos`, or `None` outside every
+    /// run. `None` too when no bracket construct can fire in this text at all.
+    ///
+    /// PART 8 resolves a bracket run before an emphasis marker, so a delimiter
+    /// pair has to open and close in ONE run (markup-carve/carve#2577). This is
+    /// the question every scan asks, and it is asked by the run's own opener
+    /// rather than by a depth: two sibling runs sit at the same depth, so a depth
+    /// comparison pairs `[a /b] [c d/]` across the gap between them.
+    fn bracket_run_at(&self, pos: usize) -> Option<usize> {
+        let &open = self.run_at.get(pos)?;
+        // An UNCLOSED `[` delimits nothing, so it opens no run. The pairing pass
+        // records it while it is on the stack, and only a `]` that pops it gives
+        // it a match. No ENCLOSING bracket can have matched after an unmatched
+        // one either: the stack pops the most recent `[`, so an outer `]` would
+        // have matched this one first. Which is why this answers `None` rather
+        // than looking outward.
+        if open == NO_BRACKET_MATCH || self.matches.get(open) == Some(&NO_BRACKET_MATCH) {
+            return None;
+        }
+        Some(open)
+    }
+
     fn has_gt_from(&self, pos: usize) -> bool {
         self.last_gt.is_some_and(|p| p >= pos)
     }
@@ -18754,10 +18780,10 @@ fn parse_inline_context(
     // precompute answers for every `[`: a `%%` marker inside a bracket run ends
     // at the run's closer (CARVE-P9-041, markup-carve/carve#2576), and an
     // emphasis delimiter does not pair across one (PART 8, carve#2577).
-    let bracket_matches = if text.contains('[') {
+    let (bracket_matches, bracket_run_at) = if text.contains('[') {
         compute_bracket_matches(bytes)
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     let bracket_openers = compute_bracket_openers(&bracket_matches);
     // Last-occurrence positions of each mandatory closer, precomputed once so the
@@ -18807,6 +18833,7 @@ fn parse_inline_context(
     let bounds = InlineBounds {
         matches: &bracket_matches,
         openers: &bracket_openers,
+        run_at: &bracket_run_at,
         last_close_paren,
         last_close_brace,
         last_close_bracket,
@@ -18820,26 +18847,9 @@ fn parse_inline_context(
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
     let mut buf_src_delta: isize = 0;
-    // The bracket runs open at this position, innermost last, as (content start,
-    // closer index). CARVE-P9-041 gives a trailing `%%` marker the rest of the
-    // line, and the line is bounded by the inline run hosting the marker: a
-    // bracket run ends at its own closer, so a comment inside one cannot take the
-    // `]` (markup-carve/carve#2576). The same bound names where the run BEGINS,
-    // which is where the clause asks for no separator before the marker.
-    let mut open_runs: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
-        while open_runs.last().is_some_and(|&(_, close)| i >= close) {
-            open_runs.pop();
-        }
-        if c == b'[' {
-            if let Some(&close) = bracket_matches.get(i) {
-                if close != NO_BRACKET_MATCH {
-                    open_runs.push((i + 1, close));
-                }
-            }
-        }
         if c == 0 {
             flush_text(
                 &mut out,
@@ -18984,7 +18994,8 @@ fn parse_inline_context(
         // whitespace runs to the end of the line and is dropped
         // (`text %% comment`). A bracket run open here is the host: the marker
         // needs no separator at its start, and takes nothing past its closer.
-        let run_start = open_runs.last().map_or(0, |&(start, _)| start);
+        let comment_run = bounds.bracket_run_at(i);
+        let run_start = comment_run.map_or(0, |open| open + 1);
         if c == b'%'
             && bytes.get(i + 1) == Some(&b'%')
             && (i == run_start
@@ -19001,7 +19012,7 @@ fn parse_inline_context(
                 buf.pop();
             }
             let comment_start = i;
-            i = trailing_comment_end(bytes, i + 2, open_runs.last().map(|&(_, close)| close))
+            i = trailing_comment_end(bytes, i + 2, comment_run.map(|open| bounds.matches[open]))
                 .unwrap_or(bytes.len());
             // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
             // `comment` node and carve-js and carve-php both emit one here, so a
@@ -19589,7 +19600,6 @@ fn parse_inline_context(
             in_footnote,
             &mut emphasis_no_close,
             &bounds,
-            &open_runs,
             positions,
             base,
         ) {
@@ -21297,8 +21307,16 @@ fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
 ///
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
-fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
+fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
+    // For each position, the `[` of the INNERMOST bracket run holding it, or
+    // `NO_BRACKET_MATCH` outside every run. Filled by the same pass that pairs
+    // the brackets, so it hides exactly what that pass hides: a `[` inside a
+    // closed verbatim span or an editorial comment opens no run, and neither does
+    // an escaped one. Four scans need the answer - the inline loop's comment
+    // extent, the emphasis closing scan, the combined `/*` scan and the braced
+    // pair - and a stack per scan is four chances to hide a different construct.
+    let mut run_at = vec![NO_BRACKET_MATCH; bytes.len() + 1];
     let last_run_start = if bytes.contains(&b'`') {
         last_backtick_run_starts(bytes)
     } else {
@@ -21332,21 +21350,29 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
-            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'\\' if i + 1 < bytes.len() => {
+                fill_run(&mut run_at, &stack, i, i + 2);
+                i += 2;
+            }
             b'`' => match closed_span_end(i) {
                 (len, Some(end)) => {
                     spans.push((i + len, end));
+                    fill_run(&mut run_at, &stack, i, end);
                     i = end;
                 }
                 (len, None) => {
+                    fill_run(&mut run_at, &stack, i, i + len);
                     stack.clear();
                     i += len;
                 }
             },
             b'{' if comment_end(i).is_some() => {
-                i = comment_end(i).unwrap_or(i + 1);
+                let end = comment_end(i).unwrap_or(i + 1);
+                fill_run(&mut run_at, &stack, i, end);
+                i = end;
             }
             b'[' => {
+                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 stack.push(i);
                 i += 1;
             }
@@ -21354,9 +21380,13 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
                 if let Some(open) = stack.pop() {
                     matches[open] = i;
                 }
+                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
                 i += 1;
             }
-            _ => i += 1,
+            _ => {
+                run_at[i] = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+                i += 1;
+            }
         }
     }
     let mut budget = BRACKET_RESCAN_BUDGET * bytes.len() + 64;
@@ -21400,7 +21430,19 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
             }
         }
     }
-    matches
+    // A position past the last byte is outside every run, which is what the
+    // `bytes.len()` slot already holds.
+    (matches, run_at)
+}
+
+/// Mark `[from, to)` as held by the run on top of `stack`, for the byte ranges the
+/// pairing pass skips over in one step.
+fn fill_run(run_at: &mut [usize], stack: &[usize], from: usize, to: usize) {
+    let holder = stack.last().copied().unwrap_or(NO_BRACKET_MATCH);
+    let end = to.min(run_at.len());
+    for slot in &mut run_at[from.min(end)..end] {
+        *slot = holder;
+    }
 }
 
 /// The `[` each `]` closes, inverted from [`compute_bracket_matches`] once so
@@ -21658,7 +21700,6 @@ fn match_emphasis(
     in_footnote: bool,
     no_close: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
-    open_runs: &[(usize, usize)],
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
 ) -> Option<(InlineNode, usize)> {
@@ -21675,10 +21716,17 @@ fn match_emphasis(
         // Opener guard: the first content byte must exist and not be whitespace.
         if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
             let mut search = start;
+            // The run the opener sits in, which the closer has to share: PART 8
+            // resolves a bracket run first, so a `*/` inside one is that run's
+            // content (markup-carve/carve#2577, carve-rs#2173).
+            let opener_run = bounds.bracket_run_at(i);
             while let Some(close) = find_seq(bytes, search, b"*/") {
                 // Reject empty content or content ending in whitespace; keep
                 // scanning for a later closer, matching carve-php.
-                if close > start && !is_carve_ws(bytes[close - 1]) {
+                if close > start
+                    && !is_carve_ws(bytes[close - 1])
+                    && bounds.bracket_run_at(close) == opener_run
+                {
                     let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                     OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                     return Some((
@@ -21758,7 +21806,7 @@ fn match_emphasis(
             return None;
         }
     }
-    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds, open_runs)?;
+    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
     Some((
@@ -24118,6 +24166,13 @@ fn parse_forced_emphasis(
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
+    // The closer has to sit in the opener's bracket run. PART 8 resolves a run
+    // before an emphasis marker, so a `delim}` inside one is that run's content
+    // and cannot close a span opened outside it (markup-carve/carve#2577,
+    // carve-rs#2173). The bare and the combined forms read the same rule.
+    if bounds.bracket_run_at(j) != bounds.bracket_run_at(i) {
+        return None;
+    }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
     // A braced inline starts its own scope (ruling markup-carve/carve#2091).
     OpenKinds::pass_only(OpenKinds::bit(delim));
@@ -24342,7 +24397,6 @@ fn cached_find_emphasis_close(
     delim: u8,
     memo: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
-    open_runs: &[(usize, usize)],
 ) -> Option<usize> {
     let idx = emphasis_delim_index(delim);
     if memo.failed[idx].as_ref().is_some_and(|f| f[from]) {
@@ -24356,7 +24410,6 @@ fn cached_find_emphasis_close(
         delim,
         memo,
         bounds,
-        open_runs,
         failed.as_deref(),
         &mut visited,
     );
@@ -24377,22 +24430,12 @@ fn find_emphasis_close(
     delim: u8,
     memo: &mut EmphasisMemo,
     bounds: &InlineBounds<'_>,
-    open_runs: &[(usize, usize)],
     failed: Option<&[bool]>,
     visited: &mut Vec<usize>,
 ) -> Option<usize> {
-    // The runs still open at `from`, then whatever this scan opens itself. A
-    // `%%` marker inside one ends at its closer, so the delimiter after that
-    // closer is still reachable (`*[a %% x]*`). See `trailing_comment_end`.
-    let mut runs: Vec<(usize, usize)> = open_runs
-        .iter()
-        .copied()
-        .filter(|&(_, close)| close > from)
-        .collect();
-    // The run the OPENER sits in, as (content start, closer), or none outside
-    // every run. Its identity, not the depth: two sibling runs give the same
-    // depth, so `[a /b] [c d/]` would pair across the gap between them.
-    let opener_run = runs.last().copied();
+    // The run the OPENER sits in. `from` is just past the delimiter, and a `[`
+    // is never one, so the delimiter's own run is the run at `from`.
+    let opener_run = bounds.bracket_run_at(from);
     let mut j = from;
     while j < bytes.len() {
         if failed.is_some_and(|f| f[j]) {
@@ -24400,16 +24443,6 @@ fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
-        while runs.last().is_some_and(|&(_, close)| j >= close) {
-            runs.pop();
-        }
-        if ch == b'[' {
-            if let Some(&close) = bounds.matches.get(j) {
-                if close != NO_BRACKET_MATCH {
-                    runs.push((j + 1, close));
-                }
-            }
-        }
         if ch == b'\\' && j + 1 < bytes.len() {
             j += 2;
             continue;
@@ -24469,12 +24502,12 @@ fn find_emphasis_close(
                 continue;
             }
         }
-        let run = runs.last().copied();
+        let run = bounds.bracket_run_at(j);
         if ch == b'%'
             && bytes.get(j + 1) == Some(&b'%')
-            && (j == run.map_or(0, |(start, _)| start) || is_carve_ws(bytes[j - 1]))
+            && (j == run.map_or(0, |open| open + 1) || is_carve_ws(bytes[j - 1]))
         {
-            j = trailing_comment_end(bytes, j + 2, run.map(|(_, close)| close))?;
+            j = trailing_comment_end(bytes, j + 2, run.map(|open| bounds.matches[open]))?;
             continue;
         }
         // A raw inline's format block is not a braced highlight: the main
@@ -24501,7 +24534,7 @@ fn find_emphasis_close(
             // is the two delimiters sharing one. Not whether a run is open at
             // all: a pair both of whose halves sit inside one still pairs, and a
             // run BETWEEN two halves has been popped by the time we get here.
-            if runs.last().copied() != opener_run {
+            if bounds.bracket_run_at(j) != opener_run {
                 j += 1;
                 continue;
             }
@@ -24548,11 +24581,19 @@ fn opens_a_link(bytes: &[u8], close: usize, bounds: &InlineBounds<'_>) -> bool {
 }
 
 /// The `)` closing the destination that opens at `open`, or `None` when what
-/// follows is not one: parentheses balance and escape, the destination is
-/// not empty, not wrapped in angle brackets, and holds no space outside a
-/// title.
+/// follows is not one: parentheses balance and escape, the destination is not
+/// empty, and it holds no space outside a title.
+///
+/// A destination OPENING WITH `<` was refused too, on the premise that an
+/// angle-wrapped one cannot be a destination (carve-rs#1665). Carve takes it
+/// literally instead - `[a](<b>)` resolves here and in the oracle with `<b>` as
+/// its href, brackets and all - so the premise was wrong and the refusal hid a
+/// real destination from the closing scan. A marker inside one then closed there:
+/// `~[a](<b~>) c` lost the link (carve-rs#2174). The shapes that genuinely cannot
+/// be a destination are still refused by the rules below, which is why dropping
+/// this one changes nothing for `(<b c>)`, `(<>)` or an unclosed `(<b`.
 fn link_destination_end(bytes: &[u8], open: usize) -> Option<usize> {
-    if matches!(bytes.get(open + 1), None | Some(b')') | Some(b'<')) {
+    if matches!(bytes.get(open + 1), None | Some(b')')) {
         return None;
     }
     let mut depth = 1usize;
