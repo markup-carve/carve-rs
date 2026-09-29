@@ -153,6 +153,7 @@ impl CarveExtension for CodeGroup {
         }
 
         let level = ctx.level();
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(level);
         let inner_pad = ctx.indent(level + 1);
         if ctx.is_static() {
@@ -165,7 +166,7 @@ impl CarveExtension for CodeGroup {
             // option. `group` regardless, which is also what this renderer
             // emitted before the option existed.
             let attrs = self.wrapper_attrs(node.attrs.as_ref(), "group", ctx);
-            let mut html = format!("{pad}<div{}>\n", render_attrs_for(&attrs, "div"));
+            let mut html = format!("<div{}>\n", render_attrs_for(&attrs, "div"));
             for item in &items {
                 html.push_str(&format!(
                     "{inner_pad}<section class=\"{}\">\n",
@@ -272,11 +273,12 @@ impl CodeGroup {
         ctx: &RenderContext<'_>,
     ) -> String {
         let level = ctx.level();
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(level);
         // Extensions §13.6: only the wrapper's own two tags take the ambient
         // indentation. Every line between them is the cross-impl contract at
         // column 0, and a panel closes on a line this function does not pad.
-        let mut html = format!("{pad}<div{}>\n", render_attrs_for(attrs, "div"));
+        let mut html = format!("<div{}>\n", render_attrs_for(attrs, "div"));
 
         for (index, item) in items.iter().enumerate() {
             let input_id = ctx.unique_id(&format!("{group_id}-tab-{}", index + 1));
@@ -332,6 +334,7 @@ impl CodeGroup {
         ctx: &RenderContext<'_>,
     ) -> String {
         let level = ctx.level();
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(level);
 
         // Both ids per panel are computed ONCE and reused by the two loops, so
@@ -346,7 +349,7 @@ impl CodeGroup {
             })
             .collect();
 
-        let mut html = format!("{pad}<div{}>\n", render_attrs_for(attrs, "div"));
+        let mut html = format!("<div{}>\n", render_attrs_for(attrs, "div"));
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
@@ -799,6 +802,34 @@ mod tests {
                         "an inner line is indented: {line:?} in {out}"
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn wrapper_tags_share_a_column_at_each_nesting_depth() {
+        for source in [
+            TWO_PANELS.to_string(),
+            format!("# H\n\n{TWO_PANELS}"),
+            format!("# H\n\n## Subheading\n\n{TWO_PANELS}"),
+            format!("> {}", TWO_PANELS.replace('\n', "\n> ")),
+            format!("- item\n\n  {}", TWO_PANELS.replace('\n', "\n  ")),
+        ] {
+            for out in [html(&source), aria_html(&source), static_html(&source)] {
+                let opener = out
+                    .lines()
+                    .find(|line| line.trim_start().starts_with("<div class=\"code-group\""))
+                    .expect("extension wrapper opener");
+                let closer = out
+                    .lines()
+                    .rev()
+                    .find(|line| line.trim_start() == "</div>")
+                    .expect("extension wrapper closer");
+                assert_eq!(
+                    opener.len() - opener.trim_start().len(),
+                    closer.len() - closer.trim_start().len(),
+                    "wrapper tags occupy different columns: {out}"
+                );
             }
         }
     }

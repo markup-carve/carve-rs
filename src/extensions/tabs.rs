@@ -186,12 +186,13 @@ impl CarveExtension for Tabs {
             return None;
         }
 
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(ctx.level());
         let inner_pad = ctx.indent(ctx.level() + 1);
 
         if ctx.is_static() {
             let mut html = format!(
-                "{pad}<div{}>\n",
+                "<div{}>\n",
                 render_attrs_for(&self.wrapper_attrs(node, None, ctx), "div")
             );
             for item in &items {
@@ -237,6 +238,7 @@ impl Tabs {
         set_id: &str,
         ctx: &RenderContext<'_>,
     ) -> String {
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(ctx.level());
         // The children carry NO indentation of their own. Each one closes on a
         // line this function does not pad, and the panel body is written by the
@@ -246,7 +248,7 @@ impl Tabs {
         // them flush, and nothing had ever compared this output before
         // carve-rs#1188 gave the case a runner.
         let mut html = format!(
-            "{pad}<div{}>\n",
+            "<div{}>\n",
             render_attrs_for(&self.wrapper_attrs(node, None, ctx), "div")
         );
 
@@ -309,6 +311,7 @@ impl Tabs {
         set_id: &str,
         ctx: &RenderContext<'_>,
     ) -> String {
+        // The core renderer pads the opener; this pad belongs to the closer.
         let pad = ctx.indent(ctx.level());
 
         // Flush children, for the reason `render_css` states.
@@ -329,7 +332,7 @@ impl Tabs {
             .collect();
 
         let mut html = format!(
-            "{pad}<div{}>\n",
+            "<div{}>\n",
             render_attrs_for(&self.wrapper_attrs(node, Some("tablist"), ctx), "div"),
         );
 
@@ -831,5 +834,33 @@ One.
     fn an_author_class_survives_beside_the_wrapper_class() {
         let out = html("{.tabs .compact}\n::::\n::: tab [One]\nFirst.\n:::\n::::");
         assert!(out.contains("class=\"tabs compact\""), "{out}");
+    }
+
+    #[test]
+    fn wrapper_tags_share_a_column_at_each_nesting_depth() {
+        for source in [
+            TWO_TABS.to_string(),
+            format!("# H\n\n{TWO_TABS}"),
+            format!("# H\n\n## Subheading\n\n{TWO_TABS}"),
+            format!("> {}", TWO_TABS.replace('\n', "\n> ")),
+            format!("- item\n\n  {}", TWO_TABS.replace('\n', "\n  ")),
+        ] {
+            for out in [html(&source), aria_html(&source), static_html(&source)] {
+                let opener = out
+                    .lines()
+                    .find(|line| line.trim_start().starts_with("<div class=\"tabs\""))
+                    .expect("extension wrapper opener");
+                let closer = out
+                    .lines()
+                    .rev()
+                    .find(|line| line.trim_start() == "</div>")
+                    .expect("extension wrapper closer");
+                assert_eq!(
+                    opener.len() - opener.trim_start().len(),
+                    closer.len() - closer.trim_start().len(),
+                    "wrapper tags occupy different columns: {out}"
+                );
+            }
+        }
     }
 }
