@@ -1308,13 +1308,14 @@ mod layout_html_tests {
                 path.display()
             );
         }
-        // 52 before the pin moved to carve 1b27b68. The one document added is
-        // corpus 448-6, a plain nested unordered list; the fast path accepts it
-        // and the per-document assertion above already proves it byte-identical
-        // to the authoritative pipeline. No scanner widened to take it - the
-        // corpus gained a document the existing list shape already covered.
+        // 52 before the pin moved to carve 1b27b68, then 53. The three documents
+        // added with the bump to carve 89157529 are all NEW corpus documents, and
+        // the 53 accepted before are accepted still: corpus 522-2, a plain link,
+        // and corpus 524 and 524-2, an empty and a one-blank code fence. No
+        // scanner widened to take them, and the per-document assertion above
+        // already proves each byte-identical to the authoritative pipeline.
         assert_eq!(
-            accepted, 53,
+            accepted, 56,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

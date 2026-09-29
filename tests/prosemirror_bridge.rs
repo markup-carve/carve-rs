@@ -1486,8 +1486,26 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // kinds are already declared unmapped and already carried by hundreds of
     // documents here, so no new cause appears with this pin. 1463/457 becomes
     // 1503/476 over 1979.
-    const STRICT: usize = 1503;
-    const LOSSY: usize = 476;
+    //
+    // The pin moves on to carve 89157529, and the delta is again DOCUMENTS
+    // ARRIVING. The corpus diff between the two pins is 97 `.crv` files ADDED
+    // with none modified and none removed, plus one `.html` golden modified
+    // (corpus 372, from markup-carve/carve#2574), and this sweep reads sources -
+    // so no pre-existing document can change bucket. Measured rather than
+    // assumed: classifying all 2097 documents and restricting to the 2000 the old
+    // pin carried gives 1524/476, the same 476 this ceiling was written at.
+    //
+    // EIGHT of the 97 joiners report, and each degrades with nothing dropped.
+    // Four report `soft_break` alone - corpus 514-7, 514-10 and 514-12, each a
+    // container whose last block leaves no paragraph open for the line below it,
+    // and 519-4. Corpus 523-5 and 523-6 report `smart_punctuation` alongside it,
+    // and 527 and 527-2 report `smart_punctuation` on its own. Both kinds are
+    // already declared unmapped and already carried by hundreds of documents here,
+    // so no new cause appears with this pin. 1503/476 becomes 1613/484, and the
+    // strict side is pinned at what it measures rather than at a floor that had
+    // lagged it by 21.
+    const STRICT: usize = 1613;
+    const LOSSY: usize = 484;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

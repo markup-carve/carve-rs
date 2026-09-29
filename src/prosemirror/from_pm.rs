@@ -179,7 +179,14 @@ impl Reader {
                         let ia = attrs_obj(only);
                         let unresolved = string_opt(ia, "carveRef").is_some()
                             && string_opt(ia, "src").unwrap_or_default().is_empty();
-                        if mapped == "image" && !unresolved {
+                        // A MARKED image is not a lone one. Its marks are what
+                        // wrap it - a link, a span, an emphasis - and a block
+                        // image has nowhere to carry them, so unwrapping
+                        // `[![a](/i)](/u)` returned the image alone and dropped
+                        // the link and the paragraph with it, silently: the
+                        // forward direction reported no loss at all.
+                        let marked = !array_field(only, "marks").is_empty();
+                        if mapped == "image" && !unresolved && !marked {
                             return self.inline_atom(only, "image");
                         }
                     }
