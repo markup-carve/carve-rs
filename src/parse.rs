@@ -19852,6 +19852,9 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = braced_pair_close(bytes, start, b'+')?;
+            if !braced_closer_shares_the_run(bounds, start, pair) {
+                return None;
+            }
             // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (markup-carve/carve#1447).
             // `inline_content` is a one-or-more repetition, so an opener that
             // meets its own closer opened nothing and its characters are text.
@@ -19902,6 +19905,9 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = braced_pair_close(bytes, start, b'-')?;
+            if !braced_closer_shares_the_run(bounds, start, pair) {
+                return None;
+            }
             // An empty deletion is not a deletion, same rule as the insertion
             // above; the one string it spelled is the en dash just handled.
             if pair == content_start {
@@ -19932,6 +19938,9 @@ fn parse_critic_markup(
                 return None;
             }
             let (pair, arrow) = substitution_at(bytes, start)?;
+            if !braced_closer_shares_the_run(bounds, start, pair) {
+                return None;
+            }
             let old = std::str::from_utf8(&bytes[content_start..arrow]).ok()?;
             let new = std::str::from_utf8(&bytes[arrow + 2..pair]).ok()?;
             Some((
@@ -19961,6 +19970,12 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'#', start) {
                 return None;
             }
+            // No run check here, unlike the three forms above: the bracket-pairing
+            // pass SKIPS an editorial comment, so a `[` inside one opens no run and
+            // both ends of this pair always answer the same `None`. A guard here
+            // could not fire - verified with a probe - and `[{#a]#}` reads as a
+            // comment in all three engines, so the crossing closer is its own
+            // divergence rather than this one (carve-rs#2212).
             let pair = find_seq(bytes, content_start, b"#}")?;
             // An empty comment says nothing to anybody, and `comment_content`
             // requires a character since markup-carve/carve#1447.
@@ -19978,6 +19993,17 @@ fn parse_critic_markup(
         }
         _ => None,
     }
+}
+
+/// Whether a braced inline's closer sits in the bracket run its opener sits in.
+///
+/// PART 8 resolves a bracket run before a braced inline, so an `X}` inside one is
+/// that run's content and closes nothing opened outside it - the rule the bare and
+/// forced emphasis forms already read (markup-carve/carve#2577, carve-rs#2173),
+/// applied to the critic family as the same rule in another spelling
+/// (carve-rs#2212).
+fn braced_closer_shares_the_run(bounds: &InlineBounds<'_>, open: usize, close: usize) -> bool {
+    bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
 }
 
 fn parse_footnote_ref(
