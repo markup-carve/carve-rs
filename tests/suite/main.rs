@@ -1647,3 +1647,6 @@ mod container_ownership;
 
 #[path = "../an_escaped_crossing_closer_leaves_its_opener_open.rs"]
 mod an_escaped_crossing_closer_leaves_its_opener_open;
+
+#[path = "../opaque_marker_quote_ownership.rs"]
+mod opaque_marker_quote_ownership;

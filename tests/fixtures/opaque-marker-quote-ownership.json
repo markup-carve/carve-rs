@@ -1,0 +1,170 @@
+[
+  {
+    "source": "- > ```\n  > x\n  > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\ny\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n    > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    &gt; y\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n\n  > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y\n<code></code></p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n\n    > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y\n<code></code></p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n  > y\n  > ~~~\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\ny\n</code></pre>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n    > y\n  > ~~~\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    &gt; y\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n\n  > y\n  > ~~~\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y\n~~~</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n\n    > y\n  > ~~~\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y\n~~~</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n  > ~~~\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n  > ~~~\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n  > ~~~\n\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ~~~\n  > x\n  > ~~~\n\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n  > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\ny\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n    > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    &gt; y\n    <blockquote>\n      <pre><code></code></pre>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n\n  > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    <blockquote><p>y\n<code></code></p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n\n    > y\n  > ```\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    <blockquote><p>y\n<code></code></p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n  > ```\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n  > ```\n\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```=html\n  > x\n  > ```\n\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      x\n    </blockquote>\n    <blockquote><p>y</p></blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > # H\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <h1 id=\"H\">H</h1>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > # H\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <h1 id=\"H\">H</h1>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > | a |\n  > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <table>\n        <tbody>\n          <tr><td>a</td></tr>\n        </tbody>\n      </table>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > | a |\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <table>\n        <tbody>\n          <tr><td>a</td></tr>\n        </tbody>\n      </table>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > p\n  > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <p>p</p>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > # H\n  > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <h1 id=\"H\">H</h1>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > p\n\n  > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote><p>p</p></blockquote>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > p\n  >\n  > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <p>p</p>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- a\n  > ```\n  > x\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>a\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > > ```\n  > > x\n  > > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <pre><code>x\n</code></pre>\n      </blockquote>\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > > ```\n  > > x\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <pre><code>x\n</code></pre>\n      </blockquote>\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ***\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <hr>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > %%%\n  > x\n    > y\n  > %%%\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n  > ~~~\n  > z\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <pre><code>z\n</code></pre>\n    </blockquote>\n    &gt; y\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n  > ~~~\n  > z\n  > ~~~\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <pre><code>z\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > > ```\n  > > x\n  > > ```\n  > > ~~~\n  > > z\n  > > ~~~\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <pre><code>x\n</code></pre>\n        <pre><code>z\n</code></pre>\n      </blockquote>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > ```\n  > x\n  > ```\n  > > ```\n  > > z\n  > > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <pre><code>x\n</code></pre>\n      <blockquote>\n        <pre><code>z\n</code></pre>\n      </blockquote>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- > > ```\n  > > x\n  > > ```\n  > ```\n  > z\n  > ```\n    > y\n",
+    "html": "<ul>\n  <li>\n    <blockquote>\n      <blockquote>\n        <pre><code>x\n</code></pre>\n      </blockquote>\n      <pre><code>z\n</code></pre>\n      <p>y</p>\n    </blockquote>\n  </li>\n</ul>"
+  }
+]
