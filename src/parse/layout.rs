@@ -1399,7 +1399,7 @@ mod adjacent_definition_tests {
     }
 
     #[test]
-    fn incomplete_runs_fall_back_without_writing() {
+    fn invalid_or_denied_runs_fall_back_without_writing() {
         for source in [
             "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n",
             "[a]: /one\n[b]: /two junk\n",
@@ -1456,6 +1456,31 @@ mod denied_definition_run_reporting {
         let source = "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n";
         let expected = "<p><a href=\"\">A</a> <a href=\"/safe\">B</a></p>";
         assert_eq!(crate::to_html(source), expected);
+        for streaming in [false, true] {
+            let report = crate::with_render_loss_report(
+                crate::RenderTarget::Html,
+                crate::CheckedRenderOptions::default(),
+                || {
+                    if streaming {
+                        let mut output = String::new();
+                        let outcome = crate::try_render_html_streaming(
+                            source,
+                            &crate::Options::default(),
+                            |chunk| output.push_str(chunk),
+                        );
+                        assert_eq!(outcome, crate::StreamOutcome::NeedsAst);
+                        assert!(output.is_empty());
+                    }
+                    crate::to_html(source)
+                },
+            )
+            .unwrap();
+            assert_eq!(report.value, expected);
+            assert_eq!(report.total_losses, 1);
+            assert_eq!(report.losses[0].code, "destination-denied");
+            assert!(report.losses[0].pos.is_none());
+        }
+
         let report =
             crate::to_html_with_report(source, crate::CheckedRenderOptions::default()).unwrap();
         assert_eq!(report.value, expected);
