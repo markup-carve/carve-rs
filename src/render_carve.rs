@@ -243,7 +243,7 @@ fn text_as_one_run(doc: &Document) -> Option<Document> {
                                 attrs: ruby.attrs.clone(),
                                 children: ruby.flattened(),
                                 injected: false,
-                                pos: ruby.pos.clone(),
+                                pos: ruby.pos,
                             })]
                         }
                         InlineNode::Ruby(ruby) => ruby.flattened(),
