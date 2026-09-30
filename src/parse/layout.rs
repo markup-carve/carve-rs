@@ -1448,3 +1448,19 @@ mod adjacent_definition_stream_tests {
         assert_eq!(output, crate::render_html(&crate::parse(&source)).unwrap());
     }
 }
+
+#[cfg(test)]
+mod denied_definition_run_reporting {
+    #[test]
+    fn denied_reference_runs_report_once_through_the_ast_renderer() {
+        let source = "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n";
+        let expected = "<p><a href=\"\">A</a> <a href=\"/safe\">B</a></p>";
+        assert_eq!(crate::to_html(source), expected);
+        let report =
+            crate::to_html_with_report(source, crate::CheckedRenderOptions::default()).unwrap();
+        assert_eq!(report.value, expected);
+        assert_eq!(report.total_losses, 1);
+        assert_eq!(report.losses[0].code, "destination-denied");
+        assert!(report.losses[0].pos.is_some());
+    }
+}
