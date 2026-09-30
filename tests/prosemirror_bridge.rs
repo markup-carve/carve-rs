@@ -1513,8 +1513,24 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // both readings found no other document moving, so 1613/484 becomes 1612/485
     // and the pair still covers the corpus exactly.
     // The bcdcba4b pin adds 37 documents: 25 strict and 12 with reported loss.
-    const STRICT: usize = 1637;
-    const LOSSY: usize = 497;
+    //
+    // The pin moves on to carve 9d6d06c, and the delta is again DOCUMENTS
+    // ARRIVING. The corpus diff between the two pins is 132 files, all ADDED -
+    // the 66 `.crv`/`.html` pairs of corpus 532 through 535 - with none
+    // modified and none removed, and this sweep reads sources, so no
+    // pre-existing document can change bucket.
+    //
+    // SIX of the 66 joiners report, and each degrades with nothing dropped:
+    // `535-a-marker-line-opaque-quote-keeps-overindented-markers-literal` 3, 4,
+    // 11, 12, 19 and 20, every one reporting the single cause `soft_break`.
+    // Each is a container whose last block leaves no paragraph open for the
+    // line below it, so the line folds in and the boundary survives as a soft
+    // break - the kind hundreds of documents here already carry, so no new
+    // cause appears with this pin. The other 60 are strict, which the declared
+    // source-lossy set holding and no name reaching `undeclared` is what says,
+    // rather than a count. 1637/497 becomes 1697/503.
+    const STRICT: usize = 1697;
+    const LOSSY: usize = 503;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
