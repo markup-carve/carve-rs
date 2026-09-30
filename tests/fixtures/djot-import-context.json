@@ -134,5 +134,21 @@
   [
     "- x\n\n  ```\n  a\n      ```\n\nlater _em_",
     "<em>em</em>"
+  ],
+  [
+    " ```\ncode _b_\n```\n\nlater _em_",
+    "code _b_"
+  ],
+  [
+    " ```\ncode _b_\n```\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "![a *s*{#i} c](u)",
+    "alt=\"a s c\""
+  ],
+  [
+    "![a _e_{#i} c](u)",
+    "alt=\"a e c\""
   ]
 ]

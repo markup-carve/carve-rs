@@ -108,6 +108,7 @@ pub fn djot_to_carve(djot: &str) -> String {
         alt_prefix.push('\0');
     }
     let mut alts = Vec::new();
+    let mut alt_cache = std::collections::HashMap::<String, String>::new();
     let image = cached_regex!(r"!\[([^\[\]\n]*)\]([\[(])").unwrap();
     let mask = mask_code_and_destinations(&folded);
     let folded = image
@@ -124,21 +125,28 @@ pub fn djot_to_carve(djot: &str) -> String {
                 return format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2]);
             }
             let label = &caps[1];
-            alts.push(
-                crate::to_plain_text_with_options(
-                    &rewrite_djot_body(&format!("DJOTALT {label} DJOTEND")),
-                    &crate::Options {
-                        smart_typography: crate::SmartTypographyMode::Source,
-                        ..crate::Options::default()
-                    },
-                )
-                .trim_end_matches('\n')
-                .strip_prefix("DJOTALT ")
-                .unwrap_or("")
-                .strip_suffix(" DJOTEND")
-                .unwrap_or("")
-                .to_string(),
-            );
+            if let Some(alt) = alt_cache.get(label) {
+                alts.push(alt.clone());
+                return format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2]);
+            }
+            let alt = crate::to_plain_text_with_options(
+                &djot_to_carve(&format!(
+                    "DJOTALT {} DJOTEND",
+                    strip_image_alt_attributes(label)
+                )),
+                &crate::Options {
+                    smart_typography: crate::SmartTypographyMode::Source,
+                    ..crate::Options::default()
+                },
+            )
+            .trim_end_matches('\n')
+            .strip_prefix("DJOTALT ")
+            .unwrap_or("")
+            .strip_suffix(" DJOTEND")
+            .unwrap_or("")
+            .to_string();
+            alt_cache.insert(label.to_string(), alt.clone());
+            alts.push(alt);
             format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
         })
         .into_owned();
@@ -184,6 +192,32 @@ pub fn djot_to_carve(djot: &str) -> String {
 
 fn quote_djot_attribute(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn strip_image_alt_attributes(label: &str) -> String {
+    let mut mask = mask_code_and_destinations(label).into_bytes();
+    for value in cached_regex!(r"<[^<>\s]+>").unwrap().find_iter(label) {
+        if value.as_str().contains(':') || value.as_str().contains('@') {
+            mask[value.range()].fill(b' ');
+        }
+    }
+    let bytes = label.as_bytes();
+    let mut out = String::new();
+    let mut cursor = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'{' && mask[at] == b'{' && !is_escaped(bytes, at) {
+            if let Some((end, _)) = read_djot_word_attributes(label, at) {
+                out.push_str(&label[cursor..at]);
+                cursor = end;
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    out.push_str(&label[cursor..]);
+    out
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
@@ -775,7 +809,6 @@ fn convert_djot_block_markers(source: &str) -> String {
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
-        let nested = nested_block(&masked, index, quote, columns);
         if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
             let token = &content[1..close + 1];
             let tail = &content[close + 2..];
@@ -784,6 +817,7 @@ fn convert_djot_block_markers(source: &str) -> String {
                 && tail.starts_with([' ', '\t'])
                 && !tail.trim().is_empty()
             {
+                let nested = nested_block(&masked, index, quote, columns);
                 let authored = &lines[index];
                 let authored_rest = &authored[prefix + indent_bytes..];
                 lines[index] = format!(
@@ -811,6 +845,7 @@ fn convert_djot_block_markers(source: &str) -> String {
             count += 1;
         }
         if valid && count >= 3 {
+            let nested = nested_block(&masked, index, quote, columns);
             lines[index] = format!(
                 "{}{}***",
                 quote,
@@ -1450,7 +1485,8 @@ fn mask_code_and_destinations(source: &str) -> String {
     let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
     let mut previous_block = true;
     let mut offset = 0;
-    for raw in source.split_inclusive('\n') {
+    let source_lines: Vec<_> = source.split('\n').collect();
+    for (index, raw) in source.split_inclusive('\n').enumerate() {
         let line = raw.trim_end_matches('\n');
         let (depth, content) = quoted(line);
         let prefix_len = line.len() - content.len();
@@ -1484,7 +1520,9 @@ fn mask_code_and_destinations(source: &str) -> String {
             if !marker.starts_with(':') || previous_block {
                 let container = if !marker.is_empty() {
                     Some(open[1].len() + marker.len())
-                } else if !open[1].is_empty() {
+                } else if !open[1].is_empty()
+                    && nested_block(&source_lines, index, &line[..prefix_len], open[1].len())
+                {
                     Some(open[1].len())
                 } else {
                     None
