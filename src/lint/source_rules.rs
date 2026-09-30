@@ -406,9 +406,12 @@ pub(super) fn collect(
                     .map(|(start, _)| *start)
                     .min()
             });
-        let continuing_run =
-            run.is_some() && run == previous_run || block_run.is_some_and(|start| start < ln);
-        previous_run = run;
+        let continuing_run = run.is_some_and(|(kind, _)| kind == '|')
+            && column > owner.map_or(0, |i| i.content)
+            && run == previous_run
+            || block_run.is_some_and(|start| start < ln);
+        previous_run =
+            run.filter(|(kind, _)| *kind == '|' && column > owner.map_or(0, |i| i.content));
         if let Some((owner_line, ch, width)) = open_fence {
             if containing.is_some_and(|i| i.first == owner_line) {
                 let run = view.chars().take_while(|&c| c == ch).count();

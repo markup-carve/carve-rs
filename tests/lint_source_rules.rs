@@ -299,6 +299,8 @@ fn overindented_blocks_report_only_their_openers() {
         ("- a\n  | x |\n   | y |\n", vec![]),
         ("- | x |\n   | y |\n", vec![]),
         ("- a\n  > q\n   > r\n", vec![]),
+        ("- a\n  >\n   > r\n", vec![]),
+        ("- a\n  > ```\n  > c\n   > ```\n", vec![]),
         ("> - a\n>    > q\n>    > r\n", vec![2]),
         ("> - a\n>\n>    > q\n", vec![3]),
         ("- > q\n   > r\n", vec![]),
