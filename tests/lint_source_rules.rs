@@ -316,3 +316,29 @@ fn overindented_blocks_report_only_their_openers() {
         assert_eq!(lines, expected, "{source}");
     }
 }
+
+#[test]
+fn canonical_empty_bodies_and_quote_prefixes_do_not_warn() {
+    for source in [
+        "See[^f]\n\n[^f]: {empty}\n",
+        ":: t\n: {empty}\n\nflush\n",
+        "- > ```\n  > x\n\n  > y\n  > ```\n",
+    ] {
+        assert!(
+            carve::lint_carve(source).is_empty(),
+            "{source:?}: {:?}",
+            carve::lint_carve(source)
+        );
+    }
+    for source in [
+        "> :  a\n>\n>    ```\n>    x\nflush\n",
+        "> - a\n>\n>     ~~~\n>     x\nz\n>     b\n>     ~~~\n",
+    ] {
+        assert!(!carve::lint_carve(source)
+            .iter()
+            .any(|warning| warning.rule == "fence-delimiter-indentation"));
+    }
+    assert!(carve::lint_carve("{empty}\n")
+        .iter()
+        .any(|warning| warning.rule == "unattached-block-attribute"));
+}
