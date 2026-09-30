@@ -50,12 +50,33 @@ pub fn render_html_with_options(
     // BEFORE the clone below, which is itself a recursion over the tree with no
     // ceiling to consult (`crate::render_depth::refuse_if_too_deep`).
     crate::render_depth::refuse_if_too_deep(doc, "html")?;
-    render_html_owned_with_options(doc.clone(), options)
+    render_html_owned_unchecked(doc.clone(), options)
 }
 
-/// Render a document whose ownership the caller can surrender, avoiding the
-/// defensive clone required by the public borrowed-AST renderer.
-pub(crate) fn render_html_owned_with_options(
+/// Render an owned document without cloning its tree.
+///
+/// Returns an error if the tree exceeds [`MAX_RENDER_DEPTH`].
+///
+/// ```
+/// let doc = carve::parse("Hello.");
+/// assert_eq!(carve::render_html_owned(doc).unwrap(), "<p>Hello.</p>");
+/// ```
+pub fn render_html_owned(doc: Document) -> Result<String, crate::RenderDepthError> {
+    render_html_owned_with_options(doc, &Options::default())
+}
+
+/// Render an owned document with options, without cloning its tree.
+///
+/// Returns an error before preprocessing if the tree exceeds [`MAX_RENDER_DEPTH`].
+pub fn render_html_owned_with_options(
+    doc: Document,
+    options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
+    crate::render_depth::refuse_if_too_deep(&doc, "html")?;
+    render_html_owned_unchecked(doc, options)
+}
+
+fn render_html_owned_unchecked(
     doc: Document,
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
@@ -4601,5 +4622,130 @@ mod nested_list_output_buffers {
             .unwrap()
             .join()
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod owned_html_tests {
+    use super::*;
+
+    #[test]
+    fn owned_and_borrowed_renderers_agree() {
+        for source in [
+            "# Same\n\n# Same\n",
+            "![alt](/image)\n",
+            "[text][r]\n\n[r]: /target \"title\"\n",
+            "A[^n]\n\n[^n]: note\n",
+            "# Target\n\n</#Target>\n",
+        ] {
+            for sections in [false, true] {
+                let options = Options {
+                    sections,
+                    ..Options::default()
+                };
+                let doc = crate::parse_with_options(source, &options);
+                let before = doc.clone();
+                let borrowed = render_html_with_options(&doc, &options).unwrap();
+                assert_eq!(doc, before);
+                assert_eq!(
+                    render_html_owned_with_options(doc, &options).unwrap(),
+                    borrowed
+                );
+            }
+        }
+        assert_eq!(
+            render_html_owned(crate::parse("Hello.")).unwrap(),
+            "<p>Hello.</p>"
+        );
+    }
+
+    #[test]
+    fn owned_renderer_refuses_before_preprocessing() {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let mut doc = crate::parse("leaf");
+                let mut block = doc.children.pop().unwrap();
+                for _ in 0..100_000 {
+                    block = BlockNode::BlockQuote(BlockQuote {
+                        children: vec![block],
+                        attrs: None,
+                        pos: None,
+                        fenced: false,
+                    });
+                }
+                doc.children.push(block);
+                let error = render_html_owned(doc).unwrap_err();
+                assert_eq!(error.renderer(), "html");
+                assert_eq!(error.limit(), MAX_RENDER_DEPTH);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod owned_html_metadata_depth_tests {
+    use super::*;
+
+    fn deep_inline() -> Vec<InlineNode> {
+        let mut node = InlineNode::text("leaf".to_string());
+        for _ in 0..MAX_RENDER_DEPTH + 16 {
+            node = InlineNode::Emphasis(Emphasis {
+                attrs: None,
+                kind: EmphasisKind::Strong,
+                children: vec![node],
+                pos: None,
+            });
+        }
+        vec![node]
+    }
+
+    #[test]
+    fn metadata_inline_trees_obey_the_ceiling() {
+        for slot in 0..6 {
+            let mut doc = crate::parse("");
+            let table = |caption, short_caption| Table {
+                attrs: None,
+                caption,
+                short_caption,
+                columns: vec![],
+                rows: vec![],
+                row_groups: None,
+                pos: None,
+            };
+            let node = match slot {
+                0 => BlockNode::CitationDefinition(CitationDefinition {
+                    key: "key".to_string(),
+                    children: deep_inline(),
+                    attrs: None,
+                    pos: None,
+                }),
+                1 => BlockNode::ExtensionCarrier(ExtensionCarrier {
+                    name: "name".to_string(),
+                    attrs: None,
+                    children: vec![],
+                    summary: Some(deep_inline()),
+                    label: None,
+                    pos: None,
+                }),
+                2 => BlockNode::Table(table(None, Some(deep_inline()))),
+                _ => BlockNode::Figure(Figure {
+                    attrs: None,
+                    caption: vec![],
+                    rendered_target: None,
+                    pos: None,
+                    short_caption: if slot == 3 { Some(deep_inline()) } else { None },
+                    target: Box::new(FigureTarget::Table(table(
+                        if slot == 4 { Some(deep_inline()) } else { None },
+                        if slot == 5 { Some(deep_inline()) } else { None },
+                    ))),
+                }),
+            };
+            doc.children.push(node);
+            assert!(render_html(&doc).is_err(), "slot {slot}");
+            assert!(render_html_owned(doc).is_err(), "slot {slot}");
+        }
     }
 }
