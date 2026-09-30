@@ -31,6 +31,44 @@ fn clear(openers: &mut [Vec<(usize, usize, bool)>; 4], from: usize) {
 pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> String) -> String {
     let bytes = source.as_bytes();
     let mask = mask.as_bytes();
+    let mut valid_braces = HashSet::new();
+    let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
+    let mut brace_line_start = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\n' {
+            if source[brace_line_start..at]
+                .trim_matches([' ', '\t', '>'])
+                .is_empty()
+            {
+                pending_braces.clear();
+            }
+            brace_line_start = at + 1;
+        }
+        if bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if mask[at] == bytes[at] {
+            if bytes[at] == b'{'
+                && bytes
+                    .get(at + 1)
+                    .is_some_and(|byte| b"+-=^~".contains(byte))
+            {
+                pending_braces.entry(bytes[at + 1]).or_default().push(at);
+            } else if bytes[at] == b'}' && at > 0 {
+                if let Some(start) = pending_braces
+                    .get_mut(&bytes[at - 1])
+                    .and_then(|stack| stack.pop())
+                {
+                    if at > start + 2 {
+                        valid_braces.insert(start);
+                    }
+                }
+            }
+        }
+        at += 1;
+    }
     let mut openers: [Vec<(usize, usize, bool)>; 4] = std::array::from_fn(|_| Vec::new());
     let mut pairs = Vec::<Pair>::new();
     let mut structural = HashSet::new();
@@ -109,7 +147,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             i += 1;
             continue;
         }
-        if ch == b'{' && bytes.get(i + 1).is_some_and(|byte| b"+-=^~".contains(byte)) {
+        if ch == b'{' && valid_braces.contains(&i) {
             braces.push(i);
             i += 1;
             continue;
@@ -170,7 +208,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             !forced_open && (forced_close || (i > 0 && !b" \t\r\n".contains(&bytes[i - 1])));
         let key = usize::from(ch == b'*') + usize::from(forced_close) * 2;
         if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
-            can_close && opener.1 < i && braces.last().is_none_or(|at| opener.0 > *at)
+            can_close && opener.1 < i && braces.last().map_or(true, |at| opener.0 > *at)
         }) {
             clear(&mut openers, start);
             pairs.push(Pair {

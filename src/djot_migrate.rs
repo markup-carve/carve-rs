@@ -38,7 +38,22 @@ pub fn djot_to_carve(djot: &str) -> String {
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
     let folded = fold_heading_continuations(body);
     let collapsed = regex::Regex::new(r"(!?\[([^\]\n]*)\])\[\]").unwrap();
-    let folded = collapsed.replace_all(&folded, "$1[$2]");
+    let collapsed_mask = mask_code_and_destinations(&folded);
+    let definitions_regex = regex::Regex::new(r"\[([^\]\n]*)\]:[ \t]").unwrap();
+    let definitions: std::collections::HashSet<String> = definitions_regex
+        .captures_iter(&folded)
+        .filter(|caps| collapsed_mask.as_bytes()[caps.get(0).unwrap().start()] == b'[')
+        .map(|caps| caps[1].to_string())
+        .collect();
+    let folded = collapsed.replace_all(&folded, |caps: &regex::Captures<'_>| {
+        if collapsed_mask.as_bytes()[caps.get(0).unwrap().start()] != b' '
+            && definitions.contains(&caps[2])
+        {
+            format!("{}[{}]", &caps[1], &caps[2])
+        } else {
+            caps[0].to_string()
+        }
+    });
     let mut alt_prefix = "\0DJOTALT\0".to_string();
     while folded.contains(&alt_prefix) {
         alt_prefix.push('\0');
@@ -872,7 +887,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
     .unwrap();
     let quote_prefix = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
     let marker = regex::Regex::new(
-        r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|[0-9]+[.)]|#{1,6}|:{1,2})[ \t]+(?:\[[ xX-]\][ \t]+)?$",
+        r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|[0-9]+[.)]|#{1,6}|:{1,2}|\[\^[^\]]+\]:)[ \t]+(?:\[[ xX-]\][ \t]+)?$",
     )
     .unwrap();
     let source_lines: Vec<&str> = source.split('\n').collect();
@@ -981,7 +996,7 @@ fn emphasis_mask(source: &str) -> String {
             mask[value.range()].fill(b' ');
         }
     }
-    let images = regex::Regex::new(r"!\[[^\]\n]*\]").unwrap();
+    let images = regex::Regex::new(r"!\[[^\]\n]*\][\[(]").unwrap();
     for value in images.find_iter(source) {
         if !is_escaped(source.as_bytes(), value.start())
             && !is_escaped(source.as_bytes(), value.end() - 1)
@@ -1428,6 +1443,12 @@ fn mask_code_and_destinations(source: &str) -> String {
         }
         offset += raw.len();
     }
+    let paragraph_ends: Vec<usize> = regex::Regex::new(r"\n[ \t]*\n")
+        .unwrap()
+        .find_iter(source)
+        .map(|value| value.start())
+        .collect();
+    let mut paragraph_index = 0;
     let mut i = 0;
     while i < bytes.len() {
         if mask[i] != bytes[i] {
@@ -1437,9 +1458,23 @@ fn mask_code_and_destinations(source: &str) -> String {
         // An inline code span, delimited by a matching backtick run.
         if bytes[i] == b'`' {
             let run = bytes[i..].iter().take_while(|b| **b == b'`').count();
-            if let Some(close) = find_backtick_close(bytes, i + run, run) {
+            while paragraph_ends
+                .get(paragraph_index)
+                .is_some_and(|end| *end <= i)
+            {
+                paragraph_index += 1;
+            }
+            let paragraph_end = paragraph_ends
+                .get(paragraph_index)
+                .copied()
+                .unwrap_or(bytes.len());
+            if let Some(close) = find_backtick_close(&bytes[..paragraph_end], i + run, run) {
                 blank_out(&mut mask, i, close + run);
                 i = close + run;
+                continue;
+            } else {
+                blank_out(&mut mask, i, paragraph_end);
+                i = paragraph_end;
                 continue;
             }
         }
@@ -1473,6 +1508,19 @@ fn mask_code_and_destinations(source: &str) -> String {
         i += 1;
     }
 
+    let metadata = regex::Regex::new(r"(?m)^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?:{3,}[ \t]+([A-Za-z_][A-Za-z0-9_.-]*)").unwrap();
+    let item_metadata = regex::Regex::new(r"(?:[-*+]|[0-9]+[.)])[ \t]+:{3,}").unwrap();
+    for caps in metadata.captures_iter(source) {
+        let value = caps.get(0).unwrap();
+        let previous = source[..value.start()]
+            .split('\n')
+            .rev()
+            .nth(1)
+            .unwrap_or("");
+        if previous.trim().is_empty() || item_metadata.is_match(value.as_str()) {
+            mask[caps.get(1).unwrap().range()].fill(b' ');
+        }
+    }
     String::from_utf8(mask).unwrap_or_else(|_| source.to_string())
 }
 

@@ -86,5 +86,29 @@
   [
     "```\ncode\n```\n- _a\n- b_",
     "<li>_a</li>"
+  ],
+  [
+    "Use `[a][]` here.\n\n[a]: /u",
+    "<code>[a][]</code>"
+  ],
+  [
+    "See [Introduction][].\n\n# Introduction",
+    "href=\"#Introduction\""
+  ],
+  [
+    "::: warn_ing\ntext\n:::",
+    "class=\"warn_ing\""
+  ],
+  [
+    "a `x_y {#i}",
+    "<code>x_y {#i}</code>"
+  ],
+  [
+    "a _b {+ c_ d",
+    "<em>b {+ c</em>"
+  ],
+  [
+    "see ![_x_] here",
+    "<em>x</em>"
   ]
 ]
