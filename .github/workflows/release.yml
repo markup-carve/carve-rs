@@ -2,8 +2,8 @@ name: Release
 
 # Publishing a GitHub Release (draft -> publish) creates the tag and holds the
 # notes; this workflow then publishes the crate to crates.io. The published
-# Release is the single source of truth - there is no in-repo release-notes file
-# and no separate job that creates the Release.
+# Release body must match the tagged CHANGELOG section and changelog footer.
+# This workflow verifies the stored notes before publishing the crate or assets.
 on:
   release:
     types: [published]
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: refs/tags/${{ github.event.release.tag_name }}
           submodules: recursive
           # The completeness gate below walks every merge back to the previous
           # tag, so it needs the tags and the history behind them.
@@ -74,6 +74,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 tools/check-changelog-completeness.py "${{ github.event.release.tag_name }}"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: The release notes match this tag's changelog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            | jq -cs --arg tag "$GITHUB_REF_NAME" '[.[][] | select(.tag_name == $tag)] | first // empty')"
+          if [ -z "$release" ]; then
+            echo "::error::No release for $GITHUB_REF_NAME. Write its notes first."
+            exit 1
+          fi
+          printf '%s' "$release" | python tools/check-release-notes.py \
+            --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -132,34 +150,6 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
-      # GATE: the notes are not the workflow's to write. A CHANGELOG entry is
-      # deliberately one or two lines for a contributor, which makes poor
-      # release notes for a reader deciding whether to upgrade. A human writes
-      # the notes first and this refuses to build binaries without them.
-      #
-      # Found by listing rather than `gh release view <tag>`: a tag can match
-      # nothing, change nothing and still exit 0.
-      #
-      # `first(f)` rather than `[f] | first`: the latter prints `null` on no
-      # match, which is not empty, so the missing-release branch never fired.
-      - name: A release for this tag exists and has notes
-        if: github.event_name != 'workflow_dispatch'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
-            --jq "first(.[] | select(.tag_name == \"$GITHUB_REF_NAME\"))")"
-          if [ -z "$release" ]; then
-            echo "::error::no release for $GITHUB_REF_NAME. Write the notes first:" \
-                 "gh release create $GITHUB_REF_NAME --draft --notes-file NOTES.md"
-            exit 1
-          fi
-          body="$(printf '%s' "$release" | jq -r '.body // ""' | tr -d '[:space:]')"
-          [ -n "$body" ] \
-            || { echo "::error::the release for $GITHUB_REF_NAME has no notes"; exit 1; }
-          printf '%s' "$release" | jq -r '"draft=\(.draft) tag=\(.tag_name)"'
-
       # The tag is the release's for a published release, and the dispatch
       # input otherwise - so an existing release can be backfilled with assets
       # without cutting a new version.
@@ -170,9 +160,30 @@ jobs:
 
       - uses: actions/checkout@v6
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: refs/tags/${{ steps.tag.outputs.tag }}
           # No submodules: the binary needs `src/` and `resources/`, and
           # `tests/spec` is 1200+ files this job never reads.
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      # The stored notes must match the tagged changelog before uploading assets.
+      # Relative changelog links resolve against this tag in the release body.
+      - name: The release notes match this tag's changelog
+        if: github.event_name != 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            | jq -cs --arg tag "$GITHUB_REF_NAME" '[.[][] | select(.tag_name == $tag)] | first // empty')"
+          if [ -z "$release" ]; then
+            echo "::error::No release for $GITHUB_REF_NAME. Write its notes first."
+            exit 1
+          fi
+          printf '%s' "$release" | python tools/check-release-notes.py \
+            --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
