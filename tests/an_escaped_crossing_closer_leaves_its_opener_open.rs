@@ -153,3 +153,28 @@ fn a_reference_tail_does_not_capture_a_braced_span_opener() {
         }
     }
 }
+
+#[test]
+fn literal_markup_and_consecutive_marks_do_not_hide_a_reference_tail() {
+    for html in [
+        "<p>[[<em>[a][a]</em>x<sub>]</sub></p>",
+        "<p><sup>[</sup>_[a][a]_</p>",
+        "<p><sup>[</sup>*[a][a]*</p>",
+        "<p><sup>[</sup>~[a][a]~</p>",
+        "<p><sup>[</sup>=[a][a]=</p>",
+        "<p><sup>[</sup>`[a][a]`</p>",
+        "<p><sup>[</sup>![a][a]</p>",
+        "<p><sup>[</sup>[^a][a]</p>",
+        "<p><sup>[</sup>[[a][a]</p>",
+        "<p><sup>[</sup>[a][[b]</p>",
+        "<p><sup>[</sup>[a][b[c]</p>",
+        "<p><sup>[</sup>[a][[b]]</p>",
+        "<p><sup>[</sup>[a][[b][c]</p>",
+        "<p><sup>[</sup><sub>[</sub>[a][a]</p>",
+        "<p><sub>[</sub><sup>[</sup>[a][a]</p>",
+        "<p><ins>[</ins><del>[</del>[a][a]</p>",
+        "<p><sup>[</sup>\\[a][a]</p>",
+    ] {
+        assert_round_trips(html);
+    }
+}
