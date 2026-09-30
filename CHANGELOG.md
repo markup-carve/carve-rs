@@ -9,6 +9,8 @@ Entries for 0.1.5 and earlier are archived in
 [CHANGELOG-0.1.md](https://github.com/markup-carve/carve-rs/blob/main/CHANGELOG-0.1.md),
 which the published crate does not carry.
 
+## [Unreleased]
+
 ## [0.1.7] - 2026-09-29
 
 ### Breaking

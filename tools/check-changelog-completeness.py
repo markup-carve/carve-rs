@@ -32,7 +32,8 @@ under any issue it closes.
 
     python3 tools/check-changelog-completeness.py [version] [options]
 
-      version         the release to check; defaults to Cargo.toml's version
+      version         the release to check; defaults to the pending heading,
+                      then Cargo.toml's version
       --at REV        read history and CHANGELOG.md as of this revision;
                       defaults to the tag when it exists, otherwise HEAD
       --previous TAG  measure from this tag instead of the highest version tag
@@ -94,7 +95,11 @@ def main() -> int:
             ["git", *args], cwd=root, check=True, capture_output=True, text=True
         ).stdout.strip()
 
-    version = (opts.version or cargo_version(root)).lstrip("v")
+    pending = [] if opts.version else pending_sections(
+        changelog_at(git, root, opts.at or "HEAD"),
+        git("tag", "--merged", opts.at or "HEAD").splitlines(),
+    )
+    version = (opts.version or (pending[0] if pending else cargo_version(root))).lstrip("v")
     section = opts.section or version
     at = opts.at or (version if rev_exists(root, version) else "HEAD")
     slug = opts.repo or os.environ.get("GITHUB_REPOSITORY") or origin_slug(git)
@@ -127,6 +132,11 @@ def main() -> int:
     if text is None:
         print(f"::error::CHANGELOG.md has no '## [{section}]' section to check")
         return 1
+
+    if not opts.section:
+        for heading in pending:
+            if heading != section:
+                text += "\n" + (section_of(body, heading) or "")
 
     cited = set()
     for qualifier, number in REFERENCE.findall(text):
@@ -178,6 +188,17 @@ def main() -> int:
         f"{len(shipping) - len(skipped)} shipped-source pull request(s) {frm}{extra}"
     )
     return 0
+
+
+def pending_sections(body: str, tags: list[str]) -> list[str]:
+    tagged = {tag.removeprefix("v") for tag in tags}
+    headings = []
+    for match in re.finditer(r"^## \[([^\]]+)\]", body, re.M):
+        heading = match.group(1)
+        if heading.removeprefix("v") in tagged:
+            break
+        headings.append(heading)
+    return headings
 
 
 def cargo_version(root: Path) -> str:
