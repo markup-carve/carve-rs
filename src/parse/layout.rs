@@ -276,6 +276,7 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
         return Some((defs, definition_lines));
     };
     let mut fence: Option<FenceOpen> = None;
+    let mut previous_definition = None;
     for (index, line) in lines[..=last_candidate].iter().copied().enumerate() {
         if let Some(open) = fence {
             if is_fence_close(line, open) {
@@ -294,13 +295,15 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
         if label.starts_with('@') || target.trim().is_empty() {
             return None;
         }
-        // This facade currently accepts definitions as standalone top-level
-        // blocks. Hosted/lazy definitions retain the authoritative collector.
-        if index > 0 && !is_blank_line(lines[index - 1]) {
+        // Accept isolated top-level runs. The next candidate must pass the
+        // grammar on its own iteration before the layout can reach a sink.
+        if index > 0 && !is_blank_line(lines[index - 1]) && previous_definition != Some(index - 1) {
             return None;
         }
-        if index + 1 < lines.len() && !is_blank_line(lines[index + 1]) {
-            return None;
+        if let Some(next) = lines.get(index + 1) {
+            if !is_blank_line(next) && !(next.starts_with('[') && next.contains("]:")) {
+                return None;
+            }
         }
         let mut def = parse_link_def_target_with_attrs(target.trim());
         if def.attrs.is_some() {
@@ -309,6 +312,7 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
         def.raw_label = Some(label.to_string());
         defs.insert(label_key(label), def);
         definition_lines.push(index);
+        previous_definition = Some(index);
     }
     Some((defs, definition_lines))
 }
@@ -1342,5 +1346,82 @@ mod layout_html_tests {
         ] {
             assert!(try_layout_html(source, &Options::default()).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod adjacent_definition_tests {
+    use super::*;
+
+    #[test]
+    fn runs_preserve_authoritative_output() {
+        for source in [
+            "[a]: /one\n[b]: /two\n[c]: /three\n\n[A][a] [B][b] [C][c]\n",
+            "[a]: /one\n[b]: /two\n[a]: /last\n\n[A][a]\n",
+            "[A][a] [B][b]\n\n[a]: /one\n[b]: /two \"escaped \\\"quote\"\n",
+            "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n",
+            "```\n[a]: /literal\n```\n\n[b]: /two\n[c]: /three\n\n[B][b]\n",
+        ] {
+            let options = Options::default();
+            let fast = try_layout_html(source, &options).expect("accepted run");
+            let doc = crate::parse_with_options(source, &options);
+            assert_eq!(
+                fast,
+                crate::render_html_with_options(&doc, &options).unwrap(),
+                "{source}"
+            );
+            let mut streamed = String::new();
+            assert!(try_layout_stream(source, &options, &mut |chunk| streamed.push_str(chunk)));
+            assert_eq!(streamed, fast);
+        }
+    }
+
+    #[test]
+    fn incomplete_runs_fall_back_without_writing() {
+        for source in [
+            "[a]: /one\n[b]: /two junk\n",
+            "[a]: /one\n[b]: /two\nprose\n",
+            "[a]: /one\n[b]: /two\n# Heading\n",
+            "[a]: /one\n[b]: /two\n- item\n",
+            "```\ncode\n```\n[a]: /one\n[b]: /two\n",
+            "prose\n[a]: /one\n[b]: /two\n",
+            "[a]: /one\n[b]: /two {.class}\n",
+            "[a]: /one\n[b]: /two\n[@bad]: /three\n",
+        ] {
+            let mut output = String::new();
+            assert!(
+                !try_layout_stream(source, &Options::default(), &mut |chunk| output
+                    .push_str(chunk)),
+                "{source}"
+            );
+            assert!(output.is_empty());
+        }
+    }
+}
+
+#[cfg(test)]
+mod adjacent_definition_stream_tests {
+    use super::*;
+
+    #[test]
+    fn streaming_sink_can_parse_another_definition_run() {
+        let source =
+            "[r]: /outer\n[s]: /second\n[t]: /third\n\n".to_owned() + &"[x][r]\n\n".repeat(300);
+        let mut output = String::new();
+        let mut callbacks = 0;
+        assert!(try_layout_stream(
+            &source,
+            &Options::default(),
+            &mut |chunk| {
+                output.push_str(chunk);
+                callbacks += 1;
+                assert_eq!(
+                    crate::to_html("[r]: /inner\n[s]: /other\n\n[x][r]"),
+                    "<p><a href=\"/inner\">x</a></p>"
+                );
+            }
+        ));
+        assert!(callbacks > 1);
+        assert_eq!(output, crate::render_html(&crate::parse(&source)).unwrap());
     }
 }
