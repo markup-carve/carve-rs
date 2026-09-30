@@ -4910,13 +4910,7 @@ fn is_language_tag(value: &str) -> bool {
 /// the ones `.` cannot spell, so this asks no questions and quotes - which is
 /// also the spelling carve#2435 ruled for the importer, `{class="-col"}`.
 fn quoted_attr_value(value: &str) -> String {
-    format!(
-        "\"{}\"",
-        value
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('|', "\\|")
-    )
+    format!("\"{}\"", escape_quoted_run(value, &['"', '|']))
 }
 
 fn quote_attr_value(value: &str) -> String {
@@ -4929,13 +4923,7 @@ fn quote_attr_value(value: &str) -> String {
     } else {
         // `\|` is the only pipe a table row's cell cut leaves in place
         // ([CARVE-P2-019]), so a pipe is escaped wherever the value sits.
-        format!(
-            "\"{}\"",
-            value
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('|', "\\|")
-        )
+        format!("\"{}\"", escape_quoted_run(value, &['"', '|']))
     }
 }
 
@@ -6128,7 +6116,36 @@ fn dangerous_destination_scheme(text: &str) -> bool {
 /// A link, an image and a `[ref]: url "t"` definition, whose `link_title` reads
 /// escapes back.
 fn escape_quoted(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
+    escape_quoted_run(text, &['"'])
+}
+
+/// Escape inside a quoted slot only what a bare spelling would lose.
+///
+/// `unescape_title` resolves `\\X` only when X is ASCII punctuation, so a
+/// backslash before anything else reads back literally and needs no partner -
+/// PART 11 §2 escapes a character only if omitting it would change the
+/// re-parse. A TRAILING backslash still doubles: the character after it is the
+/// closing delimiter, which is punctuation, so a bare one would swallow it.
+fn escape_quoted_run(text: &str, escaped: &[char]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if chars
+                .peek()
+                .map_or(true, |next| next.is_ascii_punctuation())
+            {
+                out.push('\\');
+            }
+            out.push('\\');
+            continue;
+        }
+        if escaped.contains(&ch) {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// NOT the same rule: `quoted_title` takes `{character - '"'}` verbatim and has
