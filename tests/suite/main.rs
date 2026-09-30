@@ -1110,6 +1110,8 @@ mod link_def_prepass_line_block_column;
 mod link_definition_pos_from_a_footnote_body;
 #[path = "../link_title_attribute_order.rs"]
 mod link_title_attribute_order;
+#[path = "../a_quoted_slot_escapes_only_the_backslash_the_reader_resolves.rs"]
+mod a_quoted_slot_escapes_only_the_backslash_the_reader_resolves;
 #[path = "../link_title_escaped_quote.rs"]
 mod link_title_escaped_quote;
 #[path = "../link_title_slot_is_a_space.rs"]
