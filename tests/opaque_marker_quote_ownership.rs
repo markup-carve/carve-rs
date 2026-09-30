@@ -37,6 +37,7 @@ fn a_nested_closed_quoted_comment_preserves_lazy_payload_indentation() {
         "x\n    > y"
     );
 }
+
 #[test]
 fn an_attached_block_does_not_reuse_saved_comment_line_indices() {
     let source = "> %%%\n> a\n> b\n  y\n>\n> ```\n+\nz\n> %%%\n";

@@ -8631,21 +8631,23 @@ fn collect_blockquote_body(
     let mut may_hold_fence = false;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
-            let (comment_depth, _, comment_text) = prepass_quote_scope(stripped);
-            if let Some((run, depth)) = comment_run {
-                if comment_depth == depth
-                    && detect_list_marker_full(trim_ascii_start(stripped)).is_none()
-                    && is_comment_fence_close_any_column(comment_text, run)
-                {
-                    for (index, text, column) in comment_lazy_lines.drain(..) {
-                        inner.lines[index].text = text;
-                        inner.lines[index].stripped = column;
+            if stripped.contains("%%%") {
+                let (comment_depth, _, comment_text) = prepass_quote_scope(stripped);
+                if let Some((run, depth)) = comment_run {
+                    if comment_depth == depth
+                        && detect_list_marker_full(trim_ascii_start(stripped)).is_none()
+                        && is_comment_fence_close_any_column(comment_text, run)
+                    {
+                        for (index, text, column) in comment_lazy_lines.drain(..) {
+                            inner.lines[index].text = text;
+                            inner.lines[index].stripped = column;
+                        }
+                        comment_run = None;
                     }
-                    comment_run = None;
+                } else if in_fence.is_none() {
+                    comment_run = detect_comment_fence_line_any_column(comment_text)
+                        .map(|open| (open.fence_len, comment_depth));
                 }
-            } else if in_fence.is_none() {
-                comment_run = detect_comment_fence_line_any_column(comment_text)
-                    .map(|open| (open.fence_len, comment_depth));
             }
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
