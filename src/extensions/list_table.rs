@@ -74,7 +74,10 @@ impl CarveExtension for ListTable {
         "list-table"
     }
 
-    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        if !ctx.target_is_html() {
+            return doc;
+        }
         rewrite_blocks(&mut doc.children);
         // Footnote bodies live outside the tree but are still rendered, so a
         // list-table inside a footnote def must be rewritten too (mirrors the

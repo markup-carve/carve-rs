@@ -4174,6 +4174,25 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         true
     }
     fn pair(at: usize, value: &str, host: usize, seq: &mut Vec<Bracket>, scope: &mut BracketScope) {
+        // Pair the run after the literal reference opener's required escape.
+        if seq
+            .last()
+            .is_some_and(|(_, previous_host, _)| *previous_host != host)
+            && value.contains('[')
+        {
+            let parsed = crate::parse::parse_inline_with_options(value, &crate::Options::default());
+            let reference = parsed.iter().find_map(|node| match node {
+                InlineNode::Link(link) => link.raw_ref.as_deref(),
+                _ => None,
+            });
+            if let Some(offset) = reference.and_then(|raw| value.find(raw)) {
+                let ordinal = value[..offset]
+                    .chars()
+                    .filter(|c| matches!(c, '[' | ']'))
+                    .count();
+                scope.crossing_openers.insert((at, ordinal));
+            }
+        }
         scope.keyed.insert(at);
         let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
         for (ordinal, ch) in brackets.enumerate() {
@@ -4228,7 +4247,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     // decide it - which brackets survive is not known until the run is complete -
     // and leaving it undecided is what made the formatter non-idempotent: `fmt`
     // ran pass two itself and escaped one more bracket every time (carve-rs#2209).
-    let (first, _) = resolve(&seq, &HashSet::new(), false);
+    let (first, _) = resolve(&seq, &scope.crossing_openers, false);
     for (opener, closer) in first {
         if opener.1 != closer.1 {
             scope.crossing_openers.insert(opener.0);

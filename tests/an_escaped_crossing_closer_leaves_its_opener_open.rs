@@ -134,3 +134,22 @@ fn assert_round_trips(html: &str) {
         "{html} imported as {once:?}"
     );
 }
+
+#[test]
+fn a_reference_tail_does_not_capture_a_braced_span_opener() {
+    assert_eq!(imported("<p><sup>[</sup>[a][a]</p>"), "{^\\[^}\\[a][a]\n");
+    assert_eq!(imported("<p><sub>[</sub>[a][a]</p>"), "{,\\[,}\\[a][a]\n");
+    for mark in ["em", "strong", "u", "s", "mark", "ins", "del", "sup", "sub"] {
+        for prefix in ["", "[", "[[", "x["] {
+            for body in ["[", "[a", "a[", "[a]", "a]", "a]["] {
+                for tail in ["[a][a]", "[a][]"] {
+                    for gap in ["", " ", "x", "x "] {
+                        assert_round_trips(&format!(
+                            "<p>{prefix}<{mark}>{body}</{mark}>{gap}{tail}</p>"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
