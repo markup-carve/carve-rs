@@ -6131,7 +6131,10 @@ fn escape_quoted_run(text: &str, escaped: &[char]) -> String {
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\\' {
-            if chars.peek().is_none_or(|next| next.is_ascii_punctuation()) {
+            if chars
+                .peek()
+                .map_or(true, |next| next.is_ascii_punctuation())
+            {
                 out.push('\\');
             }
             out.push('\\');

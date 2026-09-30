@@ -380,6 +380,8 @@ mod a_quote_fence_below_a_quote_lints;
 mod a_quoted_lines_indent_is_not_content;
 #[path = "../a_quoted_marker_line_keeps_the_definitions_text.rs"]
 mod a_quoted_marker_line_keeps_the_definitions_text;
+#[path = "../a_quoted_slot_escapes_only_the_backslash_the_reader_resolves.rs"]
+mod a_quoted_slot_escapes_only_the_backslash_the_reader_resolves;
 #[path = "../a_quoted_title_holds_its_backslash.rs"]
 mod a_quoted_title_holds_its_backslash;
 #[path = "../a_raw_bracketed_run_is_written_as_authored.rs"]
@@ -1110,8 +1112,6 @@ mod link_def_prepass_line_block_column;
 mod link_definition_pos_from_a_footnote_body;
 #[path = "../link_title_attribute_order.rs"]
 mod link_title_attribute_order;
-#[path = "../a_quoted_slot_escapes_only_the_backslash_the_reader_resolves.rs"]
-mod a_quoted_slot_escapes_only_the_backslash_the_reader_resolves;
 #[path = "../link_title_escaped_quote.rs"]
 mod link_title_escaped_quote;
 #[path = "../link_title_slot_is_a_space.rs"]
