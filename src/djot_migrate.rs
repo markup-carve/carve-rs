@@ -37,6 +37,47 @@ pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
     let folded = fold_heading_continuations(body);
+    let collapsed = regex::Regex::new(r"(!?\[([^\]\n]*)\])\[\]").unwrap();
+    let folded = collapsed.replace_all(&folded, "$1[$2]");
+    let mut alt_prefix = "\0DJOTALT\0".to_string();
+    while folded.contains(&alt_prefix) {
+        alt_prefix.push('\0');
+    }
+    let mut alts = Vec::new();
+    let image = regex::Regex::new(r"!\[([^\]\n]*)\]([\[(])").unwrap();
+    let mask = mask_code_and_destinations(&folded);
+    let folded = image
+        .replace_all(&folded, |caps: &regex::Captures<'_>| {
+            let at = caps.get(0).unwrap().start();
+            if mask.as_bytes()[at] != b'!'
+                || is_escaped(folded.as_bytes(), at)
+                || caps[1].contains('\\')
+            {
+                return caps[0].to_string();
+            }
+            if !caps[1].bytes().any(|byte| b"_*`{^~".contains(&byte)) {
+                alts.push(caps[1].to_string());
+                return format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2]);
+            }
+            let label = &caps[1];
+            alts.push(
+                crate::to_plain_text_with_options(
+                    &djot_to_carve(&format!("DJOTALT {label} DJOTEND")),
+                    &crate::Options {
+                        smart_typography: crate::SmartTypographyMode::Source,
+                        ..crate::Options::default()
+                    },
+                )
+                .trim_end_matches('\n')
+                .strip_prefix("DJOTALT ")
+                .unwrap_or("")
+                .strip_suffix(" DJOTEND")
+                .unwrap_or("")
+                .to_string(),
+            );
+            format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
+        })
+        .into_owned();
     let (held, prefix, mut spans) = protect_attributed_strong(&folded);
     let words = protect_attributed_words(&held, &prefix, &mut spans);
     let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
@@ -52,6 +93,13 @@ pub fn djot_to_carve(djot: &str) -> String {
         })
         .into_owned();
 
+    let alt_restore =
+        regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&alt_prefix))).unwrap();
+    let converted = alt_restore
+        .replace_all(&converted, |caps: &regex::Captures<'_>| {
+            alts[caps[1].parse::<usize>().unwrap()].clone()
+        })
+        .into_owned();
     if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
@@ -819,10 +867,14 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         spans.prefix.push('\0');
     }
     let block_end = regex::Regex::new(
-        r"^(?:`{3,}|~{3,}|:{3,}|(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|\|.*\||\[[^\]]+\]:)",
+        r"^(?:`{3,}|~{3,}|:{3,}|#{1,6} |[-*+] |[0-9]+[.)] |> |:{1,2} |(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|\|.*\||\[[^\]]+\]:)",
     )
     .unwrap();
     let quote_prefix = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
+    let marker = regex::Regex::new(
+        r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|[0-9]+[.)]|#{1,6}|:{1,2})[ \t]+(?:\[[ xX-]\][ \t]+)?$",
+    )
+    .unwrap();
     let source_lines: Vec<&str> = source.split('\n').collect();
     let mut lines = Vec::new();
     for (index, line) in source.split('\n').enumerate() {
@@ -841,6 +893,11 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
                 && at != cursor
                 && (b"]*_}^~".contains(&bytes[at - 1])
                     || (mask[at - 1] == b' ' && bytes[at - 1] != b' '))
+            {
+                continue;
+            }
+            if marker.is_match(&pattern.replace_all(&line[..at], ""))
+                && pattern.replace_all(&line[at..], "").trim().is_empty()
             {
                 continue;
             }
@@ -896,19 +953,47 @@ fn emphasis_mask(source: &str) -> String {
             mask[value.range()].fill(b' ');
         }
     }
-    let refs = regex::Regex::new(r"\[\^[^\]\n]*\]|(?m)^[ \t]*\[[^\]\n]*\]:[^\n]*").unwrap();
+    for label in regex::Regex::new(r"\[\^[^\]\n]*\]")
+        .unwrap()
+        .find_iter(source)
+    {
+        mask[label.range()].fill(b' ');
+    }
+    let refs = regex::Regex::new(
+        r"(?m)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?\[[^\^\]\n][^\]\n]*\]:[^\n]*",
+    )
+    .unwrap();
+    let reference_boundary =
+        regex::Regex::new(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\]]*\]:)").unwrap();
     for value in refs.find_iter(source) {
-        mask[value.range()].fill(b' ');
+        let text = value.as_str().trim_start_matches([' ', '\t', '>']);
+        if text.starts_with("[^") {
+            continue;
+        }
+        let previous = source[..value.start()]
+            .split('\n')
+            .rev()
+            .nth(1)
+            .unwrap_or("")
+            .trim_start_matches([' ', '\t', '>'])
+            .trim();
+        if previous.is_empty() || reference_boundary.is_match(previous) {
+            mask[value.range()].fill(b' ');
+        }
     }
     let images = regex::Regex::new(r"!\[[^\]\n]*\]").unwrap();
     for value in images.find_iter(source) {
-        mask[value.range()].fill(b' ');
+        if !is_escaped(source.as_bytes(), value.start())
+            && !is_escaped(source.as_bytes(), value.end() - 1)
+        {
+            mask[value.range()].fill(b' ');
+        }
     }
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'[' && i > 0 && bytes[i - 1] == b']' {
-            if let Some(end) = source[i..].find(']') {
+            if let Some(end) = source[i..].split('\n').next().unwrap().find(']') {
                 mask[i..=i + end].fill(b' ');
             }
         }
@@ -1289,43 +1374,66 @@ fn blank_line_follows(bytes: &[u8], index: usize) -> bool {
 fn mask_code_and_destinations(source: &str) -> String {
     let bytes = source.as_bytes();
     let mut mask: Vec<u8> = bytes.to_vec();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        // A fenced block: everything to the closing fence is verbatim.
-        if at_line_start(bytes, i) {
-            let mut candidate = i;
-            while bytes
-                .get(candidate)
-                .is_some_and(|byte| b" \t".contains(byte))
-            {
-                candidate += 1;
-            }
-            if bytes.get(candidate) == Some(&b':') {
-                candidate += 1;
-                while bytes
-                    .get(candidate)
-                    .is_some_and(|byte| b" \t".contains(byte))
-                {
-                    candidate += 1;
-                }
-            }
-            if let Some((fence_char, run)) = fence_at(bytes, candidate) {
-                let body = candidate + run;
-                let line_end = source[body..]
-                    .find('\n')
-                    .map_or(bytes.len(), |offset| body + offset);
-                if fence_char == b'`' && bytes[body..line_end].contains(&b'`') {
-                    i = candidate;
-                } else {
-                    let end = find_fence_close(bytes, body, fence_char, run, candidate - i + 3);
-                    blank_out(&mut mask, candidate, end);
-                    i = end;
-                    continue;
-                }
-            }
+    let opener = regex::Regex::new(r"^([ \t]*)(?:(:[ \t]+|[-*+][ \t]+|[0-9]+[.)][ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
+    let boundary =
+        regex::Regex::new(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} |\{[.#A-Za-z])").unwrap();
+    let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
+    let mut previous_block = true;
+    let mut offset = 0;
+    for raw in source.split_inclusive('\n') {
+        let line = raw.trim_end_matches('\n');
+        let (depth, content) = quoted(line);
+        let prefix_len = line.len() - content.len();
+        if fence.is_some_and(|(_, _, _, _, owner_depth)| {
+            depth < owner_depth && !content.trim().is_empty()
+        }) {
+            fence = None;
         }
-
+        let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
+        if fence.is_some_and(|(_, _, _, minimum, owner_depth)| {
+            minimum.is_some_and(|minimum| indent < minimum)
+                && !content.trim().is_empty()
+                && depth == owner_depth
+        }) {
+            fence = None;
+        }
+        if let Some((ch, run, maximum, _, owner_depth)) = fence {
+            blank_out(&mut mask, offset, offset + line.len());
+            let candidate = &content[indent..];
+            let length = candidate.bytes().take_while(|byte| *byte == ch).count();
+            if depth == owner_depth
+                && indent <= maximum
+                && length >= run
+                && candidate[length..].trim_matches([' ', '\t']).is_empty()
+            {
+                fence = None;
+                previous_block = true;
+            }
+        } else if let Some(open) = opener.captures(content) {
+            let marker = open.get(2).map_or("", |value| value.as_str());
+            if !marker.starts_with(':') || previous_block {
+                let container = (!marker.is_empty()).then_some(open[1].len() + marker.len());
+                let start = open.get(3).unwrap().start() + prefix_len;
+                fence = Some((
+                    open[3].as_bytes()[0],
+                    open[3].len(),
+                    container.unwrap_or(open[1].len().max(3)),
+                    container,
+                    depth,
+                ));
+                blank_out(&mut mask, offset + start, offset + line.len());
+            }
+        } else {
+            previous_block = content.trim().is_empty() || boundary.is_match(content);
+        }
+        offset += raw.len();
+    }
+    let mut i = 0;
+    while i < bytes.len() {
+        if mask[i] != bytes[i] {
+            i += 1;
+            continue;
+        }
         // An inline code span, delimited by a matching backtick run.
         if bytes[i] == b'`' {
             let run = bytes[i..].iter().take_while(|b| **b == b'`').count();
@@ -1375,58 +1483,6 @@ fn blank_out(mask: &mut [u8], from: usize, to: usize) {
             *byte = b' ';
         }
     }
-}
-
-fn at_line_start(bytes: &[u8], index: usize) -> bool {
-    index == 0 || bytes[index - 1] == b'\n'
-}
-
-fn fence_at(bytes: &[u8], index: usize) -> Option<(u8, usize)> {
-    let fence_char = bytes[index];
-    if fence_char != b'`' && fence_char != b'~' {
-        return None;
-    }
-    let run = bytes[index..]
-        .iter()
-        .take_while(|b| **b == fence_char)
-        .count();
-
-    (run >= 3).then_some((fence_char, run))
-}
-
-fn find_fence_close(
-    bytes: &[u8],
-    from: usize,
-    fence_char: u8,
-    open_run: usize,
-    max_indent: usize,
-) -> usize {
-    let mut i = from;
-    while i < bytes.len() {
-        if bytes[i] == b'\n' {
-            let mut line_start = i + 1;
-            while line_start < bytes.len()
-                && b" \t".contains(&bytes[line_start])
-                && line_start - i - 1 < max_indent
-            {
-                line_start += 1;
-            }
-            let mut k = line_start;
-            while k < bytes.len() && bytes[k] == fence_char {
-                k += 1;
-            }
-            let mut tail = k;
-            while bytes.get(tail).is_some_and(|byte| b" \t".contains(byte)) {
-                tail += 1;
-            }
-            if k - line_start >= open_run && (tail == bytes.len() || bytes[tail] == b'\n') {
-                return k;
-            }
-        }
-        i += 1;
-    }
-
-    bytes.len()
 }
 
 fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {

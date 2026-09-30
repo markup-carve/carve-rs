@@ -56,3 +56,36 @@ fn raw_and_held_fences_keep_literal_delimiters() {
         );
     }
 }
+
+#[test]
+fn paragraph_marker_text_and_image_alts() {
+    for source in ["_a\n- b_", "_a\n1. b_", "_a\n| b_", "para _a\n  - b_"] {
+        assert!(to_html(&djot_to_carve(source)).contains("<em>"), "{source}");
+    }
+    for source in [
+        "![basic _image_](url)",
+        "![basic _image_][a_b_]\n\n[a_b_]: url",
+    ] {
+        assert!(
+            to_html(&djot_to_carve(source)).contains("alt=\"basic image\""),
+            "{source}"
+        );
+    }
+    assert!(to_html(&djot_to_carve("a][_b_\n\nlater _c_ ]")).contains("<em>c</em>"));
+}
+
+#[test]
+fn importer_context_regressions() {
+    let cases: Vec<[String; 2]> =
+        serde_json::from_str(include_str!("fixtures/djot-import-context.json")).unwrap();
+    for [source, fragment] in cases {
+        assert!(
+            to_html(&djot_to_carve(&source)).contains(&fragment),
+            "{source:?}: {}",
+            djot_to_carve(&source)
+        );
+    }
+    for source in [" ", "a\n ", "a\n:"] {
+        let _ = djot_to_carve(source);
+    }
+}

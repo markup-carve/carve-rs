@@ -35,13 +35,20 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut pairs = Vec::<Pair>::new();
     let mut structural = HashSet::new();
     let mut brackets = Vec::new();
+    let mut braces = Vec::new();
     let mut bracket_pairs = Vec::new();
     let quoted_prefix = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*").unwrap();
     let stars = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:\*[ \t]*){3,}$").unwrap();
-    let block_start = regex::Regex::new(
-        r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:`{3,}|~{3,}|:{3,}|#{1,6}[ \t]|[-*+][ \t]|[0-9]+[.)][ \t]|\|)",
+    let block_start = regex::Regex::new(r"^[ \t]*(?:`{3,}|~{3,}|:{3,}|#{1,6}[ \t])").unwrap();
+    let marker = regex::Regex::new(r"^[ \t]*(?:[-*+][ \t]|[0-9]+[.)][ \t]|\|)").unwrap();
+    let mut previous_blank = true;
+    let mut container = false;
+    let mut list_column = None;
+    let structural_prefix = regex::Regex::new(
+        r"^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[[ xX-]\][ \t]+)?)*[ \t]*$",
     )
     .unwrap();
+    let item_prefix = regex::Regex::new(r"^[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+").unwrap();
     let mut line_start = 0;
     let mut i = 0;
     while i < bytes.len() {
@@ -49,7 +56,33 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             let end = source[i..]
                 .find('\n')
                 .map_or(bytes.len(), |offset| i + offset);
-            if block_start.is_match(&source[i..end]) {
+            let line = quoted_prefix.replace(&source[i..end], "");
+            let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+            if !line.trim().is_empty()
+                && list_column.is_some_and(|column| indent < column)
+                && !item_prefix.is_match(&line)
+            {
+                list_column = None;
+            }
+            if marker.is_match(&line) && (previous_blank || container) {
+                clear(&mut openers, 0);
+                container = true;
+            } else if previous_blank {
+                container = list_column.is_some_and(|column| indent >= column);
+            }
+            if marker.is_match(&line) && container {
+                if let Some(item) = item_prefix.find(&line) {
+                    list_column = Some(item.end());
+                }
+            }
+            let was_boundary = previous_blank || container;
+            previous_blank = line.trim().is_empty()
+                || block_start.is_match(&line)
+                || line.trim_start().starts_with('{');
+            if line.trim_start().starts_with(['`', '~'])
+                || line.trim_start().starts_with('#')
+                || was_boundary && line.trim_start().starts_with(":::")
+            {
                 clear(&mut openers, 0);
             }
         }
@@ -61,6 +94,8 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
                 .is_empty()
             {
                 clear(&mut openers, 0);
+                brackets.clear();
+                braces.clear();
             }
             line_start = i + 1;
             i += 1;
@@ -71,6 +106,20 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             continue;
         }
         if mask[i] != ch {
+            i += 1;
+            continue;
+        }
+        if ch == b'{' && bytes.get(i + 1).is_some_and(|byte| b"+-=^~".contains(byte)) {
+            braces.push(i);
+            i += 1;
+            continue;
+        }
+        if ch == b'}'
+            && braces
+                .last()
+                .is_some_and(|at| bytes[i - 1] == bytes[at + 1])
+        {
+            clear(&mut openers, braces.pop().unwrap());
             i += 1;
             continue;
         }
@@ -91,12 +140,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             i += 1;
             continue;
         }
-        if ch == b'*'
-            && quoted_prefix
-                .replace(&source[line_start..i], "")
-                .trim_matches([' ', '\t'])
-                .is_empty()
-        {
+        if ch == b'*' && structural_prefix.is_match(&source[line_start..i]) {
             let end = source[i..]
                 .find('\n')
                 .map_or(bytes.len(), |offset| i + offset);
@@ -125,11 +169,9 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
         let can_close =
             !forced_open && (forced_close || (i > 0 && !b" \t\r\n".contains(&bytes[i - 1])));
         let key = usize::from(ch == b'*') + usize::from(forced_close) * 2;
-        if let Some((start, end, forced)) = openers[key]
-            .last()
-            .copied()
-            .filter(|opener| can_close && opener.1 < i)
-        {
+        if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
+            can_close && opener.1 < i && braces.last().is_none_or(|at| opener.0 > *at)
+        }) {
             clear(&mut openers, start);
             pairs.push(Pair {
                 start,
