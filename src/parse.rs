@@ -643,7 +643,10 @@ fn parse_with_options_mode_and_index(
             let children = parse_mapped_source_at_document_level(&body, options);
             (footnote_defs, children)
         });
-    if options.positions {
+    let original_line_starts = options
+        .positions
+        .then(|| CodepointLineStarts::original(original));
+    if let Some(line_starts) = original_line_starts.as_ref() {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
         // BUILT FROM THE ORIGINAL TEXT, not the normalized copy. Normalization
@@ -655,10 +658,9 @@ fn parse_with_options_mode_and_index(
         // Line NUMBERS are unaffected: the normalization preserves the line
         // count, so entry N still describes line N. Only where each line starts
         // in the file changes, which is exactly what this table holds.
-        let line_starts = CodepointLineStarts::original(original);
-        fill_offsets(&mut children, &line_starts);
+        fill_offsets(&mut children, line_starts);
         for blocks in footnote_defs.values_mut() {
-            fill_offsets(blocks, &line_starts);
+            fill_offsets(blocks, line_starts);
         }
         // A definition whose BODY places something already has an extent, and
         // that extent - not this line - is what reaches the wire. Keeping the
@@ -669,14 +671,7 @@ fn parse_with_options_mode_and_index(
         // Place both boundaries; a multi-line definition ends at the following
         // line start rather than on its opener line.
         for pos in footnote_def_pos.values_mut() {
-            let Some(start) = line_starts.get(pos.start_line - 1).copied() else {
-                continue;
-            };
-            let Some(end) = line_starts.get(pos.end_line - 1).copied() else {
-                continue;
-            };
-            pos.start_offset = start + pos.start_column - 1;
-            pos.end_offset = end + pos.end_column - 1;
+            apply_offsets(pos, line_starts);
         }
         // A CONTAINER ENDS AT ITS LAST PLACED CHILD, which is the rule that
         // replaced `widen_over_hosted_definitions` (carve#1522, carve#1524).
@@ -724,7 +719,12 @@ fn parse_with_options_mode_and_index(
         // Definition nodes are part of the published AST and canonical writer,
         // but render no HTML. The source-to-HTML facade already owns the
         // resolved definition index and does not materialize invisible nodes.
-        append_link_reference_definitions(&mut doc, &link_defs, source, options);
+        append_link_reference_definitions(
+            &mut doc,
+            &link_defs,
+            source,
+            original_line_starts.as_ref(),
+        );
     }
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         if source.contains("*[") {
@@ -3649,26 +3649,25 @@ fn append_link_reference_definitions(
     doc: &mut Document,
     link_defs: &BTreeMap<String, LinkDef>,
     source: &str,
-    options: &Options<'_>,
+    line_starts: Option<&CodepointLineStarts>,
 ) {
-    // Nothing to hoist is the common case, and both scans below are O(source) -
-    // so a document with no definitions must not pay for them at all.
+    // Skip the source-line table when there are no definitions or positions.
     if link_defs.is_empty() {
         return;
     }
-    let line_starts = CodepointLineStarts::normalized(source);
-    let lines: Vec<&str> = source.split('\n').collect();
+    let lines = line_starts.map(|_| source.split('\n').collect::<Vec<_>>());
     let mut authored: Vec<(Option<usize>, LinkReferenceDefinition)> = Vec::new();
     for (label, def) in link_defs {
-        let pos = match (options.positions, def.line) {
-            (true, Some(line)) => {
+        let pos = match (line_starts, lines.as_ref(), def.line) {
+            (Some(line_starts), Some(lines), Some(line)) => {
                 let text = lines.get(line).copied().unwrap_or("");
                 let start = line_starts.get(line).copied().unwrap_or(0);
+                let bom_column = usize::from(line == 0 && line_starts.has_leading_bom());
                 Some(Pos {
                     start_line: line + 1,
                     end_line: line + 1,
-                    start_column: 1,
-                    end_column: text.chars().count() + 1,
+                    start_column: 1 + bom_column,
+                    end_column: text.chars().count() + 1 + bom_column,
                     start_offset: start,
                     end_offset: start + text.chars().count(),
                     file: None,
@@ -25604,5 +25603,97 @@ mod nested_list_content_scans {
             .unwrap()
             .join()
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod reference_definition_original_positions {
+    use super::*;
+
+    #[test]
+    fn definition_spans_select_original_codepoints() {
+        for newline in ["\n", "\r\n", "\r"] {
+            for prefix in ["", "\u{feff}", "😀 prose", "\u{feff}😀 prose"] {
+                let definition = "[a]: /first";
+                let source = if prefix.is_empty() || prefix == "\u{feff}" {
+                    format!("{prefix}{definition}")
+                } else {
+                    format!("{prefix}{newline}{newline}{definition}")
+                };
+                let options = Options {
+                    positions: true,
+                    ..Options::default()
+                };
+                let doc = parse_with_options(&source, &options);
+                let node = doc
+                    .children
+                    .iter()
+                    .find_map(|node| match node {
+                        BlockNode::LinkReferenceDefinition(def) => Some(def),
+                        _ => None,
+                    })
+                    .expect("definition");
+                let pos = node.pos.as_ref().expect("position");
+                let selected: String = source
+                    .chars()
+                    .skip(pos.start_offset)
+                    .take(pos.end_offset - pos.start_offset)
+                    .collect();
+                assert_eq!(selected, definition, "{source:?}");
+                assert_eq!(pos.start_column, if prefix == "\u{feff}" { 2 } else { 1 });
+                assert_eq!(
+                    pos.end_column - pos.start_column,
+                    definition.chars().count()
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod reference_definition_provenance {
+    use super::*;
+
+    #[test]
+    fn hoisted_definitions_keep_the_authored_line() {
+        for (source, expected) in [
+            ("---\ntitle: x\n---\n\n[r]: /u", "[r]: /u"),
+            ("> [r]: /u", "> [r]: /u"),
+            ("- [r]: /u", "- [r]: /u"),
+            ("[^a]: note\n  [r]: /u\n\nsee[^a] [t][r]", "  [r]: /u"),
+            (
+                "[^a]: note\n  [^b]: nested\n    [r]: /u\n\nsee[^a]",
+                "    [r]: /u",
+            ),
+            ("😀\0 prose\n\n[r]: /u", "[r]: /u"),
+        ] {
+            for newline in ["\n", "\r\n", "\r"] {
+                let source = format!("\u{feff}{}", source.replace('\n', newline));
+                let doc = parse_with_options(&source, &Options::default().with_positions(true));
+                let pos = doc
+                    .children
+                    .iter()
+                    .find_map(|node| match node {
+                        BlockNode::LinkReferenceDefinition(def) => def.pos.as_ref(),
+                        _ => None,
+                    })
+                    .expect("definition position");
+                let selected: String = source
+                    .chars()
+                    .skip(pos.start_offset)
+                    .take(pos.end_offset - pos.start_offset)
+                    .collect();
+                assert_eq!(selected, expected, "{source:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn footnote_definition_columns_include_the_bom() {
+        let options = Options::default().with_positions(true);
+        let doc = parse_with_options("\u{feff}[^n]: {empty}", &options);
+        let pos = doc.footnote_def_pos.get("n").expect("footnote position");
+        assert_eq!(pos.start_column, 2);
+        assert_eq!(pos.start_offset, 1);
     }
 }

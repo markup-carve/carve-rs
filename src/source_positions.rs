@@ -31,19 +31,6 @@ impl CodepointLineStarts {
         Self(starts)
     }
 
-    /// Index text whose newlines have already been normalized to LF.
-    pub(crate) fn normalized(source: &str) -> Self {
-        let mut starts = vec![0usize];
-        let mut count = 0usize;
-        for ch in source.chars() {
-            count += 1;
-            if ch == '\n' {
-                starts.push(count);
-            }
-        }
-        Self(starts)
-    }
-
     pub(crate) fn get(&self, line_index: usize) -> Option<&usize> {
         self.0.get(line_index)
     }
