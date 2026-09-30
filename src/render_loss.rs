@@ -86,7 +86,7 @@ impl std::fmt::Display for RenderLossError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "render would drop {} raw node{}",
+            "render would lose {} node{}",
             self.total_losses,
             if self.total_losses == 1 { "" } else { "s" }
         )
@@ -120,6 +120,32 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
                     "Dropped {} raw format {:?} while rendering {}",
                     node_type.as_str(),
                     format,
+                    c.target.as_str()
+                ),
+            });
+        }
+    });
+}
+
+/// One row per destination the PART 9 §25 sink denylist blanked, in the order
+/// the renderer emitted them. Every clickable sink is an inline node, and the
+/// emitted value does not change: this is what a checked render says about the
+/// link it defused (markup-carve/carve#2681).
+pub(crate) fn record_destination_denied(pos: Option<&Pos>) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code.entry("destination-denied").or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "destination-denied",
+                format: None,
+                target: c.target,
+                node_type: RawNodeType::Inline,
+                pos: pos.cloned(),
+                message: format!(
+                    "Blanked a denied destination scheme while rendering {}",
                     c.target.as_str()
                 ),
             });

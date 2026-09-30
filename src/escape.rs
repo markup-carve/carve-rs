@@ -354,14 +354,25 @@ pub(crate) fn decoded_style_value(value: &str) -> String {
 /// evasion alike. STRIP-THEN-PROBE: the stripped form is only a judgement aid,
 /// and a URL that passes is returned with its original bytes. The returned
 /// value is still passed through `escape_attr` by the caller.
-pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
+///
+/// IT ALSO REPORTS. PART 9 §25 makes a blanked destination owe one
+/// `destination-denied` row on the CARVE-P2-024 render-loss report, so every
+/// sink that EMITS a destination calls this and nothing else blanks one. A
+/// caller that only wants to know whether a URL would be blanked - because it
+/// emits no destination in that case - asks `has_denied_url_scheme` instead,
+/// which reports nothing.
+pub(crate) fn sanitize_destination<'a>(
+    url: &'a str,
+    pos: Option<&crate::ast::Pos>,
+) -> std::borrow::Cow<'a, str> {
     if has_denied_url_scheme(url) {
+        crate::render_loss::record_destination_denied(pos);
         return std::borrow::Cow::Borrowed("");
     }
     std::borrow::Cow::Borrowed(url)
 }
 
-/// Whether `sanitize_url` blanks `url`. The HTML importer asks the same
+/// Whether `sanitize_destination` blanks `url`. The HTML importer asks the same
 /// question so it never writes a destination the sink would blank.
 pub(crate) fn has_denied_url_scheme(url: &str) -> bool {
     let probe: String = url
@@ -392,7 +403,7 @@ pub(crate) fn is_url_probe_skippable(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_text, is_bidi_control, sanitize_attr_value, sanitize_url};
+    use super::{escape_text, is_bidi_control, sanitize_attr_value, sanitize_destination};
 
     #[test]
     fn bidi_overrides_and_isolates_are_controls() {
@@ -427,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_url_blocks_os_handler_schemes() {
+    fn sanitize_destination_blocks_os_handler_schemes() {
         // OS protocol-handler / command-execution schemes (CVE-2026-20841 class)
         // are blanked everywhere a URL is emitted.
         for url in [
@@ -451,20 +462,20 @@ mod tests {
             "vscode-insiders:x",
             "jar:http://evil/x.jar!/",
         ] {
-            assert_eq!(sanitize_url(url), "", "{url} must be blanked");
+            assert_eq!(sanitize_destination(url, None), "", "{url} must be blanked");
         }
     }
 
     #[test]
-    fn sanitize_url_os_handler_block_is_case_insensitive() {
-        assert_eq!(sanitize_url("MS-OFFICE:ofe|u|x"), "");
-        assert_eq!(sanitize_url("Ms-Msdt:/id"), "");
-        assert_eq!(sanitize_url("SHELL:Startup"), "");
-        assert_eq!(sanitize_url("VSCode:x"), "");
+    fn sanitize_destination_os_handler_block_is_case_insensitive() {
+        assert_eq!(sanitize_destination("MS-OFFICE:ofe|u|x", None), "");
+        assert_eq!(sanitize_destination("Ms-Msdt:/id", None), "");
+        assert_eq!(sanitize_destination("SHELL:Startup", None), "");
+        assert_eq!(sanitize_destination("VSCode:x", None), "");
     }
 
     #[test]
-    fn sanitize_url_allows_safe_schemes() {
+    fn sanitize_destination_allows_safe_schemes() {
         for url in [
             "https://ok.com",
             "http://ok.com",
@@ -475,7 +486,11 @@ mod tests {
             "/relative/path",
             "#anchor",
         ] {
-            assert_eq!(sanitize_url(url), url, "{url} must pass unchanged");
+            assert_eq!(
+                sanitize_destination(url, None),
+                url,
+                "{url} must pass unchanged"
+            );
         }
     }
 

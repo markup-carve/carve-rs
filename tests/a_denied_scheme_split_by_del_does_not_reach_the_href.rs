@@ -13,7 +13,7 @@
 //!
 //! THE ENGINE ALREADY HAD THIS RIGHT ONE FILE OVER. The ANSI target runs
 //! `strip_terminal_controls` - `char::is_control`, which is Cc exactly - over
-//! the destination BEFORE handing it to `sanitize_url`, and the Markdown target
+//! the destination BEFORE handing it to `sanitize_destination`, and the Markdown target
 //! does the same through `is_not_emitted`. Only HTML reached the probe with the
 //! character still in place, which is why only HTML leaked. The fix is the
 //! predicate the other two targets were already using, moved to where the probe
@@ -98,7 +98,7 @@ fn the_del_split_is_blanked_on_href_and_on_src_alike() {
         Some("")
     );
     // The image spelling reproduces the defect identically because it reaches
-    // the SAME `sanitize_url`. It needed no separate fix, and this row keeps
+    // the SAME `sanitize_destination`. It needed no separate fix, and this row keeps
     // that true if the two paths ever diverge.
     assert_eq!(
         attr(&carve::to_html(&format!("![a]({s})\n")), "src"),

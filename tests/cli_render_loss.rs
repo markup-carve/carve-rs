@@ -102,28 +102,34 @@ fn table_section_attributes_are_not_a_render_loss() {
     assert!(report.contains("\"totalLosses\":0"), "{report}");
 }
 
-/// The render-loss vocabulary is closed at the two codes of CARVE-P2-024, so
-/// `--allow-loss` offers those two names and refuses every other.
+/// `--allow-loss` offers two of CARVE-P2-024's three codes and refuses every
+/// other name.
+///
+/// `destination-denied` is the third code and is deliberately NOT offered:
+/// markup-carve/carve#2679 ruled that a blanked destination owes a row and left
+/// whether a security refusal should be allow-listable undecided, so the flag
+/// stayed as it was. The row below pins that gap rather than leaving it to
+/// whichever way a later edit happens to fall.
 #[test]
-fn allow_loss_offers_exactly_the_two_closed_codes() {
+fn allow_loss_offers_two_of_the_three_codes() {
     for code in ["raw-format-dropped", "ruby-flattened"] {
         let accepted = run_input(&["--plain", "--allow-loss", code], "text\n");
         assert!(accepted.status.success(), "{code}: {:?}", accepted.stderr);
     }
-    let refused = run_input(
-        &[
-            "--plain",
-            "--allow-loss",
-            "table-section-attributes-dropped",
-        ],
-        "text\n",
-    );
-    assert_eq!(refused.status.code(), Some(2), "{:?}", refused.stderr);
-    let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert_eq!(
-        stderr.trim_end(),
-        "carve: --allow-loss expects raw-format-dropped or ruby-flattened"
-    );
+    for code in ["table-section-attributes-dropped", "destination-denied"] {
+        let refused = run_input(&["--plain", "--allow-loss", code], "text\n");
+        assert_eq!(
+            refused.status.code(),
+            Some(2),
+            "{code}: {:?}",
+            refused.stderr
+        );
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert_eq!(
+            stderr.trim_end(),
+            "carve: --allow-loss expects raw-format-dropped or ruby-flattened"
+        );
+    }
     let help = run_input(&["--help"], "");
     let help = String::from_utf8_lossy(&help.stdout);
     let line = help
@@ -131,8 +137,43 @@ fn allow_loss_offers_exactly_the_two_closed_codes() {
         .find(|line| line.contains("--allow-loss"))
         .expect("--help documents --allow-loss");
     assert!(!line.contains("table-section-attributes-dropped"), "{line}");
+    assert!(!line.contains("destination-denied"), "{line}");
     assert!(line.contains("raw-format-dropped"), "{line}");
     assert!(line.contains("ruby-flattened"), "{line}");
+}
+
+/// The bytes a consumer of the JSON report actually reads for a blanked
+/// destination: the third code, the sink's position, and NO `format` key -
+/// `format` belongs to `raw-format-dropped`, and an entry naming one would
+/// describe a loss that did not happen.
+#[test]
+fn a_denied_destination_reaches_the_json_report() {
+    let path = std::env::temp_dir().join(format!("carve-denied-dest-{}.json", std::process::id()));
+    let output = run_input(
+        &["--html", "--report-losses", path.to_str().unwrap()],
+        "[report me](javascript:one) and ![report me too](vbscript:two)\n",
+    );
+    assert!(output.status.success(), "{:?}", output.stderr);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "<p><a href=\"\">report me</a> and <img src=\"\" alt=\"report me too\"></p>\n"
+    );
+    let report = std::fs::read_to_string(&path).unwrap();
+    let _ = std::fs::remove_file(path);
+    assert!(report.contains("\"totalLosses\":2"), "{report}");
+    assert_eq!(
+        report.matches("\"code\":\"destination-denied\"").count(),
+        2,
+        "{report}"
+    );
+    assert!(!report.contains("\"format\""), "{report}");
+    assert!(report.contains("\"nodeType\":\"inline\""), "{report}");
+    assert!(report.contains("\"startColumn\":1"), "{report}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("<stdin>:1:1 destination-denied"),
+        "{stderr}"
+    );
 }
 
 /// `--allow-loss` refuses an unknown code before `carve` reads stdin, so the

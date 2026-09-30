@@ -7,8 +7,8 @@
 use crate::abbr_budget::AbbrBudgetGuard;
 use crate::ast::*;
 use crate::escape::{
-    escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
-    sanitize_url, write_escaped_attr, write_escaped_text,
+    escape_attr, escape_text, has_denied_url_scheme, is_dangerous_attr_name, is_valid_attr_name,
+    sanitize_attr_value, sanitize_destination, write_escaped_attr, write_escaped_text,
 };
 use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
@@ -3175,7 +3175,7 @@ fn render_image(out: &mut String, img: &Image) {
     }
     out.push_str(&format!(
         "<img src=\"{}\" alt=\"{}\"",
-        escape_attr(&sanitize_url(&img.src)),
+        escape_attr(&sanitize_destination(&img.src, img.pos.as_ref())),
         escape_attr(&img.alt)
     ));
     if let Some(title) = &img.title {
@@ -3590,7 +3590,7 @@ fn render_inline_after(
             // Display the raw autolink content (a URI autolink keeps its scheme).
             let display = a.text.as_str();
             out.push_str("<a href=\"");
-            write_escaped_attr(out, &sanitize_url(&a.href));
+            write_escaped_attr(out, &sanitize_destination(&a.href, a.pos.as_ref()));
             out.push('"');
             write_attrs(out, &a.attrs);
             out.push('>');
@@ -3686,7 +3686,9 @@ fn render_inline_after(
                         .replace("{user}", &encoded)
                 })
             };
-            let href = href.filter(|href| !href.is_empty() && !sanitize_url(href).is_empty());
+            // Asked, not blanked: a denied URL here suppresses the anchor
+            // entirely, so no destination is emitted and PART 9 §25 owes no row.
+            let href = href.filter(|href| !href.is_empty() && !has_denied_url_scheme(href));
             if let Some(href) = href {
                 let (class, _) = structural_attrs("mention", &m.attrs);
                 out.push_str("<a class=\"");
@@ -3728,7 +3730,9 @@ fn render_inline_after(
                     template.replace("{name}", &encoded)
                 })
             };
-            let href = href.filter(|href| !href.is_empty() && !sanitize_url(href).is_empty());
+            // Asked, not blanked: a denied URL here suppresses the anchor
+            // entirely, so no destination is emitted and PART 9 §25 owes no row.
+            let href = href.filter(|href| !href.is_empty() && !has_denied_url_scheme(href));
             if let Some(href) = href {
                 let (class, _) = structural_attrs("tag", &t.attrs);
                 out.push_str("<a class=\"");
@@ -4014,7 +4018,7 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     // case-insensitive title key cannot produce a duplicate attribute.
     out.push_str(&format!(
         "<a href=\"{}\"",
-        escape_attr(&sanitize_url(&l.href))
+        escape_attr(&sanitize_destination(&l.href, l.pos.as_ref()))
     ));
     if let Some(title) = &l.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
