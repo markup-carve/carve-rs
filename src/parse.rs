@@ -1696,8 +1696,8 @@ fn extract_footnote_defs(
                         } else if let Some(mut open) = detect_fence_open(trimmed) {
                             open.content_col = indent_columns(line);
                             note_fence = Some(open);
-                        } else if let Some((label_part, target_part)) =
-                            parse_link_def_line(trim_ascii_start(trimmed))
+                        } else if let Some((label_part, target_part, mut def)) =
+                            parse_link_def_line_with_value(trim_ascii_start(trimmed))
                         {
                             // A LINK DEFINITION inside the body is
                             // document-level metadata like any other, so it is
@@ -1711,7 +1711,6 @@ fn extract_footnote_defs(
                             // precedence is applied by the caller.
                             if !label_part.starts_with(['@', '^']) && !target_part.trim().is_empty()
                             {
-                                let mut def = parse_link_def_target_with_attrs(target_part.trim());
                                 // The DOCUMENT line, so the hoisted node gets a
                                 // `pos` like every other definition (§4, §10).
                                 // `first_source_line` is 1-BASED - it is built as
@@ -2076,6 +2075,51 @@ pub(crate) fn label_key(label: &str) -> String {
         }
     }
     out
+}
+
+/// Borrow labels whose spelling is already the normalized map key.
+fn borrowed_label_key(label: &str) -> std::borrow::Cow<'_, str> {
+    let mut previous_space = true;
+    for ch in label.chars() {
+        if matches!(ch, '\t' | '\n' | '\u{000c}' | '\r') || (ch == ' ' && previous_space) {
+            return std::borrow::Cow::Owned(label_key(label));
+        }
+        previous_space = ch == ' ';
+    }
+    if previous_space && !label.is_empty() {
+        std::borrow::Cow::Owned(label_key(label))
+    } else {
+        std::borrow::Cow::Borrowed(label)
+    }
+}
+
+#[cfg(test)]
+mod borrowed_reference_keys {
+    use super::*;
+
+    #[test]
+    fn borrowed_keys_match_owned_normalization() {
+        for label in [
+            "",
+            "r0",
+            "a b",
+            "😀",
+            "a\u{a0}b",
+            " leading",
+            "trailing ",
+            "a  b",
+            "a\tb",
+            "a\nb",
+            "a\rb",
+            "a\u{c}b",
+        ] {
+            let key = borrowed_label_key(label);
+            assert_eq!(key.as_ref(), label_key(label));
+            if matches!(label, "" | "r0" | "a b" | "😀" | "a\u{a0}b") {
+                assert!(matches!(key, std::borrow::Cow::Borrowed(_)));
+            }
+        }
+    }
 }
 
 fn is_single_line_label(label: &str) -> bool {
@@ -3012,19 +3056,21 @@ fn extract_link_defs_with_guard(
         // See the footnote pass: the probe stays inside the filter so the shared
         // budget is spent only on lines that parsed as a definition.
         let mut unaffordable = false;
-        if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
-            let folds = marker_line_may_be_lazy(line)
-                && guard.as_mut().is_some_and(|(options, budget)| {
-                    line_folds_into_an_open_paragraph(
-                        &body,
-                        line,
-                        options,
-                        budget,
-                        &mut unaffordable,
-                    )
-                });
-            !(folds || unaffordable || folded_into_term.contains(&line_index))
-        }) {
+        if let Some((label_part, target_part, mut def)) = parse_link_def_line_with_value(def_line)
+            .filter(|_| {
+                let folds = marker_line_may_be_lazy(line)
+                    && guard.as_mut().is_some_and(|(options, budget)| {
+                        line_folds_into_an_open_paragraph(
+                            &body,
+                            line,
+                            options,
+                            budget,
+                            &mut unaffordable,
+                        )
+                    });
+                !(folds || unaffordable || folded_into_term.contains(&line_index))
+            })
+        {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
             // (`[r]:` + only whitespace) is NOT a definition -- the line stays
@@ -3033,7 +3079,6 @@ fn extract_link_defs_with_guard(
                 body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
-            let mut def = parse_link_def_target_with_attrs(target_part.trim());
             // The line the author wrote it on, for PART 12 §10's node: its `pos`
             // and the SOURCE order of the hoisted definitions both come from here.
             def.line = Some(line_index);
@@ -3293,6 +3338,10 @@ impl StrippedContainerLine<'_> {
 }
 
 fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
+    parse_link_def_line_with_value(line).map(|(label, target, _)| (label, target))
+}
+
+fn parse_link_def_line_with_value(line: &str) -> Option<(&str, &str, LinkDef)> {
     let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
     let first = label.chars().next()?;
     if first == '@' || label.contains(']') {
@@ -3314,23 +3363,18 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     // is the sweep carve#922 asks for: while the pattern ended in a
     // swallow-everything tail, a caller could test the RAW line and be right by
     // accident.
-    if !link_def_target_is_anchored(target) {
-        return None;
-    }
-    Some((label, target))
-}
-
-/// Does everything after `]:` match the production to END OF LINE?
-///
-/// PART 7 promises that a slot which fails to match "falls back to prose rather
-/// than silently dropping metadata". At this line there was no prose to fall
-/// back to: the swallowing tail ate whatever a failed slot rejected, so the
-/// promised failure mode was unreachable and every narrowing here dropped
-/// metadata instead of failing visibly. With the line anchored, both the
-/// mixed-run forms at the title slot and at the trailing-attributes slot
-/// produce the visible failure.
-fn link_def_target_is_anchored(target: &str) -> bool {
-    parse_link_def_target_parts(target).is_some()
+    let (href, title, attrs) = parse_link_def_target_parts(target)?;
+    Some((
+        label,
+        target,
+        LinkDef {
+            raw_label: None,
+            href,
+            title,
+            attrs,
+            line: None,
+        },
+    ))
 }
 
 /// The closing quote of the title run `after_pad` opens, as a byte index.
@@ -3375,7 +3419,7 @@ fn closing_title_quote(after_pad: &str) -> Option<usize> {
 /// spec agrees with the leniency - `[a]: <U+202F>javascript:alert(1)` is still a
 /// definition there, with the destination sanitized rather than the line
 /// refused.
-fn parse_link_def_target_parts(target: &str) -> Option<(String, Option<String>, Option<&str>)> {
+fn parse_link_def_target_parts(target: &str) -> Option<(String, Option<String>, Option<Attrs>)> {
     // THE LINE ENDING IS `whitespace` - a space or a tab, the same terminal
     // `blank_line` takes (PART 1, carve#890). So `[a]: /u<SP>` is a definition
     // and `[a]: /u<NBSP>` is not: a no-break space, an en quad, a byte order
@@ -3408,8 +3452,7 @@ fn parse_link_def_target_parts(target: &str) -> Option<(String, Option<String>, 
     if let Some(after_pad) = rest.strip_prefix(' ') {
         let block = trim_ascii_end(after_pad);
         if block.starts_with('{') && block.ends_with('}') && block.len() >= 2 {
-            parse_attrs(&block[1..block.len() - 1])?;
-            attrs = Some(block);
+            attrs = Some(parse_attrs(&block[1..block.len() - 1])?);
             rest = &after_pad[block.len()..];
         }
     }
@@ -3694,21 +3737,6 @@ fn append_link_reference_definitions(
             .into_iter()
             .map(|(_, node)| BlockNode::LinkReferenceDefinition(node)),
     );
-}
-
-/// The definition a target spells, once `parse_link_def_target_parts` has
-/// read it. Only reached for a target that already answered the shape test.
-fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
-    let (href, title, attr_text) = parse_link_def_target_parts(target).unwrap_or_default();
-    LinkDef {
-        raw_label: None,
-        href,
-        title,
-        // `parse_attrs` takes the INNER content, not the braces (see the block
-        // attribute-line caller, which strips them the same way).
-        attrs: attr_text.and_then(|t| parse_attrs(&t[1..t.len() - 1])),
-        line: None,
-    }
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
@@ -22915,7 +22943,7 @@ fn resolve_reference_links_inline(
                         // collapsed heading reference in the same document; do
                         // not merge this definition's attributes twice there.
                     } else if let Some(def) = defs
-                        .get(&label_key(label))
+                        .get(borrowed_label_key(label).as_ref())
                         .filter(|_| is_single_line_label(label))
                     {
                         // PART 12 §3a, A RESOLVED REFERENCE KEEPS ITS
@@ -23022,7 +23050,7 @@ fn resolve_reference_links_inline(
                         // Already resolved from the active definition context;
                         // see the equivalent link branch above.
                     } else if let Some(def) = defs
-                        .get(&label_key(label))
+                        .get(borrowed_label_key(label).as_ref())
                         .filter(|_| is_single_line_label(label))
                     {
                         // PART 12 §3a - see the note on the link branch above.

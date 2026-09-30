@@ -291,7 +291,7 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
         if !line.contains("]:") {
             continue;
         }
-        let (label, target) = parse_link_def_line(line)?;
+        let (label, target, mut def) = parse_link_def_line_with_value(line)?;
         if label.starts_with('@') || target.trim().is_empty() {
             return None;
         }
@@ -305,7 +305,6 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
                 return None;
             }
         }
-        let mut def = parse_link_def_target_with_attrs(target.trim());
         if def.attrs.is_some() {
             return None;
         }
@@ -650,16 +649,18 @@ fn render_layout_inline(
                     if reference.contains(['\r', '\n']) {
                         return None;
                     }
-                    let def = ACTIVE_LINK_DEFS.with(|active| {
-                        active
-                            .borrow()
-                            .last()
-                            .and_then(|context| context.defs.get(&label_key(reference)).cloned())
+                    let (href, title) = ACTIVE_LINK_DEFS.with(|active| {
+                        let active = active.borrow();
+                        let def = active
+                            .last()?
+                            .defs
+                            .get(borrowed_label_key(reference).as_ref())?;
+                        if def.attrs.is_some() {
+                            return None;
+                        }
+                        Some((def.href.clone(), def.title.clone()))
                     })?;
-                    if def.attrs.is_some() {
-                        return None;
-                    }
-                    (def.href, def.title, close + 1)
+                    (href, title, close + 1)
                 } else {
                     return None;
                 };

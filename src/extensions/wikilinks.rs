@@ -124,7 +124,7 @@ impl CarveExtension for Wikilinks {
             Some(d) => d.to_string(),
             None => {
                 if page.is_empty() {
-                    anchor.clone()
+                    anchor
                 } else {
                     page.to_string()
                 }

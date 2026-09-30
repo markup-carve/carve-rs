@@ -6809,7 +6809,7 @@ fn footnote_reference_site(reference: &Handle) -> Handle {
             _ => {}
         }
     }
-    parent.clone()
+    parent
 }
 
 /// Drop a container the notes left empty, so the `<hr>` and the `<ol>` that

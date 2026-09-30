@@ -141,7 +141,7 @@ impl ColorSwatch {
                 // meaningless here (there is no inline value) and ignored.
                 extra_classes.push("swatch-chip-only");
                 extra_kvs.push(("title", color));
-                chip.clone()
+                chip
             }
             position => {
                 // When revealing, wrap the value so CSS can collapse / expand it,
