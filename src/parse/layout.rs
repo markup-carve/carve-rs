@@ -1382,7 +1382,6 @@ mod adjacent_definition_tests {
             "[a]: /one\n[b]: /two\n[c]: /three\n\n[A][a] [B][b] [C][c]\n",
             "[a]: /one\n[b]: /two\n[a]: /last\n\n[A][a]\n",
             "[A][a] [B][b]\n\n[a]: /one\n[b]: /two \"escaped \\\"quote\"\n",
-            "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n",
             "```\n[a]: /literal\n```\n\n[b]: /two\n[c]: /three\n\n[B][b]\n",
         ] {
             let options = Options::default();
@@ -1402,6 +1401,7 @@ mod adjacent_definition_tests {
     #[test]
     fn incomplete_runs_fall_back_without_writing() {
         for source in [
+            "[a]: javascript:alert(1)\n[b]: /safe\n\n[A][a] [B][b]\n",
             "[a]: /one\n[b]: /two junk\n",
             "[a]: /one\n[b]: /two\nprose\n",
             "[a]: /one\n[b]: /two\n# Heading\n",
