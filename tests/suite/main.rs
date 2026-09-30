@@ -1650,3 +1650,9 @@ mod an_escaped_crossing_closer_leaves_its_opener_open;
 
 #[path = "../opaque_marker_quote_ownership.rs"]
 mod opaque_marker_quote_ownership;
+
+#[path = "../djot_orphan_attributes.rs"]
+mod djot_orphan_attributes;
+
+#[path = "../djot_emphasis_pairing.rs"]
+mod djot_emphasis_pairing;

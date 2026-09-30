@@ -25,6 +25,18 @@
 //! assert_eq!(carve::djot_to_carve("_em_ and ~sub~"), "/em/ and {,sub,}");
 //! ```
 
+macro_rules! cached_regex {
+    ($pattern:literal) => {{
+        static COMPILED: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        Ok::<&'static regex::Regex, regex::Error>(
+            COMPILED.get_or_init(|| regex::Regex::new($pattern).unwrap()),
+        )
+    }};
+}
+
+#[path = "djot_emphasis.rs"]
+mod emphasis;
+
 use std::collections::HashSet;
 
 use crate::ast::{BlockNode, FigureTarget};
@@ -34,16 +46,141 @@ pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
     let folded = fold_heading_continuations(body);
-    let (held, prefix, mut spans) = protect_attributed_strong(&folded);
-    let words = protect_attributed_words(&held, &prefix, &mut spans);
-    let converted = rewrite_djot_body(&convert_definition_lists(&words));
-    let restore = regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
-    let converted = restore
-        .replace_all(&converted, |caps: &regex::Captures<'_>| {
-            spans[caps[1].parse::<usize>().unwrap()].clone()
+    let collapsed = cached_regex!(r"(!?\[([^\[\]\n]*)\])\[\]").unwrap();
+    let mut collapsed_mask = mask_code_and_destinations(&folded).into_bytes();
+    let mut at = 0;
+    while at < folded.len() {
+        if collapsed_mask[at] == b'{' {
+            if let Some((end, _)) = read_djot_word_attributes(&folded, at) {
+                for byte in &mut collapsed_mask[at..end] {
+                    if *byte != b'\n' {
+                        *byte = b' ';
+                    }
+                }
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    let collapsed_mask =
+        String::from_utf8(collapsed_mask).expect("attribute masks preserve UTF-8 boundaries");
+    let autolink = cached_regex!(r"<[^<>\s]+>").unwrap();
+    let collapsed_mask = autolink.replace_all(&collapsed_mask, |caps: &regex::Captures<'_>| {
+        if caps[0].contains(':') || caps[0].contains('@') {
+            " ".repeat(caps[0].len())
+        } else {
+            caps[0].to_string()
+        }
+    });
+    let definitions_regex =
+        cached_regex!(r"(?m)^[ \t]*(?:> ?)*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?\[([^\[\]\n]*)\]:[ \t]")
+            .unwrap();
+    let definition_boundary =
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\]]*\]:)").unwrap();
+    let definitions: std::collections::HashSet<String> = definitions_regex
+        .captures_iter(&folded)
+        .filter(|caps| {
+            let start = caps.get(0).unwrap().start();
+            let previous = folded[..start]
+                .split('\n')
+                .rev()
+                .nth(1)
+                .unwrap_or("")
+                .trim_start_matches([' ', '\t', '>'])
+                .trim();
+            collapsed_mask.as_bytes()[start + caps[0].find('[').unwrap()] == b'['
+                && (previous.is_empty() || definition_boundary.is_match(previous))
+        })
+        .map(|caps| caps[1].to_string())
+        .collect();
+    let folded = collapsed.replace_all(&folded, |caps: &regex::Captures<'_>| {
+        if collapsed_mask.as_bytes()[caps.get(0).unwrap().start()] == caps[0].as_bytes()[0]
+            && definitions.contains(&caps[2])
+        {
+            format!("{}[{}]", &caps[1], &caps[2])
+        } else {
+            caps[0].to_string()
+        }
+    });
+    let mut alt_prefix = "\0DJOTALT\0".to_string();
+    while folded.contains(&alt_prefix) {
+        alt_prefix.push('\0');
+    }
+    let mut alts = Vec::new();
+    let mut alt_cache = std::collections::HashMap::<String, String>::new();
+    let image = cached_regex!(r"!\[([^\[\]\n]*)\]([\[(])").unwrap();
+    let mask = mask_code_and_destinations(&folded);
+    let folded = image
+        .replace_all(&folded, |caps: &regex::Captures<'_>| {
+            let at = caps.get(0).unwrap().start();
+            if mask.as_bytes()[at] != b'!'
+                || is_escaped(folded.as_bytes(), at)
+                || caps[1].contains('\\')
+            {
+                return caps[0].to_string();
+            }
+            if !caps[1].bytes().any(|byte| b"_*`{^~".contains(&byte)) {
+                alts.push(caps[1].to_string());
+                return format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2]);
+            }
+            let label = &caps[1];
+            if let Some(alt) = alt_cache.get(label) {
+                alts.push(alt.clone());
+                return format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2]);
+            }
+            let alt = crate::to_plain_text_with_options(
+                &djot_to_carve(&format!(
+                    "DJOTALT {} DJOTEND",
+                    strip_image_alt_attributes(label)
+                )),
+                &crate::Options {
+                    smart_typography: crate::SmartTypographyMode::Source,
+                    ..crate::Options::default()
+                },
+            )
+            .trim_end_matches('\n')
+            .strip_prefix("DJOTALT ")
+            .unwrap_or("")
+            .strip_suffix(" DJOTEND")
+            .unwrap_or("")
+            .to_string();
+            alt_cache.insert(label.to_string(), alt.clone());
+            alts.push(alt);
+            format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
         })
         .into_owned();
+    let (held, prefix, mut spans) = protect_attributed_strong(&folded);
+    let words = protect_attributed_words(&held, &prefix, &mut spans);
+    let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
+    while words.contains(&empty_term) {
+        empty_term.push('\0');
+    }
+    let converted = rewrite_djot_body(&convert_definition_lists(&words, &empty_term))
+        .replace(&empty_term, "%%");
+    let converted = if spans.is_empty() {
+        converted
+    } else {
+        let restore =
+            regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
+        restore
+            .replace_all(&converted, |caps: &regex::Captures<'_>| {
+                spans[caps[1].parse::<usize>().unwrap()].clone()
+            })
+            .into_owned()
+    };
 
+    let converted = if alts.is_empty() {
+        converted
+    } else {
+        let alt_restore =
+            regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&alt_prefix))).unwrap();
+        alt_restore
+            .replace_all(&converted, |caps: &regex::Captures<'_>| {
+                alts[caps[1].parse::<usize>().unwrap()].clone()
+            })
+            .into_owned()
+    };
     if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
@@ -55,6 +192,32 @@ pub fn djot_to_carve(djot: &str) -> String {
 
 fn quote_djot_attribute(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn strip_image_alt_attributes(label: &str) -> String {
+    let mut mask = mask_code_and_destinations(label).into_bytes();
+    for value in cached_regex!(r"<[^<>\s]+>").unwrap().find_iter(label) {
+        if value.as_str().contains(':') || value.as_str().contains('@') {
+            mask[value.range()].fill(b' ');
+        }
+    }
+    let bytes = label.as_bytes();
+    let mut out = String::new();
+    let mut cursor = 0;
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'{' && mask[at] == b'{' && !is_escaped(bytes, at) {
+            if let Some((end, _)) = read_djot_word_attributes(label, at) {
+                out.push_str(&label[cursor..at]);
+                cursor = end;
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    out.push_str(&label[cursor..]);
+    out
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
@@ -192,7 +355,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         {
             for (at, ch) in source[cursor..i].char_indices().rev() {
                 if ch.is_whitespace()
-                    || "\"'{}[]`\0)>|".contains(ch)
+                    || "\"'{}[]`\0>|".contains(ch)
                     || masked.as_bytes()[cursor + at] != bytes[cursor + at]
                 {
                     break;
@@ -240,8 +403,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
 fn fold_heading_continuations(source: &str) -> String {
     static BLOCK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let block = BLOCK.get_or_init(|| regex::Regex::new(
-        r"^(?:[#>|{]|[-*+][ \t]|[0-9]+[.)][ \t]|:[ \t]|:{2,}|\([0-9a-zA-Z]+\)[ \t]|[`~]{3,}|\^[ \t]|%{3,}|\[[^\]\n]*\]:|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)"
-    ).unwrap());
+        r"^(?:[#>|{]|[-*+][ \t]|[0-9]+[.)][ \t]|:[ \t]|:{2,}|\([0-9a-zA-Z]+\)[ \t]|[`~]{3,}|\^[ \t]|%{3,}|\[[^\]\n]*\]:|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)").unwrap());
     let masked = mask_code_and_destinations(source);
     let masks: Vec<_> = masked.split('\n').collect();
     let lines: Vec<_> = source.split('\n').collect();
@@ -443,15 +605,28 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
 
 /// Translate Djot's definition-item shape without canonicalizing unrelated
 /// links, raw blocks, attributes, or author spelling elsewhere in the file.
-fn convert_definition_lists(source: &str) -> String {
+fn convert_definition_lists(source: &str, empty_term: &str) -> String {
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
     let mut stack: Vec<DefinitionFrame> = Vec::new();
     for index in 0..lines.len() {
+        let raw_term = definition_term(&lines[index]);
+        let raw_fence = raw_term.is_some_and(|(_, content)| {
+            let payload = &lines[index][content..];
+            (payload.starts_with("~~~")
+                || (payload.starts_with("```") && !payload.trim_start_matches('`').contains('`')))
+                && masked[index].trim_start().starts_with(':')
+        });
         if let (Some((indent, _)), Some((raw_indent, content))) = (
-            definition_term(masked[index]),
-            definition_term(&lines[index]),
+            if raw_fence
+                || raw_term.is_some_and(|(_, content)| lines[index][content..].starts_with('`'))
+            {
+                raw_term
+            } else {
+                definition_term(masked[index])
+            },
+            raw_term,
         ) {
             if indent != raw_indent {
                 continue;
@@ -478,14 +653,21 @@ fn convert_definition_lists(source: &str) -> String {
                         });
                     }
                     lines[index] = format!(
-                        "{}{}:: {term}",
+                        "{}{}:: {}",
                         if starts {
                             format!("{}{{loose}}\n", " ".repeat(target))
                         } else {
                             String::new()
                         },
-                        " ".repeat(target)
+                        " ".repeat(target),
+                        if raw_fence { empty_term } else { &term }
                     );
+                    if raw_fence {
+                        lines[index].push_str(&format!("\n{}:  {term}", " ".repeat(target)));
+                        let frame = stack.last_mut().unwrap();
+                        frame.body = true;
+                        frame.ready = true;
+                    }
                     continue;
                 }
                 if top.is_some_and(|frame| frame.ready && indent >= frame.source + 2) {
@@ -627,7 +809,6 @@ fn convert_djot_block_markers(source: &str) -> String {
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
-        let nested = nested_block(&masked, index, quote, columns);
         if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
             let token = &content[1..close + 1];
             let tail = &content[close + 2..];
@@ -636,6 +817,7 @@ fn convert_djot_block_markers(source: &str) -> String {
                 && tail.starts_with([' ', '\t'])
                 && !tail.trim().is_empty()
             {
+                let nested = nested_block(&masked, index, quote, columns);
                 let authored = &lines[index];
                 let authored_rest = &authored[prefix + indent_bytes..];
                 lines[index] = format!(
@@ -663,6 +845,7 @@ fn convert_djot_block_markers(source: &str) -> String {
             count += 1;
         }
         if valid && count >= 3 {
+            let nested = nested_block(&masked, index, quote, columns);
             lines[index] = format!(
                 "{}{}***",
                 quote,
@@ -726,7 +909,10 @@ fn mask_djot_attributes(source: &str) -> String {
             };
             boundary
                 && line_tail.trim().is_empty()
-                && !following.split('\n').next().unwrap_or("").trim().is_empty()
+                && following
+                    .split('\n')
+                    .next()
+                    .is_some_and(|line| !line.trim().is_empty())
         } else {
             false
         };
@@ -751,6 +937,176 @@ fn mask_djot_attributes(source: &str) -> String {
     String::from_utf8(masked).expect("attribute masks preserve UTF-8 boundaries")
 }
 
+struct OrphanAttributeSpans {
+    prefix: String,
+    values: Vec<String>,
+}
+
+impl OrphanAttributeSpans {
+    fn restore(&self, source: &str) -> String {
+        if self.values.is_empty() {
+            return source.to_string();
+        }
+        let pattern =
+            regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&self.prefix))).unwrap();
+        pattern
+            .replace_all(source, |caps: &regex::Captures<'_>| {
+                self.values[caps[1].parse::<usize>().unwrap()].clone()
+            })
+            .into_owned()
+    }
+}
+
+fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans) {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| {
+        let item = r#"(?:[.#][A-Za-z0-9_][A-Za-z0-9_-]*|[A-Za-z][A-Za-z0-9_-]*=(?:"(?:\\.|[^"\\\n])*"|[A-Za-z0-9_:-]+))"#;
+        regex::Regex::new(&format!(r"\{{[ \t]*{item}(?:[ \t]+{item})*[ \t]*\}}")).unwrap()
+    });
+    let masked = mask_djot_attributes(source);
+    let uri = cached_regex!(r"<[A-Za-z][A-Za-z0-9+.-]*:[^<>\s]*>").unwrap();
+    let masked = uri.replace_all(&masked, |caps: &regex::Captures<'_>| {
+        " ".repeat(caps[0].len())
+    });
+    let masked_lines: Vec<&str> = masked.split('\n').collect();
+    let mut spans = OrphanAttributeSpans {
+        prefix: "\0DJOTORPHAN\0".into(),
+        values: Vec::new(),
+    };
+    while source.contains(&spans.prefix) {
+        spans.prefix.push('\0');
+    }
+    let block_end = cached_regex!(
+        r"^(?:`{3,}|~{3,}|:{3,}|#{1,6} |[-*+] |[0-9]+[.)] |> |:{1,2} |(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|\|.*\||\[[^\]]+\]:)")
+    .unwrap();
+    let quote_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
+    let marker = cached_regex!(
+        r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|[0-9]+[.)]|#{1,6}|:{1,2}|\[\^[^\]]+\]:)[ \t]+(?:\[[ xX-]\][ \t]+)?$")
+    .unwrap();
+    let source_lines: Vec<&str> = source.split('\n').collect();
+    let mut lines = Vec::new();
+    for (index, line) in source.split('\n').enumerate() {
+        let mask = masked_lines[index].as_bytes();
+        let bytes = line.as_bytes();
+        let first = quote_prefix.find(line).unwrap().end();
+        let mut output = String::new();
+        let mut cursor = 0;
+        let mut drop_line = false;
+        let stripped_line = pattern.replace_all(line, "");
+        let marker_only = marker.is_match(&stripped_line);
+        for attrs in pattern.find_iter(line) {
+            let at = attrs.start();
+            if at < cursor || mask[at] != b'{' || is_escaped(bytes, at) {
+                continue;
+            }
+            if at > 0
+                && at != cursor
+                && (b"]*_}^~".contains(&bytes[at - 1])
+                    || (mask[at - 1] == b' ' && bytes[at - 1] != b' '))
+            {
+                continue;
+            }
+            if marker_only {
+                continue;
+            }
+            let alone = at == first && attrs.end() == line.trim_end().len();
+            let previous = source_lines
+                .get(index.wrapping_sub(1))
+                .copied()
+                .unwrap_or("");
+            let previous = quote_prefix.replace(previous, "");
+            let previous = previous.trim();
+            if alone
+                && source_lines
+                    .get(index + 1)
+                    .is_some_and(|line| !line.trim().is_empty())
+                && (index == 0
+                    || previous.is_empty()
+                    || (previous.starts_with('{') && previous.ends_with('}'))
+                    || block_end.is_match(previous))
+            {
+                continue;
+            }
+            drop_line |= alone;
+            output.push_str(&line[cursor..at]);
+            cursor = attrs.end();
+            let end = cursor + line[cursor..].len()
+                - line[cursor..].trim_start_matches([' ', '\t']).len();
+            let space = &line[cursor..end];
+            let value = if at != first {
+                space.to_string()
+            } else if space.is_empty() {
+                String::new()
+            } else {
+                format!("!`{space}`")
+            };
+            output.push_str(&format!("{}{}\0", spans.prefix, spans.values.len()));
+            spans.values.push(value);
+            cursor = end;
+        }
+        output.push_str(&line[cursor..]);
+        if !drop_line {
+            lines.push(output);
+        }
+    }
+    (lines.join("\n"), spans)
+}
+
+fn emphasis_mask(source: &str) -> String {
+    let mut mask = mask_djot_attributes(source).into_bytes();
+    let autolink = cached_regex!(r"<[^<>\s]+>").unwrap();
+    let scheme = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
+    for value in autolink.find_iter(source) {
+        if scheme.is_match(value.as_str()) {
+            mask[value.range()].fill(b' ');
+        }
+    }
+    for label in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
+        mask[label.range()].fill(b' ');
+    }
+    let refs = cached_regex!(
+        r"(?m)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?\[[^\^\]\n][^\]\n]*\]:[^\n]*"
+    )
+    .unwrap();
+    let reference_boundary =
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\]]*\]:)").unwrap();
+    for value in refs.find_iter(source) {
+        let text = value.as_str().trim_start_matches([' ', '\t', '>']);
+        if text.starts_with("[^") {
+            continue;
+        }
+        let previous = source[..value.start()]
+            .split('\n')
+            .rev()
+            .nth(1)
+            .unwrap_or("")
+            .trim_start_matches([' ', '\t', '>'])
+            .trim();
+        if previous.is_empty() || reference_boundary.is_match(previous) {
+            mask[value.range()].fill(b' ');
+        }
+    }
+    let images = cached_regex!(r"!\[[^\[\]\n]*\][\[(]").unwrap();
+    for value in images.find_iter(source) {
+        if !is_escaped(source.as_bytes(), value.start())
+            && !is_escaped(source.as_bytes(), value.end() - 1)
+        {
+            mask[value.range()].fill(b' ');
+        }
+    }
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'[' && i > 0 && bytes[i - 1] == b']' {
+            if let Some(end) = source[i..].split('\n').next().unwrap().find(']') {
+                mask[i..=i + end].fill(b' ');
+            }
+        }
+        i += 1;
+    }
+    String::from_utf8(mask).expect("inline masks preserve UTF-8 boundaries")
+}
+
 fn rewrite_djot_body(djot: &str) -> String {
     let source = convert_djot_block_markers(&djot.replace("\r\n", "\n").replace('\r', "\n"));
     // Before anything else, and deliberately as a same-length rewrite: `+` and
@@ -761,9 +1117,15 @@ fn rewrite_djot_body(djot: &str) -> String {
     // works on whole lines: a blank-line run Djot reads as nothing is a list
     // boundary in Carve.
     let source = collapse_false_list_boundaries(&source);
-    let masked = mask_djot_attributes(&source);
-    let source = escape_plain_carve_syntax_masked(&source, HandledDelimiters::DJOT, &masked);
-    let masked = mask_djot_attributes(&source);
+    let (source, orphan_spans) = consume_orphan_djot_attributes(&source);
+    let mask = emphasis_mask(&source);
+    orphan_spans.restore(&emphasis::convert(&source, &mask, rewrite_djot_inline))
+}
+
+fn rewrite_djot_inline(source: &str) -> String {
+    let masked = emphasis_mask(source);
+    let source = escape_plain_carve_syntax_masked(source, HandledDelimiters::DJOT, &masked);
+    let masked = emphasis_mask(&source);
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut taken: Vec<(char, usize, usize)> = Vec::new();
@@ -1117,26 +1479,105 @@ fn blank_line_follows(bytes: &[u8], index: usize) -> bool {
 fn mask_code_and_destinations(source: &str) -> String {
     let bytes = source.as_bytes();
     let mut mask: Vec<u8> = bytes.to_vec();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        // A fenced block: everything to the closing fence is verbatim.
-        if at_line_start(bytes, i) {
-            if let Some((fence_char, run)) = fence_at(bytes, i) {
-                let body = i + run;
-                let end = find_fence_close(bytes, body, fence_char, run);
-                blank_out(&mut mask, i, end);
-                i = end;
-                continue;
-            }
+    let opener = cached_regex!(r"^([ \t]*)(?:(:[ \t]+|[-*+][ \t]+|[0-9]+[.)][ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
+    let boundary =
+        cached_regex!(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} |\{[.#A-Za-z])").unwrap();
+    let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
+    let mut previous_block = true;
+    let mut offset = 0;
+    let source_lines: Vec<_> = source.split('\n').collect();
+    for (index, raw) in source.split_inclusive('\n').enumerate() {
+        let line = raw.trim_end_matches('\n');
+        let (depth, content) = quoted(line);
+        let prefix_len = line.len() - content.len();
+        if fence.is_some_and(|(_, _, _, _, owner_depth)| {
+            depth < owner_depth && !content.trim().is_empty()
+        }) {
+            fence = None;
         }
-
+        let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
+        if fence.is_some_and(|(_, _, _, minimum, owner_depth)| {
+            minimum.is_some_and(|minimum| indent < minimum)
+                && !content.trim().is_empty()
+                && depth == owner_depth
+        }) {
+            fence = None;
+        }
+        if let Some((ch, run, maximum, _, owner_depth)) = fence {
+            blank_out(&mut mask, offset, offset + line.len());
+            let candidate = &content[indent..];
+            let length = candidate.bytes().take_while(|byte| *byte == ch).count();
+            if depth == owner_depth
+                && indent <= maximum
+                && length >= run
+                && candidate[length..].trim_matches([' ', '\t']).is_empty()
+            {
+                fence = None;
+                previous_block = true;
+            }
+        } else if let Some(open) = opener.captures(content) {
+            let marker = open.get(2).map_or("", |value| value.as_str());
+            if !marker.starts_with(':') || previous_block {
+                let container = if !marker.is_empty() {
+                    Some(open[1].len() + marker.len())
+                } else if !open[1].is_empty()
+                    && nested_block(&source_lines, index, &line[..prefix_len], open[1].len())
+                {
+                    Some(open[1].len())
+                } else {
+                    None
+                };
+                let start = open.get(3).unwrap().start() + prefix_len;
+                fence = Some((
+                    open[3].as_bytes()[0],
+                    open[3].len(),
+                    if marker.is_empty() {
+                        open[1].len().max(3)
+                    } else {
+                        container.unwrap()
+                    },
+                    container,
+                    depth,
+                ));
+                blank_out(&mut mask, offset + start, offset + line.len());
+            }
+        } else {
+            previous_block = content.trim().is_empty() || boundary.is_match(content);
+        }
+        offset += raw.len();
+    }
+    let paragraph_ends: Vec<usize> = cached_regex!(r"\n[ \t]*\n")
+        .unwrap()
+        .find_iter(source)
+        .map(|value| value.start())
+        .collect();
+    let mut paragraph_index = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if mask[i] != bytes[i] {
+            i += 1;
+            continue;
+        }
         // An inline code span, delimited by a matching backtick run.
         if bytes[i] == b'`' {
             let run = bytes[i..].iter().take_while(|b| **b == b'`').count();
-            if let Some(close) = find_backtick_close(bytes, i + run, run) {
+            while paragraph_ends
+                .get(paragraph_index)
+                .is_some_and(|end| *end <= i)
+            {
+                paragraph_index += 1;
+            }
+            let paragraph_end = paragraph_ends
+                .get(paragraph_index)
+                .copied()
+                .unwrap_or(bytes.len());
+            if let Some(close) = find_backtick_close(&bytes[..paragraph_end], i + run, run) {
                 blank_out(&mut mask, i, close + run);
                 i = close + run;
+                continue;
+            } else {
+                blank_out(&mut mask, i, paragraph_end);
+                i = paragraph_end;
                 continue;
             }
         }
@@ -1145,7 +1586,7 @@ fn mask_code_and_destinations(source: &str) -> String {
         if bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
             if let Some(close) = bytes[i + 2..].iter().position(|b| *b == b')') {
                 let end = i + 2 + close + 1;
-                blank_out(&mut mask, i + 2, end - 1);
+                blank_out(&mut mask, i + 1, end);
                 i = end;
                 continue;
             }
@@ -1170,6 +1611,19 @@ fn mask_code_and_destinations(source: &str) -> String {
         i += 1;
     }
 
+    let metadata = cached_regex!(r"(?m)^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?:{3,}[ \t]+([A-Za-z_][A-Za-z0-9_.-]*)").unwrap();
+    let item_metadata = cached_regex!(r"(?:[-*+]|[0-9]+[.)])[ \t]+:{3,}").unwrap();
+    for caps in metadata.captures_iter(source) {
+        let value = caps.get(0).unwrap();
+        let previous = source[..value.start()]
+            .split('\n')
+            .rev()
+            .nth(1)
+            .unwrap_or("");
+        if previous.trim().is_empty() || item_metadata.is_match(value.as_str()) {
+            mask[caps.get(1).unwrap().range()].fill(b' ');
+        }
+    }
     String::from_utf8(mask).unwrap_or_else(|_| source.to_string())
 }
 
@@ -1180,42 +1634,6 @@ fn blank_out(mask: &mut [u8], from: usize, to: usize) {
             *byte = b' ';
         }
     }
-}
-
-fn at_line_start(bytes: &[u8], index: usize) -> bool {
-    index == 0 || bytes[index - 1] == b'\n'
-}
-
-fn fence_at(bytes: &[u8], index: usize) -> Option<(u8, usize)> {
-    let fence_char = bytes[index];
-    if fence_char != b'`' && fence_char != b'~' {
-        return None;
-    }
-    let run = bytes[index..]
-        .iter()
-        .take_while(|b| **b == fence_char)
-        .count();
-
-    (run >= 3).then_some((fence_char, run))
-}
-
-fn find_fence_close(bytes: &[u8], from: usize, fence_char: u8, open_run: usize) -> usize {
-    let mut i = from;
-    while i < bytes.len() {
-        if bytes[i] == b'\n' {
-            let line_start = i + 1;
-            let mut k = line_start;
-            while k < bytes.len() && bytes[k] == fence_char {
-                k += 1;
-            }
-            if k - line_start >= open_run {
-                return k;
-            }
-        }
-        i += 1;
-    }
-
-    bytes.len()
 }
 
 fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {
@@ -2033,8 +2451,8 @@ mod tests {
     #[test]
     fn the_surrounding_underscore_shapes_are_unchanged() {
         assert_eq!(djot_to_carve("a _x_ b"), "a /x/ b");
-        assert_eq!(djot_to_carve("__init__"), "__init__");
-        assert_eq!(djot_to_carve("_leading"), "_leading");
+        assert_eq!(djot_to_carve("__init__"), "/init/");
+        assert_eq!(djot_to_carve("_leading"), "\\_leading");
         assert_eq!(djot_to_carve("[t](/a_b_c)"), "[t](/a_b_c)");
     }
 
@@ -2060,7 +2478,7 @@ mod tests {
 
     #[test]
     fn a_pair_never_spans_a_paragraph_break() {
-        assert_eq!(djot_to_carve("_a\n\nb_"), "_a\n\nb_");
+        assert_eq!(djot_to_carve("_a\n\nb_"), "\\_a\n\nb\\_");
         assert_eq!(djot_to_carve("_a\nb_"), "/a\nb/");
     }
 
@@ -2617,7 +3035,6 @@ mod heading_continuation_tests {
             "> quote",
             "```",
             "~~~",
-            "{.class}",
             "[r]: /url",
             "::: div",
             "  - item",
@@ -2633,6 +3050,7 @@ mod heading_continuation_tests {
                 format!("# A\n{}", djot_to_carve(&format!("{next}\n")))
             );
         }
+        assert_eq!(djot_to_carve("# A\n{.class}\n"), "# A\n");
         for source in [
             "```\n# A\n# B\n```\n",
             "`x\n# A\n# B\ny`\n",
