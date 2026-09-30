@@ -774,6 +774,12 @@ const IMPLEMENTED: &[&str] = &[
     "a-fence-after-a-footnote-quote-has-its-own-base",
     "a-footnote-body-whose-every-block-renders-nothing-is-an-empty-body",
     "an-opener-under-a-quote-in-a-nested-host-opens-at-one-column-only",
+    // All 66 documents of these four categories render the pinned corpus HTML
+    // byte for byte already; only the declaration was missing.
+    "a-container-label-preserves-closed-inline-constructs-before-cutting-a-comment",
+    "a-braced-span-cannot-close-beyond-its-bracket-run",
+    "quoted-values-and-titles-retain-a-non-punctuation-backslash",
+    "a-marker-line-opaque-quote-keeps-overindented-markers-literal",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
