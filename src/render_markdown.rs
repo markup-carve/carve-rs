@@ -1901,7 +1901,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::AutoLink(link) => format!(
             "[{}]({})",
             strip_controls(&link.text),
-            encode_markdown_destination(&link.href)
+            encode_markdown_destination(&link.href, link.pos.as_ref())
         ),
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => escape_text(&format!("#{}", strip_controls(&tag.name))),
@@ -2112,7 +2112,7 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
             format!("[{text}]({destination})")
         }
     } else {
-        let href = encode_markdown_destination(&node.href);
+        let href = encode_markdown_destination(&node.href, node.pos.as_ref());
         if let Some(title) = &node.title {
             format!(
                 "[{text}]({href} \"{}\")",
@@ -2128,7 +2128,7 @@ fn render_image(node: &Image) -> String {
     if node.ref_label.is_some() && node.src.is_empty() {
         return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
     }
-    let src = encode_markdown_destination(&node.src);
+    let src = encode_markdown_destination(&node.src, node.pos.as_ref());
     let alt = escape_md_label(&strip_controls(&node.alt));
     if let Some(title) = &node.title {
         format!(
@@ -2595,12 +2595,12 @@ fn escape_md_html(text: &str) -> String {
 /// renderer blanked them. A Markdown destination is resolved by the renderer
 /// downstream, so that is the same sink one step removed (PART 9 section 25,
 /// markup-carve/carve#385).
-fn sanitize_md_url(url: &str) -> String {
+fn sanitize_md_url(url: &str, pos: Option<&Pos>) -> String {
     // The PROBE comes from `escape` too, not only the scheme set. The body used
     // to be restated here and had already drifted: it dropped the non-empty
     // prefix guard its original has, so `:x` was read as a scheme with an empty
     // name. One copy cannot drift from itself.
-    crate::escape::sanitize_url(url).into_owned()
+    crate::escape::sanitize_destination(url, pos).into_owned()
 }
 
 /// Encode a destination for the Markdown output, refusing a denied scheme.
@@ -2611,13 +2611,13 @@ fn sanitize_md_url(url: &str) -> String {
 /// authored form and normalizing afterwards means the writer itself
 /// manufactures the live URL out of one the probe had already dismissed
 /// (`markup-carve/carve-rs#806`).
-fn encode_markdown_destination(url: &str) -> String {
+fn encode_markdown_destination(url: &str, pos: Option<&Pos>) -> String {
     // 1. Strip first, probe second. The strip drops all of `\p{Cc}`, the probe
     //    skips only up to U+0020 plus whitespace, so `java<DEL>script:` and the
     //    C1 range walked straight through and came out clean on the far side.
     //    The ANSI target of this same engine already strips before it probes
     //    (`render_ansi.rs`), and carve-php strips inside its probe.
-    let sanitized = sanitize_md_url(&strip_controls(url));
+    let sanitized = sanitize_md_url(&strip_controls(url), pos);
     let mut out = String::new();
     for ch in sanitized.chars() {
         match ch {

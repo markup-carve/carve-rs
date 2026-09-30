@@ -659,8 +659,16 @@ fn render_layout_inline(
                 } else {
                     return None;
                 };
+                // A DENIED DESTINATION LEAVES THE FAST PATH. Blanking it here
+                // would emit `href=""` with no source span to report it at, and
+                // this scanner runs twice for a streaming render, so the row PART
+                // 9 §25 owes would arrive either position-less or twice. The AST
+                // pipeline has the node and reports it once.
+                if crate::escape::has_denied_url_scheme(&href) {
+                    return None;
+                }
                 out.push_str("<a href=\"");
-                out.escaped_attr(&crate::escape::sanitize_url(&href));
+                out.escaped_attr(&href);
                 out.push('"');
                 if let Some(title) = title {
                     out.push_str(" title=\"");
@@ -1312,8 +1320,16 @@ mod layout_html_tests {
         // and corpus 524 and 524-2, an empty and a one-blank code fence. No
         // scanner widened to take them, and the per-document assertion above
         // already proves each byte-identical to the authoritative pipeline.
+        //
+        // 56 to 54 is a NARROWING, not a widening: this path now leaves a link
+        // whose destination the PART 9 §25 denylist refuses, so corpus
+        // 108-security-hardening and 108-security-hardening-4 take the AST
+        // pipeline. Both still render byte-identical HTML; what moves is which
+        // code writes the render-loss row. A third corpus document with a denied
+        // destination, 108-security-hardening-5, was already off this path for
+        // its autolink, so the count moves by two rather than three.
         assert_eq!(
-            accepted, 56,
+            accepted, 54,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
@@ -1325,6 +1341,13 @@ mod layout_html_tests {
             "A “smart” quote.\n",
             "[x](java\0script:alert(1))\n",
             "[x](java-script:alert(1))\n",
+            // A DENIED SCHEME, which this path used to blank itself. It reports
+            // nothing and has no source span, so the row PART 9 §25 owes for it
+            // is the AST pipeline's to write. Both spellings: an inline
+            // destination and a reference definition.
+            "[x](javascript:one)\n",
+            "[x](ms-msdt:/id)\n",
+            "[click][a]\n\n[a]: shell:Startup\n",
             "- a\n- +\n",
             "- # H\n- next\n",
             "> # H\n\ntail\n",

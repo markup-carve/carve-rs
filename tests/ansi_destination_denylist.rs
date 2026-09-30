@@ -19,7 +19,7 @@
 //! inside `href=""`. Blanking there would edit the author's words rather than a
 //! destination, and a test below pins that it does not happen.
 //!
-//! NO NEW COPY of the denylist: this calls `escape::sanitize_url`, the same
+//! NO NEW COPY of the denylist: this calls `escape::sanitize_destination`, the same
 //! function the HTML and Markdown paths use. A local list of four schemes in one
 //! writer is what let the OS protocol-handler class through in the first place.
 
