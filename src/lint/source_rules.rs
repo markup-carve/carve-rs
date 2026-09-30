@@ -512,6 +512,7 @@ pub(super) fn collect(
                     emit(out,&rows,ln,at,view.len(),"fence-opener-fallback","This fence has an invalid info string and parses as paragraph content. Use a language, optional quoted title, and optional label.");
                 } else if at > 0
                     && row.text.starts_with([' ', '\t'])
+                    && container_view(row.text).starts_with([' ', '\t'])
                     && !list_lines.contains(&ln)
                     && !view[run.len()..].contains(run)
                 {

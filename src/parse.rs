@@ -630,7 +630,15 @@ fn parse_with_options_mode_and_index(
         with_active_link_defs(link_defs, || {
             let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
                 .into_iter()
-                .map(|(label, source)| (label, parse_mapped_source(&source, options)))
+                .map(|(label, source)| {
+                    let children = if source.source.trim_end_matches([' ', '\t', '\n']) == "{empty}"
+                    {
+                        Vec::new()
+                    } else {
+                        parse_mapped_source(&source, options)
+                    };
+                    (label, children)
+                })
                 .collect();
             let children = parse_mapped_source_at_document_level(&body, options);
             (footnote_defs, children)
@@ -14288,7 +14296,11 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // marker rather than at the placing indent (markup-carve/carve#1980,
             // corpus 461-...-sibling-4).
             body.sublists_carry_authored_base = true;
-            let children = parse_mapped_source(&body, options);
+            let children = if body.source.trim_end_matches([' ', '\t', '\n']) == "{empty}" {
+                Vec::new()
+            } else {
+                parse_mapped_source(&body, options)
+            };
             let mut pos = span_of(cur, def_start, cur.pos, options);
             if let (Some(pos), Some(last)) = (
                 pos.as_mut(),
