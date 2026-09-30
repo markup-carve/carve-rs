@@ -4091,8 +4091,10 @@ fn render_bracketed_content(
         ..BracketScope::default()
     };
     let outer = std::mem::replace(&mut ctx.brackets, unclaimed);
+    let outer_spans = std::mem::take(&mut ctx.braced_spans);
     let out = render_inlines(session, children, ctx);
     ctx.brackets = outer;
+    ctx.braced_spans = outer_spans;
     out
 }
 
