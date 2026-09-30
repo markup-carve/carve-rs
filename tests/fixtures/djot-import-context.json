@@ -150,5 +150,53 @@
   [
     "![a _e_{#i} c](u)",
     "alt=\"a e c\""
+  ],
+  [
+    "Mr. Smith\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "code _b_"
+  ],
+  [
+    "Mr. Smith\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "Dr. Brown\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "code _b_"
+  ],
+  [
+    "Dr. Brown\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "Fig. 1\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "code _b_"
+  ],
+  [
+    "Fig. 1\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "(ab) prose\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "code _b_"
+  ],
+  [
+    "(ab) prose\n\n ```\ncode _b_\n```\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "- item\n\n  > quote\n\n  ```\n  code _b_\n\nlater _em_",
+    "<em>em</em>"
+  ],
+  [
+    "> - item\n>\n>   > quote\n>\n>   ```\n>   code _b_\n>\n> later _em_",
+    "<em>em</em>"
+  ],
+  [
+    "> - a\n\n>   ```\n> code _b_",
+    "code _b_"
+  ],
+  [
+    "> > - a\n>\n> >   ```\n> > code _b_",
+    "code _b_"
   ]
 ]
