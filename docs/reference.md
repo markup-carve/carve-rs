@@ -40,8 +40,12 @@ For lower-level access, `carve::parse` returns a typed `Document` AST and `carve
 ```rust
 let doc = carve::parse(source);
 // inspect or transform doc.children …
-let html = carve::render_html(&doc);
+let html = carve::render_html(&doc)?;
 ```
+
+`carve::render_html_owned(doc)` consumes the document and avoids cloning its tree.
+Use `carve::render_html_owned_with_options(doc, &options)` to pass rendering options.
+Both return the same depth error as the borrowed renderer.
 
 Besides HTML, the crate renders the same AST to Markdown, plain text, and
 ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and

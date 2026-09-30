@@ -158,7 +158,10 @@ pub use prosemirror::{
     from_prosemirror, from_prosemirror_with_report, to_prosemirror, ProseMirrorDoc,
     ProseMirrorError, ProseMirrorImport,
 };
-pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
+pub use render::{
+    render_html, render_html_owned, render_html_owned_with_options, render_html_with_options,
+    MAX_RENDER_DEPTH,
+};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
 pub use render_carve_error::{RenderCarveError, SourceUnspellable};
@@ -279,7 +282,7 @@ pub fn to_html_with_report(
     checked_options: CheckedRenderOptions,
 ) -> Result<RenderResult<String>, RenderLossError> {
     render_loss::checked(RenderTarget::Html, checked_options, || {
-        render_html(&parse_with_options(
+        render_html_owned(parse_with_options(
             source,
             &Options::default().with_positions(true),
         ))
@@ -592,7 +595,7 @@ pub fn try_to_html_with_options(
 ) -> Result<String, ProfileViolationError> {
     // HTML honors the configured mode (interactive / static).
     Ok(
-        render_html_with_options(&prepare_doc(source, options, options.mode, true)?, options)
+        render_html_owned_with_options(prepare_doc(source, options, options.mode, true)?, options)
             .expect(
                 "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
             ),

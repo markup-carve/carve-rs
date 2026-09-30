@@ -250,6 +250,9 @@ pub(crate) fn push_block_children<'a>(
             }
         }
         BlockNode::Table(t) => {
+            if let Some(caption) = &t.short_caption {
+                push_inlines(inlines, caption, 0);
+            }
             if let Some(caption) = &t.caption {
                 push_inlines(inlines, caption, 0);
             }
@@ -269,11 +272,20 @@ pub(crate) fn push_block_children<'a>(
             }
         }
         BlockNode::Figure(f) => {
+            if let Some(caption) = &f.short_caption {
+                push_inlines(inlines, caption, 0);
+            }
             push_inlines(inlines, &f.caption, 0);
             match &*f.target {
                 FigureTarget::BlockQuote(b) => push_blocks(blocks, &b.children, deeper),
                 FigureTarget::Paragraph(p) => push_inlines(inlines, &p.children, 0),
                 FigureTarget::Table(t) => {
+                    if let Some(caption) = &t.caption {
+                        push_inlines(inlines, caption, 0);
+                    }
+                    if let Some(caption) = &t.short_caption {
+                        push_inlines(inlines, caption, 0);
+                    }
                     for row in &t.rows {
                         for cell in &row.cells {
                             push_inlines(inlines, &cell.children, 0);
@@ -289,13 +301,18 @@ pub(crate) fn push_block_children<'a>(
         // The fallback is ONE node, and it is a block: a level of its own, the
         // same as any other child.
         BlockNode::BlockExtension(e) => blocks.push((&e.fallback, deeper)),
-        BlockNode::ExtensionCarrier(e) => push_blocks(blocks, &e.children, deeper),
+        BlockNode::ExtensionCarrier(e) => {
+            if let Some(summary) = &e.summary {
+                push_inlines(inlines, summary, 0);
+            }
+            push_blocks(blocks, &e.children, deeper);
+        }
+        BlockNode::CitationDefinition(c) => push_inlines(inlines, &c.children, 0),
         BlockNode::CodeBlock(_)
         | BlockNode::RawBlock(_)
         | BlockNode::Comment(_)
         | BlockNode::AbbreviationDef(_)
         | BlockNode::LinkReferenceDefinition(_)
-        | BlockNode::CitationDefinition(_)
         | BlockNode::BlockImage(_)
         | BlockNode::ThematicBreak(_) => {}
     }
