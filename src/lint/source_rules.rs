@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::LintWarning;
 use crate::ast::*;
@@ -138,6 +138,7 @@ pub(super) fn collect(
     }
     let mut paragraphs = BTreeSet::new();
     let mut headings = BTreeSet::new();
+    let mut block_runs: BTreeMap<(char, usize), Vec<(usize, usize)>> = BTreeMap::new();
     let mut starts = Vec::new();
     let mut items = Vec::new();
     let mut fences = Vec::new();
@@ -149,6 +150,25 @@ pub(super) fn collect(
     while let Some((block, depth)) = blocks.pop() {
         let pos = block_pos(block);
         if let Some(pos) = pos {
+            let kind = match block {
+                BlockNode::BlockQuote(_) => Some('>'),
+                BlockNode::Table(_) => Some('|'),
+                _ => None,
+            };
+            if let (Some(kind), Some(row)) = (kind, rows.get(pos.start_line - 1)) {
+                let at = row
+                    .text
+                    .char_indices()
+                    .nth(pos.start_column.saturating_sub(1))
+                    .map_or(row.text.len(), |(at, _)| at);
+                let column = visual(&row.text[..at]);
+                for line in pos.start_line..=pos.end_line {
+                    block_runs
+                        .entry((kind, line))
+                        .or_default()
+                        .push((pos.start_line, column));
+                }
+            }
             match block {
                 BlockNode::CodeBlock(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {
                     ignored.extend(pos.start_line..=pos.end_line);
@@ -343,6 +363,7 @@ pub(super) fn collect(
     items.sort_by_key(|i| (i.first, i.content));
     let block_opener = regex::Regex::new(r"^(?:#{1,6} +\S|>(?: |$)|`{3,}|~{3,}|::(?: |$)|:{3,}(?: |$)|!\[|\[[^\]]+\]: +\S|(?:-{3,}|\*{3,}|_{3,})[ \t]*$|\{[^{}]+\}[ \t]*$|\|.*\|[ \t]*$)").unwrap();
     let mut open_fence: Option<(usize, char, usize)> = None;
+    let mut previous_run = None;
     let mut active: Vec<&Item> = Vec::new();
     let mut next_item = 0;
     let mut ended: Option<&Item> = None;
@@ -371,6 +392,26 @@ pub(super) fn collect(
         let owner = containing.or(ended);
         let (view, at) = quoted_view(row.text, owner.map_or(0, |i| i.quotes));
         let column = visual(&row.text[..at]);
+        let run = view
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '|' | '>'))
+            .filter(|_| block_opener.is_match(view))
+            .map(|kind| (kind, owner.map(|i| i.first)));
+        let block_run = run
+            .and_then(|(kind, _)| block_runs.get(&(kind, ln)))
+            .and_then(|runs| {
+                runs.iter()
+                    .filter(|(_, column)| *column >= owner.map_or(0, |i| i.content))
+                    .map(|(start, _)| *start)
+                    .min()
+            });
+        let continuing_run = run.is_some_and(|(kind, _)| kind == '|')
+            && column > owner.map_or(0, |i| i.content)
+            && run == previous_run
+            || block_run.is_some_and(|start| start < ln);
+        previous_run =
+            run.filter(|(kind, _)| *kind == '|' && column > owner.map_or(0, |i| i.content));
         if let Some((owner_line, ch, width)) = open_fence {
             if containing.is_some_and(|i| i.first == owner_line) {
                 let run = view.chars().take_while(|&c| c == ch).count();
@@ -393,7 +434,10 @@ pub(super) fn collect(
             .next()
             .filter(|ch| matches!(ch, '`' | '~' | ':'))
             .filter(|ch| view.chars().take_while(|c| c == ch).count() >= 3);
-        if ignored.contains(&ln) && fence_char.is_none() {
+        if ignored.contains(&ln)
+            && fence_char.is_none()
+            && !(view.starts_with('>') && block_run == Some(ln))
+        {
             list_lines.insert(ln);
             continue;
         }
@@ -404,7 +448,7 @@ pub(super) fn collect(
         });
         let candidate = containing.or(adjacent);
         let rule = candidate.and_then(|i| {
-            if column > i.content {
+            if column > i.content && !continuing_run {
                 Some("list-item-block-overindented")
             } else if containing.is_none() && column > i.base && column < i.content {
                 Some("list-item-body-detached")
