@@ -3,7 +3,7 @@ fn word_attributes_survive_djot_import() {
     for (source, expected) in [
 ("x^a\\^b{.c}^","<p>x<sup><span class=\"c\">a^b</span></sup></p>"),
 ("a\\\\^b{.c}^","<p>a\\<sup><span class=\"c\">b</span></sup></p>"),
-("x {.c}","<p>x&nbsp;{.c}</p>"),
+("x {.c}","<p>x&nbsp;</p>"),
 
 ("^b{.c}","<p><span class=\"c\">^b</span></p>"),
 ("a^b{.c}^","<p>a<sup><span class=\"c\">b</span></sup></p>"),
