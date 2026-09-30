@@ -612,3 +612,28 @@ fn restrictive_profile_gates_list_table_as_a_div() {
         "list-table must not bypass the div restriction"
     );
 }
+
+#[test]
+fn non_html_targets_keep_the_list_table_degradation() {
+    let extension = ListTable::new();
+    let enabled = Options::new().with_extension(&extension);
+    for source in [
+        "::: list-table [plain]\n- - A\n  - B\n:::",
+        "::: list-table \"Caption\" [plain]\n- - A\n  - B\n:::",
+        "::: wrap\n:::: list-table [plain]\n- - A\n  - B\n::::\n:::",
+        "::: list-table [plain]\n- not a row\n:::",
+    ] {
+        assert_eq!(
+            carve::to_markdown_with_options(source, &enabled),
+            carve::to_markdown(source)
+        );
+        assert_eq!(
+            carve::to_plain_text_with_options(source, &enabled),
+            carve::to_plain_text(source)
+        );
+        assert_eq!(
+            carve::to_ansi_with_options(source, &enabled),
+            carve::to_ansi(source)
+        );
+    }
+}

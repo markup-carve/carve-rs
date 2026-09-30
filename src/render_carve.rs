@@ -111,6 +111,10 @@ struct BracketScope {
     closer_openers: HashMap<(usize, usize), (usize, usize)>,
     /// Every node the scan read.
     keyed: HashSet<usize>,
+    /// Pending literal brackets; escaped openers are removed lazily.
+    literal_openers: Vec<((usize, usize), usize)>,
+    /// Group openers so a reference visits each host once.
+    literal_hosts: HashMap<usize, HashSet<(usize, usize)>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4092,6 +4096,32 @@ fn render_bracketed_content(
     out
 }
 
+/// The first reference-shaped run in literal text, whose backslashes and markup
+/// delimiters will be escaped by the writer rather than read as source syntax.
+fn literal_reference_opener(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut open = Vec::new();
+    let mut reference = None;
+    for (offset, &ch) in bytes.iter().enumerate() {
+        if ch == b']' && reference.is_some() {
+            return reference;
+        }
+        match ch {
+            b'\n' | b'\r' => reference = None,
+            b'[' => open.push(offset),
+            b']' => {
+                if let Some(opener) = open.pop() {
+                    if bytes.get(offset + 1) == Some(&b'[') {
+                        reference = Some(opener);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Pair the text brackets of one inline run in order. A nested construct that
 /// writes its own brackets takes no part: it balances its own content, and an
 /// inline extension's content is not bracketed because its reader stops at the
@@ -4175,9 +4205,46 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     }
     fn pair(at: usize, value: &str, host: usize, seq: &mut Vec<Bracket>, scope: &mut BracketScope) {
         scope.keyed.insert(at);
+        let reference = literal_reference_opener(value).map(|offset| {
+            value[..offset]
+                .chars()
+                .filter(|c| matches!(c, '[' | ']'))
+                .count()
+        });
         let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
         for (ordinal, ch) in brackets.enumerate() {
-            seq.push(((at, ordinal), host, ch == '['));
+            let key = (at, ordinal);
+            if reference == Some(ordinal) {
+                let same_host = scope.literal_hosts.remove(&host);
+                let crossing = !scope.literal_hosts.is_empty();
+                for (_, openers) in scope.literal_hosts.drain() {
+                    scope.crossing_openers.extend(openers);
+                }
+                if let Some(openers) = same_host {
+                    scope.literal_hosts.insert(host, openers);
+                }
+                if crossing {
+                    scope.crossing_openers.insert(key);
+                }
+            }
+            seq.push((key, host, ch == '['));
+            if ch == '[' && !scope.crossing_openers.contains(&key) {
+                scope.literal_openers.push((key, host));
+                scope.literal_hosts.entry(host).or_default().insert(key);
+            } else if ch == ']' {
+                while let Some((opener, opener_host)) = scope.literal_openers.pop() {
+                    if scope.crossing_openers.contains(&opener) {
+                        continue;
+                    }
+                    if let Some(openers) = scope.literal_hosts.get_mut(&opener_host) {
+                        openers.remove(&opener);
+                        if openers.is_empty() {
+                            scope.literal_hosts.remove(&opener_host);
+                        }
+                    }
+                    break;
+                }
+            }
         }
     }
 
@@ -4228,7 +4295,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     // decide it - which brackets survive is not known until the run is complete -
     // and leaving it undecided is what made the formatter non-idempotent: `fmt`
     // ran pass two itself and escaped one more bracket every time (carve-rs#2209).
-    let (first, _) = resolve(&seq, &HashSet::new(), false);
+    let (first, _) = resolve(&seq, &scope.crossing_openers, false);
     for (opener, closer) in first {
         if opener.1 != closer.1 {
             scope.crossing_openers.insert(opener.0);

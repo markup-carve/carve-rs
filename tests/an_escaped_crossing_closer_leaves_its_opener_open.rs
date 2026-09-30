@@ -134,3 +134,47 @@ fn assert_round_trips(html: &str) {
         "{html} imported as {once:?}"
     );
 }
+
+#[test]
+fn a_reference_tail_does_not_capture_a_braced_span_opener() {
+    assert_eq!(imported("<p><sup>[</sup>[a][a]</p>"), "{^\\[^}\\[a][a]\n");
+    assert_eq!(imported("<p><sub>[</sub>[a][a]</p>"), "{,\\[,}\\[a][a]\n");
+    for mark in ["em", "strong", "u", "s", "mark", "ins", "del", "sup", "sub"] {
+        for prefix in ["", "[", "[[", "x["] {
+            for body in ["[", "[a", "a[", "[a]", "a]", "a]["] {
+                for tail in ["[a][a]", "[a][]"] {
+                    for gap in ["", " ", "x", "x "] {
+                        assert_round_trips(&format!(
+                            "<p>{prefix}<{mark}>{body}</{mark}>{gap}{tail}</p>"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn literal_markup_and_consecutive_marks_do_not_hide_a_reference_tail() {
+    for html in [
+        "<p>[[<em>[a][a]</em>x<sub>]</sub></p>",
+        "<p><sup>[</sup>_[a][a]_</p>",
+        "<p><sup>[</sup>*[a][a]*</p>",
+        "<p><sup>[</sup>~[a][a]~</p>",
+        "<p><sup>[</sup>=[a][a]=</p>",
+        "<p><sup>[</sup>`[a][a]`</p>",
+        "<p><sup>[</sup>![a][a]</p>",
+        "<p><sup>[</sup>[^a][a]</p>",
+        "<p><sup>[</sup>[[a][a]</p>",
+        "<p><sup>[</sup>[a][[b]</p>",
+        "<p><sup>[</sup>[a][b[c]</p>",
+        "<p><sup>[</sup>[a][[b]]</p>",
+        "<p><sup>[</sup>[a][[b][c]</p>",
+        "<p><sup>[</sup><sub>[</sub>[a][a]</p>",
+        "<p><sub>[</sub><sup>[</sup>[a][a]</p>",
+        "<p><ins>[</ins><del>[</del>[a][a]</p>",
+        "<p><sup>[</sup>\\[a][a]</p>",
+    ] {
+        assert_round_trips(html);
+    }
+}
