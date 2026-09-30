@@ -582,6 +582,7 @@ fn parse_with_options_mode_and_index(
                     },
                     reached: Vec::new(),
                     authored_base_at_start: false,
+                    item_marker_at_start: false,
                     sublists_carry_authored_base: false,
                 },
                 BTreeMap::new(),
@@ -1944,6 +1945,7 @@ fn extract_footnote_defs(
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                     authored_base_at_start: false,
+                    item_marker_at_start: false,
                     reached: vec![true; def_lines.len()],
                     // A FOOTNOTE BODY carries authored base for its sublists, so
                     // a list marker past the body's content column anchors its
@@ -2008,6 +2010,7 @@ fn extract_footnote_defs(
             },
             source: joined_source(&body),
             authored_base_at_start: false,
+            item_marker_at_start: false,
             reached: Vec::new(),
             sublists_carry_authored_base: false,
             line_map: body_line_map,
@@ -3990,7 +3993,9 @@ fn item_marker_source(cur: &LineCursor<'_>, content: &str, at: usize) -> MappedS
         .lines
         .get(at)
         .and_then(|line| stripped_col(cur.source_col(at), line, content));
-    MappedSource::new_line_at(content.to_string(), cur.source_line(at), stripped)
+    let mut source = MappedSource::new_line_at(content.to_string(), cur.source_line(at), stripped);
+    source.item_marker_at_start = true;
+    source
 }
 
 /// Span of a list item's lead paragraph. It starts where the marker's CONTENT
@@ -5655,6 +5660,7 @@ fn rebase_overindented_blocks(
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut after_blank = false;
     let mut paragraph_open = false;
+    let mut opaque_quote_tail = false;
     // Has a line AT the container's minimum column been read since the scan
     // last stood inside a descendant? It is ownership evidence exactly as an
     // open paragraph is: the scan is back in the parent's coordinate system,
@@ -5664,6 +5670,7 @@ fn rebase_overindented_blocks(
     let mut block_at_minimum = false;
     while i < lines.len() {
         if is_blank_line(&lines[i]) {
+            opaque_quote_tail = false;
             after_blank = true;
             paragraph_open = false;
             i += 1;
@@ -5679,6 +5686,10 @@ fn rebase_overindented_blocks(
                 nested_columns.push(column);
             }
             paragraph_open = true;
+            i += 1;
+            continue;
+        }
+        if !include_sublists && opaque_quote_tail && base > 0 {
             i += 1;
             continue;
         }
@@ -5802,9 +5813,14 @@ fn rebase_overindented_blocks(
             continue;
         }
         if base == 0 {
+            opaque_quote_tail = false;
             if strip_blockquote_prefix(&lines[i]).is_some() {
                 // Unmarked continuations belong to the quote before their
                 // residual indentation can become another block's base.
+                let marker_fence_quote = i == 0
+                    && source.item_marker_at_start
+                    && !source.authored_base_at_start
+                    && detect_fence_open(without_blockquote_prefixes(&lines[i])).is_some();
                 let original =
                     quote_lines.get_or_init(|| source.source.lines().collect::<Vec<_>>());
                 let mut cursor = LineCursor::new_with_cols(original, None, None);
@@ -5813,7 +5829,8 @@ fn rebase_overindented_blocks(
                 cursor.reached = Some(&source.reached);
                 {
                     let _probing = ProbeGuard::enter();
-                    collect_blockquote_body(&mut cursor, options);
+                    let (_, _, opaque_tail) = collect_blockquote_body(&mut cursor, options);
+                    opaque_quote_tail = marker_fence_quote && opaque_tail;
                 }
                 i = cursor.pos;
                 after_blank = false;
@@ -8223,7 +8240,7 @@ impl<'a> ParaOpen<'a> {
 }
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
-    let (span_start, parts) = collect_blockquote_body(cur, options);
+    let (span_start, parts, _) = collect_blockquote_body(cur, options);
     let children = parts
         .into_iter()
         .flat_map(|part| parse_mapped_source(&part.into_source(), options))
@@ -8344,6 +8361,7 @@ impl QuotedEntryScan {
 struct NestedFenceReplay {
     scanned: usize,
     chain: Vec<NestedLevel>,
+    fence_count: usize,
 }
 
 #[derive(Default)]
@@ -8363,9 +8381,18 @@ struct NestedLevel {
     comment: Option<usize>,
     para: bool,
     by_fence: bool,
+    fence_ordinal: usize,
 }
 
 impl NestedFenceReplay {
+    fn marker_fence_tail(&self) -> bool {
+        self.chain.last().is_some_and(|level| {
+            level.fence.is_some()
+                || level.host_fence.is_some()
+                || (level.by_fence && level.fence_ordinal == 1)
+        })
+    }
+
     fn verdict(&mut self, lines: &[SourceLine]) -> Option<bool> {
         if self.chain.is_empty() {
             self.chain.push(NestedLevel::default());
@@ -8495,6 +8522,8 @@ impl NestedFenceReplay {
                                 && is_fence_close(trim_ascii_start(l), open)
                         })
                     {
+                        self.fence_count += 1;
+                        here.fence_ordinal = self.fence_count;
                         here.host_fence = Some((open, floor, col));
                         here.para = false;
                         here.by_fence = true;
@@ -8506,6 +8535,8 @@ impl NestedFenceReplay {
                 // At block start a fence opens with or without a closer; after
                 // a paragraph it needs one (§10), or it is inline verbatim.
                 if !here.para || closer_ahead(lines, at, level, |l| is_fence_close(l, open)) {
+                    self.fence_count += 1;
+                    here.fence_ordinal = self.fence_count;
                     here.fence = Some(open);
                     here.para = false;
                     here.by_fence = true;
@@ -8554,12 +8585,14 @@ fn closer_ahead(
 fn collect_blockquote_body(
     cur: &mut LineCursor,
     options: &Options<'_>,
-) -> (usize, Vec<LineBuffer>) {
+) -> (usize, Vec<LineBuffer>, bool) {
     let mut parts = Vec::new();
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = ParaOpen::Closed;
     let mut in_fence: Option<FenceOpen> = None;
+    let mut opaque_tail = false;
+    let mut fence_count = 0;
     // What the quote's own lines have left open, for the lazy branch below.
     // ADVANCED ON DEMAND, never per line: `strip_blockquote_prefix` is counted
     // and a depth ladder must not pay per level per line
@@ -8607,6 +8640,7 @@ fn collect_blockquote_body(
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
             if attrs_block_rest > 0 {
+                opaque_tail = false;
                 // Inside a wrapped attribute block the opener already closed the
                 // paragraph; its remaining lines close nothing further and open
                 // nothing either.
@@ -8614,8 +8648,10 @@ fn collect_blockquote_body(
                 para_open = ParaOpen::Closed;
                 table = TableRun::default();
             } else if let Some(open) = in_fence {
+                opaque_tail = true;
                 if is_fence_close(stripped, open) {
                     in_fence = None;
+                    opaque_tail = fence_count == 1;
                 }
                 para_open = ParaOpen::Closed;
                 table = TableRun::default();
@@ -8636,6 +8672,8 @@ fn collect_blockquote_body(
                 };
                 if !fenced_below.unwrap_or_else(|| para_open.get()) {
                     // Fence at block start opens (unterminated renders to end).
+                    opaque_tail = true;
+                    fence_count += 1;
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;
                 } else {
@@ -8649,6 +8687,8 @@ fn collect_blockquote_body(
                             is_fence_close(s, open)
                         });
                     if has_closer {
+                        opaque_tail = true;
+                        fence_count += 1;
                         in_fence = Some(open);
                         para_open = ParaOpen::Closed;
                     }
@@ -8658,6 +8698,7 @@ fn collect_blockquote_body(
                     // written `if !para_open`.
                 }
             } else {
+                opaque_tail = false;
                 // Whether this line leaves a paragraph open is decided by
                 // `ParaOpen::get`, which walks down to the innermost quoted
                 // content. Record the line rather than the answer: the walk
@@ -8744,6 +8785,7 @@ fn collect_blockquote_body(
             && indent_columns(line) == 0
             && cur.carried_reach(cur.pos) != Some(false)
         {
+            opaque_tail = false;
             cur.consume();
             let mut attached = LineBuffer::default();
             let cursor_lines = cur.lines;
@@ -8906,6 +8948,7 @@ fn collect_blockquote_body(
         } else {
             (format!("{LAZY}{}", trimmed), leading_ws(line))
         };
+        opaque_tail = false;
         cur.consume();
         inner.push_at(
             kept,
@@ -8913,8 +8956,13 @@ fn collect_blockquote_body(
             source_col.map(|col| col + stripped_cols as isize),
         );
     }
+    let opaque_tail = if nested_verdict.is_some() {
+        nested_replay.marker_fence_tail()
+    } else {
+        opaque_tail
+    };
     parts.push(inner);
-    (span_start, parts)
+    (span_start, parts, opaque_tail)
 }
 
 #[inline(never)]
@@ -13385,6 +13433,7 @@ fn collect_indented_block_mapped_with_columns(
         source,
         line_map,
         authored_base_at_start,
+        item_marker_at_start: false,
         reached,
         sublists_carry_authored_base: false,
     }
@@ -14338,6 +14387,7 @@ fn body_as_read(source: String, reached: Vec<bool>, options: &Options<'_>) -> St
         // The body's own `MappedSource` is built with both of these, so the
         // rebase reads the same document here as it does there.
         authored_base_at_start: false,
+        item_marker_at_start: false,
         reached,
         sublists_carry_authored_base: false,
     };
@@ -14829,6 +14879,7 @@ fn collect_definition_body(
         source: lines.join("\n"),
         line_map,
         authored_base_at_start: false,
+        item_marker_at_start: false,
         reached,
         sublists_carry_authored_base: false,
     }

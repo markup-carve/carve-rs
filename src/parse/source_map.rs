@@ -98,6 +98,7 @@ impl LineBuffer {
             source,
             line_map,
             authored_base_at_start: false,
+            item_marker_at_start: false,
             reached: Vec::new(),
             sublists_carry_authored_base: false,
         }
@@ -116,6 +117,8 @@ pub(super) struct MappedSource {
     /// The collector consumed an authored blank immediately before this
     /// chunk's first line, making an over-indented opener a block boundary.
     pub(super) authored_base_at_start: bool,
+    /// The first line is the authored content of an enclosing item marker.
+    pub(super) item_marker_at_start: bool,
     /// Did each line REACH the enclosing container's content column?
     ///
     /// The collector leaves a line one column PAST the column and a line BELOW
@@ -156,6 +159,7 @@ impl MappedSource {
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
             authored_base_at_start: false,
+            item_marker_at_start: false,
             reached: vec![false],
             sublists_carry_authored_base: false,
         }
@@ -206,6 +210,8 @@ impl MappedSource {
         self.pad_reached();
         if !self.source.is_empty() {
             self.source.push('\n');
+        } else {
+            self.item_marker_at_start = other.item_marker_at_start;
         }
         self.source.push_str(&other.source);
         self.line_map.extend(other.line_map);
@@ -266,6 +272,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
             authored_base_at_start: original.authored_base_at_start,
+            item_marker_at_start: original.item_marker_at_start,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
             sublists_carry_authored_base: original.sublists_carry_authored_base,
         };
@@ -276,6 +283,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         // text is a column in the document.
         col_map: vec![Some(0); source_line_count],
         authored_base_at_start: false,
+        item_marker_at_start: false,
         reached: Vec::new(),
         sublists_carry_authored_base: false,
         source,
