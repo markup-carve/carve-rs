@@ -1485,8 +1485,10 @@ fn mask_code_and_destinations(source: &str) -> String {
     let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
     let mut previous_block = true;
     let mut offset = 0;
-    let source_lines: Vec<_> = source.split('\n').collect();
-    for (index, raw) in source.split_inclusive('\n').enumerate() {
+    let marker_pattern = cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+\S").unwrap();
+    let thematic_pattern = cached_regex!(r"^(?:([*-])[ \t]*){3,}$").unwrap();
+    let mut ancestors: Vec<Vec<(usize, bool)>> = Vec::new();
+    for raw in source.split_inclusive('\n') {
         let line = raw.trim_end_matches('\n');
         let (depth, content) = quoted(line);
         let prefix_len = line.len() - content.len();
@@ -1496,6 +1498,31 @@ fn mask_code_and_destinations(source: &str) -> String {
             fence = None;
         }
         let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
+        let mut nested = false;
+        ancestors.truncate(depth + 1);
+        if !content.trim().is_empty() {
+            ancestors.resize_with(depth + 1, Vec::new);
+            let mut view = line;
+            for (level, stack) in ancestors.iter_mut().enumerate() {
+                let columns = view.len() - view.trim_start_matches([' ', '\t']).len();
+                while stack.last().is_some_and(|(prior, _)| *prior >= columns) {
+                    stack.pop();
+                }
+                if level == depth {
+                    nested = stack.last().is_some_and(|(_, marker)| *marker);
+                }
+                let marker =
+                    !thematic_pattern.is_match(view.trim()) && marker_pattern.is_match(view);
+                stack.push((columns, marker));
+                if level < depth {
+                    let after = view
+                        .trim_start_matches([' ', '\t'])
+                        .strip_prefix('>')
+                        .unwrap();
+                    view = after.strip_prefix(' ').unwrap_or(after);
+                }
+            }
+        }
         if fence.is_some_and(|(_, _, _, minimum, owner_depth)| {
             minimum.is_some_and(|minimum| indent < minimum)
                 && !content.trim().is_empty()
@@ -1520,9 +1547,7 @@ fn mask_code_and_destinations(source: &str) -> String {
             if !marker.starts_with(':') || previous_block {
                 let container = if !marker.is_empty() {
                     Some(open[1].len() + marker.len())
-                } else if !open[1].is_empty()
-                    && nested_block(&source_lines, index, &line[..prefix_len], open[1].len())
-                {
+                } else if !open[1].is_empty() && nested {
                     Some(open[1].len())
                 } else {
                     None
