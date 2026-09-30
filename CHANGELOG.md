@@ -13,11 +13,11 @@ which the published crate does not carry.
 
 ### Added
 
-- `render_html_owned` and `render_html_owned_with_options` consume a document without cloning its tree.
+- `render_html_owned` and `render_html_owned_with_options` consume a document without cloning its tree (#2242).
 
 ### Fixed
 
-- Renderers refuse trees that exceed the depth ceiling in citation definitions, extension summaries, short captions or captions on figure tables.
+- Renderers refuse trees that exceed the depth ceiling in citation definitions, extension summaries, short captions or captions on figure tables (#2242).
 
 ## [0.1.7] - 2026-09-29
 
