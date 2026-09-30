@@ -279,3 +279,40 @@ fn rejected_habit_candidates_do_not_hide_later_spans() {
         );
     }
 }
+
+#[test]
+fn overindented_blocks_report_only_their_openers() {
+    for (source, expected) in [
+        ("- a\n  > q\n   | c |\n   |---|\n   | 1 |\n", vec![3]),
+        ("- a\n   | c |\n   |---|\n   | 1 |\n", vec![2]),
+        ("- a\n   > q\n   > r\n", vec![2]),
+        ("- a\n   > q\n   lazy\n   > r\n", vec![2]),
+        ("- a\n    > q\n   > r\n", vec![2]),
+        ("> - a\n>    | x |\n>    | y |\n", vec![2]),
+        ("- a\n  - b\n     | x |\n     | y |\n", vec![3]),
+        ("- a\n   | x |\n   > q\n   | y |\n", vec![2, 3, 4]),
+        ("- a\n   > q\n   >\n   > r\n", vec![2]),
+        ("- a\n   > q\n\n   > r\n", vec![2, 4]),
+        ("- a\n   > ```\n   > code\n   > ```\n   > r\n", vec![2]),
+        ("- a\n   > q\nlazy\n   > > r\n", vec![2]),
+        ("- a\n   | x |\n    | y |\n", vec![2]),
+        ("- a\n  | x |\n   | y |\n", vec![]),
+        ("- | x |\n   | y |\n", vec![]),
+        ("- a\n  > q\n   > r\n", vec![]),
+        ("- a\n  >\n   > r\n", vec![]),
+        ("- a\n  > ```\n  > c\n   > ```\n", vec![]),
+        ("> - a\n>    > q\n>    > r\n", vec![2]),
+        ("> - a\n>\n>    > q\n", vec![3]),
+        ("- > q\n   > r\n", vec![]),
+        ("- a\n   # a\n   # b\n", vec![2, 3]),
+        ("- a\n   ---\n   ---\n", vec![2, 3]),
+        ("- a\n   | a |\n\n   | b |\n", vec![2, 4]),
+    ] {
+        let lines: Vec<_> = lint_carve(source)
+            .into_iter()
+            .filter(|w| w.rule == "list-item-block-overindented")
+            .map(|w| w.line)
+            .collect();
+        assert_eq!(lines, expected, "{source}");
+    }
+}
