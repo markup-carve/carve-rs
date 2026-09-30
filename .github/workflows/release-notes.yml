@@ -1,0 +1,27 @@
+name: Release notes check
+
+on:
+  pull_request:
+    paths:
+      - 'tools/check-release-notes.py'
+      - 'tools/test-release-notes.py'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-notes.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/check-release-notes.py'
+      - 'tools/test-release-notes.py'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-notes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check release-note comparison and rejection cases
+        run: python3 tools/test-release-notes.py
