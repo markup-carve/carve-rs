@@ -75,18 +75,18 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut brackets = Vec::new();
     let mut braces = Vec::new();
     let mut bracket_pairs = Vec::new();
-    let quoted_prefix = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*").unwrap();
-    let stars = regex::Regex::new(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:\*[ \t]*){3,}$").unwrap();
-    let block_start = regex::Regex::new(r"^[ \t]*(?:`{3,}|~{3,}|:{3,}|#{1,6}[ \t])").unwrap();
-    let marker = regex::Regex::new(r"^[ \t]*(?:[-*+][ \t]|[0-9]+[.)][ \t]|\|)").unwrap();
+    let quoted_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*").unwrap();
+    let stars = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:\*[ \t]*){3,}$").unwrap();
+    let block_start = cached_regex!(r"^[ \t]*(?:`{3,}|~{3,}|:{3,}|#{1,6}[ \t])").unwrap();
+    let marker = cached_regex!(r"^[ \t]*(?:[-*+][ \t]|[0-9]+[.)][ \t]|\|)").unwrap();
     let mut previous_blank = true;
     let mut container = false;
     let mut list_column = None;
-    let structural_prefix = regex::Regex::new(
-        r"^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[[ xX-]\][ \t]+)?)*[ \t]*$",
+    let structural_prefix = cached_regex!(
+        r"^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[[ xX-]\][ \t]+)?)*[ \t]*$"
     )
     .unwrap();
-    let item_prefix = regex::Regex::new(r"^[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+").unwrap();
+    let item_prefix = cached_regex!(r"^[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+").unwrap();
     let mut line_start = 0;
     let mut i = 0;
     while i < bytes.len() {
@@ -320,6 +320,9 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
         }
     }
     let out = convert_plain(&renderer.body(0, source.len(), &roots, 0));
+    if renderer.literals.borrow().is_empty() {
+        return out;
+    }
     let pattern = regex::Regex::new(&format!(
         r"{}([0-9]+)\x00",
         regex::escape(&renderer.literal_prefix)

@@ -110,5 +110,29 @@
   [
     "see ![_x_] here",
     "<em>x</em>"
+  ],
+  [
+    "a [b](u){title=\"[x][]\"} c\n\n[x]: /u",
+    "title=\"[x][]\""
+  ],
+  [
+    "a <http://e.com/[x][]> c\n\n[x]: /u",
+    "href=\"http://e.com/[x][]\""
+  ],
+  [
+    "# x\n\nNote [x]: see. Go to [x][].",
+    "href=\"#x\""
+  ],
+  [
+    "a `b _c_ d",
+    "<code>b _c_ d</code>"
+  ],
+  [
+    "- a\n\n  b _c\n- d_ e",
+    "b _c"
+  ],
+  [
+    "- x\n\n  ```\n  a\n      ```\n\nlater _em_",
+    "<em>em</em>"
   ]
 ]
