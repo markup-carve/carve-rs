@@ -1,4 +1,4 @@
-//! Mutable tree walking for the include pass.
+//! Mutable walking of authored AST children.
 //!
 //! The pass has to do three things to an arbitrary subtree: expand block
 //! sequences, expand inline sequences, and stamp a file identity onto every
@@ -10,12 +10,13 @@
 //! silently skip a container added later, and a directive inside it would stop
 //! expanding with nothing to say why.
 
-use crate::ast::{BlockNode, Div, FigureTarget, InlineNode, Pos};
+use crate::ast::{BlockNode, Div, FigureTarget, Image, InlineNode, Pos};
 
 /// What to do with each sequence the walk reaches.
 pub(crate) trait SubtreeVisitor {
     fn blocks(&mut self, _blocks: &mut Vec<BlockNode>) {}
     fn inlines(&mut self, _inlines: &mut Vec<InlineNode>) {}
+    fn image(&mut self, _image: &mut Image) {}
     /// Called for every node's position, block and inline alike.
     fn position(&mut self, _pos: &mut Pos) {}
 }
@@ -73,6 +74,9 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
             }
         }
         BlockNode::Table(t) => {
+            if let Some(caption) = &mut t.short_caption {
+                v.inlines(caption);
+            }
             if let Some(caption) = &mut t.caption {
                 v.inlines(caption);
             }
@@ -94,6 +98,9 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
             }
         }
         BlockNode::Figure(f) => {
+            if let Some(caption) = &mut f.short_caption {
+                v.inlines(caption);
+            }
             v.inlines(&mut f.caption);
             match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
@@ -105,6 +112,9 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
                     v.inlines(&mut p.children);
                 }
                 FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.short_caption {
+                        v.inlines(caption);
+                    }
                     if let Some(caption) = &mut t.caption {
                         v.inlines(caption);
                     }
@@ -119,10 +129,14 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
                         }
                     }
                 }
-                FigureTarget::Image(i) => visit_pos(&mut i.pos, v),
+                FigureTarget::Image(i) => {
+                    v.image(i);
+                    visit_pos(&mut i.pos, v);
+                }
                 FigureTarget::CodeBlock(c) => visit_pos(&mut c.pos, v),
             }
         }
+        BlockNode::BlockImage(image) => v.image(image),
         // The fallback is a single-node field, and the visitor takes a list it
         // may grow (an include expands one node into several). Wrap it, walk it,
         // and fold what comes back into the one node the schema requires.
@@ -149,7 +163,6 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
         | BlockNode::AbbreviationDef(_)
         | BlockNode::LinkReferenceDefinition(_)
         | BlockNode::CitationDefinition(_)
-        | BlockNode::BlockImage(_)
         | BlockNode::ThematicBreak(_) => {}
     }
 }
@@ -160,6 +173,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         v.position(pos);
     }
     match node {
+        InlineNode::Image(image) => v.image(image),
         InlineNode::Emphasis(e) => v.inlines(&mut e.children),
         InlineNode::Link(l) => v.inlines(&mut l.children),
         InlineNode::Span(s) => v.inlines(&mut s.children),
@@ -199,7 +213,6 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         | InlineNode::EscapedText(_)
         | InlineNode::SmartPunctuation(_)
         | InlineNode::Code(_)
-        | InlineNode::Image(_)
         | InlineNode::Math(_)
         | InlineNode::RawInline(_)
         | InlineNode::LiteralInline(_)

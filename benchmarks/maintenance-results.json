@@ -1,0 +1,158 @@
+{
+  "baselineCommit": "5a83fdf4e12f002ffe6946a398d33804a3d23258",
+  "environment": {
+    "date": "2026-10-01",
+    "architecture": "x86_64",
+    "node": "22.22.2",
+    "php": "8.5.11",
+    "rustc": "1.97.1"
+  },
+  "before": [
+    {
+      "name": "quoted_fences",
+      "n": 128,
+      "bytes": 918,
+      "median_ms": 2.890539,
+      "min_ms": 2.784081,
+      "hash": "58f754060f18949a4743c9e956d824aea1e039bddf8af9fea70abc79ea969f9e"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 128,
+      "bytes": 1942,
+      "median_ms": 2.887173,
+      "min_ms": 2.71373,
+      "hash": "cd1dacbcbef2f7ed6d8762285b44641549dddc7a46f89cdb472476ddbf42a230"
+    },
+    {
+      "name": "paragraphs",
+      "n": 128,
+      "bytes": 2176,
+      "median_ms": 2.76188,
+      "min_ms": 2.54164,
+      "hash": "6689bb3f5490b70c86817e70802ae3cfba9439a2d9469b3a7141bce2e43fb91f"
+    },
+    {
+      "name": "quoted_fences",
+      "n": 1024,
+      "bytes": 7190,
+      "median_ms": 23.382914,
+      "min_ms": 22.788368,
+      "hash": "2df1e8e67335f20292bea3d0cdcae847c15d305b93237bcfdcb84b653a0a0aa4"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 1024,
+      "bytes": 15382,
+      "median_ms": 5.233279,
+      "min_ms": 5.028177,
+      "hash": "f8fdcbb876beb39b1d3f1fb107ba8bad74f32d17ba8e5ec5a04a03a522c39c0c"
+    },
+    {
+      "name": "paragraphs",
+      "n": 1024,
+      "bytes": 17408,
+      "median_ms": 5.252505,
+      "min_ms": 5.019272,
+      "hash": "303ac0891b9ef303ccc8d5439338496a6cd488487e3fad64ce0f7f30118ade20"
+    },
+    {
+      "name": "quoted_fences",
+      "n": 4096,
+      "bytes": 28694,
+      "median_ms": 310.998222,
+      "min_ms": 302.824078,
+      "hash": "d870790b8455f590160fc425764c72a8debfb4f579c1d6be3d2681ca9453f4b6"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 4096,
+      "bytes": 61462,
+      "median_ms": 16.40756,
+      "min_ms": 15.192006,
+      "hash": "4722eac2a418346eee0c9859a0ea6baf03b898dc66217d35deaaa243ea768302"
+    },
+    {
+      "name": "paragraphs",
+      "n": 4096,
+      "bytes": 69632,
+      "median_ms": 15.095457,
+      "min_ms": 14.933806,
+      "hash": "4ecbba854cdf70a080cc4e04871efbc5f37d292524eab1877569c8f830f37550"
+    }
+  ],
+  "after": [
+    {
+      "name": "quoted_fences",
+      "n": 128,
+      "bytes": 918,
+      "median_ms": 2.642609,
+      "min_ms": 2.456041,
+      "hash": "58f754060f18949a4743c9e956d824aea1e039bddf8af9fea70abc79ea969f9e"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 128,
+      "bytes": 1942,
+      "median_ms": 3.206619,
+      "min_ms": 2.926698,
+      "hash": "29c622251564eb429d1824f79e424341feae213d3148d69be8c586741927a24f"
+    },
+    {
+      "name": "paragraphs",
+      "n": 128,
+      "bytes": 2176,
+      "median_ms": 2.707419,
+      "min_ms": 2.572699,
+      "hash": "6689bb3f5490b70c86817e70802ae3cfba9439a2d9469b3a7141bce2e43fb91f"
+    },
+    {
+      "name": "quoted_fences",
+      "n": 1024,
+      "bytes": 7190,
+      "median_ms": 4.279395,
+      "min_ms": 4.139805,
+      "hash": "2df1e8e67335f20292bea3d0cdcae847c15d305b93237bcfdcb84b653a0a0aa4"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 1024,
+      "bytes": 15382,
+      "median_ms": 6.668843,
+      "min_ms": 6.370167,
+      "hash": "05df91c093ef7d4da153af5951ee47b50135eafa5b8b92635af8bbab25ec109c"
+    },
+    {
+      "name": "paragraphs",
+      "n": 1024,
+      "bytes": 17408,
+      "median_ms": 5.276501,
+      "min_ms": 5.161347,
+      "hash": "303ac0891b9ef303ccc8d5439338496a6cd488487e3fad64ce0f7f30118ade20"
+    },
+    {
+      "name": "quoted_fences",
+      "n": 4096,
+      "bytes": 28694,
+      "median_ms": 10.748756,
+      "min_ms": 10.398474,
+      "hash": "d870790b8455f590160fc425764c72a8debfb4f579c1d6be3d2681ca9453f4b6"
+    },
+    {
+      "name": "verse_definitions",
+      "n": 4096,
+      "bytes": 61462,
+      "median_ms": 19.780828,
+      "min_ms": 18.946926,
+      "hash": "3f6c144d5d8d44f2fba1a0cfce54c2835ec68d3748e29cbc3cf8309b29cc9c3d"
+    },
+    {
+      "name": "paragraphs",
+      "n": 4096,
+      "bytes": 69632,
+      "median_ms": 15.024456,
+      "min_ms": 14.465516,
+      "hash": "4ecbba854cdf70a080cc4e04871efbc5f37d292524eab1877569c8f830f37550"
+    }
+  ]
+}

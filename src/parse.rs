@@ -401,6 +401,7 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
 /// as an ordinary paragraph and answers every question about the line after it
 /// the wrong way.
 fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _recording = definition_regions::RecordingPause::enter();
     let _probing = ProbeGuard::enter();
     let _source_ending = SourceEndingGuard::fragment();
     parse_blocks_with_options_at_level(source, options, true)
@@ -480,9 +481,11 @@ pub(crate) fn parse_for_carve(source: &str) -> Document {
     )
 }
 
+mod definition_regions;
 mod frontmatter;
 mod layout;
 mod source_map;
+use definition_regions::verse_owned_lines;
 use frontmatter::split_frontmatter;
 pub(crate) use frontmatter::{frontmatter_format_token, frontmatter_map, opens_frontmatter};
 pub(crate) use layout::{try_layout_html, try_layout_stream};
@@ -1323,11 +1326,11 @@ fn extract_footnote_defs(
     // one is text. Without this the line was extracted here and never reached
     // the block parser, so it vanished from the output (#491). carve-js keeps it
     // and does NOT register the footnote; this matches that.
-    let mut in_line_block: Option<usize> = None;
+    let verse_lines = verse_owned_lines(source, options);
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
-    // document was skipped. Tracked only to gate the opener.
+    // document was skipped. Comment bodies remain opaque here.
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
     let closer_maxima = fence_closer_suffix_maxima(&lines);
@@ -1359,7 +1362,7 @@ fn extract_footnote_defs(
         // taking the innermost one (carve-rs#1054).
         columns.observe(
             lines[i],
-            in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
+            in_fence.is_some() || verse_lines[i].is_body() || in_comment_fence.is_some(),
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -1383,16 +1386,9 @@ fn extract_footnote_defs(
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
         let fence_line = stripped.bare;
-        if let Some(fence_len) = in_line_block {
+        if verse_lines[i].is_owned() {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
-            // The RAW line, not the prefix-stripped one: a literal `- :::` or `> :::`
-            // is verse text, and the block parser does not close on it. Stripping
-            // here ended the block early and lost every definition-shaped line
-            // between there and the real closer.
-            if exact_colon_fence_len(lines[i]) == Some(fence_len) {
-                in_line_block = None;
-            }
             i += 1;
             continue;
         }
@@ -1409,21 +1405,6 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        // Only a TOP-LEVEL, unindented opener. Two things this pre-pass cannot
-        // do are both fatal if it guesses:
-        //
-        // `detect_line_block_open` trims, so it says yes to an indented `  ::: |`
-        // where the block parser says no - entering there would swallow every
-        // later definition in the document.
-        //
-        // And a line block opened on a marker line (`- ::: |`) is closed at the
-        // item's content column (`  :::`), which this line-based pass cannot
-        // recognise, so the state would never end.
-        //
-        // A nested line block therefore still loses definition-shaped lines,
-        // exactly as it does today. That is the same limitation the comment on
-        // this function already records, and the same answer: the sound fix is
-        // collecting definitions during block parsing.
         if let Some(open) = in_comment_fence {
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
@@ -1473,15 +1454,7 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        if in_comment_fence.is_none() && !in_container && !fence_line.starts_with([' ', '\t']) {
-            if let Some(fence_len) = detect_line_block_open(fence_line) {
-                in_line_block = Some(fence_len);
-                body.push(lines[i].to_string());
-                body_line_map.push(Some(first_source_line + i));
-                i += 1;
-                continue;
-            }
-        }
+
         if let Some(open) = detect_fence_open(fence_line) {
             // §10 I4, as `extract_link_defs_with_guard`: an unterminated fence
             // interrupts no open paragraph, so going opaque here hid every
@@ -2292,11 +2265,11 @@ fn line_folds_into_an_open_paragraph(
     after.push_str(line);
 
     let before = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&before).0,
+        &extract_link_defs(&before, options).0,
         options,
     ));
     let after = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&after).0,
+        &extract_link_defs(&after, options).0,
         options,
     ));
     after.ends_in_paragraph && before.levels == after.levels
@@ -2597,8 +2570,8 @@ fn prepass_fence_ends_above(line: &str, open: FenceOpen, closer_ahead: bool) -> 
         && indent_columns(line) < open.content_col
 }
 
-fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
-    extract_link_defs_with_guard(source, None)
+fn extract_link_defs(source: &str, options: &Options<'_>) -> (String, BTreeMap<String, LinkDef>) {
+    extract_link_defs_with_guard(source, options, None)
 }
 
 /// The pipeline's spelling, which asks the block parser before it cuts a
@@ -2614,12 +2587,13 @@ fn extract_link_defs_guarded(
     options: &Options<'_>,
     budget: &mut usize,
 ) -> (String, BTreeMap<String, LinkDef>) {
-    extract_link_defs_with_guard(source, Some((options, budget)))
+    extract_link_defs_with_guard(source, options, Some(budget))
 }
 
 fn extract_link_defs_with_guard(
     source: &str,
-    mut guard: Option<(&Options<'_>, &mut usize)>,
+    options: &Options<'_>,
+    mut guard: Option<&mut usize>,
 ) -> (String, BTreeMap<String, LinkDef>) {
     let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
@@ -2632,14 +2606,12 @@ fn extract_link_defs_with_guard(
     // reached the block parser, so it vanished from the output entirely -
     // carve-js and carve-php both render it (#491).
     //
-    // Tracked the same way the code fence above is, and for the same reason: this
-    // pre-pass is line-based, so the only thing it can do is refuse to look inside
-    // a region whose contents are not blocks.
-    let mut in_line_block: Option<usize> = None;
+    // The block parser supplies source-line ownership for both prepasses.
+    let verse_lines = verse_owned_lines(source, options);
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
-    // document was skipped. Tracked only to gate the opener.
+    // document was skipped. Comment bodies remain opaque here.
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     // Track enclosing list item content columns so the strict fence test can be
     // re-based to the item's content column. This remains a line-based
@@ -2679,7 +2651,7 @@ fn extract_link_defs_with_guard(
         // in and reads it as text.
         let content_col = columns.observe(
             line,
-            in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
+            in_fence.is_some() || verse_lines[line_index].is_body() || in_comment_fence.is_some(),
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -2693,21 +2665,8 @@ fn extract_link_defs_with_guard(
             previous_non_blank = line;
         }
         let raw_is_quoted = prepass_line_is_quoted(line);
-        if let Some(fence_len) = in_line_block {
-            // The line is KEPT whatever it looks like - that is the whole point.
-            // A definition-shaped line inside a line block is inline content, so
-            // it renders; blanking it here is what made it disappear (#491).
-            //
-            // It is not REGISTERED either. That was left in deliberately while
-            // carve#557 was open - the three engines all registered here, and
-            // this change was only about the line surviving. carve#574 answered
-            // it: nothing inside verse is claimed, so a definition-shaped line
-            // renders and defines nothing.
+        if verse_lines[line_index].is_owned() {
             body.push(std::borrow::Cow::Borrowed(line));
-            // The RAW line - see the note in extract_footnote_defs.
-            if exact_colon_fence_len(line) == Some(fence_len) {
-                in_line_block = None;
-            }
             continue;
         }
         if let Some(open) = in_fence {
@@ -2799,24 +2758,6 @@ fn extract_link_defs_with_guard(
                 continue;
             }
         }
-        // THE LINE'S OWN COLUMN, not the innermost container's. An opener at the
-        // document column ends every container above it, so a list open higher
-        // up says nothing about whether this is a line block - and asking
-        // `content_col` instead left `. r` / `::: |` / `[f]: t` collecting a
-        // definition out of verse text, where the block parser renders it
-        // (carve-rs#2096, the #491 family one column out). An INDENTED opener is
-        // still refused, for the reason `extract_footnote_defs` records.
-        if in_comment_fence.is_none()
-            && stripped.structural.is_empty()
-            && !line.starts_with([' ', '\t'])
-            && !fence_line.starts_with([' ', '\t'])
-        {
-            if let Some(fence_len) = detect_line_block_open(fence_line) {
-                in_line_block = Some(fence_len);
-                body.push(std::borrow::Cow::Borrowed(line));
-                continue;
-            }
-        }
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = authored_fence_col;
             open.quoted = raw_is_quoted;
@@ -2876,7 +2817,7 @@ fn extract_link_defs_with_guard(
         if let Some((label_part, target_part, mut def)) = parse_link_def_line_with_value(def_line)
             .filter(|_| {
                 let folds = marker_line_may_be_lazy(line)
-                    && guard.as_mut().is_some_and(|(options, budget)| {
+                    && guard.as_mut().is_some_and(|budget| {
                         line_folds_into_an_open_paragraph(
                             &body,
                             line,
@@ -3557,6 +3498,7 @@ fn append_link_reference_definitions(
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _recording = definition_regions::RecordingPause::enter();
     // Fragments have local line numbers and may omit collection separators.
     // Only a whole-document entry point can identify physical EOF.
     let _source_ending = SourceEndingGuard::fragment();
@@ -7830,22 +7772,24 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
 }
 
 fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
-    let mut idx = start + 1;
-    while idx < lines.len() {
-        if exact_colon_fence_len(lines[idx]) == Some(fence_len) {
-            return idx + 1;
-        }
-        idx += 1;
-    }
-    lines.len()
+    find_colon_fence_end(lines, start, fence_len, true, &mut None)
 }
 
 fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+    find_colon_fence_end(lines, start, fence_len, false, &mut None)
+}
+
+fn find_colon_fence_end(
+    lines: &[&str],
+    start: usize,
+    fence_len: usize,
+    literal: bool,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+) -> usize {
     // Built on the first code fence seen, not up front: this function is called
     // often, and an unconditional O(lines) build here made a document of
     // unterminated `%%%` openers - which never reach the fence branch at all -
     // quadratic, as tests/perf_regressions.rs caught.
-    let mut closer_index: Option<HashMap<u8, Vec<usize>>> = None;
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
     while idx < lines.len() {
@@ -7893,7 +7837,7 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                 continue;
             }
         }
-        if !line.starts_with([' ', '\t']) && stack.len() < MAX_NESTING_DEPTH {
+        if !literal && !line.starts_with([' ', '\t']) && stack.len() < MAX_NESTING_DEPTH {
             if let Some(len) = detect_container_open(line)
                 .map(|open| open.fence_len)
                 .or_else(|| detect_line_block_open(line))
@@ -8433,11 +8377,63 @@ fn closer_ahead(
     false
 }
 
+#[derive(Default)]
+struct QuotedFenceClosers {
+    end: usize,
+    backticks: Vec<(usize, usize)>,
+    tildes: Vec<(usize, usize)>,
+}
+
+impl QuotedFenceClosers {
+    fn contains(&mut self, lines: &[&str], from: usize, open: FenceOpen) -> bool {
+        if from >= self.end {
+            self.backticks.clear();
+            self.tildes.clear();
+            self.end = from;
+            for (index, line) in lines.iter().enumerate().skip(from) {
+                let Some(body) = strip_blockquote_prefix(line) else {
+                    break;
+                };
+                self.end = index + 1;
+                let trimmed = trim_ascii_end(body);
+                let Some(marker @ (b'`' | b'~')) = trimmed.as_bytes().first().copied() else {
+                    continue;
+                };
+                if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == marker) {
+                    let entries = if marker == b'`' {
+                        &mut self.backticks
+                    } else {
+                        &mut self.tildes
+                    };
+                    entries.push((index, trimmed.len()));
+                }
+            }
+            for entries in [&mut self.backticks, &mut self.tildes] {
+                let mut maximum = 0;
+                for (_, width) in entries.iter_mut().rev() {
+                    maximum = maximum.max(*width);
+                    *width = maximum;
+                }
+            }
+        }
+        let entries = if open.fence_char == b'`' {
+            &self.backticks
+        } else {
+            &self.tildes
+        };
+        let index = entries.partition_point(|(line, _)| *line < from);
+        entries
+            .get(index)
+            .is_some_and(|(_, width)| *width >= open.fence_len)
+    }
+}
+
 #[inline(never)]
 fn collect_blockquote_body(
     cur: &mut LineCursor,
     options: &Options<'_>,
 ) -> (usize, Vec<LineBuffer>, bool) {
+    let mut fence_closers = QuotedFenceClosers::default();
     let mut parts = Vec::new();
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
@@ -8551,13 +8547,7 @@ fn collect_blockquote_body(
                 } else {
                     // After an open paragraph a fence interrupts only with a
                     // matching closer ahead (§10); else it is inline verbatim.
-                    let has_closer = cur.lines[cur.pos..]
-                        .iter()
-                        .take_while(|l| strip_blockquote_prefix(l).is_some())
-                        .any(|l| {
-                            let s = strip_blockquote_prefix(l).unwrap_or(l);
-                            is_fence_close(s, open)
-                        });
+                    let has_closer = fence_closers.contains(cur.lines, cur.pos, open);
                     if has_closer {
                         opaque_tail = true;
                         fence_count += 1;
@@ -11866,26 +11856,25 @@ fn nested_ends_with_open_paragraph(
 fn colon_fences_left_open(nested: &str) -> usize {
     let mut open: Vec<usize> = Vec::new();
     let mut code: Option<FenceOpen> = None;
-    let mut verse: Option<usize> = None;
-    for line in nested.lines() {
-        let mut trimmed = trim_ascii_start(line);
-        // A container nested in a QUOTE carries the quote's marker on every one
-        // of its lines, so the fence is only visible past it.
-        while let Some(rest) = trimmed.strip_prefix('>') {
-            trimmed = trim_ascii_start(rest);
+    let lines: Vec<_> = nested
+        .lines()
+        .map(|line| {
+            let mut trimmed = trim_ascii_start(line);
+            while let Some(rest) = trimmed.strip_prefix('>') {
+                trimmed = trim_ascii_start(rest);
+            }
+            trimmed
+        })
+        .collect();
+    let mut verse_end = 0;
+    let mut closer_index = None;
+    for (index, trimmed) in lines.iter().copied().enumerate() {
+        if index < verse_end {
+            continue;
         }
         if let Some(fence) = code {
             if is_fence_close(trimmed, fence) {
                 code = None;
-            }
-            continue;
-        }
-        if let Some(fence_len) = verse {
-            // Only the EXACT closer ends it, and every other line is content
-            // whatever it looks like - the same test the definition prepass
-            // applies to a line block's body.
-            if exact_colon_fence_len(trimmed) == Some(fence_len) {
-                verse = None;
             }
             continue;
         }
@@ -11894,7 +11883,12 @@ fn colon_fences_left_open(nested: &str) -> usize {
             continue;
         }
         if let Some(fence_len) = detect_line_block_open(trimmed) {
-            verse = Some(fence_len);
+            verse_end = find_colon_fence_end(&lines, index, fence_len, true, &mut closer_index);
+            if verse_end == lines.len()
+                && exact_colon_fence_len(lines[verse_end - 1]) != Some(fence_len)
+            {
+                return open.len() + 1;
+            }
             continue;
         }
         if let Some(len) = exact_colon_fence_len(trimmed) {
@@ -11979,6 +11973,11 @@ fn block_ends_with_open_paragraph(
         // about: the fence closes the paragraph inside it, and a dedented line
         // after it ends the item (like code/table). One line of body decides it
         // two ways, which is why `colon_open` is read from the SOURCE.
+        Some(BlockNode::LineBlock(verse)) if colon_open > 0 => block_ends_with_open_paragraph(
+            last_open_child(&verse.children, skip_comments),
+            colon_open - 1,
+            skip_comments,
+        ),
         Some(BlockNode::Directive(d)) if colon_open > 0 => block_ends_with_open_paragraph(
             last_open_child(&d.children, skip_comments),
             colon_open - 1,
@@ -16834,6 +16833,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // REFERENCE COLUMN): strip the opener's own structural indent from each
     // body line before preserving the author's intra-verse whitespace.
     let base_indent = leading_ws_columns(opener);
+    let end = find_colon_fence_end(
+        cur.lines,
+        cur.pos,
+        fence_len,
+        true,
+        &mut cur.code_closer_last_index,
+    );
     cur.consume();
     let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza = LineBuffer::default();
@@ -16847,7 +16853,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanza_start: Option<usize> = None;
     let mut stanza_end = cur.pos;
     while let Some(line) = cur.peek() {
-        if exact_colon_fence_len(line) == Some(fence_len) {
+        if cur.pos + 1 == end && exact_colon_fence_len(line) == Some(fence_len) {
             cur.consume();
             break;
         }
@@ -16937,6 +16943,16 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             start_cols: stanza_start_cols,
             comments: stanza_comments,
         });
+    }
+
+    if definition_regions::recording() {
+        definition_regions::record(
+            cur.source_line(span_start),
+            definition_regions::VerseLine::Opener,
+        );
+        for line in span_start + 1..cur.pos {
+            definition_regions::record(cur.source_line(line), definition_regions::VerseLine::Body);
+        }
     }
 
     let children = stanzas
@@ -24685,6 +24701,21 @@ mod quote_prefix_calls {
     //! runs and loads.
 
     use super::QUOTE_PREFIX_CALLS;
+    #[test]
+    fn repeated_unclosed_quoted_fences_have_linear_work() {
+        for definitions in [false, true] {
+            let mut measurements = Vec::new();
+            for n in [128, 256, 512, 1024] {
+                let tail = if definitions { "\n[r]: /target\n" } else { "" };
+                let source = format!("> ::: |\n> verse\n{}> :::\n{tail}", "> ```x\n".repeat(n));
+                let calls = calls_for(source);
+                println!("quoted_fences definitions={definitions} n={n} prefix_calls={calls}");
+                measurements.push(calls);
+            }
+            assert!(measurements[3] <= measurements[0] * 12,
+                "eight times the input must use at most twelve times the prefix work: {measurements:?}");
+        }
+    }
 
     /// Strips counted over one full parse-and-render of `src`.
     ///
