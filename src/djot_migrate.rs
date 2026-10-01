@@ -813,8 +813,20 @@ fn convert_djot_block_markers(source: &str) -> String {
         if content.trim().is_empty() {
             continue;
         }
-        let authored = &lines[index][prefix + indent_bytes..];
-        let width = crate::parse::lint_container_fence_width(authored);
+        let host_prefix = cached_regex!(r"^(?:[ \t]*> ?|[ \t]*(?:(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\([0-9A-Za-z]+\)) +(?:\[[ xX]\] +)?|: |\[\^[^\]\r\n]+\]: +))").unwrap();
+        let mut container_view = lines[index].as_str();
+        while let Some(host) = host_prefix.find(container_view) {
+            container_view = &container_view[host.end()..];
+        }
+        container_view = container_view.trim_start_matches([' ', '\t']);
+        let container_offset = lines[index].len() - container_view.len();
+        let authored = &lines[index][container_offset..];
+        let unmasked = masked[index][container_offset..].starts_with(":::");
+        let width = if unmasked {
+            crate::parse::lint_container_fence_width(authored)
+        } else {
+            None
+        };
         let close = width.is_some()
             && authored
                 .trim_end_matches([' ', '\t'])
@@ -824,16 +836,15 @@ fn convert_djot_block_markers(source: &str) -> String {
         let invalid = if close {
             containers.pop().unwrap().1
         } else {
-            let invalid = crate::parse::lint_invalid_container_metadata(authored);
+            let invalid = unmasked && crate::parse::lint_invalid_container_metadata(authored);
             if let Some(width) = width {
                 containers.push((width, invalid));
             }
             invalid
         };
         if invalid {
-            let at = prefix + indent_bytes;
+            let at = container_offset;
             lines[index].insert(at, '\\');
-            continue;
         }
         if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
             let token = &content[1..close + 1];

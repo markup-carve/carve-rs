@@ -161,3 +161,39 @@ fn migrated_recovery_does_not_escape_code_payloads() {
     let source = "```\n::: tip Bad X\n:::\n```\n";
     assert_eq!(carve::djot_to_carve(source), source);
 }
+
+#[test]
+fn migration_keeps_literal_fences_after_list_and_footnote_markers() {
+    for (prefix, indent, migrated_prefix) in [
+        ("- ", "  ", "- "),
+        ("1. ", "   ", "1. "),
+        ("+ ", "  ", "- "),
+        ("(1) ", "    ", "1. "),
+        ("- [x] ", "  ", "- [x] "),
+        ("[^1]: ", "    ", "[^1]: "),
+    ] {
+        let before = if prefix == "[^1]: " { "a[^1]\n\n" } else { "" };
+        let source = format!("{before}{prefix}::: tip Bad X\n{indent}body\n{indent}:::\n");
+        let expected =
+            format!("{before}{migrated_prefix}\\::: tip Bad X\n{indent}body\n{indent}\\:::\n");
+        let migrated = carve::djot_to_carve(&source);
+        assert_eq!(to_html(&migrated), to_html(&expected), "{prefix}");
+        assert!(!to_html(&migrated).contains("<aside"));
+    }
+}
+
+#[test]
+fn task_marker_opener_is_diagnosed_and_formatting_requires_review() {
+    let source = "- [x] ::: tip Bad X\n  body\n  :::\n";
+    assert_eq!(
+        lint_carve(source)
+            .iter()
+            .filter(|w| w.rule == "fence-title-syntax")
+            .count(),
+        1
+    );
+    assert_eq!(
+        carve::to_carve_patch(source).unresolved[0].code,
+        "invalid-container-metadata"
+    );
+}
