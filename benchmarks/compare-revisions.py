@@ -17,12 +17,14 @@ if len(revisions) != 3 or any(len(entry) != 2 for entry in revisions):
 launcher = {'js': 'node', 'rs': 'python3', 'php': 'php'}[args.engine]
 env = os.environ.copy()
 env['CARVE_BENCH_RELEASE'] = '1'
-commits = {
-    label: subprocess.check_output(
-        ['git', 'rev-parse', 'HEAD' if label == 'dev-main' else f'{label}^{{commit}}'],
-        text=True).strip()
-    for label, _ in revisions
-}
+repository = Path(args.harness).resolve().parent.parent
+commits = {}
+for label, path in revisions:
+    directory = Path(path)
+    repo = directory if directory.is_dir() else repository
+    ref = 'HEAD' if directory.is_dir() or label == 'dev-main' else f'{label}^{{commit}}'
+    commits[label] = subprocess.check_output(
+        ['git', '-C', str(repo), 'rev-parse', ref], text=True).strip()
 initial_load = Path('/proc/loadavg').read_text().split()[:3]
 runs = []
 for round_index in range(3):
