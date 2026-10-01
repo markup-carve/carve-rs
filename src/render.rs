@@ -3196,7 +3196,11 @@ fn render_image(out: &mut String, img: &Image) {
     }
     out.push_str(&format!(
         "<img src=\"{}\" alt=\"{}\"",
-        escape_attr(&sanitize_destination(&img.src, img.pos.as_ref())),
+        escape_attr(&sanitize_destination(
+            &img.src,
+            img.pos.as_ref(),
+            crate::render_loss::DeniedSink::ImageSource,
+        )),
         escape_attr(&img.alt)
     ));
     if let Some(title) = &img.title {
@@ -3611,7 +3615,14 @@ fn render_inline_after(
             // Display the raw autolink content (a URI autolink keeps its scheme).
             let display = a.text.as_str();
             out.push_str("<a href=\"");
-            write_escaped_attr(out, &sanitize_destination(&a.href, a.pos.as_ref()));
+            write_escaped_attr(
+                out,
+                &sanitize_destination(
+                    &a.href,
+                    a.pos.as_ref(),
+                    crate::render_loss::DeniedSink::Destination,
+                ),
+            );
             out.push('"');
             write_attrs(out, &a.attrs);
             out.push('>');
@@ -4039,7 +4050,11 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     // case-insensitive title key cannot produce a duplicate attribute.
     out.push_str(&format!(
         "<a href=\"{}\"",
-        escape_attr(&sanitize_destination(&l.href, l.pos.as_ref()))
+        escape_attr(&sanitize_destination(
+            &l.href,
+            l.pos.as_ref(),
+            crate::render_loss::DeniedSink::Destination,
+        ))
     ));
     if let Some(title) = &l.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));

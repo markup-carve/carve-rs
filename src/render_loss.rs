@@ -127,11 +127,36 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
     });
 }
 
+/// Which sink a blanked destination came from.
+///
+/// PART 9 §25 makes the row's `message` NORMATIVE and spells one string per
+/// sink. `target` already carries the render target and `nodeType` is `inline`
+/// for both sinks, so the message is the only field left that says whether a
+/// clickable destination or an image source was defused
+/// (markup-carve/carve#2686).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DeniedSink {
+    /// A link or autolink destination.
+    Destination,
+    /// An image source.
+    ImageSource,
+}
+
+impl DeniedSink {
+    /// The verbatim message the spec names. Nothing is appended.
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::Destination => "Blanked a denied destination scheme",
+            Self::ImageSource => "Blanked a denied image source",
+        }
+    }
+}
+
 /// One row per destination the PART 9 §25 sink denylist blanked, in the order
 /// the renderer emitted them. Every clickable sink is an inline node, and the
 /// emitted value does not change: this is what a checked render says about the
 /// link it defused (markup-carve/carve#2681).
-pub(crate) fn record_destination_denied(pos: Option<&Pos>) {
+pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(c) = slot.as_mut() else { return };
@@ -144,10 +169,7 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>) {
                 target: c.target,
                 node_type: RawNodeType::Inline,
                 pos: pos.cloned(),
-                message: format!(
-                    "Blanked a denied destination scheme while rendering {}",
-                    c.target.as_str()
-                ),
+                message: sink.message().to_string(),
             });
         }
     });

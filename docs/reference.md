@@ -73,7 +73,11 @@ omits, `ruby-flattened` for a `ruby` node a target cannot carry natively, and
 link destination, an autolink destination and an image source each take their
 own row on the targets that emit a destination, in both safe modes. The emitted
 value does not change: `href=""` is what it always was, and the row is what
-tells a host rendering untrusted input which link it defused.
+tells a host rendering untrusted input which link it defused. The row's
+`message` is fixed by the spec and names the sink: `Blanked a denied
+destination scheme` for a link or autolink destination, `Blanked a denied image
+source` for an image source. Nothing is appended, because `target` is already
+its own field on the row.
 
 Source-aware tools can prepare canonical formatting with `to_carve_patch` and
 apply it with `apply_source_patch`; see

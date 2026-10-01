@@ -42,6 +42,8 @@ mod a_blank_line_does_not_end_a_definition_s_authored_base;
 mod a_blank_line_does_not_end_a_list_s_authored_base;
 #[path = "../a_blank_line_loosens_an_item_only_when_a_paragraph_follows_it.rs"]
 mod a_blank_line_loosens_an_item_only_when_a_paragraph_follows_it;
+#[path = "../a_blanked_destination_names_its_sink.rs"]
+mod a_blanked_destination_names_its_sink;
 #[path = "../a_blanked_destination_takes_a_render_loss_row.rs"]
 mod a_blanked_destination_takes_a_render_loss_row;
 #[path = "../a_block_cell_image_writes_as_an_image.rs"]

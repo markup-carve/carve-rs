@@ -745,7 +745,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             let authored = strip_terminal_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
             if !authored.starts_with('#') && authored != strip_ansi(&text) {
-                let shown = crate::escape::sanitize_destination(&authored, link.pos.as_ref());
+                let shown = crate::escape::sanitize_destination(
+                    &authored,
+                    link.pos.as_ref(),
+                    crate::render_loss::DeniedSink::Destination,
+                );
                 out.push_str(&style(&format!(" ({shown})"), DIM));
             }
             out
