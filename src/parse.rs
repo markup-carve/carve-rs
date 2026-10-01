@@ -1323,7 +1323,7 @@ fn extract_footnote_defs(
     // one is text. Without this the line was extracted here and never reached
     // the block parser, so it vanished from the output (#491). carve-js keeps it
     // and does NOT register the footnote; this matches that.
-    let mut in_line_block: Option<usize> = None;
+    let mut in_line_block: Option<PrepassLineBlock> = None;
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
@@ -1357,6 +1357,12 @@ fn extract_footnote_defs(
         // Called for its effect on the column stack, not for its return: every
         // question below asks `reached_by` about a specific column instead of
         // taking the innermost one (carve-rs#1054).
+        if in_line_block
+            .as_mut()
+            .is_some_and(|open| !open.observe(lines[i], &lines[i + 1..]))
+        {
+            in_line_block = None;
+        }
         columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
@@ -1383,14 +1389,11 @@ fn extract_footnote_defs(
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
         let fence_line = stripped.bare;
-        if let Some(fence_len) = in_line_block {
+        if let Some(open) = in_line_block {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
-            // The RAW line, not the prefix-stripped one: a literal `- :::` or `> :::`
-            // is verse text, and the block parser does not close on it. Stripping
-            // here ended the block early and lost every definition-shaped line
-            // between there and the real closer.
-            if exact_colon_fence_len(lines[i]) == Some(fence_len) {
+            // Strip only the opener's quote scope, preserving literal markers.
+            if open.closes(lines[i]) {
                 in_line_block = None;
             }
             i += 1;
@@ -1409,21 +1412,8 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        // Only a TOP-LEVEL, unindented opener. Two things this pre-pass cannot
-        // do are both fatal if it guesses:
-        //
-        // `detect_line_block_open` trims, so it says yes to an indented `  ::: |`
-        // where the block parser says no - entering there would swallow every
-        // later definition in the document.
-        //
-        // And a line block opened on a marker line (`- ::: |`) is closed at the
-        // item's content column (`  :::`), which this line-based pass cannot
-        // recognise, so the state would never end.
-        //
-        // A nested line block therefore still loses definition-shaped lines,
-        // exactly as it does today. That is the same limitation the comment on
-        // this function already records, and the same answer: the sound fix is
-        // collecting definitions during block parsing.
+        // Recognize unindented document and explicitly quoted line blocks.
+        // List-item scopes still need the block parser's content-column context.
         if let Some(open) = in_comment_fence {
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
@@ -1473,9 +1463,9 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        if in_comment_fence.is_none() && !in_container && !fence_line.starts_with([' ', '\t']) {
-            if let Some(fence_len) = detect_line_block_open(fence_line) {
-                in_line_block = Some(fence_len);
+        if in_comment_fence.is_none() {
+            if let Some(open) = PrepassLineBlock::open(lines[i]) {
+                in_line_block = Some(open);
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
                 i += 1;
@@ -2617,6 +2607,90 @@ fn extract_link_defs_guarded(
     extract_link_defs_with_guard(source, Some((options, budget)))
 }
 
+#[derive(Clone, Copy)]
+struct PrepassLineBlock {
+    fence_len: usize,
+    quote_depth: usize,
+    lazy_open: bool,
+    code_fence: Option<FenceOpen>,
+}
+
+impl PrepassLineBlock {
+    fn open(line: &str) -> Option<Self> {
+        if line.starts_with([' ', '\t']) {
+            return None;
+        }
+        let mut content = line;
+        let mut quote_depth = 0;
+        while let Some(rest) = strip_blockquote_prefix(content) {
+            content = rest;
+            quote_depth += 1;
+        }
+        if content.starts_with([' ', '\t']) {
+            return None;
+        }
+        Some(Self {
+            fence_len: detect_line_block_open(content)?,
+            quote_depth,
+            lazy_open: false,
+            code_fence: None,
+        })
+    }
+
+    fn content(self, line: &str) -> Option<&str> {
+        strip_quote_levels(line, self.quote_depth)
+    }
+
+    fn observe(&mut self, line: &str, rest: &[&str]) -> bool {
+        if self.quote_depth == 0 {
+            return true;
+        }
+        if let Some(content) = self.content(line) {
+            if let Some(fence) = self.code_fence {
+                if is_fence_close(content, fence) {
+                    self.code_fence = None;
+                }
+                self.lazy_open = false;
+            } else {
+                let candidate = detect_fence_open(content);
+                self.code_fence = candidate.filter(|fence| {
+                    !self.lazy_open
+                        || rest
+                            .iter()
+                            .map_while(|line| self.content(line))
+                            .any(|content| is_fence_close(content, *fence))
+                });
+                if self.code_fence.is_some() {
+                    self.lazy_open = false;
+                } else if candidate.is_none() {
+                    self.lazy_open = ParaOpen::from_line(content, false).get();
+                }
+            }
+            return true;
+        }
+        let mut candidate = line;
+        for _ in 0..self.quote_depth {
+            let Some(content) = strip_blockquote_prefix(candidate) else {
+                break;
+            };
+            candidate = content;
+        }
+        if candidate == "+" {
+            self.lazy_open = true;
+            return true;
+        }
+        self.lazy_open
+            && !is_blank_line(candidate)
+            && caption_content(candidate).is_none()
+            && !is_colon_fence_opener_shape(candidate)
+            && !interrupts_paragraph_with_rest(candidate, rest)
+    }
+
+    fn closes(self, line: &str) -> bool {
+        self.content(line).and_then(exact_colon_fence_len) == Some(self.fence_len)
+    }
+}
+
 fn extract_link_defs_with_guard(
     source: &str,
     mut guard: Option<(&Options<'_>, &mut usize)>,
@@ -2635,7 +2709,7 @@ fn extract_link_defs_with_guard(
     // Tracked the same way the code fence above is, and for the same reason: this
     // pre-pass is line-based, so the only thing it can do is refuse to look inside
     // a region whose contents are not blocks.
-    let mut in_line_block: Option<usize> = None;
+    let mut in_line_block: Option<PrepassLineBlock> = None;
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
@@ -2677,6 +2751,12 @@ fn extract_link_defs_with_guard(
         // fence, so `  [r]: /u` after it was stripped to that phantom column and
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
+        if in_line_block
+            .as_mut()
+            .is_some_and(|open| !open.observe(line, &all_lines[line_index + 1..]))
+        {
+            in_line_block = None;
+        }
         let content_col = columns.observe(
             line,
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
@@ -2693,7 +2773,7 @@ fn extract_link_defs_with_guard(
             previous_non_blank = line;
         }
         let raw_is_quoted = prepass_line_is_quoted(line);
-        if let Some(fence_len) = in_line_block {
+        if let Some(open) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
             // A definition-shaped line inside a line block is inline content, so
             // it renders; blanking it here is what made it disappear (#491).
@@ -2704,8 +2784,8 @@ fn extract_link_defs_with_guard(
             // it: nothing inside verse is claimed, so a definition-shaped line
             // renders and defines nothing.
             body.push(std::borrow::Cow::Borrowed(line));
-            // The RAW line - see the note in extract_footnote_defs.
-            if exact_colon_fence_len(line) == Some(fence_len) {
+            // Strip only the opener's quote scope, as in the footnote pass.
+            if open.closes(line) {
                 in_line_block = None;
             }
             continue;
@@ -2759,8 +2839,6 @@ fn extract_link_defs_with_guard(
                 opener_kept.as_str()
             }
         };
-        // Top-level and unindented only - see the note in extract_footnote_defs
-        // for why a nested opener is refused rather than guessed at.
         if let Some(open) = in_comment_fence {
             // ANY column, at the opener's quote depth - see the note in
             // `extract_footnote_defs`.
@@ -2799,20 +2877,10 @@ fn extract_link_defs_with_guard(
                 continue;
             }
         }
-        // THE LINE'S OWN COLUMN, not the innermost container's. An opener at the
-        // document column ends every container above it, so a list open higher
-        // up says nothing about whether this is a line block - and asking
-        // `content_col` instead left `. r` / `::: |` / `[f]: t` collecting a
-        // definition out of verse text, where the block parser renders it
-        // (carve-rs#2096, the #491 family one column out). An INDENTED opener is
-        // still refused, for the reason `extract_footnote_defs` records.
-        if in_comment_fence.is_none()
-            && stripped.structural.is_empty()
-            && !line.starts_with([' ', '\t'])
-            && !fence_line.starts_with([' ', '\t'])
-        {
-            if let Some(fence_len) = detect_line_block_open(fence_line) {
-                in_line_block = Some(fence_len);
+        // Match the authored opener, including its quote depth.
+        if in_comment_fence.is_none() {
+            if let Some(open) = PrepassLineBlock::open(line) {
+                in_line_block = Some(open);
                 body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
