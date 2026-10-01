@@ -98,7 +98,13 @@ fn a_container_opener_ends_at_its_type_word() {
     let t = "::: note{W}\nbody\n:::\n";
     let control = with_a_space(t);
     assert!(control.contains("admonition note"), "control: {control}");
-    assert_not_the_construct("container opener", t, &control);
+    for ch in [VT, FF] {
+        let source = t.replace("{W}", &ch.to_string());
+        assert!(carve::to_html(&source).contains("admonition note"));
+        assert!(carve::lint_carve(&source)
+            .iter()
+            .any(|w| w.rule == "fence-title-syntax"));
+    }
 }
 
 #[test]

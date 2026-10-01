@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "invalid-named-container-metadata-keeps-the-subtree",
     "a-comment-span-opened-below-every-content-column-is-located-there",
     "a-comment-span-s-closer-column-does-not-move-the-item-s-ownership",
     "a-bare-colon-opener-in-a-description-body-is-an-opener",

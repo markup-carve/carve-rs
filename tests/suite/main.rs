@@ -10,6 +10,9 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../invalid_container_metadata.rs"]
+mod invalid_container_metadata;
+
 #[path = "../a_band_line_under_a_block_that_interrupted_the_lead_paragraph.rs"]
 mod a_band_line_under_a_block_that_interrupted_the_lead_paragraph;
 #[path = "../a_band_line_under_a_marker_line_block_ends_the_item.rs"]

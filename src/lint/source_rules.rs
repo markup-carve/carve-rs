@@ -200,7 +200,12 @@ pub(super) fn collect(
             {
                 for ln in pos.start_line..=pos.end_line.min(rows.len()) {
                     let row = &rows[ln - 1];
-                    let view = container_view(row.text).trim_start_matches([' ', '\t']);
+                    let view = container_view(if ln == 1 {
+                        row.text.trim_start_matches('\u{feff}')
+                    } else {
+                        row.text
+                    })
+                    .trim_start_matches([' ', '\t']);
                     if let Some(m) = colon.captures(view) {
                         fences.push(Fence {
                             first: ln,
@@ -612,6 +617,16 @@ pub(super) fn collect(
         let Some(row) = rows.get(fence.first - 1) else {
             continue;
         };
+        let view = container_view(if fence.first == 1 {
+            row.text.trim_start_matches('\u{feff}')
+        } else {
+            row.text
+        })
+        .trim_start_matches([' ', '\t']);
+        if crate::parse::lint_invalid_container_metadata(view) {
+            emit(out, &rows, fence.first, row.text.len() - view.len(), view.len(),
+                "fence-title-syntax", "Invalid container metadata was dropped. Use a straight-double-quoted title or a bracketed label; the container and its children are preserved.");
+        }
         if fence.bare && !closed[index] {
             if let Some(parent) = fences[..index]
                 .iter()

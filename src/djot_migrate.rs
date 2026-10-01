@@ -809,6 +809,11 @@ fn convert_djot_block_markers(source: &str) -> String {
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
+        if crate::parse::lint_invalid_container_metadata(content) {
+            let at = prefix + indent_bytes;
+            lines[index].insert(at, '\\');
+            continue;
+        }
         if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
             let token = &content[1..close + 1];
             let tail = &content[close + 2..];

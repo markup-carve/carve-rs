@@ -268,12 +268,26 @@ pub fn to_carve(source: &str) -> String {
 
 /// Prepare canonical formatting as a stale-safe patch without changing source.
 pub fn to_carve_patch(source: &str) -> SourcePatch {
-    create_source_patch(
+    let formatted = to_carve(source);
+    let mut patch = create_source_patch(
         source,
-        &to_carve(source),
+        &formatted,
         SourceEditKind::Formatting,
         "canonical-format",
-    )
+    );
+    if !patch.edits.is_empty()
+        && lint_carve(source)
+            .iter()
+            .any(|warning| warning.rule == "fence-title-syntax")
+    {
+        patch.edits.clear();
+        patch.unresolved.push(SourceSuggestion {
+            start: 0, end: patch.source_bytes, replacement: formatted,
+            kind: SourceEditKind::Formatting, code: "invalid-container-metadata".into(),
+            message: "Canonical formatting encounters invalid container metadata; review the proposed source.".into(),
+        });
+    }
+    patch
 }
 
 /// Render HTML and report target-routed raw nodes that were omitted.

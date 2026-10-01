@@ -22,15 +22,9 @@ fn html(source: &str) -> String {
     carve::to_html(source)
 }
 
-fn assert_opened_nothing(label: &str, out: &str) {
-    assert!(
-        out.contains(":::"),
-        "{label}: opener did not survive as text: {out}"
-    );
-    assert!(
-        !out.contains("<aside"),
-        "{label}: opened an admonition: {out}"
-    );
+fn assert_dropped_metadata(label: &str, out: &str) {
+    assert!(!out.contains(":::"), "{label}: leaked a fence: {out}");
+    assert!(out.contains("<aside"), "{label}: lost the container: {out}");
     assert!(
         !out.contains("admonition-title"),
         "{label}: took a title: {out}"
@@ -40,8 +34,8 @@ fn assert_opened_nothing(label: &str, out: &str) {
 
 #[test]
 fn a_tab_does_not_pad_the_title_slot() {
-    assert_opened_nothing("title, tab first", &html("::: note\t\"Title\"\nx\n:::\n"));
-    assert_opened_nothing(
+    assert_dropped_metadata("title, tab first", &html("::: note\t\"Title\"\nx\n:::\n"));
+    assert_dropped_metadata(
         "title, space then tab",
         &html("::: note \t\"Title\"\nx\n:::\n"),
     );
@@ -52,8 +46,8 @@ fn a_tab_does_not_pad_the_label_slot() {
     // This slot was missed entirely by carve-rs#712, which narrowed only the
     // slot before the title. It stayed `str::trim_start`, i.e.
     // `char::is_whitespace`.
-    assert_opened_nothing("label, tab first", &html("::: note \"T\"\t[lbl]\nx\n:::\n"));
-    assert_opened_nothing(
+    assert_dropped_metadata("label, tab first", &html("::: note \"T\"\t[lbl]\nx\n:::\n"));
+    assert_dropped_metadata(
         "label, space then tab",
         &html("::: note \"T\" \t[lbl]\nx\n:::\n"),
     );
@@ -67,11 +61,11 @@ fn no_unicode_space_pads_the_title_slot() {
         ("en quad", '\u{2000}'),
         ("no-break space", '\u{00a0}'),
     ] {
-        assert_opened_nothing(
+        assert_dropped_metadata(
             &format!("title, {label}"),
             &html(&format!("::: note{ws}\"Title\"\nx\n:::\n")),
         );
-        assert_opened_nothing(
+        assert_dropped_metadata(
             &format!("title, space then {label}"),
             &html(&format!("::: note {ws}\"Title\"\nx\n:::\n")),
         );
@@ -86,11 +80,11 @@ fn no_unicode_space_pads_the_label_slot() {
         ("en quad", '\u{2000}'),
         ("no-break space", '\u{00a0}'),
     ] {
-        assert_opened_nothing(
+        assert_dropped_metadata(
             &format!("label, {label}"),
             &html(&format!("::: note \"T\"{ws}[lbl]\nx\n:::\n")),
         );
-        assert_opened_nothing(
+        assert_dropped_metadata(
             &format!("label, space then {label}"),
             &html(&format!("::: note \"T\" {ws}[lbl]\nx\n:::\n")),
         );
@@ -116,7 +110,7 @@ fn tabbing_both_slots_at_once_proves_nothing_on_its_own() {
     // guard below is what makes the file's coverage a claim rather than an
     // assumption - the two per-slot tests above are what actually discriminate,
     // and this asserts they exist.
-    assert_opened_nothing("both slots", &html("::: note\t\"T\"\t[lbl]\nx\n:::\n"));
+    assert_dropped_metadata("both slots", &html("::: note\t\"T\"\t[lbl]\nx\n:::\n"));
 
     // The needles are assembled from halves so they do not appear literally in
     // this file and count themselves - the first draft did, and read 3 for 2.

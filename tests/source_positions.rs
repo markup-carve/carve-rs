@@ -776,10 +776,10 @@ fn an_admonition_title_places_its_inlines() {
 /// remainder that is neither a label nor whitespace, so the line is an ordinary
 /// paragraph (markup-carve/carve-rs#1946).
 #[test]
-fn an_escaped_quote_opens_no_admonition_to_place() {
+fn an_escaped_quote_recovers_the_admonition_without_a_title() {
     let doc = parse_with_positions("::: note \"a \\\" b *x*\"\nBody.\n:::\n");
     assert!(
-        matches!(&doc.children[0], BlockNode::Paragraph(_)),
+        matches!(&doc.children[0], BlockNode::Admonition(a) if a.title.is_none()),
         "{:?}",
         doc.children[0]
     );
