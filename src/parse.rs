@@ -2618,7 +2618,7 @@ struct PrepassLineBlock<'a> {
     table: TableRun,
     outer_lines: Option<Vec<&'a str>>,
     outer_next: usize,
-    end_after_attachment: bool,
+    outer_depth: usize,
 }
 
 impl<'a> PrepassLineBlock<'a> {
@@ -2647,12 +2647,35 @@ impl<'a> PrepassLineBlock<'a> {
             table: TableRun::default(),
             outer_lines: None,
             outer_next: 0,
-            end_after_attachment: false,
+            outer_depth: 0,
         })
     }
 
     fn content<'line>(&self, line: &'line str) -> Option<&'line str> {
         strip_quote_levels(line, self.quote_depth)
+    }
+
+    fn remaining_at_depth<'view>(
+        &'view mut self,
+        rest: &'view [&'a str],
+        depth: usize,
+    ) -> &'view [&'a str] {
+        if depth == 0 {
+            return rest;
+        }
+        if self.outer_lines.is_none() || self.outer_depth != depth {
+            self.outer_lines = Some(
+                rest.iter()
+                    .map_while(|line| strip_quote_levels(line, depth))
+                    .collect(),
+            );
+            self.outer_next = 0;
+            self.outer_depth = depth;
+        }
+        &self
+            .outer_lines
+            .as_ref()
+            .expect("initialized outer quote lines")[self.outer_next..]
     }
 
     fn observe(&mut self, line: &str, rest: &[&'a str], options: &Options<'_>) -> bool {
@@ -2661,7 +2684,7 @@ impl<'a> PrepassLineBlock<'a> {
         }
         if self.outer_lines.is_some() {
             self.outer_next += 1;
-            if strip_quote_levels(line, self.quote_depth - 1).is_none() {
+            if strip_quote_levels(line, self.outer_depth).is_none() {
                 self.outer_lines = None;
                 self.outer_next = 0;
             }
@@ -2669,9 +2692,6 @@ impl<'a> PrepassLineBlock<'a> {
         if self.attached_remaining > 0 {
             self.attached_remaining -= 1;
             return true;
-        }
-        if self.end_after_attachment {
-            return false;
         }
         if let Some(content) = self.content(line) {
             self.attached = false;
@@ -2732,23 +2752,11 @@ impl<'a> PrepassLineBlock<'a> {
             self.lazy_open = false;
             if self.attached {
                 self.table = TableRun::default();
-                self.end_after_attachment = self.code_fence.take().is_some();
-                let outer_lines = if self.quote_depth == 1 {
-                    rest
-                } else {
-                    if self.outer_lines.is_none() {
-                        self.outer_lines = Some(
-                            rest.iter()
-                                .map_while(|line| strip_quote_levels(line, self.quote_depth - 1))
-                                .collect(),
-                        );
-                        self.outer_next = 0;
-                    }
-                    &self
-                        .outer_lines
-                        .as_ref()
-                        .expect("initialized outer quote lines")[self.outer_next..]
-                };
+                if self.code_fence.take().is_some() {
+                    return false;
+                }
+                let depth = self.quote_depth - 1;
+                let outer_lines = self.remaining_at_depth(rest, depth);
                 let mut comment_closers = None;
                 let _probing = ProbeGuard::enter();
                 self.attached_remaining = attached_block_lines(
@@ -2768,12 +2776,22 @@ impl<'a> PrepassLineBlock<'a> {
         if self.attached {
             return false;
         }
-        self.lazy_open
-            && !is_blank_line(candidate)
-            && caption_content(candidate).is_none()
-            && !is_colon_fence_opener_shape(candidate)
-            && !interrupts_paragraph_with_rest(candidate, rest)
-            && !(self.quote_depth == 1 && detect_abbreviation_def(candidate).is_some())
+        if !self.lazy_open
+            || is_blank_line(candidate)
+            || caption_content(candidate).is_some()
+            || is_colon_fence_opener_shape(candidate)
+            || (marked_depth == 0 && detect_abbreviation_def(candidate).is_some())
+        {
+            return false;
+        }
+        let rest = if marked_depth > 0
+            && (detect_fence_open(candidate).is_some() || candidate.starts_with('{'))
+        {
+            self.remaining_at_depth(rest, marked_depth)
+        } else {
+            rest
+        };
+        !interrupts_paragraph_with_rest(candidate, rest)
     }
 
     fn closes(&self, line: &str) -> bool {

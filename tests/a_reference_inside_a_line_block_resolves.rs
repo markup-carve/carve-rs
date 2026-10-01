@@ -184,3 +184,24 @@ fn an_attachment_clears_the_previous_quoted_table_run() {
     assert!(html.contains("[r]: /hidden"), "{html}");
     assert!(!html.contains("href=\"/hidden\""), "{html}");
 }
+
+#[test]
+fn a_definition_attached_after_an_open_code_fence_is_outside_verse() {
+    let source = "> ::: |\n> ```\n+\n[r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn a_document_abbreviation_ends_verse_at_any_quote_depth() {
+    let source = "> > ::: |\n> > verse\n*[HTML]: Hyper Text\n> > [r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn a_partly_marked_fence_uses_lookahead_in_the_same_quote_scope() {
+    let source = "> > ::: |\n> > verse\n> ```\n> x\n> ```\n> [r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
