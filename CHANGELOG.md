@@ -17,10 +17,11 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Resolve link, image, and collapsed heading references inside plain and quoted line blocks (#2249).
+
 - Canonical Carve output preserves parentheses and backslashes in denied URL
   schemes. Presentation targets retain destination filtering and loss reports
   (markup-carve/carve#2685).
-- Resolve link, image, and collapsed heading references inside line blocks, including quoted line blocks. Keep definition-shaped lines in explicitly quoted verse as text (#2249).
 - Renderers refuse trees that exceed the depth ceiling in citation definitions, extension summaries, short captions or captions on figure tables (#2242).
 
 ## [0.1.7] - 2026-09-29

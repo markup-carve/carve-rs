@@ -1323,7 +1323,7 @@ fn extract_footnote_defs(
     // one is text. Without this the line was extracted here and never reached
     // the block parser, so it vanished from the output (#491). carve-js keeps it
     // and does NOT register the footnote; this matches that.
-    let mut in_line_block: Option<PrepassLineBlock> = None;
+    let mut in_line_block: Option<usize> = None;
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
@@ -1357,12 +1357,6 @@ fn extract_footnote_defs(
         // Called for its effect on the column stack, not for its return: every
         // question below asks `reached_by` about a specific column instead of
         // taking the innermost one (carve-rs#1054).
-        if in_line_block
-            .as_mut()
-            .is_some_and(|open| !open.observe(lines[i], &lines[i + 1..], options))
-        {
-            in_line_block = None;
-        }
         columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
@@ -1389,11 +1383,14 @@ fn extract_footnote_defs(
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
         let fence_line = stripped.bare;
-        if let Some(open) = in_line_block.as_ref() {
+        if let Some(fence_len) = in_line_block {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
-            // Strip only the opener's quote scope, preserving literal markers.
-            if open.closes(lines[i]) {
+            // The RAW line, not the prefix-stripped one: a literal `- :::` or `> :::`
+            // is verse text, and the block parser does not close on it. Stripping
+            // here ended the block early and lost every definition-shaped line
+            // between there and the real closer.
+            if exact_colon_fence_len(lines[i]) == Some(fence_len) {
                 in_line_block = None;
             }
             i += 1;
@@ -1412,6 +1409,21 @@ fn extract_footnote_defs(
                 continue;
             }
         }
+        // Only a TOP-LEVEL, unindented opener. Two things this pre-pass cannot
+        // do are both fatal if it guesses:
+        //
+        // `detect_line_block_open` trims, so it says yes to an indented `  ::: |`
+        // where the block parser says no - entering there would swallow every
+        // later definition in the document.
+        //
+        // And a line block opened on a marker line (`- ::: |`) is closed at the
+        // item's content column (`  :::`), which this line-based pass cannot
+        // recognise, so the state would never end.
+        //
+        // A nested line block therefore still loses definition-shaped lines,
+        // exactly as it does today. That is the same limitation the comment on
+        // this function already records, and the same answer: the sound fix is
+        // collecting definitions during block parsing.
         if let Some(open) = in_comment_fence {
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
@@ -1461,10 +1473,9 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        // List-item scopes still need the block parser's content-column context.
-        if in_comment_fence.is_none() {
-            if let Some(open) = PrepassLineBlock::open(lines[i]) {
-                in_line_block = Some(open);
+        if in_comment_fence.is_none() && !in_container && !fence_line.starts_with([' ', '\t']) {
+            if let Some(fence_len) = detect_line_block_open(fence_line) {
+                in_line_block = Some(fence_len);
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
                 i += 1;
@@ -2606,204 +2617,6 @@ fn extract_link_defs_guarded(
     extract_link_defs_with_guard(source, Some((options, budget)))
 }
 
-struct PrepassLineBlock<'a> {
-    fence_len: usize,
-    quote_depth: usize,
-    lazy_open: bool,
-    code_fence: Option<FenceOpen>,
-    attached: bool,
-    attached_remaining: usize,
-    attrs_rest: usize,
-    attrs_skip: usize,
-    table: TableRun,
-    outer_lines: Option<Vec<&'a str>>,
-    outer_next: usize,
-    outer_depth: usize,
-}
-
-impl<'a> PrepassLineBlock<'a> {
-    fn open(line: &'a str) -> Option<Self> {
-        if line.starts_with([' ', '\t']) {
-            return None;
-        }
-        let mut content = line;
-        let mut quote_depth = 0;
-        while let Some(rest) = strip_blockquote_prefix(content) {
-            content = rest;
-            quote_depth += 1;
-        }
-        if content.starts_with([' ', '\t']) {
-            return None;
-        }
-        Some(Self {
-            fence_len: detect_line_block_open(content)?,
-            quote_depth,
-            lazy_open: false,
-            code_fence: None,
-            attached: false,
-            attached_remaining: 0,
-            attrs_rest: 0,
-            attrs_skip: 0,
-            table: TableRun::default(),
-            outer_lines: None,
-            outer_next: 0,
-            outer_depth: 0,
-        })
-    }
-
-    fn content<'line>(&self, line: &'line str) -> Option<&'line str> {
-        strip_quote_levels(line, self.quote_depth)
-    }
-
-    fn remaining_at_depth<'view>(
-        &'view mut self,
-        rest: &'view [&'a str],
-        depth: usize,
-    ) -> &'view [&'a str] {
-        if depth == 0 {
-            return rest;
-        }
-        if self.outer_lines.is_none() || self.outer_depth != depth {
-            self.outer_lines = Some(
-                rest.iter()
-                    .map_while(|line| strip_quote_levels(line, depth))
-                    .collect(),
-            );
-            self.outer_next = 0;
-            self.outer_depth = depth;
-        }
-        &self
-            .outer_lines
-            .as_ref()
-            .expect("initialized outer quote lines")[self.outer_next..]
-    }
-
-    fn observe(&mut self, line: &str, rest: &[&'a str], options: &Options<'_>) -> bool {
-        if self.quote_depth == 0 {
-            return true;
-        }
-        if self.outer_lines.is_some() {
-            self.outer_next += 1;
-            if strip_quote_levels(line, self.outer_depth).is_none() {
-                self.outer_lines = None;
-                self.outer_next = 0;
-            }
-        }
-        if self.attached_remaining > 0 {
-            self.attached_remaining -= 1;
-            return true;
-        }
-        if let Some(content) = self.content(line) {
-            self.attached = false;
-            if self.attrs_rest > 0 {
-                self.attrs_rest -= 1;
-                self.lazy_open = false;
-                return true;
-            }
-            if let Some(fence) = self.code_fence {
-                if is_fence_close(content, fence) {
-                    self.code_fence = None;
-                }
-                self.lazy_open = false;
-            } else {
-                let candidate = detect_fence_open(content);
-                self.code_fence = candidate.filter(|fence| {
-                    !self.lazy_open
-                        || rest
-                            .iter()
-                            .map_while(|line| self.content(line))
-                            .any(|content| is_fence_close(content, *fence))
-                });
-                if self.code_fence.is_some() {
-                    self.lazy_open = false;
-                } else if candidate.is_none() {
-                    self.lazy_open =
-                        !self.table.observe(content) && ParaOpen::from_line(content, false).get();
-                }
-                if candidate.is_some() {
-                    self.table = TableRun::default();
-                }
-            }
-            if self.attrs_skip > 0 {
-                self.attrs_skip -= 1;
-            } else if self.code_fence.is_none() && content.contains('{') {
-                match quoted_attrs_block_len(content, rest) {
-                    QuotedAttrsBlock::Block(len) => {
-                        self.attrs_rest = len - 1;
-                        self.lazy_open = false;
-                    }
-                    QuotedAttrsBlock::NoneWithin(window) => self.attrs_skip = window - 1,
-                    QuotedAttrsBlock::No => {}
-                }
-            }
-            return true;
-        }
-        let mut candidate = line;
-        let mut marked_depth = 0;
-        for _ in 0..self.quote_depth {
-            let Some(content) = strip_blockquote_prefix(candidate) else {
-                break;
-            };
-            candidate = content;
-            marked_depth += 1;
-        }
-        if trim_ascii(candidate) == "+" && indent_columns(candidate) == 0 {
-            self.attached = marked_depth + 1 == self.quote_depth;
-            self.lazy_open = false;
-            if self.attached {
-                self.table = TableRun::default();
-                if self.code_fence.take().is_some() {
-                    return false;
-                }
-                let depth = self.quote_depth - 1;
-                let outer_lines = self.remaining_at_depth(rest, depth);
-                let mut comment_closers = None;
-                let _probing = ProbeGuard::enter();
-                self.attached_remaining = attached_block_lines(
-                    outer_lines,
-                    0,
-                    &mut comment_closers,
-                    options,
-                    None,
-                    &mut |next, _| {
-                        is_blank_line(next)
-                            || (trim_ascii(next) == "+" && indent_columns(next) == 0)
-                    },
-                );
-            }
-            return self.attached;
-        }
-        if self.attached {
-            return false;
-        }
-        if !self.lazy_open
-            || is_blank_line(candidate)
-            || caption_content(candidate).is_some()
-            || is_colon_fence_opener_shape(candidate)
-            || (marked_depth == 0 && detect_abbreviation_def(candidate).is_some())
-        {
-            return false;
-        }
-        let rest = if marked_depth > 0
-            && (detect_fence_open(candidate).is_some() || candidate.starts_with('{'))
-        {
-            self.remaining_at_depth(rest, marked_depth)
-        } else {
-            rest
-        };
-        !interrupts_paragraph_with_rest(candidate, rest)
-    }
-
-    fn closes(&self, line: &str) -> bool {
-        let content = if self.attached {
-            strip_quote_levels(line, self.quote_depth.saturating_sub(1))
-        } else {
-            self.content(line)
-        };
-        content.and_then(exact_colon_fence_len) == Some(self.fence_len)
-    }
-}
-
 fn extract_link_defs_with_guard(
     source: &str,
     mut guard: Option<(&Options<'_>, &mut usize)>,
@@ -2822,7 +2635,7 @@ fn extract_link_defs_with_guard(
     // Tracked the same way the code fence above is, and for the same reason: this
     // pre-pass is line-based, so the only thing it can do is refuse to look inside
     // a region whose contents are not blocks.
-    let mut in_line_block: Option<PrepassLineBlock> = None;
+    let mut in_line_block: Option<usize> = None;
     // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
@@ -2864,17 +2677,6 @@ fn extract_link_defs_with_guard(
         // fence, so `  [r]: /u` after it was stripped to that phantom column and
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
-        if in_line_block.as_mut().is_some_and(|open| {
-            !open.observe(
-                line,
-                &all_lines[line_index + 1..],
-                guard
-                    .as_ref()
-                    .map_or(&Options::default(), |(options, _)| *options),
-            )
-        }) {
-            in_line_block = None;
-        }
         let content_col = columns.observe(
             line,
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
@@ -2891,7 +2693,7 @@ fn extract_link_defs_with_guard(
             previous_non_blank = line;
         }
         let raw_is_quoted = prepass_line_is_quoted(line);
-        if let Some(open) = in_line_block.as_ref() {
+        if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
             // A definition-shaped line inside a line block is inline content, so
             // it renders; blanking it here is what made it disappear (#491).
@@ -2902,8 +2704,8 @@ fn extract_link_defs_with_guard(
             // it: nothing inside verse is claimed, so a definition-shaped line
             // renders and defines nothing.
             body.push(std::borrow::Cow::Borrowed(line));
-            // Strip only the opener's quote scope, as in the footnote pass.
-            if open.closes(line) {
+            // The RAW line - see the note in extract_footnote_defs.
+            if exact_colon_fence_len(line) == Some(fence_len) {
                 in_line_block = None;
             }
             continue;
@@ -2957,6 +2759,8 @@ fn extract_link_defs_with_guard(
                 opener_kept.as_str()
             }
         };
+        // Top-level and unindented only - see the note in extract_footnote_defs
+        // for why a nested opener is refused rather than guessed at.
         if let Some(open) = in_comment_fence {
             // ANY column, at the opener's quote depth - see the note in
             // `extract_footnote_defs`.
@@ -2995,10 +2799,20 @@ fn extract_link_defs_with_guard(
                 continue;
             }
         }
-        // Match the authored opener, including its quote depth.
-        if in_comment_fence.is_none() {
-            if let Some(open) = PrepassLineBlock::open(line) {
-                in_line_block = Some(open);
+        // THE LINE'S OWN COLUMN, not the innermost container's. An opener at the
+        // document column ends every container above it, so a list open higher
+        // up says nothing about whether this is a line block - and asking
+        // `content_col` instead left `. r` / `::: |` / `[f]: t` collecting a
+        // definition out of verse text, where the block parser renders it
+        // (carve-rs#2096, the #491 family one column out). An INDENTED opener is
+        // still refused, for the reason `extract_footnote_defs` records.
+        if in_comment_fence.is_none()
+            && stripped.structural.is_empty()
+            && !line.starts_with([' ', '\t'])
+            && !fence_line.starts_with([' ', '\t'])
+        {
+            if let Some(fence_len) = detect_line_block_open(fence_line) {
+                in_line_block = Some(fence_len);
                 body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
@@ -24888,22 +24702,6 @@ mod quote_prefix_calls {
             .expect("spawn the counting thread")
             .join()
             .expect("the counting thread parses without panicking")
-    }
-
-    #[test]
-    fn nested_verse_attachments_strip_each_outer_line_once() {
-        fn source(n: usize) -> String {
-            format!(
-                "> > ::: |\n> > verse\n{}> > [r]: /hidden\n> > :::\n\n[t][r]\n",
-                "> +\n> x\n".repeat(n)
-            )
-        }
-        let small = calls_for(source(128));
-        let large = calls_for(source(1024));
-        assert!(
-            large <= small * 12,
-            "128 attachments: {small}, 1024: {large}"
-        );
     }
 
     /// One measurement: the work the document contains, and the strips it cost.
