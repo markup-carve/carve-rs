@@ -18,3 +18,5 @@
 2100: the canonical render session owns its pass state instead of a free-standing scope guard. No output moved.
 2182: a wall-clock parser guard in the test suite became a counter of the work the parser does. The counter is read by the test; parse output is unchanged.
 2210: 0.1.7 - a wall-clock timing guard in the test suite became a counter of the pairings the merge bound refuses. Test-only; no parser or writer output moved.
+2244: test-only. The adjacent-definition tests assumed layout accepts a denied reference destination; #2243 made those runs fall back so the loss can carry a span. Every changed line is inside `#[cfg(test)]`.
+2247: parser reference definitions, lookup state and the late resolution walk moved into `parse::reference_resolution`, and the streaming scanner asks a lookup function instead of the thread-local map. No behavior moved.
