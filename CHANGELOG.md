@@ -9,19 +9,36 @@ Entries for 0.1.5 and earlier are archived in
 [CHANGELOG-0.1.md](https://github.com/markup-carve/carve-rs/blob/main/CHANGELOG-0.1.md),
 which the published crate does not carry.
 
-## [Unreleased]
+## [0.1.8] - 2026-10-01
 
-### Added
+### Breaking
 
-- `render_html_owned` and `render_html_owned_with_options` consume a document without cloning its tree (#2242).
+- A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
+- `RenderLossError` reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243).
 
-### Fixed
+### Fixes
 
-- Resolve link, image, and collapsed heading references inside plain and quoted line blocks (#2249).
-- Canonical Carve output preserves parentheses and backslashes in denied URL
-  schemes. Presentation targets retain destination filtering and loss reports
-  (markup-carve/carve#2685).
-- Renderers refuse trees that exceed the depth ceiling in citation definitions, extension summaries, short captions or captions on figure tables (#2242).
+- A quoted attribute value, a quoted class value and a quoted link, image or reference-definition title double a backslash only where the re-parse needs it, so `t\zu` is written back as authored instead of carrying an escape the reader discards (#2224).
+- A list table keeps its grouping label and its pipe table on the Markdown, plain and ANSI targets, since the HTML carrier rewrite reaches the HTML target alone (#2225).
+- HTML import reads a literal reference-shaped tail before pairing brackets, so a superscript or subscript opener stops pairing with the tail's closing bracket and the span re-reads as itself (#2225).
+- `carve lint` reports `list-item-block-overindented` once at each block's opener rather than per line, keeps a continuing table or quote on one finding, and leaves an aligned opener unreported when only a later continuation is overindented (#2226, markup-carve/carve#2643).
+- An overindented quote marker after a fence opened on a list item's marker line stays literal item text, and the item's indentation base returns once that fence closes, at every nested quote level (#2228, markup-carve/carve#2627, markup-carve/carve#2658).
+- Emphasis inside a link label keeps its own scope where the surrounding span uses the same kind, so the label is neither flattened nor reported as a loss; same-kind nesting within one scope still reports (#2229, markup-carve/carve#2522).
+- A lazy line inside a closed quoted comment keeps its indentation, so a comment's content and the canonical Carve output agree with the other two engines (#2231, markup-carve/carve#2663).
+- A canonical empty footnote or definition body draws no unattached-attribute warning, and list padding before a `>` adds no fence-indentation warning (#2234, markup-carve/carve#2663).
+- Djot import pairs emphasis by Djot delimiter ownership and reads orphan attributes, empty definition fences, image alt text and reference links in their own contexts, while code, destinations and fenced metadata stay opaque and a paragraph boundary stops delimiter matching (#2235, markup-carve/carve#2522).
+- A Djot code fence stays opaque where ordinary prose precedes an indented fence, Djot's numeric, single-letter and Roman list markers are read as markers, and a quote inside a list keeps the item's ownership while a shallower blank line discards exited quote context (#2236, markup-carve/carve#2522).
+- A reference definition publishes its positions in the original input, so a CRLF line ending or a leading BOM no longer shifts its span; footnote definition columns follow the same rule (#2239).
+- A denied destination's loss message names the sink: "Blanked a denied destination scheme" for a link or an autolink, "Blanked a denied image source" for an image, with no target suffix, since the target is already its own field (#2246, markup-carve/carve#2686).
+- Canonical Carve output keeps the parentheses and backslashes of a denied URL scheme, so formatting no longer changes the destination it parsed; the presentation targets keep their destination filtering and loss reports (#2248, markup-carve/carve#2685).
+- Link, image and collapsed heading references resolve inside plain and quoted line blocks (#2249).
+- Renderers refuse a tree past the depth ceiling in a citation definition, an extension summary, a short caption and a caption on a figure table (#2242).
+
+### Improvements
+
+- `render_html_owned` and `render_html_owned_with_options` render a caller-owned document without cloning its tree, and the profile and loss-report facades take ownership of the temporary documents they already held (#2242).
+- A run of adjacent top-level reference definitions renders from source to HTML through the layout scanner instead of the full AST pipeline, cutting the allocation that run requested by 84%. Hosted definitions and runs the shared grammar refuses keep the existing fallback (#2240).
+- Definition collectors and the layout scanner reuse the destinations, titles and attributes they already parsed, and reference lookup borrows a key already in normalized form. Parsing 4,096 definitions and references makes 135,907 allocation requests rather than 160,473 (#2241).
 
 ## [0.1.7] - 2026-09-29
 
@@ -393,5 +410,6 @@ which the published crate does not carry.
   (markup-carve/carve-rs#1572, markup-carve/carve#1970). `carve fmt` no longer inserts a separating blank
   before that item, converging its `carve` output with carve-js and carve-php.
 
+[0.1.8]: https://github.com/markup-carve/carve-rs/compare/0.1.7...0.1.8
 [0.1.7]: https://github.com/markup-carve/carve-rs/compare/0.1.6...0.1.7
 [0.1.6]: https://github.com/markup-carve/carve-rs/compare/0.1.5...0.1.6
