@@ -45,3 +45,39 @@ fn a_footnote_definition_in_verse_stays_literal() {
     assert!(out.contains("[^f]: t"), "{out}");
     assert!(!out.contains("doc-endnotes"), "{out}");
 }
+
+#[test]
+fn ownership_discovery_does_not_parse_verse_inlines_twice() {
+    use carve::{CarveExtension, InlineMatch, InlineNode, MatcherContext, Options};
+    use std::cell::Cell;
+
+    struct Counter(Cell<usize>);
+    impl CarveExtension for Counter {
+        fn name(&self) -> &'static str {
+            "verse-counter"
+        }
+        fn match_inline(
+            &self,
+            text: &str,
+            pos: usize,
+            _ctx: &MatcherContext<'_>,
+        ) -> Option<InlineMatch> {
+            text.get(pos..)?.strip_prefix("§token")?;
+            self.0.set(self.0.get() + 1);
+            Some(InlineMatch {
+                node: InlineNode::text("matched"),
+                end: pos + "§token".len(),
+            })
+        }
+    }
+
+    let counter = Counter(Cell::new(0));
+    let options = Options::new().with_extension(&counter);
+    let out = carve::to_html_with_options(
+        "§token\n\n::: |\n§token\n[r]: /hidden\n:::\n\n[t][r]\n",
+        &options,
+    );
+    assert!(out.contains("matched"), "{out}");
+    assert!(!out.contains("href=\"/hidden\""), "{out}");
+    assert_eq!(counter.0.get(), 2);
+}

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::ast::{Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
-use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
+use crate::parse::{parse_blocks_with_options, parse_matcher_inlines};
 use crate::profile::Profile;
 
 /// Render mode - a render OPTION, not document syntax. See the
@@ -763,7 +763,7 @@ impl<'a> MatcherContext<'a> {
     }
 
     pub fn parse_inlines(&self, text: &str) -> Vec<InlineNode> {
-        parse_inline_with_options(text, self.options)
+        parse_matcher_inlines(text, self.options)
     }
 
     pub fn parse_blocks(&self, source: &str) -> Vec<BlockNode> {

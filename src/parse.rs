@@ -16840,6 +16840,22 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         true,
         &mut cur.code_closer_last_index,
     );
+    if definition_regions::recording() {
+        definition_regions::record(
+            cur.source_line(span_start),
+            definition_regions::VerseLine::Opener,
+        );
+        for line in span_start + 1..end {
+            definition_regions::record(cur.source_line(line), definition_regions::VerseLine::Body);
+        }
+        cur.pos = end;
+        return BlockNode::LineBlock(LineBlock {
+            pos: span_of(cur, span_start, cur.pos, options),
+            attrs: None,
+            children: Vec::new(),
+            lines: None,
+        });
+    }
     cur.consume();
     let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza = LineBuffer::default();
@@ -16943,16 +16959,6 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             start_cols: stanza_start_cols,
             comments: stanza_comments,
         });
-    }
-
-    if definition_regions::recording() {
-        definition_regions::record(
-            cur.source_line(span_start),
-            definition_regions::VerseLine::Opener,
-        );
-        for line in span_start + 1..cur.pos {
-            definition_regions::record(cur.source_line(line), definition_regions::VerseLine::Body);
-        }
     }
 
     let children = stanzas
@@ -18759,6 +18765,11 @@ impl InlineBounds<'_> {
     fn has_delim_brace_from(&self, delim: u8, pos: usize) -> bool {
         delim_brace_slot(delim).is_some_and(|s| self.delim_brace[s].is_some_and(|p| p >= pos))
     }
+}
+
+pub(crate) fn parse_matcher_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    let _recording = definition_regions::RecordingPause::enter();
+    parse_inline_with_options(text, options)
 }
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
@@ -21911,7 +21922,7 @@ fn match_emphasis(
 }
 
 fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option<InlineMatch> {
-    if options.extensions.is_empty() {
+    if options.extensions.is_empty() || definition_regions::recording() {
         return None;
     }
     // See `IN_CONTAINER_LABEL`: a label's run is scanned at render time, so no
