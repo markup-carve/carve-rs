@@ -1412,8 +1412,6 @@ fn extract_footnote_defs(
                 continue;
             }
         }
-        // Recognize unindented document and explicitly quoted line blocks.
-        // List-item scopes still need the block parser's content-column context.
         if let Some(open) = in_comment_fence {
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
@@ -1463,6 +1461,7 @@ fn extract_footnote_defs(
                 continue;
             }
         }
+        // List-item scopes still need the block parser's content-column context.
         if in_comment_fence.is_none() {
             if let Some(open) = PrepassLineBlock::open(lines[i]) {
                 in_line_block = Some(open);
@@ -2613,6 +2612,10 @@ struct PrepassLineBlock {
     quote_depth: usize,
     lazy_open: bool,
     code_fence: Option<FenceOpen>,
+    attached: bool,
+    attrs_rest: usize,
+    attrs_skip: usize,
+    table: TableRun,
 }
 
 impl PrepassLineBlock {
@@ -2634,6 +2637,10 @@ impl PrepassLineBlock {
             quote_depth,
             lazy_open: false,
             code_fence: None,
+            attached: false,
+            attrs_rest: 0,
+            attrs_skip: 0,
+            table: TableRun::default(),
         })
     }
 
@@ -2646,6 +2653,12 @@ impl PrepassLineBlock {
             return true;
         }
         if let Some(content) = self.content(line) {
+            self.attached = false;
+            if self.attrs_rest > 0 {
+                self.attrs_rest -= 1;
+                self.lazy_open = false;
+                return true;
+            }
             if let Some(fence) = self.code_fence {
                 if is_fence_close(content, fence) {
                     self.code_fence = None;
@@ -2663,7 +2676,23 @@ impl PrepassLineBlock {
                 if self.code_fence.is_some() {
                     self.lazy_open = false;
                 } else if candidate.is_none() {
-                    self.lazy_open = ParaOpen::from_line(content, false).get();
+                    self.lazy_open =
+                        !self.table.observe(content) && ParaOpen::from_line(content, false).get();
+                }
+                if candidate.is_some() {
+                    self.table = TableRun::default();
+                }
+            }
+            if self.attrs_skip > 0 {
+                self.attrs_skip -= 1;
+            } else if self.code_fence.is_none() && content.contains('{') {
+                match quoted_attrs_block_len(content, rest) {
+                    QuotedAttrsBlock::Block(len) => {
+                        self.attrs_rest = len - 1;
+                        self.lazy_open = false;
+                    }
+                    QuotedAttrsBlock::NoneWithin(window) => self.attrs_skip = window - 1,
+                    QuotedAttrsBlock::No => {}
                 }
             }
             return true;
@@ -2675,9 +2704,13 @@ impl PrepassLineBlock {
             };
             candidate = content;
         }
-        if candidate == "+" {
-            self.lazy_open = true;
+        if trim_ascii(candidate) == "+" && indent_columns(candidate) == 0 {
+            self.attached = true;
+            self.lazy_open = false;
             return true;
+        }
+        if self.attached {
+            return !is_blank_line(candidate);
         }
         self.lazy_open
             && !is_blank_line(candidate)
@@ -15124,7 +15157,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// DELIMITER row is not taken, since the separator `continue`s past the
 /// continuation loop and the table ends there. Answering "row" for it is
 /// markup-carve/carve#1354 in this engine's own code.
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 struct TableRun {
     /// Rows consumed so far, the delimiter row excluded exactly as the row loop
     /// excludes it. `None` when no table is open.

@@ -117,8 +117,27 @@ fn an_unclosed_fence_after_verse_prose_keeps_the_lazy_quote_open() {
 
 #[test]
 fn attached_verse_lines_do_not_expose_later_quoted_definitions() {
-    let source = "> ::: |\n+\nattached\n> [r]: /hidden\n> :::\n\n[t][r]\n";
+    for marker in ["+", "+ "] {
+        for attached in ["attached", "# Heading", "---", "{.k}"] {
+            let source = format!("> ::: |\n{marker}\n{attached}\n> [r]: /hidden\n> [^n]: note\n> :::\n\n[t][r] [^n]\n");
+            let html = carve::to_html(&source);
+            assert!(html.contains("[r]: /hidden"), "{source:?}: {html}");
+            assert!(!html.contains("href=\"/hidden\""), "{source:?}: {html}");
+            assert!(!html.contains("doc-endnotes"), "{source:?}: {html}");
+        }
+    }
+}
+
+#[test]
+fn wrapped_attributes_in_verse_end_lazy_quote_continuation() {
+    let source = "> ::: |\n> {.k\n> #x}\nlazy\n> [r]: /target\n\n[t][r]\n";
     let html = carve::to_html(source);
-    assert!(html.contains("[r]: /hidden"), "{html}");
-    assert!(!html.contains("href=\"/hidden\""), "{html}");
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn a_table_continuation_in_verse_prevents_lazy_quote_continuation() {
+    let source = "> ::: |\n> | a |\n> + b |\nlazy\n> [r]: /target\n> :::\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
 }
