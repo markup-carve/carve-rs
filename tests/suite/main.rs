@@ -724,6 +724,8 @@ mod both_parse_paths_agree_on_fence_content;
 mod builtin_extensions;
 #[path = "../c0_controls_on_the_render_targets.rs"]
 mod c0_controls_on_the_render_targets;
+#[path = "../canonical_denied_destinations.rs"]
+mod canonical_denied_destinations;
 #[path = "../canonical_fence_info_carries_no_space.rs"]
 mod canonical_fence_info_carries_no_space;
 #[path = "../canonical_vocabulary_matches_the_spec.rs"]
@@ -880,6 +882,7 @@ mod derived_display_text_clones_the_nodes;
 mod description_column_closes_overindented_code_fences;
 #[path = "../description_fence_paragraph_boundary.rs"]
 mod description_fence_paragraph_boundary;
+
 #[path = "../destination_parens.rs"]
 mod destination_parens;
 #[path = "../destination_unicode_whitespace.rs"]

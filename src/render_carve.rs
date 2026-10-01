@@ -6045,7 +6045,6 @@ fn escape_destination_escapes(text: &str) -> String {
 }
 
 fn escape_destination(text: &str) -> String {
-    let sanitize_blank = dangerous_destination_scheme(text);
     // Almost every destination holds neither a parenthesis nor a backslash, so
     // there is nothing for the scan to misread and nothing to mark. Skipping
     // the walk keeps that case free of the set entirely.
@@ -6063,7 +6062,7 @@ fn escape_destination(text: &str) -> String {
     for (i, ch) in text.char_indices() {
         let escapable =
             ch == '\\' && matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'));
-        if (marked.contains(&i) || escapable) && !sanitize_blank {
+        if marked.contains(&i) || escapable {
             out.push('\\');
         }
         match ch {
@@ -6078,39 +6077,10 @@ fn escape_destination(text: &str) -> String {
                     out.push_str(&format!("%{:02X}", ch as u32));
                 }
             }
-            '(' if sanitize_blank => out.push_str("%28"),
-            ')' if sanitize_blank => out.push_str("%29"),
             _ => out.push(ch),
         }
     }
     out
-}
-
-fn dangerous_destination_scheme(text: &str) -> bool {
-    let trimmed = text.trim_start_matches(|ch: char| {
-        ch <= '\u{0020}'
-            || matches!(
-                ch,
-                '\u{00a0}' | '\u{1680}' | '\u{2000}'
-                    ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
-            )
-    });
-    let Some(colon) = trimmed.find(':') else {
-        return false;
-    };
-    let scheme = &trimmed[..colon];
-    !scheme.is_empty()
-        && scheme
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic())
-        && scheme
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
-        && matches!(
-            scheme.to_ascii_lowercase().as_str(),
-            "javascript" | "vbscript" | "data" | "file"
-        )
 }
 
 /// A link, an image and a `[ref]: url "t"` definition, whose `link_title` reads
