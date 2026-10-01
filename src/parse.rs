@@ -6846,7 +6846,6 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
     detect_comment_fence_line(trim_ascii_start(line))
 }
 
-/// The closer counterpart of `detect_comment_fence_line_any_column`.
 /// The run length of a comment span still OPEN in a container's collected
 /// lines, if one is (PART 9 §28, markup-carve/carve#2488).
 ///
@@ -6930,6 +6929,7 @@ fn kept_comment_delimiter(line: &str) -> String {
     }
 }
 
+/// The closer counterpart of `detect_comment_fence_line_any_column`.
 fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
@@ -7694,7 +7694,7 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
             let fence_len = open.fence_len;
             take_opaque_span_into(inner, cur, move |candidate| {
-                is_comment_fence_close(candidate, fence_len)
+                is_comment_fence_close_any_column(candidate, fence_len)
             });
             return true;
         }
@@ -7830,8 +7830,8 @@ fn find_colon_fence_end(
             }
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if let Some(close) =
-                (idx + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+            if let Some(close) = (idx + 1..lines.len())
+                .find(|&j| is_comment_fence_close_any_column(lines[j], open.fence_len))
             {
                 idx = close + 1;
                 continue;
@@ -16840,6 +16840,22 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         true,
         &mut cur.code_closer_last_index,
     );
+    if definition_regions::recording() {
+        definition_regions::record(
+            cur.source_line(span_start),
+            definition_regions::VerseLine::Opener,
+        );
+        for line in span_start + 1..end {
+            definition_regions::record(cur.source_line(line), definition_regions::VerseLine::Body);
+        }
+        cur.pos = end;
+        return BlockNode::LineBlock(LineBlock {
+            pos: span_of(cur, span_start, cur.pos, options),
+            attrs: None,
+            children: Vec::new(),
+            lines: None,
+        });
+    }
     cur.consume();
     let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza = LineBuffer::default();
@@ -16943,16 +16959,6 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             start_cols: stanza_start_cols,
             comments: stanza_comments,
         });
-    }
-
-    if definition_regions::recording() {
-        definition_regions::record(
-            cur.source_line(span_start),
-            definition_regions::VerseLine::Opener,
-        );
-        for line in span_start + 1..cur.pos {
-            definition_regions::record(cur.source_line(line), definition_regions::VerseLine::Body);
-        }
     }
 
     let children = stanzas
@@ -18759,6 +18765,11 @@ impl InlineBounds<'_> {
     fn has_delim_brace_from(&self, delim: u8, pos: usize) -> bool {
         delim_brace_slot(delim).is_some_and(|s| self.delim_brace[s].is_some_and(|p| p >= pos))
     }
+}
+
+pub(crate) fn parse_matcher_inlines(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    let _recording = definition_regions::RecordingPause::enter();
+    parse_inline_with_options(text, options)
 }
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
@@ -21911,7 +21922,7 @@ fn match_emphasis(
 }
 
 fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option<InlineMatch> {
-    if options.extensions.is_empty() {
+    if options.extensions.is_empty() || definition_regions::recording() {
         return None;
     }
     // See `IN_CONTAINER_LABEL`: a label's run is scanned at render time, so no
