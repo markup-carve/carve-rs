@@ -440,7 +440,10 @@ impl Drop for FigureGroupGuard {
 /// `figure_group_open`). An opener carrying a quoted title or a label matches
 /// `admonition_open` instead and stays a generic container.
 fn is_bare_figure_open(open: &ContainerOpen) -> bool {
-    open.kind.as_deref() == Some("figure") && open.title.is_none() && open.label.is_none()
+    !open.invalid_metadata
+        && open.kind.as_deref() == Some("figure")
+        && open.title.is_none()
+        && open.label.is_none()
 }
 
 pub fn parse(source: &str) -> Document {
@@ -15804,6 +15807,7 @@ struct ContainerOpen {
     title_col: Option<usize>,
     label: Option<String>,
     attrs: Option<Attrs>,
+    invalid_metadata: bool,
 }
 
 /// A container opener's label as every consumer of the node sees it: without the
@@ -15826,6 +15830,53 @@ fn container_open_label(label: Option<String>, options: &Options<'_>) -> Option<
 }
 
 fn detect_container_open(line: &str) -> Option<ContainerOpen> {
+    if let Some(open) = detect_valid_container_open(line) {
+        return Some(open);
+    }
+    if line.contains(['\r', '\n']) {
+        return None;
+    }
+    let line = trim_ascii(line);
+    let fence_len = line.bytes().take_while(|&b| b == b':').count();
+    if fence_len < 3 || !line[fence_len..].starts_with(' ') {
+        return None;
+    }
+    let rest = line[fence_len..].trim_start_matches(' ');
+    if !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    let end = rest
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(rest.len());
+    if rest[end..].starts_with(|c: char| {
+        !c.is_whitespace() && c != '\u{feff}' && !matches!(c, '"' | '{' | '[' | '“' | '”')
+    }) {
+        return None;
+    }
+    Some(ContainerOpen {
+        fence_len,
+        kind: Some(rest[..end].to_string()),
+        title: None,
+        title_col: None,
+        label: None,
+        attrs: None,
+        invalid_metadata: true,
+    })
+}
+
+pub(crate) fn lint_container_fence_width(line: &str) -> Option<usize> {
+    detect_container_open(line)
+        .map(|open| open.fence_len)
+        .or_else(|| detect_line_block_open(line))
+        .or_else(|| detect_hardbreaks_block_open(line))
+        .or_else(|| detect_quote_block_open(line))
+}
+
+pub(crate) fn lint_invalid_container_metadata(line: &str) -> bool {
+    detect_container_open(line).is_some_and(|open| open.invalid_metadata)
+}
+
+fn detect_valid_container_open(line: &str) -> Option<ContainerOpen> {
     let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
     if fence_len < 3 {
@@ -15846,6 +15897,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             title_col: None,
             label: None,
             attrs: None,
+            invalid_metadata: false,
         });
     }
     // `div_open = colon_fence, [[space], label]` - the label is either GLUED to
@@ -15865,6 +15917,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             title_col: None,
             label: Some(label),
             attrs: None,
+            invalid_metadata: false,
         });
     }
     // THE SEPARATOR IS A SPACE, U+0020 and nothing else. PART 7's MARKER
@@ -15956,6 +16009,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         title_col,
         label,
         attrs: None,
+        invalid_metadata: false,
     })
 }
 

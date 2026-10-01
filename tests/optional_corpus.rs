@@ -225,6 +225,42 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
         };
 
     let output = match feature {
+        "fenced-render-mermaid" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::mermaid()),
+        ),
+        "fenced-render-d2" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::d2()),
+        ),
+        "fenced-render-graphviz" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::graphviz()),
+        ),
+        "fenced-render-wavedrom" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::wavedrom()),
+        ),
+        "fenced-render-abc" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::abc()),
+        ),
+        "fenced-render-plantuml" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::plantuml()),
+        ),
+        "fenced-render-vega-lite" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::vega_lite()),
+        ),
+        "fenced-render-chart" => target.render(
+            source,
+            &Options::new().with_extension(&carve::FencedRender::chart()),
+        ),
+        "math-block" => target.render(
+            source,
+            &Options::new().with_extension(&carve::MathBlock::new()),
+        ),
         "social-link-resolvers" => target.render(
             source,
             &Options::new()

@@ -136,31 +136,32 @@ fn an_escaped_pair_keeps_exactly_one_backslash_through_two_passes() {
 /// neither a label nor whitespace and the line is an ordinary paragraph. The
 /// backslash-skipping scan swallowed the closer and opened a container instead.
 #[test]
-fn an_escaped_quote_opens_no_container() {
+fn malformed_quotes_drop_container_metadata_but_not_code_fence_payloads() {
     for source in [
         "::: toc \"A \\\"q\\\" c\"\n:::\n",
         "::: note \"A \\\"q\\\" c\"\nx\n:::\n",
         "```php \"A \\\"q\\\" c\"\nx\n```\n",
     ] {
         let html = to_html(source);
-        assert!(html.starts_with("<p>"), "{source} -> {html}");
-        // The colon spellings are bytewise stable; the code spelling falls back
-        // to an inline code span, which the writer respells with the shortest
-        // fence that holds it, so the invariant there is the render.
         assert_eq!(to_html(&to_carve(source)), html, "{source}");
+        if source.starts_with(":::") {
+            assert!(!html.contains(":::"));
+            assert!(!html.contains("admonition-title"));
+        } else {
+            assert!(html.starts_with("<p>"));
+        }
     }
     assert_eq!(
         to_carve("::: note \"A \\\"q\\\" c\"\nx\n:::\n"),
-        "::: note \"A \\\"q\\\" c\"\nx\n:::\n"
+        "::: note\nx\n:::\n"
     );
 }
 
-/// Control: an unescaped quote was already a paragraph, and stays one.
 #[test]
-fn a_bare_quote_in_the_slot_is_still_a_paragraph() {
+fn a_malformed_quote_drops_the_title_and_keeps_the_container() {
     let source = "::: note \"a \" b\"\nx\n:::\n";
-    assert!(to_html(source).starts_with("<p>"));
-    assert_eq!(to_carve(source), source);
+    assert!(to_html(source).starts_with("<aside"));
+    assert_eq!(to_carve(source), "::: note\nx\n:::\n");
 }
 
 fn titled(kind: &str, title: &str) -> Document {

@@ -89,7 +89,7 @@ fn container_view(text: &str) -> &str {
     static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = PREFIX.get_or_init(|| {
         regex::Regex::new(
-            r"^(?:[ \t]*> ?|[ \t]*(?:[-*] |(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)] |: ))",
+            r"^(?:[ \t]*> ?|[ \t]*(?:[-*]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)])(?:\{[^{}\r\n]*\})? +(?:\[[ xX_?>-]\] +)?|[ \t]*(?:: |\[\^[^\]\r\n]+\]: +))",
         )
         .unwrap()
     });
@@ -121,7 +121,8 @@ pub(super) fn collect(
     doc: &Document,
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
-) {
+) -> bool {
+    let mut recovered_metadata = false;
     let rows = lines(source);
     let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
     for body in doc.footnote_defs.values() {
@@ -200,7 +201,12 @@ pub(super) fn collect(
             {
                 for ln in pos.start_line..=pos.end_line.min(rows.len()) {
                     let row = &rows[ln - 1];
-                    let view = container_view(row.text).trim_start_matches([' ', '\t']);
+                    let view = container_view(if ln == 1 {
+                        row.text.trim_start_matches('\u{feff}')
+                    } else {
+                        row.text
+                    })
+                    .trim_start_matches([' ', '\t']);
                     if let Some(m) = colon.captures(view) {
                         fences.push(Fence {
                             first: ln,
@@ -612,6 +618,17 @@ pub(super) fn collect(
         let Some(row) = rows.get(fence.first - 1) else {
             continue;
         };
+        let view = container_view(if fence.first == 1 {
+            row.text.trim_start_matches('\u{feff}')
+        } else {
+            row.text
+        })
+        .trim_start_matches([' ', '\t']);
+        if crate::parse::lint_invalid_container_metadata(view) {
+            recovered_metadata = true;
+            emit(out, &rows, fence.first, row.text.len() - view.len(), view.len(),
+                "fence-title-syntax", "Invalid container metadata was dropped. Use a straight-double-quoted title or a bracketed label; the container and its children are preserved.");
+        }
         if fence.bare && !closed[index] {
             if let Some(parent) = fences[..index]
                 .iter()
@@ -695,4 +712,5 @@ pub(super) fn collect(
             );
         }
     }
+    recovered_metadata
 }

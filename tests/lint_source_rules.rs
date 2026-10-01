@@ -155,10 +155,10 @@ fn invalid_alignment_marker_pairs_are_not_unpadded_runs() {
 }
 
 #[test]
-fn invalid_title_separator_is_not_an_unquoted_title() {
+fn invalid_title_separator_diagnoses_dropped_metadata() {
     let warnings = lint_carve("::: note \t\"Title\"\nx\n:::\n");
-    assert!(warnings.iter().any(|w| w.rule == "block-marker-as-text"));
-    assert!(!warnings.iter().any(|w| w.rule == "fence-title-syntax"));
+    assert!(warnings.iter().any(|w| w.rule == "fence-title-syntax"));
+    assert!(!warnings.iter().any(|w| w.rule == "block-marker-as-text"));
 }
 
 #[test]

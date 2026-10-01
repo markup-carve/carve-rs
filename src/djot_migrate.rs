@@ -803,12 +803,49 @@ fn convert_djot_block_markers(source: &str) -> String {
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
+    let mut containers: Vec<(usize, bool)> = Vec::new();
+    let host_prefix = cached_regex!(r"^(?:[ \t]*> ?|[ \t]*(?:(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\([0-9A-Za-z]+\)) +(?:\[[ xX]\] +)?|: |\[\^[^\]\r\n]+\]: +))").unwrap();
     for index in 0..lines.len() {
         let prefix = quote_prefix_len(masked[index]);
         let quote = &masked[index][..prefix];
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
+        if content.trim().is_empty() {
+            continue;
+        }
+        let mut container_view = lines[index].as_str();
+        while let Some(host) = host_prefix.find(container_view) {
+            container_view = &container_view[host.end()..];
+        }
+        container_view = container_view.trim_start_matches([' ', '\t']);
+        let container_offset = lines[index].len() - container_view.len();
+        let authored = &lines[index][container_offset..];
+        let unmasked = masked[index][container_offset..].starts_with(":::");
+        let width = if unmasked {
+            crate::parse::lint_container_fence_width(authored)
+        } else {
+            None
+        };
+        let close = width.is_some()
+            && authored
+                .trim_end_matches([' ', '\t'])
+                .bytes()
+                .all(|b| b == b':')
+            && containers.last().is_some_and(|top| Some(top.0) == width);
+        let invalid = if close {
+            containers.pop().unwrap().1
+        } else {
+            let invalid = unmasked && crate::parse::lint_invalid_container_metadata(authored);
+            if let Some(width) = width {
+                containers.push((width, invalid));
+            }
+            invalid
+        };
+        if invalid {
+            let at = container_offset;
+            lines[index].insert(at, '\\');
+        }
         if let Some(close) = content.strip_prefix('(').and_then(|value| value.find(')')) {
             let token = &content[1..close + 1];
             let tail = &content[close + 2..];

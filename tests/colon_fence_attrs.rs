@@ -1,11 +1,11 @@
 //! STRICT (djot): a `:::` opener carries no inline attributes. The fence
 //! line is the colon fence, an optional type word, and an optional quoted
 //! title, and nothing else; any trailing `{...}` (or other non-title text)
-//! makes the line an ordinary paragraph. Attributes attach via a PRECEDING
+//! is diagnosed and dropped; the container keeps its body. Attributes attach via a preceding
 //! block-attribute line.
 
 #[test]
-fn inline_attribute_on_typed_opener_is_a_paragraph() {
+fn inline_attributes_on_typed_openers_are_dropped() {
     for src in [
         "::: note {.x}\nb\n:::",
         "::: note{.x}\nb\n:::",
@@ -13,38 +13,32 @@ fn inline_attribute_on_typed_opener_is_a_paragraph() {
         "::: note \"Heads up\" {.x}\nb\n:::",
     ] {
         let html = carve::to_html(src);
-        assert!(
-            html.starts_with("<p>"),
-            "{src:?} should be a paragraph: {html}"
-        );
-        assert!(
-            !html.contains("<aside"),
-            "{src:?} should not be an admonition: {html}"
-        );
+        assert!(html.starts_with("<aside"), "{src}: {html}");
+        assert!(!html.contains(":::"));
+        assert!(!html.contains("admonition-title"));
+        assert!(!html.contains("foo="));
+        assert!(carve::lint_carve(src)
+            .iter()
+            .any(|w| w.rule == "fence-title-syntax"));
     }
 }
 
 #[test]
-fn inline_attribute_on_generic_div_opener_is_paragraph_text() {
-    for src in ["::: {.x}\nb\n:::", ":::{k=v}\nb", "::: box {.x}\nb"] {
+fn a_missing_kind_does_not_identify_a_container() {
+    for src in ["::: {.x}\nb\n:::", ":::{k=v}\nb"] {
         let html = carve::to_html(src);
-        assert!(
-            html.starts_with("<p>"),
-            "{src:?} should be a paragraph: {html}"
-        );
-        assert!(
-            !html.contains("<div"),
-            "{src:?} should not be a div: {html}"
-        );
+        assert!(html.starts_with("<p>"));
+        assert!(!html.contains("<div"));
     }
+    assert!(carve::to_html("::: box {.x}\nb").starts_with("<div class=\"box\">"));
 }
 
 #[test]
-fn unquoted_trailing_text_is_a_paragraph() {
-    // Only a quoted title may follow the type word.
+fn bare_titles_are_dropped() {
     let html = carve::to_html("::: note foo\nb\n:::");
-    assert!(html.starts_with("<p>"));
-    assert!(!html.contains("<aside"));
+    assert!(html.starts_with("<aside"));
+    assert!(!html.contains(":::"));
+    assert!(!html.contains("admonition-title"));
 }
 
 #[test]
