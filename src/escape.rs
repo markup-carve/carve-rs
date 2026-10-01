@@ -364,9 +364,10 @@ pub(crate) fn decoded_style_value(value: &str) -> String {
 pub(crate) fn sanitize_destination<'a>(
     url: &'a str,
     pos: Option<&crate::ast::Pos>,
+    sink: crate::render_loss::DeniedSink,
 ) -> std::borrow::Cow<'a, str> {
     if has_denied_url_scheme(url) {
-        crate::render_loss::record_destination_denied(pos);
+        crate::render_loss::record_destination_denied(pos, sink);
         return std::borrow::Cow::Borrowed("");
     }
     std::borrow::Cow::Borrowed(url)
@@ -462,16 +463,48 @@ mod tests {
             "vscode-insiders:x",
             "jar:http://evil/x.jar!/",
         ] {
-            assert_eq!(sanitize_destination(url, None), "", "{url} must be blanked");
+            assert_eq!(
+                sanitize_destination(url, None, crate::render_loss::DeniedSink::Destination),
+                "",
+                "{url} must be blanked"
+            );
         }
     }
 
     #[test]
     fn sanitize_destination_os_handler_block_is_case_insensitive() {
-        assert_eq!(sanitize_destination("MS-OFFICE:ofe|u|x", None), "");
-        assert_eq!(sanitize_destination("Ms-Msdt:/id", None), "");
-        assert_eq!(sanitize_destination("SHELL:Startup", None), "");
-        assert_eq!(sanitize_destination("VSCode:x", None), "");
+        assert_eq!(
+            sanitize_destination(
+                "MS-OFFICE:ofe|u|x",
+                None,
+                crate::render_loss::DeniedSink::Destination
+            ),
+            ""
+        );
+        assert_eq!(
+            sanitize_destination(
+                "Ms-Msdt:/id",
+                None,
+                crate::render_loss::DeniedSink::Destination
+            ),
+            ""
+        );
+        assert_eq!(
+            sanitize_destination(
+                "SHELL:Startup",
+                None,
+                crate::render_loss::DeniedSink::Destination
+            ),
+            ""
+        );
+        assert_eq!(
+            sanitize_destination(
+                "VSCode:x",
+                None,
+                crate::render_loss::DeniedSink::Destination
+            ),
+            ""
+        );
     }
 
     #[test]
@@ -487,7 +520,7 @@ mod tests {
             "#anchor",
         ] {
             assert_eq!(
-                sanitize_destination(url, None),
+                sanitize_destination(url, None, crate::render_loss::DeniedSink::Destination),
                 url,
                 "{url} must pass unchanged"
             );
