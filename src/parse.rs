@@ -2698,16 +2698,18 @@ impl PrepassLineBlock {
             return true;
         }
         let mut candidate = line;
+        let mut marked_depth = 0;
         for _ in 0..self.quote_depth {
             let Some(content) = strip_blockquote_prefix(candidate) else {
                 break;
             };
             candidate = content;
+            marked_depth += 1;
         }
         if trim_ascii(candidate) == "+" && indent_columns(candidate) == 0 {
-            self.attached = true;
+            self.attached = marked_depth + 1 == self.quote_depth;
             self.lazy_open = false;
-            return true;
+            return self.attached;
         }
         if self.attached {
             return !is_blank_line(candidate);

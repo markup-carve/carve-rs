@@ -141,3 +141,10 @@ fn a_table_continuation_in_verse_prevents_lazy_quote_continuation() {
     let html = carve::to_html(source);
     assert!(html.contains("href=\"/target\""), "{html}");
 }
+
+#[test]
+fn an_outer_attachment_ends_verse_inside_a_nested_quote() {
+    let source = "> > ::: |\n> > verse\n+\nattached\n> > [r]: /target\n> > :::\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
