@@ -804,6 +804,7 @@ fn convert_djot_block_markers(source: &str) -> String {
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
     let mut containers: Vec<(usize, bool)> = Vec::new();
+    let host_prefix = cached_regex!(r"^(?:[ \t]*> ?|[ \t]*(?:(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\([0-9A-Za-z]+\)) +(?:\[[ xX]\] +)?|: |\[\^[^\]\r\n]+\]: +))").unwrap();
     for index in 0..lines.len() {
         let prefix = quote_prefix_len(masked[index]);
         let quote = &masked[index][..prefix];
@@ -813,7 +814,6 @@ fn convert_djot_block_markers(source: &str) -> String {
         if content.trim().is_empty() {
             continue;
         }
-        let host_prefix = cached_regex!(r"^(?:[ \t]*> ?|[ \t]*(?:(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\([0-9A-Za-z]+\)) +(?:\[[ xX]\] +)?|: |\[\^[^\]\r\n]+\]: +))").unwrap();
         let mut container_view = lines[index].as_str();
         while let Some(host) = host_prefix.find(container_view) {
             container_view = &container_view[host.end()..];
