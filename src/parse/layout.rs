@@ -649,17 +649,7 @@ fn render_layout_inline(
                     if reference.contains(['\r', '\n']) {
                         return None;
                     }
-                    let (href, title) = ACTIVE_LINK_DEFS.with(|active| {
-                        let active = active.borrow();
-                        let def = active
-                            .last()?
-                            .defs
-                            .get(borrowed_label_key(reference).as_ref())?;
-                        if def.attrs.is_some() {
-                            return None;
-                        }
-                        Some((def.href.clone(), def.title.clone()))
-                    })?;
+                    let (href, title) = active_plain_link_destination(reference)?;
                     (href, title, close + 1)
                 } else {
                     return None;
