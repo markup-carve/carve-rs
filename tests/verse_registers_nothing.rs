@@ -81,3 +81,16 @@ fn ownership_discovery_does_not_parse_verse_inlines_twice() {
     assert!(!out.contains("href=\"/hidden\""), "{out}");
     assert_eq!(counter.0.get(), 2);
 }
+
+#[test]
+fn indented_comment_closer_in_verse() {
+    assert_eq!(carve::to_html("::: |\n%%%\n:::\n  %%%\nkept\n:::\n\n[r]: /url\n\n[t][r]\n"), "<div class=\"line-block\">\n  <p><br>\n:::<br>\n&nbsp;&nbsp;%%%<br>\nkept</p>\n</div>\n<p><a href=\"/url\">t</a></p>");
+}
+
+#[test]
+fn indented_comment_closer_in_div() {
+    assert_eq!(
+        carve::to_html("::: container\n%%%\n:::\n  %%%\nkept\n:::\n\n[r]: /url\n\n[t][r]\n"),
+        "<div class=\"container\">\n  <p>kept</p>\n</div>\n<p><a href=\"/url\">t</a></p>"
+    );
+}

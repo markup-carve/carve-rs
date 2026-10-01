@@ -7694,7 +7694,7 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
             let fence_len = open.fence_len;
             take_opaque_span_into(inner, cur, move |candidate| {
-                is_comment_fence_close(candidate, fence_len)
+                is_comment_fence_close_any_column(candidate, fence_len)
             });
             return true;
         }
@@ -7830,8 +7830,8 @@ fn find_colon_fence_end(
             }
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if let Some(close) =
-                (idx + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+            if let Some(close) = (idx + 1..lines.len())
+                .find(|&j| is_comment_fence_close_any_column(lines[j], open.fence_len))
             {
                 idx = close + 1;
                 continue;
