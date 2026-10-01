@@ -16227,15 +16227,27 @@ fn expand_line_block_ws(line: &str, mut source_columns: Option<&mut Vec<Option<u
     let mut source_column = 0;
     let mut chars = line.char_indices().peekable();
 
-    while let Some((_, ch)) = chars.next() {
+    while let Some((start, ch)) = chars.next() {
         if ch != ' ' && ch != '\t' {
             if let Some(map) = source_columns.as_deref_mut() {
                 map.push(Some(source_column));
             }
-            source_column += 1;
-            out.push(ch);
+            let mut width = 1;
+            while let Some((_, next)) = chars.peek() {
+                if *next == ' ' || *next == '\t' {
+                    break;
+                }
+                if let Some(map) = source_columns.as_deref_mut() {
+                    map.push(Some(source_column + width));
+                }
+                width += 1;
+                chars.next();
+            }
+            let end = chars.peek().map_or(line.len(), |(index, _)| *index);
+            out.push_str(&line[start..end]);
+            source_column += width;
             seen_content = true;
-            columns += 1;
+            columns += width;
             continue;
         }
 
@@ -16909,7 +16921,9 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let comment = verse_comment_line(&stripped);
         let mut columns = Vec::new();
         let expanded = expand_line_block_ws(&stripped, options.positions.then_some(&mut columns));
-        source_columns.push(columns);
+        if options.positions {
+            source_columns.push(columns);
+        }
         let stripped_columns = stripped_col(cur.source_col(line_at), line, &stripped);
         // Where this line ENDS in the source, recorded whatever the indent
         // check decided. A hard break is the newline ENDING a line, not content
@@ -16917,11 +16931,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // span stays derivable on exactly the lines whose text is not
         // (carve-rs#480). Measured on `line`, which is the source text before
         // `expand_line_block_ws` rewrites gaps into placeholders.
-        stanza_end_cols.push(
-            cur.source_col(line_at)
-                .map(|stripped_cols| stripped_cols + line.chars().count() as isize),
-        );
-        stanza_start_cols.push(cur.source_col(line_at));
+        if options.positions {
+            stanza_end_cols.push(
+                cur.source_col(line_at)
+                    .map(|stripped_cols| stripped_cols + line.chars().count() as isize),
+            );
+            stanza_start_cols.push(cur.source_col(line_at));
+        }
         if let Some(content) = comment {
             let lead = (line.chars().count() - stripped.chars().count()) as isize;
             let start = cur.source_col(line_at).map(|col| col + lead);
@@ -16973,11 +16989,15 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                  comments,
              }| {
                 let source_line = lines.lines.first().and_then(|line| line.source_line());
-                let anchors: Vec<Option<(usize, isize)>> = lines
-                    .lines
-                    .iter()
-                    .map(|line| Some((line.source_line()?, line.stripped?)))
-                    .collect();
+                let anchors: Vec<Option<(usize, isize)>> = if options.positions {
+                    lines
+                        .lines
+                        .iter()
+                        .map(|line| Some((line.source_line()?, line.stripped?)))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 // AT EVERY DEPTH (PART 9 section 23, markup-carve/carve#1351).
                 // See `harden_verse_breaks` for why the test is node kind and
                 // not depth, and why both exemptions need no code.
@@ -16996,7 +17016,11 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         columns: Some(&source_columns),
                     },
                 ));
-                let emptied: Vec<usize> = comments.iter().map(|(line, _)| *line).collect();
+                let emptied: Vec<usize> = if options.positions {
+                    comments.iter().map(|(line, _)| *line).collect()
+                } else {
+                    Vec::new()
+                };
                 let inlines = place_line_block_breaks(
                     inlines,
                     &lines,

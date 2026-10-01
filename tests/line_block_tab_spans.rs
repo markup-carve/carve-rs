@@ -21,7 +21,18 @@ fn visit(value: &Value, source: &str, texts: &mut usize) {
                 );
             }
             if object.get("type").and_then(Value::as_str) == Some("non_breaking_space") {
-                assert!(object.get("pos").is_none());
+                if let Some(pos) = object.get("pos") {
+                    let start = pos["startOffset"].as_u64().unwrap() as usize;
+                    let end = pos["endOffset"].as_u64().unwrap() as usize;
+                    assert_eq!(
+                        source
+                            .chars()
+                            .skip(start)
+                            .take(end - start)
+                            .collect::<String>(),
+                        " "
+                    );
+                }
             }
             for (key, child) in object {
                 if key != "pos" {
@@ -42,6 +53,7 @@ fn visit(value: &Value, source: &str, texts: &mut usize) {
 fn unchanged_runs_beside_tabs_select_exact_source_slices() {
     for source in [
         "::: |\na\tb\n:::\n",
+        "::: |\n😀 long日本run  gap\n\tshifted\nlast /word/\n:::\n",
         "::: |\nwide\t\tgap\n\tlead\n:::\n",
         "> ::: |\n> \t😀 *bold* and /italic/\n> :::\n",
         "- item\n\n  ::: |\n  \ttext\n  :::\n",
@@ -66,4 +78,18 @@ fn a_leading_tab_stays_inside_the_stanza_span() {
     assert_eq!(paragraph["type"], "paragraph");
     assert_eq!(paragraph["pos"]["startOffset"], 10);
     assert_eq!(paragraph["pos"]["startColumn"], 3);
+}
+
+#[test]
+fn verse_source_lines_do_not_require_position_geometry() {
+    let source =
+        "> ::: |\n> 😀 long日本run  gap\n> \tshifted\n> %% comment\n> last /word/\n> :::\n";
+    let with_lines = carve::Options::new().with_source_lines(true);
+    let with_positions = carve::Options::new()
+        .with_source_lines(true)
+        .with_positions(true);
+    assert_eq!(
+        carve::to_html_with_options(source, &with_lines),
+        carve::to_html_with_options(source, &with_positions)
+    );
 }
