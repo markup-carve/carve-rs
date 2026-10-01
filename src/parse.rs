@@ -3,7 +3,13 @@
 //! Block-level reads line by line; inline does a single linear scan
 //! over each block's text. No backtracking.
 
+mod inline_positions;
 mod reference_resolution;
+mod verse_whitespace;
+
+pub(crate) use inline_positions::InlineAnchor;
+use inline_positions::InlinePositionMap;
+use verse_whitespace::expand_line_block_ws;
 
 pub(crate) use reference_resolution::label_key;
 use reference_resolution::{
@@ -16208,97 +16214,6 @@ fn strip_leading_columns(line: &str, cols: usize) -> String {
     String::new()
 }
 
-/// Expand the whitespace a line block preserves to non-breaking spaces, so a
-/// verse line's layout survives; tabs advance to the next 4-column stop.
-///
-/// Leading whitespace is preserved down to a single column. An INNER or
-/// TRAILING run of TWO OR MORE columns is a medial gap - the alignment a
-/// caesura or a column of aligned text is made of - and is preserved too
-/// (grammar §23). A lone inner space stays an ordinary, collapsible space so a
-/// long line can still wrap between words.
-///
-/// Uses the generated-NBSP placeholder (HTML folds it to `&nbsp;`; plain/ANSI
-/// turn it back into an ASCII space), so it stays distinct from a literal
-/// U+00A0 typed in the source.
-fn expand_line_block_ws(line: &str, mut source_columns: Option<&mut Vec<Option<usize>>>) -> String {
-    let mut out = String::with_capacity(line.len());
-    let mut columns = 0usize;
-    let mut seen_content = false;
-    let mut source_column = 0;
-    let mut chars = line.char_indices().peekable();
-
-    while let Some((start, ch)) = chars.next() {
-        if ch != ' ' && ch != '\t' {
-            if let Some(map) = source_columns.as_deref_mut() {
-                map.push(Some(source_column));
-            }
-            let mut width = 1;
-            while let Some((_, next)) = chars.peek() {
-                if *next == ' ' || *next == '\t' {
-                    break;
-                }
-                if let Some(map) = source_columns.as_deref_mut() {
-                    map.push(Some(source_column + width));
-                }
-                width += 1;
-                chars.next();
-            }
-            let end = chars.peek().map_or(line.len(), |(index, _)| *index);
-            out.push_str(&line[start..end]);
-            source_column += width;
-            seen_content = true;
-            columns += width;
-            continue;
-        }
-
-        let source_start = source_column;
-        source_column += 1;
-        let mut has_tab = ch == '\t';
-        let mut width = if ch == '\t' { 4 - (columns % 4) } else { 1 };
-        while let Some((_, next)) = chars.peek() {
-            match next {
-                ' ' => width += 1,
-                '\t' => width += 4 - ((columns + width) % 4),
-                _ => break,
-            }
-            has_tab |= *next == '\t';
-            source_column += 1;
-            chars.next();
-        }
-        columns += width;
-
-        if !seen_content || width >= 2 {
-            for index in 0..width {
-                if let Some(map) = source_columns.as_deref_mut() {
-                    map.push((!has_tab).then_some(source_start + index));
-                }
-                out.push(crate::NBSP_PLACEHOLDER);
-            }
-        } else if chars.peek().is_some() {
-            if let Some(map) = source_columns.as_deref_mut() {
-                map.push((!has_tab).then_some(source_start));
-            }
-            out.push(' ');
-        }
-        // ...and a ONE-COLUMN run at the END of the line is dropped, like
-        // trailing whitespace anywhere else (PART 2 NO TRAILING WHITESPACE,
-        // carve#926). The ORDER is what decides this line: §23 converts an
-        // inner or trailing run of TWO OR MORE columns into NBSP CONTENT first,
-        // and content is not whitespace - so the rule never reaches those, and
-        // `abc<SP><SP>` still ends in two non-breaking spaces. What it does
-        // reach is the one-column case, which §23 leaves as an ordinary space.
-        //
-        // A trailing TAB is not the one-column case: it expands to the next tab
-        // stop, which is at least two columns from anywhere it can start, so it
-        // becomes NBSP content and survives.
-    }
-
-    if let Some(map) = source_columns {
-        map.push(Some(source_column));
-    }
-    out
-}
-
 /// Parse a `::: |` line block into a `<div class="line-block">`: each stanza
 /// (blank-line-separated run) is a paragraph whose soft breaks become hard
 /// breaks and whose per-line leading whitespace is preserved (grammar §23).
@@ -18489,162 +18404,6 @@ struct InlineBounds<'a> {
     /// occurrence (see `delim_brace_slot`). Used by critic markup and forced
     /// emphasis, whose closers are two-byte `X}` pairs.
     delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
-}
-
-pub(crate) struct InlineAnchor<'a> {
-    /// Original codepoint column for each expanded line-block character.
-    columns: Option<&'a [Vec<Option<usize>>]>,
-    lines: &'a [Option<(usize, isize)>],
-    /// Byte offsets in the text at which a new anchor SEGMENT begins without a
-    /// newline being there to mark it.
-    ///
-    /// A newline needs no list. A TABLE CELL rebuilt across a `+` continuation
-    /// has none - its fragments are joined by a manufactured space - yet each
-    /// fragment sits on a different source line, so without this the whole cell
-    /// reads as one and every later position lands on the wrong column.
-    ///
-    /// Each break opens a segment, so `lines` is indexed by segment rather than
-    /// by newline count.
-    ///
-    /// A BREAK IS A GAP, which a newline is not. The source holds characters
-    /// between two segments that the text does not - a closing pipe, a line
-    /// break, a `+` and an opening pipe - so a span reaching across one would
-    /// not select its own text. Any node that crosses a break is therefore left
-    /// unplaced: absent beats wrong (PART 12 section 4). A newline needs no such
-    /// rule because it is IN the text, so a span across it still selects itself.
-    ///
-    /// Offsets are ASCENDING and each one sits IN FRONT OF A CHARACTER, never
-    /// at end of text - a segment with nothing in it would have no position to
-    /// give.
-    breaks: &'a [usize],
-}
-
-impl<'a> InlineAnchor<'a> {
-    fn lines(lines: &'a [Option<(usize, isize)>]) -> Self {
-        Self {
-            lines,
-            breaks: &[],
-            columns: None,
-        }
-    }
-}
-
-struct InlinePositionMap<'a> {
-    columns: Option<&'a [Vec<Option<usize>>]>,
-    unmapped_prefix: Option<Vec<usize>>,
-    lines: &'a [Option<(usize, isize)>],
-    byte_line: Vec<usize>,
-    byte_column: Vec<usize>,
-    /// Whether the segments are separated by GAPS rather than by newlines -
-    /// see `InlineAnchor::breaks`. A span across a gap carries no position.
-    gapped: bool,
-}
-
-impl<'a> InlinePositionMap<'a> {
-    fn new(text: &str, anchor: InlineAnchor<'a>) -> Self {
-        let mut byte_line = vec![0usize; text.len() + 1];
-        let mut byte_column = vec![0usize; text.len() + 1];
-        let mut line = 0usize;
-        let mut column = 0usize;
-        let mut breaks = anchor.breaks.iter().copied().peekable();
-        for (byte, ch) in text.char_indices() {
-            // A break OPENS a segment, so it is applied BEFORE the character it
-            // sits in front of rather than after the one behind it.
-            while breaks.peek() == Some(&byte) {
-                breaks.next();
-                line += 1;
-                column = 0;
-            }
-            byte_line[byte] = line;
-            byte_column[byte] = column;
-            for idx in byte + 1..byte + ch.len_utf8() {
-                byte_line[idx] = line;
-                byte_column[idx] = column;
-            }
-            if ch == '\n' {
-                line += 1;
-                column = 0;
-            } else {
-                column += 1;
-            }
-        }
-        byte_line[text.len()] = line;
-        byte_column[text.len()] = column;
-        let unmapped_prefix = anchor.columns.map(|columns| {
-            let mut prefix = vec![0; text.len() + 1];
-            for (byte, ch) in text.char_indices() {
-                let missing = ch != '\n'
-                    && columns
-                        .get(byte_line[byte])
-                        .and_then(|line| line.get(byte_column[byte]))
-                        .copied()
-                        .flatten()
-                        .is_none();
-                for index in byte + 1..=byte + ch.len_utf8() {
-                    prefix[index] = prefix[byte] + usize::from(missing);
-                }
-            }
-            prefix
-        });
-        Self {
-            columns: anchor.columns,
-            unmapped_prefix,
-            lines: anchor.lines,
-            byte_line,
-            byte_column,
-            gapped: !anchor.breaks.is_empty(),
-        }
-    }
-
-    fn pos(&self, start: usize, end: usize) -> Option<Pos> {
-        if start > end || end > self.byte_line.len().saturating_sub(1) {
-            return None;
-        }
-        let start_line_idx = *self.byte_line.get(start)?;
-        let end_line_idx = *self.byte_line.get(end)?;
-        if self.gapped && start_line_idx != end_line_idx {
-            return None;
-        }
-        for idx in start_line_idx..=end_line_idx {
-            self.lines.get(idx).copied().flatten()?;
-        }
-        let (start_line, start_stripped) = self.lines.get(start_line_idx).copied().flatten()?;
-        let (end_line, end_stripped) = self.lines.get(end_line_idx).copied().flatten()?;
-        let (start_column, end_column) = if let Some(columns) = self.columns {
-            let start_column = columns
-                .get(start_line_idx)?
-                .get(self.byte_column[start])
-                .copied()
-                .flatten()?;
-            let end_column = if self.byte_column[end] == 0 {
-                0
-            } else {
-                columns
-                    .get(end_line_idx)?
-                    .get(self.byte_column[end] - 1)
-                    .copied()
-                    .flatten()?
-                    + 1
-            };
-            (start_column, end_column)
-        } else {
-            (self.byte_column[start], self.byte_column[end])
-        };
-        let start_column = document_column(start_stripped, start_column);
-        let end_column = document_column(end_stripped, end_column);
-        if self.columns.is_some() && start_line == end_line && start_column == end_column {
-            return None;
-        }
-        Some(Pos {
-            start_line,
-            end_line,
-            start_column,
-            end_column,
-            start_offset: 0,
-            end_offset: 0,
-            file: None,
-        })
-    }
 }
 
 fn inline_pos(map: Option<&InlinePositionMap<'_>>, start: usize, end: usize) -> Option<Pos> {
