@@ -15865,7 +15865,11 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
 }
 
 pub(crate) fn lint_container_fence_width(line: &str) -> Option<usize> {
-    detect_container_open(line).map(|open| open.fence_len)
+    detect_container_open(line)
+        .map(|open| open.fence_len)
+        .or_else(|| detect_line_block_open(line))
+        .or_else(|| detect_hardbreaks_block_open(line))
+        .or_else(|| detect_quote_block_open(line))
 }
 
 pub(crate) fn lint_invalid_container_metadata(line: &str) -> bool {

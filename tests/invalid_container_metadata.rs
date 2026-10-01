@@ -114,3 +114,50 @@ fn prose_opener_does_not_block_formatting() {
     assert!(!patch.edits.is_empty());
     assert!(patch.unresolved.is_empty());
 }
+
+#[test]
+fn authored_metadata_and_nested_valid_fences_during_djot_migration() {
+    for (metadata, visible) in [("\"T\" extra", " “T” extra"), ("“T”", " “T”"), ("{.x}", "")]
+    {
+        let source = format!("::: tip {metadata}\nbody\n:::\n");
+        assert_eq!(
+            to_html(&carve::djot_to_carve(&source)),
+            format!("<p>::: tip{visible}\nbody\n:::</p>")
+        );
+    }
+    let source = "::: tip Bad X\n\n::: note\nx\n:::\n:::\n";
+    assert_eq!(to_html(&carve::djot_to_carve(source)), "<p>::: tip Bad X</p>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>x</p>\n</aside>\n<p>:::</p>");
+}
+
+#[test]
+fn line_and_hardbreak_fences_keep_their_own_migrated_closer() {
+    for opener in ["::: |", "::: \\"] {
+        let source = format!("::: tip Bad X\n{opener}\nl\n:::\nout\n:::\n");
+        assert_eq!(
+            carve::djot_to_carve(&source),
+            format!("\\::: tip Bad X\n{opener}\nl\n:::\nout\n\\:::\n")
+        );
+    }
+}
+
+#[test]
+fn footnote_marker_opener_is_diagnosed_and_formatting_requires_review() {
+    let source = "a[^1]\n\n[^1]: ::: tip Bad X\n    body\n    :::\n";
+    let warnings: Vec<_> = lint_carve(source)
+        .into_iter()
+        .filter(|w| w.rule == "fence-title-syntax")
+        .collect();
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].line, 3);
+    assert_eq!(&source[warnings[0].start..warnings[0].end], "::: tip Bad X");
+    assert_eq!(
+        carve::to_carve_patch(source).unresolved[0].code,
+        "invalid-container-metadata"
+    );
+}
+
+#[test]
+fn migrated_recovery_does_not_escape_code_payloads() {
+    let source = "```\n::: tip Bad X\n:::\n```\n";
+    assert_eq!(carve::djot_to_carve(source), source);
+}

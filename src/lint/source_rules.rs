@@ -89,7 +89,7 @@ fn container_view(text: &str) -> &str {
     static PREFIX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = PREFIX.get_or_init(|| {
         regex::Regex::new(
-            r"^(?:[ \t]*> ?|[ \t]*(?:[-*] |(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)] |: ))",
+            r"^(?:[ \t]*> ?|[ \t]*(?:[-*] |(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)] |: |\[\^[^\]\r\n]+\]: +))",
         )
         .unwrap()
     });

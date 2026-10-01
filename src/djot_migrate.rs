@@ -810,9 +810,13 @@ fn convert_djot_block_markers(source: &str) -> String {
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
-        let width = crate::parse::lint_container_fence_width(content);
+        if content.trim().is_empty() {
+            continue;
+        }
+        let authored = &lines[index][prefix + indent_bytes..];
+        let width = crate::parse::lint_container_fence_width(authored);
         let close = width.is_some()
-            && content
+            && authored
                 .trim_end_matches([' ', '\t'])
                 .bytes()
                 .all(|b| b == b':')
@@ -820,7 +824,7 @@ fn convert_djot_block_markers(source: &str) -> String {
         let invalid = if close {
             containers.pop().unwrap().1
         } else {
-            let invalid = crate::parse::lint_invalid_container_metadata(content);
+            let invalid = crate::parse::lint_invalid_container_metadata(authored);
             if let Some(width) = width {
                 containers.push((width, invalid));
             }
