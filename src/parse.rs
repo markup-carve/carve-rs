@@ -1359,7 +1359,7 @@ fn extract_footnote_defs(
         // taking the innermost one (carve-rs#1054).
         if in_line_block
             .as_mut()
-            .is_some_and(|open| !open.observe(lines[i], &lines[i + 1..]))
+            .is_some_and(|open| !open.observe(lines[i], &lines[i + 1..], options))
         {
             in_line_block = None;
         }
@@ -2613,6 +2613,7 @@ struct PrepassLineBlock {
     lazy_open: bool,
     code_fence: Option<FenceOpen>,
     attached: bool,
+    attached_remaining: usize,
     attrs_rest: usize,
     attrs_skip: usize,
     table: TableRun,
@@ -2638,6 +2639,7 @@ impl PrepassLineBlock {
             lazy_open: false,
             code_fence: None,
             attached: false,
+            attached_remaining: 0,
             attrs_rest: 0,
             attrs_skip: 0,
             table: TableRun::default(),
@@ -2648,8 +2650,12 @@ impl PrepassLineBlock {
         strip_quote_levels(line, self.quote_depth)
     }
 
-    fn observe(&mut self, line: &str, rest: &[&str]) -> bool {
+    fn observe(&mut self, line: &str, rest: &[&str], options: &Options<'_>) -> bool {
         if self.quote_depth == 0 {
+            return true;
+        }
+        if self.attached_remaining > 0 {
+            self.attached_remaining -= 1;
             return true;
         }
         if let Some(content) = self.content(line) {
@@ -2709,20 +2715,51 @@ impl PrepassLineBlock {
         if trim_ascii(candidate) == "+" && indent_columns(candidate) == 0 {
             self.attached = marked_depth + 1 == self.quote_depth;
             self.lazy_open = false;
+            if self.attached {
+                let stripped_outer;
+                let outer_lines = if self.quote_depth == 1 {
+                    rest
+                } else {
+                    stripped_outer = rest
+                        .iter()
+                        .map_while(|line| strip_quote_levels(line, self.quote_depth - 1))
+                        .collect::<Vec<_>>();
+                    &stripped_outer
+                };
+                let mut comment_closers = None;
+                let _probing = ProbeGuard::enter();
+                self.attached_remaining = attached_block_lines(
+                    outer_lines,
+                    0,
+                    &mut comment_closers,
+                    options,
+                    None,
+                    &mut |next, _| {
+                        is_blank_line(next)
+                            || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+                    },
+                );
+            }
             return self.attached;
         }
         if self.attached {
-            return !is_blank_line(candidate);
+            return false;
         }
         self.lazy_open
             && !is_blank_line(candidate)
             && caption_content(candidate).is_none()
             && !is_colon_fence_opener_shape(candidate)
             && !interrupts_paragraph_with_rest(candidate, rest)
+            && !(self.quote_depth == 1 && detect_abbreviation_def(candidate).is_some())
     }
 
     fn closes(self, line: &str) -> bool {
-        self.content(line).and_then(exact_colon_fence_len) == Some(self.fence_len)
+        let content = if self.attached {
+            strip_quote_levels(line, self.quote_depth.saturating_sub(1))
+        } else {
+            self.content(line)
+        };
+        content.and_then(exact_colon_fence_len) == Some(self.fence_len)
     }
 }
 
@@ -2786,10 +2823,15 @@ fn extract_link_defs_with_guard(
         // fence, so `  [r]: /u` after it was stripped to that phantom column and
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
-        if in_line_block
-            .as_mut()
-            .is_some_and(|open| !open.observe(line, &all_lines[line_index + 1..]))
-        {
+        if in_line_block.as_mut().is_some_and(|open| {
+            !open.observe(
+                line,
+                &all_lines[line_index + 1..],
+                guard
+                    .as_ref()
+                    .map_or(&Options::default(), |(options, _)| *options),
+            )
+        }) {
             in_line_block = None;
         }
         let content_col = columns.observe(

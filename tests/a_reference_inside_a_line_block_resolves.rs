@@ -148,3 +148,24 @@ fn an_outer_attachment_ends_verse_inside_a_nested_quote() {
     let html = carve::to_html(source);
     assert!(html.contains("href=\"/target\""), "{html}");
 }
+
+#[test]
+fn an_attachment_keeps_exactly_one_block_in_quoted_verse() {
+    let source = "> ::: |\n> verse\n+\n---\nafter\n> [r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn an_attached_colon_fence_closes_quoted_verse() {
+    let source = "> ::: |\n> verse\n+\n:::\n> [r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn a_document_abbreviation_ends_lazy_quoted_verse() {
+    let source = "> ::: |\n> verse\n*[HTML]: Hyper Text\n> [r]: /target\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
