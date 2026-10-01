@@ -6846,7 +6846,6 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
     detect_comment_fence_line(trim_ascii_start(line))
 }
 
-/// The closer counterpart of `detect_comment_fence_line_any_column`.
 /// The run length of a comment span still OPEN in a container's collected
 /// lines, if one is (PART 9 §28, markup-carve/carve#2488).
 ///
@@ -6930,6 +6929,7 @@ fn kept_comment_delimiter(line: &str) -> String {
     }
 }
 
+/// The closer counterpart of `detect_comment_fence_line_any_column`.
 fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
