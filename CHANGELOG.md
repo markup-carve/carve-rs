@@ -9,6 +9,13 @@ Entries for 0.1.5 and earlier are archived in
 [CHANGELOG-0.1.md](https://github.com/markup-carve/carve-rs/blob/main/CHANGELOG-0.1.md),
 which the published crate does not carry.
 
+## [Unreleased]
+
+### Fixed
+
+- Resolve references in authored AST children, including ruby content, short captions, block-cell tables, figure images, and extension fallbacks.
+- Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead.
+
 ## [0.1.8] - 2026-10-01
 
 ### Breaking
