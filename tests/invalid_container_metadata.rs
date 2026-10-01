@@ -105,6 +105,12 @@ fn formatting_requires_review_before_dropping_metadata() {
 #[test]
 fn djot_migration_keeps_rejected_opener_text() {
     let html = to_html(&carve::djot_to_carve("::: tip Custom Title\nbody\n:::\n"));
-    assert!(html.contains("Custom Title"));
-    assert!(!html.contains("admonition tip"));
+    assert_eq!(html, "<p>::: tip Custom Title\nbody\n:::</p>");
+}
+
+#[test]
+fn prose_opener_does_not_block_formatting() {
+    let patch = carve::to_carve_patch("  ::: widget Bad\nx\n:::\n");
+    assert!(!patch.edits.is_empty());
+    assert!(patch.unresolved.is_empty());
 }

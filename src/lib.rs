@@ -275,16 +275,17 @@ pub fn to_carve_patch(source: &str) -> SourcePatch {
         SourceEditKind::Formatting,
         "canonical-format",
     );
-    if !patch.edits.is_empty()
-        && lint_carve(source)
-            .iter()
-            .any(|warning| warning.rule == "fence-title-syntax")
-    {
+    if !patch.edits.is_empty() && lint::lint_with_recovery(source, &Options::default()).1 {
         patch.edits.clear();
         patch.unresolved.push(SourceSuggestion {
-            start: 0, end: patch.source_bytes, replacement: formatted,
-            kind: SourceEditKind::Formatting, code: "invalid-container-metadata".into(),
-            message: "Canonical formatting encounters invalid container metadata; review the proposed source.".into(),
+            start: 0,
+            end: patch.source_bytes,
+            replacement: formatted,
+            kind: SourceEditKind::Formatting,
+            code: "invalid-container-metadata".into(),
+            message:
+                "Canonical formatting drops invalid container metadata; review the proposed source."
+                    .into(),
         });
     }
     patch

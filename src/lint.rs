@@ -65,6 +65,10 @@ pub fn lint_carve(source: &str) -> Vec<LintWarning> {
 /// (`profile`, `mode`, `symbols`, ...) are deliberately ignored rather than
 /// half-applied.
 pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintWarning> {
+    lint_with_recovery(source, options).0
+}
+
+pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<LintWarning>, bool) {
     let mut parse_options = Options {
         positions: true,
         lowercase_heading_ids: options.lowercase_heading_ids,
@@ -136,12 +140,12 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         }
     }
     reference_rules::collect(source, &doc, options, &to_byte, &mut out);
-    source_rules::collect(source, &doc, &to_byte, &mut out);
+    let recovered_metadata = source_rules::collect(source, &doc, &to_byte, &mut out);
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
-    out
+    (out, recovered_metadata)
 }
 
 fn collect_contained_reference_placements(

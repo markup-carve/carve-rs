@@ -803,13 +803,30 @@ fn convert_djot_block_markers(source: &str) -> String {
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
+    let mut containers: Vec<(usize, bool)> = Vec::new();
     for index in 0..lines.len() {
         let prefix = quote_prefix_len(masked[index]);
         let quote = &masked[index][..prefix];
         let rest = &masked[index][prefix..];
         let (columns, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
-        if crate::parse::lint_invalid_container_metadata(content) {
+        let width = crate::parse::lint_container_fence_width(content);
+        let close = width.is_some()
+            && content
+                .trim_end_matches([' ', '\t'])
+                .bytes()
+                .all(|b| b == b':')
+            && containers.last().is_some_and(|top| Some(top.0) == width);
+        let invalid = if close {
+            containers.pop().unwrap().1
+        } else {
+            let invalid = crate::parse::lint_invalid_container_metadata(content);
+            if let Some(width) = width {
+                containers.push((width, invalid));
+            }
+            invalid
+        };
+        if invalid {
             let at = prefix + indent_bytes;
             lines[index].insert(at, '\\');
             continue;

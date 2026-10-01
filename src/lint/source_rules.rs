@@ -121,7 +121,8 @@ pub(super) fn collect(
     doc: &Document,
     to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
-) {
+) -> bool {
+    let mut recovered_metadata = false;
     let rows = lines(source);
     let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
     for body in doc.footnote_defs.values() {
@@ -624,6 +625,7 @@ pub(super) fn collect(
         })
         .trim_start_matches([' ', '\t']);
         if crate::parse::lint_invalid_container_metadata(view) {
+            recovered_metadata = true;
             emit(out, &rows, fence.first, row.text.len() - view.len(), view.len(),
                 "fence-title-syntax", "Invalid container metadata was dropped. Use a straight-double-quoted title or a bracketed label; the container and its children are preserved.");
         }
@@ -710,4 +712,5 @@ pub(super) fn collect(
             );
         }
     }
+    recovered_metadata
 }
