@@ -60,3 +60,54 @@ fn missing_definitions_keep_the_reference_spelling_in_line_blocks() {
         assert!(!html.contains("href=\"/target\""), "{source:?}: {html}");
     }
 }
+
+#[test]
+fn container_verse_definitions_are_literal_and_do_not_register() {
+    for source in [
+        "> ::: |\n> [r]: /hidden\n> [^n]: note\n> see [t][r]\n> :::\n\n[t][r] [^n]\n",
+        "- ::: |\n  [r]: /hidden\n  :::\n\n[t][r]\n",
+        "> ::: |\n> verse\nlazy\n> [r]: /hidden\n> :::\n\n[t][r]\n",
+        "- ::: |\n  verse\nlazy\n  [r]: /hidden\n  :::\n\n[t][r]\n",
+        "- ::: |\n  ```\n  :::\n  ```\n  verse\nlazy\n  [r]: /hidden\n  :::\n\n[t][r]\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains("[r]: /hidden"), "{source:?}: {html}");
+        assert!(!html.contains("href=\"/hidden\""), "{source:?}: {html}");
+        assert!(!html.contains("footnotes"), "{source:?}: {html}");
+    }
+}
+
+#[test]
+fn a_definition_after_the_quote_ends_registers() {
+    for source in [
+        "> ::: |\n> verse\n\n[r]: /target\n\n[t][r]\n",
+        "> ::: |\n> ```\n> verse\nlazy\n> [r]: /target\n\n[t][r]\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains("href=\"/target\""), "{source:?}: {html}");
+    }
+}
+
+#[test]
+fn a_closed_opaque_span_protects_the_verse_closer() {
+    for source in [
+        "> ::: |\n> verse\n+\n```\n:::\n```\n> [r]: /hidden\n> :::\n\n[t][r]\n",
+        "::: |\n```\n:::\n```\n[r]: /hidden\n:::\n\n[t][r]\n",
+        "::: |\n%%%\n:::\n[r]: /hidden\n%%%\n\n[t][r]\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(!html.contains("href=\"/hidden\""), "{source:?}: {html}");
+        assert!(!html.contains('\u{e005}'), "{source:?}: {html}");
+    }
+}
+
+#[test]
+fn a_definition_after_verse_in_a_list_item_registers() {
+    for source in [
+        "- ::: |\n  verse\n  :::\n\n  [r]: /target\n\n[t][r]\n",
+        "- outer\n  - ::: |\n    verse\n    :::\n\n    [r]: /target\n\n[t][r]\n",
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains("href=\"/target\""), "{source:?}: {html}");
+    }
+}
