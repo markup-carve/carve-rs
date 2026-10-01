@@ -780,6 +780,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-braced-span-cannot-close-beyond-its-bracket-run",
     "quoted-values-and-titles-retain-a-non-punctuation-backslash",
     "a-marker-line-opaque-quote-keeps-overindented-markers-literal",
+    "a-denied-destination-takes-one-render-loss-row-per-sink",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
