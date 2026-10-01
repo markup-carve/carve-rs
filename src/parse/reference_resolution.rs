@@ -248,6 +248,11 @@ fn resolve_reference_links_block(
                 resolve_reference_links_block(child, defs, heading_index);
             }
         }
+        BlockNode::LineBlock(b) => {
+            for child in &mut b.children {
+                resolve_reference_links_block(child, defs, heading_index);
+            }
+        }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
                 resolve_reference_links_inline(caption, defs, heading_index);

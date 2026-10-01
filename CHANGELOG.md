@@ -17,6 +17,7 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Resolve link, image, and collapsed heading references inside plain and quoted line blocks (#2249).
 - Canonical Carve output preserves parentheses and backslashes in denied URL
   schemes. Presentation targets retain destination filtering and loss reports
   (markup-carve/carve#2685).

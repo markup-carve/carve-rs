@@ -1665,3 +1665,6 @@ mod djot_orphan_attributes;
 
 #[path = "../djot_emphasis_pairing.rs"]
 mod djot_emphasis_pairing;
+
+#[path = "../a_reference_inside_a_line_block_resolves.rs"]
+mod a_reference_inside_a_line_block_resolves;
