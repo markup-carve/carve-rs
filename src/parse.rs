@@ -1389,7 +1389,7 @@ fn extract_footnote_defs(
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
         let fence_line = stripped.bare;
-        if let Some(open) = in_line_block {
+        if let Some(open) = in_line_block.as_ref() {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
             // Strip only the opener's quote scope, preserving literal markers.
@@ -2606,8 +2606,7 @@ fn extract_link_defs_guarded(
     extract_link_defs_with_guard(source, Some((options, budget)))
 }
 
-#[derive(Clone, Copy)]
-struct PrepassLineBlock {
+struct PrepassLineBlock<'a> {
     fence_len: usize,
     quote_depth: usize,
     lazy_open: bool,
@@ -2617,10 +2616,13 @@ struct PrepassLineBlock {
     attrs_rest: usize,
     attrs_skip: usize,
     table: TableRun,
+    outer_lines: Option<Vec<&'a str>>,
+    outer_next: usize,
+    end_after_attachment: bool,
 }
 
-impl PrepassLineBlock {
-    fn open(line: &str) -> Option<Self> {
+impl<'a> PrepassLineBlock<'a> {
+    fn open(line: &'a str) -> Option<Self> {
         if line.starts_with([' ', '\t']) {
             return None;
         }
@@ -2643,20 +2645,33 @@ impl PrepassLineBlock {
             attrs_rest: 0,
             attrs_skip: 0,
             table: TableRun::default(),
+            outer_lines: None,
+            outer_next: 0,
+            end_after_attachment: false,
         })
     }
 
-    fn content(self, line: &str) -> Option<&str> {
+    fn content<'line>(&self, line: &'line str) -> Option<&'line str> {
         strip_quote_levels(line, self.quote_depth)
     }
 
-    fn observe(&mut self, line: &str, rest: &[&str], options: &Options<'_>) -> bool {
+    fn observe(&mut self, line: &str, rest: &[&'a str], options: &Options<'_>) -> bool {
         if self.quote_depth == 0 {
             return true;
+        }
+        if self.outer_lines.is_some() {
+            self.outer_next += 1;
+            if strip_quote_levels(line, self.quote_depth - 1).is_none() {
+                self.outer_lines = None;
+                self.outer_next = 0;
+            }
         }
         if self.attached_remaining > 0 {
             self.attached_remaining -= 1;
             return true;
+        }
+        if self.end_after_attachment {
+            return false;
         }
         if let Some(content) = self.content(line) {
             self.attached = false;
@@ -2716,15 +2731,23 @@ impl PrepassLineBlock {
             self.attached = marked_depth + 1 == self.quote_depth;
             self.lazy_open = false;
             if self.attached {
-                let stripped_outer;
+                self.table = TableRun::default();
+                self.end_after_attachment = self.code_fence.take().is_some();
                 let outer_lines = if self.quote_depth == 1 {
                     rest
                 } else {
-                    stripped_outer = rest
-                        .iter()
-                        .map_while(|line| strip_quote_levels(line, self.quote_depth - 1))
-                        .collect::<Vec<_>>();
-                    &stripped_outer
+                    if self.outer_lines.is_none() {
+                        self.outer_lines = Some(
+                            rest.iter()
+                                .map_while(|line| strip_quote_levels(line, self.quote_depth - 1))
+                                .collect(),
+                        );
+                        self.outer_next = 0;
+                    }
+                    &self
+                        .outer_lines
+                        .as_ref()
+                        .expect("initialized outer quote lines")[self.outer_next..]
                 };
                 let mut comment_closers = None;
                 let _probing = ProbeGuard::enter();
@@ -2753,7 +2776,7 @@ impl PrepassLineBlock {
             && !(self.quote_depth == 1 && detect_abbreviation_def(candidate).is_some())
     }
 
-    fn closes(self, line: &str) -> bool {
+    fn closes(&self, line: &str) -> bool {
         let content = if self.attached {
             strip_quote_levels(line, self.quote_depth.saturating_sub(1))
         } else {
@@ -2850,7 +2873,7 @@ fn extract_link_defs_with_guard(
             previous_non_blank = line;
         }
         let raw_is_quoted = prepass_line_is_quoted(line);
-        if let Some(open) = in_line_block {
+        if let Some(open) = in_line_block.as_ref() {
             // The line is KEPT whatever it looks like - that is the whole point.
             // A definition-shaped line inside a line block is inline content, so
             // it renders; blanking it here is what made it disappear (#491).
@@ -15201,7 +15224,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// DELIMITER row is not taken, since the separator `continue`s past the
 /// continuation loop and the table ends there. Answering "row" for it is
 /// markup-carve/carve#1354 in this engine's own code.
-#[derive(Default, Clone, Copy)]
+#[derive(Default)]
 struct TableRun {
     /// Rows consumed so far, the delimiter row excluded exactly as the row loop
     /// excludes it. `None` when no table is open.
@@ -24847,6 +24870,22 @@ mod quote_prefix_calls {
             .expect("spawn the counting thread")
             .join()
             .expect("the counting thread parses without panicking")
+    }
+
+    #[test]
+    fn nested_verse_attachments_strip_each_outer_line_once() {
+        fn source(n: usize) -> String {
+            format!(
+                "> > ::: |\n> > verse\n{}> > [r]: /hidden\n> > :::\n\n[t][r]\n",
+                "> +\n> x\n".repeat(n)
+            )
+        }
+        let small = calls_for(source(128));
+        let large = calls_for(source(1024));
+        assert!(
+            large <= small * 12,
+            "128 attachments: {small}, 1024: {large}"
+        );
     }
 
     /// One measurement: the work the document contains, and the strips it cost.

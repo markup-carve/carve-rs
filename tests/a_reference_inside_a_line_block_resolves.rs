@@ -169,3 +169,18 @@ fn a_document_abbreviation_ends_lazy_quoted_verse() {
     let html = carve::to_html(source);
     assert!(html.contains("href=\"/target\""), "{html}");
 }
+
+#[test]
+fn an_attachment_splits_quoted_verse_when_a_code_fence_is_open() {
+    let source = "> ::: |\n> ```\n+\nattached\n> [r]: /target\n> :::\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("href=\"/target\""), "{html}");
+}
+
+#[test]
+fn an_attachment_clears_the_previous_quoted_table_run() {
+    let source = "> ::: |\n> | a |\n+\nx\n> + b |\nlazy\n> [r]: /hidden\n> :::\n\n[t][r]\n";
+    let html = carve::to_html(source);
+    assert!(html.contains("[r]: /hidden"), "{html}");
+    assert!(!html.contains("href=\"/hidden\""), "{html}");
+}
