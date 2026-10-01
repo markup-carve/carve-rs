@@ -13,8 +13,9 @@ which the published crate does not carry.
 
 ### Fixed
 
-- Resolve references in authored AST children, including ruby content, short captions, block-cell tables, figure images, and extension fallbacks.
-- Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead.
+- Resolve references in authored AST children, including ruby content, short captions, block-cell tables, figure images, and extension fallbacks (#2253).
+- Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead (#2253).
+- A colon closer inside a closed code or comment span stays inside verse, matching the executable spec (#2253).
 
 ## [0.1.8] - 2026-10-01
 
