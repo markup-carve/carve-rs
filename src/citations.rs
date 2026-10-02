@@ -273,14 +273,26 @@ pub(crate) fn close_bracket(text: &str, open: usize) -> Option<usize> {
     None
 }
 
+fn is_escaped_at(text: &str, at: usize) -> bool {
+    text.as_bytes()[..at]
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\\')
+        .count()
+        % 2
+        == 1
+}
+
 fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
     let trimmed = raw.trim();
     for (at, _) in trimmed.match_indices('@') {
-        if at > 0 && trimmed.as_bytes().get(at - 1) == Some(&b'\\') {
+        if is_escaped_at(trimmed, at) {
             continue;
         }
-        let (key, key_end) = parse_key(trimmed, at + 1)?;
-        let rest = trimmed[key_end..].trim_start();
+        let Some((key, key_end)) = parse_key(trimmed, at + 1) else {
+            continue;
+        };
+        let rest = &trimmed[key_end..];
         let (locator, locator_label, locator_value, suffix) = if rest.is_empty() {
             (None, None, None, None)
         } else if let Some(loc_raw) = rest.strip_prefix(',') {
@@ -299,7 +311,8 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
         } else {
             continue;
         };
-        let suppress_author = at > 0 && trimmed.as_bytes()[at - 1] == b'-';
+        let suppress_author =
+            at > 0 && trimmed.as_bytes()[at - 1] == b'-' && !is_escaped_at(trimmed, at - 1);
         let prefix_end = if suppress_author { at - 1 } else { at };
         let prefix_text = trimmed[..prefix_end].trim_end();
         let prefix = (!prefix_text.is_empty()).then(|| ctx.parse_inlines(prefix_text));
