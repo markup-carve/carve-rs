@@ -2863,7 +2863,13 @@ impl<'a> Importer<'a> {
             return self.definition_list(h, path, depth, attrs);
         }
         if tag == "table" {
-            return Ok(vec![self.table(h, path, depth, attrs)?]);
+            let unspellable_before = self.unspellable.len();
+            let table = self.table(h, path, depth, attrs)?;
+            if self.writing && matches!(&table, BlockNode::Table(table) if table.rows.is_empty()) {
+                self.unspellable.truncate(unspellable_before);
+                return Ok(Vec::new());
+            }
+            return Ok(vec![table]);
         }
         if tag == "div" {
             if let Some(math) = Self::carve_math(h, attrs.as_ref()) {
@@ -4890,7 +4896,13 @@ impl<'a> Importer<'a> {
                 if !cell.header {
                     continue;
                 }
-                let default = if r < leading_header_rows {
+                let default = if r < leading_header_rows
+                    && trs[r]
+                        .1
+                        .and_then(|id| sections.tags.get(id))
+                        .map(String::as_str)
+                        != Some("tfoot")
+                {
                     "col"
                 } else {
                     "row"
@@ -4911,6 +4923,15 @@ impl<'a> Importer<'a> {
             })
             .collect();
         let unspellable_before = self.unspellable.len();
+        if self.writing && trs.is_empty() {
+            self.diag(
+                HtmlImportDiagnosticCode::TableDegraded,
+                "Dropped a rowless table, including its attributes and caption: Carve source cannot spell a table without rows".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+        }
         let mut row_groups = self.row_groups(
             h,
             &trs,
@@ -4948,17 +4969,14 @@ impl<'a> Importer<'a> {
                 continue;
             };
             let tag = sections.tags.get(id).map(String::as_str).unwrap_or("tbody");
-            // A body group IS the run of rows it consumes, so a section with
-            // none is not a group and has nowhere to put them. Stating it as a
-            // zero-count group would put a body in the partition that describes
-            // no rows.
+            // Unclaimed section attributes have no slot in the retained partition.
             let reason = match tag {
                 "thead" => "the head cannot be represented in the retained row partition",
                 "tfoot" => "the foot cannot be represented in the retained row partition",
                 _ if sections_with_rows.contains(&id) => {
                     "the row grouping this body belongs to was not kept, and nothing else holds it"
                 }
-                _ => "a body group is the rows it consumes, and this one has none",
+                _ => "the empty body could not be retained in the row partition",
             };
             self.diag(
                 HtmlImportDiagnosticCode::AttributeDropped,
@@ -5262,9 +5280,7 @@ impl<'a> Importer<'a> {
             if sections.tags[id] != "tbody" || trs.iter().any(|(_, section)| *section == Some(id)) {
                 continue;
             }
-            let Some((attrs, _)) = sections.attrs[id].take() else {
-                continue;
-            };
+            let attrs = sections.attrs[id].take().map(|(attrs, _)| attrs);
             let index = body_sections
                 .iter()
                 .position(|section| section.is_some_and(|s| s > id))
@@ -5275,7 +5291,7 @@ impl<'a> Importer<'a> {
                     head_rows: 0,
                     body_rows: 0,
                     row_head_columns: None,
-                    attrs: Some(attrs),
+                    attrs,
                 },
             );
             body_sections.insert(index, Some(id));
@@ -5292,7 +5308,12 @@ impl<'a> Importer<'a> {
         // BOUNDARY the field exists to record, and absorbing it away leaves a
         // single ordinary body that the derivation reproduces.
         let mut head_rows = head_rows;
-        if head_attrs.is_none() && head_rows == 0 && bodies.len() == 1 && leading_header_rows > 0 {
+        if head_attrs.is_none()
+            && head_rows == 0
+            && bodies.len() == 1
+            && leading_header_rows > 0
+            && bodies[0].head_rows > 0
+        {
             let absorbed = leading_header_rows.min(bodies[0].head_rows);
             head_rows = absorbed;
             bodies[0].head_rows -= absorbed;
@@ -5322,7 +5343,7 @@ impl<'a> Importer<'a> {
             && bodies.len() <= 1
             // A single body's row-head count is read off its cells' header
             // flags, so it states nothing the rows do not (PART 12 §15).
-            && bodies.iter().all(|b| b.head_rows == 0 && b.attrs.is_none());
+            && bodies.iter().all(|b| b.head_rows == 0 && b.body_rows > 0 && b.attrs.is_none());
         if derivable {
             return None;
         }
