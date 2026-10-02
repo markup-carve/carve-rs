@@ -51,6 +51,34 @@ fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
 const MAX_SECS: f32 = 10.0;
 
 #[test]
+fn unmatched_citation_openers_parse_bounded() {
+    let citations = carve::Citations::new();
+    let options = Options::new().with_extension(&citations);
+    assert_conversion_near_linear_at(
+        |source| drop(carve::parse_with_options(source, &options)),
+        |n| "[@".repeat(n),
+        "unmatched citation brackets",
+        4096,
+        16384,
+    );
+}
+
+#[test]
+fn positioned_citation_groups_parse_bounded() {
+    let citations = carve::Citations::new();
+    let options = Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    assert_conversion_near_linear_at(
+        |source| drop(carve::parse_with_options(source, &options)),
+        |n| format!("[{}]", vec!["@a"; n].join("; ")),
+        "positioned citation groups",
+        4096,
+        16384,
+    );
+}
+
+#[test]
 fn many_abbreviations_do_not_scan_every_definition_at_every_position() {
     let mut source = String::new();
     for i in 0..1500 {

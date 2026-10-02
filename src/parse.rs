@@ -18484,10 +18484,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::CaptionNumber(n) => n.pos = pos,
         InlineNode::Mention(n) => n.pos = pos,
         InlineNode::Tag(n) => n.pos = pos,
-        InlineNode::CitationGroup(n) => {
-            n.pos = pos;
-            position_citation_items(n);
-        }
+        InlineNode::CitationGroup(n) => n.pos = pos,
         InlineNode::Extension(n) => n.pos = pos,
         InlineNode::Abbreviation(n) => n.pos = pos,
         InlineNode::Footnote(n) => n.pos = pos,
@@ -18498,45 +18495,6 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::CriticSubstitute(n) => n.pos = pos,
         InlineNode::Comment(n) => n.pos = pos,
         InlineNode::CriticComment(n) => n.pos = pos,
-    }
-}
-
-/// Position semicolon-delimited citation items when the group is contiguous.
-///
-/// A multiline inline source may have container prefixes removed between its
-/// physical lines. The group span alone cannot reconstruct that mapping, so
-/// PART 12 section 4 requires us to omit item positions in that case rather
-/// than inventing offsets. Single-line groups are contiguous by construction.
-fn position_citation_items(group: &mut CitationGroup) {
-    let Some(base) = group.pos.clone() else {
-        return;
-    };
-    if base.start_line != base.end_line {
-        return;
-    }
-    let inner_start = if group.integral() { 2 } else { 1 };
-    if group.raw.len() <= inner_start || !group.raw.ends_with(']') {
-        return;
-    }
-    let inner = &group.raw[inner_start..group.raw.len() - 1];
-    let mut cursor = 0usize;
-    for (item, part) in group.items.iter_mut().zip(inner.split(';')) {
-        let leading = part.len() - part.trim_start().len();
-        let trailing = part.len() - part.trim_end().len();
-        let start_byte = inner_start + cursor + leading;
-        let end_byte = inner_start + cursor + part.len() - trailing;
-        let start_chars = group.raw[..start_byte].chars().count();
-        let end_chars = group.raw[..end_byte].chars().count();
-        item.pos = Some(Pos {
-            start_line: base.start_line,
-            end_line: base.start_line,
-            start_column: base.start_column + start_chars,
-            end_column: base.start_column + end_chars,
-            start_offset: base.start_offset + start_chars,
-            end_offset: base.start_offset + end_chars,
-            file: None,
-        });
-        cursor += part.len() + 1;
     }
 }
 
@@ -18745,6 +18703,7 @@ fn parse_inline_context(
         last_gt,
         delim_brace,
     };
+    let citation_brackets = std::cell::OnceCell::new();
     // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
     let mut emphasis_no_close = EmphasisMemo::default();
     let mut out = Vec::with_capacity(4);
@@ -19580,7 +19539,9 @@ fn parse_inline_context(
             continue;
         }
 
-        if let Some(InlineMatch { mut node, end }) = try_extension_inline(text, i, options) {
+        if let Some(InlineMatch { mut node, end }) =
+            try_extension_inline(text, i, options, &citation_brackets)
+        {
             // `end` must land on a char boundary or `text[i..]`/slicing panics;
             // a misbehaving extension matcher must not be able to crash the core.
             if end > i && end <= text.len() && text.is_char_boundary(end) {
@@ -21758,7 +21719,12 @@ fn match_emphasis(
     ))
 }
 
-fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option<InlineMatch> {
+fn try_extension_inline(
+    text: &str,
+    pos: usize,
+    options: &Options<'_>,
+    citation_brackets: &std::cell::OnceCell<HashMap<usize, usize>>,
+) -> Option<InlineMatch> {
     if options.extensions.is_empty() || definition_regions::recording() {
         return None;
     }
@@ -21770,7 +21736,7 @@ fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option
     if !text.is_char_boundary(pos) {
         return None;
     }
-    let ctx = MatcherContext::new(options);
+    let ctx = MatcherContext::for_inline(options, text, citation_brackets);
     for ext in &options.extensions {
         if let Some(matched) = ext.match_inline(text, pos, &ctx) {
             return Some(matched);

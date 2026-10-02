@@ -755,11 +755,38 @@ pub struct BlockMatch {
 
 pub struct MatcherContext<'a> {
     options: &'a Options<'a>,
+    citation_brackets: Option<(&'a str, &'a std::cell::OnceCell<HashMap<usize, usize>>)>,
 }
 
 impl<'a> MatcherContext<'a> {
     pub(crate) fn new(options: &'a Options<'a>) -> Self {
-        Self { options }
+        Self {
+            options,
+            citation_brackets: None,
+        }
+    }
+
+    pub(crate) fn for_inline(
+        options: &'a Options<'a>,
+        text: &'a str,
+        brackets: &'a std::cell::OnceCell<HashMap<usize, usize>>,
+    ) -> Self {
+        Self {
+            options,
+            citation_brackets: Some((text, brackets)),
+        }
+    }
+
+    pub(crate) fn citation_close_bracket(&self, text: &str, open: usize) -> Option<usize> {
+        if let Some((source, cache)) = self.citation_brackets {
+            if source.as_ptr() == text.as_ptr() && source.len() == text.len() {
+                return cache
+                    .get_or_init(|| crate::citations::bracket_pairs(text))
+                    .get(&open)
+                    .copied();
+            }
+        }
+        crate::citations::close_bracket(text, open)
     }
 
     pub fn parse_inlines(&self, text: &str) -> Vec<InlineNode> {
