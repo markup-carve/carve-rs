@@ -225,6 +225,19 @@ fn try_layout(source: &str, options: &Options<'_>) -> Option<LayoutOutput> {
     Some(LayoutOutput { html, accepted })
 }
 
+fn eligible_layout_text(source: &str) -> bool {
+    if source.is_ascii() {
+        return true;
+    }
+    // Unicode is admitted only without syntax that uses ASCII marker flanking.
+    static PLAIN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let plain = PLAIN.get_or_init(|| {
+        regex::Regex::new(r#"[*\/`\[\]{}^\\<>_~!@$=#'":%+|]|(?:^|\n)(?:[ .-]|[A-Za-z0-9]+[.)] )|[^\x00-\x7f\pL\pM\pN\pP\pS]"#)
+            .expect("Unicode plain text eligibility pattern")
+    });
+    !plain.is_match(source)
+}
+
 fn try_layout_into(
     source: &str,
     options: &Options<'_>,
@@ -236,8 +249,9 @@ fn try_layout_into(
         || !options.sections
         || options.mode != crate::Mode::Interactive
         || options.smart_typography != crate::extension::SmartTypographyMode::Glyph
-        || !source.is_ascii()
-        || source.contains(['\0', '\t', '\u{0b}', '\u{0c}', '\r'])
+        || !eligible_layout_text(source)
+        || memchr::memchr3(0, b'\t', b'\r', source.as_bytes()).is_some()
+        || memchr::memchr2(0x0b, 0x0c, source.as_bytes()).is_some()
         || source.starts_with("---")
         || source.contains("[^")
         || source.contains("[@")
@@ -249,12 +263,21 @@ fn try_layout_into(
         return None;
     }
 
-    let lines: Vec<&str> = source.lines().collect();
+    let mut lines: Vec<&str> = source.lines().collect();
     if lines
         .iter()
         .any(|line| trim_ascii_end(line).len() != line.len())
     {
-        return None;
+        for line in &mut lines {
+            let trimmed = trim_ascii_end(line);
+            if !trimmed.is_empty()
+                && (!is_layout_paragraph_line(trimmed)
+                    || layout_inline_start(trimmed) != Some(trimmed.len()))
+            {
+                return None;
+            }
+            *line = trimmed;
+        }
     }
     let (defs, definition_lines) = layout_link_defs(&lines)?;
     let (rendered, _, _) = with_active_link_defs(defs, || render_layout_body(&lines, options, out));
@@ -745,6 +768,9 @@ fn render_layout_list(
     out: &mut impl LayoutWrite,
     accepted: &mut AcceptanceCounters,
 ) -> Option<usize> {
+    if indent >= 2 * MAX_NESTING_DEPTH {
+        return None;
+    }
     layout_indent(out, depth);
     out.push_str("<ul>");
     while i < lines.len() {
@@ -1057,6 +1083,95 @@ mod layout_html_tests {
     }
 
     #[test]
+    fn unicode_plain_paragraphs_preserve_output_and_reject_marker_flanking() {
+        for text in [
+            "café",
+            "e\u{301}",
+            "中文",
+            "العربية",
+            "“quoted” 😀",
+            "𝒜 ١ ① ©",
+            "a & b",
+        ] {
+            let source = format!("{text}\n\n{text}\n");
+            assert_eq!(
+                try_layout_html(&source, &Options::default()).unwrap(),
+                authoritative(&source)
+            );
+        }
+        for text in [
+            "- café",
+            "1. 中文",
+            "café\n\n---",
+            "é*bold*",
+            "# café",
+            "`😀`",
+            "[é](/x)",
+            "a\u{a0}b",
+            "a\u{2028}b",
+            "\u{feff}café",
+            "a\u{202e}b",
+            "é\u{200d}b",
+            "é\u{85}b",
+        ] {
+            let source = format!("{text}\n");
+            assert!(
+                try_layout_html(&source, &Options::default()).is_none(),
+                "{source}"
+            );
+            assert_eq!(crate::to_html(&source), authoritative(&source));
+        }
+    }
+
+    #[test]
+    fn trailing_plain_spaces_do_not_change_verbatim_block_payloads() {
+        for source in [
+            ".   \n",
+            "plain  \nnext \n",
+            "café \n\n中文  \n",
+            "plain \n   \nnext \n",
+        ] {
+            assert_eq!(
+                try_layout_html(source, &Options::default()).unwrap(),
+                authoritative(source)
+            );
+        }
+        for source in [
+            "```\na \n```\n",
+            "~~~\na \n~~~\n",
+            "# title \n",
+            "*bold* \n",
+            "1. item \n",
+            "  indented \n",
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_none(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn lists_beyond_the_parser_cap_fall_back_without_streaming_output() {
+        for levels in [200, 201, 300] {
+            let source: String = (0..levels)
+                .map(|level| format!("{}- item\n", "  ".repeat(level)))
+                .collect();
+            let fast = try_layout_html(&source, &Options::default());
+            if levels == 200 {
+                assert_eq!(fast.unwrap(), authoritative(&source));
+            } else {
+                assert!(fast.is_none());
+                assert!(!try_layout_stream(
+                    &source,
+                    &Options::default(),
+                    &mut |_| panic!("unexpected output")
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn skipped_plain_prefixes_keep_marker_flanking_and_escaping() {
         for source in ["a*b*\n", "x/y/\n"] {
             assert!(try_layout_html(source, &Options::default()).is_none());
@@ -1338,8 +1453,9 @@ mod layout_html_tests {
         // code writes the render-loss row. A third corpus document with a denied
         // destination, 108-security-hardening-5, was already off this path for
         // its autolink, so the count moves by two rather than three.
+        // Plain-space trimming adds corpus 104 and both corpus 268 documents.
         assert_eq!(
-            accepted, 54,
+            accepted, 57,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
@@ -1348,7 +1464,6 @@ mod layout_html_tests {
     fn stateful_or_ambiguous_shapes_fall_back() {
         for source in [
             "# *marked heading*\n",
-            "A “smart” quote.\n",
             "[x](java\0script:alert(1))\n",
             "[x](java-script:alert(1))\n",
             // A DENIED SCHEME, which this path used to blank itself. It reports
@@ -1361,7 +1476,6 @@ mod layout_html_tests {
             "- a\n- +\n",
             "- # H\n- next\n",
             "> # H\n\ntail\n",
-            ".   \n",
             "/*x*/\n",
             "$`a``b`\n",
             "`  a  `\n",
