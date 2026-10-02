@@ -1529,8 +1529,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // cause appears with this pin. The other 60 are strict, which the declared
     // source-lossy set holding and no name reaching `undeclared` is what says,
     // rather than a count. 1637/497 becomes 1697/503.
-    const STRICT: usize = 1697;
-    const LOSSY: usize = 503;
+    // Spec 3100de44 adds twelve table documents. Six invalid-metadata
+    // documents are strict; the other six report the existing table_row_groups
+    // degradation and drop no content. At this engine head the old corpus has
+    // 1704 strict and 499 reported lossy documents; the new corpus has 1710/505.
+    // table_body_source_editor_reports_partition_losses pins the six new names.
+    const STRICT: usize = 1710;
+    const LOSSY: usize = 505;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
