@@ -165,3 +165,41 @@ fn table_body_source_keeps_unordered_imported_attributes() {
         assert_eq!(render_html(&reparsed).unwrap(), render_html(&doc).unwrap());
     }
 }
+
+#[test]
+fn table_body_source_editor_reports_partition_losses() {
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut loss_names = Vec::new();
+    for entry in std::fs::read_dir(corpus).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        if path.extension().and_then(|x| x.to_str()) != Some("crv")
+            || !(538..=544).any(|i| name.starts_with(&format!("{i}-")))
+        {
+            continue;
+        }
+        let doc = parse(&std::fs::read_to_string(&path).unwrap());
+        let report = carve::prosemirror::to_prosemirror(&doc);
+        assert!(report.dropped.is_empty(), "{name}: {:?}", report.dropped);
+        if !report.degraded.is_empty() {
+            assert_eq!(
+                report.degraded.keys().collect::<Vec<_>>(),
+                vec!["table_row_groups"],
+                "{name}"
+            );
+            loss_names.push(name.to_owned());
+        }
+    }
+    loss_names.sort();
+    assert_eq!(
+        loss_names,
+        vec![
+            "538-multiple-table-bodies-have-positional-source-metadata.crv",
+            "539-empty-table-bodies-keep-their-source-boundaries.crv",
+            "540-a-table-with-no-bodies-keeps-its-head-and-foot.crv",
+            "542-a-span-across-bodies-keeps-their-header-semantics.crv",
+            "543-a-head-and-foot-consuming-all-rows-leave-no-implicit-body.crv",
+            "544-explicit-body-counts-include-native-header-cells.crv",
+        ]
+    );
+}

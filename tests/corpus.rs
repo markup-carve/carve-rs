@@ -13,6 +13,14 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "multiple-table-bodies-have-positional-source-metadata",
+    "empty-table-bodies-keep-their-source-boundaries",
+    "a-table-with-no-bodies-keeps-its-head-and-foot",
+    "invalid-table-body-metadata-stays-ordinary",
+    "a-span-across-bodies-keeps-their-header-semantics",
+    "a-head-and-foot-consuming-all-rows-leave-no-implicit-body",
+    "explicit-body-counts-include-native-header-cells",
+
     "invalid-named-container-metadata-keeps-the-subtree",
     "a-comment-span-opened-below-every-content-column-is-located-there",
     "a-comment-span-s-closer-column-does-not-move-the-item-s-ownership",
