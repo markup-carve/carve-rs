@@ -74,12 +74,14 @@ pub(crate) fn row_groups(attrs: &Attrs, rows: usize) -> Option<TableRowGroups> {
         if keys.contains_key("body-header-rows") || keys.contains_key("body-header-cols") {
             return None;
         }
-        bodies.push(TableBodyGroup {
-            head_rows: 0,
-            body_rows: remaining,
-            row_head_columns: None,
-            attrs: None,
-        });
+        if remaining > 0 {
+            bodies.push(TableBodyGroup {
+                head_rows: 0,
+                body_rows: remaining,
+                row_head_columns: None,
+                attrs: None,
+            });
+        }
     }
     Some(TableRowGroups {
         head_rows,
@@ -91,6 +93,24 @@ pub(crate) fn row_groups(attrs: &Attrs, rows: usize) -> Option<TableRowGroups> {
 }
 
 pub(crate) fn add_row_groups(attrs: &mut Attrs, groups: &TableRowGroups) {
+    let rows = std::iter::once(groups.head_rows)
+        .chain(std::iter::once(groups.foot_rows))
+        .chain(
+            groups
+                .bodies
+                .iter()
+                .flat_map(|body| [body.head_rows, body.body_rows]),
+        )
+        .try_fold(0usize, |sum, count| sum.checked_add(count));
+    let mut core = groups.clone();
+    core.head_attrs = None;
+    core.foot_attrs = None;
+    for body in &mut core.bodies {
+        body.attrs = None;
+    }
+    if rows.is_some_and(|rows| row_groups(attrs, rows).as_ref() == Some(&core)) {
+        return;
+    }
     let mut put = |key: &str, value: String| {
         if !attrs.key_values.contains_key(key) {
             attrs.key_values.insert(key.into(), value);
@@ -105,6 +125,7 @@ pub(crate) fn add_row_groups(attrs: &mut Attrs, groups: &TableRowGroups) {
     }
     let simple = groups.bodies.len() == 1
         && groups.bodies[0].head_rows == 0
+        && groups.bodies[0].body_rows > 0
         && groups.bodies[0].row_head_columns.is_none();
     if simple {
         if groups.head_rows == 0 && groups.foot_rows == 0 {

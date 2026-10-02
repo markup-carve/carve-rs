@@ -126,3 +126,20 @@ fn table_body_source_promotes_row_headers_across_spans() {
     );
     assert!(html.contains("<th scope=\"col\">D</th>"), "{html}");
 }
+
+#[test]
+fn table_body_source_distinguishes_implicit_and_explicit_empty_bodies() {
+    for (metadata, count) in [
+        ("header-rows=1 footer-rows=1", 0),
+        ("header-rows=1 footer-rows=1 body-rows=0", 1),
+    ] {
+        let source = format!("{{{metadata}}}\n| H | G |\n| F | T |\n");
+        let doc = parse(&source);
+        let BlockNode::Table(table) = &doc.children[0] else {
+            panic!("not a table")
+        };
+        assert_eq!(table.row_groups.as_ref().unwrap().bodies.len(), count);
+        assert_eq!(render_html(&doc).unwrap().contains("<tbody>"), count == 1);
+        assert_eq!(render_carve(&doc).unwrap(), source);
+    }
+}
