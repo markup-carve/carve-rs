@@ -613,6 +613,17 @@ mod tests {
     }
 
     #[test]
+    fn heading_ids_skip_suffixes_already_allocated_in_counts() {
+        let mut counts = BTreeMap::new();
+        for (base, expected) in [("x-2", "x-2"), ("x", "x"), ("x", "x-3")] {
+            assert_eq!(
+                allocate_heading_id(base.into(), false, &mut counts, |_| false),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn zero_heading_count_still_starts_collisions_at_two() {
         let mut counts = BTreeMap::from([("x".into(), 0)]);
         assert_eq!(
