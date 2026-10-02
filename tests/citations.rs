@@ -33,6 +33,45 @@ fn group(source: &str) -> Option<carve::CitationGroup> {
 }
 
 #[test]
+fn citation_item_escapes_and_soft_wraps() {
+    for (source, key) in [
+        (r"[\@a]", None),
+        (r"[\\@a]", Some("a")),
+        (r"[\\\@a]", None),
+        (r"[escaped \@a, see @b]", Some("b")),
+        ("[mail me @ home, see @a]", Some("a")),
+        ("[see\n@a]", Some("a")),
+        ("[@a , p. 4]", None),
+        (r"[@a\,b]", None),
+    ] {
+        assert_eq!(
+            group(source).map(|g| g.items[0].key.clone()).as_deref(),
+            key,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn escaped_suppress_author_marker_stays_in_the_prefix() {
+    for (source, suppressed) in [(r"[\-@a]", false), (r"[\\-@a]", true)] {
+        assert_eq!(
+            group(source).unwrap().items[0].suppress_author,
+            suppressed,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn long_citation_prefix_is_recognized() {
+    assert_eq!(
+        group(&format!("[{}@a]", "x ".repeat(16384))).unwrap().items[0].key,
+        "a"
+    );
+}
+
+#[test]
 fn parses_key_into_citation_group() {
     assert_eq!(group("[@smith2020]").unwrap().items[0].key, "smith2020");
 }
