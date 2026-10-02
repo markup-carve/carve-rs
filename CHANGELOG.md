@@ -23,7 +23,7 @@ which the published crate does not carry.
 
 ### Performance
 
-- ASCII heading IDs skip Unicode transforms. HTML text escaping and borrowed inline rendering avoid repeated scans of plain prefixes.
+- ASCII heading IDs skip Unicode transforms. HTML text escaping and borrowed inline rendering avoid repeated scans of plain prefixes (#2277).
 - Unused heading IDs reserve their base name once, avoiding a duplicate string allocation and repeated map lookups (#2272).
 
 ## [0.1.8] - 2026-10-01
