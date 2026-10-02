@@ -31,14 +31,18 @@ pub(crate) fn allocate_heading_id(
         counts.entry(base.clone()).or_insert(1);
         return base;
     }
-    let mut count = counts.get(&base).copied().unwrap_or(0);
+    let mut count = match counts.get(&base).copied() {
+        // Keep the collision suffix at 2 even for a caller-supplied zero count.
+        Some(count) => count.max(1),
+        None if !reserved(&base) => {
+            counts.insert(base.clone(), 1);
+            return base;
+        }
+        None => 1,
+    };
     let id = loop {
         count += 1;
-        let candidate = if count == 1 {
-            base.clone()
-        } else {
-            format!("{base}-{count}")
-        };
+        let candidate = format!("{base}-{count}");
         if !counts.contains_key(&candidate) && !reserved(&candidate) {
             break candidate;
         }
@@ -50,8 +54,8 @@ pub(crate) fn allocate_heading_id(
 
 #[derive(Default)]
 pub(crate) struct DocumentIdRegistry {
-    /// id -> next 1-based suffix candidate for that base (mirrors carve-php's
-    /// `HeadingIdTracker::$usedIds` / carve-js's `DocumentIdRegistry.usedIds`).
+    /// id -> last suffix allocated for that base (1 means the bare base),
+    /// matching PHP's `HeadingIdTracker::$usedIds` and JS's `DocumentIdRegistry.usedIds`.
     used_ids: BTreeMap<String, usize>,
     /// `(key, use-site count)` in first-citation order, pending reservation.
     pending_citations: Vec<(String, usize)>,
@@ -579,7 +583,67 @@ impl Seeder {
 
 #[cfg(test)]
 mod tests {
-    use super::DocumentIdRegistry;
+    use super::{allocate_heading_id, DocumentIdRegistry};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn heading_ids_skip_reserved_bases_and_suffixes() {
+        let mut counts = BTreeMap::new();
+        let reserved = |id: &str| matches!(id, "x" | "x-2");
+        assert_eq!(
+            allocate_heading_id("x".into(), false, &mut counts, reserved),
+            "x-3"
+        );
+        assert_eq!(
+            allocate_heading_id("x".into(), false, &mut counts, reserved),
+            "x-4"
+        );
+        assert_eq!(
+            allocate_heading_id("y".into(), false, &mut counts, reserved),
+            "y"
+        );
+        assert_eq!(
+            allocate_heading_id("y".into(), false, &mut counts, reserved),
+            "y-2"
+        );
+        assert_eq!(
+            allocate_heading_id("x".into(), true, &mut counts, reserved),
+            "x"
+        );
+    }
+
+    #[test]
+    fn heading_ids_skip_suffixes_already_allocated_in_counts() {
+        let mut counts = BTreeMap::new();
+        for (base, expected) in [("x-2", "x-2"), ("x", "x"), ("x", "x-3")] {
+            assert_eq!(
+                allocate_heading_id(base.into(), false, &mut counts, |_| false),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn zero_heading_count_still_starts_collisions_at_two() {
+        let mut counts = BTreeMap::from([("x".into(), 0)]);
+        assert_eq!(
+            allocate_heading_id("x".into(), false, &mut counts, |_| false),
+            "x-2"
+        );
+    }
+
+    #[test]
+    fn explicit_heading_id_reserves_the_base_for_later_auto_ids() {
+        let mut counts = BTreeMap::new();
+        assert_eq!(
+            allocate_heading_id("z".into(), true, &mut counts, |_| false),
+            "z"
+        );
+        assert_eq!(
+            allocate_heading_id("z".into(), false, &mut counts, |_| false),
+            "z-2"
+        );
+    }
 
     #[test]
     fn unique_id_returns_base_when_free_and_suffixes_on_collision() {
@@ -600,7 +664,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod regenerated_tests {
+mod redundant_heading_id_tests {
     use super::*;
 
     fn heading(text: &str, id: &str, explicit: bool) -> BlockNode {
@@ -622,7 +686,7 @@ mod regenerated_tests {
     }
 
     #[test]
-    fn generated_ids_follow_headings_inside_every_seeder_container() {
+    fn generated_ids_follow_line_block_and_footnote_headings() {
         let mut doc = crate::parse("");
         doc.children.push(BlockNode::LineBlock(LineBlock {
             attrs: None,
