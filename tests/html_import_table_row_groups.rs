@@ -372,3 +372,31 @@ fn rowless_tables_do_not_leak_onto_the_following_paragraph() {
             .any(|d| d.code == HtmlImportDiagnosticCode::TableDegraded));
     }
 }
+
+#[test]
+fn dropping_all_blank_rows_reports_table_and_body_attributes() {
+    let html =
+        "<p>x</p><table id=\"t\"><tbody class=\"b\"><tr><td></td></tr></tbody></table><p>y</p>";
+    let written = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+    assert_eq!(written.value, "x\n\ny\n");
+    assert!(written
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.code == HtmlImportDiagnosticCode::AttributeDropped
+            && d.message.contains("id on <table>")));
+    assert!(written
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.code == HtmlImportDiagnosticCode::StructureUnspellable
+            && d.message.contains("rowGroups.bodies[0].attrs")));
+    assert!(written
+        .report
+        .diagnostics
+        .iter()
+        .any(|d| d.code == HtmlImportDiagnosticCode::StructureUnspellable
+            && d.message.contains("every cell is empty")));
+    let imported = html_to_ast(html, &HtmlImportOptions::default()).unwrap();
+    assert!(imported.report.diagnostics.is_empty());
+}
