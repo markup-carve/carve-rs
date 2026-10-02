@@ -17,6 +17,10 @@ which the published crate does not carry.
 - Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead (#2253).
 - A colon closer inside a closed code or comment span stays inside verse, matching the executable spec (#2253).
 
+### Performance
+
+- Unused heading IDs reserve their base name once, avoiding a duplicate string allocation and repeated map lookups.
+
 ## [0.1.8] - 2026-10-01
 
 ### Breaking
