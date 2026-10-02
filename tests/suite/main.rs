@@ -775,6 +775,8 @@ mod cli_render_options;
 mod cli_smart_typography;
 #[path = "../cli_stamp_query.rs"]
 mod cli_stamp_query;
+#[path = "../cli_version.rs"]
+mod cli_version;
 #[path = "../code_callouts.rs"]
 mod code_callouts;
 #[path = "../code_fences_close_only_at_container_or_authored_base.rs"]

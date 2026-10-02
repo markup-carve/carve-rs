@@ -60,6 +60,7 @@ carve --no-sections --source-lines page.crv
 carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
 carve --safe --profile comment untrusted.crv   # and restrict which constructs are allowed
 carve --help
+carve --version                     # or -V: prints `carve <version>`
 ```
 
 `--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select

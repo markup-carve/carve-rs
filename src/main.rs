@@ -133,6 +133,10 @@ fn main() -> ExitCode {
                 print_usage();
                 return ExitCode::SUCCESS;
             }
+            "-V" | "--version" => {
+                println!("carve {}", env!("CARGO_PKG_VERSION"));
+                return ExitCode::SUCCESS;
+            }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
             "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
@@ -1628,7 +1632,8 @@ fn print_usage() {
          apply to all importers and fail closed when fidelity is unknown\n                              \
          (exit 1 only when --check-loss finds loss, 2 on a\n                              \
          usage error or an unreadable file)\n  \
-         carve -h                    show this help\n\n\
+         carve -h                    show this help\n  \
+         carve -V, --version         print the version\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
          --markdown, --md            Markdown\n  \
