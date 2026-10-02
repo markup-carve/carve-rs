@@ -143,3 +143,25 @@ fn table_body_source_distinguishes_implicit_and_explicit_empty_bodies() {
         assert_eq!(render_carve(&doc).unwrap(), source);
     }
 }
+
+#[test]
+fn table_body_source_keeps_unordered_imported_attributes() {
+    for suffix in ["", "^ Caption\n"] {
+        let mut doc = parse(&format!("{{#data .wide widths=33.3,66.7 header-rows=1 footer-rows=1}}\n| H | G |\n| a | b |\n| F | T |\n{suffix}"));
+        let BlockNode::Table(table) = &mut doc.children[0] else {
+            panic!("not a table")
+        };
+        let attrs = table.attrs.as_mut().unwrap();
+        attrs.order.clear();
+        attrs.key_values.clear();
+        let written = render_carve(&doc).unwrap();
+        assert!(written.contains("#data .wide"), "{written}");
+        let reparsed = parse(&written);
+        let BlockNode::Table(table) = &reparsed.children[0] else {
+            panic!("not a table")
+        };
+        assert_eq!(table.attrs.as_ref().unwrap().id.as_deref(), Some("data"));
+        assert_eq!(table.attrs.as_ref().unwrap().classes, vec!["wide"]);
+        assert_eq!(render_html(&reparsed).unwrap(), render_html(&doc).unwrap());
+    }
+}

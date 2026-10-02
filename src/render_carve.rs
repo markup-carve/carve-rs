@@ -2147,6 +2147,19 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         }
         BlockNode::Table(table) => {
             let mut attrs = table.attrs.clone();
+            if let Some(attrs) = &mut attrs {
+                if attrs.order.is_empty() {
+                    if attrs.id.is_some() {
+                        attrs.order.push(AttrSlot::Id);
+                    }
+                    if !attrs.classes.is_empty() {
+                        attrs.order.push(AttrSlot::Class);
+                    }
+                    attrs
+                        .order
+                        .extend(attrs.key_values.keys().cloned().map(AttrSlot::Key));
+                }
+            }
             if !table.columns.is_empty() {
                 let attrs = attrs.get_or_insert_with(Attrs::default);
                 let align = table
