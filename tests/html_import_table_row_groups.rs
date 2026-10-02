@@ -315,3 +315,59 @@ fn a_key_the_schema_does_not_name_inside_the_partition_is_refused() {
         );
     }
 }
+
+#[test]
+fn empty_bodies_survive_both_import_exits() {
+    for (name, html, expected) in [
+        ("leading", "<table><tbody></tbody><tbody><tr><th scope=\"col\">g</th></tr><tr><td>a</td></tr></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None), body(1, 1, None)], foot_rows: 0 }),
+        ("leading plain", "<table><tbody></tbody><tbody><tr><td>a</td></tr></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None), body(0, 1, None)], foot_rows: 0 }),
+        ("middle", "<table><tbody><tr><td>a</td></tr></tbody><tbody></tbody><tbody><tr><td>b</td></tr></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 1, None), body(0, 0, None), body(0, 1, None)], foot_rows: 0 }),
+        ("trailing", "<table><tbody><tr><td>a</td></tr></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 1, None), body(0, 0, None)], foot_rows: 0 }),
+        ("consecutive", "<table><tbody></tbody><tbody></tbody><tbody><tr><td>a</td></tr></tbody><tbody></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None), body(0, 0, None), body(0, 1, None), body(0, 0, None), body(0, 0, None)], foot_rows: 0 }),
+        ("after head", "<table><thead><tr><th scope=\"col\">h</th></tr></thead><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 0, None)], foot_rows: 0 }),
+        ("before foot", "<table><tbody></tbody><tfoot><tr><td>f</td></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None)], foot_rows: 1 }),
+        ("head and foot", "<table><thead><tr><th scope=\"col\">h</th></tr></thead><tbody></tbody><tfoot><tr><td>f</td></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 0, None)], foot_rows: 1 }),
+        ("header-only body", "<table><tbody><tr><th scope=\"col\">g</th></tr></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(1, 0, None), body(0, 0, None)], foot_rows: 0 }),
+        ("no bodies", "<table><thead><tr><th scope=\"col\">h</th></tr></thead><tfoot><tr><td>f</td></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![], foot_rows: 1 }),
+    ] {
+        let imported = html_to_ast(html, &HtmlImportOptions::default()).unwrap();
+        assert!(imported.report.diagnostics.is_empty(), "{name}: {:?}", imported.report);
+        assert_eq!(groups_of(html), Some(expected.clone()), "{name}");
+        let written = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+        assert!(written.report.diagnostics.is_empty(), "{name}: {:?}", written.report);
+        let reparsed = carve::parse(&written.value);
+        let carve::BlockNode::Table(table) = &reparsed.children[0] else { panic!("not a table: {name}") };
+        assert_eq!(table.row_groups.as_deref(), Some(&expected), "{name}");
+        let rendered = carve::render_html(&reparsed).unwrap();
+        assert_eq!(rendered.split_whitespace().collect::<String>(), html.split_whitespace().collect::<String>(), "{name}");
+        assert_eq!(carve::render_carve(&reparsed).unwrap(), written.value, "{name}");
+    }
+}
+
+#[test]
+fn rowless_tables_do_not_leak_onto_the_following_paragraph() {
+    for table in [
+        "<table><tbody></tbody></table>",
+        "<table id=\"t\"><tbody class=\"empty\"></tbody></table>",
+        "<table><caption>c</caption><tbody></tbody></table>",
+    ] {
+        let html = format!("<p>x</p>{table}<p>y</p>");
+        let written = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
+        assert_eq!(written.value, "x\n\ny\n", "{table}");
+        assert!(written
+            .report
+            .diagnostics
+            .iter()
+            .any(|d| d.code == HtmlImportDiagnosticCode::TableDegraded));
+        let imported = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
+        let carve::BlockNode::Table(ast) = &imported.value.children[1] else {
+            panic!("table lost")
+        };
+        assert_eq!(ast.row_groups.as_ref().unwrap().bodies[0].body_rows, 0);
+        assert!(!imported
+            .report
+            .diagnostics
+            .iter()
+            .any(|d| d.code == HtmlImportDiagnosticCode::TableDegraded));
+    }
+}
