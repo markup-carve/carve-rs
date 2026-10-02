@@ -226,25 +226,61 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
 // Keep escape handling identical to close_bracket; core bracket maps also
 // hide code spans and comments, which the citation matcher does not skip.
 pub(crate) fn bracket_pairs(text: &str) -> HashMap<usize, usize> {
-    let bytes = text.as_bytes();
     let mut pairs = HashMap::new();
-    let mut stack = Vec::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' => i += 2,
-            b'[' => {
-                stack.push(i);
-                i += 1;
+    let mut stack: Vec<(usize, Option<(bool, usize)>)> = Vec::new();
+    let mut last_semicolon = None;
+    let mut last_comma_key = None;
+    let mut last_key = None;
+    let mut content_end = 0;
+    let mut invalid_items = 0;
+    let mut escaped = false;
+    let valid_item_after =
+        |start: Option<usize>, comma: Option<usize>, key: Option<(usize, usize)>, end: usize| {
+            let after = |at| start.map_or(true, |start| at > start);
+            comma.is_some_and(after) || key.is_some_and(|(at, key_end)| after(at) && key_end == end)
+        };
+    for (i, ch) in text.char_indices() {
+        if ch == '@' && !escaped {
+            if let Some((_, end)) = parse_key(text, i + 1) {
+                last_key = Some((i, end));
+                if text.as_bytes().get(end) == Some(&b',') {
+                    last_comma_key = Some(i);
+                }
             }
-            b']' => {
-                if let Some(open) = stack.pop() {
+        }
+        // Item splitting treats even escaped semicolons as separators.
+        if ch == ';' {
+            if !valid_item_after(last_semicolon, last_comma_key, last_key, content_end) {
+                invalid_items += 1;
+            }
+            for (open, first) in stack.iter_mut().rev() {
+                if first.is_some() {
+                    break;
+                }
+                *first = Some((
+                    valid_item_after(Some(*open), last_comma_key, last_key, content_end),
+                    invalid_items,
+                ));
+            }
+            last_semicolon = Some(i);
+        }
+        if !escaped && ch == '[' {
+            stack.push((i, None));
+        } else if !escaped && ch == ']' {
+            if let Some((open, first)) = stack.pop() {
+                let start = Some(last_semicolon.map_or(open, |at| at.max(open)));
+                // Check edge items and the count of invalid complete items before slicing.
+                if valid_item_after(start, last_comma_key, last_key, content_end)
+                    && first.map_or(true, |(valid, count)| valid && count == invalid_items)
+                {
                     pairs.insert(open, i);
                 }
-                i += 1;
             }
-            _ => i += 1,
         }
+        if !ch.is_whitespace() {
+            content_end = i + ch.len_utf8();
+        }
+        escaped = ch == '\\' && !escaped;
     }
     pairs
 }

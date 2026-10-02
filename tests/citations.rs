@@ -708,3 +708,14 @@ fn parse_locator_multibyte_does_not_panic() {
 fn parse_locator_via(loc: &str) -> carve::ParsedLocator {
     carve::parse_locator(loc)
 }
+
+#[test]
+fn rejected_nested_wrappers_keep_inner_citation() {
+    for n in [128, 1024] {
+        let source = format!("{}@a{}", "[".repeat(n), "]".repeat(n));
+        assert_eq!(group(&source).unwrap().items[0].key, "a");
+    }
+    for source in ["[@a, [x]]", r"[@a, \, [x]]", "[@a; @b, [x]]"] {
+        assert_eq!(group(source).unwrap().items[0].key, "a");
+    }
+}

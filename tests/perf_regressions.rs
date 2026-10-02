@@ -1813,3 +1813,16 @@ fn used_up_backticks_before_open_brackets_parse_in_near_linear_time() {
 fn brackets_inside_closed_code_spans_parse_in_near_linear_time() {
     assert_bounded_scan(brackets_inside_closed_code_spans, "brackets-in-code-spans");
 }
+
+#[test]
+fn rejected_nested_citation_wrappers_parse_bounded() {
+    let citations = carve::Citations::new();
+    let options = Options::new().with_extension(&citations);
+    assert_conversion_near_linear_at(
+        |source| drop(carve::parse_with_options(source, &options)),
+        |n| format!("{}@a{}", "[".repeat(n), "]".repeat(n)),
+        "rejected nested citation wrappers",
+        16384,
+        65536,
+    );
+}
