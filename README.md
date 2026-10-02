@@ -111,3 +111,6 @@ Annotation offsets count Unicode codepoints in the contract's fixed field
 order. They do not depend on JSON property insertion order or source positions.
 The shared annotation fixture covers image alt text, math, breaks and reversed
 ranges.
+
+Table body partitions and source attributes are documented in
+[Table source metadata](docs/table-source-metadata.md).

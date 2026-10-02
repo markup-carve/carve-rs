@@ -375,7 +375,7 @@ fn the_span_grid_is_unchanged() {
             // A rowspan stops at its row GROUP, so a `<tfoot>` below is not
             // swallowed.
             "<table><tbody><tr><td rowspan=\"3\">a</td><td>b</td></tr></tbody><tfoot><tr><td>f</td></tr></tfoot></table>",
-            "| a | b |\n| f |\n",
+            "{footer-rows=1}\n| a | b |\n| f |\n",
         ),
         (
             "<table><tr><td colspan=\"5\">a</td></tr><tr><td>b</td></tr></table>",

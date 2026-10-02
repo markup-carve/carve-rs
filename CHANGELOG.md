@@ -13,6 +13,10 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Simple source partitions omit `rowHeadColumns` when no count is authored, matching the JavaScript and PHP ASTs. Invalid body metadata leaves all row-group attributes ordinary and produces no explicit partition.
+
+- Preserve multiple table bodies, intermediate body headers, empty bodies, and per-body row-header counts with positional source attributes. Keep authored conflicts and report partition loss. Preserve decimal column widths through AST parsing, source export, and HTML rendering.
+
 - Resolve references in authored AST children, including ruby content, short captions, block-cell tables, figure images, and extension fallbacks (#2253).
 - Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead (#2253).
 - A colon closer inside a closed code or comment span stays inside verse, matching the executable spec (#2253).
