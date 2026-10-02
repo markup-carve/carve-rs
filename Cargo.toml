@@ -45,6 +45,7 @@ fs = []
 # which is a different version space and not what is published.
 html5ever = "0.39"
 markup5ever_rcdom = "0.39"
+memchr = "2.7"
 # The Markdown importer parses to an AST first, the way the HTML importer uses
 # html5ever, rather than rewriting source lines. pulldown-cmark is the
 # ecosystem's CommonMark parser and emits an event stream that walks straight

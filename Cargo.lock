@@ -23,6 +23,7 @@ version = "0.1.8"
 dependencies = [
  "html5ever",
  "markup5ever_rcdom",
+ "memchr",
  "pulldown-cmark",
  "regex",
  "serde",

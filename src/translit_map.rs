@@ -941,6 +941,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn ascii_characters_have_no_transliteration_entries() {
+        assert!(TRANSLIT_MAP
+            .iter()
+            .all(|(character, _)| !character.is_ascii()));
+    }
+
+    #[test]
     fn the_table_is_sorted_so_the_search_is_valid() {
         assert!(TRANSLIT_MAP.windows(2).all(|w| w[0].0 < w[1].0));
     }
