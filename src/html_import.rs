@@ -2863,10 +2863,8 @@ impl<'a> Importer<'a> {
             return self.definition_list(h, path, depth, attrs);
         }
         if tag == "table" {
-            let unspellable_before = self.unspellable.len();
             let table = self.table(h, path, depth, attrs)?;
             if self.writing && matches!(&table, BlockNode::Table(table) if table.rows.is_empty()) {
-                self.unspellable.truncate(unspellable_before);
                 return Ok(Vec::new());
             }
             return Ok(vec![table]);
@@ -5049,6 +5047,25 @@ impl<'a> Importer<'a> {
                     &format!("{path}/tr[{}]", r + 1),
                     &trs[r].0,
                 );
+            }
+        }
+        if self.writing && trs.is_empty() {
+            self.unspellable.truncate(unspellable_before);
+        } else if self.writing && result.is_empty() {
+            if let Some(own) = &attrs {
+                let names = Self::attr_names(own);
+                if !names.is_empty() {
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        format!(
+                            "Dropped {} on <table>: no row survives source conversion",
+                            names.join(", ")
+                        ),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        h,
+                    );
+                }
             }
         }
         if list_form {
