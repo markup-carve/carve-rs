@@ -15829,7 +15829,35 @@ fn container_open_label(label: Option<String>, options: &Options<'_>) -> Option<
     label.map(|label| label_without_trailing_comment(&label, options).to_string())
 }
 
+// Counts the opener readings and the characters container RECOVERY examines.
+//
+// A container with invalid opener metadata keeps its container and parses its
+// children (markup-carve/carve#2693), so such an opener sits on the NESTING
+// path, where the body walk re-reads it once per enclosing level. carve-php
+// honoured the same ruling and its recovery branch then answered a bounded
+// column question by walking a whole indentation run, which cost 4,666,600
+// gate characters at depth 200 against 80,394 before (carve-php#2817, capped in
+// #2819). Nothing in that repo's test suite or corpus moved; only a counted
+// guard saw it. These counters are what `container_open_readings` reads.
+// Test-only, so a release build carries none of it.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static CONTAINER_OPEN_READINGS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+    pub(crate) static CONTAINER_RECOVERY_CHARS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+    pub(crate) static CONTAINER_RECOVERY_ACCEPTS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn charge_recovery(chars: usize) {
+    CONTAINER_RECOVERY_CHARS.with(|c| c.set(c.get() + chars as u64));
+}
+
 fn detect_container_open(line: &str) -> Option<ContainerOpen> {
+    #[cfg(test)]
+    CONTAINER_OPEN_READINGS.with(|c| c.set(c.get() + 1));
     if let Some(open) = detect_valid_container_open(line) {
         return Some(open);
     }
@@ -15838,21 +15866,30 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     }
     let line = trim_ascii(line);
     let fence_len = line.bytes().take_while(|&b| b == b':').count();
+    #[cfg(test)]
+    charge_recovery(fence_len + usize::from(fence_len < line.len()));
     if fence_len < 3 || !line[fence_len..].starts_with(' ') {
         return None;
     }
-    let rest = line[fence_len..].trim_start_matches(' ');
+    let after_fence = &line[fence_len..];
+    let rest = after_fence.trim_start_matches(' ');
+    #[cfg(test)]
+    charge_recovery(after_fence.len() - rest.len());
     if !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
     let end = rest
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
         .unwrap_or(rest.len());
+    #[cfg(test)]
+    charge_recovery(end + usize::from(end < rest.len()));
     if rest[end..].starts_with(|c: char| {
         !c.is_whitespace() && c != '\u{feff}' && !matches!(c, '"' | '{' | '[' | '“' | '”')
     }) {
         return None;
     }
+    #[cfg(test)]
+    CONTAINER_RECOVERY_ACCEPTS.with(|c| c.set(c.get() + 1));
     Some(ContainerOpen {
         fence_len,
         kind: Some(rest[..end].to_string()),
@@ -25121,5 +25158,232 @@ mod reference_definition_provenance {
         let pos = doc.footnote_def_pos.get("n").expect("footnote position");
         assert_eq!(pos.start_column, 2);
         assert_eq!(pos.start_offset, 1);
+    }
+}
+
+#[cfg(test)]
+mod container_open_readings {
+    //! COUNTED guards on a RECOVERED container's nesting cost
+    //! (markup-carve/carve#2693, implemented here by carve-rs#2260).
+    //!
+    //! They live here rather than in `tests/` for the two reasons
+    //! `quote_prefix_calls` gives: the counters are `#[cfg(test)]`, and a count
+    //! is a property of the algorithm rather than of the machine. The second
+    //! reason binds harder here than usual, because the shape these guards name
+    //! does not appear in `tests/perf_regressions.rs` at all and that file is
+    //! OFF the pull-request path - so a timed spelling of this would have let a
+    //! regression merge before anything measured it.
+    //!
+    //! Every colon opener the timing suite builds - `::: note`, `::: d`,
+    //! `::: index`, and the widening `::: d` ladder - reads as VALID metadata.
+    //! Nothing there puts an invalid opener on the nesting path, which is the
+    //! blind spot carve-php merged a cubic regression through.
+
+    use super::{CONTAINER_OPEN_READINGS, CONTAINER_RECOVERY_ACCEPTS, CONTAINER_RECOVERY_CHARS};
+
+    struct Counted {
+        readings: u64,
+        recovery_chars: u64,
+        recoveries: u64,
+        nested: usize,
+    }
+
+    /// Counts over one full parse-and-render of `src`, on its own thread: the
+    /// counters are thread-local, and a deep ladder recurses past the default
+    /// test stack in a debug build.
+    fn count(src: String) -> Counted {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || {
+                CONTAINER_OPEN_READINGS.with(|c| c.set(0));
+                CONTAINER_RECOVERY_CHARS.with(|c| c.set(0));
+                CONTAINER_RECOVERY_ACCEPTS.with(|c| c.set(0));
+                let html = crate::to_html(&src);
+                Counted {
+                    readings: CONTAINER_OPEN_READINGS.with(|c| c.get()),
+                    recovery_chars: CONTAINER_RECOVERY_CHARS.with(|c| c.get()),
+                    recoveries: CONTAINER_RECOVERY_ACCEPTS.with(|c| c.get()),
+                    nested: html.matches("<aside").count() + html.matches("<div").count(),
+                }
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// `depth` nested colon containers and their closers, every line the same
+    /// length at every depth.
+    ///
+    /// Widths alternate 3/4 rather than widening outward, so a per-byte reading
+    /// measures the nesting and not the fence growing with the ladder. The
+    /// metadata decides validity and nothing else: `note Bare title!` is an
+    /// unquoted title, which §3 refuses and §12 recovers, and
+    /// `noteaaaaaaaaaaaa` is a plain kind of the same byte length.
+    fn ladder(depth: usize, metadata: &str) -> String {
+        let widths: Vec<usize> = (0..depth).map(|i| 3 + i % 2).collect();
+        let mut out = String::new();
+        for width in &widths {
+            out.push_str(&":".repeat(*width));
+            out.push(' ');
+            out.push_str(metadata);
+            out.push('\n');
+        }
+        out.push_str("body\n");
+        for width in widths.iter().rev() {
+            out.push_str(&":".repeat(*width));
+            out.push('\n');
+        }
+        out
+    }
+
+    fn recovered(depth: usize) -> String {
+        ladder(depth, "note Bare title!")
+    }
+
+    fn valid(depth: usize) -> String {
+        ladder(depth, "noteaaaaaaaaaaaa")
+    }
+
+    /// The ladder has to reach the depth it claims, in both spellings, or every
+    /// count below is a count of something else.
+    #[test]
+    fn both_ladders_nest_to_their_depth() {
+        for depth in [100usize, 200] {
+            assert_eq!(recovered(depth).len(), valid(depth).len());
+            assert_eq!(count(recovered(depth)).nested, depth);
+            assert_eq!(count(valid(depth)).nested, depth);
+        }
+    }
+
+    /// RECOVERY MUST COST WHAT A VALID OPENER COSTS, to the reading.
+    ///
+    /// This is the assertion that pins the ruling rather than the parser: the
+    /// two ladders nest alike and differ only in whether §3 accepts the
+    /// metadata, so any work the recovery path adds per level shows up here as
+    /// an inequality. It is what carve-php#2817 would have failed - its
+    /// recovery branch called two full-run helpers once per level, which no
+    /// valid opener paid for.
+    #[test]
+    fn a_recovered_opener_costs_no_more_readings_than_a_valid_one() {
+        for depth in [100usize, 200] {
+            let rec = count(recovered(depth));
+            let val = count(valid(depth));
+            assert!(
+                rec.readings > 0 && val.readings > 0,
+                "the opener-reading counter is dead at depth {depth}",
+            );
+            assert_eq!(
+                rec.readings, val.readings,
+                "depth {depth}: a recovered container cost {} opener readings against {} for a \
+                 valid one - the recovery path is doing work per level",
+                rec.readings, val.readings,
+            );
+        }
+    }
+
+    /// Only the recovered ladder RECOVERS a container, so the guard above is
+    /// measuring the construct it is named for and not two spellings of the
+    /// same parse.
+    ///
+    /// The valid ladder still ENTERS the recovery branch - its `body` line is
+    /// no opener by either reading - so the claim is on what the branch
+    /// accepts, not on whether it ran.
+    #[test]
+    fn only_the_recovered_ladder_recovers_a_container() {
+        let rec = count(recovered(200));
+        let val = count(valid(200));
+        assert!(
+            rec.recoveries >= 200,
+            "the recovered ladder recovered {} containers at depth 200",
+            rec.recoveries,
+        );
+        assert_eq!(
+            val.recoveries, 0,
+            "the valid ladder recovered {} containers - its openers are supposed to parse",
+            val.recoveries,
+        );
+    }
+
+    /// A recovered ladder, every opener carrying a metadata tail of `tail`
+    /// characters after its kind.
+    ///
+    /// The tail is what separates a BOUNDED PREFIX from a full-line walk. The
+    /// ladder's own lines are the same length at every depth, so varying the
+    /// tail varies only how far past the kind there is to read - and a gate
+    /// that answers from the prefix cannot see it at all.
+    fn tailed(depth: usize, tail: usize) -> String {
+        ladder(depth, &format!("note {}", "x".repeat(tail)))
+    }
+
+    /// A RECOVERY READING MUST ANSWER FROM A BOUNDED PREFIX.
+    ///
+    /// The three scans the branch makes are a colon run, the space run after
+    /// it, and the kind. Each is a prefix, so the characters per reading hold
+    /// flat however much metadata follows. A gate that walked the whole run to
+    /// answer a bounded question - carve-php#2817's two helpers, which read a
+    /// full indentation run to compare three columns - makes this climb with
+    /// the run it walks.
+    ///
+    /// Quadrupling the tail is the axis rather than deepening the ladder,
+    /// because carve-rs nests containers FLUSH LEFT: a body line that starts
+    /// with a space opens nothing, so an opener on the nesting path has no
+    /// indentation run to re-walk and depth alone cannot express this claim.
+    #[test]
+    fn a_recovery_reading_reads_a_bounded_prefix() {
+        let small = count(tailed(100, 32));
+        let large = count(tailed(100, 128));
+        let small_per = small.recovery_chars as f64 / small.readings as f64;
+        let large_per = large.recovery_chars as f64 / large.readings as f64;
+        assert!(
+            small.recovery_chars > 0 && large.recovery_chars > 0,
+            "the recovery-character counter is dead: {} and {}",
+            small.recovery_chars,
+            large.recovery_chars,
+        );
+        assert!(
+            large.recovery_chars * small.readings * 10
+                <= small.recovery_chars * large.readings * 11,
+            "the recovery characters per reading grew with the metadata tail \
+             ({small_per:.2} at 32 characters, {large_per:.2} at 128): a recovery gate is \
+             walking the run instead of reading its prefix",
+        );
+    }
+
+    /// Opener readings stay proportional to the work the NESTING WALK owes.
+    ///
+    /// `collect_colon_container_body` re-reads a container's body once per
+    /// enclosing level, so a ladder of `depth` levels inherently owes
+    /// `depth * (depth + 1)` line readings - quadratic in the input and bounded
+    /// by `MAX_NESTING_DEPTH`. The claim is the per-unit RATE: proportional
+    /// work holds it flat or falling as the ladder deepens, and anything
+    /// superlinear in it must make it climb. Stating the curve rather than the
+    /// constant keeps the guard alive after honest drift.
+    #[test]
+    fn opener_readings_stay_proportional_to_the_nesting_walk() {
+        let work = |depth: u64| depth * (depth + 1);
+        let small = count(recovered(100));
+        let large = count(recovered(200));
+        let small_work = work(100);
+        let large_work = work(200);
+        assert!(
+            small.readings >= 100 && large.readings >= 200,
+            "the opener-reading counter is not counting: {} readings at depth 100, {} at 200",
+            small.readings,
+            large.readings,
+        );
+        assert!(
+            large.readings <= 2 * large_work,
+            "{} opener readings for {large_work} units of nesting work ({:.2} each) - \
+             an opener is being read more than twice per level per line",
+            large.readings,
+            large.readings as f64 / large_work as f64,
+        );
+        assert!(
+            large.readings * small_work * 10 <= small.readings * large_work * 11,
+            "the per-unit opener-reading cost climbs with depth ({:.3} at depth 100, {:.3} at \
+             200): a recovered container is being re-read per level",
+            small.readings as f64 / small_work as f64,
+            large.readings as f64 / large_work as f64,
+        );
     }
 }
