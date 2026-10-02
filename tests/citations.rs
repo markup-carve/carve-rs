@@ -97,6 +97,33 @@ fn positioned_citation_items_follow_unicode_source_offsets() {
 }
 
 #[test]
+fn citations_cross_the_short_scan_boundary_without_changing_matches() {
+    for width in [55, 60, 62, 63, 64, 65, 128] {
+        for padding in ["x", "α"] {
+            let source = format!(r"[see {}\] @a] [@b]", padding.repeat(width));
+            let citations = Citations::new();
+            let options = Options::new().with_extension(&citations);
+            let doc = carve::parse_with_options(&source, &options);
+            let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+                panic!("expected paragraph");
+            };
+            let keys: Vec<_> = paragraph
+                .children
+                .iter()
+                .filter_map(|node| {
+                    if let InlineNode::CitationGroup(group) = node {
+                        Some(group.items[0].key.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert_eq!(keys, ["a", "b"], "{source}");
+        }
+    }
+}
+
+#[test]
 fn types_and_positions_each_citation_item() {
     let source = "See [@a; see @bb, p. 4].\n";
     let citations = Citations::new();

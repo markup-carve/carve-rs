@@ -249,11 +249,12 @@ pub(crate) fn bracket_pairs(text: &str) -> HashMap<usize, usize> {
     pairs
 }
 
-pub(crate) fn close_bracket(text: &str, open: usize) -> Option<usize> {
+pub(crate) fn close_bracket(text: &str, open: usize, max_bytes: usize) -> Option<usize> {
     let bytes = text.as_bytes();
+    let end = open.saturating_add(max_bytes).min(bytes.len());
     let mut depth = 0usize;
     let mut i = open;
-    while i < bytes.len() {
+    while i < end {
         match bytes[i] {
             b'\\' => i += 2,
             b'[' => {
