@@ -75,6 +75,8 @@ concurrency:
   group: guards-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
+# Every job below carries a timeout-minutes bound. Without one a job inherits
+# GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
 jobs:
   timing:
     name: Timing suite
@@ -105,6 +107,7 @@ jobs:
   verdict:
     name: The verdict reaches a person
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [timing]
     if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' }}
     permissions:

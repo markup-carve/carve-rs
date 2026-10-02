@@ -21,6 +21,8 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+# Every job below carries a timeout-minutes bound. Without one a job inherits
+# GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
 jobs:
   publish:
     name: Publish to crates.io
@@ -28,6 +30,7 @@ jobs:
     # it must not re-publish the crate.
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # A required reviewer approves before this runs (markup-carve/carve#2032).
     environment: release
     permissions:
@@ -122,6 +125,7 @@ jobs:
   binaries:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: write # attach assets to the release
     env:
@@ -268,6 +272,7 @@ jobs:
     name: Update the Homebrew tap
     needs: binaries
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # A required reviewer approves before this runs (markup-carve/carve#2032).
     environment: release
     steps:

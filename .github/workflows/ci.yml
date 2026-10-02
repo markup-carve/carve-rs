@@ -42,6 +42,8 @@ env:
   CARGO_PROFILE_DEV_OPT_LEVEL: "2"
   CARGO_PROFILE_TEST_OPT_LEVEL: "2"
 
+# Every job below carries a timeout-minutes bound. Without one a job inherits
+# GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
 jobs:
   # THE PIN RESOLVES BY SHA, SO NOTHING ELSE HERE CAN SEE A DANGLING ONE. Every
   # other job checks the spec submodule out and runs against whatever tree the
@@ -58,6 +60,7 @@ jobs:
   spec-pin:
     name: spec pin is reachable from spec main
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -70,6 +73,7 @@ jobs:
   schema-map:
     name: ProseMirror schema map matches carve-grammars
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       # Full history: the check asks which commits touched the map since the one
@@ -89,6 +93,7 @@ jobs:
   test:
     name: Build and test (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -198,6 +203,7 @@ jobs:
   msrv:
     name: Compiles on the MSRV (Rust 1.75)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -214,6 +220,7 @@ jobs:
   no-fs:
     name: Builds with no filesystem access (--no-default-features)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -240,6 +247,7 @@ jobs:
   lints:
     name: rustfmt + clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -254,6 +262,7 @@ jobs:
   seam-matrix:
     name: Seam matrix covers every shape family
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - run: python3 tools/seam-matrix.py --check
