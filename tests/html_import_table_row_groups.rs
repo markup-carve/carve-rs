@@ -325,6 +325,7 @@ fn empty_bodies_survive_both_import_exits() {
         ("trailing", "<table><tbody><tr><td>a</td></tr></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 1, None), body(0, 0, None)], foot_rows: 0 }),
         ("consecutive", "<table><tbody></tbody><tbody></tbody><tbody><tr><td>a</td></tr></tbody><tbody></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None), body(0, 0, None), body(0, 1, None), body(0, 0, None), body(0, 0, None)], foot_rows: 0 }),
         ("after head", "<table><thead><tr><th scope=\"col\">h</th></tr></thead><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 0, None)], foot_rows: 0 }),
+        ("before a header-cell foot", "<table><tbody></tbody><tfoot><tr><th scope=\"col\">f</th></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None)], foot_rows: 1 }),
         ("before foot", "<table><tbody></tbody><tfoot><tr><td>f</td></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(0, 0, None)], foot_rows: 1 }),
         ("head and foot", "<table><thead><tr><th scope=\"col\">h</th></tr></thead><tbody></tbody><tfoot><tr><td>f</td></tr></tfoot></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 1, bodies: vec![body(0, 0, None)], foot_rows: 1 }),
         ("header-only body", "<table><tbody><tr><th scope=\"col\">g</th></tr></tbody><tbody></tbody></table>", TableRowGroups { head_attrs: None, foot_attrs: None, head_rows: 0, bodies: vec![body(1, 0, None), body(0, 0, None)], foot_rows: 0 }),
@@ -354,11 +355,11 @@ fn rowless_tables_do_not_leak_onto_the_following_paragraph() {
         let html = format!("<p>x</p>{table}<p>y</p>");
         let written = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
         assert_eq!(written.value, "x\n\ny\n", "{table}");
-        assert!(written
-            .report
-            .diagnostics
-            .iter()
-            .any(|d| d.code == HtmlImportDiagnosticCode::TableDegraded));
+        assert_eq!(written.report.diagnostics.len(), 1, "{table}");
+        assert_eq!(
+            written.report.diagnostics[0].code,
+            HtmlImportDiagnosticCode::TableDegraded
+        );
         let imported = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
         let carve::BlockNode::Table(ast) = &imported.value.children[1] else {
             panic!("table lost")

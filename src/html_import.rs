@@ -2863,8 +2863,10 @@ impl<'a> Importer<'a> {
             return self.definition_list(h, path, depth, attrs);
         }
         if tag == "table" {
+            let unspellable_before = self.unspellable.len();
             let table = self.table(h, path, depth, attrs)?;
             if self.writing && matches!(&table, BlockNode::Table(table) if table.rows.is_empty()) {
+                self.unspellable.truncate(unspellable_before);
                 return Ok(Vec::new());
             }
             return Ok(vec![table]);
@@ -4894,7 +4896,13 @@ impl<'a> Importer<'a> {
                 if !cell.header {
                     continue;
                 }
-                let default = if r < leading_header_rows {
+                let default = if r < leading_header_rows
+                    && trs[r]
+                        .1
+                        .and_then(|id| sections.tags.get(id))
+                        .map(String::as_str)
+                        != Some("tfoot")
+                {
                     "col"
                 } else {
                     "row"
@@ -5300,7 +5308,12 @@ impl<'a> Importer<'a> {
         // BOUNDARY the field exists to record, and absorbing it away leaves a
         // single ordinary body that the derivation reproduces.
         let mut head_rows = head_rows;
-        if head_attrs.is_none() && head_rows == 0 && bodies.len() == 1 && leading_header_rows > 0 {
+        if head_attrs.is_none()
+            && head_rows == 0
+            && bodies.len() == 1
+            && leading_header_rows > 0
+            && bodies[0].head_rows > 0
+        {
             let absorbed = leading_header_rows.min(bodies[0].head_rows);
             head_rows = absorbed;
             bodies[0].head_rows -= absorbed;
