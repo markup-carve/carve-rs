@@ -358,7 +358,6 @@ fn render_layout_body(
             if title
                 .bytes()
                 .any(|byte| matches!(byte, b'*' | b'/' | b'`' | b'['))
-                || title.matches(':').count() >= 2
             {
                 return None;
             }
@@ -503,9 +502,6 @@ fn render_layout_body(
             wrote = true;
             continue;
         }
-        if !is_layout_paragraph_line(line) {
-            return None;
-        }
         layout_indent(out, depth);
         out.push_str("<p>");
         let mut end = i;
@@ -570,17 +566,15 @@ fn render_layout_inline(
     text: &str,
     options: &Options<'_>,
 ) -> Option<()> {
-    if layout_inline_needs_authoritative(text)
-        || options.smart_typography != crate::extension::SmartTypographyMode::Glyph
-    {
+    if options.smart_typography != crate::extension::SmartTypographyMode::Glyph {
         return None;
     }
     let bytes = text.as_bytes();
-    let mut i = 0;
+    let mut i = layout_inline_start(text)?;
     let mut plain = 0;
     while i < bytes.len() {
         let delimiter = bytes[i];
-        if !matches!(delimiter, b'*' | b'/' | b'`' | b'[') {
+        if !is_layout_inline_marker(delimiter) {
             i += 1;
             continue;
         }
@@ -683,9 +677,16 @@ fn render_layout_inline(
     Some(())
 }
 
-fn layout_inline_needs_authoritative(text: &str) -> bool {
+#[inline]
+fn is_layout_inline_marker(byte: u8) -> bool {
+    matches!(byte, b'*' | b'/' | b'`' | b'[')
+}
+
+/// Validate the inline subset and return its first marker, or the byte length.
+fn layout_inline_start(text: &str) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut colons = 0;
+    let mut first_marker = bytes.len();
     for (i, byte) in bytes.iter().copied().enumerate() {
         if matches!(
             byte,
@@ -704,32 +705,35 @@ fn layout_inline_needs_authoritative(text: &str) -> bool {
                 | b'\''
                 | b'"'
         ) {
-            return true;
+            return None;
+        }
+        if first_marker == bytes.len() && is_layout_inline_marker(byte) {
+            first_marker = i;
         }
         match byte {
             b':' => {
                 colons += 1;
                 if colons == 2 {
-                    return true;
+                    return None;
                 }
             }
-            b'-' if bytes.get(i + 1) == Some(&b'-') => return true,
-            b'.' if bytes.get(i + 1..i + 3) == Some(b"..") => return true,
-            b'/' if bytes.get(i + 1) == Some(&b'*') => return true,
-            b'*' if bytes.get(i + 1) == Some(&b'/') => return true,
-            b'`' if bytes.get(i + 1) == Some(&b'`') => return true,
-            b'+' if bytes.get(i + 1) == Some(&b'-') => return true,
+            b'-' if bytes.get(i + 1) == Some(&b'-') => return None,
+            b'.' if bytes.get(i + 1..i + 3) == Some(b"..") => return None,
+            b'/' if bytes.get(i + 1) == Some(&b'*') => return None,
+            b'*' if bytes.get(i + 1) == Some(&b'/') => return None,
+            b'`' if bytes.get(i + 1) == Some(&b'`') => return None,
+            b'+' if bytes.get(i + 1) == Some(&b'-') => return None,
             b'(' => {
                 let rest = &bytes[i..];
                 if rest.starts_with(b"(c)") || rest.starts_with(b"(r)") || rest.starts_with(b"(tm)")
                 {
-                    return true;
+                    return None;
                 }
             }
             _ => {}
         }
     }
-    false
+    Some(first_marker)
 }
 
 fn render_layout_list(
@@ -1050,6 +1054,17 @@ mod layout_html_tests {
             source.contains("[^") || source.contains("^["),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn skipped_plain_prefixes_keep_marker_flanking_and_escaping() {
+        for source in ["a*b*\n", "x/y/\n"] {
+            assert!(try_layout_html(source, &Options::default()).is_none());
+        }
+        for source in ["a & b *c*\n", "foo`bar`\n", "text [link](/url)\n"] {
+            let html = try_layout_html(source, &Options::default()).expect("accepted prefix");
+            assert_eq!(html, authoritative(source), "{source}");
+        }
     }
 
     #[test]

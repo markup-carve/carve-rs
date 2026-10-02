@@ -2,13 +2,17 @@
 //! text content escapes `&`, `<`, `>`; attribute values additionally
 //! escape `"`.
 
+const AMPERSAND: u8 = b'&';
+const LESS_THAN: u8 = b'<';
+const GREATER_THAN: u8 = b'>';
+
 /// Replacement entity for a text-escaped byte, or `None` if it passes through.
 #[inline]
 fn text_entity(byte: u8) -> Option<&'static str> {
     match byte {
-        b'&' => Some("&amp;"),
-        b'<' => Some("&lt;"),
-        b'>' => Some("&gt;"),
+        AMPERSAND => Some("&amp;"),
+        LESS_THAN => Some("&lt;"),
+        GREATER_THAN => Some("&gt;"),
         _ => None,
     }
 }
@@ -63,9 +67,13 @@ pub fn write_escaped_text(out: &mut String, input: &str) {
 
 fn write_escaped_text_inner(out: &mut String, input: &str) {
     let bytes = input.as_bytes();
+    let Some(first) = memchr::memchr3(AMPERSAND, LESS_THAN, GREATER_THAN, bytes) else {
+        out.push_str(input);
+        return;
+    };
     let mut start = 0;
-    for (i, &b) in bytes.iter().enumerate() {
-        if let Some(entity) = text_entity(b) {
+    for (i, &byte) in bytes.iter().enumerate().skip(first) {
+        if let Some(entity) = text_entity(byte) {
             out.push_str(&input[start..i]);
             out.push_str(entity);
             start = i + 1;
@@ -91,7 +99,9 @@ pub fn write_escaped_attr(out: &mut String, input: &str) {
 
 pub fn escape_text(input: &str) -> String {
     // Fast path: nothing to escape or strip, avoid an allocation copy.
-    if !input.bytes().any(|b| text_entity(b).is_some()) && !has_bidi_control(input) {
+    if memchr::memchr3(AMPERSAND, LESS_THAN, GREATER_THAN, input.as_bytes()).is_none()
+        && !has_bidi_control(input)
+    {
         return input.to_string();
     }
     let mut out = String::with_capacity(input.len() + 8);
@@ -426,6 +436,20 @@ mod tests {
                 "U+{:04X} must not be a control",
                 c as u32
             );
+        }
+    }
+
+    #[test]
+    fn text_escaping_preserves_utf8_around_escape_runs() {
+        for length in [0, 15, 16, 31, 32, 63, 64] {
+            let prefix = "é€🙂".repeat(length);
+            let input = format!("{prefix}<&>🙂\u{202e}tail");
+            let expected = format!("{prefix}&lt;&amp;&gt;🙂tail");
+            assert_eq!(escape_text(&prefix), prefix);
+            assert_eq!(escape_text(&input), expected);
+            let mut output = String::from("existing:");
+            super::write_escaped_text(&mut output, &input);
+            assert_eq!(output, format!("existing:{expected}"));
         }
     }
 

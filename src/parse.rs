@@ -23709,24 +23709,36 @@ fn sanitize_id_source(text: &str) -> String {
 }
 
 pub(crate) fn slugify_parse(text: &str, opts: HeadingIdOptions) -> String {
-    let sanitized = sanitize_id_source(text);
-    let detyped = de_typography(&sanitized);
-    let mut out = slug_run(detyped.chars(), false);
-    match opts.ascii {
-        AsciiHeadingIds::Off => {}
-        mode => {
-            let mut folded = String::with_capacity(out.len());
-            for ch in out.chars() {
-                match crate::translit_map::translit(ch) {
-                    Some(ascii) => folded.push_str(ascii),
-                    None => folded.push(ch),
+    let ascii = text.is_ascii();
+    // ASCII needs no normalization, invisible-control stripping, or glyph conversion.
+    let mut out = if ascii {
+        slug_run(text, false)
+    } else {
+        let sanitized = sanitize_id_source(text);
+        let detyped = de_typography(&sanitized);
+        slug_run(&detyped, false)
+    };
+    if !ascii {
+        match opts.ascii {
+            AsciiHeadingIds::Off => {}
+            mode => {
+                let mut folded = String::with_capacity(out.len());
+                for ch in out.chars() {
+                    match crate::translit_map::translit(ch) {
+                        Some(ascii) => folded.push_str(ascii),
+                        None => folded.push(ch),
+                    }
                 }
+                out = slug_run(&folded, mode == AsciiHeadingIds::Strict);
             }
-            out = slug_run(folded.chars(), mode == AsciiHeadingIds::Strict);
         }
     }
     if opts.lowercase {
-        out = out.chars().flat_map(char::to_lowercase).collect::<String>();
+        if ascii {
+            out.make_ascii_lowercase();
+        } else {
+            out = out.chars().flat_map(char::to_lowercase).collect::<String>();
+        }
     }
     // A leading Unicode number (\p{N}: Nd/Nl/No) is a valid HTML id but not a
     // bare CSS selector, so prefix 's-'. Empty -> 's'. Matches carve-js/php.
@@ -23748,10 +23760,10 @@ pub(crate) fn slugify_parse(text: &str, opts: HeadingIdOptions) -> String {
 /// map becomes a hyphen instead of surviving. Both variants are needed because
 /// the fold runs this twice - once over the source, once over the table's
 /// output - and only the second run may narrow what counts as a character.
-fn slug_run(chars: impl Iterator<Item = char>, ascii_only: bool) -> String {
-    let mut out = String::new();
+fn slug_run(text: &str, ascii_only: bool) -> String {
+    let mut out = String::with_capacity(text.len());
     let mut last_dash = false;
-    for ch in chars {
+    for ch in text.chars() {
         let kept = ch.is_ascii_alphanumeric() || (!ascii_only && ch as u32 >= 0x80);
         if kept {
             out.push(ch);
@@ -25351,5 +25363,47 @@ mod container_open_readings {
             small.readings as f64 / small_work as f64,
             large.readings as f64 / large_work as f64,
         );
+    }
+}
+
+#[cfg(test)]
+mod ascii_heading_id_tests {
+    use super::{
+        de_typography, sanitize_id_source, slugify_parse, AsciiHeadingIds, HeadingIdOptions,
+    };
+
+    #[test]
+    fn ascii_heading_ids_keep_separator_number_and_case_rules_in_every_mode() {
+        let ascii: String = (0..=127).map(char::from).collect();
+        assert_eq!(sanitize_id_source(&ascii), ascii);
+        assert_eq!(de_typography(&ascii), ascii);
+        for ascii in [
+            AsciiHeadingIds::Off,
+            AsciiHeadingIds::Fold,
+            AsciiHeadingIds::Strict,
+        ] {
+            for lowercase in [false, true] {
+                let options = HeadingIdOptions { ascii, lowercase };
+                for (source, expected) in [
+                    ("  ASCII Title... ", "ASCII-Title"),
+                    ("A\0B\tC\nD", "A-B-C-D"),
+                    ("123 & punctuation", "s-123-punctuation"),
+                    ("", "s"),
+                    ("---", "s"),
+                    ("A Z", "A-Z"),
+                ] {
+                    let expected = if lowercase {
+                        expected.to_ascii_lowercase()
+                    } else {
+                        expected.into()
+                    };
+                    assert_eq!(
+                        slugify_parse(source, options),
+                        expected,
+                        "{source:?}: {options:?}"
+                    );
+                }
+            }
+        }
     }
 }
