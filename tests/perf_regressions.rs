@@ -51,6 +51,47 @@ fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
 const MAX_SECS: f32 = 10.0;
 
 #[test]
+fn unmatched_citation_openers_parse_bounded() {
+    let _guard = perf_guard();
+    let citations = carve::Citations::new();
+    let options = Options::new().with_extension(&citations);
+    let source = "[@".repeat(100_000);
+    let start = Instant::now();
+    let doc = carve::parse_with_options(&source, &options);
+    assert!(!doc.children.is_empty());
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "citation bracket scan took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn positioned_citation_groups_parse_bounded() {
+    let _guard = perf_guard();
+    let citations = carve::Citations::new();
+    let options = Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    let source = format!("[{}]", vec!["@a"; 100_000].join("; "));
+    let start = Instant::now();
+    let doc = carve::parse_with_options(&source, &options);
+    let carve::BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    let carve::InlineNode::CitationGroup(group) = &paragraph.children[0] else {
+        panic!("expected citation group");
+    };
+    assert_eq!(group.items.len(), 100_000);
+    assert!(group.items.last().unwrap().pos.is_some());
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "citation positioning took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
 fn many_abbreviations_do_not_scan_every_definition_at_every_position() {
     let mut source = String::new();
     for i in 0..1500 {

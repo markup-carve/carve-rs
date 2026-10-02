@@ -38,6 +38,65 @@ fn parses_key_into_citation_group() {
 }
 
 #[test]
+fn nested_and_escaped_brackets_preserve_citation_matches() {
+    let citations = Citations::new();
+    let options = Options::new().with_extension(&citations);
+    let source = r"[see [x] @a] [bad] [@b, p. [3]] [see \] @c] [@d]";
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    let groups: Vec<_> = paragraph
+        .children
+        .iter()
+        .filter_map(|node| {
+            if let InlineNode::CitationGroup(group) = node {
+                Some(group)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(
+        groups
+            .iter()
+            .map(|g| g.items[0].key.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b", "c", "d"]
+    );
+    assert_eq!(groups[2].raw, r"[see \] @c]");
+}
+
+#[test]
+fn positioned_citation_items_follow_unicode_source_offsets() {
+    let source = "é [voir α @a;\nvoir β @bb].\n";
+    let citations = Citations::new();
+    let options = Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    let doc = carve::parse_with_options(source, &options);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected paragraph");
+    };
+    let group = paragraph
+        .children
+        .iter()
+        .find_map(|node| {
+            if let InlineNode::CitationGroup(group) = node {
+                Some(group)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    let first = group.items[0].pos.as_ref().unwrap();
+    let second = group.items[1].pos.as_ref().unwrap();
+    assert_eq!((first.start_offset, first.end_offset), (3, 12));
+    assert_eq!((second.start_offset, second.end_offset), (14, 24));
+    assert_eq!((second.start_line, second.start_column), (2, 1));
+}
+
+#[test]
 fn types_and_positions_each_citation_item() {
     let source = "See [@a; see @bb, p. 4].\n";
     let citations = Citations::new();

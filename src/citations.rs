@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::ast::*;
 use crate::escape::{escape_attr, escape_text};
@@ -188,7 +188,7 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
     if !text.get(pos..)?.starts_with('[') {
         return None;
     }
-    let close = close_bracket(text, pos)?;
+    let close = ctx.citation_close_bracket(text, pos)?;
     if matches!(text.as_bytes().get(close + 1), Some(b'(' | b'[' | b'{')) {
         return None;
     }
@@ -223,7 +223,33 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
     })
 }
 
-fn close_bracket(text: &str, open: usize) -> Option<usize> {
+// Keep escape handling identical to close_bracket; core bracket maps also
+// hide code spans and comments, which the citation matcher does not skip.
+pub(crate) fn bracket_pairs(text: &str) -> HashMap<usize, usize> {
+    let bytes = text.as_bytes();
+    let mut pairs = HashMap::new();
+    let mut stack = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'[' => {
+                stack.push(i);
+                i += 1;
+            }
+            b']' => {
+                if let Some(open) = stack.pop() {
+                    pairs.insert(open, i);
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    pairs
+}
+
+pub(crate) fn close_bracket(text: &str, open: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let mut depth = 0usize;
     let mut i = open;
