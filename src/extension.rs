@@ -780,13 +780,25 @@ impl<'a> MatcherContext<'a> {
     pub(crate) fn citation_close_bracket(&self, text: &str, open: usize) -> Option<usize> {
         if let Some((source, cache)) = self.citation_brackets {
             if source.as_ptr() == text.as_ptr() && source.len() == text.len() {
+                if let Some(pairs) = cache.get() {
+                    return pairs.get(&open).copied();
+                }
+                // Short balanced citations need no map. Limit this scan so
+                // repeated unclosed or deeply nested openers remain bounded.
+                const SHORT_SCAN_BYTES: usize = 64;
+                if let Some(close) = crate::citations::close_bracket(text, open, SHORT_SCAN_BYTES) {
+                    return Some(close);
+                }
+                if text.len().saturating_sub(open) <= SHORT_SCAN_BYTES {
+                    return None;
+                }
                 return cache
                     .get_or_init(|| crate::citations::bracket_pairs(text))
                     .get(&open)
                     .copied();
             }
         }
-        crate::citations::close_bracket(text, open)
+        crate::citations::close_bracket(text, open, usize::MAX)
     }
 
     pub fn parse_inlines(&self, text: &str) -> Vec<InlineNode> {
