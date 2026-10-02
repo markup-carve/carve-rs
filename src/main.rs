@@ -134,7 +134,7 @@ fn main() -> ExitCode {
                 return ExitCode::SUCCESS;
             }
             "-V" | "--version" => {
-                println!("carve {}", env!("CARGO_PKG_VERSION"));
+                println!("carve-rs {}", env!("CARGO_PKG_VERSION"));
                 return ExitCode::SUCCESS;
             }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,

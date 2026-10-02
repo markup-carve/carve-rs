@@ -14,7 +14,7 @@ fn carve(args: &[&str]) -> (String, String, Option<i32>) {
 
 #[test]
 fn version_flags_print_the_crate_version() {
-    let expected = format!("carve {}\n", env!("CARGO_PKG_VERSION"));
+    let expected = format!("carve-rs {}\n", env!("CARGO_PKG_VERSION"));
     for args in [
         &["--version"][..],
         &["-V"],
