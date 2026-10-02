@@ -126,7 +126,10 @@ fn a_rowspan_of_zero_reaches_the_end_of_its_row_group() {
     let (written, _) = round_trip(
         "<table><thead><tr><th>h</th></tr></thead><tbody><tr><td rowspan=\"0\">b</td><td>x</td></tr><tr><td>y</td></tr></tbody><tfoot><tr><td>f</td></tr><tr><td>g</td></tr></tfoot></table>",
     );
-    assert_eq!(written, "|= h |\n| b | x |\n| ^ | y |\n| f |\n| g |\n");
+    assert_eq!(
+        written,
+        "{header-rows=1 footer-rows=2}\n|= h |\n| b | x |\n| ^ | y |\n| f |\n| g |\n"
+    );
 }
 
 /// And a POSITIVE rowspan stops there too, whatever the number says: a browser
@@ -137,7 +140,7 @@ fn a_rowspan_stops_at_its_row_group_whatever_the_number_says() {
     let (written, _) = round_trip(
         "<table><tbody><tr><td rowspan=\"5\">b</td><td>x</td></tr></tbody><tfoot><tr><td>f</td></tr><tr><td>g</td></tr></tfoot></table>",
     );
-    assert_eq!(written, "| b | x |\n| f |\n| g |\n");
+    assert_eq!(written, "{footer-rows=2}\n| b | x |\n| f |\n| g |\n");
 }
 
 /// Carve derives the head from the leading run of all-header rows, so a span

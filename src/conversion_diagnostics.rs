@@ -3,7 +3,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::ast::Document;
+use crate::ast::{Attrs, Document, TableBodyGroup, TableRowGroups};
 use crate::ast_json::{parse_value, try_to_json, AstJsonError};
 
 pub const DEFAULT_MAX_CONVERSION_DIAGNOSTICS: usize = 100;
@@ -76,6 +76,53 @@ fn position(value: &Value) -> Option<ConversionPos> {
     }
 }
 
+fn source_partition_preserved(object: &serde_json::Map<String, Value>) -> Option<bool> {
+    let groups = object.get("rowGroups")?;
+    let get_count = |value: &Value, key: &str| {
+        value
+            .get(key)?
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok())
+    };
+    let mut bodies = Vec::new();
+    for body in groups.get("bodies")?.as_array()? {
+        bodies.push(TableBodyGroup {
+            head_rows: get_count(body, "headRows")?,
+            body_rows: get_count(body, "bodyRows")?,
+            row_head_columns: body
+                .get("rowHeadColumns")
+                .and_then(Value::as_u64)
+                .and_then(|v| usize::try_from(v).ok()),
+            attrs: None,
+        });
+    }
+    let expected = TableRowGroups {
+        head_rows: get_count(groups, "headRows")?,
+        foot_rows: get_count(groups, "footRows")?,
+        bodies,
+        head_attrs: None,
+        foot_attrs: None,
+    };
+    let mut attrs = Attrs::default();
+    if let Some(keys) = object
+        .get("attrs")
+        .and_then(|v| v.get("keyValues"))
+        .and_then(Value::as_object)
+    {
+        for (key, value) in keys {
+            if let Some(value) = value.as_str() {
+                attrs.key_values.insert(key.clone(), value.into());
+            }
+        }
+    }
+    crate::table_source_metadata::add_row_groups(&mut attrs, &expected);
+    Some(
+        crate::table_source_metadata::row_groups(&attrs, object.get("rows")?.as_array()?.len())
+            .as_ref()
+            == Some(&expected),
+    )
+}
+
 /// Report AST structure and fields that a canonical Carve write discards.
 ///
 /// The report can be requested before `render_carve`; it does not change the
@@ -141,6 +188,13 @@ pub fn conversion_diagnostics(
                         "Carve source has no block content in a table cell",
                     )),
                     _ => {}
+                }
+                if ty == Some("table") && source_partition_preserved(object) == Some(false) {
+                    losses.push((
+                        ConversionDiagnosticCode::FieldUnspellable,
+                        Some("rowGroups"),
+                        "The retained attributes cannot preserve this table partition",
+                    ));
                 }
                 if ty == Some("table") {
                     if let Some(Value::Object(groups)) = object.get("rowGroups") {

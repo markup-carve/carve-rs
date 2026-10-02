@@ -4911,7 +4911,7 @@ impl<'a> Importer<'a> {
             })
             .collect();
         let unspellable_before = self.unspellable.len();
-        let row_groups = self.row_groups(
+        let mut row_groups = self.row_groups(
             h,
             &trs,
             &header_rows,
@@ -4920,6 +4920,14 @@ impl<'a> Importer<'a> {
             path,
             &mut sections,
         );
+        if list_form && row_groups.is_some() {
+            self.unspellable.push((
+                h.clone(),
+                path.to_owned(),
+                "ListTable cannot preserve this explicit row-group partition".into(),
+                HtmlImportDiagnosticCode::StructureUnspellable,
+            ));
+        }
         // A list table has no slot for the grouping on either exit, so the AST
         // exit reports what only the writing exit reports for a pipe table.
         if list_form && !self.writing {
@@ -4963,11 +4971,47 @@ impl<'a> Importer<'a> {
                 &section_nodes[id].0,
             );
         }
+        if self.writing && !list_form {
+            if let Some(groups) = &mut row_groups {
+                let mut cursor = 0;
+                let mut keep_count = |count: &mut usize| {
+                    let end = cursor + *count;
+                    *count = result[cursor..end]
+                        .iter()
+                        .filter(|row| !Self::blank_table_row(row))
+                        .count();
+                    cursor = end;
+                };
+                keep_count(&mut groups.head_rows);
+                for body in &mut groups.bodies {
+                    keep_count(&mut body.head_rows);
+                    keep_count(&mut body.body_rows);
+                }
+                keep_count(&mut groups.foot_rows);
+            }
+        }
         let last_dropped = if self.writing && !list_form {
             self.drop_blank_rows(&trs, &mut result, path)
         } else {
             None
         };
+        if !list_form {
+            if let Some(groups) = &row_groups {
+                let mut source_attrs = attrs.clone().unwrap_or_default();
+                crate::table_source_metadata::add_row_groups(&mut source_attrs, groups);
+                let mut core = groups.clone();
+                core.head_attrs = None;
+                core.foot_attrs = None;
+                for body in &mut core.bodies {
+                    body.attrs = None;
+                }
+                if crate::table_source_metadata::row_groups(&source_attrs, result.len()).as_ref()
+                    != Some(&core)
+                {
+                    self.unspellable.push((h.clone(), path.to_owned(), "The retained table attributes cannot preserve its explicit row-group partition".into(), HtmlImportDiagnosticCode::StructureUnspellable));
+                }
+            }
+        }
         let mut caption = match caption_node {
             Some((index, node)) => Some(self.caption_inlines(
                 &node,
@@ -5056,28 +5100,34 @@ impl<'a> Importer<'a> {
     /// Drop every row whose cells are all blank, which Carve reads as text
     /// (markup-carve/carve#1954). Returns the source index of the last row
     /// dropped. Writing exit only: the tree renders such a row, and only the
-    /// writer has no spelling for it (carve-rs#1735). The writer does not read
-    /// `row_groups`, so the partition is left as the HTML stated it.
+    /// writer has no spelling for it (carve-rs#1735). The writing exit adjusts
+    /// group counts before removing the rows.
+    fn blank_table_row(row: &TableRow) -> bool {
+        row.cells.iter().all(|cell| {
+            cell.children.is_empty()
+                && cell.span.is_none()
+                && cell.align.is_none()
+                && cell.valign.is_none()
+                && cell
+                    .attrs
+                    .as_ref()
+                    .map_or(true, |attrs| *attrs == Attrs::default())
+        })
+    }
+
     fn drop_blank_rows(
         &mut self,
         trs: &[(Handle, Option<usize>)],
         rows: &mut Vec<TableRow>,
         path: &str,
     ) -> Option<usize> {
-        let blank = |cell: &TableCell| {
-            cell.children.is_empty()
-                && cell.span.is_none()
-                && cell.align.is_none()
-                && cell.valign.is_none()
-                && cell.attrs.as_ref().map_or(true, |a| *a == Attrs::default())
-        };
         let mut last = None;
         let mut index = 0;
         for (r, (tr, _)) in trs.iter().enumerate() {
             if index >= rows.len() {
                 break;
             }
-            if !rows[index].cells.iter().all(blank) {
+            if !Self::blank_table_row(&rows[index]) {
                 index += 1;
                 continue;
             }
@@ -5276,15 +5326,6 @@ impl<'a> Importer<'a> {
         if derivable {
             return None;
         }
-        // Carve SOURCE has no spelling for the field, so a writer loses it. The
-        // AST keeps it and `html_to_carve` reports it, which is the split PART
-        // 12 §16 draws.
-        self.unspellable.push((
-            node.clone(),
-            path.to_owned(),
-            "A table with an explicit head/body/foot grouping has no Carve spelling; the written table keeps only the structure a reader derives from its rows".into(),
-            HtmlImportDiagnosticCode::StructureUnspellable,
-        ));
         Some(TableRowGroups {
             head_attrs,
             foot_attrs,

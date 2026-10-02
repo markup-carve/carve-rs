@@ -197,11 +197,8 @@ fn a_head_or_foot_away_from_the_edge_is_refused_and_reported() {
     );
 }
 
-/// The AST keeps it and says nothing; a WRITER loses it and says so. That split
-/// is PART 12 §16, and `structure-unspellable` is the code the import schema
-/// names for it - carve-rs produced none of the eight before this.
 #[test]
-fn the_ast_keeps_the_partition_and_a_writer_reports_losing_it() {
+fn both_ast_and_source_keep_the_partition() {
     let html =
         "<table><tbody><tr><td>1</td></tr></tbody><tbody><tr><td>2</td></tr></tbody></table>";
     let ast = html_to_ast(html, &HtmlImportOptions::default()).unwrap();
@@ -212,28 +209,8 @@ fn the_ast_keeps_the_partition_and_a_writer_reports_losing_it() {
     );
 
     let written = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
-    assert_eq!(written.value, "| 1 |\n| 2 |\n");
-    assert_eq!(
-        written.report.diagnostics.len(),
-        1,
-        "{:?}",
-        written.report.diagnostics
-    );
-    assert_eq!(
-        written.report.diagnostics[0].code,
-        HtmlImportDiagnosticCode::StructureUnspellable
-    );
-    assert_eq!(
-        written.report.diagnostics[0].severity,
-        HtmlImportSeverity::Warning
-    );
-    assert!(
-        written.report.diagnostics[0]
-            .message
-            .contains("explicit head/body/foot grouping"),
-        "{:?}",
-        written.report.diagnostics[0]
-    );
+    assert_eq!(written.value, "{body-rows=1,1}\n| 1 |\n| 2 |\n");
+    assert!(written.report.diagnostics.is_empty());
 }
 
 /// CONTROL: a table whose partition IS derivable reports nothing on either

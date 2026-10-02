@@ -10,6 +10,11 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../table_body_source.rs"]
+mod table_body_source;
+#[path = "../table_width_precision.rs"]
+mod table_width_precision;
+
 #[path = "../invalid_container_metadata.rs"]
 mod invalid_container_metadata;
 

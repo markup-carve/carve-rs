@@ -2180,7 +2180,11 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 let widths = table
                     .columns
                     .iter()
-                    .map(|c| c.width.map(|v| (v * 100.0).to_string()).unwrap_or_default())
+                    .map(|c| {
+                        c.width
+                            .map(crate::table_width::percentage)
+                            .unwrap_or_default()
+                    })
                     .collect::<Vec<_>>()
                     .join(",");
                 for (key, value) in [("aligns", align), ("valigns", valign), ("widths", widths)] {
@@ -2189,6 +2193,12 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                         attrs.order.push(AttrSlot::Key(key.to_owned()));
                     }
                 }
+            }
+            if let Some(groups) = &table.row_groups {
+                crate::table_source_metadata::add_row_groups(
+                    attrs.get_or_insert_with(Attrs::default),
+                    groups,
+                );
             }
             with_block_attrs(&attrs, &render_table(session, table, ctx))
         }

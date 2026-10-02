@@ -2106,11 +2106,7 @@ fn columns_from_table_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
                 "bottom" => Some(TableVerticalAlign::Bottom),
                 _ => None,
             }),
-            width: widths
-                .get(i)
-                .and_then(|v| v.parse::<f64>().ok())
-                .filter(|v| *v > 0.0 && *v <= 100.0)
-                .map(|v| v / 100.0),
+            width: widths.get(i).and_then(|v| crate::table_width::fraction(v)),
         })
         .collect()
 }

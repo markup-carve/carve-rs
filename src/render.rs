@@ -2063,13 +2063,29 @@ fn render_table(
     out.push_str("<table");
     let mut table_attrs = t.attrs.clone();
     if let Some(attrs) = &mut table_attrs {
-        attrs.key_values.retain(|k, _| {
-            !matches!(
-                k.as_str(),
-                "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows"
-            )
-        });
-        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows")));
+        let has_body_metadata = ["body-rows", "body-header-rows", "body-header-cols"]
+            .iter()
+            .any(|key| attrs.key_values.contains_key(*key));
+        let valid_groups = crate::table_source_metadata::row_groups(attrs, t.rows.len()).is_some();
+        if valid_groups {
+            attrs.key_values.retain(|key, _| {
+                !matches!(
+                    key.as_str(),
+                    "body-rows" | "body-header-rows" | "body-header-cols"
+                )
+            });
+            attrs.order.retain(|slot| !matches!(slot, AttrSlot::Key(key) if matches!(key.as_str(), "body-rows" | "body-header-rows" | "body-header-cols")));
+        }
+        attrs
+            .key_values
+            .retain(|k, _| !matches!(k.as_str(), "aligns" | "valigns" | "widths"));
+        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths")));
+        if !has_body_metadata || valid_groups {
+            attrs
+                .key_values
+                .retain(|key, _| !matches!(key.as_str(), "header-rows" | "footer-rows"));
+            attrs.order.retain(|slot| !matches!(slot, AttrSlot::Key(key) if matches!(key.as_str(), "header-rows" | "footer-rows")));
+        }
     }
     write_attrs(out, &table_attrs);
     out.push('>');
@@ -2089,7 +2105,12 @@ fn render_table(
             indent(out, level + 2);
             out.push_str("<col");
             if let Some(width) = column.width {
-                write!(out, " style=\"width: {}%;\"", width * 100.0).unwrap();
+                write!(
+                    out,
+                    " style=\"width: {}%;\"",
+                    crate::table_width::percentage(width)
+                )
+                .unwrap();
             }
             out.push('>');
         }
@@ -2155,11 +2176,28 @@ fn render_table(
     });
     // Computed once per table: every row and every cell reads the same answer.
     let column_defaults = table_column_defaults(t, header_count);
+    let mut row_contexts: Vec<_> = (0..t.rows.len())
+        .map(|row| (row < header_count, 0))
+        .collect();
+    if let Some(groups) = &t.row_groups {
+        let mut start = groups.head_rows;
+        for body in &groups.bodies {
+            let end = start + body.head_rows + body.body_rows;
+            for (row, context) in row_contexts.iter_mut().enumerate().take(end).skip(start) {
+                *context = (
+                    row < start + body.head_rows,
+                    body.row_head_columns.unwrap_or(0),
+                );
+            }
+            start = end;
+        }
+    }
     if crosses_section {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<tbody>");
         let mut body_ctx = TableBodyRenderContext {
+            row_head_columns: 0,
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
             defaults: &column_defaults,
@@ -2169,7 +2207,8 @@ fn render_table(
         for (row_idx, row) in t.rows.iter().enumerate() {
             out.push('\n');
             indent(out, level + 2);
-            if row_idx < header_count {
+            body_ctx.row_head_columns = row_contexts[row_idx].1;
+            if row_contexts[row_idx].0 {
                 render_table_row(
                     out,
                     row,
@@ -2256,6 +2295,7 @@ fn render_table(
         write_attrs(out, &body.attrs);
         out.push('>');
         let mut body_ctx = TableBodyRenderContext {
+            row_head_columns: body.row_head_columns.unwrap_or(0),
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
             defaults: &column_defaults,
@@ -2299,6 +2339,7 @@ fn render_table(
         }
         out.push('>');
         let mut foot_ctx = TableBodyRenderContext {
+            row_head_columns: 0,
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
             defaults: &column_defaults,
@@ -2344,11 +2385,7 @@ fn columns_from_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
                 "bottom" => Some(TableVerticalAlign::Bottom),
                 _ => None,
             }),
-            width: widths
-                .get(i)
-                .and_then(|v| v.parse::<f64>().ok())
-                .filter(|v| *v > 0.0 && *v <= 100.0)
-                .map(|v| v / 100.0),
+            width: widths.get(i).and_then(|v| crate::table_width::fraction(v)),
         })
         .collect()
 }
@@ -2437,6 +2474,7 @@ struct TableBodyRenderContext<'a, 'b> {
     defaults: &'a ColumnDefaults,
     options: &'a Options<'a>,
     state: &'b mut RenderState,
+    row_head_columns: usize,
 }
 
 fn render_table_body_row(
@@ -2451,12 +2489,13 @@ fn render_table_body_row(
     let consumed_cols = consumed_rowspan_cols(source_row_idx, ctx.rowspan_cols);
     let colspan_counts = compute_colspans(row, &consumed_cols);
     for (cell_index, cell) in row.cells.iter().enumerate() {
+        let is_header = cell.header || cell_index < ctx.row_head_columns;
         if cell.span == Some(TableCellSpan::Rowspan) {
             // A `^` that merged into a cell above renders nothing; one with
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
             if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
-                let tag = if cell.header { "th" } else { "td" };
-                let scope = cell_scope_attr(cell, cell.header, false);
+                let tag = if is_header { "th" } else { "td" };
+                let scope = cell_scope_attr(cell, is_header, false);
                 let span = ctx
                     .rowspan_cols
                     .get(&(source_row_idx, cell_index))
@@ -2476,8 +2515,8 @@ fn render_table_body_row(
             // with nothing to merge (first column / no real left cell) renders
             // an EMPTY cell (§5).
             if colspan_target(row, cell_index, &consumed_cols).is_none() {
-                let tag = if cell.header { "th" } else { "td" };
-                let scope = cell_scope_attr(cell, cell.header, false);
+                let tag = if is_header { "th" } else { "td" };
+                let scope = cell_scope_attr(cell, is_header, false);
                 write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
             continue;
@@ -2498,11 +2537,11 @@ fn render_table_body_row(
             emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
-        let tag = if cell.header { "th" } else { "td" };
+        let tag = if is_header { "th" } else { "td" };
         out.push('<');
         out.push_str(tag);
         // Below the header run, so a header cell here heads its ROW.
-        out.push_str(&cell_scope_attr(cell, cell.header, false));
+        out.push_str(&cell_scope_attr(cell, is_header, false));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
         out.push('>');
