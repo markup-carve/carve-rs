@@ -14,11 +14,9 @@ use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
 };
 use crate::parse::{label_key, unwrap_nested_anchors};
-use crate::table_spans::{
-    colspan_target, compute_colspans, compute_rowspans, consumed_rowspan_cols,
-};
+use crate::table_spans::{ColspanPlan, TableSpanPlan};
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 
 /// The recursion bound every renderer shares, and it MUST sit ABOVE the
@@ -2140,7 +2138,9 @@ fn render_table(
     // Computed once over ALL rows: a `^` in a body row extends the cell above
     // it even when that cell is in a header row, so a header cell can carry a
     // rowspan that crosses the thead/tbody boundary (matches carve-js).
-    let (rowspan_cols, orphan_carets) = compute_rowspans(t);
+    let span_plan = TableSpanPlan::new(t);
+    let rowspan_cols = &span_plan.rowspans;
+    let orphan_carets = &span_plan.orphan_carets;
     // The leading run of rows whose cells are ALL header cells forms <thead>.
     // A row that merely contains a header cell (a row header) stays in the body.
     //
@@ -2155,10 +2155,9 @@ fn render_table(
         .iter()
         .enumerate()
         .take_while(|(r, row)| {
-            let consumed = consumed_rowspan_cols(*r, &rowspan_cols);
             let resolved = |i: usize, cell: &TableCell| match cell.span {
                 Some(TableCellSpan::Rowspan) => !orphan_carets.contains(&(*r, i)),
-                Some(TableCellSpan::Colspan) => colspan_target(row, i, &consumed).is_some(),
+                Some(TableCellSpan::Colspan) => span_plan.rows[*r].targets[i],
                 None => false,
             };
             row.cells
@@ -2186,12 +2185,14 @@ fn render_table(
             section_ends.push(section_end);
         }
     }
+    section_ends.sort_unstable();
+    section_ends.dedup();
     let crosses_section = rowspan_cols.iter().any(|(&(row, col), &span)| {
         span > 1
             && t.rows[row].cells[col].span != Some(TableCellSpan::Colspan)
             && section_ends
-                .iter()
-                .any(|&end| row < end && row + span > end)
+                .get(section_ends.partition_point(|&end| end <= row))
+                .is_some_and(|&end| row + span > end)
     });
     // Computed once per table: every row and every cell reads the same answer.
     let column_defaults = table_column_defaults(t, header_count);
@@ -2217,8 +2218,7 @@ fn render_table(
         out.push_str("<tbody>");
         let mut body_ctx = TableBodyRenderContext {
             row_head_columns: 0,
-            rowspan_cols: &rowspan_cols,
-            orphan_carets: &orphan_carets,
+            spans: &span_plan,
             defaults: &column_defaults,
             options,
             state,
@@ -2234,8 +2234,7 @@ fn render_table(
                     true,
                     body_ctx.options,
                     row_idx,
-                    &rowspan_cols,
-                    &orphan_carets,
+                    &span_plan,
                     body_ctx.state,
                     &column_defaults,
                 );
@@ -2279,8 +2278,7 @@ fn render_table(
                 true,
                 options,
                 row_idx,
-                &rowspan_cols,
-                &orphan_carets,
+                &span_plan,
                 state,
                 &column_defaults,
             );
@@ -2315,8 +2313,7 @@ fn render_table(
         out.push('>');
         let mut body_ctx = TableBodyRenderContext {
             row_head_columns: body.row_head_columns.unwrap_or(0),
-            rowspan_cols: &rowspan_cols,
-            orphan_carets: &orphan_carets,
+            spans: &span_plan,
             defaults: &column_defaults,
             options,
             state,
@@ -2331,8 +2328,7 @@ fn render_table(
                     true,
                     body_ctx.options,
                     row_idx,
-                    &rowspan_cols,
-                    &orphan_carets,
+                    &span_plan,
                     body_ctx.state,
                     &column_defaults,
                 );
@@ -2359,8 +2355,7 @@ fn render_table(
         out.push('>');
         let mut foot_ctx = TableBodyRenderContext {
             row_head_columns: 0,
-            rowspan_cols: &rowspan_cols,
-            orphan_carets: &orphan_carets,
+            spans: &span_plan,
             defaults: &column_defaults,
             options,
             state,
@@ -2416,8 +2411,7 @@ fn render_table_row(
     in_head: bool,
     options: &Options<'_>,
     row_idx: usize,
-    rowspan_cols: &BTreeMap<(usize, usize), usize>,
-    orphan_carets: &BTreeSet<(usize, usize)>,
+    spans: &TableSpanPlan,
     state: &mut RenderState,
     defaults: &ColumnDefaults,
 ) {
@@ -2429,8 +2423,12 @@ fn render_table_row(
     // `rowspan` its origin already carried, and a `<` rendered an empty `<th>`
     // instead of widening the cell to its left - so a header cell spanning
     // columns lost the span and gained a column the table does not have.
-    let consumed_cols = consumed_rowspan_cols(row_idx, rowspan_cols);
-    let colspan_counts = compute_colspans(row, &consumed_cols);
+    let rowspan_cols = &spans.rowspans;
+    let orphan_carets = &spans.orphan_carets;
+    let ColspanPlan {
+        counts: colspan_counts,
+        targets,
+    } = &spans.rows[row_idx];
     for (col, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
             if orphan_carets.contains(&(row_idx, col)) {
@@ -2452,7 +2450,7 @@ fn render_table_row(
             emitted.push("rowspan");
         }
         if cell.span == Some(TableCellSpan::Colspan) {
-            if colspan_target(row, col, &consumed_cols).is_none() {
+            if !targets[col] {
                 let scope = cell_scope_attr(cell, true, in_head);
                 write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
@@ -2487,8 +2485,7 @@ fn render_table_row(
 }
 
 struct TableBodyRenderContext<'a, 'b> {
-    rowspan_cols: &'a BTreeMap<(usize, usize), usize>,
-    orphan_carets: &'a BTreeSet<(usize, usize)>,
+    spans: &'a TableSpanPlan,
     /// The column defaults declared by the head, computed once per table.
     defaults: &'a ColumnDefaults,
     options: &'a Options<'a>,
@@ -2505,18 +2502,25 @@ fn render_table_body_row(
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
     out.push('>');
-    let consumed_cols = consumed_rowspan_cols(source_row_idx, ctx.rowspan_cols);
-    let colspan_counts = compute_colspans(row, &consumed_cols);
+    let ColspanPlan {
+        counts: colspan_counts,
+        targets,
+    } = &ctx.spans.rows[source_row_idx];
     for (cell_index, cell) in row.cells.iter().enumerate() {
         let is_header = cell.header || cell_index < ctx.row_head_columns;
         if cell.span == Some(TableCellSpan::Rowspan) {
             // A `^` that merged into a cell above renders nothing; one with
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
-            if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
+            if ctx
+                .spans
+                .orphan_carets
+                .contains(&(source_row_idx, cell_index))
+            {
                 let tag = if is_header { "th" } else { "td" };
                 let scope = cell_scope_attr(cell, is_header, false);
                 let span = ctx
-                    .rowspan_cols
+                    .spans
+                    .rowspans
                     .get(&(source_row_idx, cell_index))
                     .map_or(String::new(), |count| format!(" rowspan=\"{count}\""));
                 write!(out, "<{tag}{scope}{span}></{tag}>").unwrap();
@@ -2525,7 +2529,7 @@ fn render_table_body_row(
         }
         let mut attrs = String::new();
         let mut emitted: Vec<&str> = Vec::new();
-        if let Some(span) = ctx.rowspan_cols.get(&(source_row_idx, cell_index)) {
+        if let Some(span) = ctx.spans.rowspans.get(&(source_row_idx, cell_index)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
             emitted.push("rowspan");
         }
@@ -2533,7 +2537,7 @@ fn render_table_body_row(
             // A `<` that merged into a cell to its left renders nothing; one
             // with nothing to merge (first column / no real left cell) renders
             // an EMPTY cell (§5).
-            if colspan_target(row, cell_index, &consumed_cols).is_none() {
+            if !targets[cell_index] {
                 let tag = if is_header { "th" } else { "td" };
                 let scope = cell_scope_attr(cell, is_header, false);
                 write!(out, "<{tag}{scope}></{tag}>").unwrap();
