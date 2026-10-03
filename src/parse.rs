@@ -10917,6 +10917,7 @@ fn parse_list(
         // table); a would-be opener on a LATER lazy-continuation line stays
         // paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
+        let mut suppress_colon_interrupt = is_invalid_colon_fence_opener_text(marker.content);
         // The first raw line a failed wrapped-attribute lookahead has not
         // already proved cannot start one. Without this floor, a run of
         // unclosed `{.a` lines scans the whole remaining item once per line.
@@ -10982,6 +10983,7 @@ fn parse_list(
                 if let Some(anchors) = &mut anchors {
                     anchors.push(inline_anchor_for_line(cur, cur.pos, inline_line));
                 }
+                suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(inline_line);
                 para_lines.push(inline_line.to_string());
                 cur.consume();
                 continue;
@@ -11010,6 +11012,7 @@ fn parse_list(
                 if let Some(anchors) = &mut anchors {
                     anchors.push(inline_anchor_for_line(cur, cur.pos, inline_line));
                 }
+                suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(inline_line);
                 para_lines.push(inline_line.to_string());
                 cur.consume();
                 continue;
@@ -11017,9 +11020,6 @@ fn parse_list(
             // AT content_column: a block opener interrupts the lead paragraph and
             // nests as a child block; plain text dedents to the body's column 0.
             let dedented = slice_columns(next, content_col, false);
-            let suppress_colon_interrupt = para_lines
-                .iter()
-                .any(|line| is_invalid_colon_fence_opener_text(line));
             let wrapped_attr_interrupts = if cur.pos < attrs_scan_floor {
                 false
             } else {
@@ -11068,6 +11068,7 @@ fn parse_list(
             } else {
                 item_unopened_fence_span = true;
             }
+            suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(&dedented);
             para_lines.push(dedented);
             cur.consume();
         }
@@ -11348,7 +11349,13 @@ fn content_column_attr_block(
         if is_blank_line(line) || indent_columns(line) < content_col {
             break;
         }
-        normalized.push(slice_columns(line, content_col, false));
+        #[cfg(test)]
+        ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
+        let fragment = slice_columns(line, content_col, false);
+        if !valid_wrapped_attr_continuation(&fragment) {
+            return ContentColumnAttrBlock::NoneWithin(normalized.len());
+        }
+        normalized.push(fragment);
         if trim_ascii_end(line).ends_with('}') {
             met_closer = true;
             break;
@@ -12194,6 +12201,15 @@ fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
 fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
     let base = indent_columns(line);
     let local = strip_leading_columns(line, base);
+    if is_list_marker(&local)
+        || item_block_opener(&local)
+        || interrupts_paragraph_with_rest(&local, &[])
+    {
+        return true;
+    }
+    if !local.starts_with('{') && detect_fence_open(&local).is_none() {
+        return false;
+    }
     let rebased_rest: Vec<String> = rest
         .iter()
         .map(|candidate| {
@@ -12205,13 +12221,7 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
         })
         .collect();
     let rebased_rest: Vec<&str> = rebased_rest.iter().map(String::as_str).collect();
-    if is_list_marker(&local) || item_block_opener(&local) {
-        return true;
-    }
-    if interrupts_paragraph_with_rest(&local, &rebased_rest) {
-        return true;
-    }
-    false
+    interrupts_paragraph_with_rest(&local, &rebased_rest)
 }
 
 /// A flush-left single-line comment (`%% ...`), the one construct §24 C3
@@ -13800,13 +13810,12 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     // The brace test comes FIRST so the common line costs nothing: this
     // predicate is asked of every blank-separated block, and copying `rest`
     // for a heading or a paragraph line would make that quadratic.
-    if !line.starts_with([' ', '\t']) && trim_ascii(line).starts_with('{') {
-        let mut block: Vec<&str> = Vec::with_capacity(rest.len() + 1);
-        block.push(line);
-        block.extend_from_slice(rest);
-        if standalone_attrs_block_len(&block).is_some() {
-            return true;
-        }
+    if !line.starts_with([' ', '\t'])
+        && trim_ascii(line).starts_with('{')
+        && standalone_attrs_block_len_iter(std::iter::once(line).chain(rest.iter().copied()))
+            .is_some()
+    {
+        return true;
     }
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
@@ -17733,6 +17742,15 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
     attrs
 }
 
+#[cfg(test)]
+thread_local! {
+    static ATTRS_LOOKAHEAD_BYTES: Cell<usize> = const { Cell::new(0) };
+}
+
+fn valid_wrapped_attr_continuation(line: &str) -> bool {
+    trim_ascii_end(line).ends_with('}') || parse_attrs_with(trim_ascii(line), false).is_some()
+}
+
 /// A standalone block-attribute block, possibly spanning several contiguous
 /// (non-blank) lines: it opens with `{` and closes with `}` on a later line
 /// (`{#id` / ` .foo}`). Consumes the lines and returns the parsed attributes,
@@ -17773,12 +17791,17 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         if is_blank_line(line) {
             return None;
         }
+        if count > 0 && !valid_wrapped_attr_continuation(line) {
+            return None;
+        }
         if !joined.is_empty() {
             if quote.is_some() {
                 return None;
             }
             joined.push(' ');
         }
+        #[cfg(test)]
+        ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
         joined.push_str(trim_ascii(line));
         quote = open_quote_at_end(trim_ascii(line));
         count += 1;
@@ -17810,10 +17833,14 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
 /// FLUSH-LEFT ONLY, like every caller's own guard: an indented `{...}` is lazy
 /// paragraph text under the strict column-0 rule (PART 9 section 24 C3).
 fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
+    standalone_attrs_block_len_iter(lines.iter().copied())
+}
+
+fn standalone_attrs_block_len_iter<'a>(mut lines: impl Iterator<Item = &'a str>) -> Option<usize> {
     // OPENER read RAW (see `parse_standalone_attrs_block`): a framed first line
     // is lazily-folded indented text, not a block opener. Only the CONTINUATION
     // lines in the join loop below are unframed.
-    let first = *lines.first()?;
+    let first = lines.next()?;
     if first.starts_with([' ', '\t']) {
         return None;
     }
@@ -17836,9 +17863,12 @@ fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
     }
     let mut joined = String::new();
     let mut quote: Option<char> = None;
-    for (count, raw) in lines.iter().enumerate() {
+    for (count, raw) in std::iter::once(first).chain(lines).enumerate() {
         let line = strip_lazy(raw);
         if is_blank_line(line) {
+            return None;
+        }
+        if count > 0 && !valid_wrapped_attr_continuation(line) {
             return None;
         }
         if !joined.is_empty() {
@@ -17847,6 +17877,8 @@ fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
             }
             joined.push(' ');
         }
+        #[cfg(test)]
+        ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + line.len()));
         joined.push_str(trim_ascii(line));
         quote = open_quote_at_end(trim_ascii(line));
         if trim_ascii_end(line).ends_with('}') {
@@ -17896,8 +17928,8 @@ enum QuotedAttrsBlock {
 /// first line with a trailing `}`; if the walk reaches a blank line or the end
 /// of the quoted run without meeting one, no line it passed can open a block
 /// either, and `NoneWithin` hands the caller that window to skip. Without it a
-/// quoted `{a` repeated n times pays an O(n) scan per line - a second quadratic
-/// on top of the one the inner paragraph parse already has on that shape.
+/// quoted `{a` repeated n times pays an O(n) scan per line. Invalid continuation
+/// fragments also end the window before a later opener is skipped.
 fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttrsBlock {
     if !stripped.contains('{') {
         return QuotedAttrsBlock::No;
@@ -17909,6 +17941,9 @@ fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttr
         line
     }
     let first = innermost(stripped);
+    if first.starts_with([' ', '\t']) || !first.starts_with('{') {
+        return QuotedAttrsBlock::No;
+    }
     // The single-line spelling is already answered by
     // `interrupts_paragraph_with_rest`, which `ParaOpen` consults. Only the
     // WRAPPED one needs the lookahead, and refusing a complete line here keeps
@@ -17925,6 +17960,11 @@ fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttr
             break;
         };
         let inner = innermost(next);
+        #[cfg(test)]
+        ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(work.get() + inner.len()));
+        if !is_blank_line(inner) && !valid_wrapped_attr_continuation(inner) {
+            return QuotedAttrsBlock::NoneWithin(block.len());
+        }
         block.push(inner);
         if is_blank_line(inner) {
             break;
@@ -25405,5 +25445,80 @@ mod ascii_heading_id_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod wrapped_attrs_work_tests {
+    use super::*;
+
+    #[test]
+    fn unclosed_attribute_lines_do_not_repeatedly_copy_the_paragraph_tail() {
+        for prefix in ["", "> ", "- "] {
+            for suffix in ["", "}\n", "\n}\n", "\n{#valid\n.class}\ntext\n"] {
+                let source = format!("{prefix}{{abcd\n").repeat(8000) + suffix;
+                ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(0));
+                let doc = parse(&source);
+                assert!(!doc.children.is_empty());
+                let work = ATTRS_LOOKAHEAD_BYTES.with(Cell::get);
+                assert!(
+                    work <= source.len() * 3,
+                    "copied {work} bytes for {} source bytes",
+                    source.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn container_collectors_stop_before_the_next_invalid_fragment() {
+        for source in [
+            "> {abcd\n".repeat(8000) + "> }\n",
+            String::from("- x\n") + &"  {abcd\n".repeat(8000) + "  }\n",
+        ] {
+            ATTRS_LOOKAHEAD_BYTES.with(|work| work.set(0));
+            let doc = parse(&source);
+            assert!(!doc.children.is_empty());
+            let work = ATTRS_LOOKAHEAD_BYTES.with(Cell::get);
+            assert!(
+                work <= source.len() * 8,
+                "read {work} bytes for {} source bytes",
+                source.len()
+            );
+        }
+    }
+
+    #[test]
+    fn a_valid_three_line_block_attaches_after_a_rejected_opener_in_each_container() {
+        for source in [
+            "{abcd\n{#valid\n  .class\nrole=note}\ntext\n",
+            "> {abcd\n> {#valid\n>   .class\n> role=note}\n> text\n",
+            "- {abcd\n  {#valid\n    .class\n  role=note}\n  text\n",
+        ] {
+            let html = crate::to_html(source);
+            assert!(
+                html.contains("id=\"valid\" class=\"class\" role=\"note\""),
+                "{html}"
+            );
+            assert!(html.contains("{abcd"), "{html}");
+        }
+    }
+
+    #[test]
+    fn a_later_wrapped_attribute_block_keeps_its_closer() {
+        let doc = parse("{abcd\n\n{#valid\n.class}\ntext\n");
+        assert_eq!(
+            plain_inlines_parse(match &doc.children[0] {
+                BlockNode::Paragraph(p) => &p.children,
+                _ => panic!("unclosed opener must remain a paragraph"),
+            }),
+            "{abcd"
+        );
+        let BlockNode::Paragraph(p) = &doc.children[1] else {
+            panic!("expected attributed paragraph")
+        };
+        let attrs = p.attrs.as_ref().expect("wrapped block survives");
+        assert_eq!(attrs.id.as_deref(), Some("valid"));
+        assert_eq!(attrs.classes, ["class"]);
     }
 }
