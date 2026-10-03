@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: changelog-drift-${{ github.event_name }}
@@ -25,11 +26,13 @@ jobs:
         with:
           python-version: '3.x'
       - name: Check merges since the last tag
+        id: measure
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           python3 tools/check-changelog-completeness.py 2>&1 | tee /tmp/changelog-drift.txt && status=0 || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           {
             echo '## Changelog completeness'
             echo
@@ -38,3 +41,87 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # A scheduled red run reports into a page nobody is obliged to open, so the
+      # verdict is filed as one ticket: opened by the first red run, edited by
+      # later ones, closed by the first green one. Same reporter as carve's
+      # changelog-drift.yml. It fails if it cannot file.
+      - name: File the verdict where someone reads it
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STATUS: ${{ steps.measure.outputs.status }}
+          HEAD_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
+            echo "Changelog drift tickets are scoped to $DEFAULT_BRANCH; $REF_NAME keeps its Actions verdict only."
+            exit 0
+          fi
+
+          TITLE="The unreleased changelog section is behind the merges since the last tag"
+          MARKER="<!-- changelog-drift-verdict ref=$REF_NAME -->"
+
+          # Listed rather than searched: the search index lags a fresh issue by
+          # enough to file a duplicate. Matched on the marker rather than the
+          # title, so renaming the issue does not fork it into two.
+          open_issues="$(gh api "repos/$REPO/issues?state=open&per_page=100" --paginate \
+            | jq -r --arg m "$MARKER" \
+                '.[] | select(.pull_request == null) | select((.body // "") | contains($m)) | .number')"
+          issue="${open_issues%%$'\n'*}"
+
+          if [ "${STATUS:-1}" = "0" ]; then
+            echo "The unreleased section accounts for every merge on $HEAD_SHA."
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$REPO" --body \
+                "Green again: run $RUN_URL on \`$HEAD_SHA\`. Closing. The next red run opens a fresh ticket rather than reopening this one."
+              gh issue close "$issue" --repo "$REPO"
+              echo "Closed #$issue."
+            fi
+            exit 0
+          fi
+
+          {
+            echo "$MARKER"
+            echo
+            echo "\`check-changelog-completeness\` is failing against the Unreleased section of"
+            echo "CHANGELOG.md. Nothing else asks this between a merge and a tag, so the"
+            echo "alternative to this ticket is finding out on cut day."
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| run | $RUN_URL |"
+            echo "| commit | \`$HEAD_SHA\` |"
+            echo "| trigger | \`$EVENT_NAME\` |"
+            echo
+            echo "### What it reported"
+            echo
+            echo '```text'
+            cat /tmp/changelog-drift.txt
+            echo '```'
+            echo
+            echo "### How to clear it"
+            echo
+            echo "Write the missing merges into the section being prepared, or exempt a"
+            echo "merge no reader of the notes needs in \`.changelog-exempt\`. Reproduce"
+            echo "locally with \`python3 tools/check-changelog-completeness.py\`."
+            echo
+            echo "This ticket is filed and maintained by the workflow. It is EDITED by each"
+            echo "later red run and CLOSED by the first green one. Closing it by hand does"
+            echo "not silence it: the next red run files a new one."
+          } > /tmp/changelog-drift-verdict.md
+
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$REPO" --body-file /tmp/changelog-drift-verdict.md
+            echo "Updated #$issue."
+          else
+            url="$(gh issue create --repo "$REPO" --title "$TITLE" \
+              --body-file /tmp/changelog-drift-verdict.md)"
+            echo "Filed $url."
+          fi
