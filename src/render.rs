@@ -464,29 +464,31 @@ fn render_dropped_raw_block(
     true
 }
 
-/// Render a container's children, dropping the ones that render to nothing.
-///
-/// A comment, a comment block, an abbreviation definition and a non-HTML raw
-/// block all render as the empty string. Pushing the separating newline before
-/// knowing that leaves a blank line where the block stood - a divergence from
-/// carve-php, which never wrote one. A container whose whole body renders to
-/// nothing gets an empty Vec, which each caller hands to the same path it uses
-/// for a childless container.
-fn rendered_children(
+/// Append visible children, rolling back the separator when a child emits nothing.
+fn render_children(
+    out: &mut String,
     nodes: &[BlockNode],
     level: usize,
     options: &Options<'_>,
     state: &mut RenderState,
-) -> Vec<String> {
-    let mut out = Vec::new();
+) -> bool {
+    #[cfg(test)]
+    CONTAINER_OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow_mut().insert(out as *const String as usize);
+    });
+    let mut visible = false;
     for child in nodes {
-        let mut buf = String::new();
-        render_block(&mut buf, child, level, options, state);
-        if !buf.is_empty() {
-            out.push(buf);
+        let start = out.len();
+        out.push('\n');
+        let body_start = out.len();
+        render_block(out, child, level, options, state);
+        if out.len() == body_start {
+            out.truncate(start);
+        } else {
+            visible = true;
         }
     }
-    out
+    visible
 }
 
 #[derive(Default)]
@@ -1503,12 +1505,8 @@ fn render_block(
         BlockNode::Section(d) => {
             indent(out, level);
             out.push_str(&format!("<section{}>", render_attrs(&d.attrs)));
-            let children = rendered_children(&d.children, level + 1, options, state);
-            for child in &children {
-                out.push('\n');
-                out.push_str(child);
-            }
-            close_block_container(out, level, "section", !children.is_empty());
+            let visible = render_children(out, &d.children, level + 1, options, state);
+            close_block_container(out, level, "section", visible);
         }
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
@@ -2891,16 +2889,12 @@ fn render_named_container(
         out.push_str(&render_container_label(label, options));
         out.push_str("</p>");
     }
-    let rendered = rendered_children(children, level + 1, options, state);
-    for child in &rendered {
-        out.push('\n');
-        out.push_str(child);
-    }
+    let visible = render_children(out, children, level + 1, options, state);
     close_block_container(
         out,
         level,
         tag,
-        title.is_some() || label.is_some() || !rendered.is_empty(),
+        title.is_some() || label.is_some() || visible,
     );
 }
 
@@ -2926,12 +2920,8 @@ fn render_line_block(
 
     indent(out, level);
     out.push_str(&format!("<div{}>", render_attrs_for(&Some(attrs), "div")));
-    let children = rendered_children(&lb.children, level + 1, options, state);
-    for child in &children {
-        out.push('\n');
-        out.push_str(child);
-    }
-    close_block_container(out, level, "div", !children.is_empty());
+    let visible = render_children(out, &lb.children, level + 1, options, state);
+    close_block_container(out, level, "div", visible);
 }
 
 fn close_block_container(out: &mut String, level: usize, tag: &str, has_visible_body: bool) {
@@ -2961,12 +2951,8 @@ fn render_div(
         out.push_str(&render_container_label(label, options));
         out.push_str("</p>");
     }
-    let children = rendered_children(&d.children, level + 1, options, state);
-    for child in &children {
-        out.push('\n');
-        out.push_str(child);
-    }
-    close_block_container(out, level, "div", d.label.is_some() || !children.is_empty());
+    let visible = render_children(out, &d.children, level + 1, options, state);
+    close_block_container(out, level, "div", d.label.is_some() || visible);
 }
 
 fn render_definition_list(
@@ -3018,17 +3004,13 @@ fn render_definition_list(
                 out.push_str("</dd>");
                 continue;
             }
-            let blocks = rendered_children(def, level + 2, options, state);
             out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
+            let visible = render_children(out, def, level + 2, options, state);
             // A definition whose whole body renders to nothing closes on its
             // own line, like the single-paragraph form above.
-            if blocks.is_empty() {
+            if !visible {
                 out.push_str("</dd>");
                 continue;
-            }
-            for block in &blocks {
-                out.push('\n');
-                out.push_str(block);
             }
             out.push('\n');
             indent(out, level + 1);
@@ -3231,17 +3213,7 @@ fn render_extension_carrier(
     let mut state = shared.borrow_mut();
     indent(out, level);
     out.push_str(&format!("<div class=\"{}\">", escape_attr(&node.name)));
-    let children = rendered_children(&node.children, level + 1, options, &mut state);
-    if !children.is_empty() {
-        out.push('\n');
-        let mut first = true;
-        for child in &children {
-            if !first {
-                out.push('\n');
-            }
-            out.push_str(child);
-            first = false;
-        }
+    if render_children(out, &node.children, level + 1, options, &mut state) {
         out.push('\n');
         indent(out, level);
     }
@@ -4673,6 +4645,8 @@ pub(crate) fn allocate_dashes(n: usize) -> String {
 
 #[cfg(test)]
 thread_local! {
+    static CONTAINER_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
     static QUOTE_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
         std::cell::RefCell::new(std::collections::HashSet::new());
     static LIST_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
@@ -4681,6 +4655,35 @@ thread_local! {
 
 #[cfg(test)]
 mod nested_container_output_buffers {
+    #[test]
+    fn nested_divs_append_to_one_output_buffer() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let mut source = String::new();
+                for width in (3..=130).rev() {
+                    source.push_str(&":".repeat(width));
+                    source.push('\n');
+                }
+                source.push_str("body\n");
+                for width in 3..=130 {
+                    source.push_str(&":".repeat(width));
+                    source.push('\n');
+                }
+                let doc = crate::parse(&source);
+                super::CONTAINER_OUTPUT_BUFFERS.with(|buffers| buffers.borrow_mut().clear());
+                let html = crate::render_html(&doc).unwrap();
+                assert_eq!(html.matches("<div>").count(), 128);
+                assert_eq!(
+                    super::CONTAINER_OUTPUT_BUFFERS.with(|buffers| buffers.borrow().len()),
+                    1
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
     #[test]
     fn nested_quotes_append_to_one_output_buffer() {
         std::thread::Builder::new()
