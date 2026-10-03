@@ -1912,12 +1912,16 @@ fn render_list_item(
     }
     write_attrs(out, &item.attrs);
     out.push('>');
-    let task_name = match item.children.first() {
-        Some(BlockNode::Paragraph(p)) => plain_inlines(&p.children)
-            .split_ascii_whitespace()
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => String::new(),
+    let task_name = if item.checked.is_some() {
+        match item.children.first() {
+            Some(BlockNode::Paragraph(p)) => plain_inlines(&p.children)
+                .split_ascii_whitespace()
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => String::new(),
+        }
+    } else {
+        String::new()
     };
     let name_attr = if task_name.is_empty() {
         String::new()
@@ -1994,6 +1998,10 @@ fn render_blockquote(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    #[cfg(test)]
+    QUOTE_OUTPUT_BUFFERS.with(|buffers| {
+        buffers.borrow_mut().insert(out as *const String as usize);
+    });
     indent(out, level);
     if b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
@@ -2011,11 +2019,17 @@ fn render_blockquote(
     write_attrs(out, &b.attrs);
     out.push_str(">\n");
     let mut first = true;
-    for child in rendered_children(&b.children, level + 1, options, state) {
+    for child in &b.children {
+        let start = out.len();
         if !first {
             out.push('\n');
         }
-        out.push_str(&child);
+        let body_start = out.len();
+        render_block(out, child, level + 1, options, state);
+        if out.len() == body_start {
+            out.truncate(start);
+            continue;
+        }
         first = false;
     }
     out.push('\n');
@@ -2030,11 +2044,14 @@ fn render_table(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    let mut resolved = t.clone();
-    if resolved.columns.is_empty() {
-        resolved.columns = columns_from_attrs(resolved.attrs.as_ref());
+    let mut resolved = std::borrow::Cow::Borrowed(t);
+    if t.columns.is_empty() {
+        let columns = columns_from_attrs(t.attrs.as_ref());
+        if !columns.is_empty() {
+            resolved.to_mut().columns = columns;
+        }
     }
-    if let Some(groups) = &resolved.row_groups {
+    if let Some(groups) = &t.row_groups {
         if groups.head_attrs.is_some()
             || groups.foot_attrs.is_some()
             || groups.bodies.iter().any(|b| b.attrs.is_some())
@@ -2046,8 +2063,12 @@ fn render_table(
                 boundaries.push(end);
             }
             for boundary in boundaries {
-                if let Some(row) = resolved.rows.get_mut(boundary) {
-                    for cell in &mut row.cells {
+                if t.rows.get(boundary).is_some_and(|row| {
+                    row.cells
+                        .iter()
+                        .any(|cell| cell.span == Some(TableCellSpan::Rowspan))
+                }) {
+                    for cell in &mut resolved.to_mut().rows[boundary].cells {
                         if cell.span == Some(TableCellSpan::Rowspan) {
                             cell.span = None;
                             cell.children.clear();
@@ -2058,7 +2079,7 @@ fn render_table(
             }
         }
     }
-    let t = &resolved;
+    let t = resolved.as_ref();
     indent(out, level);
     out.push_str("<table");
     let mut table_attrs = t.attrs.clone();
@@ -4652,12 +4673,34 @@ pub(crate) fn allocate_dashes(n: usize) -> String {
 
 #[cfg(test)]
 thread_local! {
+    static QUOTE_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
     static LIST_OUTPUT_BUFFERS: std::cell::RefCell<std::collections::HashSet<usize>> =
         std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
 #[cfg(test)]
-mod nested_list_output_buffers {
+mod nested_container_output_buffers {
+    #[test]
+    fn nested_quotes_append_to_one_output_buffer() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(|| {
+                let source = format!("{}end\n", "> ".repeat(192));
+                let doc = crate::parse(&source);
+                super::QUOTE_OUTPUT_BUFFERS.with(|buffers| buffers.borrow_mut().clear());
+                let html = crate::render_html(&doc).unwrap();
+                assert_eq!(html.matches("<blockquote>").count(), 192);
+                assert_eq!(
+                    super::QUOTE_OUTPUT_BUFFERS.with(|buffers| buffers.borrow().len()),
+                    1
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
     #[test]
     fn nested_lists_append_to_one_output_buffer() {
         std::thread::Builder::new()
