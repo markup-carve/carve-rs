@@ -1,4 +1,11 @@
 use crate::ast::Pos;
+use std::num::NonZeroUsize;
+
+#[derive(Clone, Copy)]
+pub(super) struct MarkerTail {
+    pub(super) content_offset: NonZeroUsize,
+    pub(super) column: usize,
+}
 
 enum LineOrigin {
     Mapped(usize),
@@ -87,6 +94,7 @@ impl LineBuffer {
             line_map,
             authored_base_at_start: false,
             item_marker_at_start: false,
+            marker_tail: None,
             reached: Vec::new(),
             sublists_carry_authored_base: false,
         }
@@ -107,6 +115,8 @@ pub(super) struct MappedSource {
     pub(super) authored_base_at_start: bool,
     /// The first line is the authored content of an enclosing item marker.
     pub(super) item_marker_at_start: bool,
+    /// Innermost marker content byte offset and column on an unchanged first line.
+    pub(super) marker_tail: Option<MarkerTail>,
     /// Did each line REACH the enclosing container's content column?
     ///
     /// The collector leaves a line one column PAST the column and a line BELOW
@@ -148,6 +158,7 @@ impl MappedSource {
             col_map: vec![stripped],
             authored_base_at_start: false,
             item_marker_at_start: false,
+            marker_tail: None,
             reached: vec![false],
             sublists_carry_authored_base: false,
         }
@@ -200,6 +211,7 @@ impl MappedSource {
             self.source.push('\n');
         } else {
             self.item_marker_at_start = other.item_marker_at_start;
+            self.marker_tail = other.marker_tail;
         }
         self.source.push_str(&other.source);
         self.line_map.extend(other.line_map);
@@ -261,6 +273,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
             authored_base_at_start: original.authored_base_at_start,
             item_marker_at_start: original.item_marker_at_start,
+            marker_tail: None,
             reached: original.reached[..source_line_count.min(original.reached.len())].to_vec(),
             sublists_carry_authored_base: original.sublists_carry_authored_base,
         };
@@ -272,6 +285,7 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         col_map: vec![Some(0); source_line_count],
         authored_base_at_start: false,
         item_marker_at_start: false,
+        marker_tail: None,
         reached: Vec::new(),
         sublists_carry_authored_base: false,
         source,
