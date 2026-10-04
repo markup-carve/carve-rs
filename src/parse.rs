@@ -3583,6 +3583,7 @@ fn parse_blocks_with_options_at_level_into_reached(
 }
 
 struct LineCursor<'a> {
+    colon_view: Option<&'a ColonView>,
     lines: &'a [&'a str],
     line_map: Option<&'a [Option<usize>]>,
     /// Columns already stripped from the front of each line by an enclosing
@@ -3635,6 +3636,7 @@ impl<'a> LineCursor<'a> {
         col_map: Option<&'a [Option<isize>]>,
     ) -> Self {
         LineCursor {
+            colon_view: None,
             lines,
             line_map,
             col_map,
@@ -4777,58 +4779,31 @@ fn flattened_paragraphs(
     out
 }
 
-/// The drained entry point, for a caller that reads the body's blocks straight
-/// back (`parse_hardbreaks_block` rewrites their soft breaks). The container
-/// worklist calls [`parse_capped_colon_body_into`] instead, which is what keeps
-/// its own descent flat.
-fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
-    drained(options, |pending| {
-        parse_capped_colon_body_into(inner, options, pending)
-    })
-}
-
-#[inline(never)]
-fn parse_capped_colon_body_into(
-    inner: LineBuffer,
+fn parse_colon_view(
+    view: ColonView,
     options: &Options<'_>,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
+    let source = &view.source.inner.lines[view.start..view.end];
+    let lines: Vec<_> = source.iter().map(|line| line.text.as_str()).collect();
     if !options.source_lines
         && !options.positions
         && !needs_source_ending_map()
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
-        return parse_unpositioned_colon_body(inner, options, pending);
+        let mut cursor = LineCursor::new_with_cols(&lines, None, None);
+        cursor.colon_view = Some(&view);
+        return parse_blocks(&mut cursor, options, pending);
     }
-    parse_positioned_capped_colon_body(inner, options, pending)
-}
-
-#[inline(never)]
-fn parse_unpositioned_colon_body(
-    inner: LineBuffer,
-    options: &Options<'_>,
-    pending: &mut Vec<PendingBody>,
-) -> Vec<BlockNode> {
-    let lines = inner.parser_lines();
-    let mut cursor = LineCursor::new_with_cols(&lines, None, None);
-    parse_blocks(&mut cursor, options, pending)
-}
-
-#[inline(never)]
-fn parse_positioned_capped_colon_body(
-    inner: LineBuffer,
-    options: &Options<'_>,
-    pending: &mut Vec<PendingBody>,
-) -> Vec<BlockNode> {
-    let lines = inner.parser_lines();
-    let line_map: Vec<_> = inner.lines.iter().map(|line| line.source_line()).collect();
-    let col_map: Vec<_> = inner.lines.iter().map(|line| line.stripped).collect();
-    if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
-        let mut cursor = Box::new(LineCursor::new_with_cols(
+    let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
+    let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
+    if NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH) {
+        let mut cursor = LineCursor::new_with_cols(
             &lines,
             Some(&line_map),
             options.positions.then_some(col_map.as_slice()),
-        ));
+        );
+        cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
     }
     if lines.iter().all(|line| is_blank_line(line)) {
@@ -5024,7 +4999,7 @@ fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockN
     }
     // The SECOND over-cap producer, and a real one. The colon-fence
     // document that named carve-rs#716 never reaches this branch - it
-    // degrades through `parse_capped_colon_body` instead - but a deep quote
+    // degrades through `parse_colon_view` instead - but a deep quote
     // ladder and a deep list ladder both arrive here with positions on, and
     // published nothing either. The lines are contiguous and still in the
     // cursor, so the span is the ordinary one and the anchors are the
@@ -5077,7 +5052,7 @@ fn append_parsed_block(
 
 /// A colon container whose body has been COLLECTED but not yet parsed.
 ///
-/// `collect_colon_container_body` materializes a body into a [`LineBuffer`]
+/// `collect_shared_colon_body` materializes a body into a [`LineBuffer`]
 /// before anything parses it, so a level never has to suspend a half-finished
 /// parse in order to descend into one. That is what makes the descent a
 /// worklist rather than a recursion: [`parse_blocks`] emits the container node
@@ -5151,10 +5126,23 @@ enum Chunk {
     },
 }
 
-/// What [`open_container`] hands back with the hollow node: the body's lines
-/// and the parser state its parse has to run under.
-struct ContainerBody {
+/// A range in a collected body, shared by its nested colon containers.
+struct ColonView {
+    source: std::rc::Rc<ColonSource>,
+    start: usize,
+    end: usize,
+}
+
+struct ColonSource {
     inner: LineBuffer,
+    // Indexed by opener line. A boundary names the closer line, or the
+    // source end when unclosed. Over-cap scans leave the index empty.
+    boundaries: Vec<Option<(usize, bool)>>,
+}
+
+/// Collected lines and the parser state at the container opener.
+struct ContainerBody {
+    inner: ColonView,
     /// `NESTING_DEPTH` as it stood in the level that opened this container, so
     /// the body's cap arithmetic is the arithmetic the recursive descent did.
     depth: usize,
@@ -6314,10 +6302,7 @@ fn resolve_pending_bodies(
                 // state the worklist happens to be in - see `ContainerBody`.
                 let _depth = DepthScope::set(body.depth);
                 let _group = FigureGroupScope::set(body.in_group);
-                (
-                    parse_capped_colon_body_into(body.inner, options, &mut nested),
-                    None,
-                )
+                (parse_colon_view(body.inner, options, &mut nested), None)
             }
             Body::Item(body) => {
                 let target = (body.item, body.widen_list);
@@ -7649,7 +7634,15 @@ fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
         .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
 }
 
+#[cfg(test)]
+thread_local! {
+    static COLON_COPIED_BYTES: Cell<usize> = const { Cell::new(0) };
+    static COLON_CACHE_ENABLED: Cell<bool> = const { Cell::new(true) };
+}
+
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
+    #[cfg(test)]
+    COLON_COPIED_BYTES.with(|count| count.set(count.get() + cur.peek().unwrap().len()));
     inner.push_at(
         cur.peek().unwrap().to_string(),
         cur.source_line(cur.pos),
@@ -7715,10 +7708,50 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
 /// consumed - `false` means end of input closed it (PART 9 §12). The flag
 /// exists for the figure group, whose caption slot hangs on the closing fence
 /// (§4c): a group closed by end of input has no closer line for a caption.
-fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (LineBuffer, bool) {
+fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (ColonView, bool) {
+    #[cfg(test)]
+    let cached = COLON_CACHE_ENABLED.with(Cell::get);
+    #[cfg(not(test))]
+    let cached = true;
+    if let Some(view) = cur.colon_view.filter(|_| cached) {
+        let opener = view.start + cur.pos - 1;
+        if let Some(&(end, closed)) = view.source.boundaries.get(opener).and_then(Option::as_ref) {
+            if end <= view.end && (!closed || end < view.end) {
+                let start = view.start + cur.pos;
+                cur.pos = end - view.start + usize::from(closed);
+                return (
+                    ColonView {
+                        source: view.source.clone(),
+                        start,
+                        end,
+                    },
+                    closed,
+                );
+            }
+        }
+    }
+    let (inner, closed, boundaries) = collect_indexed_colon_body(cur, opener_len);
+    let end = inner.lines.len();
+    (
+        ColonView {
+            source: std::rc::Rc::new(ColonSource { inner, boundaries }),
+            start: 0,
+            end,
+        },
+        closed,
+    )
+}
+
+fn collect_indexed_colon_body(
+    cur: &mut LineCursor<'_>,
+    opener_len: usize,
+) -> (LineBuffer, bool, Vec<Option<(usize, bool)>>) {
     let mut inner = LineBuffer::default();
     let mut closed = false;
     let mut stack = vec![opener_len];
+    let mut origins = vec![None];
+    let mut boundaries = Vec::new();
+    let mut cacheable = true;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
         // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
@@ -7730,6 +7763,10 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                 cur.consume();
                 closed = true;
                 break;
+            }
+            let end = inner.lines.len();
+            if let Some(origin) = origins.pop().flatten() {
+                boundaries[origin] = Some((end, true));
             }
             push_current_line(&mut inner, cur);
             cur.consume();
@@ -7748,6 +7785,9 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                     .or_else(|| detect_hardbreaks_block_open(line))
                     .or_else(|| detect_quote_block_open(line))
                 {
+                    let origin = inner.lines.len();
+                    boundaries.resize(origin + 1, None);
+                    origins.push(Some(origin));
                     stack.push(len);
                     push_current_line(&mut inner, cur);
                     cur.consume();
@@ -7758,6 +7798,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                 || detect_hardbreaks_block_open(line).is_some()
                 || detect_quote_block_open(line).is_some()
             {
+                cacheable = false;
                 // Past the cap an opener DEGRADES to literal paragraph text
                 // (§25) - it does not vanish. Consuming the line without
                 // pushing it dropped every over-cap opener that had a closer
@@ -7777,7 +7818,14 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
         push_current_line(&mut inner, cur);
         cur.consume();
     }
-    (inner, closed)
+    let end = inner.lines.len();
+    for origin in origins.into_iter().flatten() {
+        boundaries[origin] = Some((end, false));
+    }
+    if !cacheable {
+        boundaries.clear();
+    }
+    (inner, closed, boundaries)
 }
 
 fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
@@ -16171,7 +16219,7 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode
 /// blocks. So the node can be emitted here, hollow, and filled in by the
 /// worklist; the recursive form parsed the body BETWEEN these two halves and
 /// paid a stack frame per nesting level for it
-/// (markup-carve/carve-rs#1165). `collect_colon_container_body` is purely
+/// (markup-carve/carve-rs#1165). `collect_shared_colon_body` is purely
 /// lexical, so nothing here reads the state the body will parse under - what
 /// that state is gets recorded in the [`ContainerBody`] instead.
 #[inline(never)]
@@ -16186,7 +16234,7 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
     // and closer follow the unchanged container rules; what §4c adds is the
     // caption slot hanging on the CLOSING fence, this kind only.
     if is_bare_figure_open(&open) && !IN_FIGURE_GROUP.with(Cell::get) {
-        let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
+        let (inner, closed) = collect_shared_colon_body(cur, open.fence_len);
         // The slot hangs on the closer. A group left open at end of input
         // closed there without one, so there is no line for a caption to
         // attach to (§4c).
@@ -16208,7 +16256,7 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
             },
         );
     }
-    let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
+    let (inner, closed) = collect_shared_colon_body(cur, open.fence_len);
     // The span covers the opening fence through the closing one.
     let pos = container_span(cur, span_start, closed, options);
     let title_anchor = open.title_col.and_then(|col| {
@@ -17144,8 +17192,8 @@ fn parse_quote_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let fence_len = detect_quote_block_open(opener).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let (inner, _closed) = collect_colon_container_body(cur, fence_len);
-    let children = parse_capped_colon_body(inner, options);
+    let (inner, _closed) = collect_shared_colon_body(cur, fence_len);
+    let children = drained(options, |pending| parse_colon_view(inner, options, pending));
     // The quote's own span ends at its CLOSING fence, before the caption slot
     // that hangs on it, so it is taken before `consume_caption` moves the
     // cursor past a caption line.
@@ -17168,11 +17216,11 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let (inner, _closed) = collect_colon_container_body(cur, fence_len);
+    let (inner, _closed) = collect_shared_colon_body(cur, fence_len);
     // The span covers the opening fence through the closing one, like any other
     // colon fence.
     let pos = span_of(cur, span_start, cur.pos, options);
-    let mut children = parse_capped_colon_body(inner, options);
+    let mut children = drained(options, |pending| parse_colon_view(inner, options, pending));
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
@@ -25369,8 +25417,8 @@ mod container_open_readings {
 
     /// Opener readings stay proportional to the work the NESTING WALK owes.
     ///
-    /// `collect_colon_container_body` re-reads a container's body once per
-    /// enclosing level, so a ladder of `depth` levels inherently owes
+    /// The definition-region scan visits nested fence boundaries once per
+    /// enclosing level, so a ladder of `depth` levels currently takes
     /// `depth * (depth + 1)` line readings - quadratic in the input and bounded
     /// by `MAX_NESTING_DEPTH`. The claim is the per-unit RATE: proportional
     /// work holds it flat or falling as the ladder deepens, and anything
@@ -25520,5 +25568,77 @@ mod wrapped_attrs_work_tests {
         let attrs = p.attrs.as_ref().expect("wrapped block survives");
         assert_eq!(attrs.id.as_deref(), Some("valid"));
         assert_eq!(attrs.classes, ["class"]);
+    }
+}
+
+#[cfg(test)]
+mod shared_colon_work_tests {
+    use super::*;
+
+    #[test]
+    fn nested_bodies_copy_the_payload_once_with_and_without_positions() {
+        for positions in [false, true] {
+            for depth in [20, 80, 150] {
+                let mut source: String = (0..depth)
+                    .map(|i| ["::: box\n", "::: >\n", "::: \\\n"][i % 3])
+                    .collect();
+                source.push_str(&"payload ".repeat(8000));
+                source.push('\n');
+                source.push_str(&":::\n".repeat(depth));
+                COLON_COPIED_BYTES.with(|count| count.set(0));
+                let doc =
+                    parse_with_options(&source, &Options::default().with_positions(positions));
+                let copied = COLON_COPIED_BYTES.with(Cell::get);
+                assert!(
+                    copied <= source.len() * 2,
+                    "{depth} levels copied {copied} bytes for {} source bytes",
+                    source.len()
+                );
+                assert!(crate::render_html(&doc)
+                    .unwrap()
+                    .contains("payload payload"));
+            }
+        }
+    }
+    #[test]
+    fn cached_boundaries_match_fresh_collection_on_adversarial_bodies() {
+        let mut cases = vec![
+            "::: outer\n::: inner\npayload\n".to_owned(),
+            "::: outer\n::: inner\n```text\n:::\n```\n:::\n:::\n".to_owned(),
+            "::: outer\n::: inner\n%%%\n:::\n%%%\n:::\n:::\n".to_owned(),
+            "::: outer\n::: |\n::: inner\nverse\n:::\n:::\n:::\n".to_owned(),
+            "::: outer\n::: >\n::: \\\nfirst\nsecond\n:::\n:::\n:::\n".to_owned(),
+            "::: outer\n::: figure\n![map](map.svg)\n:::\n^ caption\n:::\n".to_owned(),
+            "::: outer\n:::: inner\n:::\npayload\n::::\n:::\n".to_owned(),
+        ];
+        cases.push(format!(
+            "{}payload\n{}",
+            "::: box\n".repeat(205),
+            ":::\n".repeat(205)
+        ));
+        cases.push("::: outer\n- item\n  ::: inner\n  payload\n  :::\n:::\n".to_owned());
+        for (positions, source_lines) in
+            [(false, false), (true, false), (false, true), (true, true)]
+        {
+            for source in &cases {
+                let options = Options::default()
+                    .with_positions(positions)
+                    .with_source_lines(source_lines);
+                COLON_CACHE_ENABLED.with(|flag| flag.set(false));
+                let reference = parse_with_options(source, &options);
+                COLON_CACHE_ENABLED.with(|flag| flag.set(true));
+                let cached = parse_with_options(source, &options);
+                assert_eq!(
+                    crate::ast_json::to_json(&reference),
+                    crate::ast_json::to_json(&cached),
+                    "{source}"
+                );
+                assert_eq!(
+                    crate::render_html(&reference).unwrap(),
+                    crate::render_html(&cached).unwrap(),
+                    "{source}"
+                );
+            }
+        }
     }
 }

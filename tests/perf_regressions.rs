@@ -1865,3 +1865,30 @@ fn rejected_nested_citation_wrappers_parse_bounded() {
         65536,
     );
 }
+
+#[test]
+fn nested_colon_payloads_parse_in_near_linear_time() {
+    for mixed in [false, true] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::parse(source)),
+            |depth| {
+                let mut source: String = (0..depth)
+                    .map(|i| {
+                        if mixed {
+                            ["::: box\n", "::: >\n", "::: \\\n"][i % 3]
+                        } else {
+                            "::: box\n"
+                        }
+                    })
+                    .collect();
+                source.push_str(&"payload ".repeat(depth * 100));
+                source.push('\n');
+                source.push_str(&":::\n".repeat(depth));
+                source
+            },
+            "nested colon payloads",
+            40,
+            160,
+        );
+    }
+}
