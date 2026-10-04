@@ -9,30 +9,7 @@ Entries for 0.1.5 and earlier are archived in
 [CHANGELOG-0.1.md](https://github.com/markup-carve/carve-rs/blob/main/CHANGELOG-0.1.md),
 which the published crate does not carry.
 
-## [Unreleased]
-
-### Improvements
-
-- Extract footnote, quote, and table extent scans from body rebasing while preserving blank and column checks (#2292).
-- Extract code-fence, comment-fence, line-block, and definition-list extent scans from list-body rebasing while preserving ownership and column checks.
-- Extract nested list and colon-group extent scans from list-body rebasing while preserving column checks and scan order.
-
-### Fixed
-
-- Simple source partitions omit `rowHeadColumns` when no count is authored, matching the JavaScript and PHP ASTs. Invalid body metadata leaves all row-group attributes ordinary and produces no explicit partition.
-
-- Preserve multiple table bodies, intermediate body headers, empty bodies, and per-body row-header counts with positional source attributes. Keep authored conflicts and report partition loss. Preserve decimal column widths through AST parsing, source export, and HTML rendering.
-
-- Resolve references in authored AST children, including ruby content, short captions, block-cell tables, figure images, and extension fallbacks (#2253).
-- Preserve literal definitions in quoted and list-contained verse, including lazy continuations and attached opaque spans. Repeated quoted fence openers use bounded lookahead (#2253).
-- A colon closer inside a closed code or comment span stays inside verse, matching the executable spec (#2253).
-
-### Performance
-
-- ASCII heading IDs skip Unicode transforms. HTML text escaping and borrowed inline rendering avoid repeated scans of plain prefixes (#2277).
-- Unused heading IDs reserve their base name once, avoiding a duplicate string allocation and repeated map lookups (#2272).
-
-## [0.1.8] - 2026-10-01
+## [0.1.8] - 2026-10-04
 
 ### Breaking
 
@@ -55,12 +32,24 @@ which the published crate does not carry.
 - Canonical Carve output keeps the parentheses and backslashes of a denied URL scheme, so formatting no longer changes the destination it parsed; the presentation targets keep their destination filtering and loss reports (#2248, markup-carve/carve#2685).
 - Link, image and collapsed heading references resolve inside plain and quoted line blocks (#2249).
 - Renderers refuse a tree past the depth ceiling in a citation definition, an extension summary, a short caption and a caption on a figure table (#2242).
+- Tables keep multiple bodies, intermediate body headers, empty bodies and per-body row-header counts through parsing, canonical source export and HTML rendering, using positional source attributes. Authored conflicts are kept and partition loss is reported, an explicitly empty body stays distinct from an absent one, decimal column widths keep their precision, and a simple partition omits `rowHeadColumns` when no count is authored, matching the JavaScript and PHP ASTs (#2273, #2274).
+- HTML import keeps every empty `<tbody>` as a body boundary, canonical export keeps an imported table's ID and classes when it adds column or row-group metadata, and table-attribute loss is still reported when every row is blank and dropped (#2275, #2278, #2279).
+- References resolve in authored AST children, including ruby content, short captions, block-cell tables, figure images and extension fallbacks (#2253).
+- Literal definitions in quoted and list-contained verse are preserved, including lazy continuations and attached opaque spans, and a colon closer inside a closed code or comment span stays inside verse, matching the executable spec (#2253).
+- An indented matching comment closer ends the comment inside a colon fence, so definitions that follow stay outside the container (#2256).
+- A named colon fence with invalid opener metadata stays a container with its children parsed and reports `fence-title-syntax`, instead of reaching the page as text. A bare tab title is dropped so the tab falls back to its name, Djot migration keeps the rejected opener text, and `to_carve_patch` offers a format that would drop the metadata for review rather than as an edit (#2260, markup-carve/carve#2693).
+- Citations skip an invalid `@` in prefix text so a later valid key matches, honor backslash escapes before `@` and the suppress-author `-`, and require the locator comma to touch the key, so `[@a , p. 4]` stays literal as in the other engines (#2267).
 
 ### Improvements
 
 - `render_html_owned` and `render_html_owned_with_options` render a caller-owned document without cloning its tree, and the profile and loss-report facades take ownership of the temporary documents they already held (#2242).
 - A run of adjacent top-level reference definitions renders from source to HTML through the layout scanner instead of the full AST pipeline, cutting the allocation that run requested by 84%. Hosted definitions and runs the shared grammar refuses keep the existing fallback (#2240).
 - Definition collectors and the layout scanner reuse the destinations, titles and attributes they already parsed, and reference lookup borrows a key already in normalized form. Parsing 4,096 definitions and references makes 135,907 allocation requests rather than 160,473 (#2241).
+- `carve --version` and `carve -V` print `carve-rs <version>` and exit 0 (#2270, #2271).
+- Parsing stops re-reading what an enclosing level already scanned: verse ownership and position geometry, quoted fence closers, nested colon bodies, list marker tails, fence lookahead and wrapped attribute lookahead are each computed once. One parse of nested closed colon bodies allocates 4.8 MB rather than 11.5 MB, and 1,024 quoted opener lines take 18,488 prefix checks rather than 1,067,064 (#2253, #2256, #2257, #2283, #2285, #2286, #2291).
+- Citation parsing caches bracket matches, rejects impossible groups before scanning their contents, and builds no bracket map for a short citation, so unmatched brackets and nested rejected groups no longer rescan the same text (#2263, #2266, #2268).
+- HTML rendering writes container, quote and list children into the caller's buffer, borrows table data, plans table spans once per table and skips cloning a tree that preparation cannot change. Rendering 192 nested quotes requests 352 KB rather than 29.7 MB (#2281, #2282, #2283, #2285).
+- ASCII heading IDs skip Unicode transforms and an unused heading ID reserves its base name once, cutting allocation requests for 1,024 unique headings from 6,316 to 2,220. Text escaping and borrowed inline rendering stop rescanning plain prefixes, and plain Unicode paragraphs and lines with trailing spaces take the borrowed source-to-HTML path (#2272, #2277, #2280).
 
 ## [0.1.7] - 2026-09-29
 

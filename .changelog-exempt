@@ -20,3 +20,8 @@
 2210: 0.1.7 - a wall-clock timing guard in the test suite became a counter of the pairings the merge bound refuses. Test-only; no parser or writer output moved.
 2244: test-only. The adjacent-definition tests assumed layout accepts a denied reference destination; #2243 made those runs fall back so the loss can carry a span. Every changed line is inside `#[cfg(test)]`.
 2247: parser reference definitions, lookup state and the late resolution walk moved into `parse::reference_resolution`, and the streaming scanner asks a lookup function instead of the thread-local map. No behavior moved.
+2258: verse whitespace expansion and inline position mapping moved into their own parser modules. No behavior moved.
+2265: test-only. Opener-reading counters and their assertions are `#[cfg(test)]`; no parser output moved.
+2287: nested-list and colon-group extent scans extracted from list-body rebasing. Same scans in the same order; no behavior moved.
+2288: code-fence, comment-fence, line-block and definition-list extent scans extracted from list-body rebasing. No behavior moved.
+2292: footnote, quote and table extent scans extracted from list-body rebasing. No behavior moved.
