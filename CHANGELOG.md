@@ -36,8 +36,7 @@ which the published crate does not carry.
 
 ### Breaking
 
-- A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
-- `RenderLossError` reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243).
+- A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
 
 ### Fixes
 
