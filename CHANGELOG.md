@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Improvements
+
+- Extract nested list and colon-group extent scans from list-body rebasing while preserving column checks and scan order.
+
 ### Fixed
 
 - Simple source partitions omit `rowHeadColumns` when no count is authored, matching the JavaScript and PHP ASTs. Invalid body metadata leaves all row-group attributes ordinary and produces no explicit partition.
