@@ -54,18 +54,6 @@ impl LineBuffer {
         });
     }
 
-    pub(super) fn parser_lines(&self) -> Vec<&str> {
-        let mut lines: Vec<&str> = self.lines.iter().map(|line| line.text.as_str()).collect();
-        if self
-            .lines
-            .last()
-            .is_some_and(|line| line.is_synthetic() && line.text.is_empty())
-        {
-            lines.pop();
-        }
-        lines
-    }
-
     pub(super) fn into_source(self) -> MappedSource {
         let ends_in_authored_blank = self
             .lines

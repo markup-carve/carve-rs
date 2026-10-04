@@ -47,8 +47,13 @@ pub fn render_html_with_options(
 ) -> Result<String, crate::RenderDepthError> {
     // BEFORE the clone below, which is itself a recursion over the tree with no
     // ceiling to consult (`crate::render_depth::refuse_if_too_deep`).
-    crate::render_depth::refuse_if_too_deep(doc, "html")?;
-    render_html_owned_unchecked(doc.clone(), options)
+    if crate::render_depth::html_preparation_needed(doc)? {
+        render_html_owned_unchecked(doc.clone(), options)
+    } else {
+        let watch = crate::render_depth::RenderDepthWatch::new();
+        let index = crate::parse::crossref_index_for_document(doc, options.heading_id_options());
+        watch.into_result(render_prepared_html(doc, &[], options, index, true))
+    }
 }
 
 /// Render an owned document without cloning its tree.
@@ -124,9 +129,25 @@ fn render_html_inner(
         Vec::new()
     };
 
-    let (first, crossref_index) = render_html_pass(
+    render_prepared_html(
         &doc,
         &footnotes,
+        options,
+        crossref_index,
+        needs_document_ids,
+    )
+}
+
+fn render_prepared_html(
+    doc: &Document,
+    footnotes: &[FootnoteEntry],
+    options: &Options<'_>,
+    crossref_index: crate::parse::CrossrefIndex,
+    needs_document_ids: bool,
+) -> String {
+    let (first, crossref_index) = render_html_pass(
+        doc,
+        footnotes,
         options,
         crossref_index,
         needs_document_ids,
@@ -155,8 +176,8 @@ fn render_html_inner(
         u32::from(FOOTNOTES_PLACEMENT_DEFAULT),
     )[0];
     let (second, _) = render_html_pass(
-        &doc,
-        &footnotes,
+        doc,
+        footnotes,
         options,
         crossref_index,
         needs_document_ids,
@@ -2177,22 +2198,35 @@ fn render_table(
         .map_or(derived_header_count, |groups| groups.head_rows);
     let footer_count = t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows);
     let footer_start = t.rows.len() - footer_count;
-    let mut section_ends = vec![header_count, footer_start];
+    let mut section_ends = vec![false; t.rows.len() + 1];
+    for end in [header_count, footer_start] {
+        if let Some(boundary) = section_ends.get_mut(end) {
+            *boundary = true;
+        }
+    }
     let mut section_end = header_count;
     if let Some(groups) = &t.row_groups {
         for body in &groups.bodies {
             section_end += body.head_rows + body.body_rows;
-            section_ends.push(section_end);
+            if let Some(boundary) = section_ends.get_mut(section_end) {
+                *boundary = true;
+            }
         }
     }
-    section_ends.sort_unstable();
-    section_ends.dedup();
-    let crosses_section = rowspan_cols.iter().any(|(&(row, col), &span)| {
-        span > 1
-            && t.rows[row].cells[col].span != Some(TableCellSpan::Colspan)
-            && section_ends
-                .get(section_ends.partition_point(|&end| end <= row))
-                .is_some_and(|&end| row + span > end)
+    let mut next_boundary = usize::MAX;
+    let crosses_section = (0..t.rows.len()).rev().any(|row| {
+        if section_ends[row + 1] {
+            next_boundary = row + 1;
+        }
+        rowspan_cols
+            .row(row)
+            .iter()
+            .enumerate()
+            .any(|(col, &span)| {
+                span > 1
+                    && t.rows[row].cells[col].span != Some(TableCellSpan::Colspan)
+                    && row + span > next_boundary
+            })
     });
     // Computed once per table: every row and every cell reads the same answer.
     let column_defaults = table_column_defaults(t, header_count);
@@ -2456,7 +2490,7 @@ fn render_table_row(
             }
             continue;
         }
-        let colspan = colspan_counts.get(&col).copied().unwrap_or(1);
+        let colspan = colspan_counts.get(col).copied().unwrap_or(1);
         if colspan > 1 {
             extra.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
@@ -2544,7 +2578,7 @@ fn render_table_body_row(
             }
             continue;
         }
-        let colspan = colspan_counts.get(&cell_index).copied().unwrap_or(1);
+        let colspan = colspan_counts.get(cell_index).copied().unwrap_or(1);
         if colspan > 1 {
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
@@ -4850,6 +4884,37 @@ mod owned_html_metadata_depth_tests {
             doc.children.push(node);
             assert!(render_html(&doc).is_err(), "slot {slot}");
             assert!(render_html_owned(doc).is_err(), "slot {slot}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod borrowed_preparation_tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_and_owned_paths_agree_and_leave_the_input_unchanged() {
+        for source in [
+            "# Head\n\nplain *emphasis* and [link](https://example.org).\n",
+            "::: note \"Title\"\n> paragraph\n:::\n",
+            "| a | b |\n| ^ | c |\n",
+            "![map](map.svg)\n",
+            "  ![map](map.svg)\n  ^ caption\n",
+            "note[^a] and ^[inline]\n\n[^a]: body\n",
+            "![unresolved][missing]\n",
+            "| ![map](map.svg) | text |\n",
+            "[![map](map.svg)](https://example.org)\n",
+            "| cell |\n^ note[^a]\n\n[^a]: body\n",
+            "[^unused]: ![map](map.svg)\n\nplain\n",
+            "::: box\n[^unused]: body\n\nplain\n:::\n",
+            "::: box\n- ![map](map.svg)\n:::\n",
+        ] {
+            let doc = crate::parse(source);
+            let before = crate::ast_json::to_json(&doc);
+            let borrowed = render_html(&doc).unwrap();
+            let owned = render_html_owned(doc.clone()).unwrap();
+            assert_eq!(borrowed, owned, "{source}");
+            assert_eq!(before, crate::ast_json::to_json(&doc), "{source}");
         }
     }
 }

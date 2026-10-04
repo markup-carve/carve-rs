@@ -7,22 +7,56 @@
 //! markup-carve/carve#2190 exists to stop, whether the copies sit in two
 //! repositories or two modules.
 
+#[cfg(test)]
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{Table, TableCellSpan, TableRow};
 
-/// Per-cell colspan counts for a row, keyed by the origin cell index. Computed in
-/// a single left-to-right pass: each `<` extends the current chain origin
-/// instead of every cell re-scanning the rest of the row.
-pub(crate) type ColspanCounts = BTreeMap<usize, usize>;
+pub(crate) struct CellGrid<T> {
+    rows: Vec<Vec<T>>,
+}
 
-/// Resolve every colspan origin in `row` to its total colspan count in one pass.
-/// A real cell (`None` span, not consumed by a rowspan from above) starts a new
-/// chain; each following `<` (Colspan) extends it; a rowspan cell or an orphan
-/// `<` (no preceding real cell) breaks the chain so the next `<` resolves to
-/// nothing. Columns consumed by rowspans do not change the current origin.
-fn compute_colspans(row: &TableRow, consumed_cols: &BTreeSet<usize>) -> ColspanPlan {
-    let mut counts: ColspanCounts = BTreeMap::new();
+impl<T: Copy + Default + PartialEq> CellGrid<T> {
+    fn new() -> Self {
+        Self { rows: Vec::new() }
+    }
+
+    pub(crate) fn get(&self, &(row, col): &(usize, usize)) -> Option<&T> {
+        self.rows
+            .get(row)?
+            .get(col)
+            .filter(|value| **value != T::default())
+    }
+
+    fn set(&mut self, row: usize, col: usize, width: usize, value: T) {
+        if self.rows.len() <= row {
+            self.rows.resize_with(row + 1, Vec::new);
+        }
+        if self.rows[row].is_empty() {
+            self.rows[row].resize(width, T::default());
+        }
+        self.rows[row][col] = value;
+    }
+
+    pub(crate) fn row(&self, row: usize) -> &[T] {
+        self.rows.get(row).map_or(&[], Vec::as_slice)
+    }
+
+    pub(crate) fn contains(&self, key: &(usize, usize)) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ((usize, usize), &T)> {
+        self.rows.iter().enumerate().flat_map(|(row, cells)| {
+            cells.iter().enumerate().filter_map(move |(col, value)| {
+                (*value != T::default()).then_some(((row, col), value))
+            })
+        })
+    }
+}
+
+fn compute_colspans(row: &TableRow, consumed_cols: &[bool]) -> ColspanPlan {
+    let mut counts = Vec::new();
     let mut current_target: Option<usize> = None;
     let mut targets = Vec::new();
     for (i, cell) in row.cells.iter().enumerate() {
@@ -32,21 +66,20 @@ fn compute_colspans(row: &TableRow, consumed_cols: &BTreeSet<usize>) -> ColspanP
             }
             targets[i] = current_target.is_some();
         }
-        if consumed_cols.contains(&i) {
+        if consumed_cols.get(i) == Some(&true) {
             continue;
         }
         match cell.span {
             Some(TableCellSpan::Colspan) => {
                 if let Some(target) = current_target {
-                    *counts.entry(target).or_insert(1) += 1;
+                    if counts.is_empty() {
+                        counts.resize(row.cells.len(), 1);
+                    }
+                    counts[target] += 1;
                 }
             }
-            Some(TableCellSpan::Rowspan) => {
-                current_target = None;
-            }
-            None => {
-                current_target = Some(i);
-            }
+            Some(TableCellSpan::Rowspan) => current_target = None,
+            None => current_target = Some(i),
         }
     }
     ColspanPlan { counts, targets }
@@ -56,17 +89,17 @@ fn compute_colspans(row: &TableRow, consumed_cols: &BTreeSet<usize>) -> ColspanP
 /// by carrying the current chain origin down per column. Each `^` extends
 /// that origin without walking back through prior rows or merged columns.
 /// Rowspan counts keyed by origin cell `(row, col)`.
-pub(crate) type RowspanCols = BTreeMap<(usize, usize), usize>;
+pub(crate) type RowspanCols = CellGrid<usize>;
 /// Positions `(row, cell-index)` of orphan `^` markers (nothing above to extend).
-pub(crate) type OrphanCarets = BTreeSet<(usize, usize)>;
+pub(crate) type OrphanCarets = CellGrid<bool>;
 
 /// Returns (rowspan counts keyed by origin (row, col), positions of orphan `^`
 /// markers). An orphan `^` has no cell above it to extend, so it renders as an
 /// EMPTY cell rather than being dropped (spec PART 9 §5). Positions are keyed
 /// by (row, cell-index), matching the render loop's cell enumeration.
 pub(crate) fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
-    let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
-    let mut orphan_carets: BTreeSet<(usize, usize)> = BTreeSet::new();
+    let mut spans = CellGrid::new();
+    let mut orphan_carets = CellGrid::new();
     // Per column: the origin row of the current rowspan chain (the most recent
     // non-`^` cell above). A `^` extends that origin; a real cell starts a new
     // chain.
@@ -91,13 +124,14 @@ pub(crate) fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
                         true
                     };
                     if covered_by_visible_span {
-                        *spans.entry((base, col)).or_insert(1) += 1;
+                        let count = spans.get(&(base, col)).copied().unwrap_or(1) + 1;
+                        spans.set(base, col, t.rows[base].cells.len(), count);
                     } else {
-                        orphan_carets.insert((row_idx, col));
+                        orphan_carets.set(row_idx, col, row.cells.len(), true);
                         base_for_col[col] = Some((row_idx, left));
                     }
                 } else {
-                    orphan_carets.insert((row_idx, col));
+                    orphan_carets.set(row_idx, col, row.cells.len(), true);
                     base_for_col[col] = Some((row_idx, left));
                 }
             } else {
@@ -112,7 +146,7 @@ pub(crate) fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
 }
 
 pub(crate) struct ColspanPlan {
-    pub(crate) counts: ColspanCounts,
+    pub(crate) counts: Vec<usize>,
     pub(crate) targets: Vec<bool>,
 }
 
@@ -127,10 +161,20 @@ impl TableSpanPlan {
         let (rowspans, orphan_carets) = compute_rowspans(table);
         // Each covered column is visited once, rather than scanning every
         // span again for each row. Coverage is bounded by the authored carets.
-        let mut consumed = vec![BTreeSet::new(); table.rows.len()];
-        for (&(row, col), &span) in &rowspans {
-            for covered in consumed.iter_mut().skip(row + 1).take(span - 1) {
-                covered.insert(col);
+        let mut consumed = vec![Vec::new(); table.rows.len()];
+        for ((row, col), &span) in rowspans.iter() {
+            for (covered, source) in consumed
+                .iter_mut()
+                .zip(&table.rows)
+                .skip(row + 1)
+                .take(span - 1)
+            {
+                if col < source.cells.len() {
+                    if covered.is_empty() {
+                        covered.resize(source.cells.len(), false);
+                    }
+                    covered[col] = true;
+                }
             }
         }
         let rows = table
@@ -170,7 +214,7 @@ pub(crate) fn resolve_table_spans(t: &mut Table) {
                 }
             }
             if cell.colspan.is_none() {
-                if let Some(&n) = plan.rows[row_idx].counts.get(&col) {
+                if let Some(&n) = plan.rows[row_idx].counts.get(col) {
                     if n > 1 {
                         cell.colspan = Some(n);
                     }
@@ -239,8 +283,20 @@ mod tests {
             let t = table(&markers);
             let plan = TableSpanPlan::new(&t);
             let (spans, orphans) = reference_rowspans(&t);
-            assert_eq!(plan.rowspans, spans);
-            assert_eq!(plan.orphan_carets, orphans);
+            assert_eq!(
+                plan.rowspans
+                    .iter()
+                    .map(|(key, &value)| (key, value))
+                    .collect::<BTreeMap<_, _>>(),
+                spans
+            );
+            assert_eq!(
+                plan.orphan_carets
+                    .iter()
+                    .map(|(key, _)| key)
+                    .collect::<BTreeSet<_>>(),
+                orphans
+            );
             for (r, row) in t.rows.iter().enumerate() {
                 let consumed = spans
                     .iter()
@@ -282,8 +338,20 @@ mod tests {
                 let t = table(&markers);
                 let plan = TableSpanPlan::new(&t);
                 let (spans, orphans) = reference_rowspans(&t);
-                assert_eq!(plan.rowspans, spans);
-                assert_eq!(plan.orphan_carets, orphans);
+                assert_eq!(
+                    plan.rowspans
+                        .iter()
+                        .map(|(key, &value)| (key, value))
+                        .collect::<BTreeMap<_, _>>(),
+                    spans
+                );
+                assert_eq!(
+                    plan.orphan_carets
+                        .iter()
+                        .map(|(key, _)| key)
+                        .collect::<BTreeSet<_>>(),
+                    orphans
+                );
                 for (r, row) in t.rows.iter().enumerate() {
                     let consumed = spans
                         .iter()
@@ -311,12 +379,15 @@ mod tests {
         markers[0] = None;
         let t = table(&[markers, vec![Some(TableCellSpan::Rowspan); width]]);
         let plan = TableSpanPlan::new(&t);
-        assert_eq!(plan.rows[0].counts.get(&0), Some(&width));
+        assert_eq!(plan.rows[0].counts.first(), Some(&width));
         assert_eq!(plan.rowspans.get(&(0, 0)), Some(&2));
-        assert!(plan.orphan_carets.is_empty());
+        assert!(plan.orphan_carets.iter().next().is_none());
     }
 
-    fn reference_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
+    type ReferenceSpans = BTreeMap<(usize, usize), usize>;
+    type ReferenceOrphans = BTreeSet<(usize, usize)>;
+
+    fn reference_rowspans(t: &Table) -> (ReferenceSpans, ReferenceOrphans) {
         let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
         let mut orphan_carets: BTreeSet<(usize, usize)> = BTreeSet::new();
         // Per column: the origin row of the current rowspan chain (the most recent
