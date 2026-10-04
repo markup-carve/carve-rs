@@ -86,15 +86,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
-            | jq -cs --arg tag "$GITHUB_REF_NAME" '[.[][] | select(.tag_name == $tag)] | first // empty')"
-          if [ -z "$release" ]; then
-            echo "::error::No release for $GITHUB_REF_NAME. Write its notes first."
-            exit 1
-          fi
-          printf '%s' "$release" | python tools/check-release-notes.py \
-            --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+        run: bash tools/run-release-notes-gate.sh "$GITHUB_REF_NAME"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -179,15 +171,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          release="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
-            | jq -cs --arg tag "$GITHUB_REF_NAME" '[.[][] | select(.tag_name == $tag)] | first // empty')"
-          if [ -z "$release" ]; then
-            echo "::error::No release for $GITHUB_REF_NAME. Write its notes first."
-            exit 1
-          fi
-          printf '%s' "$release" | python tools/check-release-notes.py \
-            --tag "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+        run: bash tools/run-release-notes-gate.sh "$GITHUB_REF_NAME"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
