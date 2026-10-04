@@ -1352,6 +1352,7 @@ fn extract_footnote_defs(
     // has none, which is every document that only ever writes `%%%` at column 0.
     let mut container_closers: Option<ContainerCommentClosers> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
+    let mut closer_index = None;
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
     // like a definition, and was neither collected nor rendered - the author's
@@ -1626,6 +1627,7 @@ fn extract_footnote_defs(
                             CursorLines::Slice(&lines),
                             i,
                             &mut comment_closers,
+                            &mut closer_index,
                             options,
                             Some(0),
                             &mut |a, _| {
@@ -5004,6 +5006,8 @@ fn parse_colon_view(
 /// lookup answers "at least this wide", which is what a code fence closer needs
 /// (unlike a comment fence, which matches its width exactly).
 fn build_code_closer_last_index(lines: &[&str]) -> HashMap<u8, Vec<usize>> {
+    #[cfg(test)]
+    CODE_INDEX_LINES.with(|count| count.set(count.get() + lines.len()));
     let mut per_char: HashMap<u8, Vec<usize>> = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
@@ -7902,6 +7906,7 @@ thread_local! {
     static COLON_REFERENCE_ENTRIES: Cell<usize> = const { Cell::new(0) };
     static COLON_CLOSER_LINES: Cell<usize> = const { Cell::new(0) };
     static COMMENT_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
+    static CODE_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
 }
 
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
@@ -9010,6 +9015,7 @@ fn collect_blockquote_body(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
                 options,
                 attach_first_col,
                 &mut |next, _| {
@@ -9697,9 +9703,9 @@ fn attached_block_end(
     lines: CursorLines<'_>,
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
 ) -> usize {
-    let mut closer_index = None;
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
     while end < lines.len() {
@@ -9730,36 +9736,15 @@ fn attached_block_end(
         // `+` inside it is content, not the parent's boundary. Unterminated
         // colon containers close at end of input.
         if let Some(fence_len) = detect_line_block_open(line) {
-            end = find_colon_fence_end(
-                lines,
-                end,
-                fence_len,
-                true,
-                &mut closer_index,
-                comment_closers,
-            );
+            end = find_colon_fence_end(lines, end, fence_len, true, closer_index, comment_closers);
             continue;
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            end = find_colon_fence_end(
-                lines,
-                end,
-                fence_len,
-                false,
-                &mut closer_index,
-                comment_closers,
-            );
+            end = find_colon_fence_end(lines, end, fence_len, false, closer_index, comment_closers);
             continue;
         }
         if let Some(fence_len) = detect_quote_block_open(line) {
-            end = find_colon_fence_end(
-                lines,
-                end,
-                fence_len,
-                false,
-                &mut closer_index,
-                comment_closers,
-            );
+            end = find_colon_fence_end(lines, end, fence_len, false, closer_index, comment_closers);
             continue;
         }
         if let Some(open) = detect_container_open(line) {
@@ -9768,7 +9753,7 @@ fn attached_block_end(
                 end,
                 open.fence_len,
                 false,
-                &mut closer_index,
+                closer_index,
                 comment_closers,
             );
             continue;
@@ -9828,6 +9813,7 @@ fn attached_block_lines(
     lines: CursorLines<'_>,
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
     options: &Options<'_>,
     first_source_col: Option<isize>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
@@ -9835,7 +9821,7 @@ fn attached_block_lines(
     if !attaches_flush_left(first_source_col, lines.line(start).as_ref()) {
         return start;
     }
-    let end = attached_block_end(lines, start, comment_closers, is_boundary);
+    let end = attached_block_end(lines, start, comment_closers, closer_index, is_boundary);
     if measuring_attached_block() {
         return end;
     }
@@ -9903,6 +9889,7 @@ fn parse_continuation_block(
         lines,
         start,
         &mut cur.comment_closer_last_index,
+        &mut cur.code_closer_last_index,
         &mut |line, end| {
             if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
                 return true;
@@ -14566,6 +14553,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     lines,
                     cur.pos,
                     &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
                     options,
                     first_block_col,
                     &mut |a, _| {
@@ -14907,6 +14895,7 @@ fn collect_definition_body(
                 cursor_lines,
                 cur.pos,
                 &mut cur.comment_closer_last_index,
+                &mut cur.code_closer_last_index,
                 options,
                 attached_first_col,
                 &mut |a, _| {
@@ -26020,6 +26009,34 @@ mod shared_colon_work_tests {
     use super::*;
 
     #[test]
+    fn repeated_attachment_probes_share_code_and_comment_indices() {
+        for count in [64, 512, 4096] {
+            let unit = [
+                "::: |", "```", "code", "```", "%%%", "comment", "%%%", ":::", "+",
+            ];
+            let lines: Vec<_> = (0..count).flat_map(|_| unit).collect();
+            let mut code = None;
+            let mut comments = None;
+            CODE_INDEX_LINES.with(|work| work.set(0));
+            COMMENT_INDEX_LINES.with(|work| work.set(0));
+            for start in (0..lines.len()).step_by(unit.len()) {
+                assert_eq!(
+                    attached_block_end(
+                        CursorLines::Slice(&lines),
+                        start,
+                        &mut comments,
+                        &mut code,
+                        &mut |line, _| line == "+"
+                    ),
+                    start + unit.len() - 1
+                );
+            }
+            assert!(CODE_INDEX_LINES.with(Cell::get) <= lines.len());
+            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines.len());
+        }
+    }
+
+    #[test]
     fn repeated_verse_comment_probes_share_their_index() {
         for count in [64, 512, 4096] {
             let source = "::: |\n%%%\nx\n%%%\n:::\n".repeat(count);
@@ -26033,7 +26050,13 @@ mod shared_colon_work_tests {
             let refs: Vec<_> = source.lines().collect();
             COMMENT_INDEX_LINES.with(|work| work.set(0));
             assert_eq!(
-                attached_block_end(CursorLines::Slice(&refs), 0, &mut None, &mut |_, _| false),
+                attached_block_end(
+                    CursorLines::Slice(&refs),
+                    0,
+                    &mut None,
+                    &mut None,
+                    &mut |_, _| false
+                ),
                 refs.len()
             );
             assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
