@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Check a release body against the tagged checkout's changelog section."""
+"""Check a release body against the tagged checkout's changelog section.
+
+The body is a condensed, user-facing summary; the section keeps the full record."""
 
 import argparse
-import difflib
 import json
 from pathlib import Path
 import posixpath
@@ -74,7 +75,27 @@ def release_links(text, repo, tag):
     return "".join(output)
 
 
+def references(text, repo):
+    """Issue and pull request references, each as owner/repo#N."""
+    found = set()
+    for match in re.finditer(r"(?<![\w/.#-])(?:([\w.-]+/[\w.-]+))?#(\d+)\b", text):
+        found.add(f"{match.group(1) or repo}#{match.group(2)}")
+    for match in re.finditer(r"https://github\.com/([\w.-]+/[\w.-]+)/(?:pull|issues)/(\d+)\b", text):
+        found.add(f"{match.group(1)}#{match.group(2)}")
+    return found
+
+
+def breaking_entries(section):
+    """The bullets under the section's ### Breaking heading."""
+    block = re.search(r"^###[ \t]+Breaking[ \t]*\n(.*?)(?=^###?[ \t]|\Z)", section, re.M | re.S)
+    if not block:
+        return []
+    return [entry for entry in re.split(r"\n(?=[-*][ \t])", block.group(1).strip()) if entry.strip()]
+
+
 def check_release(changelog, release, repo, tag):
+    """The body is a short summary of the section: it may leave entries out, but it may not cite
+    anything the section does not, and it may not leave out a breaking change."""
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         raise ValueError("Expected an owner/repository slug")
     if not isinstance(release, dict) or release.get("tag_name") != tag:
@@ -89,12 +110,32 @@ def check_release(changelog, release, repo, tag):
     footer = re.search(r"(?:^|\n)\*\*Full Changelog\*\*:\s*(\S+)\s*$", normalized(body))
     if not footer or footer.group(1) != footer_url:
         raise ValueError(f"Release notes need the footer: **Full Changelog**: {footer_url}")
-    actual = normalized(normalized(body)[:footer.start()])
-    expected = normalized(release_links(section, repo, tag))
-    if actual != expected:
-        difference = "\n".join(difflib.unified_diff(expected.splitlines(), actual.splitlines(),
-                                                   fromfile="tagged CHANGELOG.md", tofile="release body", lineterm=""))
-        raise ValueError(f"Release notes differ from the {tag} changelog section:\n{difference}")
+    notes = normalized(normalized(body)[:footer.start()])
+    if not notes:
+        raise ValueError(f"The release for {tag} has no notes above the footer")
+    if release_links(notes, repo, tag) != notes:
+        raise ValueError("Release notes hold a relative link, which breaks on the releases page")
+    changelog_url = re.escape(f"https://github.com/{repo}/blob/{quote(tag, safe='')}/CHANGELOG.md")
+    if not re.search(r"\]\(" + changelog_url + r"(?:#[^)\s]*)?\)", notes):
+        raise ValueError(f"Release notes need a link to https://github.com/{repo}/blob/{tag}/CHANGELOG.md")
+    unknown = sorted(references(notes, repo) - references(section, repo))
+    if unknown:
+        raise ValueError(f"Release notes cite what the {tag} changelog section does not: {', '.join(unknown)}")
+    cited = references(notes, repo)
+    if references(section, repo) and not cited:
+        raise ValueError(f"Release notes cite none of the {tag} changes")
+    entries = [references(entry, repo) for entry in breaking_entries(section)]
+    missing = []
+    for entry, refs in zip(breaking_entries(section), entries):
+        # A reference two breaking entries share cannot show which one the body means.
+        own = refs - set().union(*(other for other in entries if other is not refs))
+        if refs and not own:
+            raise ValueError("A breaking CHANGELOG entry shares all its references with another one, so the notes "
+                             f"cannot show they cover it. Give it a reference of its own: {entry.splitlines()[0][:100]}")
+        if own and not own & cited:
+            missing.append(entry.splitlines()[0][:100])
+    if missing:
+        raise ValueError("Release notes leave out a breaking change:\n" + "\n".join(missing))
 
 
 def main():
@@ -112,7 +153,7 @@ def main():
     except (ValueError, OSError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
-    print(f"Release notes match CHANGELOG.md for {args.tag}.")
+    print(f"Release notes agree with CHANGELOG.md for {args.tag}.")
     return 0
 
 

@@ -2,7 +2,7 @@ name: Release
 
 # Publishing a GitHub Release (draft -> publish) creates the tag and holds the
 # notes; this workflow then publishes the crate to crates.io. The published
-# Release body must match the tagged CHANGELOG section and changelog footer.
+# release body is a condensed summary checked against the tagged CHANGELOG section and footer.
 # This workflow verifies the stored notes before publishing the crate or assets.
 on:
   release:
