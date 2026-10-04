@@ -5795,6 +5795,56 @@ fn rebased_definition_list_end(lines: &[Cow<'_, str>], start: usize, base: usize
     end
 }
 
+/// Last line in the footnote metadata group, retaining intervening blanks.
+#[inline(always)]
+fn rebased_footnote_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize {
+    let mut end = start;
+    // The authored base belongs to the remainder of this metadata
+    // group, not only to the definition opener. A later paragraph at
+    // the same authored column is a sibling in the enclosing footnote
+    // body; leaving its residual indent made it a continuation of the
+    // nested definition after the opener itself had been rebased.
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if !is_blank_line(candidate) && indent_columns(candidate) < base {
+            break;
+        }
+        end = j;
+    }
+    end
+}
+
+/// Last quote prefix or lazy continuation before a blank or dedent.
+#[inline(always)]
+fn rebased_quote_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize {
+    let mut end = start;
+    // Quote prefixes and their lazy paragraph continuations share the
+    // opener's authored base until a blank or a dedent ends the run.
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if is_blank_line(candidate) || indent_columns(candidate) < base {
+            break;
+        }
+        end = j;
+    }
+    end
+}
+
+/// Last table row or continuation at the opener's authored base.
+#[inline(always)]
+fn rebased_table_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize {
+    let mut end = start;
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if is_blank_line(candidate) || indent_columns(candidate) < base {
+            break;
+        }
+        let local = strip_leading_columns(candidate, base);
+        if !is_table_start(&local) && !is_table_continuation(&local) {
+            break;
+        }
+        end = j;
+    }
+    end
+}
+
 /// Apply an authored block base after a container's minimum content column has
 /// been stripped. List-item calls leave sublists alone because their residual
 /// indentation expresses another list level; definition and footnote bodies
@@ -6161,39 +6211,13 @@ fn rebase_overindented_blocks(
         } else if let Some(width) = colon {
             end = rebased_colon_group_end(&lines, i, base, width);
         } else if footnote {
-            // The authored base belongs to the remainder of this metadata
-            // group, not only to the definition opener. A later paragraph at
-            // the same authored column is a sibling in the enclosing footnote
-            // body; leaving its residual indent made it a continuation of the
-            // nested definition after the opener itself had been rebased.
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if !is_blank_line(candidate) && indent_columns(candidate) < base {
-                    break;
-                }
-                end = j;
-            }
+            end = rebased_footnote_end(&lines, i, base);
         } else if is_list_marker(&opener) {
             end = rebased_list_end(&lines, i, base);
         } else if strip_blockquote_prefix(&opener).is_some() {
-            // Quote prefixes and their lazy paragraph continuations share the
-            // opener's authored base until a blank or a dedent ends the run.
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) || indent_columns(candidate) < base {
-                    break;
-                }
-                end = j;
-            }
+            end = rebased_quote_end(&lines, i, base);
         } else if is_table_start(&opener) {
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) || indent_columns(candidate) < base {
-                    break;
-                }
-                let local = strip_leading_columns(candidate, base);
-                if !is_table_start(&local) && !is_table_continuation(&local) {
-                    break;
-                }
-                end = j;
-            }
+            end = rebased_table_end(&lines, i, base);
         } else if is_definition_list_start(&opener) {
             end = rebased_definition_list_end(&lines, i, base);
         } else if parse_standalone_attrs(&opener).is_some() {
