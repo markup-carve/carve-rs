@@ -25,3 +25,4 @@
 2287: nested-list and colon-group extent scans extracted from list-body rebasing. Same scans in the same order; no behavior moved.
 2288: code-fence, comment-fence, line-block and definition-list extent scans extracted from list-body rebasing. No behavior moved.
 2292: footnote, quote and table extent scans extracted from list-body rebasing. No behavior moved.
+2296: the Unicode eligibility check #2280 added to the layout fast path is a hand-written scan instead of a regex. Same accepted inputs, same output; it keeps the regex engine out of the rendering-only wasm, a size #2280 grew in this same unreleased window.
