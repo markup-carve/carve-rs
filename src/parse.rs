@@ -5,10 +5,12 @@
 
 mod inline_positions;
 mod reference_resolution;
+mod scoped_fence_closers;
 mod verse_whitespace;
 
 pub(crate) use inline_positions::InlineAnchor;
 use inline_positions::InlinePositionMap;
+use scoped_fence_closers::ScopedFenceClosers;
 use verse_whitespace::expand_line_block_ws;
 
 pub(crate) use reference_resolution::label_key;
@@ -1621,7 +1623,7 @@ fn extract_footnote_defs(
                         let mut attached: Vec<String> = Vec::new();
                         let attached_start = i;
                         let end = attached_block_lines(
-                            &lines,
+                            CursorLines::Slice(&lines),
                             i,
                             &mut comment_closers,
                             options,
@@ -3589,11 +3591,137 @@ fn parse_blocks_with_options_at_level_into_reached(
     parse_blocks(&mut cursor, options, pending)
 }
 
+#[derive(Clone, Copy)]
+enum CursorLines<'a> {
+    Slice(&'a [&'a str]),
+    Colon {
+        source: &'a [SourceLine],
+        view: &'a ColonView,
+        base: usize,
+        materialized: &'a std::cell::OnceCell<Vec<&'a str>>,
+    },
+}
+
+impl<'a> CursorLines<'a> {
+    fn len(self) -> usize {
+        match self {
+            Self::Slice(lines) => lines.len(),
+            Self::Colon { source, .. } => source.len(),
+        }
+    }
+
+    fn at(self, index: usize) -> &'a str {
+        self.line(index).expect("cursor line index")
+    }
+
+    fn range(self, range: std::ops::Range<usize>) -> impl DoubleEndedIterator<Item = &'a str> {
+        range.map(move |index| self.at(index))
+    }
+
+    fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+
+    fn window<'b>(
+        self,
+        range: std::ops::Range<usize>,
+        materialized: &'b std::cell::OnceCell<Vec<&'b str>>,
+    ) -> CursorLines<'b>
+    where
+        'a: 'b,
+    {
+        match self {
+            Self::Slice(lines) => CursorLines::Slice(&lines[range]),
+            Self::Colon {
+                source, view, base, ..
+            } => CursorLines::Colon {
+                source: &source[range.clone()],
+                view,
+                base: base + range.start,
+                materialized,
+            },
+        }
+    }
+
+    fn colon_end(self, start: usize) -> Option<usize> {
+        if !reuse_colon_views() {
+            return None;
+        }
+        let Self::Colon {
+            source, view, base, ..
+        } = self
+        else {
+            return None;
+        };
+        let &(end, closed) = view.source.boundaries.get(base + start)?.as_ref()?;
+        (end <= base + source.len() && (!closed || end < base + source.len()))
+            .then_some(end - base + usize::from(closed))
+    }
+
+    fn code_after(self, start: usize, character: u8, width: usize) -> Option<bool> {
+        if !reuse_colon_views() {
+            return None;
+        }
+        match self {
+            Self::Slice(_) => None,
+            Self::Colon {
+                source, view, base, ..
+            } => Some(view.source.fence_closers().code_in(
+                base + start + 1..base + source.len(),
+                character,
+                width,
+            )),
+        }
+    }
+
+    fn comment_after(self, start: usize, width: usize) -> Option<bool> {
+        if !reuse_colon_views() {
+            return None;
+        }
+        match self {
+            Self::Slice(_) => None,
+            Self::Colon {
+                source, view, base, ..
+            } => Some(
+                view.source
+                    .fence_closers()
+                    .comment_in(base + start..base + source.len(), width),
+            ),
+        }
+    }
+
+    fn line(self, index: usize) -> Option<&'a str> {
+        match self {
+            Self::Slice(lines) => lines.get(index).copied(),
+            Self::Colon { source, .. } => source.get(index).map(|line| line.text.as_str()),
+        }
+    }
+}
+
+impl<'a> std::ops::Deref for CursorLines<'a> {
+    type Target = [&'a str];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Slice(lines) => lines,
+            Self::Colon {
+                source,
+                materialized,
+                ..
+            } => materialized.get_or_init(|| {
+                #[cfg(test)]
+                COLON_REFERENCE_ENTRIES.with(|count| count.set(count.get() + source.len()));
+                source.iter().map(|line| line.text.as_str()).collect()
+            }),
+        }
+    }
+}
+
 struct LineCursor<'a> {
     colon_view: Option<&'a ColonView>,
     colon_geometry: Option<&'a [SourceLine]>,
     marker_tail: Option<MarkerTail>,
-    lines: &'a [&'a str],
+    lines: CursorLines<'a>,
     line_map: Option<&'a [Option<usize>]>,
     /// Columns already stripped from the front of each line by an enclosing
     /// container, so a nested strip accumulates rather than resetting. `None`
@@ -3644,6 +3772,14 @@ impl<'a> LineCursor<'a> {
         line_map: Option<&'a [Option<usize>]>,
         col_map: Option<&'a [Option<isize>]>,
     ) -> Self {
+        Self::from_lines(CursorLines::Slice(lines), line_map, col_map)
+    }
+
+    fn from_lines(
+        lines: CursorLines<'a>,
+        line_map: Option<&'a [Option<usize>]>,
+        col_map: Option<&'a [Option<isize>]>,
+    ) -> Self {
         LineCursor {
             colon_view: None,
             colon_geometry: None,
@@ -3664,7 +3800,7 @@ impl<'a> LineCursor<'a> {
     }
 
     fn peek(&self) -> Option<&'a str> {
-        self.lines.get(self.pos).copied()
+        self.lines.line(self.pos)
     }
     fn consume(&mut self) -> Option<&'a str> {
         let line = self.peek();
@@ -3739,8 +3875,15 @@ impl<'a> LineCursor<'a> {
     /// same shape `comment_closer_last_index` was added to remove for `%%%`.
     /// Code fences never got the equivalent.
     fn has_code_closer_after(&mut self, start: usize, fence_char: u8, fence_len: usize) -> bool {
+        if let Some(view) = self.colon_view.filter(|_| reuse_colon_views()) {
+            return view.source.fence_closers().code_in(
+                view.start + start + 1..view.end,
+                fence_char,
+                fence_len,
+            );
+        }
         if self.code_closer_last_index.is_none() {
-            self.code_closer_last_index = Some(build_code_closer_last_index(self.lines));
+            self.code_closer_last_index = Some(build_code_closer_last_index(&self.lines));
         }
         self.code_closer_last_index
             .as_ref()
@@ -3748,8 +3891,14 @@ impl<'a> LineCursor<'a> {
     }
 
     fn has_comment_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
+        if let Some(view) = self.colon_view.filter(|_| reuse_colon_views()) {
+            return view
+                .source
+                .fence_closers()
+                .comment_in(view.start + start..view.end, fence_len);
+        }
         if self.comment_closer_last_index.is_none() {
-            self.comment_closer_last_index = Some(build_comment_closer_last_index(self.lines));
+            self.comment_closer_last_index = Some(build_comment_closer_last_index(&self.lines));
         }
         self.comment_closer_last_index
             .as_ref()
@@ -3813,7 +3962,7 @@ fn document_column(stripped: isize, within: usize) -> usize {
 fn item_marker_source(cur: &LineCursor<'_>, content: &str, at: usize) -> MappedSource {
     let stripped = cur
         .lines
-        .get(at)
+        .line(at)
         .and_then(|line| stripped_col(cur.source_col(at), line, content));
     let mut source = MappedSource::new_line_at(content.to_string(), cur.source_line(at), stripped);
     source.item_marker_at_start = true;
@@ -3834,12 +3983,12 @@ fn item_paragraph_span(
         return None;
     }
     let start_line = cur.source_line(start_at)?;
-    let line = cur.lines.get(start_at)?;
+    let line = cur.lines.line(start_at)?;
     let start_stripped = stripped_col(cur.source_col(start_at), line, content)?;
     let end_line = cur.source_line(end_at).unwrap_or(start_line);
     let end_width = cur
         .lines
-        .get(end_at)
+        .line(end_at)
         .map(|l| strip_lazy(l).chars().count())
         .unwrap_or(0);
     Some(Pos {
@@ -3874,7 +4023,7 @@ fn inline_anchor_for_line(
         cur.source_line(pos)?,
         stripped_col(
             cur.source_col(pos),
-            strip_lazy(cur.lines.get(pos)?),
+            strip_lazy(cur.lines.line(pos)?),
             strip_lazy(inline_line),
         )?,
     ))
@@ -3940,13 +4089,13 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     // they belong inside the span, not in front of it.
     let indent = cur
         .lines
-        .get(start)
-        .map(|l| strip_lazy(l))
+        .line(start)
+        .map(strip_lazy)
         .map(|l| l.chars().count() - trim_ascii_start(l).chars().count())
         .unwrap_or(0);
     let width = cur
         .lines
-        .get(last)
+        .line(last)
         .map(|l| strip_lazy(l).chars().count())
         .unwrap_or(0);
     // The LAST line may have had a different amount taken off it than the
@@ -4804,7 +4953,13 @@ fn parse_colon_view(
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let source = &view.source.inner.lines[view.start..view.end];
-    let lines: Vec<_> = source.iter().map(|line| line.text.as_str()).collect();
+    let materialized = std::cell::OnceCell::new();
+    let lines = CursorLines::Colon {
+        source,
+        view: &view,
+        base: view.start,
+        materialized: &materialized,
+    };
     #[cfg(test)]
     if !COLON_CACHE_ENABLED.with(Cell::get)
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
@@ -4812,8 +4967,8 @@ fn parse_colon_view(
         let want_lines = options.source_lines || options.positions || needs_source_ending_map();
         let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
         let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
-        let mut cursor = LineCursor::new_with_cols(
-            &lines,
+        let mut cursor = LineCursor::from_lines(
+            lines,
             want_lines.then_some(line_map.as_slice()),
             options.positions.then_some(col_map.as_slice()),
         );
@@ -4825,16 +4980,13 @@ fn parse_colon_view(
         && !needs_source_ending_map()
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
-        let mut cursor = LineCursor::new_with_cols(&lines, None, None);
+        let mut cursor = LineCursor::from_lines(lines, None, None);
         cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
     }
     if NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH) {
-        let mut cursor = LineCursor::new_with_cols(
-            &lines,
-            Some(&[]),
-            options.positions.then_some([].as_slice()),
-        );
+        let mut cursor =
+            LineCursor::from_lines(lines, Some(&[]), options.positions.then_some([].as_slice()));
         cursor.colon_view = Some(&view);
         cursor.colon_geometry = Some(source);
         return parse_blocks(&mut cursor, options, pending);
@@ -5170,9 +5322,20 @@ struct ColonView {
 
 struct ColonSource {
     inner: LineBuffer,
+    fence_closers: std::cell::OnceCell<ScopedFenceClosers>,
     // Indexed by opener line. A boundary names the closer line, or the
     // source end when unclosed. Over-cap scans leave the index empty.
     boundaries: Vec<Option<(usize, bool)>>,
+}
+
+impl ColonSource {
+    fn fence_closers(&self) -> &ScopedFenceClosers {
+        self.fence_closers.get_or_init(|| {
+            #[cfg(test)]
+            COLON_CLOSER_LINES.with(|count| count.set(count.get() + self.inner.lines.len()));
+            ScopedFenceClosers::new(self.inner.lines.iter().map(|line| line.text.as_str()))
+        })
+    }
 }
 
 /// Collected lines and the parser state at the container opener.
@@ -6790,7 +6953,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     }
     // Non-blank, non-caption prose on the very next line: let parse_paragraph
     // fold the math and that text into one paragraph (preserve existing behavior).
-    if let Some(next) = cur.lines.get(cur.pos + 1).copied() {
+    if let Some(next) = cur.lines.line(cur.pos + 1) {
         if !is_blank_line(next) && caption_content(next).is_none() {
             return None;
         }
@@ -7724,9 +7887,9 @@ fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
     if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
         return false;
     }
-    let strip = leading_ws(cur.lines[cur.pos]);
-    cur.lines[cur.pos + 1..]
-        .iter()
+    let strip = leading_ws(cur.lines.at(cur.pos));
+    cur.lines
+        .range(cur.pos + 1..cur.lines.len())
         .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
 }
 
@@ -7734,6 +7897,8 @@ fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
 thread_local! {
     static COLON_COPIED_BYTES: Cell<usize> = const { Cell::new(0) };
     static COLON_CACHE_ENABLED: Cell<bool> = const { Cell::new(true) };
+    static COLON_REFERENCE_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static COLON_CLOSER_LINES: Cell<usize> = const { Cell::new(0) };
 }
 
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
@@ -7804,6 +7969,17 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
 /// consumed - `false` means end of input closed it (PART 9 §12). The flag
 /// exists for the figure group, whose caption slot hangs on the closing fence
 /// (§4c): a group closed by end of input has no closer line for a caption.
+fn reuse_colon_views() -> bool {
+    #[cfg(test)]
+    {
+        COLON_CACHE_ENABLED.with(Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        true
+    }
+}
+
 fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (ColonView, bool) {
     #[cfg(test)]
     let cached = COLON_CACHE_ENABLED.with(Cell::get);
@@ -7830,7 +8006,11 @@ fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (Co
     let end = inner.lines.len();
     (
         ColonView {
-            source: std::rc::Rc::new(ColonSource { inner, boundaries }),
+            source: std::rc::Rc::new(ColonSource {
+                inner,
+                boundaries,
+                fence_closers: std::cell::OnceCell::new(),
+            }),
             start: 0,
             end,
         },
@@ -7924,29 +8104,35 @@ fn collect_indexed_colon_body(
     (inner, closed, boundaries)
 }
 
-fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+fn find_line_block_end(lines: CursorLines<'_>, start: usize, fence_len: usize) -> usize {
     find_colon_fence_end(lines, start, fence_len, true, &mut None)
 }
 
-fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+fn find_colon_container_end(lines: CursorLines<'_>, start: usize, fence_len: usize) -> usize {
     find_colon_fence_end(lines, start, fence_len, false, &mut None)
 }
 
 fn find_colon_fence_end(
-    lines: &[&str],
+    lines: CursorLines<'_>,
     start: usize,
     fence_len: usize,
     literal: bool,
     closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
 ) -> usize {
+    if !literal {
+        if let Some(end) = lines.colon_end(start) {
+            return end;
+        }
+    }
     // Built on the first code fence seen, not up front: this function is called
     // often, and an unconditional O(lines) build here made a document of
     // unterminated `%%%` openers - which never reach the fence branch at all -
     // quadratic, as tests/perf_regressions.rs caught.
+    let mut comment_closers = None;
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
     while idx < lines.len() {
-        let line = lines[idx];
+        let line = lines.at(idx);
         let top = *stack.last().unwrap();
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
@@ -7965,15 +8151,21 @@ fn find_colon_fence_end(
             // The index makes the `any` below skip-able. Without it this scan
             // runs from every opener to the end of the input, which is
             // quadratic in the number of unterminated openers.
-            let index = closer_index.get_or_insert_with(|| build_code_closer_last_index(lines));
-            let has_closer = code_closer_exists_after(index, idx, open.fence_char, open.fence_len)
-                && lines[idx + 1..]
-                    .iter()
+            let possible = lines
+                .code_after(idx, open.fence_char, open.fence_len)
+                .unwrap_or_else(|| {
+                    let index =
+                        closer_index.get_or_insert_with(|| build_code_closer_last_index(&lines));
+                    code_closer_exists_after(index, idx, open.fence_char, open.fence_len)
+                });
+            let has_closer = possible
+                && lines
+                    .range(idx + 1..lines.len())
                     .any(|candidate| is_fence_close(candidate, open));
             if has_closer {
                 idx += 1;
                 while idx < lines.len() {
-                    let candidate = lines[idx];
+                    let candidate = lines.at(idx);
                     idx += 1;
                     if is_fence_close(candidate, open) {
                         break;
@@ -7983,11 +8175,18 @@ fn find_colon_fence_end(
             }
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if let Some(close) = (idx + 1..lines.len())
-                .find(|&j| is_comment_fence_close_any_column(lines[j], open.fence_len))
-            {
-                idx = close + 1;
-                continue;
+            if has_indexed_comment_closer_after(
+                lines,
+                &mut comment_closers,
+                idx + 1,
+                open.fence_len,
+            ) {
+                if let Some(close) = (idx + 1..lines.len())
+                    .find(|&j| is_comment_fence_close_any_column(lines.at(j), open.fence_len))
+                {
+                    idx = close + 1;
+                    continue;
+                }
             }
         }
         if !literal && !line.starts_with([' ', '\t']) && stack.len() < MAX_NESTING_DEPTH {
@@ -8538,12 +8737,13 @@ struct QuotedFenceClosers {
 }
 
 impl QuotedFenceClosers {
-    fn contains(&mut self, lines: &[&str], from: usize, open: FenceOpen) -> bool {
+    fn contains(&mut self, lines: CursorLines<'_>, from: usize, open: FenceOpen) -> bool {
         if from >= self.end {
             self.backticks.clear();
             self.tildes.clear();
             self.end = from;
-            for (index, line) in lines.iter().enumerate().skip(from) {
+            for (offset, line) in lines.range(from..lines.len()).enumerate() {
+                let index = from + offset;
                 let Some(body) = strip_blockquote_prefix(line) else {
                     break;
                 };
@@ -8762,7 +8962,10 @@ fn collect_blockquote_body(
                 // one block one block however many lines it takes, so the two
                 // spellings answer alike.
                 if at >= attrs_scan_floor {
-                    match quoted_attrs_block_len(stripped, &cur.lines[cur.pos..]) {
+                    match quoted_attrs_block_len(
+                        stripped,
+                        cur.lines.range(cur.pos..cur.lines.len()),
+                    ) {
                         QuotedAttrsBlock::Block(len) => {
                             para_open = ParaOpen::Closed;
                             attrs_block_rest = len - 1;
@@ -8816,7 +9019,7 @@ fn collect_blockquote_body(
                 },
             );
             while cur.pos < attach_end {
-                let next = cur.lines[cur.pos];
+                let next = cur.lines.at(cur.pos);
                 // Attached lines are spliced in verbatim, so the container took
                 // nothing beyond whatever an outer one already had.
                 attached.push_at(
@@ -9310,7 +9513,7 @@ fn resolve_ordered_first(
     // Find the next sibling ordered marker at the same indent, skipping the
     // first item's own body (blank lines and lines indented past the base).
     let mut sibling = None;
-    for l in &cur.lines[cur.pos + 1..] {
+    for l in cur.lines.range(cur.pos + 1..cur.lines.len()) {
         if is_blank_line(l) {
             continue;
         }
@@ -9350,13 +9553,16 @@ fn resolve_ordered_first(
 }
 
 fn has_indexed_comment_closer_after(
-    lines: &[&str],
+    lines: CursorLines<'_>,
     comment_closers: &mut Option<HashMap<usize, usize>>,
     start: usize,
     fence_len: usize,
 ) -> bool {
+    if let Some(answer) = lines.comment_after(start, fence_len) {
+        return answer;
+    }
     if comment_closers.is_none() {
-        *comment_closers = Some(build_comment_closer_last_index(lines));
+        *comment_closers = Some(build_comment_closer_last_index(&lines));
     }
     comment_closers
         .as_ref()
@@ -9370,7 +9576,7 @@ fn has_indexed_comment_closer_after(
 /// Nested `+` markers stay whole: probing them repeats work per level, while
 /// an inner split cannot change the enclosing block's line extent.
 /// A nonempty slice consumes at least one line so the caller advances.
-fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
+fn attached_one_block_lines(slice: CursorLines<'_>, options: &Options<'_>) -> usize {
     if slice.is_empty() {
         return 0;
     }
@@ -9379,7 +9585,7 @@ fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
     // it an index built over those would read a closer at the wrong place.
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
     let _measuring = MeasuringGuard::enter();
-    let mut sub = LineCursor::new_with_cols(slice, None, None);
+    let mut sub = LineCursor::from_lines(slice, None, None);
     while let Some(line) = sub.peek() {
         if line.starts_with([' ', '\t']) || !line.starts_with('{') {
             break;
@@ -9409,15 +9615,15 @@ fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
 /// runs to its closer, or to end of input when it has none, and nothing inside
 /// it can shorten that.
 fn self_delimiting_block_end(
-    slice: &[&str],
+    slice: CursorLines<'_>,
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
 ) -> Option<usize> {
-    let line = *slice.get(start)?;
+    let line = slice.line(start)?;
     if let Some(open) = detect_fence_open(line) {
         let mut i = start + 1;
         while i < slice.len() {
-            if is_fence_close(slice[i], open) {
+            if is_fence_close(slice.at(i), open) {
                 return Some(i + 1);
             }
             i += 1;
@@ -9426,8 +9632,8 @@ fn self_delimiting_block_end(
     }
     if let Some(open) = detect_comment_fence_line(line) {
         if has_indexed_comment_closer_after(slice, comment_closers, start + 1, open.fence_len) {
-            if let Some(close) =
-                (start + 1..slice.len()).find(|&j| is_comment_fence_close(slice[j], open.fence_len))
+            if let Some(close) = (start + 1..slice.len())
+                .find(|&j| is_comment_fence_close(slice.at(j), open.fence_len))
             {
                 return Some(close + 1);
             }
@@ -9490,7 +9696,7 @@ fn measuring_attached_block() -> bool {
 /// Find the container boundary after `start`. Lines inside an open fence remain
 /// content. The caller shares its comment-closer index across probes.
 fn attached_block_end(
-    lines: &[&str],
+    lines: CursorLines<'_>,
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
@@ -9498,7 +9704,7 @@ fn attached_block_end(
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
     while end < lines.len() {
-        let line = lines[end];
+        let line = lines.at(end);
         if let Some(open) = in_fence {
             if is_fence_close(line, open) {
                 in_fence = None;
@@ -9514,7 +9720,7 @@ fn attached_block_end(
         if let Some(open) = detect_comment_fence_line(line) {
             if has_indexed_comment_closer_after(lines, comment_closers, end + 1, open.fence_len) {
                 if let Some(close) = (end + 1..lines.len())
-                    .find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+                    .find(|&j| is_comment_fence_close(lines.at(j), open.fence_len))
                 {
                     end = close + 1;
                     continue;
@@ -9592,21 +9798,22 @@ fn attaches_flush_left(outer: Option<isize>, line: Option<&&str>) -> bool {
 /// One past the last line the `+` marker at `start - 1` attaches: the container's
 /// own boundary, narrowed to the ONE block PART 9 §17 L3 counts.
 fn attached_block_lines(
-    lines: &[&str],
+    lines: CursorLines<'_>,
     start: usize,
     comment_closers: &mut Option<HashMap<usize, usize>>,
     options: &Options<'_>,
     first_source_col: Option<isize>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
 ) -> usize {
-    if !attaches_flush_left(first_source_col, lines.get(start)) {
+    if !attaches_flush_left(first_source_col, lines.line(start).as_ref()) {
         return start;
     }
     let end = attached_block_end(lines, start, comment_closers, is_boundary);
     if measuring_attached_block() {
         return end;
     }
-    start + attached_one_block_lines(&lines[start..end], options)
+    let materialized = std::cell::OnceCell::new();
+    start + attached_one_block_lines(lines.window(start..end, &materialized), options)
 }
 
 /// Parse ONE block attached by a list `+` continuation marker, bounded to the
@@ -9683,7 +9890,7 @@ fn parse_continuation_block(
                 && detect_list_marker_full(line).is_some()
         },
     );
-    let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
+    let slice: Vec<&str> = cur.lines.range(cur.pos..end).collect();
     let line_map: Vec<Option<usize>> = if cur.line_map.is_some() {
         (cur.pos..end).map(|pos| cur.source_line(pos)).collect()
     } else {
@@ -10206,10 +10413,11 @@ fn parse_list(
                     if !renders_nothing {
                         pending_blank = item_open_fence.is_some()
                             && cur.pos > 0
-                            && is_blank_line(cur.lines[cur.pos - 1]);
+                            && is_blank_line(cur.lines.at(cur.pos - 1));
                         if pending_blank {
-                            blank_run = cur.lines[..cur.pos]
-                                .iter()
+                            blank_run = cur
+                                .lines
+                                .range(0..cur.pos)
                                 .rev()
                                 .take(3)
                                 .take_while(|line| is_blank_line(line))
@@ -10486,7 +10694,7 @@ fn parse_list(
             // in the fold below, which stops the OTHER path from claiming the
             // very same line into the very same empty item.
             let first_block_attaches =
-                attaches_flush_left(cur.source_col(cur.pos), cur.lines.get(cur.pos));
+                attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
             if let Some(block) = first_block_attaches
                 .then(|| parse_continuation_block(cur, options, base_indent))
                 .flatten()
@@ -10534,7 +10742,7 @@ fn parse_list(
                 }
                 detect_fence_open(&slice_columns(line, content_col, false)).is_some_and(|open| {
                     item_body_fence_has_closer(
-                        &cur.lines[cur.pos + 1..],
+                        cur.lines.range(cur.pos + 1..cur.lines.len()),
                         open,
                         content_col,
                         |line, _| {
@@ -10576,7 +10784,7 @@ fn parse_list(
                 stream.push_newline_at(String::new(), None, None);
             }
             stream.append(continuation);
-            let after_blank = cur.pos > 0 && is_blank_line(cur.lines[cur.pos - 1]);
+            let after_blank = cur.pos > 0 && is_blank_line(cur.lines.at(cur.pos - 1));
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
@@ -10663,7 +10871,7 @@ fn parse_list(
             // nothing, so collection must resume against THAT item's content
             // column. Using the outer `content_col` assigned a following line
             // between the two columns to the outer item instead (#1424).
-            let content_offset = cur.lines[item_at].len() - marker.content.len();
+            let content_offset = cur.lines.at(item_at).len() - marker.content.len();
             let cached_tail = cur.marker_tail.filter(|_| item_at == 0);
             #[cfg(test)]
             let cached_tail = cached_tail.filter(|_| REUSE_MARKER_TAIL.with(Cell::get));
@@ -10769,7 +10977,7 @@ fn parse_list(
             // paragraph as open and the lazy loop swallowed `- - a` / blank / `b`
             // into the inner item, where carve-js and carve-php end the list.
             let mut ended_on_blank =
-                cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             // A column-0 lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
             // `<li>b\nlazy</li>`), and a following sibling marker at the
@@ -10813,7 +11021,7 @@ fn parse_list(
                         content_col,
                     ));
                     ended_on_blank =
-                        cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                        cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
                     continue;
                 }
                 let has_lazy = if let Some(line) = cur.peek() {
@@ -10868,7 +11076,7 @@ fn parse_list(
                     nested_content_col - 1,
                     nested_content_col,
                 ));
-                ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             }
             // A blank line between the item's blocks loosens the list, and a
             // sub-list lead is no exception: the item holds the sub-list and
@@ -10972,7 +11180,7 @@ fn parse_list(
                 &mut item_open_fence,
             ));
             let swallowed_blank_separator =
-                cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             let marker_line_was_the_whole_block = cur.pos == before_block;
             // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
             // above already has it. A fenced body is verbatim and holds no
@@ -11044,8 +11252,9 @@ fn parse_list(
             // double-loosen.
             if swallowed_blank_separator {
                 pending_blank = true;
-                blank_run = cur.lines[..cur.pos]
-                    .iter()
+                blank_run = cur
+                    .lines
+                    .range(0..cur.pos)
                     .rev()
                     .take(3)
                     .take_while(|line| is_blank_line(line))
@@ -11096,7 +11305,10 @@ fn parse_list(
                 && indent_columns(next) <= base_indent
                 && cur.carried_reach(cur.pos) != Some(false)
             {
-                if attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1)) {
+                if attaches_flush_left(
+                    cur.source_col(cur.pos + 1),
+                    cur.lines.line(cur.pos + 1).as_ref(),
+                ) {
                     break;
                 }
                 cur.consume();
@@ -11184,7 +11396,11 @@ fn parse_list(
             let wrapped_attr_interrupts = if cur.pos < attrs_scan_floor {
                 false
             } else {
-                match content_column_attr_block(&dedented, &cur.lines[cur.pos + 1..], content_col) {
+                match content_column_attr_block(
+                    &dedented,
+                    cur.lines.range(cur.pos + 1..cur.lines.len()),
+                    content_col,
+                ) {
                     ContentColumnAttrBlock::Block => true,
                     ContentColumnAttrBlock::NoneWithin(lines) => {
                         attrs_scan_floor = cur.pos + lines;
@@ -11196,7 +11412,7 @@ fn parse_list(
             let fence_open = detect_fence_open(&dedented);
             let fence_interrupts = fence_open.is_some_and(|open| {
                 item_body_fence_has_closer(
-                    &cur.lines[cur.pos + 1..],
+                    cur.lines.range(cur.pos + 1..cur.lines.len()),
                     open,
                     content_col,
                     |line, _| {
@@ -11433,7 +11649,7 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         // block opener all leave the fence standing on its own - and `- :::`
         // alone published `<li>:::</li>` here where carve-js, carve-php and the
         // executable spec publish an empty `<div>` (carve-rs#511 item 4).
-        let Some(next) = cur.lines.get(cur.pos) else {
+        let Some(next) = cur.lines.line(cur.pos) else {
             return true;
         };
         if is_blank_line(next) {
@@ -11478,7 +11694,11 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
 /// text and therefore keeps the item open.
 fn marker_content_is_attr_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
     matches!(
-        content_column_attr_block(content, &cur.lines[cur.pos..], content_col),
+        content_column_attr_block(
+            content,
+            cur.lines.range(cur.pos..cur.lines.len()),
+            content_col
+        ),
         ContentColumnAttrBlock::Block
     )
 }
@@ -11489,9 +11709,9 @@ enum ContentColumnAttrBlock {
     No,
 }
 
-fn content_column_attr_block(
+fn content_column_attr_block<'a>(
     content: &str,
-    rest: &[&str],
+    rest: impl Iterator<Item = &'a str>,
     content_col: usize,
 ) -> ContentColumnAttrBlock {
     if !trim_ascii(content).starts_with('{') {
@@ -11914,7 +12134,7 @@ fn last_consumed_line_below_column(cur: &LineCursor, content_col: usize) -> bool
         .closed_comment_location
         .filter(|(closer, _)| *closer == cur.pos - 1)
         .map_or_else(
-            || indent_columns(cur.lines[cur.pos - 1]),
+            || indent_columns(cur.lines.at(cur.pos - 1)),
             |(_, column)| column,
         );
     column < content_col
@@ -12066,7 +12286,13 @@ fn colon_fences_left_open(nested: &str) -> usize {
             continue;
         }
         if let Some(fence_len) = detect_line_block_open(trimmed) {
-            verse_end = find_colon_fence_end(&lines, index, fence_len, true, &mut closer_index);
+            verse_end = find_colon_fence_end(
+                CursorLines::Slice(&lines),
+                index,
+                fence_len,
+                true,
+                &mut closer_index,
+            );
             if verse_end == lines.len()
                 && exact_colon_fence_len(lines[verse_end - 1]) != Some(fence_len)
             {
@@ -12213,9 +12439,9 @@ fn closed_colon_span_end(
     line_block: bool,
 ) -> Option<usize> {
     let end = if line_block {
-        find_line_block_end(lines, start, fence_len)
+        find_line_block_end(CursorLines::Slice(lines), start, fence_len)
     } else {
-        find_colon_container_end(lines, start, fence_len)
+        find_colon_container_end(CursorLines::Slice(lines), start, fence_len)
     };
     if end > start && end <= lines.len() && exact_colon_fence_len(lines[end - 1]) == Some(fence_len)
     {
@@ -12729,7 +12955,7 @@ fn collect_trailing_lazy_through(
 /// A blank ends the run: past one a below-column line ends the list through the
 /// ordinary dedent, which needs no floor.
 fn a_band_line_ends_the_chunk(cur: &LineCursor, base_indent: usize, content_col: usize) -> bool {
-    for candidate in &cur.lines[cur.pos..] {
+    for candidate in cur.lines.range(cur.pos..cur.lines.len()) {
         if is_blank_line(candidate) {
             return false;
         }
@@ -12776,7 +13002,7 @@ fn chunk_run_leaves_content_open(
         return true;
     }
     let mut run: Vec<String> = Vec::new();
-    for candidate in &cur.lines[cur.pos..] {
+    for candidate in cur.lines.range(cur.pos..cur.lines.len()) {
         if is_blank_line(candidate) || indent_columns(candidate) < content_col {
             break;
         }
@@ -12949,7 +13175,7 @@ fn collect_indented_block_mapped_with_columns(
     let marker_comment = cur
         .pos
         .checked_sub(1)
-        .and_then(|at| detect_list_marker_full(cur.lines[at]))
+        .and_then(|at| detect_list_marker_full(cur.lines.at(at)))
         .and_then(|marker| detect_comment_fence_line(marker.content))
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
     let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
@@ -12984,7 +13210,7 @@ fn collect_indented_block_mapped_with_columns(
     // A marker-line ladder opens descendants before collection begins.
     let mut marker_line_columns = Vec::new();
     if let Some(previous) = cur.pos.checked_sub(1) {
-        let mut lead = cur.lines[previous];
+        let mut lead = cur.lines.at(previous);
         let mut offset = 0;
         while let Some(marker) = detect_list_marker_full(lead) {
             let Some(width) = marker_content_col(lead) else {
@@ -13041,7 +13267,7 @@ fn collect_indented_block_mapped_with_columns(
                 // is what a line has to reach to still belong to the item.
                 let bi = block_indent.unwrap_or(strip_cols);
                 let mut k = cur.pos + 1;
-                while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
+                while k < cur.lines.len() && is_blank_line(cur.lines.at(k)) {
                     k += 1;
                 }
                 // The item's CONTENT COLUMN outright. It used to be
@@ -13057,14 +13283,14 @@ fn collect_indented_block_mapped_with_columns(
                 let threshold = strip_cols;
                 let _ = bi;
                 let continues = k < cur.lines.len()
-                    && (indent_columns(cur.lines[k]) >= threshold
-                        || (comment_fence.is_some() && cur.lines[k].starts_with(LAZY)));
+                    && (indent_columns(cur.lines.at(k)) >= threshold
+                        || (comment_fence.is_some() && cur.lines.at(k).starts_with(LAZY)));
                 if !continues {
                     // Descendants may own these blanks as fence payload. Copy
                     // them without advancing the outer separator cursor.
                     for at in cur.pos..k {
                         let (residue, consumed, synthetic) =
-                            slice_columns_mapped(cur.lines[at], strip_cols, true);
+                            slice_columns_mapped(cur.lines.at(at), strip_cols, true);
                         lines.push(residue);
                         reached.push(false);
                         if building_maps {
@@ -13117,11 +13343,14 @@ fn collect_indented_block_mapped_with_columns(
             && lines
                 .last()
                 .is_some_and(|line| detect_list_marker_full(line).is_some())
-            && cur.lines.get(cur.pos + 1).is_some_and(|next| {
+            && cur.lines.line(cur.pos + 1).is_some_and(|next| {
                 let next = trim_ascii_start(next);
                 line_starts_paragraph(next) && !item_block_opener(next)
             })
-            && !attaches_flush_left(cur.source_col(cur.pos + 1), cur.lines.get(cur.pos + 1))
+            && !attaches_flush_left(
+                cur.source_col(cur.pos + 1),
+                cur.lines.line(cur.pos + 1).as_ref(),
+            )
         {
             cur.consume();
             continue;
@@ -13245,7 +13474,7 @@ fn collect_indented_block_mapped_with_columns(
                                 open.fence_len,
                             )
                             && item_body_fence_has_closer(
-                                &cur.lines[cur.pos + 1..],
+                                cur.lines.range(cur.pos + 1..cur.lines.len()),
                                 open,
                                 column,
                                 |line, _| {
@@ -13403,8 +13632,8 @@ fn collect_indented_block_mapped_with_columns(
             .closed_comment_location
             .is_some_and(|(at, column)| at + 1 == cur.pos && column < strip_cols)
             || cur.pos.checked_sub(1).is_some_and(|at| {
-                indent_columns(cur.lines[at]) < strip_cols
-                    && is_line_comment_any_column(cur.lines[at])
+                indent_columns(cur.lines.at(at)) < strip_cols
+                    && is_line_comment_any_column(cur.lines.at(at))
             });
         let at_descendant_column = after_below_comment
             && nested_item_columns
@@ -13442,7 +13671,7 @@ fn collect_indented_block_mapped_with_columns(
                 folded_code_span = detect_fence_open(fence_line).is_some_and(|open| {
                     !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                         || !item_body_fence_has_closer(
-                            &cur.lines[cur.pos + 1..],
+                            cur.lines.range(cur.pos + 1..cur.lines.len()),
                             open,
                             folded_code_column,
                             |line, _| {
@@ -13552,8 +13781,8 @@ fn track_collected_colon_fence(open: &mut Vec<usize>, line: &str, at_content_col
 /// ends: at a sibling or outer marker, and at a blank followed by a line below
 /// the content column (carve#1379). A below-column line folds as lazy text, so
 /// the search runs past it, and a closer is read at the content column exactly.
-fn item_body_fence_has_closer(
-    lines: &[&str],
+fn item_body_fence_has_closer<'a>(
+    lines: impl Iterator<Item = &'a str>,
     open: FenceOpen,
     content_col: usize,
     ends_item: impl Fn(&str, usize) -> bool,
@@ -13803,9 +14032,9 @@ fn code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
     if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
         return false;
     }
-    let strip = leading_ws(cur.lines[cur.pos]);
-    cur.lines[cur.pos + 1..]
-        .iter()
+    let strip = leading_ws(cur.lines.at(cur.pos));
+    cur.lines
+        .range(cur.pos + 1..cur.lines.len())
         .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
         .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
 }
@@ -13824,8 +14053,11 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         if parse_standalone_attrs(line).is_some() {
             return true;
         }
-        if cur.lines.get(cur.pos).copied() == Some(line)
-            && standalone_attrs_block_len(&cur.lines[cur.pos..]).is_some()
+        if cur.lines.line(cur.pos) == Some(line)
+            && standalone_attrs_block_len_iter(
+                (cur.pos..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+            )
+            .is_some()
         {
             return true;
         }
@@ -14227,11 +14459,10 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // `:  ` definition ends the entry.
             if matches!(cur.peek(), Some(l) if is_blank_line(l)) {
                 let mut look = 0usize;
-                while matches!(cur.lines.get(cur.pos + look).copied(), Some(l) if is_blank_line(l))
-                {
+                while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
                     look += 1;
                 }
-                match cur.lines.get(cur.pos + look).copied() {
+                match cur.lines.line(cur.pos + look) {
                     Some(after) if strip_definition_marker(strip_lazy(after)).is_some() => {
                         for _ in 0..look {
                             cur.consume();
@@ -14279,7 +14510,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     },
                 );
                 while cur.pos < end {
-                    let a = cur.lines[cur.pos];
+                    let a = cur.lines.at(cur.pos);
                     fb.push_at(
                         a.to_string(),
                         cur.source_line(cur.pos),
@@ -14600,7 +14831,7 @@ fn collect_definition_body(
             // 0, and a `<dd>` ends at one of those. Asked ONE LINE EARLY because
             // the branch below would otherwise fold the following line into the
             // open paragraph before any extent is measured.
-            if !attaches_flush_left(cur.source_col(cur.pos), cur.lines.get(cur.pos)) {
+            if !attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref()) {
                 break;
             }
             let mut attached = LineBuffer::default();
@@ -14620,7 +14851,7 @@ fn collect_definition_body(
                 },
             );
             while cur.pos < end {
-                let a = cur.lines[cur.pos];
+                let a = cur.lines.at(cur.pos);
                 attached.push_at(
                     a.to_string(),
                     cur.source_line(cur.pos),
@@ -14692,7 +14923,7 @@ fn collect_definition_body(
                                 open.fence_char,
                                 open.fence_len,
                             ) && item_body_fence_has_closer(
-                                &cur.lines[cur.pos + 1..],
+                                cur.lines.range(cur.pos + 1..cur.lines.len()),
                                 open,
                                 content_column,
                                 |line, indent| {
@@ -14866,7 +15097,7 @@ fn collect_definition_body(
             let fence_interrupts = detect_fence_open(&owned).is_some_and(|open| {
                 open.lang_start < open.lang_end
                     || item_body_fence_has_closer(
-                        &cur.lines[cur.pos + 1..],
+                        cur.lines.range(cur.pos + 1..cur.lines.len()),
                         open,
                         content_column,
                         |line, indent| {
@@ -14917,15 +15148,15 @@ fn collect_definition_body(
         // still continues the definition (form A); otherwise leave it for the
         // entry separator / outer block stream.
         let mut look = 0usize;
-        while matches!(cur.lines.get(cur.pos + look).copied(), Some(l) if is_blank_line(l)) {
+        while matches!(cur.lines.line(cur.pos + look), Some(l) if is_blank_line(l)) {
             look += 1;
         }
-        match cur.lines.get(cur.pos + look).copied() {
+        match cur.lines.line(cur.pos + look) {
             Some(after) if !is_blank_line(after) && indent_columns(after) >= content_column => {
                 folded_a_lazy_line = false;
                 for _ in 0..look {
                     let (residue, consumed, synthetic) =
-                        slice_columns_mapped(cur.lines[cur.pos], content_column, true);
+                        slice_columns_mapped(cur.lines.at(cur.pos), content_column, true);
                     lines.push(residue);
                     line_map.push(cur.source_line(cur.pos));
                     col_map.push(
@@ -14959,7 +15190,7 @@ fn collect_definition_body(
 /// image stays inline in a paragraph with that content, per grammar §1722 I3
 /// ("an image is not a block of its own; it stays inline in the paragraph").
 fn image_is_block(cur: &mut LineCursor) -> bool {
-    let Some(next) = cur.lines.get(cur.pos + 1).copied() else {
+    let Some(next) = cur.lines.line(cur.pos + 1) else {
         return true;
     };
     if is_blank_line(next) || caption_content(next).is_some() {
@@ -16406,7 +16637,7 @@ fn container_span(
 ) -> Option<Pos> {
     let mut end = cur.pos;
     if options.positions && !closed {
-        while end > start + 1 && is_blank_line(cur.lines[end - 1]) {
+        while end > start + 1 && is_blank_line(cur.lines.at(end - 1)) {
             end -= 1;
         }
     }
@@ -17956,7 +18187,7 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     let mut joined = String::new();
     let mut count = 0usize;
     let mut quote: Option<char> = None;
-    while let Some(raw) = cur.lines.get(cur.pos + count).copied() {
+    while let Some(raw) = cur.lines.line(cur.pos + count) {
         let line = strip_lazy(raw);
         if is_blank_line(line) {
             return None;
@@ -18100,7 +18331,10 @@ enum QuotedAttrsBlock {
 /// either, and `NoneWithin` hands the caller that window to skip. Without it a
 /// quoted `{a` repeated n times pays an O(n) scan per line. Invalid continuation
 /// fragments also end the window before a later opener is skipped.
-fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttrsBlock {
+fn quoted_attrs_block_len<'a>(
+    stripped: &'a str,
+    rest: impl Iterator<Item = &'a str>,
+) -> QuotedAttrsBlock {
     if !stripped.contains('{') {
         return QuotedAttrsBlock::No;
     }
@@ -18601,7 +18835,7 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
         if let Some(BlockMatch {
             node,
             lines_consumed,
-        }) = ext.match_block(cur.lines, cur.pos, &ctx)
+        }) = ext.match_block(&cur.lines, cur.pos, &ctx)
         {
             if lines_consumed == 0 || cur.pos + lines_consumed > cur.lines.len() {
                 continue;
@@ -25743,6 +25977,69 @@ mod shared_colon_work_tests {
             }
         }
     }
+    #[test]
+    fn nested_colon_line_references_are_materialized_only_where_needed() {
+        for positions in [false, true] {
+            for depth in [24, 96, 192] {
+                for prefix in [
+                    "::: box\ntext\n\n",
+                    "::: box\n- item\n\n",
+                    "::: box\n```text\ncode\n```\n\n",
+                    "::: box\n%%%\ncomment\n%%%\n\n",
+                    "::: box\n::: |\nverse\n:::\n\n",
+                    "::: box\n> text\n> ```text\n> code\n> ```\n\n",
+                    "::: box\n- item\n+\n# attached\n\n",
+                    "::: box\nterm\n:  +\n# attached\n\n",
+                ] {
+                    for closed in [true, false] {
+                        for payload in [
+                            "payload\n".repeat(500),
+                            format!("``` =html\n<pre>\n{}</pre>\n```\n", "payload\n".repeat(500)),
+                        ] {
+                            let source = format!(
+                                "{}{}{}",
+                                prefix.repeat(depth),
+                                payload,
+                                if closed {
+                                    ":::\n".repeat(depth)
+                                } else {
+                                    String::new()
+                                }
+                            );
+                            COLON_REFERENCE_ENTRIES.with(|count| count.set(0));
+                            COLON_CLOSER_LINES.with(|count| count.set(0));
+                            let document = parse_with_options(
+                                &source,
+                                &Options::default().with_positions(positions),
+                            );
+                            let entries = COLON_REFERENCE_ENTRIES.with(Cell::get);
+                            assert!(
+                                COLON_CLOSER_LINES.with(Cell::get) <= source.lines().count() * 2
+                            );
+                            assert!(
+                        entries <= source.lines().count() * 2,
+                        "{depth} levels, prefix {prefix:?}, closed {closed}: materialized {entries} references"
+                    );
+                            assert!(crate::render_html(&document).unwrap().contains("payload"));
+                            if depth == 24 {
+                                COLON_CACHE_ENABLED.with(|flag| flag.set(false));
+                                let reference = parse_with_options(
+                                    &source,
+                                    &Options::default().with_positions(positions),
+                                );
+                                COLON_CACHE_ENABLED.with(|flag| flag.set(true));
+                                assert_eq!(
+                                    crate::ast_json::to_json(&document),
+                                    crate::ast_json::to_json(&reference)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn cached_boundaries_match_fresh_collection_on_adversarial_bodies() {
         let mut cases = vec![
