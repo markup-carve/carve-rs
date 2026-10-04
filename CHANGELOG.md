@@ -13,6 +13,7 @@ which the published crate does not carry.
 
 ### Improvements
 
+- Extract footnote, quote, and table extent scans from body rebasing while preserving blank and column checks (#2292).
 - Extract code-fence, comment-fence, line-block, and definition-list extent scans from list-body rebasing while preserving ownership and column checks.
 - Extract nested list and colon-group extent scans from list-body rebasing while preserving column checks and scan order.
 
