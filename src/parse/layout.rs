@@ -230,12 +230,81 @@ fn eligible_layout_text(source: &str) -> bool {
         return true;
     }
     // Unicode is admitted only without syntax that uses ASCII marker flanking.
-    static PLAIN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let plain = PLAIN.get_or_init(|| {
-        regex::Regex::new(r#"[*\/`\[\]{}^\\<>_~!@$=#'":%+|]|(?:^|\n)(?:[ .-]|[A-Za-z0-9]+[.)] )|[^\x00-\x7f\pL\pM\pN\pP\pS]"#)
-            .expect("Unicode plain text eligibility pattern")
-    });
-    !plain.is_match(source)
+    // Hand-written rather than a regex: this path is in every render, and the
+    // regex engine would ship in builds that otherwise never link it.
+    let bytes = source.as_bytes();
+    if starts_with_line_marker(bytes) {
+        return false;
+    }
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\n' && starts_with_line_marker(&bytes[i + 1..]) {
+            return false;
+        }
+        if matches!(
+            b,
+            b'*' | b'/'
+                | b'`'
+                | b'['
+                | b']'
+                | b'{'
+                | b'}'
+                | b'^'
+                | b'\\'
+                | b'<'
+                | b'>'
+                | b'_'
+                | b'~'
+                | b'!'
+                | b'@'
+                | b'$'
+                | b'='
+                | b'#'
+                | b'\''
+                | b'"'
+                | b':'
+                | b'%'
+                | b'+'
+                | b'|'
+        ) {
+            return false;
+        }
+    }
+    !source
+        .chars()
+        .any(|c| !c.is_ascii() && is_other_or_separator(c))
+}
+
+/// A space, `.` or `-`, or an ASCII alphanumeric run followed by `.` or `)`
+/// and a space, at the start of `rest`.
+fn starts_with_line_marker(rest: &[u8]) -> bool {
+    if matches!(rest.first(), Some(b' ' | b'.' | b'-')) {
+        return true;
+    }
+    let digits = rest
+        .iter()
+        .take_while(|b| b.is_ascii_alphanumeric())
+        .count();
+    digits > 0
+        && matches!(rest.get(digits), Some(b'.' | b')'))
+        && rest.get(digits + 1) == Some(&b' ')
+}
+
+mod other_or_separator;
+
+/// General_Category C* or Z* (unassigned included), for a non-ASCII `c`.
+fn is_other_or_separator(c: char) -> bool {
+    let c = c as u32;
+    other_or_separator::RANGES
+        .binary_search_by(|&(start, end)| {
+            if end < c {
+                std::cmp::Ordering::Less
+            } else if start > c {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
 }
 
 fn try_layout_into(
@@ -1607,5 +1676,125 @@ mod denied_definition_run_reporting {
         assert_eq!(report.total_losses, 1);
         assert_eq!(report.losses[0].code, "destination-denied");
         assert!(report.losses[0].pos.is_some());
+    }
+}
+
+#[cfg(test)]
+mod layout_plain_scan_tests {
+    use super::*;
+
+    fn regex_eligible(source: &str) -> bool {
+        source.is_ascii()
+            || !regex::Regex::new(r#"[*\/`\[\]{}^\\<>_~!@$=#'":%+|]|(?:^|\n)(?:[ .-]|[A-Za-z0-9]+[.)] )|[^\x00-\x7f\pL\pM\pN\pP\pS]"#)
+                .unwrap()
+                .is_match(source)
+    }
+
+    #[test]
+    fn other_or_separator_table_matches_the_unicode_class() {
+        let class = regex::Regex::new(r"\A[^\x00-\x7f\pL\pM\pN\pP\pS]\z").unwrap();
+        let mut buf = [0; 4];
+        for c in (0x80..=0x10FFFF).filter_map(char::from_u32) {
+            assert_eq!(
+                is_other_or_separator(c),
+                class.is_match(c.encode_utf8(&mut buf)),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn boundary_cases_match_the_former_pattern() {
+        let cases = [
+            "é",
+            "é*",
+            "é/",
+            "é`",
+            "é[",
+            "é]",
+            "é{",
+            "é}",
+            "é^",
+            "é\\",
+            "é<",
+            "é>",
+            "é_",
+            "é~",
+            "é!",
+            "é@",
+            "é$",
+            "é=",
+            "é#",
+            "é'",
+            "é\"",
+            "é:",
+            "é%",
+            "é+",
+            "é|",
+            "é&",
+            "é?",
+            "é,",
+            "é;",
+            "é(",
+            "é)",
+            "é.",
+            "é-",
+            " é",
+            ".é",
+            "-é",
+            "é\n é",
+            "é\n.x",
+            "é\n-x",
+            "é\nx",
+            "1. é",
+            "1) é",
+            "a. é",
+            "Z9) é",
+            "1.é",
+            "1 é",
+            "1.\né",
+            "1)",
+            "é\n12. x",
+            "é\n12) x",
+            "é\n12.x",
+            "é\n12 x",
+            "é\n\n1. x",
+            "x 1. é",
+            "é\n",
+            "é\n1.",
+            "é\né",
+            "\u{00A0}",
+            "a\u{00A0}b",
+            "a\u{2003}b",
+            "a\u{2028}b",
+            "a\u{2029}b",
+            "a\u{3000}b",
+            "a\u{200B}b",
+            "a\u{200D}b",
+            "a\u{00AD}b",
+            "a\u{FEFF}b",
+            "a\u{0085}b",
+            "a\u{E000}b",
+            "a\u{F0000}b",
+            "a\u{0378}b",
+            "a\u{10FFFF}b",
+            "e\u{0301}",
+            "\u{1F600}",
+            "\u{1F469}\u{200D}\u{1F4BB}",
+            "€ £ ¥",
+            "«é»",
+            "日本語",
+            "١٢٣",
+            "\u{2014}",
+            "\u{00B7}",
+        ];
+        for source in cases {
+            assert_eq!(
+                eligible_layout_text(source),
+                regex_eligible(source),
+                "{source:?}"
+            );
+        }
     }
 }
