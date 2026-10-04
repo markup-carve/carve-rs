@@ -149,6 +149,20 @@ pub(crate) fn refuse_if_too_deep(
     Ok(())
 }
 
+/// Returns an error past the depth ceiling, otherwise whether HTML preparation is required.
+pub(crate) fn html_preparation_needed(doc: &Document) -> Result<bool, RenderDepthError> {
+    let (exceeds, preparation) = inspect::<true>(doc);
+    if exceeds {
+        Err(RenderDepthError::new("html", MAX_RENDER_DEPTH))
+    } else {
+        Ok(preparation)
+    }
+}
+
+fn exceeds_ceiling(doc: &Document) -> bool {
+    inspect::<false>(doc).0
+}
+
 /// Whether the tree nests deeper than [`MAX_RENDER_DEPTH`], measured on an
 /// EXPLICIT STACK.
 ///
@@ -168,19 +182,6 @@ pub(crate) fn refuse_if_too_deep(
 ///
 /// Stops at the first node past the ceiling, so a deep document costs the depth
 /// rather than the tree. A document under the ceiling pays one pointer walk.
-pub(crate) fn html_preparation_needed(doc: &Document) -> Result<bool, RenderDepthError> {
-    let (exceeds, preparation) = inspect::<true>(doc);
-    if exceeds {
-        Err(RenderDepthError::new("html", MAX_RENDER_DEPTH))
-    } else {
-        Ok(preparation)
-    }
-}
-
-fn exceeds_ceiling(doc: &Document) -> bool {
-    inspect::<false>(doc).0
-}
-
 fn inspect<const HTML: bool>(doc: &Document) -> (bool, bool) {
     let mut preparation = HTML && !doc.footnote_defs.is_empty();
     let mut blocks: Vec<(&BlockNode, usize)> = Vec::new();
