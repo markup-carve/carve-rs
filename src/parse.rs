@@ -3877,12 +3877,8 @@ impl<'a> LineCursor<'a> {
     /// same shape `comment_closer_last_index` was added to remove for `%%%`.
     /// Code fences never got the equivalent.
     fn has_code_closer_after(&mut self, start: usize, fence_char: u8, fence_len: usize) -> bool {
-        if let Some(view) = self.colon_view.filter(|_| reuse_colon_views()) {
-            return view.source.fence_closers().code_in(
-                view.start + start + 1..view.end,
-                fence_char,
-                fence_len,
-            );
+        if let Some(possible) = self.lines.code_after(start, fence_char, fence_len) {
+            return possible;
         }
         if self.code_closer_last_index.is_none() {
             self.code_closer_last_index = Some(build_code_closer_last_index(&self.lines));
@@ -3893,11 +3889,8 @@ impl<'a> LineCursor<'a> {
     }
 
     fn has_comment_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
-        if let Some(view) = self.colon_view.filter(|_| reuse_colon_views()) {
-            return view
-                .source
-                .fence_closers()
-                .comment_in(view.start + start..view.end, fence_len);
+        if let Some(possible) = self.lines.comment_after(start, fence_len) {
+            return possible;
         }
         if self.comment_closer_last_index.is_none() {
             self.comment_closer_last_index = Some(build_comment_closer_last_index(&self.lines));
@@ -26031,8 +26024,8 @@ mod shared_colon_work_tests {
                     start + unit.len() - 1
                 );
             }
-            assert!(CODE_INDEX_LINES.with(Cell::get) <= lines.len());
-            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines.len());
+            assert_eq!(CODE_INDEX_LINES.with(Cell::get), lines.len());
+            assert_eq!(COMMENT_INDEX_LINES.with(Cell::get), lines.len());
         }
     }
 
@@ -26100,6 +26093,8 @@ mod shared_colon_work_tests {
                     "::: box\n::: |\nverse\n:::\n\n",
                     "::: box\n> text\n> ```text\n> code\n> ```\n\n",
                     "::: box\n- item\n+\n# attached\n\n",
+                    "::: box\n- item\n+\n```text\ncode\n```\n\n",
+                    "::: box\n- item\n+\n%%%\ncomment\n%%%\n\n",
                     "::: box\nterm\n:  +\n# attached\n\n",
                 ] {
                     for closed in [true, false] {
@@ -26128,9 +26123,10 @@ mod shared_colon_work_tests {
                                 COLON_CLOSER_LINES.with(Cell::get) <= source.lines().count() * 2
                             );
                             assert!(
-                        entries <= source.lines().count() * 2,
-                        "{depth} levels, prefix {prefix:?}, closed {closed}: materialized {entries} references"
-                    );
+                                entries <= source.lines().count() * 2,
+                                "{depth} levels, prefix {prefix:?}, closed {closed}: \
+                                 materialized {entries} references"
+                            );
                             assert!(crate::render_html(&document).unwrap().contains("payload"));
                             if depth == 24 {
                                 COLON_CACHE_ENABLED.with(|flag| flag.set(false));
