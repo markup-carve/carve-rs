@@ -7966,10 +7966,6 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
     false
 }
 
-/// Returns the collected body and whether the container's own CLOSER was
-/// consumed - `false` means end of input closed it (PART 9 §12). The flag
-/// exists for the figure group, whose caption slot hangs on the closing fence
-/// (§4c): a group closed by end of input has no closer line for a caption.
 fn reuse_colon_views() -> bool {
     #[cfg(test)]
     {
@@ -7981,6 +7977,10 @@ fn reuse_colon_views() -> bool {
     }
 }
 
+/// Returns the collected body and whether the container's own CLOSER was
+/// consumed - `false` means end of input closed it (PART 9 §12). The flag
+/// exists for the figure group, whose caption slot hangs on the closing fence
+/// (§4c): a group closed by end of input has no closer line for a caption.
 fn collect_shared_colon_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (ColonView, bool) {
     #[cfg(test)]
     let cached = COLON_CACHE_ENABLED.with(Cell::get);
@@ -26158,6 +26158,7 @@ mod shared_colon_work_tests {
             "::: outer\n::: figure\n![map](map.svg)\n:::\n^ caption\n:::\n".to_owned(),
             "::: outer\n:::: inner\n:::\npayload\n::::\n:::\n".to_owned(),
             "::: outer\n- item\n+\n  ```text\n  x\n  ```\n:::\n".to_owned(),
+            "::: box\n- item\n+\n::: note\n  ```\n:::\n  ```\n:::\n:::\n".to_owned(),
         ];
         cases.push(format!(
             "{}payload\n{}",
