@@ -28,6 +28,7 @@ use crate::source_positions::CodepointLineStarts;
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::num::NonZeroUsize;
 use unicode_normalization::UnicodeNormalization;
 
 /// The line a collected definition leaves behind, and the marker that says it
@@ -500,7 +501,7 @@ pub(crate) use frontmatter::{frontmatter_format_token, frontmatter_map, opens_fr
 pub(crate) use layout::{try_layout_html, try_layout_stream};
 use source_map::{
     compose_mapped_source, first_mapped_line, map_pos_through_source, remap_source, LineBuffer,
-    MappedSource, SourceLine,
+    MappedSource, MarkerTail, SourceLine,
 };
 #[derive(Clone, Copy)]
 enum ParseMode {
@@ -603,6 +604,7 @@ fn parse_with_options_mode_and_index(
                     reached: Vec::new(),
                     authored_base_at_start: false,
                     item_marker_at_start: false,
+                    marker_tail: None,
                     sublists_carry_authored_base: false,
                 },
                 BTreeMap::new(),
@@ -1943,6 +1945,7 @@ fn extract_footnote_defs(
                     line_map: def_line_map,
                     authored_base_at_start: false,
                     item_marker_at_start: false,
+                    marker_tail: None,
                     reached: vec![true; def_lines.len()],
                     // A FOOTNOTE BODY carries authored base for its sublists, so
                     // a list marker past the body's content column anchors its
@@ -2008,6 +2011,7 @@ fn extract_footnote_defs(
             source: joined_source(&body),
             authored_base_at_start: false,
             item_marker_at_start: false,
+            marker_tail: None,
             reached: Vec::new(),
             sublists_carry_authored_base: false,
             line_map: body_line_map,
@@ -3536,6 +3540,7 @@ fn parse_blocks_with_options_at_level_into(
     parse_blocks_with_options_at_level_into_reached(
         source,
         &[],
+        None,
         options,
         at_document_level,
         in_item_body,
@@ -3548,6 +3553,7 @@ fn parse_blocks_with_options_at_level_into(
 fn parse_blocks_with_options_at_level_into_reached(
     source: &str,
     reached: &[bool],
+    marker_tail: Option<MarkerTail>,
     options: &Options<'_>,
     at_document_level: bool,
     in_item_body: bool,
@@ -3579,11 +3585,14 @@ fn parse_blocks_with_options_at_level_into_reached(
     cursor.at_document_level = at_document_level;
     cursor.in_item_body = in_item_body;
     cursor.reached = Some(reached);
+    cursor.marker_tail = marker_tail;
     parse_blocks(&mut cursor, options, pending)
 }
 
 struct LineCursor<'a> {
     colon_view: Option<&'a ColonView>,
+    colon_geometry: Option<&'a [SourceLine]>,
+    marker_tail: Option<MarkerTail>,
     lines: &'a [&'a str],
     line_map: Option<&'a [Option<usize>]>,
     /// Columns already stripped from the front of each line by an enclosing
@@ -3637,6 +3646,8 @@ impl<'a> LineCursor<'a> {
     ) -> Self {
         LineCursor {
             colon_view: None,
+            colon_geometry: None,
+            marker_tail: None,
             lines,
             line_map,
             col_map,
@@ -3666,12 +3677,18 @@ impl<'a> LineCursor<'a> {
         self.pos >= self.lines.len()
     }
     fn source_line(&self, pos: usize) -> Option<usize> {
+        if let Some(lines) = self.colon_geometry {
+            return lines.get(pos).and_then(|line| line.source_line());
+        }
         self.line_map
             .and_then(|map| map.get(pos).copied().flatten())
     }
 
     /// Columns stripped from the front of the line at `pos`, when known.
     fn source_col(&self, pos: usize) -> Option<isize> {
+        if let Some(lines) = self.colon_geometry.filter(|_| self.col_map.is_some()) {
+            return lines.get(pos).and_then(|line| line.stripped);
+        }
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
     }
 
@@ -4494,6 +4511,7 @@ fn parse_unpositioned_mapped_source(
     parse_blocks_with_options_at_level_into_reached(
         &source.source,
         &source.reached,
+        source.marker_tail,
         options,
         at_document_level,
         in_item_body,
@@ -4522,6 +4540,7 @@ fn parse_positioned_mapped_source(
     cursor.in_item_body = in_item_body;
     cursor.reached = Some(source.reached.as_slice());
     cursor.sublists_carry_authored_base = source.sublists_carry_authored_base;
+    cursor.marker_tail = source.marker_tail;
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -4786,6 +4805,21 @@ fn parse_colon_view(
 ) -> Vec<BlockNode> {
     let source = &view.source.inner.lines[view.start..view.end];
     let lines: Vec<_> = source.iter().map(|line| line.text.as_str()).collect();
+    #[cfg(test)]
+    if !COLON_CACHE_ENABLED.with(Cell::get)
+        && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
+    {
+        let want_lines = options.source_lines || options.positions || needs_source_ending_map();
+        let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
+        let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
+        let mut cursor = LineCursor::new_with_cols(
+            &lines,
+            want_lines.then_some(line_map.as_slice()),
+            options.positions.then_some(col_map.as_slice()),
+        );
+        cursor.colon_view = Some(&view);
+        return parse_blocks(&mut cursor, options, pending);
+    }
     if !options.source_lines
         && !options.positions
         && !needs_source_ending_map()
@@ -4795,17 +4829,18 @@ fn parse_colon_view(
         cursor.colon_view = Some(&view);
         return parse_blocks(&mut cursor, options, pending);
     }
-    let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
-    let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
     if NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH) {
         let mut cursor = LineCursor::new_with_cols(
             &lines,
-            Some(&line_map),
-            options.positions.then_some(col_map.as_slice()),
+            Some(&[]),
+            options.positions.then_some([].as_slice()),
         );
         cursor.colon_view = Some(&view);
+        cursor.colon_geometry = Some(source);
         return parse_blocks(&mut cursor, options, pending);
     }
+    let line_map: Vec<_> = source.iter().map(|line| line.source_line()).collect();
+    let col_map: Vec<_> = source.iter().map(|line| line.stripped).collect();
     if lines.iter().all(|line| is_blank_line(line)) {
         return Vec::new();
     }
@@ -5420,6 +5455,13 @@ fn parse_item_chunk(
     options: &Options<'_>,
     carried: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
+    if !source
+        .source
+        .lines()
+        .any(|line| line.starts_with([' ', '\t']))
+    {
+        return parse_mapped_source_at_level_into(source, options, false, true, carried);
+    }
     let mut rebased = source.clone();
     rebase_overindented_blocks(&mut rebased, false, options);
     parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
@@ -6025,6 +6067,7 @@ fn rebase_overindented_blocks(
         rebased.push('\n');
     }
     source.source = rebased;
+    source.marker_tail = None;
 }
 
 /// Line indexes by the length of their `%` run, for comment fence closers.
@@ -9588,19 +9631,21 @@ fn parse_continuation_block(
         },
     );
     let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
-    let line_map: Vec<Option<usize>> = cur
-        .line_map
-        .map(|map| map[cur.pos..end].to_vec())
-        .unwrap_or_default();
+    let line_map: Vec<Option<usize>> = if cur.line_map.is_some() {
+        (cur.pos..end).map(|pos| cur.source_line(pos)).collect()
+    } else {
+        Vec::new()
+    };
     // The attached lines are taken VERBATIM - nothing is stripped from them -
     // so the parent's column widths apply unchanged. Without this the sub-cursor
     // had no column map at all, and every block a `+` attached came out
     // unplaced: the code block, quote or table after the marker, and everything
     // inside it.
-    let col_map: Vec<Option<isize>> = cur
-        .col_map
-        .map(|map| map[cur.pos..end].to_vec())
-        .unwrap_or_default();
+    let col_map: Vec<Option<isize>> = if cur.col_map.is_some() {
+        (cur.pos..end).map(|pos| cur.source_col(pos)).collect()
+    } else {
+        Vec::new()
+    };
     let mut sub = LineCursor::new_with_cols(
         &slice,
         cur.line_map.is_some().then_some(line_map.as_slice()),
@@ -10565,11 +10610,26 @@ fn parse_list(
             // nothing, so collection must resume against THAT item's content
             // column. Using the outer `content_col` assigned a following line
             // between the two columns to the outer item instead (#1424).
-            let nested_content_col = content_col + innermost_marker_content_col(marker.content);
-            let innermost_content = innermost_marker_content(marker.content);
+            let content_offset = cur.lines[item_at].len() - marker.content.len();
+            let cached_tail = cur.marker_tail.filter(|_| item_at == 0);
+            #[cfg(test)]
+            let cached_tail = cached_tail.filter(|_| REUSE_MARKER_TAIL.with(Cell::get));
+            let carried_tail = cached_tail.and_then(|tail| {
+                let relative = tail.content_offset.get().checked_sub(content_offset)?;
+                let column = tail.column.checked_sub(content_col)?;
+                Some((column, marker.content.get(relative..)?))
+            });
+            let (tail_col, innermost_content) =
+                carried_tail.unwrap_or_else(|| innermost_marker_tail(marker.content));
+            let nested_content_col = content_col + tail_col;
             let nested_definition_ended_paragraph =
                 is_collected_definition_placeholder(innermost_content);
             let mut stream = item_marker_source(cur, marker.content, item_at);
+            stream.marker_tail = NonZeroUsize::new(marker.content.len() - innermost_content.len())
+                .map(|content_offset| MarkerTail {
+                    content_offset,
+                    column: tail_col,
+                });
             // A code fence or a colon container opened on this NESTED lead takes
             // the flush-left lines below it, exactly as the single-level item
             // does - but the inner re-parse cannot see those lines unless this
@@ -11543,16 +11603,22 @@ fn definition_body_content_col(line: &str) -> Option<usize> {
 
 /// The content column of the deepest marker in a marker-line list run,
 /// relative to the first marker's content.
-fn innermost_marker_content_col(mut line: &str) -> usize {
+fn innermost_marker_content_col(line: &str) -> usize {
+    innermost_marker_tail(line).0
+}
+
+fn innermost_marker_tail(mut line: &str) -> (usize, &str) {
     let mut column = 0;
     while let Some(marker) = detect_list_marker_full(line) {
+        #[cfg(test)]
+        INNERMOST_MARKER_STEPS.with(|count| count.set(count.get() + 1));
         let Some(next) = marker_content_col(line) else {
             break;
         };
         column += next;
         line = marker.content;
     }
-    column
+    (column, line)
 }
 
 fn innermost_marker_content(mut line: &str) -> &str {
@@ -13377,6 +13443,7 @@ fn collect_indented_block_mapped_with_columns(
         line_map,
         authored_base_at_start,
         item_marker_at_start: false,
+        marker_tail: None,
         reached,
         sublists_carry_authored_base: false,
     }
@@ -14334,6 +14401,7 @@ fn body_as_read(source: String, reached: Vec<bool>, options: &Options<'_>) -> St
         // rebase reads the same document here as it does there.
         authored_base_at_start: false,
         item_marker_at_start: false,
+        marker_tail: None,
         reached,
         sublists_carry_authored_base: false,
     };
@@ -14826,6 +14894,7 @@ fn collect_definition_body(
         line_map,
         authored_base_at_start: false,
         item_marker_at_start: false,
+        marker_tail: None,
         reached,
         sublists_carry_authored_base: false,
     }
@@ -25108,25 +25177,54 @@ mod comment_fence_work {
 #[cfg(test)]
 thread_local! {
     static INNERMOST_CONTENT_SCANS: Cell<usize> = const { Cell::new(0) };
+    static INNERMOST_MARKER_STEPS: Cell<usize> = const { Cell::new(0) };
+    static REUSE_MARKER_TAIL: Cell<bool> = const { Cell::new(true) };
 }
 
 #[cfg(test)]
 mod nested_list_content_scans {
     #[test]
-    // A constant-factor guard: marker suffix lengths still grow with depth.
-    fn each_marker_body_reuses_its_innermost_content_scan() {
+    fn carried_boundaries_match_fresh_scans() {
+        use super::*;
+        for marker in ["- ", "1. ", "-{.x} ", "- [x] ", "\t- "] {
+            for tail in [
+                "end\n",
+                "α *bold*\n   # heading\n",
+                "``` =html\n<pre>x</pre>\n```\n",
+            ] {
+                let source = format!("{}{tail}", marker.repeat(24));
+                for positions in [false, true] {
+                    let options = Options {
+                        positions,
+                        source_lines: positions,
+                        ..Options::default()
+                    };
+                    REUSE_MARKER_TAIL.with(|flag| flag.set(false));
+                    let expected = parse_with_options(&source, &options);
+                    REUSE_MARKER_TAIL.with(|flag| flag.set(true));
+                    assert_eq!(
+                        parse_with_options(&source, &options),
+                        expected,
+                        "{marker:?} {tail:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn descendants_reuse_the_marker_tail_boundary() {
         std::thread::Builder::new()
             .stack_size(64 * 1024 * 1024)
             .spawn(|| {
                 for depth in [32, 64, 128, 192] {
                     super::INNERMOST_CONTENT_SCANS.with(|count| count.set(0));
+                    super::INNERMOST_MARKER_STEPS.with(|count| count.set(0));
                     let source = format!("{}end\n", "- ".repeat(depth));
                     let html = crate::to_html(&source);
                     assert_eq!(html.matches("<ul>").count(), depth);
-                    assert_eq!(
-                        super::INNERMOST_CONTENT_SCANS.with(|count| count.get()),
-                        depth - 1
-                    );
+                    assert_eq!(super::INNERMOST_CONTENT_SCANS.with(|count| count.get()), 0);
+                    assert!(super::INNERMOST_MARKER_STEPS.with(|count| count.get()) <= depth * 2);
                 }
             })
             .unwrap()
@@ -25415,18 +25513,10 @@ mod container_open_readings {
         );
     }
 
-    /// Opener readings stay proportional to the work the NESTING WALK owes.
-    ///
-    /// The definition-region scan visits nested fence boundaries once per
-    /// enclosing level, so a ladder of `depth` levels currently takes
-    /// `depth * (depth + 1)` line readings - quadratic in the input and bounded
-    /// by `MAX_NESTING_DEPTH`. The claim is the per-unit RATE: proportional
-    /// work holds it flat or falling as the ladder deepens, and anything
-    /// superlinear in it must make it climb. Stating the curve rather than the
-    /// constant keeps the guard alive after honest drift.
+    /// Shared colon boundaries keep opener readings proportional to input lines.
     #[test]
     fn opener_readings_stay_proportional_to_the_nesting_walk() {
-        let work = |depth: u64| depth * (depth + 1);
+        let work = |depth: u64| depth;
         let small = count(recovered(100));
         let large = count(recovered(200));
         let small_work = work(100);
@@ -25438,9 +25528,9 @@ mod container_open_readings {
             large.readings,
         );
         assert!(
-            large.readings <= 2 * large_work,
+            large.readings <= 5 * large_work,
             "{} opener readings for {large_work} units of nesting work ({:.2} each) - \
-             an opener is being read more than twice per level per line",
+             an opener is being read more than five times per level",
             large.readings,
             large.readings as f64 / large_work as f64,
         );
@@ -25610,6 +25700,7 @@ mod shared_colon_work_tests {
             "::: outer\n::: >\n::: \\\nfirst\nsecond\n:::\n:::\n:::\n".to_owned(),
             "::: outer\n::: figure\n![map](map.svg)\n:::\n^ caption\n:::\n".to_owned(),
             "::: outer\n:::: inner\n:::\npayload\n::::\n:::\n".to_owned(),
+            "::: outer\n- item\n+\n  ```text\n  x\n  ```\n:::\n".to_owned(),
         ];
         cases.push(format!(
             "{}payload\n{}",
