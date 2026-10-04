@@ -5467,6 +5467,76 @@ fn parse_item_chunk(
     parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
 }
 
+/// Last line in a colon group rebased with its opener.
+fn rebased_colon_group_end(
+    lines: &[Cow<'_, str>],
+    start: usize,
+    base: usize,
+    width: usize,
+) -> usize {
+    let mut end = start;
+    // CARVE-P0-004: the closer is measured from the
+    // authored base, so only the container's content column or that base
+    // closes. A run in the band between them is payload, and the extent
+    // must keep it rather than break and let the outer scan re-read it as
+    // an opener of its own. The comment fence is the deliberate exception
+    // and is left alone - both its delimiters carry a whitespace slot.
+    let mut stack = vec![width];
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        end = j;
+        let column = indent_columns(candidate);
+        if !is_blank_line(candidate) && (column == 0 || column == base) {
+            let local = strip_leading_columns(candidate, column);
+            let trimmed = trim_ascii(&local);
+            if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == b':') {
+                if stack.last() == Some(&trimmed.len()) {
+                    stack.pop();
+                    if stack.is_empty() {
+                        break;
+                    }
+                } else {
+                    stack.push(trimmed.len());
+                }
+            }
+        }
+    }
+    end
+}
+
+/// Last line in a list run before a dedent or a below-content-column block.
+fn rebased_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize {
+    let mut end = start;
+    let content = marker_content_col(&lines[start]).unwrap_or(base);
+    let mut blank_seen = false;
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if is_blank_line(candidate) {
+            blank_seen = true;
+            end = j;
+            continue;
+        }
+        let indent = indent_columns(candidate);
+        if indent < base {
+            break;
+        }
+        // THE SECOND BOUND. Carrying a block short of the item's
+        // content column into the run puts it in the LIST's coordinate
+        // system one or two columns shy of that content column, where
+        // the ordinary list rule reads it as lazy text - which is
+        // exactly what the enclosing body's own block is not.
+        //
+        // `indent > base` rather than `>= base` is equivalent for known shapes:
+        // widening it moves nothing, because the outer scan
+        // picks a marker at the base up again as its own opener. It is
+        // written this way because a line AT the marker's column is
+        // where a sibling marker goes, which belongs in the run.
+        if blank_seen && indent > base && indent < content {
+            break;
+        }
+        end = j;
+    }
+    end
+}
+
 /// Apply an authored block base after a container's minimum content column has
 /// been stripped. List-item calls leave sublists alone because their residual
 /// indentation expresses another list level; definition and footnote bodies
@@ -5867,31 +5937,7 @@ fn rebase_overindented_blocks(
                 }
             }
         } else if let Some(width) = colon {
-            // CARVE-P0-004, as the code arm above: the closer is measured from the
-            // authored base, so only the container's content column or that base
-            // closes. A run in the band between them is payload, and the extent
-            // must keep it rather than break and let the outer scan re-read it as
-            // an opener of its own. The comment fence is the deliberate exception
-            // and is left alone - both its delimiters carry a whitespace slot.
-            let mut stack = vec![width];
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                end = j;
-                let column = indent_columns(candidate);
-                if !is_blank_line(candidate) && (column == 0 || column == base) {
-                    let local = strip_leading_columns(candidate, column);
-                    let trimmed = trim_ascii(&local);
-                    if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == b':') {
-                        if stack.last() == Some(&trimmed.len()) {
-                            stack.pop();
-                            if stack.is_empty() {
-                                break;
-                            }
-                        } else {
-                            stack.push(trimmed.len());
-                        }
-                    }
-                }
-            }
+            end = rebased_colon_group_end(&lines, i, base, width);
         } else if footnote {
             // The authored base belongs to the remainder of this metadata
             // group, not only to the definition opener. A later paragraph at
@@ -5905,34 +5951,7 @@ fn rebase_overindented_blocks(
                 end = j;
             }
         } else if is_list_marker(&opener) {
-            let content = marker_content_col(&lines[i]).unwrap_or(base);
-            let mut blank_seen = false;
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) {
-                    blank_seen = true;
-                    end = j;
-                    continue;
-                }
-                let indent = indent_columns(candidate);
-                if indent < base {
-                    break;
-                }
-                // THE SECOND BOUND. Carrying a block short of the item's
-                // content column into the run puts it in the LIST's coordinate
-                // system one or two columns shy of that content column, where
-                // the ordinary list rule reads it as lazy text - which is
-                // exactly what the enclosing body's own block is not.
-                //
-                // `indent > base` rather than `>= base` is equivalent for known shapes:
-                // widening it moves nothing, because the outer scan
-                // picks a marker at the base up again as its own opener. It is
-                // written this way because a line AT the marker's column is
-                // where a sibling marker goes, which belongs in the run.
-                if blank_seen && indent > base && indent < content {
-                    break;
-                }
-                end = j;
-            }
+            end = rebased_list_end(&lines, i, base);
         } else if strip_blockquote_prefix(&opener).is_some() {
             // Quote prefixes and their lazy paragraph continuations share the
             // opener's authored base until a blank or a dedent ends the run.
