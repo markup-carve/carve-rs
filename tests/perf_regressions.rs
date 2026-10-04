@@ -1892,3 +1892,42 @@ fn nested_colon_payloads_parse_in_near_linear_time() {
         );
     }
 }
+
+#[test]
+fn invalid_autolink_prefixes_before_a_closer_scale_near_linearly() {
+    for prefix in ["<a:x ", "<a:x<", "~<a:x "] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::to_html(source)),
+            |n| format!("{}>", prefix.repeat(n)),
+            prefix,
+            4096,
+            16384,
+        );
+    }
+}
+
+#[test]
+fn invalid_crossref_targets_share_failed_ranges() {
+    for prefix in ["</#a ", "</#"] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::to_html(source)),
+            |n| format!("{} x>", prefix.repeat(n)),
+            prefix,
+            4096,
+            16384,
+        );
+    }
+}
+
+#[test]
+fn failed_combined_span_closers_scale_near_linearly() {
+    for suffix in ["", " [x */]"] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::to_html(source)),
+            |n| format!("{}{suffix}", "/*a ".repeat(n)),
+            "failed combined spans",
+            4096,
+            16384,
+        );
+    }
+}

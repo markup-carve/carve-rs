@@ -48,3 +48,34 @@ fn nbsp_inside_code_span_serializes_as_entity() {
         "<p><code>a&nbsp;b</code></p>"
     );
 }
+
+#[test]
+fn malformed_prefixes_do_not_hide_the_final_autolink() {
+    for prefix in ["<a:x ", "<a:x<", "<word "] {
+        let source = format!("{}<https://example.com>{{.last}}", prefix.repeat(512));
+        let html = carve::to_html(&source);
+        assert_eq!(html.matches("<a ").count(), 1);
+        assert!(html.contains("class=\"last\""));
+        assert!(html.contains("href=\"https://example.com\""));
+    }
+}
+
+#[test]
+fn invalid_crossrefs_do_not_hide_later_valid_targets() {
+    let source = format!("{} x></#valid>\n\n# valid", "</#".repeat(512));
+    let html = carve::to_html(&source);
+    assert!(html.contains("href=\"#valid\""));
+    assert!(html.contains("&lt;"));
+}
+
+#[test]
+fn a_nested_angle_in_a_crossref_target_remains_accepted() {
+    let doc = carve::parse("</#a<b>");
+    let carve::ast::BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+    let carve::ast::InlineNode::CrossRef(crossref) = &paragraph.children[0] else {
+        panic!("expected a cross-reference");
+    };
+    assert_eq!(crossref.target, "a<b");
+}

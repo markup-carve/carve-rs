@@ -13994,6 +13994,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
         last_close_brace: bytes.iter().rposition(|&b| b == b'}'),
         last_close_bracket: bytes.iter().rposition(|&b| b == b']'),
         last_gt: bytes.iter().rposition(|&b| b == b'>'),
+        crossref_invalid_range: Cell::new(None),
         delim_brace: [None; DELIM_BRACE_SLOTS],
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
@@ -18974,6 +18975,8 @@ struct InlineBounds<'a> {
     last_close_bracket: Option<usize>,
     /// Index of the last `>` (crossref / autolink closer).
     last_gt: Option<usize>,
+    /// Starts in this range already failed at the same whitespace byte.
+    crossref_invalid_range: Cell<Option<(usize, usize)>>,
     /// For each tracked `X}` pair, the index of the leading `X` of its LAST
     /// occurrence (see `delim_brace_slot`). Used by critic markup and forced
     /// emphasis, whose closers are two-byte `X}` pairs.
@@ -19221,6 +19224,7 @@ fn parse_inline_context(
         last_close_brace,
         last_close_bracket,
         last_gt,
+        crossref_invalid_range: Cell::new(None),
         delim_brace,
     };
     let citation_brackets = std::cell::OnceCell::new();
@@ -21307,8 +21311,15 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
         return None;
     }
     let rest = text.get(pos..)?;
-    let close = rest.find('>')?;
+    let close = autolink_closer(rest.as_bytes(), 0)?;
     let target = &rest[1..close];
+    let href = if is_url_autolink_target(target) {
+        target.to_string()
+    } else if is_email_autolink_target(target) {
+        format!("mailto:{target}")
+    } else {
+        return None;
+    };
     let mut attrs = None;
     let mut consumed = close + 1;
     let bytes = text.as_bytes();
@@ -21320,29 +21331,15 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
             consumed = next - pos;
         }
     }
-    if is_url_autolink_target(target) {
-        return Some((
-            AutoLink {
-                attrs,
-                href: target.to_string(),
-                text: target.to_string(),
-                pos: None,
-            },
-            consumed,
-        ));
-    }
-    if is_email_autolink_target(target) {
-        return Some((
-            AutoLink {
-                attrs,
-                href: format!("mailto:{target}"),
-                text: target.to_string(),
-                pos: None,
-            },
-            consumed,
-        ));
-    }
-    None
+    Some((
+        AutoLink {
+            attrs,
+            href,
+            text: target.to_string(),
+            pos: None,
+        },
+        consumed,
+    ))
 }
 
 /// `email_char = letter | digit | '.' | '-' | '_' | '+'` (grammar.ebnf).
@@ -21506,9 +21503,25 @@ fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
     }
     let rest = text.get(pos..)?;
     let inner = rest.strip_prefix("</#")?;
-    let close = inner.find('>')?;
+    let start = pos + 3;
+    if bounds
+        .crossref_invalid_range
+        .get()
+        .is_some_and(|(from, to)| start >= from && start <= to)
+    {
+        return None;
+    }
+    let close = inner
+        .bytes()
+        .position(|b| b == b'>' || b.is_ascii_whitespace())?;
+    if inner.as_bytes()[close] != b'>' {
+        bounds
+            .crossref_invalid_range
+            .set(Some((start, start + close)));
+        return None;
+    }
     let target = &inner[..close];
-    if target.is_empty() || target.bytes().any(|b| b.is_ascii_whitespace()) {
+    if target.is_empty() {
         return None;
     }
     Some((
@@ -22127,38 +22140,26 @@ fn match_emphasis(
         let start = i + 2;
         // Opener guard: the first content byte must exist and not be whitespace.
         if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
-            let mut search = start;
-            // The run the opener sits in, which the closer has to share: PART 8
-            // resolves a bracket run first, so a `*/` inside one is that run's
-            // content (markup-carve/carve#2577, carve-rs#2173).
             let opener_run = bounds.bracket_run_at(i);
-            while let Some(close) = find_seq(bytes, search, b"*/") {
-                // Reject empty content or content ending in whitespace; keep
-                // scanning for a later closer, matching carve-php.
-                if close > start
-                    && !is_carve_ws(bytes[close - 1])
-                    && bounds.bracket_run_at(close) == opener_run
-                {
-                    let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
-                    OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
-                    return Some((
-                        InlineNode::Emphasis(Emphasis {
-                            attrs: None,
-                            kind: EmphasisKind::BoldItalic,
-                            children: parse_inline_context(
-                                inner,
-                                options,
-                                false,
-                                in_footnote,
-                                positions,
-                                base + start,
-                            ),
-                            pos: None,
-                        }),
-                        close + 2 - i,
-                    ));
-                }
-                search = close + 1;
+            if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
+                let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
+                OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
+                return Some((
+                    InlineNode::Emphasis(Emphasis {
+                        attrs: None,
+                        kind: EmphasisKind::BoldItalic,
+                        children: parse_inline_context(
+                            inner,
+                            options,
+                            false,
+                            in_footnote,
+                            positions,
+                            base + start,
+                        ),
+                        pos: None,
+                    }),
+                    close + 2 - i,
+                ));
             }
         }
     }
@@ -24557,6 +24558,32 @@ struct EmphasisMemo {
     failed: [Option<Vec<bool>>; EMPHASIS_DELIM_SLOTS],
     last_brace: Option<Option<usize>>,
     last_comment_close: Option<Option<usize>>,
+    bold_italic: Option<HashMap<Option<usize>, Vec<usize>>>,
+}
+
+fn bold_italic_close(
+    bytes: &[u8],
+    start: usize,
+    opener_run: Option<usize>,
+    memo: &mut EmphasisMemo,
+    bounds: &InlineBounds<'_>,
+) -> Option<usize> {
+    let closers = memo.bold_italic.get_or_insert_with(|| {
+        let mut index: HashMap<Option<usize>, Vec<usize>> = HashMap::new();
+        for (close, pair) in bytes.windows(2).enumerate() {
+            if pair == b"*/" && close > 0 && !is_carve_ws(bytes[close - 1]) {
+                index
+                    .entry(bounds.bracket_run_at(close))
+                    .or_default()
+                    .push(close);
+            }
+        }
+        index
+    });
+    let positions = closers.get(&opener_run)?;
+    positions
+        .get(positions.partition_point(|&close| close <= start))
+        .copied()
 }
 
 /// `find_emphasis_close` behind the failure memo, which bounds `_a](`×n and
@@ -24806,10 +24833,18 @@ fn link_destination_end(bytes: &[u8], open: usize) -> Option<usize> {
     None
 }
 
+fn autolink_closer(bytes: &[u8], open: usize) -> Option<usize> {
+    let tail = bytes.get(open + 1..)?;
+    let stop = tail
+        .iter()
+        .position(|&b| matches!(b, b'>' | b'<' | b' ' | b'\t' | b'\r' | b'\n'))?;
+    (tail[stop] == b'>').then_some(open + 1 + stop)
+}
+
 /// The `>` closing the autolink at `open`, or `None` when the body between
 /// the angle brackets is not a URL or email autolink target.
 fn scanned_autolink_end(bytes: &[u8], open: usize) -> Option<usize> {
-    let close = open + 1 + bytes[open + 1..].iter().position(|&b| b == b'>')?;
+    let close = autolink_closer(bytes, open)?;
     let target = std::str::from_utf8(&bytes[open + 1..close]).ok()?;
     (is_url_autolink_target(target) || is_email_autolink_target(target)).then_some(close)
 }
