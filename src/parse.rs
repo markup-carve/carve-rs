@@ -5537,6 +5537,102 @@ fn rebased_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize 
     end
 }
 
+/// Last line owned by a rebased code fence.
+fn rebased_code_fence_end(
+    lines: &[Cow<'_, str>],
+    start: usize,
+    base: usize,
+    open: FenceOpen,
+) -> usize {
+    let mut end = start;
+    // CARVE-P0-004: only the container's content column and the opener's
+    // own base close it, so an unterminated fence runs to the container's
+    // end and a run in between stays payload at its authored column.
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        end = j;
+        let column = indent_columns(candidate);
+        if !is_blank_line(candidate)
+            && (column == 0 || column == base)
+            && is_fence_close(&strip_leading_columns(candidate, column), open)
+        {
+            break;
+        }
+    }
+    end
+}
+
+/// Last line owned by a rebased comment fence.
+fn rebased_comment_end(lines: &[Cow<'_, str>], start: usize, base: usize, width: usize) -> usize {
+    let mut end = start;
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if !is_blank_line(candidate) && indent_columns(candidate) < base {
+            break;
+        }
+        end = j;
+        if !is_blank_line(candidate)
+            && is_comment_fence_close(&strip_leading_columns(candidate, base), width)
+        {
+            break;
+        }
+    }
+    end
+}
+
+/// Last line owned by a rebased line block.
+fn rebased_line_block_end(
+    lines: &[Cow<'_, str>],
+    start: usize,
+    base: usize,
+    width: usize,
+) -> usize {
+    let mut end = start;
+    // Rebase the opener and its whole body together. Other colon widths
+    // are verse content and do not open nested containers.
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        end = j;
+        let column = indent_columns(candidate);
+        if (column == 0 || column == base)
+            && exact_colon_fence_len(&strip_leading_columns(candidate, column)) == Some(width)
+        {
+            break;
+        }
+    }
+    end
+}
+
+/// Last line owned by a rebased definition list.
+fn rebased_definition_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize {
+    let mut end = start;
+    let mut content = definition_body_content_col(&lines[start]);
+    for (j, candidate) in lines.iter().enumerate().skip(start + 1) {
+        if is_blank_line(candidate) {
+            end = j;
+            continue;
+        }
+        let indent = indent_columns(candidate);
+        if indent < base {
+            break;
+        }
+        if indent == base {
+            // A sibling term or description marker re-opens the run's
+            // innermost body, so the column to measure against moves
+            // with it.
+            if let Some(column) = definition_body_content_col(candidate) {
+                content = Some(column);
+            }
+            end = j;
+            continue;
+        }
+        if content.is_some_and(|column| indent < column)
+            && item_block_opener(&strip_leading_columns(candidate, indent))
+        {
+            break;
+        }
+        end = j;
+    }
+    end
+}
+
 /// Apply an authored block base after a container's minimum content column has
 /// been stripped. List-item calls leave sublists alone because their residual
 /// indentation expresses another list level; definition and footnote bodies
@@ -5895,47 +5991,11 @@ fn rebase_overindented_blocks(
             && colon.is_none()
             && parse_footnote_def_line(&opener).is_some();
         if let Some(open) = code {
-            // CARVE-P0-004: only the container's content column and the opener's
-            // own base close it, so an unterminated fence runs to the container's
-            // end and a run in between stays payload at its authored column.
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                end = j;
-                let column = indent_columns(candidate);
-                if !is_blank_line(candidate)
-                    && (column == 0 || column == base)
-                    && is_fence_close(&strip_leading_columns(candidate, column), open)
-                {
-                    break;
-                }
-            }
+            end = rebased_code_fence_end(&lines, i, base, open);
         } else if let Some(ref open) = comment {
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if !is_blank_line(candidate) && indent_columns(candidate) < base {
-                    break;
-                }
-                end = j;
-                if !is_blank_line(candidate)
-                    && is_comment_fence_close(
-                        &strip_leading_columns(candidate, base),
-                        open.fence_len,
-                    )
-                {
-                    break;
-                }
-            }
+            end = rebased_comment_end(&lines, i, base, open.fence_len);
         } else if let Some(width) = line_block {
-            // Rebase the opener and its whole body together. Other colon widths
-            // are verse content and do not open nested containers.
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                end = j;
-                let column = indent_columns(candidate);
-                if (column == 0 || column == base)
-                    && exact_colon_fence_len(&strip_leading_columns(candidate, column))
-                        == Some(width)
-                {
-                    break;
-                }
-            }
+            end = rebased_line_block_end(&lines, i, base, width);
         } else if let Some(width) = colon {
             end = rebased_colon_group_end(&lines, i, base, width);
         } else if footnote {
@@ -5973,33 +6033,7 @@ fn rebase_overindented_blocks(
                 end = j;
             }
         } else if is_definition_list_start(&opener) {
-            let mut content = definition_body_content_col(&lines[i]);
-            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) {
-                    end = j;
-                    continue;
-                }
-                let indent = indent_columns(candidate);
-                if indent < base {
-                    break;
-                }
-                if indent == base {
-                    // A sibling term or description marker re-opens the run's
-                    // innermost body, so the column to measure against moves
-                    // with it.
-                    if let Some(column) = definition_body_content_col(candidate) {
-                        content = Some(column);
-                    }
-                    end = j;
-                    continue;
-                }
-                if content.is_some_and(|column| indent < column)
-                    && item_block_opener(&strip_leading_columns(candidate, indent))
-                {
-                    break;
-                }
-                end = j;
-            }
+            end = rebased_definition_list_end(&lines, i, base);
         } else if parse_standalone_attrs(&opener).is_some() {
             // A floating attribute line and the list marker it targets share
             // the authored base. Sublists are otherwise intentionally left to
