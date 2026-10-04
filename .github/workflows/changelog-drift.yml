@@ -1,5 +1,9 @@
 name: Changelog drift
 
+# A drift verdict (gate exit 3) files one tracking issue and the run stays
+# GREEN: the issue is the channel (markup-carve/carve#2706). A gate that could
+# not judge, or a reporter that could not file, keeps the run RED.
+
 on:
   schedule:
     - cron: '0 6 * * *'
@@ -29,6 +33,7 @@ jobs:
         id: measure
         env:
           GH_TOKEN: ${{ github.token }}
+          FILES_A_TICKET: ${{ github.ref_name == github.event.repository.default_branch }}
         run: |
           set -o pipefail
           python3 tools/check-changelog-completeness.py 2>&1 | tee /tmp/changelog-drift.txt && status=0 || status=$?
@@ -40,12 +45,17 @@ jobs:
             cat /tmp/changelog-drift.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          # Off the default branch the reporter files nothing, so drift stays red there.
+          if [ "$status" = 3 ] && [ "$FILES_A_TICKET" = true ]; then
+            echo "Drift verdict: the reporter files it, and the run stays green."
+            exit 0
+          fi
           exit "$status"
 
-      # A scheduled red run reports into a page nobody is obliged to open, so the
-      # verdict is filed as one ticket: opened by the first red run, edited by
-      # later ones, closed by the first green one. Same reporter as carve's
-      # changelog-drift.yml. It fails if it cannot file.
+      # A scheduled run reports into a page nobody is obliged to open, so the
+      # verdict is filed as one ticket: opened by the first failing measurement,
+      # edited by later ones, closed by the first clean one. Same reporter as
+      # carve's changelog-drift.yml. It fails if it cannot file.
       - name: File the verdict where someone reads it
         if: ${{ !cancelled() }}
         env:
@@ -80,7 +90,7 @@ jobs:
             echo "The unreleased section accounts for every merge on $HEAD_SHA."
             if [ -n "$issue" ]; then
               gh issue comment "$issue" --repo "$REPO" --body \
-                "Green again: run $RUN_URL on \`$HEAD_SHA\`. Closing. The next red run opens a fresh ticket rather than reopening this one."
+                "Clean again: run $RUN_URL on \`$HEAD_SHA\`. Closing. The next failing measurement opens a fresh ticket rather than reopening this one."
               gh issue close "$issue" --repo "$REPO"
               echo "Closed #$issue."
             fi
@@ -94,6 +104,11 @@ jobs:
             echo "CHANGELOG.md. Nothing else asks this between a merge and a tag, so the"
             echo "alternative to this ticket is finding out on cut day."
             echo
+            if [ "${STATUS:-1}" != "3" ]; then
+              echo "**The gate could not judge** (exit \`${STATUS:-none}\`), so this run is red and"
+              echo "the output below is a broken check, not a list of missing entries. Fix that first."
+              echo
+            fi
             echo "| | |"
             echo "| --- | --- |"
             echo "| run | $RUN_URL |"
@@ -113,8 +128,8 @@ jobs:
             echo "locally with \`python3 tools/check-changelog-completeness.py\`."
             echo
             echo "This ticket is filed and maintained by the workflow. It is EDITED by each"
-            echo "later red run and CLOSED by the first green one. Closing it by hand does"
-            echo "not silence it: the next red run files a new one."
+            echo "later failing measurement and CLOSED by the first clean one. Closing it by"
+            echo "hand does not silence it: the next failing measurement files a new one."
           } > /tmp/changelog-drift-verdict.md
 
           if [ -n "$issue" ]; then
@@ -122,6 +137,7 @@ jobs:
             echo "Updated #$issue."
           else
             url="$(gh issue create --repo "$REPO" --title "$TITLE" \
+              --label chore --label area:tooling \
               --body-file /tmp/changelog-drift-verdict.md)"
             echo "Filed $url."
           fi
