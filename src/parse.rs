@@ -5052,6 +5052,8 @@ fn code_closer_exists_after(
 }
 
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
+    #[cfg(test)]
+    COMMENT_INDEX_LINES.with(|count| count.set(count.get() + lines.len()));
     let mut last_index = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
         // Any column: the consumption sites read an indented fence, so the
@@ -7899,6 +7901,7 @@ thread_local! {
     static COLON_CACHE_ENABLED: Cell<bool> = const { Cell::new(true) };
     static COLON_REFERENCE_ENTRIES: Cell<usize> = const { Cell::new(0) };
     static COLON_CLOSER_LINES: Cell<usize> = const { Cell::new(0) };
+    static COMMENT_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
 }
 
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
@@ -8105,11 +8108,11 @@ fn collect_indexed_colon_body(
 }
 
 fn find_line_block_end(lines: CursorLines<'_>, start: usize, fence_len: usize) -> usize {
-    find_colon_fence_end(lines, start, fence_len, true, &mut None)
+    find_colon_fence_end(lines, start, fence_len, true, &mut None, &mut None)
 }
 
 fn find_colon_container_end(lines: CursorLines<'_>, start: usize, fence_len: usize) -> usize {
-    find_colon_fence_end(lines, start, fence_len, false, &mut None)
+    find_colon_fence_end(lines, start, fence_len, false, &mut None, &mut None)
 }
 
 fn find_colon_fence_end(
@@ -8118,6 +8121,7 @@ fn find_colon_fence_end(
     fence_len: usize,
     literal: bool,
     closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
 ) -> usize {
     if !literal {
         if let Some(end) = lines.colon_end(start) {
@@ -8128,7 +8132,6 @@ fn find_colon_fence_end(
     // often, and an unconditional O(lines) build here made a document of
     // unterminated `%%%` openers - which never reach the fence branch at all -
     // quadratic, as tests/perf_regressions.rs caught.
-    let mut comment_closers = None;
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
     while idx < lines.len() {
@@ -8175,12 +8178,7 @@ fn find_colon_fence_end(
             }
         }
         if let Some(open) = detect_comment_fence_line(line) {
-            if has_indexed_comment_closer_after(
-                lines,
-                &mut comment_closers,
-                idx + 1,
-                open.fence_len,
-            ) {
+            if has_indexed_comment_closer_after(lines, comment_closers, idx + 1, open.fence_len) {
                 if let Some(close) = (idx + 1..lines.len())
                     .find(|&j| is_comment_fence_close_any_column(lines.at(j), open.fence_len))
                 {
@@ -9701,6 +9699,7 @@ fn attached_block_end(
     comment_closers: &mut Option<HashMap<usize, usize>>,
     is_boundary: &mut dyn FnMut(&str, usize) -> bool,
 ) -> usize {
+    let mut closer_index = None;
     let mut end = start;
     let mut in_fence: Option<FenceOpen> = None;
     while end < lines.len() {
@@ -9731,19 +9730,47 @@ fn attached_block_end(
         // `+` inside it is content, not the parent's boundary. Unterminated
         // colon containers close at end of input.
         if let Some(fence_len) = detect_line_block_open(line) {
-            end = find_line_block_end(lines, end, fence_len);
+            end = find_colon_fence_end(
+                lines,
+                end,
+                fence_len,
+                true,
+                &mut closer_index,
+                comment_closers,
+            );
             continue;
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            end = find_colon_container_end(lines, end, fence_len);
+            end = find_colon_fence_end(
+                lines,
+                end,
+                fence_len,
+                false,
+                &mut closer_index,
+                comment_closers,
+            );
             continue;
         }
         if let Some(fence_len) = detect_quote_block_open(line) {
-            end = find_colon_container_end(lines, end, fence_len);
+            end = find_colon_fence_end(
+                lines,
+                end,
+                fence_len,
+                false,
+                &mut closer_index,
+                comment_closers,
+            );
             continue;
         }
         if let Some(open) = detect_container_open(line) {
-            end = find_colon_container_end(lines, end, open.fence_len);
+            end = find_colon_fence_end(
+                lines,
+                end,
+                open.fence_len,
+                false,
+                &mut closer_index,
+                comment_closers,
+            );
             continue;
         }
         if is_boundary(line, end) {
@@ -12271,6 +12298,7 @@ fn colon_fences_left_open(nested: &str) -> usize {
         .collect();
     let mut verse_end = 0;
     let mut closer_index = None;
+    let mut comment_closers = None;
     for (index, trimmed) in lines.iter().copied().enumerate() {
         if index < verse_end {
             continue;
@@ -12292,6 +12320,7 @@ fn colon_fences_left_open(nested: &str) -> usize {
                 fence_len,
                 true,
                 &mut closer_index,
+                &mut comment_closers,
             );
             if verse_end == lines.len()
                 && exact_colon_fence_len(lines[verse_end - 1]) != Some(fence_len)
@@ -12437,12 +12466,17 @@ fn closed_colon_span_end(
     start: usize,
     fence_len: usize,
     line_block: bool,
+    closer_index: &mut Option<HashMap<u8, Vec<usize>>>,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
 ) -> Option<usize> {
-    let end = if line_block {
-        find_line_block_end(CursorLines::Slice(lines), start, fence_len)
-    } else {
-        find_colon_container_end(CursorLines::Slice(lines), start, fence_len)
-    };
+    let end = find_colon_fence_end(
+        CursorLines::Slice(lines),
+        start,
+        fence_len,
+        line_block,
+        closer_index,
+        comment_closers,
+    );
     if end > start && end <= lines.len() && exact_colon_fence_len(lines[end - 1]) == Some(fence_len)
     {
         return Some(end);
@@ -12492,6 +12526,7 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
     };
     let mut fence: Option<FenceOpen> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
+    let mut closer_index = None;
     let mut i = 0;
     while i < lines.len() {
         if let Some(open) = fence {
@@ -12525,29 +12560,60 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
             }
         }
         if let Some(fence_len) = detect_line_block_open(lines[i]) {
-            let end = closed_colon_span_end(&lines, i, fence_len, true).unwrap_or(lines.len());
+            let end = closed_colon_span_end(
+                &lines,
+                i,
+                fence_len,
+                true,
+                &mut closer_index,
+                &mut comment_closers,
+            )
+            .unwrap_or(lines.len());
             if !is_the_whole_item_body(i, end) {
                 i = end;
                 continue;
             }
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(lines[i]) {
-            let end = closed_colon_span_end(&lines, i, fence_len, false).unwrap_or(lines.len());
+            let end = closed_colon_span_end(
+                &lines,
+                i,
+                fence_len,
+                false,
+                &mut closer_index,
+                &mut comment_closers,
+            )
+            .unwrap_or(lines.len());
             if !is_the_whole_item_body(i, end) {
                 i = end;
                 continue;
             }
         }
         if let Some(fence_len) = detect_quote_block_open(lines[i]) {
-            let end = closed_colon_span_end(&lines, i, fence_len, false).unwrap_or(lines.len());
+            let end = closed_colon_span_end(
+                &lines,
+                i,
+                fence_len,
+                false,
+                &mut closer_index,
+                &mut comment_closers,
+            )
+            .unwrap_or(lines.len());
             if !is_the_whole_item_body(i, end) {
                 i = end;
                 continue;
             }
         }
         if let Some(open) = detect_container_open(lines[i]) {
-            let end =
-                closed_colon_span_end(&lines, i, open.fence_len, false).unwrap_or(lines.len());
+            let end = closed_colon_span_end(
+                &lines,
+                i,
+                open.fence_len,
+                false,
+                &mut closer_index,
+                &mut comment_closers,
+            )
+            .unwrap_or(lines.len());
             if !is_the_whole_item_body(i, end) {
                 i = end;
                 continue;
@@ -17267,6 +17333,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         fence_len,
         true,
         &mut cur.code_closer_last_index,
+        &mut cur.comment_closer_last_index,
     );
     if definition_regions::recording() {
         definition_regions::record(
@@ -25951,6 +26018,27 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn repeated_verse_comment_probes_share_their_index() {
+        for count in [64, 512, 4096] {
+            let source = "::: |\n%%%\nx\n%%%\n:::\n".repeat(count);
+            let lines = source.split('\n').count();
+            COMMENT_INDEX_LINES.with(|work| work.set(0));
+            assert_eq!(colon_fences_left_open(&source), 0);
+            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
+            COMMENT_INDEX_LINES.with(|work| work.set(0));
+            assert!(!continuation_source_loosens(&source, false));
+            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
+            let refs: Vec<_> = source.lines().collect();
+            COMMENT_INDEX_LINES.with(|work| work.set(0));
+            assert_eq!(
+                attached_block_end(CursorLines::Slice(&refs), 0, &mut None, &mut |_, _| false),
+                refs.len()
+            );
+            assert!(COMMENT_INDEX_LINES.with(Cell::get) <= lines);
+        }
+    }
 
     #[test]
     fn nested_bodies_copy_the_payload_once_with_and_without_positions() {
