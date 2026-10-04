@@ -47,7 +47,10 @@ Needs `gh` authenticated (the release workflow passes GITHUB_TOKEN). It refuses
 to run without it rather than degrading to an answer it cannot back.
 
 Exit 0  every shipped-source pull request in range is cited or exempt.
-Exit 1  at least one is not, and every one of them is named.
+Exit 3  at least one is not, and every one of them is named.
+Exit 1  the gate could not judge: no `gh` answer, no section, a malformed
+        `.changelog-exempt`, or a crash. changelog-drift.yml files exit 3 as a
+        ticket and stays green; anything else keeps the run red.
 """
 from __future__ import annotations
 
@@ -176,7 +179,7 @@ def main() -> int:
                 f"moved shipped source and are cited nowhere in the {section} section. Write them "
                 f"up, or exempt one with a reason in {EXEMPT_FILE}."
             )
-        return 1
+        return 1 if malformed else 3
 
     extra = ""
     if skipped:
