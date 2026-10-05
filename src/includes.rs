@@ -1134,7 +1134,7 @@ fn rename_child_heading_ids(
     // restart its search at -2 each time.
     let mut cursor: HashMap<String, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
-    walk_blocks_mut(children, &mut |block| {
+    let mut visit = |block: &mut BlockNode| {
         let BlockNode::Heading(h) = block else { return };
         let Some(attrs) = h.attrs.as_ref() else {
             return;
@@ -1181,7 +1181,16 @@ fn rename_child_heading_ids(
             format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
         );
         rename.insert(id, renamed);
-    });
+    };
+    walk_blocks_mut(children, &mut visit);
+    for body in footnote_bodies.values_mut() {
+        walk_blocks_mut(body, &mut visit);
+    }
+    // Ids on other elements claim their names too, so a later file's automatic
+    // heading id steps around them.
+    for id in &authored {
+        state.reserve_heading_id(id);
+    }
     if !rename.is_empty() {
         let empty = HashMap::new();
         rename_in_blocks(children, &empty, &rename);
@@ -2289,6 +2298,12 @@ pub(crate) fn expand_includes_with_extensions(
                 }
             }
         });
+        state
+            .used_heading_ids
+            .extend(crate::document_ids::authored_ids(
+                std::iter::once(doc.children.as_slice())
+                    .chain(doc.footnote_defs.values().map(Vec::as_slice)),
+            ));
         state.footnotes.push(std::mem::take(&mut doc.footnote_defs));
         expand_blocks(&mut doc.children, &mut state);
         let mut defs = state

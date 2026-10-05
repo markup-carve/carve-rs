@@ -1766,6 +1766,57 @@ fn an_automatic_id_skips_a_name_a_paragraph_in_the_file_writes() {
     );
 }
 
+/// The ids the expanded tree itself carries, before the renderer touches them.
+fn tree_ids(source: &str, files: &[(&str, &str)]) -> Vec<String> {
+    let resolver = MapResolver::new(files);
+    let doc = expand_includes(
+        parse(source),
+        source,
+        &IncludeOptions::new().with_resolver(&resolver),
+    )
+    .doc;
+    let mut ids = Vec::new();
+    let blocks = doc
+        .children
+        .iter()
+        .chain(doc.footnote_defs.values().flatten());
+    for block in blocks {
+        let attrs = match block {
+            BlockNode::Heading(h) => &h.attrs,
+            BlockNode::Paragraph(p) => &p.attrs,
+            _ => continue,
+        };
+        ids.extend(attrs.as_ref().and_then(|a| a.id.clone()));
+    }
+    ids
+}
+
+fn assert_unique(ids: &[String]) {
+    let mut seen = std::collections::HashSet::new();
+    for id in ids {
+        assert!(seen.insert(id), "duplicate id {id}: {ids:?}");
+    }
+}
+
+#[test]
+fn an_automatic_id_skips_a_name_a_parent_paragraph_writes() {
+    let dup = "# Overview\n\nfirst\n\n# Overview\n\nsecond";
+    let ids = tree_ids(
+        "{#Overview}\npara\n\n{{ dup.crv #Overview-2 }}",
+        &[("dup.crv", dup)],
+    );
+    assert_unique(&ids);
+    assert_eq!(ids, vec!["Overview", "Overview-2"]);
+}
+
+#[test]
+fn an_included_footnote_heading_is_numbered_with_the_rest() {
+    let child = "# Overview\n\na\n\n# Overview\n\nb[^n]\n\n[^n]: # Overview";
+    let ids = tree_ids("# Overview\n\n{{ c.crv }}", &[("c.crv", child)]);
+    assert_unique(&ids);
+    assert_eq!(ids.len(), 4, "{ids:?}");
+}
+
 #[test]
 fn many_identical_included_headings_each_get_the_next_number() {
     let child = "# Overview\n\n".repeat(3000);
