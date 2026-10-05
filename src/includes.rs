@@ -1312,6 +1312,14 @@ fn finish_renames(doc: &mut Document, state: &mut State<'_>) {
             rename.insert(p.placeholder.clone(), p.base.clone());
             continue;
         }
+        // The claim it collided with did not survive (a block include
+        // directive's own paragraph, for one): nothing to rename around.
+        if !taken.contains(&p.base) {
+            unsaid.extend(p.warning);
+            taken.insert(p.base.clone());
+            rename.insert(p.placeholder.clone(), p.base.clone());
+            continue;
+        }
         let from = cursor.get(p.base.as_str()).copied().unwrap_or(2);
         let (name, n) = next_free_from(&p.base, from, |c| taken.contains(c));
         cursor.insert(&p.base, n + 1);
@@ -1442,10 +1450,13 @@ impl FollowRename<'_> {
         }
     }
 
-    fn follow(&self, href: &mut String) {
-        if let Some(new) = href.strip_prefix('#').and_then(|id| self.rename.get(id)) {
-            *href = format!("#{new}");
-        }
+    /// Whether `href` was rewritten.
+    fn follow(&self, href: &mut String) -> bool {
+        let Some(new) = href.strip_prefix('#').and_then(|id| self.rename.get(id)) else {
+            return false;
+        };
+        *href = format!("#{new}");
+        true
     }
 }
 
@@ -1459,7 +1470,14 @@ impl SubtreeVisitor for FollowRename<'_> {
     fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
         for node in inlines.iter_mut() {
             match node {
-                InlineNode::Link(l) => self.follow(&mut l.href),
+                InlineNode::Link(l) => {
+                    // The writer spells a reference link from its label, which
+                    // still names the old destination: write it inline instead.
+                    if self.follow(&mut l.href) {
+                        l.ref_label = None;
+                        l.raw_ref = None;
+                    }
+                }
                 // A parsed `</#id>` that resolved is already a Link. One that
                 // did not resolve in its own file is literal text, left as is.
                 InlineNode::CrossRef(c) => {
@@ -1477,7 +1495,10 @@ impl SubtreeVisitor for FollowRename<'_> {
     }
 
     fn image(&mut self, image: &mut Image) {
-        self.follow(&mut image.src);
+        if self.follow(&mut image.src) {
+            image.ref_label = None;
+            image.raw_ref = None;
+        }
     }
 }
 

@@ -2347,6 +2347,36 @@ fn a_link_through_the_files_own_reference_definition_follows_the_rename() {
 }
 
 #[test]
+fn a_flattened_reference_link_keeps_its_renamed_destination() {
+    let source = "{#tip}\nparent\n\n{{ c.crv }}";
+    let resolver = MapResolver::new(&[("c.crv", "{#tip}\nchild\n\n[See][t]\n\n[t]: #tip")]);
+    let doc = expand_includes(
+        parse(source),
+        source,
+        &IncludeOptions::new().with_resolver(&resolver),
+    )
+    .doc;
+    let flat = carve::render_carve(&doc).unwrap();
+    let html = render_html(&parse(&flat)).unwrap();
+    assert!(html.contains("href=\"#tip-2\""), "{flat}\n{html}");
+}
+
+#[test]
+fn a_collision_with_an_id_that_never_reaches_the_output_renames_nothing() {
+    let result = expand(
+        "{{ c.crv }}\n\n{#p}\n{{ d.crv }}\n\n[up](#p)",
+        &[("c.crv", "{#p}\nchild"), ("d.crv", "dee")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<p id=\"p\">child</p>"),
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("p-2"), "{}", result.html);
+}
+
+#[test]
 fn a_second_inclusion_of_the_same_file_is_renamed() {
     let result = expand("{{ c.crv }}\n\n{{ c.crv }}", &[("c.crv", "{#tip}\nx")]);
     assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
