@@ -144,6 +144,7 @@ impl CarveExtension for Citations {
     }
 
     fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+        sync_entries(&doc.children, &mut self.defs.borrow_mut());
         let defs = self.defs.borrow();
         let mut seen = BTreeSet::new();
         let mut order = Vec::new();
@@ -662,6 +663,31 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
         }
     }
     out
+}
+
+/// Read each entry back from its definition node, which is what a pass after
+/// parsing edits: the include pass renames ids in an included entry there.
+fn sync_entries(blocks: &[BlockNode], defs: &mut BTreeMap<String, Def>) {
+    for block in blocks {
+        match block {
+            BlockNode::CitationDefinition(node) => {
+                if let Some(def) = defs.get_mut(&node.key) {
+                    def.entry.clone_from(&node.children);
+                }
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    sync_entries(&item.children, defs);
+                }
+            }
+            BlockNode::BlockQuote(b) => sync_entries(&b.children, defs),
+            BlockNode::Admonition(a) => sync_entries(&a.children, defs),
+            BlockNode::Directive(d) => sync_entries(&d.children, defs),
+            BlockNode::Div(d) => sync_entries(&d.children, defs),
+            BlockNode::Section(d) => sync_entries(&d.children, defs),
+            _ => {}
+        }
+    }
 }
 
 fn split_on_soft_breaks(nodes: Vec<InlineNode>) -> Vec<Vec<InlineNode>> {

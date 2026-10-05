@@ -190,3 +190,22 @@ fn an_id_inside_a_citation_affix_collides_like_any_other() {
     assert_eq!(out.matches("id=\"x\"").count(), 1, "{out}");
     assert!(out.contains("<span id=\"x-2\">child</span>"), "{out}");
 }
+
+#[test]
+fn an_id_inside_a_citation_entry_follows_its_rename() {
+    let citations = Citations::new();
+    let resolver = MapResolver::new(&[("c.crv", "[@a].\n\n[@a]: [entry]{#p} [back](#p)\n")]);
+    let options = Options::new().with_extension(&citations);
+    let prepared = prepare_doc_with_includes(
+        "{#p}\nparent\n\n{{ c.crv }}\n",
+        &options,
+        &IncludeOptions::new().with_resolver(&resolver),
+        Mode::Interactive,
+        true,
+    )
+    .expect("no profile");
+    let out = html(&prepared.doc, &[&citations]);
+    assert_eq!(out.matches("id=\"p\"").count(), 1, "{out}");
+    assert!(out.contains("id=\"p-2\""), "{out}");
+    assert!(out.contains("href=\"#p-2\""), "{out}");
+}

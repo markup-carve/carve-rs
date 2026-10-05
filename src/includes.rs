@@ -1415,7 +1415,7 @@ fn rename_child_ids(
     if !rename.is_empty() {
         let mut follow = FollowRename { rename: &rename };
         for block in children.iter_mut() {
-            crate::include_walk::visit_block_children(block, &mut follow);
+            follow.block(block);
         }
         for body in footnote_bodies.values_mut() {
             follow.blocks(body);
@@ -1432,6 +1432,16 @@ struct FollowRename<'a> {
 }
 
 impl FollowRename<'_> {
+    /// The shared walker treats a citation entry as a leaf; its text holds
+    /// links all the same.
+    fn block(&mut self, block: &mut BlockNode) {
+        if let BlockNode::CitationDefinition(d) = block {
+            self.inlines(&mut d.children);
+        } else {
+            crate::include_walk::visit_block_children(block, self);
+        }
+    }
+
     fn follow(&self, href: &mut String) {
         if let Some(new) = href.strip_prefix('#').and_then(|id| self.rename.get(id)) {
             *href = format!("#{new}");
@@ -1442,7 +1452,7 @@ impl FollowRename<'_> {
 impl SubtreeVisitor for FollowRename<'_> {
     fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
         for block in blocks.iter_mut() {
-            crate::include_walk::visit_block_children(block, self);
+            self.block(block);
         }
     }
 
