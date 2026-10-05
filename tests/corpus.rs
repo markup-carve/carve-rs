@@ -794,6 +794,7 @@ const IMPLEMENTED: &[&str] = &[
     "every-name-lookup-compares-case-exactly",
     // Brought in by the same pin bump; renders byte for byte with no engine work.
     "an-unreferenced-footnote-definition-takes-its-links-out-of-the-render",
+    "an-info-string-does-not-change-how-a-flush-left-fence-folds-into-a-description-body",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
