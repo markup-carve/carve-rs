@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(feature = "fs")]
 use std::path::{Path, PathBuf};
 
-use crate::ast::{BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
+use crate::ast::{AttrSlot, BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
 use crate::extension::CarveExtension;
 use crate::parse::slugify_parse;
 use crate::render::plain_inlines;
@@ -1123,8 +1123,9 @@ fn auto_shift(children: &[BlockNode], context_level: i32) -> i32 {
     }
 }
 
-/// Merge-time collision pass for EXPLICIT heading ids (spec I5): parent ids and
-/// earlier includes win, a later duplicate gets the least free `-N`, and the
+/// Merge-time collision pass for heading ids (spec I5): parent ids and earlier
+/// includes win, a later duplicate gets the least free `-N`, automatic ids are
+/// re-derived against the assembled document, and the
 /// child's own crossrefs follow the rename so they keep resolving within the
 /// child's scope. Runs depth-first at merge time because after splicing, file
 /// provenance is gone.
@@ -1133,38 +1134,59 @@ fn rename_child_heading_ids(
     footnote_bodies: &mut BTreeMap<String, Vec<BlockNode>>,
     state: &mut State<'_>,
 ) {
+    // An automatic id never takes a name the file's own `{#id}` writes.
+    let mut authored: HashSet<String> = HashSet::new();
+    walk_blocks(children, &mut |block| {
+        if let BlockNode::Heading(h) = block {
+            if let Some(a) = h.attrs.as_ref().filter(|a| a.order.contains(&AttrSlot::Id)) {
+                authored.extend(a.id.clone());
+            }
+        }
+    });
     let mut rename: HashMap<String, String> = HashMap::new();
     walk_blocks_mut(children, &mut |block| {
         let BlockNode::Heading(h) = block else { return };
-        let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) else {
+        let Some(attrs) = h.attrs.as_ref() else {
             return;
         };
+        let Some(id) = attrs.id.clone() else {
+            return;
+        };
+        // A generated id carries no `order` slot; only an authored `{#id}` does.
+        if !attrs.order.contains(&AttrSlot::Id) {
+            // I5 rule 4: an automatic id is disambiguated as in a single
+            // document, against the ASSEMBLED one. The child's own suffix
+            // (`Overview-2` from its second `# Overview`) is dropped first, so
+            // a selected section or a lone later heading does not keep a
+            // number the parent never assigned. Silent, like the in-file dedup.
+            let base = heading_slug(&h.children);
+            let taken = |c: &str| state.used_heading_ids.contains(c) || authored.contains(c);
+            let assigned = if taken(&base) {
+                next_free(&base, taken)
+            } else {
+                base
+            };
+            state.reserve_heading_id(&assigned);
+            if assigned != id {
+                if let Some(attrs) = h.attrs.as_mut() {
+                    attrs.id = Some(assigned.clone());
+                }
+                rename.entry(id).or_insert(assigned);
+            }
+            return;
+        }
         if state.reserve_heading_id(&id) {
             return;
         }
-        // WARN ONLY FOR AN ID THE AUTHOR WROTE. I5 covers EXPLICIT ids, and by
-        // this point `attrs.id` also carries the auto id the parser stamps, so
-        // the two are told apart by re-deriving the slug: an id equal to the
-        // heading's own slug is one nobody asked for.
-        //
-        // The RENAME still happens either way, and has to: each child is parsed
-        // as its own document (I4), so two chapters opening `# Overview` each
-        // stamp `Overview` independently and nothing re-stamps them after the
-        // merge. Within a single file that disambiguation happens at stamp time
-        // and is silent - warning here would report a collision the author
-        // never created, on a shape as common as two chapters sharing a heading.
-        let is_auto = heading_slug(&h.children) == id;
         let renamed = next_free(&id, |c| state.used_heading_ids.contains(c));
         if let Some(attrs) = h.attrs.as_mut() {
             attrs.id = Some(renamed.clone());
         }
         state.reserve_heading_id(&renamed);
-        if !is_auto {
-            state.warn(
-                "include-heading-id-rename",
-                format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
-            );
-        }
+        state.warn(
+            "include-heading-id-rename",
+            format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
+        );
         rename.insert(id, renamed);
     });
     if !rename.is_empty() {
