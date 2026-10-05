@@ -1,9 +1,10 @@
-use super::{find_seq, skip_code_span, CodeSpanIndex};
+use super::braced_closers::CodeSpanIndex;
+use super::{find_seq, skip_code_span};
 
 #[derive(Default)]
 pub(super) struct SubstitutionScanner {
     first: Option<(usize, usize, Option<usize>)>,
-    index: Option<ArrowIndex>,
+    index: Option<Box<ArrowIndex>>,
 }
 
 impl SubstitutionScanner {
@@ -23,7 +24,7 @@ impl SubstitutionScanner {
             Some((old_from, old_to, result)) if old_from == from && old_to == to => result,
             _ => self
                 .index
-                .get_or_insert_with(|| ArrowIndex::new(bytes, code_ends))
+                .get_or_insert_with(|| Box::new(ArrowIndex::new(bytes, code_ends)))
                 .find(bytes, from, to),
         }
     }
@@ -100,11 +101,7 @@ impl ArrowIndex {
                 next_events[at + 2]
             } else if bytes[at] == b'`' {
                 let end = code_ends.as_ref().unwrap().end(at);
-                if end.is_none() {
-                    points.len() - 1
-                } else {
-                    next_events[end.unwrap()]
-                }
+                end.map_or(points.len() - 1, |end| next_events[end])
             } else {
                 next_events[at + 1]
             };
@@ -228,8 +225,7 @@ impl ForwardPaths {
         }
         let mut cursors = starts.clone();
         let mut order = vec![0; n];
-        for at in 0..n {
-            let head = heads[at];
+        for (at, &head) in heads.iter().enumerate() {
             order[cursors[head]] = at;
             cursors[head] += 1;
         }
