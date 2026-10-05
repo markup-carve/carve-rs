@@ -2425,6 +2425,17 @@ fn each_renamed_copy_gets_its_own_name_and_links_follow_the_first() {
 }
 
 #[test]
+fn a_reference_keeps_its_target_when_the_renamed_id_is_spliced_away() {
+    let result = expand(
+        "{#p}\nparent\n\nBefore {{ a.crv }} after.",
+        &[("a.crv", "{{ b.crv }}"), ("b.crv", "{#p}\n[back](#p)")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("href=\"#p\""), "{}", result.html);
+    assert!(!result.html.contains("p-2"), "{}", result.html);
+}
+
+#[test]
 fn a_rename_skips_a_name_a_later_include_writes() {
     let result = expand(
         "{#a}\nparent\n\n{{ c.crv }}\n\n{{ e.crv }}",

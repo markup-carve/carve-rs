@@ -1280,8 +1280,9 @@ struct PendingRename {
 
 /// Give every deferred rename its final name (I5): the least `-N`, N >= 2, that
 /// no id anywhere in the assembled document uses and no earlier rename took.
-/// Renames that reached the output go first, in the order they were made; one
-/// whose include was rejected still gets a name for its warning.
+/// A renamed id that never reached the output (its include was rejected, or an
+/// inline include spliced its paragraph away) renamed nothing: its warning is
+/// dropped and references to it point at the original id again.
 fn finish_renames(doc: &mut Document, state: &mut State<'_>) {
     if state.pending_renames.is_empty() {
         return;
@@ -1301,18 +1302,27 @@ fn finish_renames(doc: &mut Document, state: &mut State<'_>) {
         .filter(|id| !id.contains(RENAME_MARK))
         .cloned()
         .collect();
-    let pending = std::mem::take(&mut state.pending_renames);
-    let (landed, dropped): (Vec<_>, Vec<_>) = pending
-        .iter()
-        .partition(|p| present.contains(&p.placeholder));
+    let mut cursor: HashMap<&str, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
-    for p in landed.into_iter().chain(dropped) {
-        let name = next_free(&p.base, |c| taken.contains(c));
+    let mut unsaid: Vec<usize> = Vec::new();
+    let pending = std::mem::take(&mut state.pending_renames);
+    for p in &pending {
+        if !present.contains(&p.placeholder) {
+            unsaid.extend(p.warning);
+            rename.insert(p.placeholder.clone(), p.base.clone());
+            continue;
+        }
+        let from = cursor.get(p.base.as_str()).copied().unwrap_or(2);
+        let (name, n) = next_free_from(&p.base, from, |c| taken.contains(c));
+        cursor.insert(&p.base, n + 1);
         taken.insert(name.clone());
         if let Some(w) = p.warning.and_then(|i| state.warnings.get_mut(i)) {
             w.message = w.message.replace(&p.placeholder, &name);
         }
         rename.insert(p.placeholder.clone(), name);
+    }
+    for i in unsaid.into_iter().rev() {
+        state.warnings.remove(i);
     }
     let mut apply = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
         if let Some(a) = attrs.as_mut() {
@@ -1640,6 +1650,16 @@ fn id_sites_in_inlines(
             InlineNode::CriticSubstitute(c) => {
                 id_sites_in_inlines(&mut c.old, f);
                 id_sites_in_inlines(&mut c.new, f);
+            }
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    for inlines in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        id_sites_in_inlines(inlines, f);
+                    }
+                }
             }
             _ => {}
         }
