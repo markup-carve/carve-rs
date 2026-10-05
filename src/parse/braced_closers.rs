@@ -170,7 +170,7 @@ impl BracedClosers {
                         let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
                         for &delim in b"+-~#/*_^,=" {
                             let slot = delim_brace_slot(delim).unwrap();
-                            raw[slot] = self.raw_close(bytes, at, delim).map_or(usize::MAX, &index);
+                            raw[slot] = self.raw_close(bytes, at, delim).map_or(usize::MAX, index);
                         }
                         BracedStep::Raw(Box::new(raw))
                     }
