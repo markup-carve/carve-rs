@@ -50,6 +50,35 @@ fn undefined_term_degrades_to_span() {
 }
 
 #[test]
+fn case_only_miss_stays_unresolved_like_an_undefined_term() {
+    let out = h(&format!("Use :term[http] and :term[FTP].\n\n{GLOSS}"));
+    assert!(out.contains("<span class=\"term\">http</span>"));
+    assert!(out.contains("<span class=\"term\">FTP</span>"));
+    assert!(!out.contains("<a href=\"#gloss-http\""));
+}
+
+#[test]
+fn entries_differing_only_in_case_are_each_reached_by_their_exact_spelling() {
+    let out = h(
+        "Use :term[HTTP], :term[http] and :term[Http].\n\n::: glossary\n:: HTTP\n:  Upper.\n\n:: http\n:  Lower.\n:::",
+    );
+    assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
+    assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">http</a>"));
+    assert!(out.contains("<span class=\"term\">Http</span>"));
+    assert!(out.contains("<dt id=\"gloss-http\">HTTP</dt>"));
+    assert!(out.contains("<dt>http</dt>"));
+}
+
+#[test]
+fn whitespace_runs_and_nfc_still_match() {
+    let out = h(
+        "Use :term[Hyper  Text] and :term[Cafe\u{301}].\n\n::: glossary\n:: Hyper Text\n:  One.\n\n:: Caf\u{e9}\n:  Two.\n:::",
+    );
+    assert!(out.contains("<a href=\"#gloss-hyper-text\" class=\"term\">Hyper  Text</a>"));
+    assert!(out.contains("class=\"term\">Cafe\u{301}</a>"));
+}
+
+#[test]
 fn entries_in_source_order() {
     let out = h(GLOSS);
     assert!(out.find("gloss-http").unwrap() < out.find("gloss-html").unwrap());
