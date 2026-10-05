@@ -26493,3 +26493,146 @@ mod nested_list_indent_work {
         }
     }
 }
+
+#[cfg(test)]
+mod nested_list_ladder_work {
+    //! COUNTED guard on a list ladder deeper than the nesting cap.
+    //!
+    //! This replaces `perf_regressions::deeply_nested_list_parse_is_bounded`,
+    //! which asserted a 10-second wall clock. An absolute duration describes
+    //! the machine that chose it: the same test passed on an idle box and
+    //! failed at load 42 (12.5 s), so it could not tell a regression from a
+    //! busy runner, and its own doc comment recorded the cap being widened from
+    //! 2 s to 10 s for exactly that reason. The intent is kept and the
+    //! stopwatch is dropped, following `nested_list_indent_work` (#2324).
+    //!
+    //! The intent was that the nesting cap keeps a deep ladder's
+    //! collect-and-reparse from blowing up per level. That is a relationship
+    //! and it is stated as one here: past the cap, one more level costs one
+    //! more collection per enclosing item and no more, which is the cap, and
+    //! the indent bytes that level's own line costs stay a bounded multiple of
+    //! its length times the cap. An uncapped per-level rescan fails both.
+    //!
+    //! ONE parse per depth, all relationships from the same three tallies: a
+    //! 300-level ladder is the expensive part, and asserting each relationship
+    //! in its own test would parse it three times over.
+
+    use super::{BODY_LINES_COLLECTED, INDENT_BYTES_WALKED, MAX_NESTING_DEPTH};
+
+    /// A `depth`-level ladder of `- x`, each level one column deeper.
+    fn ladder(depth: usize) -> String {
+        let mut out = String::new();
+        for level in 0..depth {
+            out.push_str(&"  ".repeat(level));
+            out.push_str("- x\n");
+        }
+        out
+    }
+
+    /// `(indent bytes walked, body lines collected)` over one parse, on its own
+    /// deep-stacked thread so the tallies cannot pick up another test's.
+    fn work_for(depth: usize) -> (f64, f64) {
+        let src = ladder(depth);
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                INDENT_BYTES_WALKED.with(|c| c.set(0));
+                BODY_LINES_COLLECTED.with(|c| c.set(0));
+                let doc = crate::parse(&src);
+                assert!(
+                    matches!(doc.children.first(), Some(crate::BlockNode::List(_))),
+                    "the ladder must actually parse into a list, or the tallies below \
+                     are measuring a parse that did nothing"
+                );
+                (
+                    INDENT_BYTES_WALKED.with(|c| c.get()) as f64,
+                    BODY_LINES_COLLECTED.with(|c| c.get()) as f64,
+                )
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// Indent bytes a level's own line may cost: its length grows with its
+    /// depth and it is re-read once per enclosing item, which the cap bounds.
+    ///
+    /// CALIBRATED AGAINST THE REGRESSION IT GUARDS, not against headroom alone.
+    /// Undoing #2324's reuse (the `_at` helpers re-measuring the indent they
+    /// were handed) takes the two pairs below from 2.25 and 2.58 to 6.16 and
+    /// 7.06, so this sits between them: 55% over the measurement and 35% under
+    /// the regression. A looser ceiling of 9 was tried first and could not see
+    /// that regression at all, which is the thing a guard has to do.
+    const BYTES_PER_LEVEL_LENGTH_PER_ENCLOSING_ITEM: f64 = 4.0;
+
+    #[test]
+    fn a_ladder_past_the_cap_pays_the_cap_per_added_level_and_no_more() {
+        let cap = MAX_NESTING_DEPTH as f64;
+        let at_the_cap = work_for(MAX_NESTING_DEPTH);
+        let past = work_for(MAX_NESTING_DEPTH + 50);
+        let further = work_for(MAX_NESTING_DEPTH + 100);
+
+        for (name, shallow, deep, levels) in [
+            ("at the cap to 50 past it", at_the_cap, past, 50.0),
+            ("50 past the cap to 100 past it", past, further, 50.0),
+        ] {
+            // ONE MORE COLLECTION PER ENCLOSING ITEM. The recursion stops at the
+            // cap, so a level added past it is re-collected by the items above
+            // it and by nothing more. Below the cap this count is the depth
+            // itself and grows; past it, it is flat at the cap. An uncapped
+            // per-level rescan keeps growing here.
+            let per_level_collections = (deep.1 - shallow.1) / levels;
+            assert!(
+                per_level_collections <= cap,
+                "{name}: {per_level_collections:.1} collections per added level, over the \
+                 cap of {cap}"
+            );
+            // AND ITS INDENT IS WALKED A BOUNDED NUMBER OF TIMES. The line's own
+            // length is what grows with depth; the number of walks over it is
+            // what a regression multiplies (#2324).
+            let per_level_bytes = (deep.0 - shallow.0) / levels;
+            let line_length = levels.mul_add(0.5, MAX_NESTING_DEPTH as f64) * 2.0;
+            let ratio = per_level_bytes / (line_length * cap);
+            assert!(
+                ratio <= BYTES_PER_LEVEL_LENGTH_PER_ENCLOSING_ITEM,
+                "{name}: {per_level_bytes:.0} indent bytes per added level is {ratio:.2} per \
+                 line byte per enclosing item, over the ceiling of \
+                 {BYTES_PER_LEVEL_LENGTH_PER_ENCLOSING_ITEM}"
+            );
+        }
+
+        // AND THE TOTAL IS LINEAR IN THE LADDER'S LINES, with the cap as the
+        // constant. The quadratic an uncapped rescan produces passes the
+        // marginal checks above only while the sample is narrow; this one it
+        // cannot pass at all.
+        let lines = (MAX_NESTING_DEPTH + 100) as f64;
+        assert!(
+            further.1 <= lines * cap,
+            "a {lines}-level ladder collected {:.0} body lines, over the linear bound of {:.0}",
+            further.1,
+            lines * cap
+        );
+    }
+
+    #[test]
+    #[ignore = "a measurement, not a guard"]
+    fn measure() {
+        let cap = MAX_NESTING_DEPTH as f64;
+        let mut previous: Option<(usize, (f64, f64))> = None;
+        for depth in [50usize, 100, 150, 200, 250, 300] {
+            let work = work_for(depth);
+            if let Some((before, earlier)) = previous {
+                let levels = (depth - before) as f64;
+                let per_level_bytes = (work.0 - earlier.0) / levels;
+                let line_length = (before + depth) as f64;
+                println!(
+                    "{before:4} to {depth:4}: {per_level_bytes:10.0} indent bytes per level \
+                     ({:.2} per line byte per enclosing item), {:.1} collections per level",
+                    per_level_bytes / (line_length * cap),
+                    (work.1 - earlier.1) / levels,
+                );
+            }
+            previous = Some((depth, work));
+        }
+    }
+}
