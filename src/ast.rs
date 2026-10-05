@@ -95,7 +95,7 @@ pub struct Attrs {
     pub order: Vec<AttrSlot>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AttrSlot {
     Id,
     Class,

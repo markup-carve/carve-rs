@@ -1931,3 +1931,68 @@ fn failed_combined_span_closers_scale_near_linearly() {
         );
     }
 }
+
+#[test]
+fn distinct_attribute_classes_and_keys_render_near_linearly() {
+    for classes in [true, false] {
+        assert_conversion_near_linear_at(
+            |source| {
+                drop(carve::to_html(source));
+            },
+            |n| {
+                let mut source = String::from("[x]");
+                for i in 0..n {
+                    if classes {
+                        write!(source, "{{.c{i}}}").unwrap();
+                    } else {
+                        write!(source, "{{k{i}=x}}").unwrap();
+                    }
+                }
+                source
+            },
+            "distinct consecutive attributes",
+            1024,
+            4096,
+        );
+    }
+}
+
+#[test]
+fn abbreviation_dictionary_with_a_shared_first_letter_scales_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            drop(carve::parse(source));
+        },
+        |n| {
+            let mut source = String::new();
+            for i in 0..n {
+                writeln!(source, "*[A{i:06}]: expansion").unwrap();
+            }
+            source.push('\n');
+            source.push_str(&"AZZZZZZ ".repeat(n));
+            source
+        },
+        "shared abbreviation prefix",
+        1024,
+        4096,
+    );
+}
+
+#[test]
+fn underscore_attribute_chains_on_emphasis_scale_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            drop(carve::to_html(source));
+        },
+        |n| {
+            let mut source = String::from("*x*{.a}");
+            for i in 0..n {
+                write!(source, "{{_k{i}=x}}").unwrap();
+            }
+            source
+        },
+        "underscore attribute keys",
+        1024,
+        4096,
+    );
+}

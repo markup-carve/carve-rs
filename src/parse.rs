@@ -29,7 +29,7 @@ use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
 use crate::source_positions::CodepointLineStarts;
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use unicode_normalization::UnicodeNormalization;
 
@@ -6629,6 +6629,7 @@ fn parse_blocks(
     };
     let mut out = Vec::new();
     let mut pending_attrs: Box<Option<Attrs>> = Box::new(None);
+    let mut pending_attr_slots = None;
     // Where the pending run STARTED, for §15 A4's diagnostic. The FIRST block of
     // a stacked run, because that is where the author began writing attributes
     // that reach nothing - the run merges into one set and is reported once.
@@ -6661,7 +6662,7 @@ fn parse_blocks(
         if line_flush {
             let attrs_start = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(cur) {
-                merge_attrs(&mut pending_attrs, attrs);
+                merge_attrs_indexed(&mut pending_attrs, attrs, &mut pending_attr_slots);
                 if pending_attrs_pos.is_none() {
                     *pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
                 }
@@ -9943,6 +9944,7 @@ fn parse_continuation_block(
         cur.col_map.is_some().then_some(col_map.as_slice()),
     );
     let mut floating_attrs: Option<Attrs> = None;
+    let mut floating_attr_slots = None;
     let mut floating_attrs_pos: Option<Pos> = None;
     while let Some(line) = sub.peek() {
         if indent_columns(line) != base_indent || !trim_ascii_start(line).starts_with('{') {
@@ -9952,7 +9954,7 @@ fn parse_continuation_block(
         let Some(attrs) = parse_standalone_attrs_block(&mut sub) else {
             break;
         };
-        merge_attrs(&mut floating_attrs, attrs);
+        merge_attrs_indexed(&mut floating_attrs, attrs, &mut floating_attr_slots);
         if floating_attrs_pos.is_none() {
             floating_attrs_pos = span_of(&sub, attrs_start, sub.pos, options);
         }
@@ -10119,6 +10121,7 @@ fn parse_list(
     // so a set of attributes can only ever reach the sub-list that directly
     // follows it, and one that reaches nothing is dropped exactly as before.
     let mut pending_attrs: Option<Attrs> = None;
+    let mut pending_attr_slots = None;
     // Where that set was written, for §15 A4's diagnostic. This slot holds
     // attributes LIFTED off a chunk (`split_trailing_attrs`), so the span comes
     // from the chunk's own maps rather than from the cursor.
@@ -10396,7 +10399,7 @@ fn parse_list(
                         if pending_attrs.is_none() {
                             pending_attrs_pos = pos;
                         }
-                        merge_attrs(&mut pending_attrs, attrs);
+                        merge_attrs_indexed(&mut pending_attrs, attrs, &mut pending_attr_slots);
                     }
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
@@ -18205,10 +18208,11 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
     let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
     let mut pos = 0usize;
     let mut attrs: Option<Attrs> = None;
+    let mut slots = None;
     while pos < bytes.len() {
         // The block-attribute LINE, so `whitespace` at all three of its slots.
         let (incoming, next) = read_attrs_at_with(bytes, pos, last_close_brace, false)?;
-        merge_attrs(&mut attrs, incoming);
+        merge_attrs_indexed(&mut attrs, incoming, &mut slots);
         pos = next;
         if pos < bytes.len() && bytes[pos] != b'{' {
             return None;
@@ -18618,18 +18622,28 @@ fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
         *target = Some(incoming);
         return;
     }
+    merge_attrs_indexed(target, incoming, &mut None);
+}
+
+fn merge_attrs_indexed(
+    target: &mut Option<Attrs>,
+    incoming: Attrs,
+    slots: &mut Option<HashSet<AttrSlot>>,
+) {
+    if target.is_none() {
+        *slots = None;
+        *target = Some(incoming);
+        return;
+    }
     let target = target.as_mut().unwrap();
+    let slots = slots.get_or_insert_with(|| target.order.iter().cloned().collect());
     if incoming.id.is_some() {
         target.id = incoming.id;
     }
     target.classes.extend(incoming.classes);
     target.key_values.extend(incoming.key_values);
-    // Merge the render order too: a later id/key overrides the value but keeps
-    // its original slot position, so consecutive attribute lines emit in
-    // first-appearance order (`{#a}` / `{k=v}` / `{.c}` -> id, then k, then
-    // class). Without this only the last line's slots were rendered.
     for slot in incoming.order {
-        if !target.order.contains(&slot) {
+        if slots.insert(slot.clone()) {
             target.order.push(slot);
         }
     }
@@ -18859,23 +18873,27 @@ fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attrs) {
 
 /// Merge an attribute block onto an inline node, accumulating classes (§15)
 /// instead of overwriting -- used for chained blocks (`[x]{.a}{.b}`).
-fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
+fn merge_attrs_into_inline(
+    node: &mut InlineNode,
+    attrs: Attrs,
+    slots: &mut Option<HashSet<AttrSlot>>,
+) {
     match node {
-        InlineNode::Emphasis(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Link(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Image(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Span(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Math(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::AutoLink(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Code(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Emphasis(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Link(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Image(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Span(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Math(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::AutoLink(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Extension(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Code(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
         // A trailing standalone block chains onto an inline literal, promoting a
         // bare literal to a `<span>` (`` !`x`{.a}{.b} `` -> class="a b"). Matches
         // carve-js, whose merge attaches to any non-text node.
-        InlineNode::LiteralInline(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Footnote(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::CriticInsert(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::CriticDelete(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::LiteralInline(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::Footnote(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::CriticInsert(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
+        InlineNode::CriticDelete(n) => merge_attrs_indexed(&mut n.attrs, attrs, slots),
         _ => {}
     }
 }
@@ -19231,6 +19249,8 @@ fn parse_inline_context(
     // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
     let mut emphasis_no_close = EmphasisMemo::default();
     let mut out = Vec::with_capacity(4);
+    let mut attribute_target = None;
+    let mut attribute_slots = None;
     let mut buf = String::with_capacity(text.len());
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
@@ -19559,7 +19579,25 @@ fn parse_inline_context(
             // and the `{`, so the block stays literal. An empty/invalid `{...}`
             // also stays literal. Matches carve-php / carve-js.
             if buf.is_empty() && out.last().is_some_and(inline_is_attributable) {
-                if let Some((attrs, next)) = read_attrs_at(bytes, i, bounds.last_close_brace) {
+                if let Some((attrs, mut next)) = read_attrs_at(bytes, i, bounds.last_close_brace) {
+                    let mut attrs = Some(attrs);
+                    let mut slots = None;
+                    while bytes.get(next) == Some(&b'{')
+                        && (bytes.get(next + 1) != Some(&b'_')
+                            || !bounds.has_delim_brace_from(b'_', next))
+                    {
+                        let Some((incoming, end)) =
+                            read_attrs_at(bytes, next, bounds.last_close_brace)
+                        else {
+                            break;
+                        };
+                        merge_attrs_indexed(&mut attrs, incoming, &mut slots);
+                        next = end;
+                    }
+                    if attribute_target != Some(out.len()) {
+                        attribute_target = Some(out.len());
+                        attribute_slots = None;
+                    }
                     let last = out.last_mut().unwrap();
                     // A reference link carries `raw_ref` (its literal source) in
                     // case it stays unresolved. Merge the block into the link's
@@ -19574,7 +19612,7 @@ fn parse_inline_context(
                             }
                         }
                     }
-                    merge_attrs_into_inline(last, attrs);
+                    merge_attrs_into_inline(last, attrs.unwrap(), &mut attribute_slots);
                     // An attached attribute block is owned by the construct it
                     // decorates, so extend the construct through the closing
                     // brace while retaining its original opening delimiter.
@@ -21131,11 +21169,12 @@ fn parse_span(
     // an empty `{}`) reads as None and is left literal, so `[x]{}{}` keeps the
     // trailing `{}` -- matching carve-php / carve-js.
     let mut attrs = Some(attrs);
+    let mut slots = None;
     let mut after_attrs = after_attrs;
     while bytes.get(after_attrs) == Some(&b'{') {
         match read_attrs_at(bytes, after_attrs, bounds.last_close_brace) {
             Some((more, next)) => {
-                merge_attrs(&mut attrs, more);
+                merge_attrs_indexed(&mut attrs, more, &mut slots);
                 after_attrs = next;
             }
             None => break,
@@ -22285,17 +22324,32 @@ fn apply_abbreviations(doc: &mut Document) {
     }
 }
 
-type AbbreviationIndex<'a> = BTreeMap<char, Vec<(&'a str, &'a str)>>;
+#[derive(Default)]
+struct AbbreviationTrieNode<'a> {
+    children: HashMap<u8, usize>,
+    definition: Option<(&'a str, &'a str)>,
+}
+
+type AbbreviationIndex<'a> = Vec<AbbreviationTrieNode<'a>>;
 
 fn abbreviation_index(defs: &BTreeMap<String, String>) -> AbbreviationIndex<'_> {
-    let mut index: AbbreviationIndex<'_> = BTreeMap::new();
+    let mut index = vec![AbbreviationTrieNode::default()];
     for (abbr, expansion) in defs {
-        if let Some(first) = abbr.chars().next() {
-            index
-                .entry(first)
-                .or_default()
-                .push((abbr.as_str(), expansion.as_str()));
+        if abbr.is_empty() {
+            continue;
         }
+        let mut node = 0;
+        for byte in abbr.bytes() {
+            node = if let Some(&child) = index[node].children.get(&byte) {
+                child
+            } else {
+                let child = index.len();
+                index.push(AbbreviationTrieNode::default());
+                index[node].children.insert(byte, child);
+                child
+            };
+        }
+        index[node].definition = Some((abbr.as_str(), expansion.as_str()));
     }
     index
 }
@@ -22480,14 +22534,18 @@ fn append_abbreviations_in_text(
     while i < text.len() {
         let mut matched: Option<(&str, &str)> = None;
         let ch = text[i..].chars().next().unwrap();
-        if let Some(candidates) = index.get(&ch) {
-            for (abbr, expansion) in candidates {
-                if text[i..].starts_with(abbr)
-                    && is_word_boundary(&text, i)
-                    && is_word_boundary(&text, i + abbr.len())
-                {
-                    matched = Some((*abbr, *expansion));
+        if is_word_boundary(&text, i) {
+            let mut node = 0;
+            for (offset, byte) in text.as_bytes()[i..].iter().enumerate() {
+                let Some(&child) = index[node].children.get(byte) else {
                     break;
+                };
+                node = child;
+                if let Some(definition) = index[node].definition {
+                    if is_word_boundary(&text, i + offset + 1) {
+                        matched = Some(definition);
+                        break;
+                    }
                 }
             }
         }
