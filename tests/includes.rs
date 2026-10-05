@@ -1669,6 +1669,101 @@ fn an_auto_heading_id_collision_across_an_include_is_silent() {
 }
 
 #[test]
+fn a_section_selected_by_its_deduplicated_slug_takes_the_assembled_id() {
+    // I5 rule 4: `Overview-2` is the child's own numbering. The assembled
+    // document holds one `Overview`, so that is the id it derives.
+    let dup = "# Overview\n\nfirst\n\n# Overview\n\nsecond\n\nSee </#Overview-2>.";
+    let result = expand("{{ dup.crv #Overview-2 }}", &[("dup.crv", dup)]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<section id=\"Overview\">"),
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("Overview-2"), "{}", result.html);
+    assert!(
+        result.html.contains("href=\"#Overview\""),
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("first"), "{}", result.html);
+}
+
+#[test]
+fn a_selected_dedup_slug_still_yields_to_a_parent_heading_of_that_name() {
+    let dup = "# Overview\n\nfirst\n\n# Overview\n\nsecond";
+    let result = expand(
+        "# Overview\n\nparent\n\n{{ dup.crv #Overview-2 }}",
+        &[("dup.crv", dup)],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<section id=\"Overview\">"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<section id=\"Overview-2\">"),
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("first"), "{}", result.html);
+}
+
+#[test]
+fn a_whole_file_include_keeps_its_own_dedup_numbering() {
+    let dup = "# Overview\n\nfirst\n\n# Overview\n\nsecond";
+    let result = expand("{{ dup.crv }}", &[("dup.crv", dup)]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<section id=\"Overview\">"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<section id=\"Overview-2\">"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_automatic_id_never_takes_a_name_the_file_writes_later() {
+    let child = "# Overview\n\nfirst\n\n{#Overview}\n# Explicit\n\nsecond";
+    let result = expand("{{ c.crv }}", &[("c.crv", child)]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result
+            .html
+            .contains("<section id=\"Overview-2\">\n  <h1>Overview</h1>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result
+            .html
+            .contains("<section id=\"Overview\">\n  <h1>Explicit</h1>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_authored_id_that_equals_its_slug_is_still_explicit() {
+    // Told apart by the `{#id}` slot, not by comparing with the slug.
+    let result = expand(
+        "{#Overview}\n# Overview\n\n{{ c.crv }}",
+        &[("c.crv", "{#Overview}\n# Overview\n\nchild")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<section id=\"Overview-2\">"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
 fn an_explicit_heading_id_collision_across_an_include_still_warns() {
     // The other side of the same line: this id WAS written by someone, and it
     // is a cross-reference target, so the rename has to be visible.
