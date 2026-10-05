@@ -276,3 +276,57 @@ fn fragment_links_follow_the_registered_extensions() {
     let options = carve::Options::new().with_extension(&tabs);
     assert!(carve::lint_carve_with_options("[x](#tab-1)\n", &options).is_empty());
 }
+
+fn unresolved(source: &str) -> Vec<carve::LintWarning> {
+    lint_carve(source)
+        .into_iter()
+        .filter(|w| w.rule == "unresolved-reference-link")
+        .collect()
+}
+
+#[test]
+fn unresolved_reference_images_are_reported() {
+    let source = "![a][missing]\n\n![b][Logo]\n\n![Nope][]\n\n# Nope\n\n[logo]: logo.png\n";
+    let warnings = unresolved(source);
+    let spans: Vec<_> = warnings.iter().map(|w| &source[w.start..w.end]).collect();
+    assert_eq!(
+        spans,
+        ["![a][missing]", "![b][Logo]", "![Nope][]"],
+        "{warnings:?}"
+    );
+    assert_eq!(
+        warnings[0].message,
+        "Reference image ![a][missing] has no matching link definition; it renders as literal text."
+    );
+    assert_eq!(
+        warnings[1].message,
+        "Reference image ![b][Logo] matches no link definition; the label \"logo\" differs only in case, and reference labels are case-sensitive, so it renders as literal text."
+    );
+    assert_eq!(
+        warnings[2].message,
+        "Reference image ![Nope][] has no matching link definition; it renders as literal text."
+    );
+}
+
+#[test]
+fn resolved_and_inline_images_are_not_reported() {
+    for source in [
+        "![a][logo] ![logo][] ![x](x.png) ![y](<>)\n\n[logo]: logo.png\n",
+        "```\n![a][missing]\n```\n",
+        "`![a][missing]`\n",
+    ] {
+        assert!(
+            unresolved(source).is_empty(),
+            "{source:?}: {:?}",
+            unresolved(source)
+        );
+    }
+}
+
+#[test]
+fn unresolved_images_follow_the_link_rule_in_footnote_definitions() {
+    for body in ["[x][missing]", "![x][missing]", "[![x][missing]](u)"] {
+        let source = format!("text\n\n[^u]: {body}\n");
+        assert_eq!(unresolved(&source).len(), 1, "{source:?}");
+    }
+}

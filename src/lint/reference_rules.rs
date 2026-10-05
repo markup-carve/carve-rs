@@ -126,6 +126,26 @@ pub(super) fn collect(
                     out,
                 );
             }
+            InlineNode::Image(image) if image.ref_label.is_some() && image.src.is_empty() => {
+                let label = image.ref_label.as_deref().unwrap_or_default();
+                let case_only = targets.image_reference(label);
+                let raw = image.raw_ref.as_deref().unwrap_or_default();
+                let message = if case_only.is_empty() {
+                    format!("Reference image {raw} has no matching link definition; it renders as literal text.")
+                } else {
+                    format!(
+                        "Reference image {raw} matches no link definition; {}, and reference labels are case-sensitive, so it renders as literal text.",
+                        differ_only_in_case(&case_only)
+                    )
+                };
+                report(
+                    image.pos.clone(),
+                    "unresolved-reference-link",
+                    message,
+                    to_byte,
+                    out,
+                );
+            }
             InlineNode::Link(link) if link.href.starts_with('#') && !link.from_crossref => {
                 fragment_links.push((link.href.as_str(), link.pos.clone()));
             }
