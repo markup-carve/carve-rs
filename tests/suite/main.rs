@@ -16,6 +16,8 @@ mod exact_case_lookups;
 mod table_body_source;
 #[path = "../table_width_precision.rs"]
 mod table_width_precision;
+#[path = "../the_carve_writer_refuses_instead_of_aborting.rs"]
+mod the_carve_writer_refuses_instead_of_aborting;
 
 #[path = "../invalid_container_metadata.rs"]
 mod invalid_container_metadata;

@@ -166,7 +166,7 @@ pub use render::{
 };
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
-pub use render_carve_error::{RenderCarveError, SourceUnspellable};
+pub use render_carve_error::{CarveWriteError, RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
 pub use render_loss::{
     with_render_loss_report, CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError,
@@ -263,9 +263,15 @@ pub fn to_ansi(source: &str) -> String {
 /// heading-id enrichment, or other render-time transforms. It also carries no
 /// [`Options`], so no profile reaches it; callers that need the profile honored
 /// on this target use [`try_to_carve_with_options`].
+/// A DEFAULT `Options` CARRIES NO PROFILE, so the only refusal this can meet is
+/// the writer's own, and this entry point has no way to report one. It leaves
+/// the source as authored rather than aborting or emitting an empty document:
+/// every caller here formats in place (`to_carve_patch` then yields a no-op
+/// patch), so losing the text would be worse than not formatting it. A caller
+/// that needs to SEE the refusal uses [`try_to_carve_with_options`], which both
+/// CLI paths now do (carve-rs#2326).
 pub fn to_carve(source: &str) -> String {
-    try_to_carve_with_options(source, &Options::default())
-        .expect("a default `Options` carries no profile, so no violation can be raised")
+    try_to_carve_with_options(source, &Options::default()).unwrap_or_else(|_| source.to_string())
 }
 
 /// Prepare canonical formatting as a stale-safe patch without changing source.
@@ -378,7 +384,7 @@ pub fn to_carve_with_report(
 pub fn try_to_carve_with_options(
     source: &str,
     options: &Options<'_>,
-) -> Result<String, ProfileViolationError> {
+) -> Result<String, CarveWriteError> {
     // BEFORE the parse. `max_length` bounds untrusted input, so it has to be
     // answered ahead of anything that walks that input - refusing after the
     // parse means the work the cap exists to prevent has already been done.
@@ -386,7 +392,7 @@ pub fn try_to_carve_with_options(
     if let Some(profile) = &options.profile {
         let max_length = profile.max_length();
         if max_length > 0 && source.len() > max_length {
-            return Err(ProfileViolationError {
+            return Err(CarveWriteError::Profile(ProfileViolationError {
                 violations: vec![ProfileViolation {
                     node_type: "document".to_string(),
                     reason: "max_length_exceeded".to_string(),
@@ -395,7 +401,7 @@ pub fn try_to_carve_with_options(
                         source.len()
                     )),
                 }],
-            });
+            }));
         }
     }
     // The SAME text the parser reads. `raw_frontmatter` scans for the block's
@@ -427,8 +433,12 @@ pub fn try_to_carve_with_options(
             frontmatter = None;
         }
     }
-    let rendered = render_carve(&doc)
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
+    // THE WRITER'S REFUSAL IS THE CALLER'S TO HANDLE (carve-rs#2326). This was
+    // an `expect` saying a parsed tree never reaches the render ceiling. The
+    // DEPTH half of that is true; a round-trip refusal is not, and one level
+    // past the parse cap the flattening produces a code node whose value the
+    // writer cannot spell, so a shipped CLI path aborted on valid input.
+    let rendered = render_carve(&doc)?;
     // The writer's own output, unedited. `restore_inline_comments` used to walk
     // the SOURCE lines here and graft each trailing `%%` back onto the first
     // formatted line equal to the part before it. It could not repair what it

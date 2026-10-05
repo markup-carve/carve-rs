@@ -694,7 +694,8 @@ fn main() -> ExitCode {
         )
     } else {
         let checked = carve::with_render_loss_report(target, checked_options, || match format {
-            OutputFormat::Html => carve::try_to_html_with_options(&source, &options),
+            OutputFormat::Html => carve::try_to_html_with_options(&source, &options)
+                .map_err(carve::CarveWriteError::from),
             // Positions ON for the three targets that PRINT the footnote
             // definitions: §7 orders them by source position, and the map they
             // come from is a BTreeMap, so without spans they print in label
@@ -702,14 +703,17 @@ fn main() -> ExitCode {
             OutputFormat::Markdown => {
                 options = options.with_positions(true);
                 carve::try_to_markdown_with_options(&source, &options)
+                    .map_err(carve::CarveWriteError::from)
             }
             OutputFormat::Plain => {
                 options = options.with_positions(true);
                 carve::try_to_plain_text_with_options(&source, &options)
+                    .map_err(carve::CarveWriteError::from)
             }
             OutputFormat::Ansi => {
                 options = options.with_positions(true);
                 carve::try_to_ansi_with_options(&source, &options)
+                    .map_err(carve::CarveWriteError::from)
             }
             // The options-taking sibling. `to_carve` carries no `Options`, so
             // the profile was never even asked about on this target: an
@@ -720,6 +724,7 @@ fn main() -> ExitCode {
             OutputFormat::Json => {
                 options = options.with_positions(true);
                 carve::try_to_json_with_options(&source, &options)
+                    .map_err(carve::CarveWriteError::from)
             }
         })
         .expect("non-strict collection cannot fail");
@@ -1232,6 +1237,15 @@ impl From<carve::RenderCarveError> for RenderError {
     }
 }
 
+impl From<carve::CarveWriteError> for RenderError {
+    fn from(err: carve::CarveWriteError) -> Self {
+        match err {
+            carve::CarveWriteError::Profile(err) => RenderError::Profile(err),
+            carve::CarveWriteError::Render(err) => RenderError::Carve(err),
+        }
+    }
+}
+
 fn render_document(
     doc: carve::Document,
     format: OutputFormat,
@@ -1548,7 +1562,13 @@ fn run_fmt(
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
-        return write_stdout(&format_carve(&source, stamp, migrate));
+        return match format_carve(&source, stamp, migrate) {
+            Ok(formatted) => write_stdout(&formatted),
+            Err(err) => {
+                eprintln!("carve fmt: {err}");
+                ExitCode::FAILURE
+            }
+        };
     }
 
     let mut changed = Vec::new();
@@ -1565,7 +1585,13 @@ fn run_fmt(
                 return ExitCode::FAILURE;
             }
         };
-        let formatted = format_carve(&source, stamp, migrate);
+        let formatted = match format_carve(&source, stamp, migrate) {
+            Ok(formatted) => formatted,
+            Err(err) => {
+                eprintln!("carve fmt: {path}: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
         if formatted != source {
             changed.push(path.clone());
             if write {
@@ -1591,22 +1617,32 @@ fn run_fmt(
     ExitCode::SUCCESS
 }
 
-fn format_carve(source: &str, stamp: Option<carve::StampForm>, migrate: bool) -> String {
+/// FALLIBLE, because the writer can refuse (carve-rs#2326). `to_carve` leaves
+/// the source as authored when it cannot spell the tree, which is the right
+/// answer for a library caller formatting in place and the wrong one here: a
+/// formatter that silently emits its input looks like a document already in
+/// canonical form. `fmt` says so and exits non-zero instead.
+fn format_carve(
+    source: &str,
+    stamp: Option<carve::StampForm>,
+    migrate: bool,
+) -> Result<String, carve::CarveWriteError> {
+    let options = carve::Options::default();
     let formatted = if migrate {
-        carve::to_carve(&carve::migrate_case_only_references(
-            source,
-            &carve::Options::default(),
-        ))
+        carve::try_to_carve_with_options(
+            &carve::migrate_case_only_references(source, &options),
+            &options,
+        )?
     } else {
-        carve::to_carve(source)
+        carve::try_to_carve_with_options(source, &options)?
     };
-    match stamp {
+    Ok(match stamp {
         Some(form) => {
             let generated_by = format!("carve-rs {}", env!("CARGO_PKG_VERSION"));
             carve::stamp_carve(&formatted, &generated_by, form)
         }
         None => formatted,
-    }
+    })
 }
 
 fn write_stdout(output: &str) -> ExitCode {

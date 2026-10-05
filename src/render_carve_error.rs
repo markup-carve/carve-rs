@@ -66,6 +66,54 @@ impl From<crate::RenderDepthError> for RenderCarveError {
     }
 }
 
+/// Why the canonical Carve writer produced no source.
+///
+/// `--carve` and `carve fmt` parse and re-serialize a whole document, so they
+/// can be stopped by the profile the options carry OR by the writer itself. The
+/// writer's refusal used to be unwrapped with an `expect` claiming a parsed tree
+/// never reaches it. That claim holds for the DEPTH ceiling, which sits above
+/// the parse cap, and not for a round-trip refusal: one level past the cap the
+/// over-cap flattening hands the writer a code node whose value carries the
+/// ladder's indentation, which the block layer strips on the way back out, and
+/// the CLI aborted with exit 101 on valid input (carve-rs#2326).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CarveWriteError {
+    /// The profile refused a node, or the source exceeded its `max_length`.
+    Profile(crate::ProfileViolationError),
+    /// The writer cannot spell the tree the parser built.
+    Render(RenderCarveError),
+}
+
+impl fmt::Display for CarveWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Profile(error) => error.fmt(f),
+            Self::Render(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for CarveWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Profile(error) => Some(error),
+            Self::Render(error) => Some(error),
+        }
+    }
+}
+
+impl From<crate::ProfileViolationError> for CarveWriteError {
+    fn from(error: crate::ProfileViolationError) -> Self {
+        Self::Profile(error)
+    }
+}
+
+impl From<RenderCarveError> for CarveWriteError {
+    fn from(error: RenderCarveError) -> Self {
+        Self::Render(error)
+    }
+}
+
 thread_local! {
     static UNSPELLABLE: Cell<Option<(&'static str, &'static str)>> = const { Cell::new(None) };
     static NESTED_SAME_KIND: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
