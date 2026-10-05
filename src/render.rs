@@ -16,7 +16,7 @@ use crate::extension::{
 use crate::parse::{label_key, unwrap_nested_anchors};
 use crate::table_spans::{ColspanPlan, TableSpanPlan};
 use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 /// The recursion bound every renderer shares, and it MUST sit ABOVE the
@@ -4198,14 +4198,22 @@ fn write_attr_id(out: &mut String, id: &str) {
 /// (§15, matching carve-php / carve-js).
 pub(crate) fn sanitized_classes(classes: &[String]) -> Vec<std::borrow::Cow<'_, str>> {
     let mut sanitized: Vec<std::borrow::Cow<'_, str>> = Vec::new();
+    let mut seen = (classes.len() > 8).then(|| HashSet::with_capacity(classes.len()));
     for entry in classes {
         // Probe the WHOLE entry. Splitting it into names would bypass the
         // sanitizer's scheme normalization, letting `java script:alert(1)`
         // through, and so would deny less than before the class fold
         // (carve-js#1164).
         let entry = crate::escape::sanitize_attr_value("class", entry);
-        if !entry.is_empty() && !sanitized.contains(&entry) {
-            sanitized.push(entry);
+        if !entry.is_empty() {
+            let unique = if let Some(seen) = &mut seen {
+                seen.insert(entry.clone())
+            } else {
+                !sanitized.contains(&entry)
+            };
+            if unique {
+                sanitized.push(entry);
+            }
         }
     }
     sanitized
@@ -4300,7 +4308,7 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
     // `order` covers everything, so the fallback emits nothing.
     let mut seen_id = false;
     let mut seen_class = false;
-    let mut seen_keys: Vec<&str> = Vec::new();
+    let mut seen_keys: HashSet<&str> = HashSet::new();
     for slot in &attrs.order {
         match slot {
             AttrSlot::Id => {
@@ -4321,7 +4329,7 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
                         write_attr_key_value(out, key, value);
                     }
                 }
-                seen_keys.push(key.as_str());
+                seen_keys.insert(key.as_str());
             }
         }
     }
@@ -4334,7 +4342,7 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
         write_attr_class(out, &attrs.classes);
     }
     for (key, value) in &attrs.key_values {
-        if !seen_keys.contains(&key.as_str())
+        if !seen_keys.contains(key.as_str())
             && !is_dangerous_attr_name(key)
             && is_valid_attr_name(key)
         {

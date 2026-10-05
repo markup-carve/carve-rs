@@ -64,3 +64,15 @@ fn a_block_that_is_not_the_closers_is_unchanged() {
     );
     assert!(moved.is_empty(), "rows moved:\n{}", moved.join("\n"));
 }
+
+#[test]
+fn a_later_forced_underline_keeps_precedence_over_attribute_payloads() {
+    assert_eq!(
+        carve::to_html("*x*{.k}{_a=b_}"),
+        "<p><strong class=\"k\">x</strong><u>a=b</u></p>"
+    );
+    assert_eq!(
+        carve::to_html("`c`{.k}{_a=b_}"),
+        "<p><code class=\"k\">c</code><u>a=b</u></p>"
+    );
+}

@@ -129,3 +129,11 @@ fn many_small_abbreviations_stay_under_budget() {
     let wrappers = html.matches("<abbr title=").count();
     assert_eq!(wrappers, 500, "every occurrence should keep its wrapper");
 }
+
+#[test]
+fn prefix_terms_and_ascii_boundaries_keep_the_original_matches() {
+    assert_eq!(
+        carve::to_html("*[A]: short\n*[AB]: long\n\nA AB ABC _A_ éA"),
+        "<p><abbr title=\"short\">A</abbr> <abbr title=\"long\">AB</abbr> ABC <u><abbr title=\"short\">A</abbr></u> é<abbr title=\"short\">A</abbr></p>"
+    );
+}
