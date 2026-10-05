@@ -92,6 +92,8 @@ mod a_citation_definition_is_a_node;
 mod a_citation_item_carries_its_own_mode;
 #[path = "../a_class_key_value_is_the_class_slot.rs"]
 mod a_class_key_value_is_the_class_slot;
+#[path = "../a_closed_block_at_a_nested_items_bottom_folds_a_flush_left_line.rs"]
+mod a_closed_block_at_a_nested_items_bottom_folds_a_flush_left_line;
 #[path = "../a_closed_comment_span_ends_the_right_item.rs"]
 mod a_closed_comment_span_ends_the_right_item;
 #[path = "../a_code_blocks_last_newline_is_its_terminator.rs"]

@@ -11104,6 +11104,17 @@ fn parse_list(
                 if nested_lead_is_continuation {
                     break;
                 }
+                // A CLOSED FENCE OR RAW BLOCK ON THE NESTED ITEM'S LEAD
+                // LEAVES THIS ITEM OPEN (markup-carve/carve#2734, carve-rs#2313).
+                // THE LEAD, not any closed fence the item happens to end on: a
+                // fence collected below an outer-column comment closes the same
+                // way and the spec still ends the list there
+                // (`comment_span_opener_column`).
+                // The item holds a list, which takes another item or another
+                // sibling block, so §24 C3's innermost container the line
+                // REACHES is that list and not the finished block inside it.
+                // Only those two kinds: a heading, a table or a comment in the
+                // same position ends the list, and that split is the ruling.
                 if !nested_ends_with_open_paragraph_rebased(
                     &stream,
                     last_consumed_line_below_column(cur, nested_content_col),
@@ -11114,7 +11125,9 @@ fn parse_list(
                     // (markup-carve/carve-rs#1516).
                     last_consumed_line_below_column(cur, content_col),
                     options,
-                ) {
+                ) && !(detect_fence_open(inner_lead).is_some()
+                    && nested_item_ends_in_a_closed_verbatim_block(&stream.source, options))
+                {
                     break;
                 }
                 let before = cur.pos;
@@ -12118,6 +12131,35 @@ fn detect_list_marker_full_at(line: &str, indent: usize) -> Option<ListMarker<'_
 /// nested list. The enclosing item must collect the flush-left line so it can
 /// close that inner item and continue the still-open outer paragraph; the
 /// heading's own collector no longer takes it (carve#1377).
+/// Does the collected nested block end in a NESTED ITEM whose own last block is
+/// a closed CODE FENCE or RAW BLOCK?
+///
+/// §24 C3's fold is asked of the innermost container the line REACHES, and a
+/// list the item holds is still open whatever finished block its last item
+/// ended on. The spec does not fold uniformly though: measured against
+/// `renderDoc(parse(source))`, a flush-left non-opener below `- - <block>`
+/// folds into the OUTER item after a closed fence or raw block and leaves the
+/// list after a heading, a one-row table or a comment. markup-carve/carve#2734
+/// rules that split normative, so this arm names the two kinds rather than
+/// every closed block: a uniform fold was measured to fix the fence rows and
+/// move three rows that already agreed with the spec.
+fn nested_item_ends_in_a_closed_verbatim_block(nested: &str, options: &Options<'_>) -> bool {
+    block_ends_in_a_closed_verbatim_block(probe_blocks(nested, options).last())
+}
+
+fn block_ends_in_a_closed_verbatim_block(block: Option<&BlockNode>) -> bool {
+    match block {
+        Some(BlockNode::List(list)) => {
+            let trailing = list.items.last().and_then(|item| item.children.last());
+            matches!(
+                trailing,
+                Some(BlockNode::CodeBlock(_) | BlockNode::RawBlock(_))
+            ) || block_ends_in_a_closed_verbatim_block(trailing)
+        }
+        _ => false,
+    }
+}
+
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
     block_ends_with_heading(probe_blocks(nested, options).last())
 }
@@ -13040,6 +13082,16 @@ fn collect_trailing_lazy_through(
         let indent = indent_columns(line);
         let take = dedent_below_column(line, indent);
         let (sliced, consumed, _) = slice_columns_mapped(line, take, true);
+        // A FENCE AT COLUMN 0 HAS NO COLUMN TO SPEND, so it gets the sentinel
+        // instead (carve-rs#2313). One column is what keeps a block-shaped line
+        // text on the re-parse, and a flush line has none: the fence shape then
+        // opened a block one level in, where the fold had just made it the
+        // paragraph's text. The description-body twin frames it the same way.
+        let sliced = if indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some() {
+            format!("{LAZY}{sliced}")
+        } else {
+            sliced
+        };
         nested.push_newline_at(
             sliced,
             cur.source_line(cur.pos),
@@ -15251,18 +15303,23 @@ fn collect_definition_body(
             let below_the_column = indent > 0;
             // List markers do not interrupt the open paragraph (§10 I2).
             // Fences and captions retain their separate boundary rules.
+            // AN INFO STRING IS NOT AN OPENER (markup-carve/carve#2735). A
+            // flush-left fence line below a body that takes a fold is the
+            // body's content whether or not it carries a language, so the
+            // closer ahead is the only thing that decides. Reading the language
+            // as an opener split the two spellings and pinned the split in
+            // `a_fence_ends_the_body`, which the clause contradicts.
             let fence_interrupts = detect_fence_open(&owned).is_some_and(|open| {
-                open.lang_start < open.lang_end
-                    || item_body_fence_has_closer(
-                        cur.lines.range(cur.pos + 1..cur.lines.len()),
-                        open,
-                        content_column,
-                        |line, indent| {
-                            indent < content_column
-                                && (is_definition_list_start(strip_lazy(line))
-                                    || strip_definition_marker(strip_lazy(line)).is_some())
-                        },
-                    )
+                item_body_fence_has_closer(
+                    cur.lines.range(cur.pos + 1..cur.lines.len()),
+                    open,
+                    content_column,
+                    |line, indent| {
+                        indent < content_column
+                            && (is_definition_list_start(strip_lazy(line))
+                                || strip_definition_marker(strip_lazy(line)).is_some())
+                    },
+                )
             });
             if !below_the_column
                 && cur.at_document_level
