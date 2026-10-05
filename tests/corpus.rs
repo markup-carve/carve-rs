@@ -790,6 +790,10 @@ const IMPLEMENTED: &[&str] = &[
     "quoted-values-and-titles-retain-a-non-punctuation-backslash",
     "a-marker-line-opaque-quote-keeps-overindented-markers-literal",
     "a-denied-destination-takes-one-render-loss-row-per-sink",
+    // markup-carve/carve#2732: every name lookup compares case exactly.
+    "every-name-lookup-compares-case-exactly",
+    // Brought in by the same pin bump; renders byte for byte with no engine work.
+    "an-unreferenced-footnote-definition-takes-its-links-out-of-the-render",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

@@ -35,11 +35,11 @@ fn the_slug_case_is_unchanged() {
 }
 
 #[test]
-fn matching_stays_case_insensitive_and_whitespace_collapsed() {
-    // R1: "the label and the heading text are both trimmed, their internal
-    // whitespace runs collapsed to one space, and then compared
-    // case-INSENSITIVELY".
-    assert!(to_html("{#g}\n# Getting Started\n\n[getting started][]\n").contains("href=\"#g\""));
+fn matching_compares_case_exactly_and_collapses_whitespace() {
+    // R1 collapses whitespace runs and then compares case exactly
+    // (`CARVE-P9R-010`).
+    assert!(to_html("{#g}\n# Getting Started\n\n[Getting Started][]\n").contains("href=\"#g\""));
+    assert!(!to_html("{#g}\n# Getting Started\n\n[getting started][]\n").contains("href=\"#g\""));
     assert!(to_html("{#ab}\n# A   B\n\n[A B][]\n").contains("href=\"#ab\""));
 }
 

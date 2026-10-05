@@ -170,11 +170,11 @@ fn the_label_keeps_an_escaped_character() {
 #[test]
 fn a_nested_crossref_in_the_label_is_not_re_expanded() {
     assert_eq!(
-        carve::to_html("# A </#a>\n").trim(),
+        carve::to_html("# A </#A>\n").trim(),
         "<section id=\"A\">\n  <h1>A <a href=\"#A\">A </a></h1>\n</section>"
     );
     assert_eq!(
-        carve::to_html("# A </#b>\n\n# B </#a>\n").trim(),
+        carve::to_html("# A </#B>\n\n# B </#A>\n").trim(),
         "<section id=\"A\">\n  <h1>A <a href=\"#B\">B </a></h1>\n</section>\n\
          <section id=\"B\">\n  <h1>B <a href=\"#A\">A </a></h1>\n</section>"
     );

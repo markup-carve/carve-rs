@@ -98,9 +98,9 @@ fn text_keeps_directional_marks_and_zero_width() {
 
 #[test]
 fn self_cross_reference_does_not_pollute_heading_id() {
-    // `# A </#a>` resolves to itself; the id stays `A` (the cross-reference's
+    // `# A </#A>` resolves to itself; the id stays `A` (the cross-reference's
     // resolved-link text must not feed the slug, which would give `A-A`).
-    let html = carve::to_html("# A </#a>");
+    let html = carve::to_html("# A </#A>");
     assert!(html.contains("id=\"A\""), "id polluted by crossref: {html}");
     assert!(html.contains("href=\"#A\""), "{html}");
 }

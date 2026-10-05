@@ -6,28 +6,28 @@ fn html(src: &str) -> String {
 
 #[test]
 fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
-    let src = "See [name][]\n\n# Name";
+    let src = "See [Name][]\n\n# Name";
     assert_eq!(
         html(src),
         concat!(
-            "<p>See <a href=\"#Name\">name</a></p>\n",
+            "<p>See <a href=\"#Name\">Name</a></p>\n",
             "<section id=\"Name\">\n",
             "  <h1>Name</h1>\n",
             "</section>"
         )
     );
     assert_eq!(
-        html("See [NAME][]\n\n# name"),
+        html("See [name][]\n\n# name"),
         concat!(
-            "<p>See <a href=\"#name\">NAME</a></p>\n",
+            "<p>See <a href=\"#name\">name</a></p>\n",
             "<section id=\"name\">\n",
             "  <h1>name</h1>\n",
             "</section>"
         )
     );
-    assert!(carve::to_markdown(src).contains("See [name](#name)"));
-    assert!(!carve::to_markdown(src).contains("[name][]"));
-    assert!(!carve::to_plain_text(src).contains("[name][]"));
+    assert!(carve::to_markdown(src).contains("See [Name](#name)"));
+    assert!(!carve::to_markdown(src).contains("[Name][]"));
+    assert!(!carve::to_plain_text(src).contains("[Name][]"));
     assert!(!carve::to_ansi(src).contains("[name][]"));
 }
 

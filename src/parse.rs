@@ -897,7 +897,7 @@ fn extract_nested_footnote_defs(
 /// This engine resolves `</#id>` at RENDER time, from an index built per
 /// render, which is why the tree carried only what the author wrote. That is
 /// half of what section 3a asks for: a consumer decoding the published tree
-/// had to rebuild the heading table and re-run the case-insensitive match
+/// had to rebuild the heading table and re-run the match
 /// before it could render a crossref, which is the recomputation section 5
 /// exists to prevent.
 ///
@@ -22729,6 +22729,15 @@ pub(crate) fn crossref_index_for_document(
     crossref_index(titles, labels, id_opts)
 }
 
+/// The index a collapsed `[text][]` reference resolves against, built from a
+/// parsed document.
+pub(crate) fn heading_reference_index_for_document(
+    doc: &Document,
+    id_opts: HeadingIdOptions,
+) -> CrossrefIndex {
+    heading_index(&doc.children, &doc.footnote_defs, id_opts, true, true).0
+}
+
 fn heading_index(
     children: &[BlockNode],
     footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
@@ -22948,28 +22957,17 @@ fn crossref_index(
     labels: BTreeMap<String, CrossrefLabel>,
     id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
-    // Case-folded index of known ids -> actual (case-preserved) id. First
-    // occurrence wins, so a duplicate that only differs in case does not shadow
-    // the earlier heading. Used as a fallback when an exact match fails, so a
-    // lowercase reference resolves to a `Getting-Started` heading and the
-    // emitted href uses the ACTUAL id.
-    let mut folded: BTreeMap<String, String> = BTreeMap::new();
-    for id in titles.keys() {
-        folded.entry(case_fold(id)).or_insert_with(|| id.clone());
-    }
     CrossrefIndex {
         titles,
         labels,
-        folded,
         by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
         id_opts,
     }
 }
 
-/// Heading-id lookup table for `</#id>` cross-references: exact id -> title,
-/// plus a case-folded fallback (folded id -> actual case-preserved id) so a
-/// lowercase reference resolves to a case-preserved heading.
+/// Heading-id lookup table for `</#id>` cross-references: exact id -> title.
+/// Every lookup compares case exactly (PART 9R R1, `CARVE-P9R-010`).
 #[derive(Default)]
 pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
@@ -22981,7 +22979,6 @@ pub(crate) struct CrossrefIndex {
     /// A CAPTION id has a title but no entry here: its label is LABEL + NUMBER
     /// ("Figure 1"), text that no node of the document ever held.
     labels: BTreeMap<String, CrossrefLabel>,
-    folded: BTreeMap<String, String>,
     /// Normalized heading TEXT -> that heading's id, in document order (first
     /// occurrence wins). PART 11 R1 keys the implicit `[label][]` index by "the
     /// document's headings keyed by their rendered plain text"; looking the
@@ -23002,14 +22999,9 @@ pub(crate) struct CrossrefIndex {
 impl CrossrefIndex {
     fn extend_titles(&mut self, titles: BTreeMap<String, String>) {
         for (id, title) in titles {
-            self.folded
-                .entry(case_fold(&id))
-                .or_insert_with(|| id.clone());
             self.titles.entry(id).or_insert(title);
         }
     }
-    /// Resolve a cross-reference target to its `(actual_id, title)`. Tries an
-    /// exact match first, then a case-folded fallback (first-occurrence wins).
     /// Resolve for an IMPLICIT `[label][]` reference, which declines a heading
     /// with a blockquote ancestor (PART 11 R1). Quoted text names the quoted
     /// document's headings, not this one's, and a quotation is the one
@@ -23056,6 +23048,20 @@ impl CrossrefIndex {
             .is_some_and(|id| !self.quoted.contains(id) && self.titles.contains_key(id))
     }
 
+    /// Every id a `</#id>` cross-reference can reach.
+    pub(crate) fn ids(&self) -> impl Iterator<Item = &str> {
+        self.titles.keys().map(String::as_str)
+    }
+
+    /// Every heading text a collapsed `[text][]` reference can reach, keyed the
+    /// way R1 compares them (whitespace collapsed, NFC).
+    pub(crate) fn heading_texts(&self) -> impl Iterator<Item = &str> {
+        self.by_text
+            .iter()
+            .filter(|(_, id)| !self.quoted.contains(*id) && self.titles.contains_key(*id))
+            .map(|(text, _)| text.as_str())
+    }
+
     /// The cloned inline nodes a resolved reference to `id` renders, when the
     /// target is a HEADING. `None` for a caption id, whose label is
     /// LABEL + NUMBER rather than any node of the document; the caller falls
@@ -23064,38 +23070,24 @@ impl CrossrefIndex {
         self.labels.get(id).cloned()
     }
 
+    /// Resolve a cross-reference target to its `(id, title)`, matching case
+    /// exactly.
     pub(crate) fn resolve(&self, target: &str) -> Option<(&str, &str)> {
-        if let Some((id, title)) = self.titles.get_key_value(target) {
-            return Some((id.as_str(), title.as_str()));
-        }
-        let id = self.folded.get(&case_fold(target))?;
-        let title = self.titles.get(id)?;
+        let (id, title) = self.titles.get_key_value(target)?;
         Some((id.as_str(), title.as_str()))
     }
 }
 
 /// The comparison PART 11 R1 specifies for the implicit heading fallback: the
-/// label and the heading text are "both trimmed, their internal whitespace runs
-/// collapsed to one space, and then compared case-INSENSITIVELY".
-fn normalize_heading_label(s: &str) -> String {
-    let collapsed = s
-        .split([' ', '\t', '\n', '\u{000C}', '\r'])
+/// label and the heading text are both trimmed, their internal whitespace runs
+/// collapsed to one space, NFC-normalized, and then compared with exact case.
+pub(crate) fn normalize_heading_label(s: &str) -> String {
+    s.split([' ', '\t', '\n', '\u{000C}', '\r'])
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
-        .join(" ");
-    case_fold(&collapsed.nfc().collect::<String>())
-}
-
-/// Per-code-point lowercase fold, used for case-insensitive `</#id>` lookup.
-/// Matches the `lowercase` transform in `slugify_parse` (no context mappings).
-fn case_fold(s: &str) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        for lc in ch.to_lowercase() {
-            out.push(lc);
-        }
-    }
-    out
+        .join(" ")
+        .nfc()
+        .collect()
 }
 
 /// Promote a paragraph whose sole child is a direct or resolved image to a
@@ -23323,7 +23315,7 @@ fn is_unresolved_image(image: &Image) -> bool {
     image.ref_label.is_some() && image.src.is_empty()
 }
 
-fn is_collapsed_reference(link: &Link) -> bool {
+pub(crate) fn is_collapsed_reference(link: &Link) -> bool {
     let Some(raw) = &link.raw_ref else {
         return false;
     };

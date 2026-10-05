@@ -85,7 +85,7 @@ fn a_top_level_heading_matches_the_same_heading_inside_a_div() {
 #[test]
 fn resolves_crossrefs_and_implicit_heading_references() {
     assert_eq!(
-        flat("# Target\n\nSee </#target> and [Target][].\n"),
+        flat("# Target\n\nSee </#Target> and [Target][].\n"),
         "<h1 id=\"Target\">Target</h1>\n\
          <p>See <a href=\"#Target\">Target</a> and <a href=\"#Target\">Target</a>.</p>"
     );

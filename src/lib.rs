@@ -144,7 +144,7 @@ pub use incremental::{
     parse_snapshot, parse_snapshot_with_identity, reparse, IncrementalParse, IncrementalParseError,
     ParserSnapshot, TextChange,
 };
-pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
+pub use lint::{lint_carve, lint_carve_with_options, migrate_case_only_references, LintWarning};
 pub use markdown_import::{
     markdown_to_ast, markdown_to_carve, try_markdown_to_ast, try_markdown_to_carve,
 };

@@ -99,6 +99,7 @@ fn main() -> ExitCode {
     let mut fmt_write = false;
     let mut fmt_check = false;
     let mut fmt_stamp = None;
+    let mut fmt_migrate = false;
     let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
     let mut extension_keys: Vec<String> = Vec::new();
@@ -139,6 +140,7 @@ fn main() -> ExitCode {
             }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
+            "--migrate" if command == Command::Fmt => fmt_migrate = true,
             "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
             "--stamp-block" if command == Command::Fmt => {
                 fmt_stamp = Some(carve::StampForm::Block);
@@ -381,7 +383,7 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Fmt {
-        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
+        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp, fmt_migrate);
     }
 
     if command == Command::Flatten {
@@ -1530,6 +1532,7 @@ fn run_fmt(
     write: bool,
     check: bool,
     stamp: Option<carve::StampForm>,
+    migrate: bool,
 ) -> ExitCode {
     if write && check {
         eprintln!("carve fmt: --write and --check are mutually exclusive");
@@ -1545,7 +1548,7 @@ fn run_fmt(
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
-        return write_stdout(&format_carve(&source, stamp));
+        return write_stdout(&format_carve(&source, stamp, migrate));
     }
 
     let mut changed = Vec::new();
@@ -1562,7 +1565,7 @@ fn run_fmt(
                 return ExitCode::FAILURE;
             }
         };
-        let formatted = format_carve(&source, stamp);
+        let formatted = format_carve(&source, stamp, migrate);
         if formatted != source {
             changed.push(path.clone());
             if write {
@@ -1588,8 +1591,15 @@ fn run_fmt(
     ExitCode::SUCCESS
 }
 
-fn format_carve(source: &str, stamp: Option<carve::StampForm>) -> String {
-    let formatted = carve::to_carve(source);
+fn format_carve(source: &str, stamp: Option<carve::StampForm>, migrate: bool) -> String {
+    let formatted = if migrate {
+        carve::to_carve(&carve::migrate_case_only_references(
+            source,
+            &carve::Options::default(),
+        ))
+    } else {
+        carve::to_carve(source)
+    };
     match stamp {
         Some(form) => {
             let generated_by = format!("carve-rs {}", env!("CARGO_PKG_VERSION"));
@@ -1644,7 +1654,9 @@ fn print_usage() {
          --from-json                 read an encoded AST instead of Carve source\n\n\
          Format options:\n  \
          -w, --write                 write formatted output in place\n  \
-         --check                     fail if any file is not formatted\n\n\
+         --check                     fail if any file is not formatted\n  \
+         --migrate                   rewrite a reference that misses its only\n                              \
+         target by case to the target's exact spelling\n\n\
          --stamp                     append/update provenance marker\n  \
          --stamp-block               append/update provenance marker as block comment\n\n\
          Render mode (HTML only; default --interactive):\n  \

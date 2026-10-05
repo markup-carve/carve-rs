@@ -10,14 +10,14 @@ fn md(src: &str) -> String {
 #[test]
 fn a_duplicate_heading_is_linked_by_its_deduplicated_slug() {
     // The second `Setup` has the Carve id `Setup-2` and the GFM slug `setup-1`.
-    let out = md("## Setup\n\n## Setup\n\nSee </#setup-2>.\n");
+    let out = md("## Setup\n\n## Setup\n\nSee </#Setup-2>.\n");
 
     assert!(out.contains("[Setup](#setup-1)"), "{out}");
 }
 
 #[test]
 fn no_heading_gains_a_suffix() {
-    let out = md("## Setup\n\n## Setup\n\nSee </#setup-2>.\n");
+    let out = md("## Setup\n\n## Setup\n\nSee </#Setup-2>.\n");
 
     assert!(out.contains("## Setup\n\n## Setup\n"), "{out}");
     assert!(!out.contains("{#"), "{out}");
@@ -25,7 +25,7 @@ fn no_heading_gains_a_suffix() {
 
 #[test]
 fn a_heading_referenced_only_from_a_footnote_body_is_linked() {
-    let out = md("# H\n\nBody[^n]\n\n[^n]: see </#h>\n");
+    let out = md("# H\n\nBody[^n]\n\n[^n]: see </#H>\n");
 
     assert!(out.contains("# H\n"), "{out}");
     assert!(out.contains("[H](#h)"), "{out}");
@@ -33,9 +33,9 @@ fn a_heading_referenced_only_from_a_footnote_body_is_linked() {
 
 #[test]
 fn a_self_referencing_heading_does_not_slug_its_own_expansion() {
-    // `</#a>` resolves to a link carrying the heading's own text, so counting it
-    // would slug `# A </#a>` as `a-a`.
-    let out = md("# A </#a>\n\nSee </#a>.\n");
+    // `</#A>` resolves to a link carrying the heading's own text, so counting it
+    // would slug `# A </#A>` as `a-a`.
+    let out = md("# A </#A>\n\nSee </#A>.\n");
 
     assert!(out.contains("](#a)."), "{out}");
     assert!(!out.contains("a-a"), "{out}");

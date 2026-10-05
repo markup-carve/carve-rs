@@ -303,7 +303,7 @@ fn footnote_body_reference_links_are_resolved() {
 
 #[test]
 fn footnote_body_crossrefs_are_resolved() {
-    let html = carve::to_html("# H\n\nBody[^n]\n\n[^n]: see </#h>");
+    let html = carve::to_html("# H\n\nBody[^n]\n\n[^n]: see </#H>");
     assert!(
         html.contains("<li id=\"fn1\">") && html.contains("<p>see <a href=\"#H\">H</a>"),
         "{html}"
