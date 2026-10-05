@@ -13,7 +13,9 @@ which the published crate does not carry.
 
 ### Fixes
 
-- HTML import keeps separate paragraphs when an unwrapped div exposes them inside a list item, collapses layout whitespace exposed by removed empty inline elements in roundtrip mode, and preserves an empty definition term as raw HTML in roundtrip mode. Safe and semantic import drop and report an empty term while keeping its definitions in document order. A canonical source export refuses an empty definition term instead of writing invalid Carve.
+- HTML import keeps separate paragraphs when an unwrapped div exposes them inside a list item. Text separated by a code block remains tight (#2302).
+- Roundtrip import collapses layout whitespace exposed by removed empty inline elements and preserves an empty definition term as raw HTML (#2302).
+- Safe and semantic import drop and report an empty term while keeping its definitions in document order. Canonical source export refuses an empty definition term instead of writing invalid Carve (#2302).
 
 ## [0.1.8] - 2026-10-04
 

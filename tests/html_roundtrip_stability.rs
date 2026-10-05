@@ -42,6 +42,11 @@ fn an_empty_definition_term_is_preserved_raw_in_roundtrip_mode() {
     .unwrap();
     assert_eq!(to_html(&safe.value), "<p>d</p>");
     assert!(!safe.report.diagnostics.is_empty());
+    assert!(!safe
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.message.contains("no <dt> before it")));
     let ast = html_to_ast(
         "<dl><dt></dt><dd>d</dd></dl>",
         &HtmlImportOptions::default(),
@@ -75,7 +80,7 @@ fn dropping_an_empty_term_keeps_definition_order() {
 #[test]
 fn raw_empty_terms_retract_descendant_loss_reports() {
     let html =
-        "<dl><div id=\"group\"><dt><b></b></dt><dd><a href=\"javascript:x\">d</a></dd></div></dl>";
+        "<dl onclick=\"x\" style=\"color:red\"><div id=\"group\"><dt><b></b></dt><dd><a href=\"javascript:x\">d</a></dd></div></dl>";
     let imported = html_to_carve(
         html,
         &HtmlImportOptions {
@@ -94,5 +99,54 @@ fn raw_empty_terms_retract_descendant_loss_reports() {
         carve::HtmlImportDiagnosticCode::AttributeDropped
             | carve::HtmlImportDiagnosticCode::ElementUnwrapped
     )));
-    assert!(stable(html).contains("href=\"javascript:x\""));
+    let rendered = stable(html);
+    for (name, value) in [("onclick", "x"), ("style", "color:red")] {
+        assert!(rendered.contains(&format!("{name}=\"{value}\"")));
+        assert!(imported.report.diagnostics.iter().any(|row| {
+            row.code == carve::HtmlImportDiagnosticCode::AttributePreserved
+                && row.path.as_deref() == Some("/dl[1]")
+                && row.message.contains(name)
+        }));
+    }
+    assert!(rendered.contains("href=\"javascript:x\""));
+}
+
+#[test]
+fn a_break_only_term_is_not_an_empty_term() {
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        let imported =
+            html_to_carve("<dl><dt><br></dt><dd>definition body</dd></dl>", &options).unwrap();
+        assert_eq!(
+            to_html(&imported.value),
+            "<dl>\n  <dt><br>\n</dt>\n  <dd>definition body</dd>\n</dl>"
+        );
+        assert!(imported.report.diagnostics.is_empty());
+    }
+    stable("<dl><dt><br></dt><dd>definition body</dd></dl>");
+}
+
+#[test]
+fn preformatted_text_keeps_its_whitespace() {
+    let html = "<pre>a  <b>b</b>\n  c</pre>";
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let options = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        let pre = html_to_carve(html, &options).unwrap();
+        assert!(to_html(&pre.value).contains("a  b\n  c"));
+    }
+    assert!(stable(html).contains("a  b\n  c"));
 }

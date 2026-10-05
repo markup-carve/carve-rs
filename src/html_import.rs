@@ -3705,7 +3705,11 @@ impl<'a> Importer<'a> {
                 // diagnostic states the role that did not survive.
                 self.diag(
                     HtmlImportDiagnosticCode::ElementUnwrapped,
-                    "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into(),
+                    if dropped_term {
+                        "A definition whose empty term was dropped kept its content as blocks ahead of the definition list".into()
+                    } else {
+                        "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into()
+                    },
                     HtmlImportSeverity::Warning,
                     &p,
                     node,
