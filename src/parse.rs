@@ -5976,9 +5976,9 @@ fn rebase_overindented_blocks(
         while nested_columns.last().is_some_and(|column| base < *column) {
             nested_columns.pop();
         }
-        if let Some(column) = marker_content_col(&lines[i]) {
+        if let Some(column) = marker_content_col_at(&lines[i], base) {
             if !include_sublists || base == 0 || !nested_columns.is_empty() {
-                let marker = detect_list_marker_full(&lines[i]);
+                let marker = detect_list_marker_full_at(&lines[i], base);
                 let colon_folds = marker.as_ref().is_some_and(|marker| {
                     detect_container_open(marker.content).is_some()
                         || detect_line_block_open(marker.content).is_some()
@@ -8244,15 +8244,35 @@ fn leading_ws(line: &str) -> usize {
 // Visual column of the leading whitespace, expanding tabs to the next
 // CommonMark tab stop (a multiple of 4). For space-only indentation this
 // equals leading_ws(). Used for list-nesting comparisons.
+// COUNTED work probes for carve-rs#2301. Test-only, so a release build carries
+// nothing.
+#[cfg(test)]
+thread_local! {
+    /// Leading-whitespace bytes `indent_columns` has stepped over.
+    pub(crate) static INDENT_BYTES_WALKED: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+    /// Lines pushed into a collected item body, counting every re-collection.
+    pub(crate) static BODY_LINES_COLLECTED: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+}
+
 fn indent_columns(line: &str) -> usize {
     let mut col = 0;
+    #[cfg(test)]
+    let mut walked = 0u64;
     for b in line.bytes() {
         match b {
             b' ' => col += 1,
             b'\t' => col += 4 - (col % 4),
             _ => break,
         }
+        #[cfg(test)]
+        {
+            walked += 1;
+        }
     }
+    #[cfg(test)]
+    INDENT_BYTES_WALKED.with(|c| c.set(c.get() + walked));
     col
 }
 
@@ -11882,13 +11902,18 @@ fn marker_attrs_width(line: &str, marker: &ListMarker<'_>) -> usize {
 /// (`-{#k} [x] ` -> 2, markup-carve/carve#1701).
 /// Returns `None` when `line` is not a list marker.
 fn marker_content_col(line: &str) -> Option<usize> {
-    let m = detect_list_marker_full(line)?;
+    marker_content_col_at(line, indent_columns(line))
+}
+
+/// `marker_content_col` for a caller holding the line's indentation already.
+fn marker_content_col_at(line: &str, indent: usize) -> Option<usize> {
+    let m = detect_list_marker_full_at(line, indent)?;
     if m.checked.is_some() {
         return Some(m.indent + 2);
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
     Some(
-        indent_columns(line)
+        indent
             + content_off
                 .saturating_sub(leading_ws(line))
                 .saturating_sub(marker_attrs_width(line, &m)),
@@ -12013,17 +12038,18 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
             prev_blank = true;
             continue;
         }
+        let indent = indent_columns(line);
         // A marker at the sub-list's own column opens a sibling item or a
         // sibling sub-list, whose content column then applies (carve-rs#1846).
-        if indent_columns(line) == 0 {
-            if let Some(col) = marker_content_col(line) {
+        if indent == 0 {
+            if let Some(col) = marker_content_col_at(line, indent) {
                 inner_content_col = col;
                 prev_blank = false;
                 continue;
             }
         }
         if prev_blank
-            && indent_columns(line) < inner_content_col
+            && indent < inner_content_col
             && !continuation_line_opens_sub_block(line, &lines[i + 1..])
         {
             return true;
@@ -12034,7 +12060,15 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
 }
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
-    let indent = indent_columns(line);
+    detect_list_marker_full_at(line, indent_columns(line))
+}
+
+/// `detect_list_marker_full` for a caller that has already measured the line's
+/// indentation. Every scan below starts past that run, so re-measuring it is
+/// pure repetition - and a nested list's line is scanned once per enclosing
+/// item, which is what made that repetition cost the line's whole indent again
+/// at every level (carve-rs#2301).
+fn detect_list_marker_full_at(line: &str, indent: usize) -> Option<ListMarker<'_>> {
     if let Some(task) = detect_task(line) {
         return Some(ListMarker {
             indent,
@@ -13288,8 +13322,9 @@ fn collect_indented_block_mapped_with_columns(
     if let Some(previous) = cur.pos.checked_sub(1) {
         let mut lead = cur.lines.at(previous);
         let mut offset = 0;
-        while let Some(marker) = detect_list_marker_full(lead) {
-            let Some(width) = marker_content_col(lead) else {
+        while let Some(marker) = detect_list_marker_full_at(lead, indent_columns(lead)) {
+            let lead_indent = marker.indent;
+            let Some(width) = marker_content_col_at(lead, lead_indent) else {
                 break;
             };
             let column = offset + width;
@@ -13517,14 +13552,14 @@ fn collect_indented_block_mapped_with_columns(
                 nested_fence = None;
             }
         } else if fence.is_none() && comment_fence.is_none() && colon_open.is_empty() {
-            if let Some(marker) = detect_list_marker_full(line) {
+            if let Some(marker) = detect_list_marker_full_at(line, indent) {
                 while nested_item_columns
                     .last()
                     .is_some_and(|&(base, _)| base >= marker.indent)
                 {
                     nested_item_columns.pop();
                 }
-                if let Some(column) = marker_content_col(line) {
+                if let Some(column) = marker_content_col_at(line, indent) {
                     nested_item_columns.push((marker.indent, column));
                 }
             } else {
@@ -13576,7 +13611,7 @@ fn collect_indented_block_mapped_with_columns(
                 }
             }
         }
-        let is_marker = detect_list_marker_full(line).is_some();
+        let is_marker = detect_list_marker_full_at(line, indent).is_some();
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
@@ -13794,6 +13829,8 @@ fn collect_indented_block_mapped_with_columns(
     if lines.last().is_some_and(|line| line.is_empty()) {
         source.push('\n');
     }
+    #[cfg(test)]
+    BODY_LINES_COLLECTED.with(|c| c.set(c.get() + lines.len() as u64));
     debug_assert_eq!(reached.len(), lines.len());
     MappedSource {
         col_map,
@@ -24976,7 +25013,7 @@ mod container_comment_dedent_steps {
             .stack_size(16 * 1024 * 1024)
             .spawn(move || {
                 CONTAINER_DEDENT_STEPS.with(|c| c.set(0));
-                let _ = crate::to_html(&src);
+                let _ = crate::parse(&src);
                 CONTAINER_DEDENT_STEPS.with(|c| c.get())
             })
             .expect("spawn the counting thread")
@@ -25146,7 +25183,7 @@ mod quote_prefix_calls {
             .stack_size(64 * 1024 * 1024)
             .spawn(move || {
                 QUOTE_PREFIX_CALLS.with(|c| c.set(0));
-                let _ = crate::to_html(&src);
+                let _ = crate::parse(&src);
                 QUOTE_PREFIX_CALLS.with(|c| c.get())
             })
             .expect("spawn the counting thread")
@@ -26285,6 +26322,117 @@ mod shared_colon_work_tests {
                     "{source}"
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod nested_list_indent_work {
+    //! COUNTED guard on the nested-list indentation walk (carve-rs#2301).
+    //!
+    //! Counts, not durations: a count is a property of the algorithm and
+    //! reproduces on any machine under any load, while a duration describes the
+    //! machine that took it.
+
+    use super::{BODY_LINES_COLLECTED, INDENT_BYTES_WALKED, MAX_NESTING_DEPTH};
+
+    /// A `depth`-level ladder of `- x`, then `siblings` items at the deepest level.
+    fn ladder(depth: usize, siblings: usize) -> String {
+        let mut out = String::new();
+        for level in 0..depth {
+            out.push_str(&"  ".repeat(level));
+            out.push_str("- x\n");
+        }
+        for _ in 0..siblings {
+            out.push_str(&"  ".repeat(depth));
+            out.push_str("- y\n");
+        }
+        out
+    }
+
+    /// `(indent bytes walked, body lines collected)` over one parse of `src`, on
+    /// its own deep-stacked thread so the tallies cannot pick up another test's.
+    fn work_for(src: String) -> (u64, u64) {
+        std::thread::Builder::new()
+            .stack_size(256 * 1024 * 1024)
+            .spawn(move || {
+                INDENT_BYTES_WALKED.with(|c| c.set(0));
+                BODY_LINES_COLLECTED.with(|c| c.set(0));
+                let _ = crate::parse(&src);
+                (
+                    INDENT_BYTES_WALKED.with(|c| c.get()),
+                    BODY_LINES_COLLECTED.with(|c| c.get()),
+                )
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// Work charged to ONE added sibling line at `depth`, isolating the ladder.
+    fn per_sibling(depth: usize, siblings: usize) -> (f64, f64) {
+        let (bare_bytes, bare_lines) = work_for(ladder(depth, 0));
+        let (full_bytes, full_lines) = work_for(ladder(depth, siblings));
+        (
+            (full_bytes as f64 - bare_bytes as f64) / siblings as f64,
+            (full_lines as f64 - bare_lines as f64) / siblings as f64,
+        )
+    }
+
+    /// The indent walking a sibling line costs is bounded by the square of its
+    /// depth, with a ceiling the pre-fix parser could not meet: it charged
+    /// about 11.1 bytes per depth squared, and this allows 6.
+    #[test]
+    fn a_deep_sibling_line_walks_a_bounded_multiple_of_its_depth_squared() {
+        for depth in [50usize, 100, 200] {
+            let (bytes, _) = per_sibling(depth, 100);
+            let ratio = bytes / (depth * depth) as f64;
+            assert!(
+                ratio <= 6.0,
+                "depth {depth}: {bytes:.0} indent bytes per sibling line is {ratio:.2} per \
+                 depth squared, over the ceiling of 6"
+            );
+        }
+    }
+
+    /// The re-collection count per line is the enclosing-item count and no
+    /// more, so nothing above it multiplies the work again.
+    #[test]
+    fn a_sibling_line_is_collected_once_per_enclosing_item() {
+        for depth in [50usize, 100, 200] {
+            let (_, collections) = per_sibling(depth, 100);
+            let cap = depth.min(MAX_NESTING_DEPTH) as f64;
+            assert!(
+                collections <= cap,
+                "depth {depth}: {collections:.1} collections per sibling line, over {cap}"
+            );
+        }
+    }
+
+    /// At a FIXED depth the cost is linear in the line count: the work charged
+    /// to one sibling line does not depend on how many siblings there are.
+    #[test]
+    fn at_a_fixed_depth_the_cost_per_line_is_flat() {
+        let (hundred, _) = per_sibling(150, 100);
+        let (three_hundred, _) = per_sibling(150, 300);
+        let ratio = three_hundred / hundred;
+        assert!(
+            (0.95..=1.05).contains(&ratio),
+            "per-line indent work moved by {ratio:.3}x between 100 and 300 sibling lines \
+             ({hundred:.0} against {three_hundred:.0} bytes)"
+        );
+    }
+
+    #[test]
+    #[ignore = "a measurement, not a guard"]
+    fn measure() {
+        for depth in [25usize, 50, 100, 150, 199, 200, 201, 250] {
+            let (bytes, collections) = per_sibling(depth, 100);
+            println!(
+                "depth {depth}: {bytes:.0} indent bytes ({:.2} per depth squared), \
+                 {collections:.1} collections per sibling line",
+                bytes / (depth * depth) as f64,
+            );
         }
     }
 }
