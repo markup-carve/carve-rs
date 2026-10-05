@@ -19,7 +19,7 @@ use crate::ast::{
 };
 use crate::extension::HeadingIdOptions;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
-use crate::parse::slugify_parse;
+use crate::parse::{normalize_heading_label, slugify_parse};
 use crate::render::{render_attrs, render_attrs_without_keys};
 
 /// Sentinel name for the rewritten carrier node.
@@ -38,7 +38,7 @@ pub(crate) const CARRIER: &str = "carve-glossary";
 /// ```
 #[derive(Debug, Default)]
 pub struct Glossary {
-    /// Defined term slugs across every `::: glossary` block.
+    /// Defined term keys across every `::: glossary` block.
     defined: RefCell<BTreeSet<String>>,
     /// Per-render set giving the id to the first occurrence of a duplicated slug.
     id_seen: RefCell<BTreeSet<String>>,
@@ -95,6 +95,12 @@ fn term_slug(term: &[InlineNode]) -> String {
     slugify_parse(&inline_text(term), HeadingIdOptions::LOWERCASE)
 }
 
+/// A reference reaches an entry by its exact text after whitespace collapse and
+/// NFC (CARVE-P9R-010); only the emitted id keeps the lowercased slug.
+fn term_key(term: &[InlineNode]) -> String {
+    normalize_heading_label(&inline_text(term))
+}
+
 /// Prepend `base` as the leading class of (a clone of) `attrs`.
 fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
     let mut a = attrs.clone().unwrap_or_default();
@@ -122,7 +128,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
                     if let BlockNode::DefinitionList(dl) = child {
                         for item in &dl.items {
                             for term in &item.terms {
-                                defined.insert(term_slug(term));
+                                defined.insert(term_key(term));
                             }
                         }
                     }
@@ -174,9 +180,9 @@ fn render_term(
     defined: &BTreeSet<String>,
 ) -> String {
     let word = ctx.render_inlines(&node.children);
-    let slug = term_slug(&node.children);
     let attrs = Some(with_base_class(&node.attrs, "term"));
-    if defined.contains(&slug) {
+    if defined.contains(&term_key(&node.children)) {
+        let slug = term_slug(&node.children);
         // The structural glossary target wins; drop any author `href`
         // (case-insensitively) so the <a> never has two.
         let attr_str = render_attrs_without_keys(&attrs, &["href"]);

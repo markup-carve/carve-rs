@@ -269,8 +269,10 @@ assert!(html.contains("<dt id=\"gloss-http\">HTTP</dt>"));
 ```
 
 - The id slug is the heading-id slug of the term's plain text, lowercased
-  (`HTTP` -> `gloss-http`); `:term[word]` slugs its own bracket text the same
-  way, so the two sides meet without a separate key.
+  (`HTTP` -> `gloss-http`).
+- `:term[word]` reaches an entry only when its bracket text matches the term
+  exactly, after whitespace collapsing and NFC: `:term[http]` does not reach
+  `:: HTTP` and degrades like an undefined term.
 - The `<dl>` renders in source order (no sort); on a duplicate slug the first
   entry wins the id. A single-paragraph definition collapses to inline content.
 - `:term[word]` with no matching entry degrades to `<span class="term">word</span>`
