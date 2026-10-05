@@ -371,6 +371,52 @@ fn parent_explicit_ids_win_a_collision_and_the_child_crossref_follows_the_rename
 }
 
 #[test]
+fn a_child_crossref_follows_the_first_renamed_copy() {
+    let result = expand(
+        "{#d}\n# Parent\n\n{{ c }}",
+        &[("c", "{#d}\n# One\n\n{#d}\n# Two\n\nSee </#d>.")],
+    );
+    assert_eq!(
+        result.rules(),
+        vec!["include-heading-id-rename", "include-heading-id-rename"]
+    );
+    assert!(
+        result.html.contains("<section id=\"d-3\">"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<a href=\"#d-2\">One</a>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn ids_differing_only_in_case_do_not_collide_and_each_crossref_finds_its_own() {
+    let result = expand(
+        "{#Tip}\n# Parent\n\n{{ c }}\n\n</#Tip> and </#tip>",
+        &[("c", "{#tip}\n# Child")],
+    );
+    assert!(result.rules().is_empty(), "{:?}", result.rules());
+    assert!(
+        result
+            .html
+            .contains("<a href=\"#Tip\">Parent</a> and <a href=\"#tip\">Child</a>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_section_name_matches_its_heading_case_exactly() {
+    let result = expand("{{ c #intro }}", &[("c", "# Intro\n\nBody")]);
+    assert!(!result.html.contains("Body"), "{}", result.html);
+    let result = expand("{{ c #Intro }}", &[("c", "# Intro\n\nBody")]);
+    assert!(result.html.contains("Body"), "{}", result.html);
+}
+
+#[test]
 fn detects_a_cycle_through_differing_path_spellings_when_the_resolver_supplies_ids() {
     let resolver = MapResolver::new(&[("a", "{{ ./b }}"), ("b", "{{ a }}")]).with_canonical_ids();
     let result = expand_with("{{ a }}", &resolver, IncludeOptions::new());

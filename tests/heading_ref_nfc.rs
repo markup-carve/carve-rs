@@ -77,9 +77,11 @@ fn the_heading_text_keeps_the_author_s_spelling() {
 }
 
 #[test]
-fn case_and_whitespace_folding_still_apply() {
-    let out = html("# Getting  Started\n\nsee [getting started][]\n");
+fn whitespace_folding_still_applies_and_case_does_not_fold() {
+    let out = html("# Getting  Started\n\nsee [Getting Started][]\n");
     assert!(out.contains("<a href=\"#Getting-Started\""), "{out}");
+    let out = html("# Getting  Started\n\nsee [getting started][]\n");
+    assert!(out.contains("see [getting started][]"), "{out}");
 }
 
 #[test]

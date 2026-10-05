@@ -212,9 +212,8 @@ fn carries_no_code_styling_in_ansi() {
 #[test]
 fn feeds_the_auto_heading_id_so_a_crossref_resolves() {
     // It renders as visible prose, so it must slug like a code span does.
-    // Ids are case-preserving; the crossref folds case-insensitively.
     assert_eq!(
-        h("# !`Cat`\n\nSee </#cat>"),
+        h("# !`Cat`\n\nSee </#Cat>"),
         "<section id=\"Cat\">\n  <h1>Cat</h1>\n  <p>See <a href=\"#Cat\">Cat</a></p>\n</section>"
     );
 }

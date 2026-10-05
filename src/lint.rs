@@ -68,6 +68,45 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     lint_with_recovery(source, options).0
 }
 
+/// Rewrite each reference that misses its target only by case to the target's
+/// exact spelling, as `carve fmt --migrate` does before formatting.
+///
+/// Covers `</#id>` cross-references and `[text][label]` / `[text][]` reference
+/// links (PART 9R R1). A reference is rewritten only when exactly one target
+/// matches it case-insensitively; with several, it is left as written and
+/// [`lint_carve_with_options`] reports it.
+pub fn migrate_case_only_references(source: &str, options: &Options<'_>) -> String {
+    let mut parse_options = Options {
+        positions: true,
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ascii_heading_ids: options.ascii_heading_ids,
+        ..Options::default()
+    };
+    parse_options.extensions.clone_from(&options.extensions);
+    let doc = parse_with_options(source, &parse_options);
+    let byte_at = codepoint_to_byte_map(source);
+    let to_byte = |offset: usize| -> usize {
+        match &byte_at {
+            Some(map) => map.get(offset).copied().unwrap_or(source.len()),
+            None => offset.min(source.len()),
+        }
+    };
+    let mut edits = reference_rules::case_only_edits(source, &doc, options, &to_byte);
+    edits.sort_by_key(|&(start, end, _)| (start, end));
+    let mut out = String::with_capacity(source.len());
+    let mut at = 0;
+    for (start, end, replacement) in edits {
+        if start < at {
+            continue;
+        }
+        out.push_str(&source[at..start]);
+        out.push_str(&replacement);
+        at = end;
+    }
+    out.push_str(&source[at..]);
+    out
+}
+
 pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<LintWarning>, bool) {
     let mut parse_options = Options {
         positions: true,

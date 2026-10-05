@@ -136,7 +136,7 @@ fn a_crossref_to_an_id_on_another_element_names_it() {
             "table",
             "tbl",
         ),
-        ("[x]{#Spot}\n\nSee </#spot>.\n", "span", "Spot"),
+        ("[x]{#Spot}\n\nSee </#Spot>.\n", "span", "Spot"),
     ] {
         let warnings = lint_carve(source);
         assert_eq!(

@@ -36,14 +36,12 @@ fn a_resolved_crossref_carries_the_destination() {
 }
 
 #[test]
-fn the_authored_spelling_is_kept_beside_the_resolved_id() {
-    // Ids resolve case-insensitively, so `href` alone cannot say which spelling
-    // the author wrote - which is why section 3a keeps both.
-    let lower = crossref_fields("# Intro\n\nSee </#intro>.\n");
-    let upper = crossref_fields("# Intro\n\nSee </#Intro>.\n");
-    assert_eq!(lower[0].1, upper[0].1);
-    assert_ne!(lower[0].0, upper[0].0);
-    assert_eq!(lower[0].0, "intro");
+fn a_crossref_that_differs_only_in_case_does_not_resolve() {
+    // Ids compare case exactly (`CARVE-P9R-010`); the authored spelling stays.
+    assert_eq!(
+        crossref_fields("# Intro\n\nSee </#intro>.\n"),
+        vec![("intro".to_string(), None)]
+    );
 }
 
 #[test]
@@ -58,7 +56,7 @@ fn an_unresolved_crossref_has_no_destination() {
 fn a_crossref_inside_a_container_resolves_too() {
     // The fill walk has to reach every block that can hold inlines; a list item
     // is the shape that catches a walk written for paragraphs only.
-    let doc = carve::parse("# Intro\n\n- see </#intro>\n");
+    let doc = carve::parse("# Intro\n\n- see </#Intro>\n");
     let json = carve::to_json(&doc);
     assert!(json.contains(r##""href":"#Intro""##), "{json}");
 }
@@ -78,7 +76,7 @@ fn the_wire_survives_a_round_trip() {
 fn html_is_unchanged_by_the_new_field() {
     // The renderers resolve through their own index, which is built by the same
     // function this field is filled from - so the two cannot disagree.
-    let html = carve::to_html("# Intro\n\nSee </#intro> and </#Nope>.\n");
+    let html = carve::to_html("# Intro\n\nSee </#Intro> and </#Nope>.\n");
     assert!(html.contains(r##"<a href="#Intro">Intro</a>"##), "{html}");
     assert!(html.contains("&lt;/#Nope&gt;"), "{html}");
 }

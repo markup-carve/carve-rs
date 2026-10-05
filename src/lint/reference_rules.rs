@@ -79,6 +79,7 @@ pub(super) fn collect(
         .collect();
     let mut referenced = BTreeSet::new();
     let id_kinds = explicit_id_kinds(doc);
+    let targets = CaseTargets::new(doc, options);
     let mut fragment_links = Vec::new();
     while let Some((inline, depth)) = inlines.pop() {
         if let Some(pos) = inline.pos() {
@@ -87,9 +88,14 @@ pub(super) fn collect(
         match inline {
             InlineNode::CrossRef(reference) if reference.href.is_none() => {
                 let target = &reference.target;
-                let message = match id_kinds.get(&fold_id(target)) {
+                let case_only = targets.crossref(target);
+                let message = match id_kinds.get(target) {
                     Some((id, kind)) => format!(
                         "Cross-reference </#{target}> names the id \"{id}\", which is on a {kind}; a cross-reference reaches only headings and numbered captions, so it renders as the literal text \"</#{target}>\". Link to it with [text](#{id})."
+                    ),
+                    None if !case_only.is_empty() => format!(
+                        "Cross-reference </#{target}> matches no id; {}, and cross-references are case-sensitive, so it renders as the literal text \"</#{target}>\".",
+                        differ_only_in_case(&case_only)
                     ),
                     None => format!("Cross-reference </#{target}> has no matching heading id."),
                 };
@@ -101,13 +107,25 @@ pub(super) fn collect(
                     out,
                 );
             }
-            InlineNode::Link(link) if link.ref_label.is_some() && link.href.is_empty() => report(
-                link.pos.clone(),
-                "unresolved-reference-link",
-                "Reference link has no matching definition or heading.".into(),
-                to_byte,
-                out,
-            ),
+            InlineNode::Link(link) if link.ref_label.is_some() && link.href.is_empty() => {
+                let case_only = targets.reference(link);
+                let message = if case_only.is_empty() {
+                    "Reference link has no matching definition or heading.".into()
+                } else {
+                    format!(
+                        "Reference link {} matches no definition or heading; {}, and reference labels are case-sensitive, so it renders as literal text.",
+                        link.raw_ref.as_deref().unwrap_or_default(),
+                        differ_only_in_case(&case_only)
+                    )
+                };
+                report(
+                    link.pos.clone(),
+                    "unresolved-reference-link",
+                    message,
+                    to_byte,
+                    out,
+                );
+            }
             InlineNode::Link(link) if link.href.starts_with('#') && !link.from_crossref => {
                 fragment_links.push((link.href.as_str(), link.pos.clone()));
             }
@@ -202,18 +220,223 @@ pub(super) fn collect(
     }
 }
 
-/// Cross-references resolve case-insensitively, so the lookup folds the same way.
+/// Every lookup compares case exactly; this fold only finds the near misses a
+/// diagnostic or `fmt --migrate` names.
 fn fold_id(id: &str) -> String {
     id.chars().flat_map(char::to_lowercase).collect()
 }
 
-/// The first element carrying each id, keyed by folded id, named by node kind.
+/// A target a reference misses only by case.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum CaseMatch {
+    Id(String),
+    Label(String),
+    Heading(String),
+}
+
+impl CaseMatch {
+    pub(super) fn spelling(&self) -> &str {
+        match self {
+            Self::Id(s) | Self::Label(s) | Self::Heading(s) => s,
+        }
+    }
+}
+
+fn differ_only_in_case(matches: &[CaseMatch]) -> String {
+    let noun = |m: &CaseMatch| match m {
+        CaseMatch::Id(_) => "id",
+        CaseMatch::Label(_) => "label",
+        CaseMatch::Heading(_) => "heading",
+    };
+    let quoted = |m: &CaseMatch| format!("\"{}\"", m.spelling());
+    match matches {
+        [only] => format!("the {} {} differs only in case", noun(only), quoted(only)),
+        [first, rest @ ..] if rest.iter().all(|m| noun(m) == noun(first)) => format!(
+            "the {}s {} differ only in case",
+            noun(first),
+            matches.iter().map(quoted).collect::<Vec<_>>().join(" and ")
+        ),
+        _ => format!(
+            "{} differ only in case",
+            matches
+                .iter()
+                .map(|m| format!("the {} {}", noun(m), quoted(m)))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        ),
+    }
+}
+
+/// The targets a reference can reach, for finding the ones it misses by case.
+pub(super) struct CaseTargets {
+    crossref_ids: Vec<String>,
+    labels: Vec<String>,
+    headings: Vec<String>,
+}
+
+impl CaseTargets {
+    pub(super) fn new(doc: &Document, options: &Options<'_>) -> Self {
+        let id_opts = options.heading_id_options();
+        let crossref_ids = crate::parse::crossref_index_for_document(doc, id_opts)
+            .ids()
+            .map(str::to_owned)
+            .collect();
+        let headings = crate::parse::heading_reference_index_for_document(doc, id_opts)
+            .heading_texts()
+            .map(str::to_owned)
+            .collect();
+        let mut labels = BTreeSet::new();
+        let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
+        for body in doc.footnote_defs.values() {
+            blocks.extend(body.iter().map(|b| (b, 0)));
+        }
+        let mut inlines = Vec::new();
+        while let Some((block, depth)) = blocks.pop() {
+            if let BlockNode::LinkReferenceDefinition(def) = block {
+                labels.insert(label_key(&def.label));
+            }
+            push_block_children(block, depth, &mut blocks, &mut inlines);
+        }
+        Self {
+            crossref_ids,
+            labels: labels.into_iter().collect(),
+            headings,
+        }
+    }
+
+    /// Ids a `</#target>` misses only by case.
+    pub(super) fn crossref(&self, target: &str) -> Vec<CaseMatch> {
+        let folded = fold_id(target);
+        self.crossref_ids
+            .iter()
+            .filter(|id| *id != target && fold_id(id) == folded)
+            .map(|id| CaseMatch::Id(id.clone()))
+            .collect()
+    }
+
+    /// Definition labels, and for a collapsed `[text][]` heading texts, that an
+    /// unresolved reference link misses only by case.
+    pub(super) fn reference(&self, link: &Link) -> Vec<CaseMatch> {
+        let Some(label) = link.ref_label.as_deref() else {
+            return Vec::new();
+        };
+        let key = label_key(label);
+        let folded = fold_id(&key);
+        let mut found: Vec<_> = self
+            .labels
+            .iter()
+            .filter(|l| **l != key && fold_id(l) == folded)
+            .map(|l| CaseMatch::Label(l.clone()))
+            .collect();
+        if crate::parse::is_collapsed_reference(link) {
+            let text = crate::parse::normalize_heading_label(label);
+            let folded = fold_id(&text);
+            found.extend(
+                self.headings
+                    .iter()
+                    .filter(|h| **h != text && fold_id(h) == folded)
+                    .map(|h| CaseMatch::Heading(h.clone())),
+            );
+        }
+        found
+    }
+}
+
+/// The source edits `fmt --migrate` makes: each reference whose ONE
+/// case-insensitive match is spelled differently takes that spelling. A
+/// reference with several such matches is left for lint to report.
+pub(super) fn case_only_edits(
+    source: &str,
+    doc: &Document,
+    options: &Options<'_>,
+    to_byte: &dyn Fn(usize) -> usize,
+) -> Vec<(usize, usize, String)> {
+    let targets = CaseTargets::new(doc, options);
+    let mut blocks: Vec<_> = doc.children.iter().map(|b| (b, 0)).collect();
+    for body in doc.footnote_defs.values() {
+        blocks.extend(body.iter().map(|b| (b, 0)));
+    }
+    let mut inlines = Vec::new();
+    while let Some((block, depth)) = blocks.pop() {
+        push_block_children(block, depth, &mut blocks, &mut inlines);
+    }
+    let mut edits = Vec::new();
+    while let Some((inline, depth)) = inlines.pop() {
+        // (pos, the source the node spans, its name part, the rewrite, the target)
+        let edit = match inline {
+            InlineNode::CrossRef(reference) if reference.href.is_none() => {
+                let target = reference.target.as_str();
+                match targets.crossref(target).as_slice() {
+                    [only] => Some((
+                        reference.pos.as_ref(),
+                        format!("</#{target}>"),
+                        target,
+                        format!("</#{}>", only.spelling()),
+                        only.spelling().to_owned(),
+                    )),
+                    _ => None,
+                }
+            }
+            InlineNode::Link(link) if link.ref_label.is_some() && link.href.is_empty() => {
+                let label = link.ref_label.as_deref().unwrap_or_default();
+                let raw = link.raw_ref.clone().unwrap_or_default();
+                // `raw_ref` may end in a trailing attribute block, which stays.
+                let rewrite = |needle: String, replacement: String| {
+                    let at = if crate::parse::is_collapsed_reference(link) {
+                        raw.starts_with(&needle).then_some(0)
+                    } else {
+                        raw.rfind(&needle)
+                    }?;
+                    let rest = &raw[at + needle.len()..];
+                    (rest.is_empty() || rest.starts_with('{'))
+                        .then(|| format!("{}{replacement}{rest}", &raw[..at]))
+                };
+                match targets.reference(link).as_slice() {
+                    [only] => {
+                        let spelling = only.spelling();
+                        let new = if crate::parse::is_collapsed_reference(link) {
+                            rewrite(format!("[{label}][]"), format!("[{spelling}][]"))
+                        } else {
+                            rewrite(format!("][{label}]"), format!("][{spelling}]"))
+                        };
+                        new.map(|new| {
+                            (
+                                link.pos.as_ref(),
+                                raw.clone(),
+                                label,
+                                new,
+                                spelling.to_owned(),
+                            )
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        // Only a case change (plus the whitespace and NFC normalization lookup
+        // applies) is safe to write back: it cannot open new markup.
+        if let Some((Some(pos), old, name, new, spelling)) = edit {
+            let (start, end) = (to_byte(pos.start_offset), to_byte(pos.end_offset));
+            if source.get(start..end) == Some(old.as_str())
+                && fold_id(&crate::parse::normalize_heading_label(name))
+                    == fold_id(&crate::parse::normalize_heading_label(&spelling))
+            {
+                edits.push((start, end, new));
+            }
+        }
+        push_inline_children(inline, depth, &mut inlines);
+    }
+    edits
+}
+
+/// The first element carrying each id, named by node kind.
 fn explicit_id_kinds(doc: &Document) -> BTreeMap<String, (String, String)> {
     let mut kinds = BTreeMap::new();
     let mut visit = |node_type: &'static str, attrs: &Attrs, _: Option<Pos>| {
         if let Some(id) = &attrs.id {
             kinds
-                .entry(fold_id(id))
+                .entry(id.clone())
                 .or_insert_with(|| (id.clone(), node_type.replace('_', " ")));
         }
     };

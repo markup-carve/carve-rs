@@ -147,13 +147,12 @@ fn a_plain_label_derives_to_itself() {
 }
 
 #[test]
-fn a_label_that_differs_only_in_case_still_publishes_what_the_author_wrote() {
-    // DERIVED, NOT NORMALIZED. Case folding is MATCHING's job. Publishing the
-    // folded key here would rewrite this label - and every other plain one in
-    // every document - to make a markup-bearing one right.
+fn a_label_that_differs_only_in_case_does_not_resolve() {
+    // Matching compares case exactly (`CARVE-P9R-010`), and the unresolved
+    // reference still publishes what the author wrote.
     let (r, _, href) = reference("# getting started\n\n[Getting Started][]\n");
     assert_eq!(r.as_deref(), Some("Getting Started"));
-    assert_eq!(href, "#getting-started");
+    assert_eq!(href, "");
 }
 
 #[test]

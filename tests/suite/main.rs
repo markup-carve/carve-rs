@@ -10,6 +10,8 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../exact_case_lookups.rs"]
+mod exact_case_lookups;
 #[path = "../table_body_source.rs"]
 mod table_body_source;
 #[path = "../table_width_precision.rs"]

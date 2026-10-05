@@ -37,7 +37,16 @@ carve --plain README.crv            # plain text
 carve --ansi README.crv             # ANSI-colored terminal text
 echo '# Hello' | carve              # render from stdin
 carve merge base.crv ours.crv theirs.crv # structural three-way merge
+carve fmt --write notes.crv         # rewrite in canonical form
+carve fmt --migrate --write old.crv # also fix references that miss only by case
 ```
+
+`carve fmt --migrate` rewrites a `</#id>` cross-reference or a `[text][label]` /
+`[text][]` reference whose target differs only in case to the target's exact
+spelling. Every name lookup compares case exactly, so these references
+otherwise render as literal text. A reference that matches several targets
+case-insensitively is left alone and `carve lint` reports it. The library
+function is `migrate_case_only_references`.
 
 The library exports `merge_ast`, `merge_ast_with_resolver`, `create_ast_patch`,
 and `apply_ast_patch` for the same workflow over typed `Document` values. A

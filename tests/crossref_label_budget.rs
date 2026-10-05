@@ -151,7 +151,7 @@ fn every_target_scales_the_budget_from_the_same_document() {
 #[test]
 fn an_ordinary_document_renders_every_label_in_full() {
     let source =
-        "# The Long Heading Here\n\nsee </#the-long-heading-here> and </#the-long-heading-here>\n";
+        "# The Long Heading Here\n\nsee </#The-Long-Heading-Here> and </#The-Long-Heading-Here>\n";
     let doc = carve::parse(source);
     let html = carve::to_html(source);
     assert_eq!(html.matches("The Long Heading Here").count(), 3);

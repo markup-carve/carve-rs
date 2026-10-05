@@ -470,14 +470,7 @@ fn resolve_numbered_crossref<'a>(
     by_id: &'a BTreeMap<String, Entry>,
     target: &str,
 ) -> Option<(String, &'a Entry)> {
-    if let Some(entry) = by_id.get(target) {
-        return Some((target.to_string(), entry));
-    }
-    let folded_target = case_fold(target);
-    by_id
-        .iter()
-        .find(|(id, _)| case_fold(id) == folded_target)
-        .map(|(id, entry)| (id.clone(), entry))
+    by_id.get(target).map(|entry| (target.to_string(), entry))
 }
 
 /// NUMBERING, PREFIXING AND JOINING REMAIN THE EXTENSION'S OWN BUSINESS. R4
@@ -503,16 +496,6 @@ fn numbered_crossref_label(entry: &Entry, opts: &HeadingNumbersOptions) -> Vec<I
         }
         CrossrefStyle::Title => entry.title.clone(),
     }
-}
-
-fn case_fold(s: &str) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        for lc in ch.to_lowercase() {
-            out.push(lc);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
