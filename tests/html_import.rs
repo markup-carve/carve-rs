@@ -1174,3 +1174,36 @@ fn an_attributed_empty_paragraph_is_dropped_with_a_row() {
         ]
     );
 }
+
+#[test]
+fn a_long_rowspan_chain_retains_its_header_origin() {
+    let count = 2048;
+    let html = format!(
+        "<table><tbody><tr><th rowspan=\"{count}\">R</th><td>A</td></tr>{}</tbody><tfoot><tr><td>F</td></tr></tfoot></table>",
+        "<tr><td>B</td></tr>".repeat(count - 1),
+    );
+    let result = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
+    let carve::BlockNode::Table(table) = &result.value.children[0] else {
+        panic!("expected table")
+    };
+    let groups = table.row_groups.as_ref().unwrap();
+    assert_eq!(groups.bodies[0].row_head_columns, Some(1));
+    assert_eq!(groups.bodies[0].body_rows, count);
+}
+
+#[test]
+fn a_long_sequence_of_empty_bodies_retains_its_boundaries() {
+    let count = 1024;
+    let html = format!(
+        "<table>{}<tbody><tr><td>Z</td></tr></tbody></table>",
+        "<tbody></tbody>".repeat(count),
+    );
+    let result = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
+    let carve::BlockNode::Table(table) = &result.value.children[0] else {
+        panic!("expected table")
+    };
+    let bodies = &table.row_groups.as_ref().unwrap().bodies;
+    assert_eq!(bodies.len(), count + 1);
+    assert_eq!(bodies[0].body_rows, 0);
+    assert_eq!(bodies[count].body_rows, 1);
+}

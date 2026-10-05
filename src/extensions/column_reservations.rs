@@ -85,30 +85,32 @@ mod tests {
 
     #[test]
     fn sparse_holds_overlapping_extensions_and_expiry_match_column_scans() {
-        let mut index = ColumnReservations::new(64);
-        let mut held = [0usize; 64];
-        assert_eq!(index.next_free(0, 0), 0);
-        assert_eq!(index.reach(0), 0);
-        for row in 0..20 {
-            if row < 12 {
-                for j in 0..16 {
-                    let col = (row * 17 + j * 13) % 64;
-                    let end = row + 2 + j % 7;
-                    held[col] = held[col].max(end);
-                    index.hold(col, end);
+        for limit in [1, 37, 64] {
+            let mut index = ColumnReservations::new(limit);
+            let mut held = vec![0usize; limit];
+            assert_eq!(index.next_free(0, 0), 0);
+            assert_eq!(index.reach(0), 0);
+            for row in 0..20 {
+                if row < 12 {
+                    for j in 0..16 {
+                        let col = (row * 17 + j * 13) % limit;
+                        let end = row + 2 + j % 7;
+                        held[col] = held[col].max(end);
+                        index.hold(col, end);
+                    }
                 }
-            }
-            let reach = held
-                .iter()
-                .rposition(|end| *end > row)
-                .map_or(0, |col| col + 1);
-            assert_eq!(index.reach(row), reach);
-            for from in 0..=65 {
-                let mut expected = from;
-                while held.get(expected).copied().unwrap_or(0) > row {
-                    expected += 1;
+                let reach = held
+                    .iter()
+                    .rposition(|end| *end > row)
+                    .map_or(0, |col| col + 1);
+                assert_eq!(index.reach(row), reach);
+                for from in 0..=limit + 1 {
+                    let mut expected = from;
+                    while held.get(expected).copied().unwrap_or(0) > row {
+                        expected += 1;
+                    }
+                    assert_eq!(index.next_free(from, row), expected);
                 }
-                assert_eq!(index.next_free(from, row), expected);
             }
         }
     }

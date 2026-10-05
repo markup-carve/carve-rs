@@ -718,12 +718,19 @@ fn list_table_columns(attrs: Option<&Attrs>) -> Vec<(Option<&str>, Option<&str>,
 /// (and carve-rs's pipe table) uses. Skipped cells take no column. Mirrors
 /// carve-js's `placeColumns`.
 fn place_columns(grid: &[Vec<GridEntry<'_>>]) -> Placement {
-    let capacity = grid
-        .iter()
-        .flatten()
-        .filter(|cell| !cell.skip)
-        .map(|cell| cell.colspan)
-        .sum();
+    let mut held_width = 0;
+    let mut row_width = 0;
+    for row in grid {
+        let mut width = 0;
+        for cell in row.iter().filter(|cell| !cell.skip) {
+            width += cell.colspan;
+            if cell.rowspan > 1 {
+                held_width += cell.colspan;
+            }
+        }
+        row_width = row_width.max(width);
+    }
+    let capacity = held_width + row_width;
     let mut occupied = ColumnReservations::new(capacity);
     let mut cols: Vec<Vec<Option<usize>>> = Vec::with_capacity(grid.len());
     let mut row_reach: Vec<usize> = Vec::with_capacity(grid.len());
