@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(feature = "fs")]
 use std::path::{Path, PathBuf};
 
-use crate::ast::{BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
+use crate::ast::{AttrSlot, BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
 use crate::extension::CarveExtension;
 use crate::parse::slugify_parse;
 use crate::render::plain_inlines;
@@ -1115,8 +1115,9 @@ fn auto_shift(children: &[BlockNode], context_level: i32) -> i32 {
     }
 }
 
-/// Merge-time collision pass for EXPLICIT heading ids (spec I5): parent ids and
-/// earlier includes win, a later duplicate gets the least free `-N`, and the
+/// Merge-time collision pass for heading ids (spec I5): parent ids and earlier
+/// includes win, a later duplicate gets the least free `-N`, automatic ids are
+/// re-derived against the assembled document, and the
 /// child's own crossrefs follow the rename so they keep resolving within the
 /// child's scope. Runs depth-first at merge time because after splicing, file
 /// provenance is gone.
@@ -1125,40 +1126,71 @@ fn rename_child_heading_ids(
     footnote_bodies: &mut BTreeMap<String, Vec<BlockNode>>,
     state: &mut State<'_>,
 ) {
+    // An automatic id never takes a name the file's own `{#id}` writes.
+    let authored = crate::document_ids::authored_ids(
+        std::iter::once(&*children).chain(footnote_bodies.values().map(Vec::as_slice)),
+    );
+    // The last suffix handed out per slug, so a run of equal headings does not
+    // restart its search at -2 each time.
+    let mut cursor: HashMap<String, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
-    walk_blocks_mut(children, &mut |block| {
+    let mut visit = |block: &mut BlockNode| {
         let BlockNode::Heading(h) = block else { return };
-        let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) else {
+        let Some(attrs) = h.attrs.as_ref() else {
             return;
         };
+        let Some(id) = attrs.id.clone() else {
+            return;
+        };
+        // A generated id carries no `order` slot; only an authored `{#id}` does.
+        if !attrs.order.contains(&AttrSlot::Id) {
+            // I5 rule 4: an automatic id is disambiguated as in a single
+            // document, against the ASSEMBLED one. The child's own suffix
+            // (`Overview-2` from its second `# Overview`) is dropped first, so
+            // a selected section or a lone later heading does not keep a
+            // number the parent never assigned. Silent, like the in-file dedup.
+            let base = heading_slug(&h.children);
+            let taken = |c: &str| state.used_heading_ids.contains(c) || authored.contains(c);
+            let assigned = if taken(&base) {
+                let from = cursor.get(&base).copied().unwrap_or(2);
+                let (name, n) = next_free_from(&base, from, taken);
+                cursor.insert(base, n + 1);
+                name
+            } else {
+                base
+            };
+            state.reserve_heading_id(&assigned);
+            if assigned != id {
+                if let Some(attrs) = h.attrs.as_mut() {
+                    attrs.id = Some(assigned.clone());
+                }
+                rename.entry(id).or_insert(assigned);
+            }
+            return;
+        }
         if state.reserve_heading_id(&id) {
             return;
         }
-        // WARN ONLY FOR AN ID THE AUTHOR WROTE. I5 covers EXPLICIT ids, and by
-        // this point `attrs.id` also carries the auto id the parser stamps, so
-        // the two are told apart by re-deriving the slug: an id equal to the
-        // heading's own slug is one nobody asked for.
-        //
-        // The RENAME still happens either way, and has to: each child is parsed
-        // as its own document (I4), so two chapters opening `# Overview` each
-        // stamp `Overview` independently and nothing re-stamps them after the
-        // merge. Within a single file that disambiguation happens at stamp time
-        // and is silent - warning here would report a collision the author
-        // never created, on a shape as common as two chapters sharing a heading.
-        let is_auto = heading_slug(&h.children) == id;
         let renamed = next_free(&id, |c| state.used_heading_ids.contains(c));
         if let Some(attrs) = h.attrs.as_mut() {
             attrs.id = Some(renamed.clone());
         }
         state.reserve_heading_id(&renamed);
-        if !is_auto {
-            state.warn(
-                "include-heading-id-rename",
-                format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
-            );
-        }
+        state.warn(
+            "include-heading-id-rename",
+            format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
+        );
         rename.insert(id, renamed);
-    });
+    };
+    walk_blocks_mut(children, &mut visit);
+    for body in footnote_bodies.values_mut() {
+        walk_blocks_mut(body, &mut visit);
+    }
+    // Ids on other elements claim their names too, so a later file's automatic
+    // heading id steps around them.
+    for id in &authored {
+        state.reserve_heading_id(id);
+    }
     if !rename.is_empty() {
         let empty = HashMap::new();
         rename_in_blocks(children, &empty, &rename);
@@ -1168,15 +1200,20 @@ fn rename_child_heading_ids(
     }
 }
 
-fn next_free(base: &str, taken: impl Fn(&str) -> bool) -> String {
-    let mut n = 2u32;
+/// The least `base-N` with `N >= from` that `taken` refuses, and its `N`.
+fn next_free_from(base: &str, from: u32, taken: impl Fn(&str) -> bool) -> (String, u32) {
+    let mut n = from;
     loop {
         let candidate = format!("{base}-{n}");
         if !taken(&candidate) {
-            return candidate;
+            return (candidate, n);
         }
         n += 1;
     }
+}
+
+fn next_free(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    next_free_from(base, 2, taken).0
 }
 
 fn normalize_ref_label(label: &str) -> String {
@@ -2261,6 +2298,12 @@ pub(crate) fn expand_includes_with_extensions(
                 }
             }
         });
+        state
+            .used_heading_ids
+            .extend(crate::document_ids::authored_ids(
+                std::iter::once(doc.children.as_slice())
+                    .chain(doc.footnote_defs.values().map(Vec::as_slice)),
+            ));
         state.footnotes.push(std::mem::take(&mut doc.footnote_defs));
         expand_blocks(&mut doc.children, &mut state);
         let mut defs = state

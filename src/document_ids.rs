@@ -262,6 +262,28 @@ fn assigned_heading_ids_with_policy(
     seeder
 }
 
+/// Every id an author wrote with `{#id}` in `blocks`, on any node, ignoring
+/// the ids the parser generated for headings.
+pub(crate) fn authored_ids<'a>(
+    blocks: impl IntoIterator<Item = &'a [BlockNode]>,
+) -> BTreeSet<String> {
+    let mut seeder = Seeder {
+        registry: DocumentIdRegistry::default(),
+        heading_counts: BTreeMap::new(),
+        citation_index: BTreeMap::new(),
+        id_opts: HeadingIdOptions::default(),
+        assigned: Vec::new(),
+        original_ids: Vec::new(),
+        had_generated: false,
+        collect_explicit_only: true,
+        ignore_generated: true,
+    };
+    for seq in blocks {
+        seeder.walk_blocks(seq);
+    }
+    seeder.registry.explicit_ids
+}
+
 fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistry {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
