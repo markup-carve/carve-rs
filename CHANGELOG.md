@@ -50,6 +50,7 @@ which the published crate does not carry.
 - Citation parsing caches bracket matches, rejects impossible groups before scanning their contents, and builds no bracket map for a short citation, so unmatched brackets and nested rejected groups no longer rescan the same text (#2263, #2266, #2268).
 - HTML rendering writes container, quote and list children into the caller's buffer, borrows table data, plans table spans once per table and skips cloning a tree that preparation cannot change. Rendering 192 nested quotes requests 352 KB rather than 29.7 MB (#2281, #2282, #2283, #2285).
 - ASCII heading IDs skip Unicode transforms and an unused heading ID reserves its base name once, cutting allocation requests for 1,024 unique headings from 6,316 to 2,220. Text escaping and borrowed inline rendering stop rescanning plain prefixes, and plain Unicode paragraphs and lines with trailing spaces take the borrowed source-to-HTML path (#2272, #2277, #2280).
+- A failed inline scan stops re-reading the text it already rejected: a malformed autolink ends at its first invalid byte, an invalid cross-reference target is refused before its attributes are read and its range remembered, and an eligible combined-emphasis closer is indexed by bracket run. Target syntax, delimiter fallback and source positions are unchanged (#2297).
 
 ## [0.1.7] - 2026-09-29
 
