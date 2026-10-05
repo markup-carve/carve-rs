@@ -251,6 +251,12 @@ impl BracedClosers {
         }
     }
 
+    /// Where the `delim}` closing the brace pair opened at `open` starts.
+    ///
+    /// A backtick run's closer is searched for across the rest of the block, so a
+    /// closer inside a closed code span is code (ruling markup-carve/carve#2079).
+    /// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
+    /// An escaped backtick opens no span; other escapes are left alone.
     fn scan(
         &mut self,
         bytes: &[u8],

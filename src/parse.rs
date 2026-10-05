@@ -8,10 +8,10 @@ mod reference_resolution;
 mod scoped_fence_closers;
 mod verse_whitespace;
 
-pub(crate) mod braced_closers;
+mod braced_closers;
 mod substitution_scanner;
 use braced_closers::BracedClosers;
-use inline_positions::InlineAnchor;
+pub(crate) use inline_positions::InlineAnchor;
 use inline_positions::InlinePositionMap;
 use scoped_fence_closers::ScopedFenceClosers;
 use verse_whitespace::expand_line_block_ws;
@@ -24435,12 +24435,6 @@ fn parse_forced_emphasis(
     ))
 }
 
-/// Where the `delim}` closing the brace pair opened at `open` starts.
-///
-/// A backtick run's closer is searched for across the rest of the block, so a
-/// closer inside a closed code span is code (ruling markup-carve/carve#2079).
-/// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
-/// An escaped backtick opens no span; other escapes are left alone.
 /// The `~}` and the top-level `~>` of the substitution opening at `open`.
 ///
 /// Only an arrow outside verbatim content and outside a comment splits the pair
