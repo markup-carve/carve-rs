@@ -2012,3 +2012,525 @@ fn an_unresolved_target_charges_no_bytes() {
         vec!["include-unresolved"]
     );
 }
+
+// ---------------------------------------------------------------------------
+// PART 9 §19 I1a: `#name` selects a heading's section, else one block by its
+// explicit id. Cases ported from the spec's `include-fragment.mjs` tests.
+// ---------------------------------------------------------------------------
+
+fn select(child: &str, name: &str) -> Expanded {
+    expand(&format!("{{{{ c.crv #{name} }}}}"), &[("c.crv", child)])
+}
+
+fn assert_selects_nothing(child: &str, name: &str) {
+    let result = select(child, name);
+    assert_eq!(
+        result.rules(),
+        vec!["include-section"],
+        "{child:?}: {}",
+        result.html
+    );
+    assert_eq!(
+        result.html,
+        literal_html(&format!("{{{{ c.crv #{name} }}}}"))
+    );
+}
+
+#[test]
+fn a_block_id_selects_that_block_alone_with_its_attributes() {
+    let result = select(
+        "# Pizza\n\n{#dough}\n```text\n500 g flour\n325 g water\n```",
+        "dough",
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("id=\"dough\""), "{}", result.html);
+    assert!(result.html.contains("500 g flour"), "{}", result.html);
+    assert!(!result.html.contains("Pizza"), "{}", result.html);
+}
+
+#[test]
+fn a_block_id_matches_exactly_case_included() {
+    let result = select("{#Dough}\nknead\n\nskip", "Dough");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(result.html, "<p id=\"Dough\">knead</p>");
+
+    assert_selects_nothing("{#Dough}\nknead\n\nskip", "dough");
+}
+
+#[test]
+fn a_heading_wins_over_an_earlier_block_with_the_same_id() {
+    let result = select("{#x}\nfirst\n\n{#x}\n# H\n\nbody", "x");
+    assert!(result.html.contains("<h1>H</h1>"), "{}", result.html);
+    assert!(result.html.contains("body"), "{}", result.html);
+    assert!(!result.html.contains("first"), "{}", result.html);
+}
+
+#[test]
+fn an_auto_slug_and_a_block_id_differing_in_case_are_distinct_names() {
+    let child = "{#hello}\npara\n\n# Hello\n\nbody";
+    let result = select(child, "Hello");
+    assert!(result.html.contains("body"), "{}", result.html);
+    assert!(!result.html.contains("para"), "{}", result.html);
+
+    let result = select(child, "hello");
+    assert_eq!(result.html, "<p id=\"hello\">para</p>");
+}
+
+#[test]
+fn the_first_block_wins_and_a_container_precedes_its_contents() {
+    let result = select("{#x}\n> {#x}\n> inner\n\n{#x}\nlater", "x");
+    assert!(
+        result.html.starts_with("<blockquote id=\"x\">"),
+        "{}",
+        result.html
+    );
+    assert!(result.html.contains("inner"), "{}", result.html);
+    assert!(!result.html.contains("later"), "{}", result.html);
+
+    let result = select("{#x}\nonce\n\n{#x}\ntwice", "x");
+    assert_eq!(result.html, "<p id=\"x\">once</p>");
+}
+
+#[test]
+fn a_block_at_depth_is_selectable() {
+    let result = select("- a\n\n  {#z}\n  ```\n  code\n  ```", "z");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("code"), "{}", result.html);
+    assert!(!result.html.contains("<li>"), "{}", result.html);
+}
+
+#[test]
+fn a_block_inside_a_captioned_quote_is_reachable() {
+    let result = select("> {#x}\n> inner\n\n^ Figure: caption", "x");
+    assert_eq!(result.html, "<p id=\"x\">inner</p>");
+}
+
+#[test]
+fn a_heading_inside_a_container_stops_at_the_end_of_that_container() {
+    let result = select("> {#q}\n> ## Q\n>\n> in\n\nafter", "q");
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("<h2>Q</h2>"), "{}", result.html);
+    assert!(result.html.contains("in"), "{}", result.html);
+    assert!(!result.html.contains("after"), "{}", result.html);
+    assert!(!result.html.contains("blockquote"), "{}", result.html);
+}
+
+#[test]
+fn a_nested_section_inside_a_container_stops_at_its_next_peer_heading() {
+    let child = "> # A\n>\n> a\n>\n> ## B\n>\n> b\n>\n> # C\n>\n> c\n\nafter";
+    let result = select(child, "A");
+    assert!(result.html.contains("<h2>B</h2>"), "{}", result.html);
+    assert!(result.html.contains("<p>b</p>"), "{}", result.html);
+    assert!(!result.html.contains("<h1>C</h1>"), "{}", result.html);
+    assert!(!result.html.contains("after"), "{}", result.html);
+}
+
+#[test]
+fn a_part_an_inline_element_or_a_footnote_selects_nothing() {
+    assert_selects_nothing("-{#li} item\n- two", "li");
+    assert_selects_nothing("| a |{#row}", "row");
+    assert_selects_nothing("x [span]{#sp} y", "sp");
+    assert_selects_nothing("![a](a){#im}![b](b)", "im");
+    assert_selects_nothing("| ![a](a){#im} |", "im");
+    assert_selects_nothing("See[^n].\n\n[^n]: {#w}\n    note", "w");
+    assert_selects_nothing("{#p}\npara", "nope");
+}
+
+#[test]
+fn a_digit_leading_name_selects_an_explicit_id() {
+    let result = expand(
+        "{{ plans.crv #2024-plan }}",
+        &[("plans.crv", "{#2024-plan}\n```text\nship it\n```\n\nafter")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("id=\"2024-plan\""), "{}", result.html);
+    assert!(result.html.contains("ship it"), "{}", result.html);
+    assert!(!result.html.contains("after"), "{}", result.html);
+
+    // A name the id class cannot spell leaves the directive literal.
+    let source = "{{ plans.crv #-x }}";
+    let result = expand(source, &[("plans.crv", "{#x}\npara")]);
+    assert_eq!(result.html, literal_html(source));
+}
+
+#[test]
+fn an_inline_include_splices_a_selected_paragraph_and_leaves_its_id_behind() {
+    let result = expand(
+        "{#p}\nparent\n\nBefore {{ c.crv #p }} after.",
+        &[("c.crv", "{#p}\nmiddle words\n\n{#q}\nother")],
+    );
+    // The child's `{#p}` never reaches the output, so it claims nothing.
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<p>Before middle words after.</p>"),
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("other"), "{}", result.html);
+}
+
+#[test]
+fn the_shift_option_reaches_headings_inside_a_selected_block() {
+    let result = expand(
+        "{{ c.crv #box @shift:1 }}",
+        &[("c.crv", "{#box}\n> # Inside\n>\n> text\n\nafter")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<blockquote id=\"box\">"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<h2 id=\"Inside\">Inside</h2>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_selected_block_that_includes_its_own_file_is_a_cycle() {
+    let result = expand(
+        "{{ a.crv #blk }}",
+        &[("a.crv", "{#blk}\n> {{ a.crv #blk }}")],
+    );
+    assert!(
+        result.rules().contains(&"include-cycle"),
+        "{:?}",
+        result.warnings
+    );
+}
+
+#[test]
+fn includes_outside_the_selected_block_are_never_resolved() {
+    let resolver = MapResolver::new(&[
+        ("a.crv", "{{ b.crv }}\n\n{#blk}\n> kept"),
+        ("b.crv", "never"),
+    ]);
+    let result = expand_with("{{ a.crv #blk }}", &resolver, IncludeOptions::new());
+    assert!(result.html.contains("kept"), "{}", result.html);
+    assert_eq!(*resolver.calls.borrow(), vec!["a.crv".to_string()]);
+}
+
+// ---------------------------------------------------------------------------
+// PART 9 §19 I5: explicit ids on any element share one namespace and are
+// renamed on collision across file inclusions.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_colliding_paragraph_id_is_renamed_and_its_own_link_follows() {
+    let result = expand(
+        "{#tip}\nKeep the dough cold.\n\n{{ child.crv }}",
+        &[(
+            "child.crv",
+            "{#tip}\nRest it overnight.\n\n[The tip above](#tip) is the one this file wrote.",
+        )],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.warnings[0].1.as_deref(), Some("child.crv"));
+    assert!(
+        result.html.contains("<p id=\"tip\">Keep"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"tip-2\">Rest"),
+        "{}",
+        result.html
+    );
+    assert!(result.html.contains("href=\"#tip-2\""), "{}", result.html);
+}
+
+#[test]
+fn a_heading_and_a_paragraph_share_one_id_namespace() {
+    let result = expand("{#tip}\n# Tip\n\n{{ c.crv }}", &[("c.crv", "{#tip}\npara")]);
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"tip-2\">para</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_inline_span_collides_with_a_block_id() {
+    let result = expand("{#s}\npara\n\n{{ c.crv }}", &[("c.crv", "x [y]{#s} z")]);
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<span id=\"s-2\">y</span>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_list_item_id_is_renamed_too() {
+    let result = expand(
+        "{#li}\npara\n\n{{ c.crv }}",
+        &[("c.crv", "-{#li} item\n- two")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(result.html.contains("<li id=\"li-2\">"), "{}", result.html);
+}
+
+#[test]
+fn ids_compare_exactly_so_case_variants_do_not_collide() {
+    let result = expand(
+        "{#Tip}\nparent\n\n{{ c.crv }}",
+        &[("c.crv", "{#tip}\nchild")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<p id=\"Tip\">parent</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"tip\">child</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_footnote_label_never_collides_with_an_element_id() {
+    let result = expand(
+        "{#n}\npara\n\n{{ c.crv }}",
+        &[("c.crv", "See[^n].\n\n[^n]: body")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<p id=\"n\">para</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn duplicates_one_file_holds_on_its_own_are_left_alone() {
+    let result = expand("{{ c.crv }}", &[("c.crv", "{#d}\none\n\n{#d}\ntwo")]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(!result.html.contains("d-2"), "{}", result.html);
+}
+
+#[test]
+fn a_link_to_an_id_only_the_parent_defines_is_not_rewritten() {
+    let result = expand(
+        "{#top}\nparent\n\n{#tip}\nalso parent\n\n{{ c.crv }}",
+        &[("c.crv", "{#tip}\nchild\n\n[up](#top) and [tip](#tip)")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(result.html.contains("href=\"#top\""), "{}", result.html);
+    assert!(result.html.contains("href=\"#tip-2\""), "{}", result.html);
+}
+
+#[test]
+fn a_parent_link_keeps_reaching_the_first_occurrence() {
+    let result = expand(
+        "{#tip}\nparent [see](#tip)\n\n{{ c.crv }}",
+        &[("c.crv", "{#tip}\nchild")],
+    );
+    assert_eq!(
+        result.html.matches("href=\"#tip\"").count(),
+        1,
+        "{}",
+        result.html
+    );
+    assert!(!result.html.contains("href=\"#tip-2\""), "{}", result.html);
+}
+
+#[test]
+fn a_link_through_the_files_own_reference_definition_follows_the_rename() {
+    let result = expand(
+        "{#tip}\nparent\n\n{{ c.crv }}",
+        &[("c.crv", "{#tip}\nchild\n\n[See][t]\n\n[t]: #tip")],
+    );
+    assert!(result.html.contains("href=\"#tip-2\""), "{}", result.html);
+}
+
+#[test]
+fn a_second_inclusion_of_the_same_file_is_renamed() {
+    let result = expand("{{ c.crv }}\n\n{{ c.crv }}", &[("c.crv", "{#tip}\nx")]);
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"tip\">x</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"tip-2\">x</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_rename_skips_a_name_the_file_itself_writes() {
+    let result = expand(
+        "{#a}\nparent\n\n{{ c.crv }}",
+        &[("c.crv", "{#a}\nx\n\n{#a-2}\ny")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"a-3\">x</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"a-2\">y</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_selected_block_id_collides_like_any_other() {
+    let result = expand(
+        "{#dough}\nparent\n\n{{ r.crv #dough }}",
+        &[("r.crv", "{#dough}\n```text\nflour\n```")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(result.html.contains("id=\"dough-2\""), "{}", result.html);
+}
+
+#[test]
+fn a_files_own_duplicate_follows_the_first_rename() {
+    let result = expand(
+        "{#d}\nparent\n\n{{ c.crv }}",
+        &[("c.crv", "{#d}\none\n\n{#d}\ntwo\n\n[back](#d)")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"d-2\">one</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"d-2\">two</p>"),
+        "{}",
+        result.html
+    );
+    assert!(result.html.contains("href=\"#d-2\""), "{}", result.html);
+    assert!(!result.html.contains("d-3"), "{}", result.html);
+}
+
+#[test]
+fn a_paragraph_id_from_a_nested_include_spliced_inline_claims_nothing() {
+    let result = expand(
+        "Before {{ a.crv }} after.\n\n{{ c.crv }}",
+        &[
+            ("a.crv", "{{ b.crv }}"),
+            ("b.crv", "{#p}\nwords"),
+            ("c.crv", "{#p}\nlast"),
+        ],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<p>Before words after.</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"p\">last</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_spliced_paragraph_id_still_carried_by_a_span_stays_claimed() {
+    let result = expand(
+        "Before {{ a.crv }} after.\n\n{{ c.crv }}",
+        &[
+            ("a.crv", "{{ b.crv }}"),
+            ("b.crv", "{#p}\nwords [kept]{#p}"),
+            ("c.crv", "{#p}\nlast"),
+        ],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<span id=\"p\">kept</span>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"p-2\">last</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_id_on_a_block_include_paragraph_claims_nothing() {
+    let result = expand("{#p}\n{{ c.crv }}", &[("c.crv", "{#p}\nlast")]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert_eq!(result.html, "<p id=\"p\">last</p>");
+}
+
+#[test]
+fn an_id_on_a_block_include_left_literal_is_claimed() {
+    let result = expand(
+        "{#p}\n{{ missing.crv }}\n\n{{ c.crv }}",
+        &[("c.crv", "{#p}\nlast")],
+    );
+    assert_eq!(
+        result.rules(),
+        vec!["include-unresolved", "include-heading-id-rename"]
+    );
+    assert!(
+        result.html.contains("<p id=\"p-2\">last</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_id_on_a_literal_block_include_in_a_child_is_still_renamed() {
+    let result = expand(
+        "{#p}\nroot\n\n{{ c.crv }}",
+        &[("c.crv", "{#p}\n{{ missing.crv }}")],
+    );
+    assert!(
+        result.rules().contains(&"include-heading-id-rename"),
+        "{:?}",
+        result.warnings
+    );
+    assert_eq!(
+        result.html.matches("id=\"p\"").count(),
+        1,
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_literal_root_include_keeps_parent_precedence_for_its_id() {
+    let result = expand(
+        "{{ c.crv }}\n\n{#p}\n{{ missing.crv }}",
+        &[("c.crv", "{#p}\nchild")],
+    );
+    assert!(
+        result.html.contains("<p id=\"p-2\">child</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn an_include_paragraph_id_shared_with_a_surviving_element_stays_claimed() {
+    let result = expand(
+        "{#p}\nroot\n\n{#p}\n{{ c.crv }}",
+        &[("c.crv", "{#p}\nchild")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"p\">root</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"p-2\">child</p>"),
+        "{}",
+        result.html
+    );
+}

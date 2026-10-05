@@ -237,11 +237,18 @@ same.
 
 ```
 {{ chapters/intro.crv }}              include a whole file
-{{ chapters/intro.crv #setup }}       include one heading subtree
+{{ chapters/intro.crv #setup }}       include one heading subtree, or the one
+                                      block whose {#setup} id matches
 {{ notes.crv @lines:10-25 }}          include a physical line range
 {{ chapters/intro.crv @shift:2 }}     shift included heading levels by +2
 {{ chapters/intro.crv @shift:auto }}  shift to sit under the heading in scope
 ```
+
+`#section` matches an id exactly, case included: `#plan` does not select
+`{#Plan}`. A heading with that id (explicit or generated) selects its section,
+which ends with its container when the heading sits inside one. Otherwise the
+first block with that explicit id is included alone, at any depth. Ids on list
+items, table cells, inline elements and footnotes select nothing.
 
 `#section` and `@lines` are the two selection mechanisms and are mutually
 exclusive. Every failure (a missing file, binary content, both selectors, a
@@ -361,8 +368,8 @@ carve flatten --include-root ./book < main.crv
 
 Two things it changes beyond inlining, both reported on stderr: the output is
 CANONICAL Carve, so formatting is normalized rather than preserved, and
-colliding heading ids and footnote labels are renamed (two files that were never
-in one document together can each define `intro`). The renames are written into
+colliding explicit ids (on any element) and footnote labels are renamed (two
+files that were never in one document together can each define `intro`). The renames are written into
 the source, so the flattened file renders exactly like the expanded original.
 
 ### Turning the filesystem off entirely
