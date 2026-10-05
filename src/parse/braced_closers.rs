@@ -251,7 +251,7 @@ impl BracedClosers {
         }
     }
 
-    /// Where the `delim}` closing the brace pair opened at `open` starts.
+    /// Where a scan for `delim}` starting at `from` stops.
     ///
     /// A backtick run's closer is searched for across the rest of the block, so a
     /// closer inside a closed code span is code (ruling markup-carve/carve#2079).

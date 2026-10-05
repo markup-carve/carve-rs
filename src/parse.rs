@@ -14002,7 +14002,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
         last_gt: bytes.iter().rposition(|&b| b == b'>'),
         crossref_invalid_range: Cell::new(None),
         delim_brace: [None; DELIM_BRACE_SLOTS],
-        braced_closers: RefCell::new(BracedClosers::default()),
+        braced_closers: RefCell::new(None),
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
@@ -19003,7 +19003,7 @@ struct InlineBounds<'a> {
     /// occurrence (see `delim_brace_slot`). Used by critic markup and forced
     /// emphasis, whose closers are two-byte `X}` pairs.
     delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
-    braced_closers: RefCell<BracedClosers>,
+    braced_closers: RefCell<Option<BracedClosers>>,
 }
 
 fn inline_pos(map: Option<&InlinePositionMap<'_>>, start: usize, end: usize) -> Option<Pos> {
@@ -19066,6 +19066,12 @@ fn position_citation_items_from_map(
 }
 
 impl InlineBounds<'_> {
+    fn braced_closers(&self) -> std::cell::RefMut<'_, BracedClosers> {
+        std::cell::RefMut::map(self.braced_closers.borrow_mut(), |memo| {
+            memo.get_or_insert_with(BracedClosers::default)
+        })
+    }
+
     /// True when a `]` occurs at or after `pos`.
     #[inline]
     fn has_bracket_from(&self, pos: usize) -> bool {
@@ -19249,7 +19255,7 @@ fn parse_inline_context(
         last_gt,
         crossref_invalid_range: Cell::new(None),
         delim_brace,
-        braced_closers: RefCell::new(BracedClosers::default()),
+        braced_closers: RefCell::new(None),
     };
     let citation_brackets = std::cell::OnceCell::new();
     // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
@@ -20176,10 +20182,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'+', start) {
                 return None;
             }
-            let pair = bounds
-                .braced_closers
-                .borrow_mut()
-                .close(bytes, start, b'+')?;
+            let pair = bounds.braced_closers().close(bytes, start, b'+')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -20232,10 +20235,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
-            let pair = bounds
-                .braced_closers
-                .borrow_mut()
-                .close(bytes, start, b'-')?;
+            let pair = bounds.braced_closers().close(bytes, start, b'-')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -24403,7 +24403,7 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
-    let j = bounds.braced_closers.borrow_mut().close(bytes, i, delim)?;
+    let j = bounds.braced_closers().close(bytes, i, delim)?;
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
@@ -24441,7 +24441,7 @@ fn parse_forced_emphasis(
 /// (ruling B on markup-carve/carve#2083), and an escaped one never does. A pair
 /// with no such arrow is a forced strike.
 fn substitution_at(bytes: &[u8], open: usize, bounds: &InlineBounds<'_>) -> Option<(usize, usize)> {
-    bounds.braced_closers.borrow_mut().substitution(bytes, open)
+    bounds.braced_closers().substitution(bytes, open)
 }
 
 thread_local! {
@@ -24923,10 +24923,7 @@ fn braced_inline_scan(
         }
         find_seq(bytes, content, &pair)?
     } else {
-        bounds
-            .braced_closers
-            .borrow_mut()
-            .close(bytes, open, delim)?
+        bounds.braced_closers().close(bytes, open, delim)?
     };
     if close == content {
         return None;

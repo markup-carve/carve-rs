@@ -4,6 +4,7 @@ use super::{find_seq, skip_code_span};
 #[derive(Default)]
 pub(super) struct SubstitutionScanner {
     first: Option<(usize, usize, Option<usize>)>,
+    last_arrow: Option<Option<usize>>,
     index: Option<Box<ArrowIndex>>,
 }
 
@@ -15,6 +16,12 @@ impl SubstitutionScanner {
         to: usize,
         code_ends: &mut Option<CodeSpanIndex>,
     ) -> Option<usize> {
+        let last = *self
+            .last_arrow
+            .get_or_insert_with(|| bytes.windows(2).rposition(|pair| pair == b"~>"));
+        if last.map_or(true, |arrow| arrow < from) {
+            return None;
+        }
         match self.first {
             None => {
                 let result = scan(bytes, from, to);
