@@ -309,34 +309,12 @@ fn a_marker_ladder_parses_without_a_pass_per_level() {
     );
 }
 
-#[test]
-fn deeply_nested_list_parse_is_bounded() {
-    on_big_stack(|| {
-        // Finding 1: deeply nested lists collect-and-reparse the tail per level.
-        // MAX_NESTING_DEPTH (200) caps the recursion so the work stays linear in
-        // the input bytes; this guards against a regression that would
-        // reintroduce a per-level rescan blow-up. 300 levels is past the depth
-        // cap while the input stays small (~180 KB) so the time bound holds in a
-        // debug build too.
-        let mut source = String::new();
-        for i in 0..300 {
-            for _ in 0..i {
-                source.push_str("  ");
-            }
-            source.push_str("- x\n");
-        }
-
-        let start = Instant::now();
-        let html = carve::to_html(&source);
-
-        assert!(html.contains("<li>x"), "expected nested list items");
-        assert!(
-            start.elapsed().as_secs_f32() < MAX_SECS,
-            "deeply nested list parse took {:?}",
-            start.elapsed()
-        );
-    });
-}
+// `deeply_nested_list_parse_is_bounded` used to sit here with a 10-second cap.
+// A duration describes the machine that chose it - this one passed on an idle
+// box and failed at load 42 - so the same intent is now a COUNTED relationship
+// in `parse::nested_list_ladder_work`: past the cap, one added level costs one
+// collection per enclosing item and no more. The counters it reads are
+// `#[cfg(test)]`, so the guard has to live beside them (carve-rs#2324).
 
 #[test]
 fn deeply_nested_div_parse_is_bounded() {
