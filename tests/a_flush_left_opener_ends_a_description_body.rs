@@ -1,5 +1,6 @@
 //! Description-body boundaries follow §10 I2 and the definition-body production.
-//! List markers continue an open paragraph; captions and interrupting fences end it.
+//! List markers continue an open paragraph; captions and fences with a closer
+//! ahead end it. A fence with none folds, info string or not (carve#2735).
 
 use carve::{to_html, to_html_with_options, Options};
 
@@ -63,13 +64,26 @@ fn a_caption_ends_the_body() {
     );
 }
 
-/// A FENCE ends the body too. The ticket recorded this kind as already right;
-/// measured, it was not - the body swallowed it and the run became INLINE code.
+/// A FENCE DOES NOT end the body, info string or not (markup-carve/carve#2735).
+/// This expectation was the other way round and pinned a reading the clause
+/// contradicts: the engine read the language as an opener, so `` ``` `` folded
+/// and ``` ```c ``` did not. Ruled 2026-10-05, the info string is irrelevant -
+/// a flush-left fence line the body takes is the body's content either way -
+/// and the expectation below is `renderDoc(parse(source))` at spec 8b68a46.
 #[test]
-fn a_fence_ends_the_body() {
+fn a_fence_folds_into_the_body() {
     assert_html(
         &format!("{BODY}``` c\n"),
-        "<dl><dt>t</dt><dd>d</dd></dl><pre><code class=\"language-c\"> </code></pre>",
+        "<dl><dt>t</dt><dd>d\n<code> c</code></dd></dl>",
+    );
+}
+
+/// THE BARE SPELLING, beside it, so the two cannot drift apart again.
+#[test]
+fn a_bare_fence_folds_into_the_body_too() {
+    assert_html(
+        &format!("{BODY}```\n"),
+        "<dl><dt>t</dt><dd>d\n<code></code></dd></dl>",
     );
 }
 
