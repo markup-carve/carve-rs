@@ -71,8 +71,8 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
 /// Rewrite each reference that misses its target only by case to the target's
 /// exact spelling, as `carve fmt --migrate` does before formatting.
 ///
-/// Covers `</#id>` cross-references and `[text][label]` / `[text][]` reference
-/// links (PART 9R R1). A reference is rewritten only when exactly one target
+/// Covers `</#id>` cross-references, `[text][label]` / `[text][]` reference
+/// links (PART 9R R1) and `![alt][label]` / `![alt][]` reference images. A reference is rewritten only when exactly one target
 /// matches it case-insensitively; with several, it is left as written and
 /// [`lint_carve_with_options`] reports it.
 pub fn migrate_case_only_references(source: &str, options: &Options<'_>) -> String {
