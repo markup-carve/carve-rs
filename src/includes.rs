@@ -1048,12 +1048,20 @@ fn heading_id(h: &Heading) -> String {
         })
 }
 
-/// The subtree rooted at the heading whose id equals `section`: that heading
+/// How a `#name` is compared with an id: the way a `</#id>` cross-reference
+/// matches (I1a, R4), NFC-normalized and case-folded.
+fn name_key(name: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    name.nfc().flat_map(char::to_lowercase).collect()
+}
+
+/// The subtree rooted at the heading whose id matches `section`: that heading
 /// through content up to the next same-or-higher-level heading (I1).
 fn select_section(children: &[BlockNode], section: &str) -> Option<Vec<BlockNode>> {
+    let wanted = name_key(section);
     let start = children
         .iter()
-        .position(|b| matches!(b, BlockNode::Heading(h) if heading_id(h) == section))?;
+        .position(|b| matches!(b, BlockNode::Heading(h) if name_key(&heading_id(h)) == wanted))?;
     let BlockNode::Heading(head) = &children[start] else {
         return None;
     };

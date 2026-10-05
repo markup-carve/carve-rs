@@ -256,6 +256,42 @@ fn section_includes_the_selected_heading_subtree() {
 }
 
 #[test]
+fn a_section_name_matches_case_insensitively_like_a_crossref() {
+    for name in ["plan", "PLAN", "Plan"] {
+        let result = expand(
+            &format!("{{{{ case.crv #{name} }}}}"),
+            &[(
+                "case.crv",
+                "{#Plan}\n# Plan\n\nplan text\n\n# Other\n\nskip",
+            )],
+        );
+        assert!(result.warnings.is_empty(), "#{name}: {:?}", result.warnings);
+        assert!(
+            result.html.contains("<p>plan text</p>"),
+            "#{name}: {}",
+            result.html
+        );
+        assert!(
+            result.html.contains("id=\"Plan\""),
+            "#{name}: {}",
+            result.html
+        );
+        assert!(!result.html.contains("skip"), "#{name}: {}", result.html);
+    }
+}
+
+#[test]
+fn a_section_name_matches_an_auto_slug_case_insensitively() {
+    let result = expand(
+        "{{ c.crv #getting-started }}",
+        &[("c.crv", "# Intro\n\nskip\n\n# Getting Started\n\nyes")],
+    );
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("<p>yes</p>"), "{}", result.html);
+    assert!(!result.html.contains("skip"), "{}", result.html);
+}
+
+#[test]
 fn lines_includes_an_inclusive_physical_line_range() {
     let result = expand(
         "{{ child @lines:2-3 }}",
