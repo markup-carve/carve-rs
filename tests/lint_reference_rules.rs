@@ -184,6 +184,14 @@ fn a_broken_fragment_link_is_found_in_every_container() {
 }
 
 #[test]
+fn a_link_in_an_unreferenced_footnote_definition_is_not_checked() {
+    assert_eq!(
+        rules("[^u]: see [x](#nope)\n\nBody.\n"),
+        ["unused-footnote-definition"]
+    );
+}
+
+#[test]
 fn a_case_only_near_miss_is_named() {
     let warnings = lint_carve("# Getting Started\n\n[x](#getting-started)\n");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
