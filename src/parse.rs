@@ -8,6 +8,9 @@ mod reference_resolution;
 mod scoped_fence_closers;
 mod verse_whitespace;
 
+mod braced_closers;
+mod substitution_scanner;
+use braced_closers::BracedClosers;
 pub(crate) use inline_positions::InlineAnchor;
 use inline_positions::InlinePositionMap;
 use scoped_fence_closers::ScopedFenceClosers;
@@ -13999,6 +14002,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
         last_gt: bytes.iter().rposition(|&b| b == b'>'),
         crossref_invalid_range: Cell::new(None),
         delim_brace: [None; DELIM_BRACE_SLOTS],
+        braced_closers: RefCell::new(None),
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
@@ -18999,6 +19003,7 @@ struct InlineBounds<'a> {
     /// occurrence (see `delim_brace_slot`). Used by critic markup and forced
     /// emphasis, whose closers are two-byte `X}` pairs.
     delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
+    braced_closers: RefCell<Option<BracedClosers>>,
 }
 
 fn inline_pos(map: Option<&InlinePositionMap<'_>>, start: usize, end: usize) -> Option<Pos> {
@@ -19061,6 +19066,12 @@ fn position_citation_items_from_map(
 }
 
 impl InlineBounds<'_> {
+    fn braced_closers(&self) -> std::cell::RefMut<'_, BracedClosers> {
+        std::cell::RefMut::map(self.braced_closers.borrow_mut(), |memo| {
+            memo.get_or_insert_with(BracedClosers::default)
+        })
+    }
+
     /// True when a `]` occurs at or after `pos`.
     #[inline]
     fn has_bracket_from(&self, pos: usize) -> bool {
@@ -19244,6 +19255,7 @@ fn parse_inline_context(
         last_gt,
         crossref_invalid_range: Cell::new(None),
         delim_brace,
+        braced_closers: RefCell::new(None),
     };
     let citation_brackets = std::cell::OnceCell::new();
     // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
@@ -20170,7 +20182,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'+', start) {
                 return None;
             }
-            let pair = braced_pair_close(bytes, start, b'+')?;
+            let pair = bounds.braced_closers().close(bytes, start, b'+')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -20223,7 +20235,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
-            let pair = braced_pair_close(bytes, start, b'-')?;
+            let pair = bounds.braced_closers().close(bytes, start, b'-')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -20256,7 +20268,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'~', start) {
                 return None;
             }
-            let (pair, arrow) = substitution_at(bytes, start)?;
+            let (pair, arrow) = substitution_at(bytes, start, bounds)?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -24391,7 +24403,7 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
-    let j = braced_pair_close(bytes, i, delim)?;
+    let j = bounds.braced_closers().close(bytes, i, delim)?;
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
@@ -24423,73 +24435,13 @@ fn parse_forced_emphasis(
     ))
 }
 
-/// Where the `delim}` closing the brace pair opened at `open` starts.
-///
-/// A backtick run's closer is searched for across the rest of the block, so a
-/// closer inside a closed code span is code (ruling markup-carve/carve#2079).
-/// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
-/// An escaped backtick opens no span; other escapes are left alone.
 /// The `~}` and the top-level `~>` of the substitution opening at `open`.
 ///
 /// Only an arrow outside verbatim content and outside a comment splits the pair
 /// (ruling B on markup-carve/carve#2083), and an escaped one never does. A pair
 /// with no such arrow is a forced strike.
-fn substitution_at(bytes: &[u8], open: usize) -> Option<(usize, usize)> {
-    if bytes.get(open + 1) != Some(&b'~') {
-        return None;
-    }
-    let pair = braced_pair_close(bytes, open, b'~')?;
-    let mut j = open + 2;
-    while j + 1 < pair {
-        match bytes[j] {
-            b'\\' => j += 2,
-            b'`' => j = skip_code_span(bytes, j)?,
-            b'{' if matches!(bytes[j + 1], b'%' | b'#') => {
-                match find_seq(bytes, j + 2, &[bytes[j + 1], b'}']) {
-                    Some(close) if close < pair => j = close + 2,
-                    _ => j += 1,
-                }
-            }
-            b'~' if bytes[j + 1] == b'>' => return Some((pair, j)),
-            _ => j += 1,
-        }
-    }
-    None
-}
-
-fn braced_pair_close(bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
-    braced_pair_close_at_depth(bytes, open, delim, 0)
-}
-
-/// A braced inline of another kind starts its own scope, so a closer inside it
-/// cannot close this pair (ruling markup-carve/carve#2091). One of this pair's
-/// own kind is literal (E3).
-fn braced_pair_close_at_depth(bytes: &[u8], open: usize, delim: u8, depth: usize) -> Option<usize> {
-    let mut j = open + 2;
-    while j + 1 < bytes.len() {
-        match bytes[j] {
-            b'\\' if bytes[j + 1] == b'`' => j += 2,
-            b'`' => match skip_code_span(bytes, j) {
-                Some(end) => j = end,
-                None => return find_seq(bytes, j, &[delim, b'}']),
-            },
-            b if b == delim && bytes[j + 1] == b'}' => return Some(j),
-            b'{' if bytes[j + 1] != delim
-                && matches!(
-                    bytes[j + 1],
-                    b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-'
-                )
-                && depth < MAX_NESTING_DEPTH =>
-            {
-                match braced_pair_close_at_depth(bytes, j, bytes[j + 1], depth + 1) {
-                    Some(close) if close > j + 2 => j = close + 2,
-                    _ => j += 1,
-                }
-            }
-            _ => j += 1,
-        }
-    }
-    None
+fn substitution_at(bytes: &[u8], open: usize, bounds: &InlineBounds<'_>) -> Option<(usize, usize)> {
+    bounds.braced_closers().substitution(bytes, open)
 }
 
 thread_local! {
@@ -24775,7 +24727,7 @@ fn find_emphasis_close(
             }
         }
         if ch == b'{' {
-            if let Some(end) = braced_inline_end(bytes, j, memo, delim) {
+            if let Some(end) = braced_inline_end(bytes, j, memo, delim, bounds) {
                 j = end + 1;
                 continue;
             }
@@ -24931,6 +24883,7 @@ fn braced_inline_end(
     open: usize,
     memo: &mut EmphasisMemo,
     scanning: u8,
+    bounds: &InlineBounds<'_>,
 ) -> Option<usize> {
     let last = *memo
         .last_brace
@@ -24938,15 +24891,20 @@ fn braced_inline_end(
     if last.map_or(true, |l| l < open) {
         return None;
     }
-    braced_inline_scan(bytes, open, scanning)
+    braced_inline_scan(bytes, open, scanning, bounds)
 }
 
-fn braced_inline_scan(bytes: &[u8], open: usize, scanning: u8) -> Option<usize> {
+fn braced_inline_scan(
+    bytes: &[u8],
+    open: usize,
+    scanning: u8,
+    bounds: &InlineBounds<'_>,
+) -> Option<usize> {
     let delim = bytes.get(open + 1).copied()?;
     let content = open + 2;
     // `{~ ~> ~}` is matched before the forced strike, as the main loop does.
     if delim == b'~' {
-        if let Some((pair, _)) = substitution_at(bytes, open) {
+        if let Some((pair, _)) = substitution_at(bytes, open, bounds) {
             return Some(pair + 1);
         }
     }
@@ -24960,9 +24918,12 @@ fn braced_inline_scan(bytes: &[u8], open: usize, scanning: u8) -> Option<usize> 
         _ => return None,
     };
     let close = if matches!(delim, b'#') {
+        if !bounds.has_delim_brace_from(b'#', open) {
+            return None;
+        }
         find_seq(bytes, content, &pair)?
     } else {
-        braced_pair_close(bytes, open, delim)?
+        bounds.braced_closers().close(bytes, open, delim)?
     };
     if close == content {
         return None;
