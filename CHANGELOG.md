@@ -9,6 +9,12 @@ Entries for 0.1.5 and earlier are archived in
 [CHANGELOG-0.1.md](https://github.com/markup-carve/carve-rs/blob/main/CHANGELOG-0.1.md),
 which the published crate does not carry.
 
+## [Unreleased]
+
+### Fixes
+
+- HTML import keeps separate paragraphs when an unwrapped div exposes them inside a list item, collapses layout whitespace exposed by removed empty inline elements in roundtrip mode, and preserves an empty definition term as raw HTML in roundtrip mode. Safe and semantic import drop and report an empty term while keeping its definitions in document order. A canonical source export refuses an empty definition term instead of writing invalid Carve.
+
 ## [0.1.8] - 2026-10-04
 
 ### Breaking

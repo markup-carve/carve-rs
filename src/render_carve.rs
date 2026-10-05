@@ -2690,6 +2690,12 @@ fn render_definition_list(
             let outer_term = std::mem::replace(&mut ctx.in_term, true);
             let rendered = render_inlines(session, term, ctx);
             ctx.in_term = outer_term;
+            if rendered.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    "definition_term",
+                    "an empty definition term has no Carve source spelling",
+                );
+            }
             out.push(format!(":: {rendered}"));
         }
         for def in &item.definitions {
