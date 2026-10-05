@@ -16,7 +16,7 @@
 //! ever silently dropped. The defer decision is made on the pristine AST before
 //! any rewrite, so a deferred render is byte-identical to the plain admonition.
 
-use std::collections::BTreeMap;
+use super::column_reservations::ColumnReservations;
 
 use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockNode, Document, ExtensionCarrier, InlineNode, ListItem,
@@ -625,8 +625,10 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>]) -> Vec<Vec<GridEntry<'a>>> {
     // Per SOURCE column, the last row index (above the current one) whose cell is
     // not skipped - the nearest source a `^` can extend.
     let mut last_non_skip: Vec<Option<usize>> = Vec::new();
+    let mut colspan_origins: Vec<Vec<Option<usize>>> = vec![Vec::new(); grid.len()];
     for r in 0..grid.len() {
         let cols = grid[r].len();
+        let mut last_visible: Option<usize> = None;
         for c in 0..cols {
             if grid[r][c].skip {
                 continue;
@@ -637,35 +639,33 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>]) -> Vec<Vec<GridEntry<'a>>> {
                 let up = last_non_skip.get(c).copied().flatten();
                 let has_source = matches!(up, Some(u) if u < grid.len() && c < grid[u].len());
                 let consumed_source = matches!(up, Some(u) if grid[u][c].skip);
-                let covered_by_visible_span = if let Some(u) = up {
-                    let mut left = c;
-                    while left > 0 {
-                        left -= 1;
-                        if !grid[u][left].skip {
-                            break;
-                        }
-                    }
-                    left < c
-                        && !grid[u][left].skip
-                        && left + grid[u][left].colspan > c
-                        && u + grid[u][left].rowspan > r
-                } else {
-                    false
-                };
+                let covered_by_visible_span = consumed_source
+                    && up.is_some_and(|u| {
+                        colspan_origins[u]
+                            .get(c)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|left| {
+                                left + grid[u][left].colspan > c && u + grid[u][left].rowspan > r
+                            })
+                    });
                 if has_source && (!consumed_source || covered_by_visible_span) {
                     let u = up.unwrap();
                     grid[u][c].rowspan += 1;
                     grid[r][c].skip = true;
                 }
             } else if marker == Some('<') && c > 0 {
-                let mut left = c as isize - 1;
-                while left >= 0 && grid[r][left as usize].skip {
-                    left -= 1;
-                }
-                if left >= 0 {
-                    grid[r][left as usize].colspan += 1;
+                if let Some(left) = last_visible {
+                    grid[r][left].colspan += 1;
                     grid[r][c].skip = true;
+                    if colspan_origins[r].is_empty() {
+                        colspan_origins[r].resize(cols, None);
+                    }
+                    colspan_origins[r][c] = Some(left);
                 }
+            }
+            if !grid[r][c].skip {
+                last_visible = Some(c);
             }
 
             // A consumed colspan position still covers this source column.
@@ -718,8 +718,13 @@ fn list_table_columns(attrs: Option<&Attrs>) -> Vec<(Option<&str>, Option<&str>,
 /// (and carve-rs's pipe table) uses. Skipped cells take no column. Mirrors
 /// carve-js's `placeColumns`.
 fn place_columns(grid: &[Vec<GridEntry<'_>>]) -> Placement {
-    // occupied_until[col] = exclusive row index through which a rowspan holds col.
-    let mut occupied_until: BTreeMap<usize, usize> = BTreeMap::new();
+    let capacity = grid
+        .iter()
+        .flatten()
+        .filter(|cell| !cell.skip)
+        .map(|cell| cell.colspan)
+        .sum();
+    let mut occupied = ColumnReservations::new(capacity);
     let mut cols: Vec<Vec<Option<usize>>> = Vec::with_capacity(grid.len());
     let mut row_reach: Vec<usize> = Vec::with_capacity(grid.len());
     let mut column_count = 0usize;
@@ -727,13 +732,7 @@ fn place_columns(grid: &[Vec<GridEntry<'_>>]) -> Placement {
     for (r, grid_row) in grid.iter().enumerate() {
         let mut row_cols: Vec<Option<usize>> = Vec::with_capacity(grid_row.len());
         let mut col = 0usize;
-        let mut reach = 0usize;
-        // A rowspan descending from above into this row reaches at least its col.
-        for (c, end) in &occupied_until {
-            if *end > r {
-                reach = reach.max(c + 1);
-            }
-        }
+        let mut reach = occupied.reach(r);
 
         for entry in grid_row {
             if entry.skip {
@@ -741,14 +740,11 @@ fn place_columns(grid: &[Vec<GridEntry<'_>>]) -> Placement {
                 continue;
             }
             // Flow past columns a rowspan from above still holds in this row.
-            while occupied_until.get(&col).copied().unwrap_or(0) > r {
-                col += 1;
-            }
+            col = occupied.next_free(col, r);
             row_cols.push(Some(col));
             if entry.rowspan > 1 {
                 for c in col..col + entry.colspan {
-                    let slot = occupied_until.entry(c).or_insert(0);
-                    *slot = (*slot).max(r + entry.rowspan);
+                    occupied.hold(c, r + entry.rowspan);
                 }
             }
             col += entry.colspan;

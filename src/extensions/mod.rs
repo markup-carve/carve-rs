@@ -16,6 +16,7 @@ pub mod autolink;
 pub mod code_callouts;
 pub mod code_group;
 pub mod color_swatch;
+mod column_reservations;
 pub mod details;
 pub mod external_links;
 pub mod fenced_render;

@@ -405,7 +405,8 @@ mod tests {
     fn every_extension_module_is_registered() {
         // Not extensions: `mod.rs` declares them, `registry.rs` is this file,
         // and `svg_sanitize` is a helper function used by other extensions.
-        const NOT_AN_EXTENSION: &[&str] = &["mod", "registry", "svg_sanitize"];
+        const NOT_AN_EXTENSION: &[&str] =
+            &["mod", "registry", "svg_sanitize", "column_reservations"];
 
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/extensions");
         let mut on_disk = HashSet::new();
