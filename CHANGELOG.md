@@ -17,6 +17,12 @@ which the published crate does not carry.
 - Roundtrip import collapses layout whitespace exposed by removed empty inline elements and preserves an empty definition term as raw HTML (#2302).
 - Safe and semantic import drop and report an empty term while keeping its definitions in document order. Canonical source export refuses an empty definition term instead of writing invalid Carve (#2302).
 
+### Improvements
+
+- `carve lint` reports `broken-fragment-link` for a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered document, with a case-only near miss naming the real id. Bare `#`, `#top`, cross-file links and URLs are skipped, as are `#ref-` and `#cite-` fragments when citations are enabled, and the rule stays silent under any other extension. Render output is unchanged (#2300, markup-carve/carve-js#2497).
+- A cross-reference whose id exists on an element it cannot reach names that element kind and suggests the `[text](#id)` form (#2300).
+- Repeated attribute folds, class and key emission, and abbreviation lookup are indexed rather than rescanned, so 4,096 consecutive classes, inline key blocks or block attribute lines no longer cost quadratic time. First-slot order, last values, class order, abbreviation boundaries and positions are unchanged; ordinary prose throughput is not improved (#2299).
+
 ## [0.1.8] - 2026-10-04
 
 ### Breaking
