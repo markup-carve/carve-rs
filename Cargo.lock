@@ -28,6 +28,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "smallvec",
  "unicode-normalization",
 ]
 

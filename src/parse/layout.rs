@@ -1006,7 +1006,10 @@ fn render_layout_ordered_list(
     Some(i)
 }
 
-fn layout_pipe_cells(line: &str) -> Option<Vec<&str>> {
+const INLINE_TABLE_CELLS: usize = 4;
+type LayoutTableCells<'a> = smallvec::SmallVec<[&'a str; INLINE_TABLE_CELLS]>;
+
+fn layout_pipe_cells<'a, C: FromIterator<&'a str>>(line: &'a str) -> Option<C> {
     let line = line.trim();
     // TWO PIPES, NOT ONE BYTE TESTED TWICE. `starts_with` and `ends_with` both
     // answer for the SAME `|` on a one-character line, so the slice below ran as
@@ -1042,8 +1045,8 @@ fn render_layout_table(
     out: &mut impl LayoutWrite,
     accepted: &mut AcceptanceCounters,
 ) -> Option<usize> {
-    let headers = layout_pipe_cells(lines.get(start)?)?;
-    let delimiter = layout_pipe_cells(lines.get(start + 1)?)?;
+    let headers: LayoutTableCells<'_> = layout_pipe_cells(lines.get(start)?)?;
+    let delimiter: LayoutTableCells<'_> = layout_pipe_cells(lines.get(start + 1)?)?;
     if headers.is_empty() || headers.len() != delimiter.len() {
         return None;
     }
@@ -1083,14 +1086,54 @@ fn render_layout_table(
     out.push_str("</tr>\n");
     layout_indent(out, depth + 1);
     out.push_str("</thead>");
+    if headers.len() <= INLINE_TABLE_CELLS {
+        render_layout_table_rows::<LayoutTableCells<'_>>(
+            lines,
+            start,
+            depth,
+            options,
+            out,
+            accepted,
+            &alignments,
+        )
+    } else {
+        render_layout_table_rows::<Vec<&str>>(
+            lines,
+            start,
+            depth,
+            options,
+            out,
+            accepted,
+            &alignments,
+        )
+    }
+}
+
+#[inline(never)]
+fn render_layout_table_rows<'a, C>(
+    lines: &[&'a str],
+    start: usize,
+    depth: usize,
+    options: &Options<'_>,
+    out: &mut impl LayoutWrite,
+    accepted: &mut AcceptanceCounters,
+    alignments: &[Option<&str>],
+) -> Option<usize>
+where
+    C: FromIterator<&'a str> + AsRef<[&'a str]>,
+{
     let mut i = start + 2;
-    let mut rows = Vec::new();
+    let mut rows: Vec<C> = Vec::new();
     while i < lines.len() && lines[i].trim_start().starts_with('|') {
-        let cells = layout_pipe_cells(lines[i])?;
-        if cells.len() != headers.len() {
+        let cells: C = layout_pipe_cells(lines[i])?;
+        if cells.as_ref().len() != alignments.len() {
             return None;
         }
-        if cells.iter().any(|cell| *cell == "^" || *cell == "<") {
+        if cells
+            .as_ref()
+            .iter()
+            .any(|cell| *cell == "^" || *cell == "<")
+        {
             return None;
         }
         rows.push(cells);
@@ -1111,7 +1154,7 @@ fn render_layout_table(
         out.push('\n');
         layout_indent(out, depth + 2);
         out.push_str("<tr>");
-        for (cell, alignment) in cells.iter().zip(&alignments) {
+        for (cell, alignment) in cells.as_ref().iter().zip(alignments) {
             out.push_str("<td");
             if let Some(alignment) = alignment {
                 out.push_str(" style=\"text-align: ");
@@ -1442,6 +1485,69 @@ mod layout_html_tests {
                 crate::to_html(&header_source),
                 authoritative(&header_source)
             );
+        }
+    }
+
+    #[test]
+    fn table_cell_storage_boundary_preserves_layout() {
+        for columns in [1, 4, 5, 32] {
+            let row = |cells: Vec<String>| format!("| {} |\n", cells.join(" | "));
+            let mut source = row((0..columns).map(|i| format!("Heading {i}")).collect());
+            source.push_str(&row((0..columns).map(|_| "---:".to_string()).collect()));
+            for i in 0..10 {
+                source.push_str(&row((0..columns)
+                    .map(|j| format!("*cell {i}-{j}*"))
+                    .collect()));
+            }
+            let output = try_layout_html(&source, &Options::default())
+                .expect("ordinary tables remain on the layout route");
+            assert_eq!(output, authoritative(&source));
+            let mut streamed = String::new();
+            assert!(try_layout_stream(
+                &source,
+                &Options::default(),
+                &mut |chunk| {
+                    streamed.push_str(chunk);
+                }
+            ));
+            assert_eq!(streamed, output);
+        }
+    }
+
+    #[test]
+    fn table_body_rejection_keeps_streaming_output_private() {
+        let valid = "| A | B |\n| --- | --- |\n| good | row |\n| another | row |\n";
+        assert!(try_layout_html(valid, &Options::default()).is_some());
+        let mut streamed = String::new();
+        assert!(try_layout_stream(
+            valid,
+            &Options::default(),
+            &mut |chunk| {
+                streamed.push_str(chunk);
+            }
+        ));
+        assert_eq!(streamed, authoritative(valid));
+
+        for body in [
+            "| good | row |\n| another | row |\n| short |\n",
+            "| good | row |\n| a | b | c | d | e | f |\n",
+            "| good | row |\n| a | ^ |\n",
+            "| good | row |\n| a | < |\n",
+            "| good | row |\n| incomplete\n",
+            "",
+        ] {
+            let source = format!("| A | B |\n| --- | --- |\n{body}");
+            assert!(try_layout_html(&source, &Options::default()).is_none());
+            let mut chunks = Vec::new();
+            assert!(!try_layout_stream(
+                &source,
+                &Options::default(),
+                &mut |chunk| {
+                    chunks.push(chunk.to_string());
+                }
+            ));
+            assert!(chunks.is_empty());
+            assert_eq!(crate::to_html(&source), authoritative(&source));
         }
     }
 
