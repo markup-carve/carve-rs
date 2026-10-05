@@ -11,7 +11,7 @@
 //! extension rendered by [`CarveExtension::render_inline_extension`].
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     smart_punctuation_glyph, Attrs, BlockNode, Document, ExtensionCarrier, InlineExtension,
@@ -33,13 +33,14 @@ pub(crate) const CARRIER: &str = "carve-glossary";
 /// let opts = Options::new().with_extension(&ext);
 /// let src = "Use :term[HTTP].\n\n::: glossary\n:: HTTP\n:  HyperText Transfer Protocol.\n:::";
 /// let html = carve::to_html_with_options(src, &opts);
-/// assert!(html.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
-/// assert!(html.contains("<dt id=\"gloss-http\">HTTP</dt>"));
+/// assert!(html.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"));
+/// assert!(html.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
 /// ```
 #[derive(Debug, Default)]
 pub struct Glossary {
-    /// Defined term keys across every `::: glossary` block.
-    defined: RefCell<BTreeSet<String>>,
+    /// Defined term key -> slug of the first entry with that key, across every
+    /// `::: glossary` block.
+    defined: RefCell<BTreeMap<String, String>>,
     /// Per-render set giving the id to the first occurrence of a duplicated slug.
     id_seen: RefCell<BTreeSet<String>>,
 }
@@ -57,7 +58,7 @@ impl CarveExtension for Glossary {
     }
 
     fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
-        let mut defined = BTreeSet::new();
+        let mut defined = BTreeMap::new();
         rewrite_blocks(&mut doc.children, &mut defined);
         // A `::: glossary` may live in a footnote definition (rendered later).
         for blocks in doc.footnote_defs.values_mut() {
@@ -91,12 +92,13 @@ impl CarveExtension for Glossary {
     }
 }
 
+/// Case-preserving, like a heading id, so `:: HTTP` and `:: http` keep two ids.
 fn term_slug(term: &[InlineNode]) -> String {
-    slugify_parse(&inline_text(term), HeadingIdOptions::LOWERCASE)
+    slugify_parse(&inline_text(term), HeadingIdOptions::PLAIN)
 }
 
 /// A reference reaches an entry by its exact text after whitespace collapse and
-/// NFC (CARVE-P9R-010); only the emitted id keeps the lowercased slug.
+/// NFC (CARVE-P9R-010).
 fn term_key(term: &[InlineNode]) -> String {
     normalize_heading_label(&inline_text(term))
 }
@@ -109,8 +111,8 @@ fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
 }
 
 /// Rewrite every `::: glossary` admonition (recursively) into a carrier and
-/// collect its defined term slugs.
-fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
+/// collect its defined term keys.
+fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeMap<String, String>) {
     for block in blocks.iter_mut() {
         match block {
             // CARVE-P12-057: `::: glossary` parses to a `directive`
@@ -128,7 +130,9 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
                     if let BlockNode::DefinitionList(dl) = child {
                         for item in &dl.items {
                             for term in &item.terms {
-                                defined.insert(term_key(term));
+                                defined
+                                    .entry(term_key(term))
+                                    .or_insert_with(|| term_slug(term));
                             }
                         }
                     }
@@ -177,18 +181,17 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
 fn render_term(
     node: &InlineExtension,
     ctx: &RenderContext<'_>,
-    defined: &BTreeSet<String>,
+    defined: &BTreeMap<String, String>,
 ) -> String {
     let word = ctx.render_inlines(&node.children);
     let attrs = Some(with_base_class(&node.attrs, "term"));
-    if defined.contains(&term_key(&node.children)) {
-        let slug = term_slug(&node.children);
+    if let Some(slug) = defined.get(&term_key(&node.children)) {
         // The structural glossary target wins; drop any author `href`
         // (case-insensitively) so the <a> never has two.
         let attr_str = render_attrs_without_keys(&attrs, &["href"]);
         format!(
             "<a href=\"#gloss-{}\"{}>{}</a>",
-            ctx.escape_attr(&slug),
+            ctx.escape_attr(slug),
             attr_str,
             word
         )
