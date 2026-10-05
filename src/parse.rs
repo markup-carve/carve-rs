@@ -14812,6 +14812,31 @@ fn body_ends_with_an_attribute_line(source: &str) -> bool {
 
 /// Whether the body can accept a lazy line, and whether its open paragraph
 /// lies inside a surviving quote. Both answers use the same parsed blocks.
+/// Does the body collected so far end in a LIST? The tracker that guards the
+/// body's own fence cannot tell a nested item's closer from the body's own, so
+/// it reports a closed block where the body holds an open container, and the
+/// line below reaches that container rather than ending the body
+/// (carve-rs#2313).
+fn body_ends_in_a_list(
+    seed: &str,
+    lines: &[String],
+    reached: &[bool],
+    options: &Options<'_>,
+) -> bool {
+    let mut source = String::from(seed);
+    for collected in lines {
+        source.push('\n');
+        source.push_str(collected);
+    }
+    let mut probe_reached = vec![true; seed.lines().count()];
+    probe_reached.extend_from_slice(reached);
+    let source = body_as_read(source, probe_reached, options);
+    matches!(
+        probe_blocks(&source, options).last(),
+        Some(BlockNode::List(_))
+    )
+}
+
 fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
     if body_ends_with_an_unnoded_interrupter(source) {
         return (false, false);
@@ -14838,6 +14863,14 @@ fn definition_body_fold(source: &str, options: &Options<'_>) -> (bool, bool) {
     // the body's own block content, §10 I1 closes the paragraph for either, and
     // the follower has nothing left to fold into. Corpus 444 rows 4 and 15 are
     // that half, and this engine was the only reader still folding them.
+    // A NESTED CONTAINER THE LINE REACHES IS STILL OPEN (carve-rs#2313). A list
+    // the body holds takes another item or another sibling block, so S24 C3's
+    // "asked of the innermost container the line REACHES" leaves the line inside
+    // the body whatever finished block the nested item ended on. The arms below
+    // are about the body's OWN last block, which has nothing left to fold into.
+    if matches!(blocks[end - 1], BlockNode::List(_)) {
+        return (true, false);
+    }
     (
         matches!(
             blocks[end - 1],
@@ -15100,7 +15133,14 @@ fn collect_definition_body(
                     continue;
                 }
             }
-            if fence.holds_no_paragraph() {
+            // A BLANK ENDS THE BODY WHATEVER IT HOLDS, so the container arm is
+            // asked only of a body still being continued without one, and a
+            // line already folded lazily has left a paragraph open.
+            if fence.holds_no_paragraph()
+                && !folded_a_lazy_line
+                && !(lines.last().is_some_and(|last| !is_blank_line(last))
+                    && body_ends_in_a_list(seed, &lines, &reached, options))
+            {
                 break;
             }
             // AND NEITHER DOES ANY OTHER BODY THAT ENDS IN A FINISHED BLOCK.
@@ -15196,6 +15236,15 @@ fn collect_definition_body(
             if !interrupts_paragraph_in_band(cur, &owned, !below_the_column) {
                 let keep = if below_the_column {
                     line.to_string()
+                } else if detect_fence_open(&owned).is_some() {
+                    // ONE COLUMN, AS THE LIST TWIN KEEPS IT. The body dedents
+                    // its own lines by the content margin, so a line pushed at
+                    // column 0 arrives AT that column on the reparse and the
+                    // fence shape opens a block one level in, where S10 I5 has
+                    // just made it the paragraph's text (carve-rs#2313). Only a
+                    // fence gets the column: a list marker given one opens a
+                    // second list where the fold continues the first.
+                    format!("{LAZY}{owned}")
                 } else {
                     owned
                 };
