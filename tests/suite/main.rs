@@ -792,6 +792,8 @@ mod code_callouts;
 mod code_fences_close_only_at_container_or_authored_base;
 #[path = "../code_title_edges.rs"]
 mod code_title_edges;
+#[path = "../collapsed_reference_exact_text.rs"]
+mod collapsed_reference_exact_text;
 #[path = "../collapsed_reference_publishes_its_resolution_key.rs"]
 mod collapsed_reference_publishes_its_resolution_key;
 #[path = "../collected_definition_leaves_no_comment_node.rs"]
