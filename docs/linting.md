@@ -78,6 +78,22 @@ let warnings = carve::lint_carve_with_options(source, &options);
 `cite` on a block quote is a valid HTML URL attribute and is deliberately not
 reported.
 
+The in-document reference rules:
+
+| rule | fires on |
+| --- | --- |
+| `broken-crossref` | a `</#id>` cross-reference with no matching heading or numbered caption id; it renders as literal text. When the id exists on an element a cross-reference cannot reach (a paragraph, a span, an uncaptioned table), the message names that element and suggests `[text](#id)` |
+| `broken-fragment-link` | a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered HTML |
+
+`broken-fragment-link` reads ids off the rendered output, so heading slugs,
+footnote ids and ids in raw HTML count, while an id quoted in a code block, an
+HTML comment or another attribute's value does not. Fragments match
+case-sensitively and a case-only near miss is named. A `:~:` text directive is
+ignored, a percent-encoded fragment is decoded, and `#`, `#top` and links into
+other files are skipped. With `citations`, `#ref-…` and `#cite-…` are skipped;
+with any other extension except `semantic-span` the rule stays silent, since
+lint cannot know which ids that extension generates.
+
 With citations enabled, `references-placement-in-container` reports a
 `::: references` marker inside a container. The marker renders as a div there;
 the generated list keeps its document position.
