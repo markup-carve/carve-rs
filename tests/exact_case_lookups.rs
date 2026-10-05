@@ -182,6 +182,32 @@ fn migrate_keeps_a_trailing_attribute_block() {
 }
 
 #[test]
+fn migrate_respells_a_reference_image_label_like_a_link_label() {
+    let migrated = migrate("A ![b][Logo] and [x][Logo]\n\n[logo]: logo.png\n");
+    assert_eq!(migrated, "A ![b][logo] and [x][logo]\n\n[logo]: logo.png\n");
+    assert!(to_html(&migrated).contains("<img src=\"logo.png\" alt=\"b\">"));
+}
+
+#[test]
+fn migrate_respells_a_collapsed_reference_image_and_keeps_its_attributes() {
+    assert_eq!(
+        migrate("\u{1F600} ![Logo][]{.c} and ![b][Logo]{width=10}\n\n[logo]: logo.png\n"),
+        "\u{1F600} ![logo][]{.c} and ![b][logo]{width=10}\n\n[logo]: logo.png\n"
+    );
+}
+
+#[test]
+fn migrate_leaves_an_image_with_several_matches_a_heading_match_or_a_multiline_label() {
+    for src in [
+        "![b][LOGO]\n\n[logo]: a.png\n[Logo]: b.png\n",
+        "![plan][]\n\n# Plan\n",
+        "![a][Lo\ngo]\n\n[lo go]: /a\n",
+    ] {
+        assert_eq!(migrate(src), src);
+    }
+}
+
+#[test]
 fn migrate_accepts_a_canonically_equivalent_spelling() {
     assert_eq!(
         migrate("# \u{c9}cole\n\n[e\u{301}cole][]\n"),
