@@ -1749,6 +1749,33 @@ fn an_automatic_id_never_takes_a_name_the_file_writes_later() {
 }
 
 #[test]
+fn an_automatic_id_skips_a_name_a_paragraph_in_the_file_writes() {
+    let child = "# Overview\n\nfirst\n\n{#Overview}\npara";
+    let result = expand("{{ c.crv }}", &[("c.crv", child)]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(
+        result.html.contains("<section id=\"Overview-2\">"),
+        "{}",
+        result.html
+    );
+    assert_eq!(
+        result.html.matches("id=\"Overview\"").count(),
+        1,
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn many_identical_included_headings_each_get_the_next_number() {
+    let child = "# Overview\n\n".repeat(3000);
+    let result = expand("{{ c.crv }}", &[("c.crv", &child)]);
+    assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    assert!(result.html.contains("id=\"Overview-3000\""));
+    assert!(!result.html.contains("id=\"Overview-3001\""));
+}
+
+#[test]
 fn an_authored_id_that_equals_its_slug_is_still_explicit() {
     // Told apart by the `{#id}` slot, not by comparing with the slug.
     let result = expand(

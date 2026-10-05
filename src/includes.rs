@@ -1127,14 +1127,12 @@ fn rename_child_heading_ids(
     state: &mut State<'_>,
 ) {
     // An automatic id never takes a name the file's own `{#id}` writes.
-    let mut authored: HashSet<String> = HashSet::new();
-    walk_blocks(children, &mut |block| {
-        if let BlockNode::Heading(h) = block {
-            if let Some(a) = h.attrs.as_ref().filter(|a| a.order.contains(&AttrSlot::Id)) {
-                authored.extend(a.id.clone());
-            }
-        }
-    });
+    let authored = crate::document_ids::authored_ids(
+        std::iter::once(&*children).chain(footnote_bodies.values().map(Vec::as_slice)),
+    );
+    // The last suffix handed out per slug, so a run of equal headings does not
+    // restart its search at -2 each time.
+    let mut cursor: HashMap<String, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
     walk_blocks_mut(children, &mut |block| {
         let BlockNode::Heading(h) = block else { return };
@@ -1154,7 +1152,10 @@ fn rename_child_heading_ids(
             let base = heading_slug(&h.children);
             let taken = |c: &str| state.used_heading_ids.contains(c) || authored.contains(c);
             let assigned = if taken(&base) {
-                next_free(&base, taken)
+                let from = cursor.get(&base).copied().unwrap_or(2);
+                let (name, n) = next_free_from(&base, from, taken);
+                cursor.insert(base, n + 1);
+                name
             } else {
                 base
             };
@@ -1190,15 +1191,20 @@ fn rename_child_heading_ids(
     }
 }
 
-fn next_free(base: &str, taken: impl Fn(&str) -> bool) -> String {
-    let mut n = 2u32;
+/// The least `base-N` with `N >= from` that `taken` refuses, and its `N`.
+fn next_free_from(base: &str, from: u32, taken: impl Fn(&str) -> bool) -> (String, u32) {
+    let mut n = from;
     loop {
         let candidate = format!("{base}-{n}");
         if !taken(&candidate) {
-            return candidate;
+            return (candidate, n);
         }
         n += 1;
     }
+}
+
+fn next_free(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    next_free_from(base, 2, taken).0
 }
 
 fn normalize_ref_label(label: &str) -> String {
