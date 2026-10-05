@@ -264,12 +264,13 @@ let ext = Glossary::new();
 let opts = Options::new().with_extension(&ext);
 let src = "Use :term[HTTP].\n\n::: glossary\n:: HTTP\n:  HyperText Transfer Protocol.\n:::";
 let html = carve::to_html_with_options(src, &opts);
-assert!(html.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
-assert!(html.contains("<dt id=\"gloss-http\">HTTP</dt>"));
+assert!(html.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"));
+assert!(html.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
 ```
 
-- The id slug is the heading-id slug of the term's plain text, lowercased
-  (`HTTP` -> `gloss-http`).
+- The id slug is the heading-id slug of the term's plain text with its case
+  kept, like a heading id (`HTTP` -> `gloss-HTTP`), so `:: HTTP` and `:: http`
+  are two entries with two ids.
 - `:term[word]` reaches an entry only when its bracket text matches the term
   exactly, after whitespace collapsing and NFC: `:term[http]` does not reach
   `:: HTTP` and degrades like an undefined term.

@@ -174,8 +174,8 @@ impl HeadingIdOptions {
         ascii: AsciiHeadingIds::Off,
     };
 
-    /// Lowercased with no folding: what the glossary and index-term ids use,
-    /// which are keys rather than heading anchors.
+    /// Lowercased with no folding: what index-term ids use, which group
+    /// spellings rather than anchor a heading.
     pub(crate) const LOWERCASE: Self = Self {
         lowercase: true,
         ascii: AsciiHeadingIds::Off,

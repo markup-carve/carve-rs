@@ -50,7 +50,7 @@ fn a_glossary_title_sits_at_the_element_it_titles() {
     assert_eq!(
         out,
         "<blockquote>\n  <p class=\"admonition-title\">G</p>\n  <dl class=\"glossary\">\n    \
-         <dt id=\"gloss-api\">API</dt>\n    <dd>Interface</dd>\n  </dl>\n</blockquote>"
+         <dt id=\"gloss-API\">API</dt>\n    <dd>Interface</dd>\n  </dl>\n</blockquote>"
     );
     assert_eq!(columns(&out, "<p class=\"admonition-title\""), vec![2]);
     assert_eq!(columns(&out, "<dl"), vec![2]);

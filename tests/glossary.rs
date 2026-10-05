@@ -20,9 +20,9 @@ const GLOSS_HTTP: &str = "::: glossary\n:: HTTP\n:  HyperText Transfer Protocol.
 fn renders_dl_with_gloss_ids() {
     let out = h(GLOSS);
     assert!(out.contains("<dl class=\"glossary\">"));
-    assert!(out.contains("<dt id=\"gloss-http\">HTTP</dt>"));
+    assert!(out.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
     assert!(out.contains("<dd>HyperText Transfer Protocol.</dd>"));
-    assert!(out.contains("<dt id=\"gloss-html\">HTML</dt>"));
+    assert!(out.contains("<dt id=\"gloss-HTML\">HTML</dt>"));
 }
 
 #[test]
@@ -30,23 +30,23 @@ fn full_golden_matches_carve_js() {
     let out = h(&format!("Use :term[HTTP] and :term[FTP].\n\n{GLOSS}"));
     assert_eq!(
         out,
-        "<p>Use <a href=\"#gloss-http\" class=\"term\">HTTP</a> and <span class=\"term\">FTP</span>.</p>\n\
-<dl class=\"glossary\">\n  <dt id=\"gloss-http\">HTTP</dt>\n  <dd>HyperText Transfer Protocol.</dd>\n  \
-<dt id=\"gloss-html\">HTML</dt>\n  <dd>HyperText Markup Language.</dd>\n</dl>"
+        "<p>Use <a href=\"#gloss-HTTP\" class=\"term\">HTTP</a> and <span class=\"term\">FTP</span>.</p>\n\
+<dl class=\"glossary\">\n  <dt id=\"gloss-HTTP\">HTTP</dt>\n  <dd>HyperText Transfer Protocol.</dd>\n  \
+<dt id=\"gloss-HTML\">HTML</dt>\n  <dd>HyperText Markup Language.</dd>\n</dl>"
     );
 }
 
 #[test]
 fn term_links_to_defined_entry() {
     let out = h(&format!("Use :term[HTTP].\n\n{GLOSS}"));
-    assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
+    assert!(out.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"));
 }
 
 #[test]
 fn undefined_term_degrades_to_span() {
     let out = h(&format!("Use :term[FTP].\n\n{GLOSS}"));
     assert!(out.contains("<span class=\"term\">FTP</span>"));
-    assert!(!out.contains("href=\"#gloss-ftp\""));
+    assert!(!out.contains("href=\"#gloss-FTP\""));
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn case_only_miss_stays_unresolved_like_an_undefined_term() {
     let out = h(&format!("Use :term[http] and :term[FTP].\n\n{GLOSS}"));
     assert!(out.contains("<span class=\"term\">http</span>"));
     assert!(out.contains("<span class=\"term\">FTP</span>"));
-    assert!(!out.contains("<a href=\"#gloss-http\""));
+    assert!(!out.contains("<a href="));
 }
 
 #[test]
@@ -62,11 +62,11 @@ fn entries_differing_only_in_case_are_each_reached_by_their_exact_spelling() {
     let out = h(
         "Use :term[HTTP], :term[http] and :term[Http].\n\n::: glossary\n:: HTTP\n:  Upper.\n\n:: http\n:  Lower.\n:::",
     );
-    assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
+    assert!(out.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"));
     assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">http</a>"));
     assert!(out.contains("<span class=\"term\">Http</span>"));
-    assert!(out.contains("<dt id=\"gloss-http\">HTTP</dt>"));
-    assert!(out.contains("<dt>http</dt>"));
+    assert!(out.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
+    assert!(out.contains("<dt id=\"gloss-http\">http</dt>"));
 }
 
 #[test]
@@ -74,20 +74,20 @@ fn whitespace_runs_and_nfc_still_match() {
     let out = h(
         "Use :term[Hyper  Text] and :term[Cafe\u{301}].\n\n::: glossary\n:: Hyper Text\n:  One.\n\n:: Caf\u{e9}\n:  Two.\n:::",
     );
-    assert!(out.contains("<a href=\"#gloss-hyper-text\" class=\"term\">Hyper  Text</a>"));
-    assert!(out.contains("class=\"term\">Cafe\u{301}</a>"));
+    assert!(out.contains("<a href=\"#gloss-Hyper-Text\" class=\"term\">Hyper  Text</a>"));
+    assert!(out.contains("<a href=\"#gloss-Caf\u{e9}\" class=\"term\">Cafe\u{301}</a>"));
 }
 
 #[test]
 fn entries_in_source_order() {
     let out = h(GLOSS);
-    assert!(out.find("gloss-http").unwrap() < out.find("gloss-html").unwrap());
+    assert!(out.find("gloss-HTTP").unwrap() < out.find("gloss-HTML").unwrap());
 }
 
 #[test]
 fn duplicate_slug_first_wins_id() {
     let out = h("::: glossary\n:: HTTP\n:  One.\n\n:: HTTP\n:  Two.\n:::");
-    assert_eq!(out.matches("id=\"gloss-http\"").count(), 1);
+    assert_eq!(out.matches("id=\"gloss-HTTP\"").count(), 1);
     assert!(out.contains("<dt>HTTP</dt>"));
 }
 
@@ -102,28 +102,28 @@ fn nested_in_blockquote() {
     let out = h(
         "Use :term[HTTP].\n\n> ::: glossary\n> :: HTTP\n> :  HyperText Transfer Protocol.\n> :::",
     );
-    assert!(out.contains("<dt id=\"gloss-http\">HTTP</dt>"));
-    assert!(out.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
+    assert!(out.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
+    assert!(out.contains("<a href=\"#gloss-HTTP\" class=\"term\">HTTP</a>"));
 }
 
 #[test]
 fn preserves_intro_prose_and_second_list() {
     let out = h("::: glossary\nProtocols below.\n\n:: HTTP\n:  One.\n\n:: FTP\n:  Two.\n:::");
     assert!(out.contains("Protocols below."));
-    assert!(out.contains("<dt id=\"gloss-http\">HTTP</dt>"));
-    assert!(out.contains("<dt id=\"gloss-ftp\">FTP</dt>"));
+    assert!(out.contains("<dt id=\"gloss-HTTP\">HTTP</dt>"));
+    assert!(out.contains("<dt id=\"gloss-FTP\">FTP</dt>"));
 }
 
 #[test]
 fn trailing_note_keeps_source_order() {
     let out = h("::: glossary\n:: HTTP\n:  One.\n\nSee the RFCs.\n:::");
-    assert!(out.find("gloss-http").unwrap() < out.find("See the RFCs.").unwrap());
+    assert!(out.find("gloss-HTTP").unwrap() < out.find("See the RFCs.").unwrap());
 }
 
 #[test]
 fn carries_inline_attrs_on_term() {
     let out = h(&format!("Use :term[HTTP]{{.abbr #use}}.\n\n{GLOSS_HTTP}"));
-    assert!(out.contains("href=\"#gloss-http\""));
+    assert!(out.contains("href=\"#gloss-HTTP\""));
     assert!(out.contains("id=\"use\""));
     assert!(out.contains("class=\"term abbr\""));
 }
