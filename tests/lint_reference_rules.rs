@@ -122,3 +122,149 @@ fn nested_list_definitions_are_checked() {
     assert_eq!(warning.column, 5);
     assert_eq!(&source[warning.start..warning.end], "[^a]:");
 }
+
+fn rules(source: &str) -> Vec<&'static str> {
+    lint_carve(source).into_iter().map(|w| w.rule).collect()
+}
+
+#[test]
+fn a_crossref_to_an_id_on_another_element_names_it() {
+    for (source, kind, id) in [
+        ("{#para}\nA para.\n\nSee </#para>.\n", "paragraph", "para"),
+        (
+            "{#tbl}\n| A |\n|---|\n| 1 |\n\nSee </#tbl>.\n",
+            "table",
+            "tbl",
+        ),
+        ("[x]{#Spot}\n\nSee </#spot>.\n", "span", "Spot"),
+    ] {
+        let warnings = lint_carve(source);
+        assert_eq!(
+            warnings.iter().map(|w| w.rule).collect::<Vec<_>>(),
+            ["broken-crossref"],
+            "{source:?}"
+        );
+        assert!(
+            warnings[0]
+                .message
+                .contains(&format!("which is on a {kind}")),
+            "{warnings:?}"
+        );
+        assert!(
+            warnings[0].message.contains(&format!("[text](#{id})")),
+            "{warnings:?}"
+        );
+    }
+    assert!(lint_carve("See </#nope>.\n")[0]
+        .message
+        .contains("has no matching heading id"));
+}
+
+#[test]
+fn a_fragment_link_that_matches_no_id_is_reported_at_the_link() {
+    let source = "# Intro\n\nSee [bad](#nope).\n";
+    let warnings = lint_carve(source);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0].rule, "broken-fragment-link");
+    assert!(warnings[0].message.contains("\"#nope\""));
+    assert_eq!((warnings[0].line, warnings[0].column), (3, 5));
+    assert_eq!(&source[warnings[0].start..warnings[0].end], "[bad](#nope)");
+}
+
+#[test]
+fn a_broken_fragment_link_is_found_in_every_container() {
+    for source in [
+        "> [x](#nope)\n",
+        "- [x](#nope)\n",
+        "Text[^n].\n\n[^n]: [x](#nope)\n",
+        "[x][r]\n\n[r]: #nope\n",
+    ] {
+        assert_eq!(rules(source), ["broken-fragment-link"], "{source:?}");
+    }
+}
+
+#[test]
+fn a_case_only_near_miss_is_named() {
+    let warnings = lint_carve("# Getting Started\n\n[x](#getting-started)\n");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0]
+        .message
+        .contains("\"Getting-Started\" differs only in case"));
+}
+
+#[test]
+fn fragment_links_to_rendered_ids_are_not_reported() {
+    for source in [
+        "# Getting Started\n\n[x](#Getting-Started)\n",
+        "# A\n\n# A\n\n[x](#A-2)\n",
+        "# Über uns\n\n[x](#%C3%9Cber-uns) [y](#Über-uns)\n",
+        "{#tbl}\n| A |\n|---|\n| 1 |\n\n[x](#tbl)\n",
+        "[x]{#sp}\n\n[y](#sp)\n",
+        "Text[^n].\n\n[^n]: Back to [ref](#fnref1).\n\n[x](#fn1)\n",
+        "``` =html\n<div id=\"raw\"></div>\n```\n\n[x](#raw)\n",
+        "``` =html\n<a name=\"old\"></a>\n```\n\n[x](#old)\n",
+        "[x](#top) [y](#)\n",
+        "[x](#:~:text=word)\n",
+        "# Intro\n\n[x](#Intro:~:text=word)\n",
+        "[x](other.crv#nope) [y](https://example.com/#nope)\n",
+        "# Intro\n\nsee </#Intro> and [Intro][]\n",
+    ] {
+        assert!(
+            !rules(source).contains(&"broken-fragment-link"),
+            "{source:?}: {:?}",
+            lint_carve(source)
+        );
+    }
+    let options = carve::Options::default().with_lowercase_heading_ids(true);
+    assert!(carve::lint_carve_with_options(
+        "# Getting Started\n\n[x](#getting-started)\n",
+        &options
+    )
+    .is_empty());
+}
+
+#[test]
+fn ids_only_spelled_inside_raw_html_text_do_not_count() {
+    for html in [
+        "<div title=\" id=phantom\"></div>",
+        "<!-- <div id=\"phantom\"></div> -->",
+    ] {
+        let source = format!("``` =html\n{html}\n```\n\n[x](#phantom)\n");
+        assert_eq!(rules(&source), ["broken-fragment-link"], "{source:?}");
+    }
+    assert_eq!(
+        rules("``` html\n<div id=\"raw\"></div>\n```\n\n[x](#raw)\n"),
+        ["broken-fragment-link"]
+    );
+}
+
+#[test]
+fn raw_html_ids_are_read_the_way_a_browser_decodes_them() {
+    let source = "``` =html\n<div title=\">\" id=\"r&amp;d\"></div><p id=\"&#1114112;\"></p>\n```\n\n[x](#r&d) [y](#nope)\n";
+    assert_eq!(rules(source), ["broken-fragment-link"]);
+    let deep = format!(
+        "``` =html\n{}<p id=\"deep\"></p>\n```\n\n[x](#deep) [y](#nope)\n",
+        "<div>".repeat(10000)
+    );
+    assert_eq!(rules(&deep), ["broken-fragment-link"]);
+}
+
+#[test]
+fn fragment_links_follow_the_registered_extensions() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    let found: Vec<_> = carve::lint_carve_with_options("[x](#ref-smith) [y](#nope)\n", &options)
+        .into_iter()
+        .map(|w| w.rule)
+        .collect();
+    assert_eq!(found, ["broken-fragment-link"]);
+    let unused = "[@a]: [Entry]{#entry}\n\n[x](#entry)\n";
+    let found: Vec<_> = carve::lint_carve_with_options(unused, &options)
+        .into_iter()
+        .map(|w| w.rule)
+        .collect();
+    assert!(found.contains(&"broken-fragment-link"), "{found:?}");
+    let tabs = carve::Tabs::new();
+    let options = carve::Options::new().with_extension(&tabs);
+    assert!(carve::lint_carve_with_options("[x](#tab-1)\n", &options).is_empty());
+}
