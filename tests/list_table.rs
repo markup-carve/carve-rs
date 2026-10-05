@@ -637,3 +637,35 @@ fn non_html_targets_keep_the_list_table_degradation() {
         );
     }
 }
+
+#[test]
+fn wide_colspan_keeps_its_origin_across_the_following_caret_row() {
+    let width = 2048;
+    let source = format!(
+        "::: list-table\n- - A\n{}- - ^\n{}:::\n",
+        "  - <\n".repeat(width - 1),
+        "  - ^\n".repeat(width - 1),
+    );
+    let html = h(&source);
+    assert!(html.contains("colspan=\"2048\""));
+    assert!(html.contains("rowspan=\"2\""));
+    assert_eq!(html.matches("<td").count(), 1);
+}
+
+#[test]
+fn wide_active_spans_release_their_columns_for_narrow_rows() {
+    let wide = format!("- - A\n{}", "  - <\n".repeat(127));
+    let active = h(&format!(
+        "::: list-table\n{wide}{}:::\n",
+        "- - ^\n".repeat(512)
+    ));
+    assert!(active.contains("rowspan=\"513\""));
+    assert!(active.contains("colspan=\"128\""));
+    assert_eq!(active.matches("<td").count(), 1);
+    let expired = h(&format!(
+        "::: list-table\n{wide}- - ^\n{}:::\n",
+        "- - Z\n".repeat(512)
+    ));
+    assert!(expired.contains("rowspan=\"2\""));
+    assert_eq!(expired.matches("<td").count(), 65537);
+}

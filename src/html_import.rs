@@ -5317,6 +5317,28 @@ impl<'a> Importer<'a> {
             .iter()
             .map(|slot| slot.as_ref().map(|(_, path)| path.clone()))
             .collect();
+        let mut origins: Vec<bool> = Vec::new();
+        let headers: Vec<Vec<bool>> = rows
+            .iter()
+            .map(|row| {
+                origins.resize(row.cells.len(), false);
+                row.cells
+                    .iter()
+                    .enumerate()
+                    .map(|(column, cell)| {
+                        let header = if cell.span == Some(TableCellSpan::Rowspan) {
+                            origins[column]
+                        } else {
+                            cell.header
+                        };
+                        if cell.span.is_none() {
+                            origins[column] = cell.header;
+                        }
+                        header
+                    })
+                    .collect()
+            })
+            .collect();
         let mut bodies: Vec<TableBodyGroup> = Vec::new();
         let mut body_sections = Vec::new();
         let mut index = middle.start;
@@ -5335,7 +5357,7 @@ impl<'a> Importer<'a> {
             // something to reinterpret.
             let body_start = start + group_head;
             let row_head_columns = if body_start < index {
-                Self::row_head_columns(rows, body_start..index)
+                Self::row_head_columns(rows, &headers, body_start..index)
             } else {
                 0
             };
@@ -5358,25 +5380,49 @@ impl<'a> Importer<'a> {
             });
         }
 
-        for id in 0..sections.tags.len() {
-            if sections.tags[id] != "tbody" || trs.iter().any(|(_, section)| *section == Some(id)) {
+        let mut sections_with_rows = vec![false; sections.tags.len()];
+        for (_, section) in trs {
+            if let Some(id) = section {
+                sections_with_rows[*id] = true;
+            }
+        }
+        let mut empty_bodies = Vec::new();
+        for (id, has_rows) in sections_with_rows.into_iter().enumerate() {
+            if sections.tags[id] != "tbody" || has_rows {
                 continue;
             }
             let attrs = sections.attrs[id].take().map(|(attrs, _)| attrs);
-            let index = body_sections
-                .iter()
-                .position(|section| section.is_some_and(|s| s > id))
-                .unwrap_or(bodies.len());
-            bodies.insert(
-                index,
+            empty_bodies.push((
+                id,
                 TableBodyGroup {
                     head_rows: 0,
                     body_rows: 0,
                     row_head_columns: None,
                     attrs,
                 },
-            );
-            body_sections.insert(index, Some(id));
+            ));
+        }
+        if !empty_bodies.is_empty() {
+            let mut empty_bodies = empty_bodies.into_iter().peekable();
+            let mut merged_bodies = Vec::new();
+            let mut merged_sections = Vec::new();
+            for (body, section) in bodies.into_iter().zip(body_sections) {
+                if let Some(id) = section {
+                    while empty_bodies.peek().is_some_and(|(empty, _)| *empty < id) {
+                        let (empty, body) = empty_bodies.next().unwrap();
+                        merged_bodies.push(body);
+                        merged_sections.push(Some(empty));
+                    }
+                }
+                merged_bodies.push(body);
+                merged_sections.push(section);
+            }
+            for (empty, body) in empty_bodies {
+                merged_bodies.push(body);
+                merged_sections.push(Some(empty));
+            }
+            bodies = merged_bodies;
+            body_sections = merged_sections;
         }
 
         // No `<thead>` at all: the leading run of header rows is what every
@@ -5456,33 +5502,15 @@ impl<'a> Importer<'a> {
     /// more than one column. carve-js carries the single mark and needs the
     /// width of the origin to undo it; a width lookup here could not change an
     /// answer, so there is none.
-    fn row_head_columns(rows: &[TableRow], group: std::ops::Range<usize>) -> usize {
-        fn origin_row(rows: &[TableRow], r: usize, c: usize) -> Option<usize> {
-            let mut up = r;
-            while up > 0 {
-                up -= 1;
-                if rows[up].cells.get(c).and_then(|cell| cell.span).is_none() {
-                    return Some(up);
-                }
-            }
-            None
-        }
-        fn header_at(rows: &[TableRow], r: usize, c: usize) -> bool {
-            let Some(cell) = rows[r].cells.get(c) else {
-                return false;
-            };
-            if cell.span == Some(TableCellSpan::Rowspan) {
-                return match origin_row(rows, r, c) {
-                    Some(up) => header_at(rows, up, c),
-                    None => false,
-                };
-            }
-            cell.header
-        }
+    fn row_head_columns(
+        rows: &[TableRow],
+        headers: &[Vec<bool>],
+        group: std::ops::Range<usize>,
+    ) -> usize {
         let leading = |r: usize| -> usize {
             let cells = &rows[r].cells;
             let mut columns = 0;
-            while columns < cells.len() && header_at(rows, r, columns) {
+            while columns < cells.len() && headers[r][columns] {
                 columns += 1;
             }
             // An all-header row would say every column is a row head, which is
