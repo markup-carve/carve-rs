@@ -797,6 +797,11 @@ struct State<'a> {
     used_ids: HashMap<String, (usize, usize)>,
     /// The last inclusion number handed out.
     inclusions: usize,
+    /// Explicit-id renames waiting for their final `-N`, in the order they were
+    /// made. The suffix has to skip every id in the ASSEMBLED document,
+    /// including ones later includes have not contributed yet, so the merge
+    /// writes a placeholder and [`finish_renames`] picks the name at the end.
+    pending_renames: Vec<PendingRename>,
     /// The inclusion whose content is being expanded, 0 for the root.
     owner: usize,
     /// Open reservation frames, one per include being expanded (spec I7).
@@ -893,6 +898,24 @@ impl State<'_> {
     /// The inclusion that claimed `id` first, if any did.
     fn id_owner(&self, id: &str) -> Option<usize> {
         self.used_ids.get(id).map(|&(owner, _)| owner)
+    }
+
+    /// Rename one occurrence of `id` to a placeholder that [`finish_renames`]
+    /// replaces, claim it for `owner` and warn.
+    fn defer_rename(&mut self, id: &str, owner: usize) -> String {
+        let placeholder = format!("{RENAME_MARK}{}{RENAME_MARK}", self.pending_renames.len());
+        self.reserve_id(&placeholder, owner);
+        let before = self.warnings.len();
+        self.warn(
+            "include-heading-id-rename",
+            format!("Id \"{id}\" was renamed to \"{placeholder}\"."),
+        );
+        self.pending_renames.push(PendingRename {
+            placeholder: placeholder.clone(),
+            base: id.to_string(),
+            warning: (self.warnings.len() > before).then_some(before),
+        });
+        placeholder
     }
 
     /// Give back one element's claim on `id`, for an element that never
@@ -1244,15 +1267,82 @@ fn auto_shift(children: &[BlockNode], context_level: i32) -> i32 {
     }
 }
 
+/// Brackets a rename placeholder. A private-use character cannot come out of an
+/// `{#id}` the author wrote, so a placeholder never meets a real id.
+const RENAME_MARK: char = '\u{E000}';
+
+struct PendingRename {
+    placeholder: String,
+    base: String,
+    /// Index of the warning that reports it, unless the warning cap dropped it.
+    warning: Option<usize>,
+}
+
+/// Give every deferred rename its final name (I5): the least `-N`, N >= 2, that
+/// no id anywhere in the assembled document uses and no earlier rename took.
+/// Renames that reached the output go first, in the order they were made; one
+/// whose include was rejected still gets a name for its warning.
+fn finish_renames(doc: &mut Document, state: &mut State<'_>) {
+    if state.pending_renames.is_empty() {
+        return;
+    }
+    let mut present: HashSet<String> = HashSet::new();
+    let mut gather = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
+        if let Some(id) = attrs.as_ref().and_then(|a| a.id.as_deref()) {
+            present.insert(id.to_string());
+        }
+    };
+    for_each_id_site(&mut doc.children, &mut gather);
+    for body in doc.footnote_defs.values_mut() {
+        for_each_id_site(body, &mut gather);
+    }
+    let mut taken: HashSet<String> = present
+        .iter()
+        .filter(|id| !id.contains(RENAME_MARK))
+        .cloned()
+        .collect();
+    let pending = std::mem::take(&mut state.pending_renames);
+    let (landed, dropped): (Vec<_>, Vec<_>) = pending
+        .iter()
+        .partition(|p| present.contains(&p.placeholder));
+    let mut rename: HashMap<String, String> = HashMap::new();
+    for p in landed.into_iter().chain(dropped) {
+        let name = next_free(&p.base, |c| taken.contains(c));
+        taken.insert(name.clone());
+        if let Some(w) = p.warning.and_then(|i| state.warnings.get_mut(i)) {
+            w.message = w.message.replace(&p.placeholder, &name);
+        }
+        rename.insert(p.placeholder.clone(), name);
+    }
+    let mut apply = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
+        if let Some(a) = attrs.as_mut() {
+            if let Some(new) = a.id.as_ref().and_then(|id| rename.get(id)) {
+                a.id = Some(new.clone());
+            }
+        }
+    };
+    for_each_id_site(&mut doc.children, &mut apply);
+    for body in doc.footnote_defs.values_mut() {
+        for_each_id_site(body, &mut apply);
+    }
+    let mut follow = FollowRename { rename: &rename };
+    follow.blocks(&mut doc.children);
+    for body in doc.footnote_defs.values_mut() {
+        follow.blocks(body);
+    }
+}
+
 /// Merge-time collision pass for element ids (spec I5), run on one child
 /// inclusion before its own includes expand.
 ///
-/// An explicit id on any element is renamed to the least free `-N` when another
-/// inclusion (the parent, an earlier include, an earlier inclusion of the same
-/// file) already claimed it; a duplicate the file holds on its own is left
-/// alone. Names compare exactly, as HTML ids do. An automatic heading id is
-/// re-derived from its slug against the assembled document, silently (rule 4).
-/// References in this inclusion to a renamed id follow it.
+/// An explicit id on any element is renamed when another inclusion (the parent,
+/// an earlier include, an earlier inclusion of the same file) already claimed
+/// it; every further copy of that id in this file is renamed too, each to its
+/// own name. A duplicate the file holds on its own is left alone. Names compare
+/// exactly, as HTML ids do. The final `-N` is picked by [`finish_renames`]. An
+/// automatic heading id is re-derived from its slug against the assembled
+/// document, silently (rule 4). References in this inclusion to a renamed id
+/// follow its first renamed copy.
 fn rename_child_ids(
     children: &mut [BlockNode],
     footnote_bodies: &mut BTreeMap<String, Vec<BlockNode>>,
@@ -1260,7 +1350,7 @@ fn rename_child_ids(
 ) -> usize {
     state.inclusions += 1;
     let me = state.inclusions;
-    // A rename never lands on a name this file writes further down.
+    // An automatic id never lands on a name this file writes further down.
     let own = crate::document_ids::authored_ids(
         std::iter::once(&*children).chain(footnote_bodies.values().map(Vec::as_slice)),
     );
@@ -1268,6 +1358,7 @@ fn rename_child_ids(
     // restart its search at -2 each time.
     let mut cursor: HashMap<String, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
+    let mut renamed_explicit: HashSet<String> = HashSet::new();
     let mut visit = |attrs: &mut Option<Attrs>, heading: Option<&[InlineNode]>| {
         let Some(a) = attrs.as_mut() else { return };
         let Some(id) = a.id.clone() else { return };
@@ -1288,21 +1379,13 @@ fn rename_child_ids(
             };
             state.reserve_id(&assigned, me);
             assigned
-        } else if let Some(first) = rename.get(&id) {
-            // The file's own duplicate of a renamed id stays its duplicate.
-            state.reserve_id(first, me);
-            first.clone()
+        } else if renamed_explicit.contains(&id) {
+            state.defer_rename(&id, me)
         } else {
             match state.id_owner(&id) {
                 Some(owner) if owner != me => {
-                    let renamed =
-                        next_free(&id, |c| state.used_ids.contains_key(c) || own.contains(c));
-                    state.reserve_id(&renamed, me);
-                    state.warn(
-                        "include-heading-id-rename",
-                        format!("Id \"{id}\" was renamed to \"{renamed}\"."),
-                    );
-                    renamed
+                    renamed_explicit.insert(id.clone());
+                    state.defer_rename(&id, me)
                 }
                 _ => {
                     state.reserve_id(&id, me);
@@ -2643,6 +2726,7 @@ pub(crate) fn expand_includes_with_extensions(
         file: options.source_path.clone(),
         used_ids: HashMap::new(),
         inclusions: 0,
+        pending_renames: Vec::new(),
         owner: 0,
         reservation_frames: Vec::new(),
         dependencies: Vec::new(),
@@ -2686,6 +2770,7 @@ pub(crate) fn expand_includes_with_extensions(
             defs.entry(label).or_insert(body);
         }
         doc.footnote_defs = defs;
+        finish_renames(&mut doc, &mut state);
     }
     IncludeResult {
         doc,

@@ -71,7 +71,6 @@ impl IncludeResolver for MapResolver {
 
 struct Expanded {
     warnings: Vec<(String, Option<String>)>,
-    #[cfg(feature = "fs")]
     messages: Vec<String>,
     dependencies: Vec<IncludeDependency>,
     html: String,
@@ -92,7 +91,6 @@ fn expand_with(source: &str, resolver: &dyn IncludeResolver, opts: IncludeOption
             .iter()
             .map(|w| (w.rule.clone(), w.file.clone()))
             .collect(),
-        #[cfg(feature = "fs")]
         messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
         dependencies: result.dependencies,
         html: render_html(&result.doc).unwrap(),
@@ -2394,24 +2392,88 @@ fn a_selected_block_id_collides_like_any_other() {
 }
 
 #[test]
-fn a_files_own_duplicate_follows_the_first_rename() {
+fn each_renamed_copy_gets_its_own_name_and_links_follow_the_first() {
     let result = expand(
         "{#d}\nparent\n\n{{ c.crv }}",
         &[("c.crv", "{#d}\none\n\n{#d}\ntwo\n\n[back](#d)")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(
+        result.rules(),
+        vec!["include-heading-id-rename", "include-heading-id-rename"]
+    );
+    assert!(
+        result.messages[0].contains("\"d-2\""),
+        "{:?}",
+        result.messages
+    );
+    assert!(
+        result.messages[1].contains("\"d-3\""),
+        "{:?}",
+        result.messages
+    );
     assert!(
         result.html.contains("<p id=\"d-2\">one</p>"),
         "{}",
         result.html
     );
     assert!(
-        result.html.contains("<p id=\"d-2\">two</p>"),
+        result.html.contains("<p id=\"d-3\">two</p>"),
         "{}",
         result.html
     );
     assert!(result.html.contains("href=\"#d-2\""), "{}", result.html);
-    assert!(!result.html.contains("d-3"), "{}", result.html);
+}
+
+#[test]
+fn a_rename_skips_a_name_a_later_include_writes() {
+    let result = expand(
+        "{#a}\nparent\n\n{{ c.crv }}\n\n{{ e.crv }}",
+        &[("c.crv", "{#a}\nx"), ("e.crv", "{#a-2}\ny")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"a-3\">x</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"a-2\">y</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_rename_skips_a_name_the_files_own_include_writes() {
+    let result = expand(
+        "{#a}\nparent\n\n{{ c.crv }}",
+        &[("c.crv", "{#a}\nx\n\n{{ g.crv }}"), ("g.crv", "{#a-2}\ny")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"a-3\">x</p>"),
+        "{}",
+        result.html
+    );
+    assert!(
+        result.html.contains("<p id=\"a-2\">y</p>"),
+        "{}",
+        result.html
+    );
+}
+
+#[test]
+fn a_rename_skips_a_name_the_parent_writes_after_the_include() {
+    let result = expand(
+        "{#a}\nparent\n\n{{ c.crv }}\n\n{#a-2}\nlater",
+        &[("c.crv", "{#a}\nx")],
+    );
+    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert!(
+        result.html.contains("<p id=\"a-3\">x</p>"),
+        "{}",
+        result.html
+    );
 }
 
 #[test]

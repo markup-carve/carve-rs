@@ -369,8 +369,12 @@ carve flatten --include-root ./book < main.crv
 Two things it changes beyond inlining, both reported on stderr: the output is
 CANONICAL Carve, so formatting is normalized rather than preserved, and
 colliding explicit ids (on any element) and footnote labels are renamed (two
-files that were never in one document together can each define `intro`). The renames are written into
-the source, so the flattened file renders exactly like the expanded original.
+files that were never in one document together can each define `intro`). Each
+renamed copy gets its own `-N`, the least one no id in the assembled document
+uses, so a child that writes a colliding `intro` twice yields `intro-2` and
+`intro-3`. Ids compare exactly: `Intro` and `intro` do not collide. The renames
+are written into the source, so the flattened file renders exactly like the
+expanded original.
 
 ### Turning the filesystem off entirely
 
