@@ -241,7 +241,7 @@ fn check_fragment_links(
         return;
     }
     let citations = names.contains(&"citations");
-    let ids = rendered_ids(source, options);
+    let (ids, linked) = rendered_ids(source, options);
     let mut ids_by_fold = BTreeMap::new();
     for id in &ids {
         ids_by_fold.entry(fold_id(id)).or_insert(id.as_str());
@@ -253,6 +253,11 @@ fn check_fragment_links(
             continue;
         }
         let decoded = percent_decode(fragment).unwrap_or_else(|| fragment.to_owned());
+        // A link the render leaves out reaches no reader, so it goes nowhere for
+        // a reason this rule does not own.
+        if !linked.contains(fragment) && !linked.contains(&decoded) {
+            continue;
+        }
         if ids.contains(fragment) || ids.contains(&decoded) {
             continue;
         }
@@ -272,8 +277,9 @@ fn check_fragment_links(
 }
 
 /// The ids the rendered HTML carries, read off the output so generated ids and
-/// ids inside raw HTML count exactly as a browser sees them.
-fn rendered_ids(source: &str, options: &Options<'_>) -> BTreeSet<String> {
+/// ids inside raw HTML count exactly as a browser sees them, and the fragments
+/// of the links that render.
+fn rendered_ids(source: &str, options: &Options<'_>) -> (BTreeSet<String>, BTreeSet<String>) {
     let mut render_options = Options {
         lowercase_heading_ids: options.lowercase_heading_ids,
         ascii_heading_ids: options.ascii_heading_ids,
@@ -285,6 +291,7 @@ fn rendered_ids(source: &str, options: &Options<'_>) -> BTreeSet<String> {
     let html = crate::to_html_with_options(source, &render_options);
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut ids = BTreeSet::new();
+    let mut linked = BTreeSet::new();
     // Iterative: raw HTML nesting is not bounded by the renderer's depth cap.
     let mut pending = vec![dom.document.clone()];
     while let Some(node) = pending.pop() {
@@ -297,11 +304,20 @@ fn rendered_ids(source: &str, options: &Options<'_>) -> BTreeSet<String> {
                 if attr_name == "id" || (attr_name == "name" && &*name.local == "a") {
                     ids.insert(attr.value.to_string());
                 }
+                if attr_name == "href" && &*name.local == "a" {
+                    if let Some(rest) = attr.value.strip_prefix('#') {
+                        let fragment = rest.split(":~:").next().unwrap_or_default();
+                        linked.insert(fragment.to_owned());
+                        if let Some(decoded) = percent_decode(fragment) {
+                            linked.insert(decoded);
+                        }
+                    }
+                }
             }
             pending.push(child.clone());
         }
     }
-    ids
+    (ids, linked)
 }
 
 /// `decodeURIComponent`: `None` for a malformed escape or non-UTF-8 result.
