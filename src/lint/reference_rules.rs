@@ -340,6 +340,19 @@ impl CaseTargets {
         }
         found
     }
+
+    /// Definition labels an unresolved reference image misses only by case. An
+    /// image never resolves against the heading index, so headings are not
+    /// candidates.
+    fn image_reference(&self, label: &str) -> Vec<CaseMatch> {
+        let key = label_key(label);
+        let folded = fold_id(&key);
+        self.labels
+            .iter()
+            .filter(|l| **l != key && fold_id(l) == folded)
+            .map(|l| CaseMatch::Label(l.clone()))
+            .collect()
+    }
 }
 
 /// The source edits `fmt --migrate` makes: each reference whose ONE
@@ -407,6 +420,46 @@ pub(super) fn case_only_edits(
                                 new,
                                 spelling.to_owned(),
                             )
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            // A multiline label misses for a reason other than case.
+            InlineNode::Image(image)
+                if image.src.is_empty()
+                    && image
+                        .ref_label
+                        .as_deref()
+                        .is_some_and(|label| !label.contains(['\r', '\n'])) =>
+            {
+                let label = image.ref_label.as_deref().unwrap_or_default();
+                let raw = image.raw_ref.clone().unwrap_or_default();
+                match targets.image_reference(label).as_slice() {
+                    [only] => {
+                        let spelling = only.spelling();
+                        // Only a plain alt proves the bracket is the reference's
+                        // own; a trailing attribute block stays.
+                        let collapsed = format!("![{label}][]");
+                        let explicit = format!("![{}][{label}]", image.alt);
+                        let head = if label == image.alt && raw.starts_with(&collapsed) {
+                            Some((collapsed, format!("![{spelling}][]")))
+                        } else if raw.starts_with(&explicit) {
+                            Some((explicit, format!("![{}][{spelling}]", image.alt)))
+                        } else {
+                            None
+                        };
+                        head.and_then(|(head, new_head)| {
+                            let rest = &raw[head.len()..];
+                            (rest.is_empty() || rest.starts_with('{')).then(|| {
+                                (
+                                    image.pos.as_ref(),
+                                    raw.clone(),
+                                    label,
+                                    format!("{new_head}{rest}"),
+                                    spelling.to_owned(),
+                                )
+                            })
                         })
                     }
                     _ => None,

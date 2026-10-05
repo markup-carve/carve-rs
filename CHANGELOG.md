@@ -11,23 +11,12 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Fixes
-
-- HTML import keeps separate paragraphs when an unwrapped div exposes them inside a list item. Text separated by a code block remains tight (#2302).
-- Roundtrip import collapses layout whitespace exposed by removed empty inline elements and preserves an empty definition term as raw HTML (#2302).
-- Safe and semantic import drop and report an empty term while keeping its definitions in document order. Canonical source export refuses an empty definition term instead of writing invalid Carve (#2302).
-
-### Improvements
-
-- `carve lint` reports `broken-fragment-link` for a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered document, with a case-only near miss naming the real id. Bare `#`, `#top`, cross-file links and URLs are skipped, as are `#ref-` and `#cite-` fragments when citations are enabled, and the rule stays silent under any other extension. Render output is unchanged (#2300, markup-carve/carve-js#2497).
-- A cross-reference whose id exists on an element it cannot reach names that element kind and suggests the `[text](#id)` form (#2300).
-- Repeated attribute folds, class and key emission, and abbreviation lookup are indexed rather than rescanned, so 4,096 consecutive classes, inline key blocks or block attribute lines no longer cost quadratic time. First-slot order, last values, class order, abbreviation boundaries and positions are unchanged; ordinary prose throughput is not improved (#2299).
-
-## [0.1.8] - 2026-10-04
+## [0.1.8] - 2026-10-05
 
 ### Breaking
 
 - A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
+- A name lookup compares with exact case wherever one is made. A collapsed reference resolves only to a heading whose text is spelled the same way, a glossary reference only to a term spelled the same way, and an include's `#name` only to an id spelled the same way; a near miss is reported rather than resolved (#2320, #2321, #2325, markup-carve/carve#2732).
 
 ### Fixes
 
@@ -53,6 +42,12 @@ which the published crate does not carry.
 - An indented matching comment closer ends the comment inside a colon fence, so definitions that follow stay outside the container (#2256).
 - A named colon fence with invalid opener metadata stays a container with its children parsed and reports `fence-title-syntax`, instead of reaching the page as text. A bare tab title is dropped so the tab falls back to its name, Djot migration keeps the rejected opener text, and `to_carve_patch` offers a format that would drop the metadata for review rather than as an edit (#2260, markup-carve/carve#2693).
 - Citations skip an invalid `@` in prefix text so a later valid key matches, honor backslash escapes before `@` and the suppress-author `-`, and require the locator comma to touch the key, so `[@a , p. 4]` stays literal as in the other engines (#2267).
+- HTML import keeps separate paragraphs when an unwrapped div exposes them inside a list item. Text separated by a code block remains tight (#2302).
+- Roundtrip import collapses layout whitespace exposed by removed empty inline elements and preserves an empty definition term as raw HTML (#2302).
+- Safe and semantic import drop and report an empty term while keeping its definitions in document order. Canonical source export refuses an empty definition term instead of writing invalid Carve (#2302).
+- An included automatic heading id carries the assembled document's number rather than the included file's, so the same heading included twice no longer collides (#2315, markup-carve/carve#2729).
+- `carve lint` stops checking a fragment link that never renders, so a link inside a construct the target drops reports nothing (#2314).
+- A flush-left line folds into the body its nested list holds instead of ending the item (#2318).
 
 ### Improvements
 
@@ -65,6 +60,12 @@ which the published crate does not carry.
 - HTML rendering writes container, quote and list children into the caller's buffer, borrows table data, plans table spans once per table and skips cloning a tree that preparation cannot change. Rendering 192 nested quotes requests 352 KB rather than 29.7 MB (#2281, #2282, #2283, #2285).
 - ASCII heading IDs skip Unicode transforms and an unused heading ID reserves its base name once, cutting allocation requests for 1,024 unique headings from 6,316 to 2,220. Text escaping and borrowed inline rendering stop rescanning plain prefixes, and plain Unicode paragraphs and lines with trailing spaces take the borrowed source-to-HTML path (#2272, #2277, #2280).
 - A failed inline scan stops re-reading the text it already rejected: a malformed autolink ends at its first invalid byte, an invalid cross-reference target is refused before its attributes are read and its range remembered, and an eligible combined-emphasis closer is indexed by bracket run. Target syntax, delimiter fallback and source positions are unchanged (#2297).
+- `carve lint` reports `broken-fragment-link` for a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered document, with a case-only near miss naming the real id. Bare `#`, `#top`, cross-file links and URLs are skipped, as are `#ref-` and `#cite-` fragments when citations are enabled, and the rule stays silent under any other extension. Render output is unchanged (#2300, markup-carve/carve-js#2497).
+- A cross-reference whose id exists on an element it cannot reach names that element kind and suggests the `[text](#id)` form (#2300).
+- Repeated attribute folds, class and key emission, and abbreviation lookup are indexed rather than rescanned, so 4,096 consecutive classes, inline key blocks or block attribute lines no longer cost quadratic time. First-slot order, last values, class order, abbreviation boundaries and positions are unchanged; ordinary prose throughput is not improved (#2299).
+- An include selects a block by id, and an element id that would collide in the assembled document is renamed (#2311, markup-carve/carve#2727, markup-carve/carve#2729).
+- Repeated braced closer and substitution scans are bounded rather than repeated, so a run of failed braced closers no longer costs quadratic time. Output is unchanged (#2317).
+- A nested list line's indentation is measured once per enclosing level instead of about eleven times, so the indent scanning a line at depth 200 costs falls by 2.71x, counted rather than timed. Output is unchanged, and the cost is still quadratic in depth (#2324, #2301).
 
 ## [0.1.7] - 2026-09-29
 
