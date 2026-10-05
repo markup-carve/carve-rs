@@ -2826,7 +2826,13 @@ impl<'a> Importer<'a> {
                     pos: None,
                 });
             }
-            let tight = !list_items.iter().any(|li| self.holds_paragraph(li));
+            let tight = !list_items.iter().any(|li| self.holds_paragraph(li))
+                && !items.iter().any(|item| {
+                    item.children.windows(2).any(|pair| {
+                        matches!(pair[0], BlockNode::Paragraph(_))
+                            && matches!(pair[1], BlockNode::Paragraph(_))
+                    })
+                });
             let start = if ordered {
                 Self::attr(h, "start")
                     .and_then(|s| s.parse().ok())
@@ -3623,6 +3629,7 @@ impl<'a> Importer<'a> {
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
         let mut definitions: Vec<DefinitionDef> = Vec::new();
+        let mut dropped_term = false;
         // Every entry is written, so a `<dl>` imports and writes back as ONE
         // list: no term acquires the next entry's description and nothing
         // splits. See `render_definition_list`.
@@ -3636,18 +3643,59 @@ impl<'a> Importer<'a> {
                         pos: None,
                     });
                 }
-                terms.push(DefinitionTerm {
-                    attrs: self.attrs(node, &p),
-                    children: trim_edge_whitespace(self.inlines(
-                        &node.children.borrow(),
+                let term_attrs = self.attrs(node, &p);
+                let children = trim_edge_whitespace(self.inlines(
+                    &node.children.borrow(),
+                    &p,
+                    node_depth + 1,
+                )?);
+                if self.writing
+                    && children.is_empty()
+                    && self.opts.mode != HtmlImportMode::Roundtrip
+                {
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementDropped,
+                        "Dropped an empty definition term: it has no Carve source spelling".into(),
+                        HtmlImportSeverity::Warning,
                         &p,
-                        node_depth + 1,
-                    )?),
+                        node,
+                    );
+                    self.report_unplaceable_attrs(
+                        node,
+                        term_attrs,
+                        "dt",
+                        "an empty term has no Carve source spelling",
+                        &p,
+                    );
+                    dropped_term = true;
+                    continue;
+                }
+                dropped_term = false;
+                terms.push(DefinitionTerm {
+                    attrs: term_attrs,
+                    children,
                     pos: None,
                 });
                 continue;
             }
             if terms.is_empty() && definitions.is_empty() {
+                if dropped_term && !items.is_empty() {
+                    let children = self.blocks(&node.children.borrow(), &p, node_depth + 1)?;
+                    let attrs = self.attrs(node, &p);
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        "A definition whose empty term was dropped is attached to the preceding group to keep document order".into(),
+                        HtmlImportSeverity::Warning,
+                        &p,
+                        node,
+                    );
+                    items.last_mut().unwrap().definitions.push(DefinitionDef {
+                        attrs,
+                        children,
+                        pos: None,
+                    });
+                    continue;
+                }
                 // A `dd` before any `dt` is not valid HTML5, but a sliced-up
                 // editor export produces one. It cannot become a group: a
                 // definition line under an empty `::` re-parses as a paragraph,
@@ -3657,7 +3705,11 @@ impl<'a> Importer<'a> {
                 // diagnostic states the role that did not survive.
                 self.diag(
                     HtmlImportDiagnosticCode::ElementUnwrapped,
-                    "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into(),
+                    if dropped_term {
+                        "A definition whose empty term was dropped kept its content as blocks ahead of the definition list".into()
+                    } else {
+                        "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into()
+                    },
                     HtmlImportSeverity::Warning,
                     &p,
                     node,
@@ -3695,6 +3747,19 @@ impl<'a> Importer<'a> {
                 definitions,
                 pos: None,
             });
+        }
+        if self.writing
+            && self.opts.mode == HtmlImportMode::Roundtrip
+            && items
+                .iter()
+                .any(|item| item.terms.iter().any(|term| term.children.is_empty()))
+        {
+            self.keep_raw(h, path, "dl");
+            return Ok(vec![BlockNode::RawBlock(RawBlock {
+                format: "html".into(),
+                content: Self::html(h),
+                pos: None,
+            })]);
         }
         if items.is_empty() {
             // No list is written, so nothing carries the `<dl>`'s attributes.
@@ -5494,7 +5559,15 @@ impl<'a> Importer<'a> {
             }
             out.extend(produced);
         }
-        Ok(drop_space_after_hard_break(coalesce(hoist_edge_space(out))))
+        let mut out = drop_space_after_hard_break(coalesce(hoist_edge_space(out)));
+        if self.opts.mode == HtmlImportMode::Roundtrip {
+            for node in &mut out {
+                if let InlineNode::Text(text) = node {
+                    text.value = collapse(&text.value);
+                }
+            }
+        }
+        Ok(out)
     }
     /// An HTML comment in an INLINE position, as the delimited Carve comment
     /// (markup-carve/carve#1709).
