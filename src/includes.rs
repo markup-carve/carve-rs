@@ -26,8 +26,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(feature = "fs")]
 use std::path::{Path, PathBuf};
 
-use crate::ast::{AttrSlot, BlockNode, Document, FigureTarget, Heading, InlineNode, Paragraph};
+use crate::ast::{
+    AttrSlot, Attrs, BlockNode, Document, FigureTarget, Heading, Image, InlineNode, Paragraph,
+};
 use crate::extension::CarveExtension;
+use crate::include_walk::SubtreeVisitor;
 use crate::parse::slugify_parse;
 use crate::render::plain_inlines;
 
@@ -347,6 +350,12 @@ fn is_ident_start(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '_'
 }
 
+/// PART 6 `include_section` takes an `explicit_identifier`, which may also open
+/// on a digit (`#2024-plan`).
+fn is_explicit_ident_start(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 fn is_ident_rest(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_' || c == '-'
 }
@@ -448,7 +457,7 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
             if let Some(name) = after_ws.strip_prefix('#') {
                 let mut it = name.chars();
                 if let Some(first) = it.next() {
-                    if is_ident_start(first) {
+                    if is_explicit_ident_start(first) {
                         let end = name
                             .char_indices()
                             .find(|(_, c)| !is_ident_rest(*c))
@@ -779,7 +788,22 @@ struct State<'a> {
     depth: usize,
     /// Identity of the document whose content is currently being expanded.
     file: Option<String>,
-    used_heading_ids: HashSet<String>,
+    /// Every element id claimed so far (I5), mapped to the file inclusion that
+    /// claimed it first (0 is the root document, each child inclusion takes the
+    /// next number) and the number of elements carrying it. A duplicate is
+    /// renamed only against ANOTHER inclusion's claim; the count lets an
+    /// element that never reaches the output give its id back without freeing
+    /// one a surviving element still carries.
+    used_ids: HashMap<String, (usize, usize)>,
+    /// The last inclusion number handed out.
+    inclusions: usize,
+    /// Explicit-id renames waiting for their final `-N`, in the order they were
+    /// made. The suffix has to skip every id in the ASSEMBLED document,
+    /// including ones later includes have not contributed yet, so the merge
+    /// writes a placeholder and [`finish_renames`] picks the name at the end.
+    pending_renames: Vec<PendingRename>,
+    /// The inclusion whose content is being expanded, 0 for the root.
+    owner: usize,
     /// Open reservation frames, one per include being expanded (spec I7).
     ///
     /// Every identifier claimed while a child is being processed is journalled
@@ -857,19 +881,52 @@ impl State<'_> {
         }
     }
 
-    /// Claim an explicit heading id, journalling it into the innermost open
-    /// reservation frame. Returns `true` when the id was still free.
+    /// Claim an element id for inclusion `owner`, journalling it into the
+    /// innermost open reservation frame. Returns `true` when the id was free.
     ///
     /// Claims made outside any frame - the root document's own ids - are
     /// permanent and never journalled.
-    fn reserve_heading_id(&mut self, id: &str) -> bool {
-        let fresh = self.used_heading_ids.insert(id.to_string());
-        if fresh {
-            if let Some(frame) = self.reservation_frames.last_mut() {
-                frame.push(id.to_string());
+    fn reserve_id(&mut self, id: &str, owner: usize) -> bool {
+        let entry = self.used_ids.entry(id.to_string()).or_insert((owner, 0));
+        entry.1 += 1;
+        if let Some(frame) = self.reservation_frames.last_mut() {
+            frame.push(id.to_string());
+        }
+        entry.1 == 1
+    }
+
+    /// The inclusion that claimed `id` first, if any did.
+    fn id_owner(&self, id: &str) -> Option<usize> {
+        self.used_ids.get(id).map(|&(owner, _)| owner)
+    }
+
+    /// Rename one occurrence of `id` to a placeholder that [`finish_renames`]
+    /// replaces, claim it for `owner` and warn.
+    fn defer_rename(&mut self, id: &str, owner: usize) -> String {
+        let placeholder = format!("{RENAME_MARK}{}{RENAME_MARK}", self.pending_renames.len());
+        self.reserve_id(&placeholder, owner);
+        let before = self.warnings.len();
+        self.warn(
+            "include-heading-id-rename",
+            format!("Id \"{id}\" was renamed to \"{placeholder}\"."),
+        );
+        self.pending_renames.push(PendingRename {
+            placeholder: placeholder.clone(),
+            base: id.to_string(),
+            warning: (self.warnings.len() > before).then_some(before),
+        });
+        placeholder
+    }
+
+    /// Give back one element's claim on `id`, for an element that never
+    /// reaches the output.
+    fn release_id(&mut self, id: &str) {
+        if let Some(entry) = self.used_ids.get_mut(id) {
+            entry.1 = entry.1.saturating_sub(1);
+            if entry.1 == 0 {
+                self.used_ids.remove(id);
             }
         }
-        fresh
     }
 
     fn open_reservations(&mut self) {
@@ -896,7 +953,7 @@ impl State<'_> {
             .pop()
             .expect("reservation frames are balanced");
         for id in frame {
-            self.used_heading_ids.remove(&id);
+            self.release_id(&id);
         }
     }
 }
@@ -1048,26 +1105,121 @@ fn heading_id(h: &Heading) -> String {
         })
 }
 
-/// The subtree rooted at the heading whose id equals `section`: that heading
-/// through content up to the next same-or-higher-level heading (I1).
-fn select_section(children: &[BlockNode], section: &str) -> Option<Vec<BlockNode>> {
-    let start = children
-        .iter()
-        .position(|b| matches!(b, BlockNode::Heading(h) if heading_id(h) == section))?;
-    let BlockNode::Heading(head) = &children[start] else {
-        return None;
-    };
-    let level = head.level;
-    let mut end = start + 1;
-    while end < children.len() {
-        if let BlockNode::Heading(h) = &children[end] {
-            if h.level <= level {
-                break;
+/// What `#name` selects from a child's own parse (I1a), or `None`.
+///
+/// Step 1: the first heading, at any depth, whose id matches: it and the blocks
+/// after it in the same container, up to the next same-or-higher-level heading.
+/// Step 2: otherwise the first other block carrying the explicit id. Document
+/// order, a container before the blocks inside it. Footnote bodies are never
+/// searched; they are not in `children`.
+fn select_fragment(children: &[BlockNode], section: &str) -> Option<Vec<BlockNode>> {
+    let heading = first_block(
+        children,
+        &|b| matches!(b, BlockNode::Heading(h) if heading_id(h) == section),
+    );
+    if let Some((seq, start)) = heading {
+        let BlockNode::Heading(head) = &seq[start] else {
+            return None;
+        };
+        let level = head.level;
+        let end = seq[start + 1..]
+            .iter()
+            .position(|b| matches!(b, BlockNode::Heading(h) if h.level <= level))
+            .map_or(seq.len(), |at| start + 1 + at);
+        return Some(seq[start..end].to_vec());
+    }
+    let (seq, at) = first_block(children, &|b| {
+        selectable_block_attrs(b)
+            .and_then(|a| a.id.as_deref())
+            .is_some_and(|id| id == section)
+    })?;
+    Some(vec![seq[at].clone()])
+}
+
+/// The first block in document order that passes `test`, as its sequence and
+/// index.
+fn first_block<'a>(
+    seq: &'a [BlockNode],
+    test: &impl Fn(&BlockNode) -> bool,
+) -> Option<(&'a [BlockNode], usize)> {
+    for (i, block) in seq.iter().enumerate() {
+        if test(block) {
+            return Some((seq, i));
+        }
+        for inner in block_sequences(block) {
+            if let Some(hit) = first_block(inner, test) {
+                return Some(hit);
             }
         }
-        end += 1;
     }
-    Some(children[start..end].to_vec())
+    None
+}
+
+/// The block sequences directly inside `block`: container bodies, list items,
+/// definitions and block table cells. A line block holds lines, not blocks.
+fn block_sequences(block: &BlockNode) -> Vec<&[BlockNode]> {
+    fn cells(t: &crate::ast::Table) -> Vec<&[BlockNode]> {
+        t.rows
+            .iter()
+            .flat_map(|r| &r.cells)
+            .filter_map(|c| c.blocks.as_deref())
+            .collect()
+    }
+    match block {
+        BlockNode::BlockQuote(b) => vec![&b.children],
+        BlockNode::Admonition(a) => vec![&a.children],
+        BlockNode::Directive(d) => vec![&d.children],
+        BlockNode::Div(d) => vec![&d.children],
+        BlockNode::Section(d) => vec![&d.children],
+        BlockNode::FigureGroup(g) => vec![&g.children],
+        BlockNode::ExtensionCarrier(e) => vec![&e.children],
+        BlockNode::BlockExtension(e) => vec![e.fallback_slice()],
+        BlockNode::List(l) => l.items.iter().map(|i| i.children.as_slice()).collect(),
+        BlockNode::DefinitionList(d) => d
+            .items
+            .iter()
+            .flat_map(|i| &i.definitions)
+            .map(|def| def.children.as_slice())
+            .collect(),
+        BlockNode::Table(t) => cells(t),
+        BlockNode::Figure(f) => match &*f.target {
+            FigureTarget::BlockQuote(b) => vec![&b.children],
+            FigureTarget::Table(t) => cells(t),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// The attributes of a block step 2 may select. Definitions that render
+/// nothing (reference, abbreviation and citation definitions, comments) and
+/// headings (step 1's business) are never selected by a block id.
+fn selectable_block_attrs(block: &BlockNode) -> Option<&Attrs> {
+    match block {
+        BlockNode::Paragraph(b) => b.attrs.as_ref(),
+        BlockNode::CodeBlock(b) => b.attrs.as_ref(),
+        BlockNode::List(b) => b.attrs.as_ref(),
+        BlockNode::BlockQuote(b) => b.attrs.as_ref(),
+        BlockNode::Table(b) => b.attrs.as_ref(),
+        BlockNode::Admonition(b) => b.attrs.as_ref(),
+        BlockNode::Directive(b) => b.attrs.as_ref(),
+        BlockNode::Div(b) => b.attrs.as_ref(),
+        BlockNode::Section(b) => b.attrs.as_ref(),
+        BlockNode::LineBlock(b) => b.attrs.as_ref(),
+        BlockNode::DefinitionList(b) => b.attrs.as_ref(),
+        BlockNode::Figure(b) => b.attrs.as_ref(),
+        BlockNode::FigureGroup(b) => b.attrs.as_ref(),
+        BlockNode::BlockExtension(b) => b.attrs.as_ref(),
+        BlockNode::ExtensionCarrier(b) => b.attrs.as_ref(),
+        BlockNode::BlockImage(b) => b.attrs.as_ref(),
+        BlockNode::ThematicBreak(b) => b.attrs.as_ref(),
+        BlockNode::Heading(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_) => None,
+    }
 }
 
 fn shift_blocks(blocks: &mut [BlockNode], shift: i32, state: &mut State<'_>) {
@@ -1115,42 +1267,126 @@ fn auto_shift(children: &[BlockNode], context_level: i32) -> i32 {
     }
 }
 
-/// Merge-time collision pass for heading ids (spec I5): parent ids and earlier
-/// includes win, a later duplicate gets the least free `-N`, automatic ids are
-/// re-derived against the assembled document, and the
-/// child's own crossrefs follow the rename so they keep resolving within the
-/// child's scope. Runs depth-first at merge time because after splicing, file
-/// provenance is gone.
-fn rename_child_heading_ids(
+/// Brackets a rename placeholder. A private-use character cannot come out of an
+/// `{#id}` the author wrote, so a placeholder never meets a real id.
+const RENAME_MARK: char = '\u{E000}';
+
+struct PendingRename {
+    placeholder: String,
+    base: String,
+    /// Index of the warning that reports it, unless the warning cap dropped it.
+    warning: Option<usize>,
+}
+
+/// Give every deferred rename its final name (I5): the least `-N`, N >= 2, that
+/// no id anywhere in the assembled document uses and no earlier rename took.
+/// A renamed id that never reached the output (its include was rejected, or an
+/// inline include spliced its paragraph away) renamed nothing: its warning is
+/// dropped and references to it point at the original id again.
+fn finish_renames(doc: &mut Document, state: &mut State<'_>) {
+    if state.pending_renames.is_empty() {
+        return;
+    }
+    let mut present: HashSet<String> = HashSet::new();
+    let mut gather = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
+        if let Some(id) = attrs.as_ref().and_then(|a| a.id.as_deref()) {
+            present.insert(id.to_string());
+        }
+    };
+    for_each_id_site(&mut doc.children, &mut gather);
+    for body in doc.footnote_defs.values_mut() {
+        for_each_id_site(body, &mut gather);
+    }
+    let mut taken: HashSet<String> = present
+        .iter()
+        .filter(|id| !id.contains(RENAME_MARK))
+        .cloned()
+        .collect();
+    let mut cursor: HashMap<&str, u32> = HashMap::new();
+    let mut rename: HashMap<String, String> = HashMap::new();
+    let mut unsaid: Vec<usize> = Vec::new();
+    let pending = std::mem::take(&mut state.pending_renames);
+    for p in &pending {
+        if !present.contains(&p.placeholder) {
+            unsaid.extend(p.warning);
+            rename.insert(p.placeholder.clone(), p.base.clone());
+            continue;
+        }
+        // The claim it collided with did not survive (a block include
+        // directive's own paragraph, for one): nothing to rename around.
+        if !taken.contains(&p.base) {
+            unsaid.extend(p.warning);
+            taken.insert(p.base.clone());
+            rename.insert(p.placeholder.clone(), p.base.clone());
+            continue;
+        }
+        let from = cursor.get(p.base.as_str()).copied().unwrap_or(2);
+        let (name, n) = next_free_from(&p.base, from, |c| taken.contains(c));
+        cursor.insert(&p.base, n + 1);
+        taken.insert(name.clone());
+        if let Some(w) = p.warning.and_then(|i| state.warnings.get_mut(i)) {
+            w.message = w.message.replace(&p.placeholder, &name);
+        }
+        rename.insert(p.placeholder.clone(), name);
+    }
+    for i in unsaid.into_iter().rev() {
+        state.warnings.remove(i);
+    }
+    let mut apply = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
+        if let Some(a) = attrs.as_mut() {
+            if let Some(new) = a.id.as_ref().and_then(|id| rename.get(id)) {
+                a.id = Some(new.clone());
+            }
+        }
+    };
+    for_each_id_site(&mut doc.children, &mut apply);
+    for body in doc.footnote_defs.values_mut() {
+        for_each_id_site(body, &mut apply);
+    }
+    let mut follow = FollowRename { rename: &rename };
+    follow.blocks(&mut doc.children);
+    for body in doc.footnote_defs.values_mut() {
+        follow.blocks(body);
+    }
+}
+
+/// Merge-time collision pass for element ids (spec I5), run on one child
+/// inclusion before its own includes expand.
+///
+/// An explicit id on any element is renamed when another inclusion (the parent,
+/// an earlier include, an earlier inclusion of the same file) already claimed
+/// it; every further copy of that id in this file is renamed too, each to its
+/// own name. A duplicate the file holds on its own is left alone. Names compare
+/// exactly, as HTML ids do. The final `-N` is picked by [`finish_renames`]. An
+/// automatic heading id is re-derived from its slug against the assembled
+/// document, silently (rule 4). References in this inclusion to a renamed id
+/// follow its first renamed copy.
+fn rename_child_ids(
     children: &mut [BlockNode],
     footnote_bodies: &mut BTreeMap<String, Vec<BlockNode>>,
     state: &mut State<'_>,
-) {
-    // An automatic id never takes a name the file's own `{#id}` writes.
-    let authored = crate::document_ids::authored_ids(
+) -> usize {
+    state.inclusions += 1;
+    let me = state.inclusions;
+    // An automatic id never lands on a name this file writes further down.
+    let own = crate::document_ids::authored_ids(
         std::iter::once(&*children).chain(footnote_bodies.values().map(Vec::as_slice)),
     );
     // The last suffix handed out per slug, so a run of equal headings does not
     // restart its search at -2 each time.
     let mut cursor: HashMap<String, u32> = HashMap::new();
     let mut rename: HashMap<String, String> = HashMap::new();
-    let mut visit = |block: &mut BlockNode| {
-        let BlockNode::Heading(h) = block else { return };
-        let Some(attrs) = h.attrs.as_ref() else {
-            return;
-        };
-        let Some(id) = attrs.id.clone() else {
-            return;
-        };
-        // A generated id carries no `order` slot; only an authored `{#id}` does.
-        if !attrs.order.contains(&AttrSlot::Id) {
-            // I5 rule 4: an automatic id is disambiguated as in a single
-            // document, against the ASSEMBLED one. The child's own suffix
-            // (`Overview-2` from its second `# Overview`) is dropped first, so
-            // a selected section or a lone later heading does not keep a
-            // number the parent never assigned. Silent, like the in-file dedup.
-            let base = heading_slug(&h.children);
-            let taken = |c: &str| state.used_heading_ids.contains(c) || authored.contains(c);
+    let mut renamed_explicit: HashSet<String> = HashSet::new();
+    let mut visit = |attrs: &mut Option<Attrs>, heading: Option<&[InlineNode]>| {
+        let Some(a) = attrs.as_mut() else { return };
+        let Some(id) = a.id.clone() else { return };
+        // A generated heading id carries no `order` slot; an authored one does.
+        let generated = heading.filter(|_| !a.order.contains(&AttrSlot::Id));
+        let new = if let Some(text) = generated {
+            // The child's own suffix (`Overview-2` from its second `# Overview`)
+            // is dropped, so the assembled document numbers it afresh.
+            let base = heading_slug(text);
+            let taken = |c: &str| state.used_ids.contains_key(c) || own.contains(c);
             let assigned = if taken(&base) {
                 let from = cursor.get(&base).copied().unwrap_or(2);
                 let (name, n) = next_free_from(&base, from, taken);
@@ -1159,43 +1395,304 @@ fn rename_child_heading_ids(
             } else {
                 base
             };
-            state.reserve_heading_id(&assigned);
-            if assigned != id {
-                if let Some(attrs) = h.attrs.as_mut() {
-                    attrs.id = Some(assigned.clone());
+            state.reserve_id(&assigned, me);
+            assigned
+        } else if renamed_explicit.contains(&id) {
+            state.defer_rename(&id, me)
+        } else {
+            match state.id_owner(&id) {
+                Some(owner) if owner != me => {
+                    renamed_explicit.insert(id.clone());
+                    state.defer_rename(&id, me)
                 }
-                rename.entry(id).or_insert(assigned);
+                _ => {
+                    state.reserve_id(&id, me);
+                    id.clone()
+                }
             }
-            return;
+        };
+        if new != id {
+            a.id = Some(new.clone());
+            rename.entry(id).or_insert(new);
         }
-        if state.reserve_heading_id(&id) {
-            return;
-        }
-        let renamed = next_free(&id, |c| state.used_heading_ids.contains(c));
-        if let Some(attrs) = h.attrs.as_mut() {
-            attrs.id = Some(renamed.clone());
-        }
-        state.reserve_heading_id(&renamed);
-        state.warn(
-            "include-heading-id-rename",
-            format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
-        );
-        rename.insert(id, renamed);
     };
-    walk_blocks_mut(children, &mut visit);
+    for_each_id_site(children, &mut visit);
     for body in footnote_bodies.values_mut() {
-        walk_blocks_mut(body, &mut visit);
-    }
-    // Ids on other elements claim their names too, so a later file's automatic
-    // heading id steps around them.
-    for id in &authored {
-        state.reserve_heading_id(id);
+        for_each_id_site(body, &mut visit);
     }
     if !rename.is_empty() {
-        let empty = HashMap::new();
-        rename_in_blocks(children, &empty, &rename);
+        let mut follow = FollowRename { rename: &rename };
+        for block in children.iter_mut() {
+            follow.block(block);
+        }
         for body in footnote_bodies.values_mut() {
-            rename_in_blocks(body, &empty, &rename);
+            follow.blocks(body);
+        }
+    }
+    me
+}
+
+/// Rewrites this inclusion's references to a renamed id: a `</#id>`
+/// cross-reference and a link or image destination that is exactly `#id`,
+/// inline or through the file's own reference definition (I5).
+struct FollowRename<'a> {
+    rename: &'a HashMap<String, String>,
+}
+
+impl FollowRename<'_> {
+    /// The shared walker treats a citation entry as a leaf; its text holds
+    /// links all the same.
+    fn block(&mut self, block: &mut BlockNode) {
+        if let BlockNode::CitationDefinition(d) = block {
+            self.inlines(&mut d.children);
+        } else {
+            crate::include_walk::visit_block_children(block, self);
+        }
+    }
+
+    /// Whether `href` was rewritten.
+    fn follow(&self, href: &mut String) -> bool {
+        let Some(new) = href.strip_prefix('#').and_then(|id| self.rename.get(id)) else {
+            return false;
+        };
+        *href = format!("#{new}");
+        true
+    }
+}
+
+impl SubtreeVisitor for FollowRename<'_> {
+    fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+        for block in blocks.iter_mut() {
+            self.block(block);
+        }
+    }
+
+    fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+        for node in inlines.iter_mut() {
+            match node {
+                InlineNode::Link(l) => {
+                    // The writer spells a reference link from its label, which
+                    // still names the old destination: write it inline instead.
+                    if self.follow(&mut l.href) {
+                        l.ref_label = None;
+                        l.raw_ref = None;
+                    }
+                }
+                // A parsed `</#id>` that resolved is already a Link. One that
+                // did not resolve in its own file is literal text, left as is.
+                InlineNode::CrossRef(c) => {
+                    if let Some(href) = c.href.as_mut() {
+                        self.follow(href);
+                        if let Some(new) = self.rename.get(&c.target) {
+                            c.target = new.clone();
+                        }
+                    }
+                }
+                _ => {}
+            }
+            crate::include_walk::visit_inline_children(node, self);
+        }
+    }
+
+    fn image(&mut self, image: &mut Image) {
+        if self.follow(&mut image.src) {
+            image.ref_label = None;
+            image.raw_ref = None;
+        }
+    }
+}
+
+/// Call `f` on every attribute slot that can carry an element id, in document
+/// order, with the heading's text when the slot is a heading's. Mirrors the
+/// renderer's id seeding (`document_ids`).
+fn for_each_id_site(
+    blocks: &mut [BlockNode],
+    f: &mut impl FnMut(&mut Option<Attrs>, Option<&[InlineNode]>),
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Heading(h) => {
+                f(&mut h.attrs, Some(&h.children));
+                id_sites_in_inlines(&mut h.children, f);
+            }
+            BlockNode::Paragraph(p) => {
+                f(&mut p.attrs, None);
+                id_sites_in_inlines(&mut p.children, f);
+            }
+            BlockNode::CitationDefinition(d) => {
+                f(&mut d.attrs, None);
+                id_sites_in_inlines(&mut d.children, f);
+            }
+            BlockNode::CodeBlock(c) => f(&mut c.attrs, None),
+            BlockNode::List(l) => {
+                f(&mut l.attrs, None);
+                for item in &mut l.items {
+                    f(&mut item.attrs, None);
+                    for_each_id_site(&mut item.children, f);
+                }
+            }
+            BlockNode::BlockQuote(b) => {
+                f(&mut b.attrs, None);
+                for_each_id_site(&mut b.children, f);
+            }
+            BlockNode::Table(t) => id_sites_in_table(t, f),
+            BlockNode::Admonition(a) => {
+                f(&mut a.attrs, None);
+                if let Some(title) = &mut a.title {
+                    id_sites_in_inlines(title, f);
+                }
+                for_each_id_site(&mut a.children, f);
+            }
+            BlockNode::Directive(d) => {
+                f(&mut d.attrs, None);
+                if let Some(title) = &mut d.title {
+                    id_sites_in_inlines(title, f);
+                }
+                for_each_id_site(&mut d.children, f);
+            }
+            BlockNode::Div(d) => {
+                f(&mut d.attrs, None);
+                for_each_id_site(&mut d.children, f);
+            }
+            BlockNode::Section(d) => {
+                f(&mut d.attrs, None);
+                for_each_id_site(&mut d.children, f);
+            }
+            BlockNode::LineBlock(b) => {
+                f(&mut b.attrs, None);
+                for_each_id_site(&mut b.children, f);
+            }
+            BlockNode::DefinitionList(d) => {
+                f(&mut d.attrs, None);
+                for item in &mut d.items {
+                    for term in &mut item.terms {
+                        f(&mut term.attrs, None);
+                        id_sites_in_inlines(&mut term.children, f);
+                    }
+                    for def in &mut item.definitions {
+                        for_each_id_site(&mut def.children, f);
+                    }
+                }
+            }
+            BlockNode::Figure(fig) => {
+                f(&mut fig.attrs, None);
+                match &mut *fig.target {
+                    FigureTarget::Image(i) => f(&mut i.attrs, None),
+                    FigureTarget::CodeBlock(c) => f(&mut c.attrs, None),
+                    FigureTarget::BlockQuote(b) => {
+                        f(&mut b.attrs, None);
+                        for_each_id_site(&mut b.children, f);
+                    }
+                    FigureTarget::Table(t) => id_sites_in_table(t, f),
+                    FigureTarget::Paragraph(p) => {
+                        f(&mut p.attrs, None);
+                        id_sites_in_inlines(&mut p.children, f);
+                    }
+                }
+                id_sites_in_inlines(&mut fig.caption, f);
+            }
+            BlockNode::FigureGroup(g) => {
+                f(&mut g.attrs, None);
+                for_each_id_site(&mut g.children, f);
+                if let Some(caption) = &mut g.caption {
+                    id_sites_in_inlines(caption, f);
+                }
+            }
+            BlockNode::BlockExtension(e) => {
+                f(&mut e.attrs, None);
+                for_each_id_site(e.fallback_slice_mut(), f);
+            }
+            BlockNode::ExtensionCarrier(e) => {
+                f(&mut e.attrs, None);
+                for_each_id_site(&mut e.children, f);
+            }
+            BlockNode::BlockImage(i) => f(&mut i.attrs, None),
+            BlockNode::ThematicBreak(t) => f(&mut t.attrs, None),
+            BlockNode::LinkReferenceDefinition(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_) => {}
+        }
+    }
+}
+
+fn id_sites_in_table(
+    t: &mut crate::ast::Table,
+    f: &mut impl FnMut(&mut Option<Attrs>, Option<&[InlineNode]>),
+) {
+    f(&mut t.attrs, None);
+    if let Some(caption) = &mut t.caption {
+        id_sites_in_inlines(caption, f);
+    }
+    for row in &mut t.rows {
+        f(&mut row.attrs, None);
+        for cell in &mut row.cells {
+            f(&mut cell.attrs, None);
+            id_sites_in_inlines(&mut cell.children, f);
+            if let Some(blocks) = &mut cell.blocks {
+                for_each_id_site(blocks, f);
+            }
+        }
+    }
+}
+
+fn id_sites_in_inlines(
+    nodes: &mut [InlineNode],
+    f: &mut impl FnMut(&mut Option<Attrs>, Option<&[InlineNode]>),
+) {
+    for node in nodes {
+        match node {
+            InlineNode::Emphasis(e) => {
+                f(&mut e.attrs, None);
+                id_sites_in_inlines(&mut e.children, f);
+            }
+            InlineNode::Code(c) => f(&mut c.attrs, None),
+            InlineNode::LiteralInline(l) => f(&mut l.attrs, None),
+            InlineNode::Link(l) => {
+                f(&mut l.attrs, None);
+                id_sites_in_inlines(&mut l.children, f);
+            }
+            InlineNode::Image(i) => f(&mut i.attrs, None),
+            InlineNode::Span(s) => {
+                f(&mut s.attrs, None);
+                id_sites_in_inlines(&mut s.children, f);
+            }
+            InlineNode::Ruby(r) => {
+                f(&mut r.attrs, None);
+                for pair in &mut r.pairs {
+                    id_sites_in_inlines(&mut pair.base, f);
+                    id_sites_in_inlines(&mut pair.annotation, f);
+                }
+            }
+            InlineNode::Math(m) => f(&mut m.attrs, None),
+            InlineNode::AutoLink(a) => f(&mut a.attrs, None),
+            InlineNode::Extension(e) => {
+                f(&mut e.attrs, None);
+                id_sites_in_inlines(&mut e.children, f);
+            }
+            InlineNode::Footnote(n) => {
+                f(&mut n.attrs, None);
+                if let Some(inline) = &mut n.inline {
+                    id_sites_in_inlines(inline, f);
+                }
+            }
+            InlineNode::CriticInsert(c) => id_sites_in_inlines(&mut c.children, f),
+            InlineNode::CriticDelete(c) => id_sites_in_inlines(&mut c.children, f),
+            InlineNode::CriticSubstitute(c) => {
+                id_sites_in_inlines(&mut c.old, f);
+                id_sites_in_inlines(&mut c.new, f);
+            }
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    for inlines in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        id_sites_in_inlines(inlines, f);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -1262,12 +1759,11 @@ fn merge_footnotes(
         }
     }
     if !rename.is_empty() {
-        let empty = HashMap::new();
-        rename_in_blocks(child_children, &rename, &empty);
+        rename_in_blocks(child_children, &rename);
         if let Some(target) = state.footnotes.last_mut() {
             for label in inserted {
                 if let Some(body) = target.get_mut(&label) {
-                    rename_in_blocks(body, &rename, &empty);
+                    rename_in_blocks(body, &rename);
                 }
             }
         }
@@ -1374,11 +1870,7 @@ fn walk_blocks_mut(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut BlockNode))
     }
 }
 
-fn rename_inlines(
-    nodes: &mut [InlineNode],
-    footnotes: &HashMap<String, String>,
-    headings: &HashMap<String, String>,
-) {
+fn rename_inlines(nodes: &mut [InlineNode], footnotes: &HashMap<String, String>) {
     for node in nodes {
         match node {
             InlineNode::Footnote(f) => {
@@ -1388,47 +1880,24 @@ fn rename_inlines(
                     }
                 }
                 if let Some(inline) = &mut f.inline {
-                    rename_inlines(inline, footnotes, headings);
+                    rename_inlines(inline, footnotes);
                 }
             }
-            // An UNRESOLVED cross-reference (a programmatically built AST, or
-            // one the parser could not bind).
-            InlineNode::CrossRef(c) => {
-                if let Some(new) = headings.get(&c.target) {
-                    c.target = new.clone();
-                }
-            }
-            InlineNode::Emphasis(e) => rename_inlines(&mut e.children, footnotes, headings),
-            InlineNode::Link(l) => {
-                // Unlike carve-js, this engine binds `</#id>` during PARSE, so
-                // by include time the child's own cross-reference is already a
-                // Link carrying `#id`. The rename has to follow it there or a
-                // renamed heading would keep an href pointing at the id the
-                // parent kept. `from_crossref` is exactly the flag that marks
-                // an auto-filled cross-reference, so an ordinary authored
-                // `[text](#dup)` link is left alone.
-                if l.from_crossref {
-                    if let Some(old) = l.href.strip_prefix('#') {
-                        if let Some(new) = headings.get(old) {
-                            l.href = format!("#{new}");
-                        }
-                    }
-                }
-                rename_inlines(&mut l.children, footnotes, headings);
-            }
-            InlineNode::Span(s) => rename_inlines(&mut s.children, footnotes, headings),
+            InlineNode::Emphasis(e) => rename_inlines(&mut e.children, footnotes),
+            InlineNode::Link(l) => rename_inlines(&mut l.children, footnotes),
+            InlineNode::Span(s) => rename_inlines(&mut s.children, footnotes),
             InlineNode::Ruby(r) => {
                 for pair in &mut r.pairs {
-                    rename_inlines(&mut pair.base, footnotes, headings);
-                    rename_inlines(&mut pair.annotation, footnotes, headings);
+                    rename_inlines(&mut pair.base, footnotes);
+                    rename_inlines(&mut pair.annotation, footnotes);
                 }
             }
-            InlineNode::Extension(e) => rename_inlines(&mut e.children, footnotes, headings),
-            InlineNode::CriticInsert(c) => rename_inlines(&mut c.children, footnotes, headings),
-            InlineNode::CriticDelete(c) => rename_inlines(&mut c.children, footnotes, headings),
+            InlineNode::Extension(e) => rename_inlines(&mut e.children, footnotes),
+            InlineNode::CriticInsert(c) => rename_inlines(&mut c.children, footnotes),
+            InlineNode::CriticDelete(c) => rename_inlines(&mut c.children, footnotes),
             InlineNode::CriticSubstitute(c) => {
-                rename_inlines(&mut c.old, footnotes, headings);
-                rename_inlines(&mut c.new, footnotes, headings);
+                rename_inlines(&mut c.old, footnotes);
+                rename_inlines(&mut c.new, footnotes);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
@@ -1436,7 +1905,7 @@ fn rename_inlines(
                         .into_iter()
                         .flatten()
                     {
-                        rename_inlines(part, footnotes, headings);
+                        rename_inlines(part, footnotes);
                     }
                 }
             }
@@ -1445,35 +1914,31 @@ fn rename_inlines(
     }
 }
 
-fn rename_in_blocks(
-    blocks: &mut [BlockNode],
-    footnotes: &HashMap<String, String>,
-    headings: &HashMap<String, String>,
-) {
+fn rename_in_blocks(blocks: &mut [BlockNode], footnotes: &HashMap<String, String>) {
     walk_blocks_mut(blocks, &mut |block| match block {
-        BlockNode::Heading(h) => rename_inlines(&mut h.children, footnotes, headings),
-        BlockNode::Paragraph(p) => rename_inlines(&mut p.children, footnotes, headings),
+        BlockNode::Heading(h) => rename_inlines(&mut h.children, footnotes),
+        BlockNode::Paragraph(p) => rename_inlines(&mut p.children, footnotes),
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                rename_inlines(caption, footnotes, headings);
+                rename_inlines(caption, footnotes);
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    rename_inlines(&mut cell.children, footnotes, headings);
+                    rename_inlines(&mut cell.children, footnotes);
                 }
             }
         }
         BlockNode::Figure(fig) => {
-            rename_inlines(&mut fig.caption, footnotes, headings);
+            rename_inlines(&mut fig.caption, footnotes);
             match &mut *fig.target {
-                FigureTarget::Paragraph(p) => rename_inlines(&mut p.children, footnotes, headings),
+                FigureTarget::Paragraph(p) => rename_inlines(&mut p.children, footnotes),
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        rename_inlines(caption, footnotes, headings);
+                        rename_inlines(caption, footnotes);
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            rename_inlines(&mut cell.children, footnotes, headings);
+                            rename_inlines(&mut cell.children, footnotes);
                         }
                     }
                 }
@@ -1508,10 +1973,11 @@ struct ExpandedChild {
 fn with_child<T>(
     d: &Directive,
     state: &mut State<'_>,
+    inline: bool,
     merge: impl FnOnce(ExpandedChild, &mut State<'_>) -> Option<T>,
 ) -> Option<T> {
     state.open_reservations();
-    let merged = expand_child(d, state).and_then(|child| merge(child, state));
+    let merged = expand_child(d, state, inline).and_then(|child| merge(child, state));
     if merged.is_some() {
         state.commit_reservations();
     } else {
@@ -1673,7 +2139,7 @@ impl crate::include_walk::SubtreeVisitor for Stamp<'_> {
     }
 }
 
-fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
+fn expand_child(d: &Directive, state: &mut State<'_>, inline: bool) -> Option<ExpandedChild> {
     let ResolvedChild {
         source,
         id,
@@ -1698,7 +2164,7 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     // Select BEFORE expanding: nested includes outside the wanted section must
     // not be resolved (no budget charge) and must not move section boundaries.
     if let Some(section) = &d.section {
-        match select_section(&children, section) {
+        match select_fragment(&children, section) {
             Some(selected) => children = selected,
             None => {
                 // I11: `resolved` reports whether the target's SOURCE WAS READ,
@@ -1719,7 +2185,15 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     // Everything from here on operates on the child's own content, so warnings
     // it raises name the CHILD rather than the document that included it.
     let outer_file = state.file.replace(id.clone());
-    rename_child_heading_ids(&mut children, &mut footnotes, state);
+    // An inline include splices a lone paragraph's inlines and leaves its
+    // attributes behind, so its id must not claim a name it never takes.
+    if inline {
+        if let [BlockNode::Paragraph(p)] = children.as_mut_slice() {
+            p.attrs = None;
+        }
+    }
+    let me = rename_child_ids(&mut children, &mut footnotes, state);
+    let outer_owner = std::mem::replace(&mut state.owner, me);
 
     let auto = d.shift == Shift::Auto;
     let stated = match d.shift {
@@ -1760,6 +2234,15 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     state.context_level = outer_context;
     state.depth -= 1;
     state.stack.pop();
+    state.owner = outer_owner;
+    // A paragraph a nested include contributed is spliced the same way.
+    let dropped = match children.as_mut_slice() {
+        [BlockNode::Paragraph(p)] if inline => p.attrs.take().and_then(|a| a.id),
+        _ => None,
+    };
+    if let Some(id) = dropped {
+        state.release_id(&id);
+    }
     // Measured after expansion so a child that only passes through to nested
     // includes is levelled by the headings those actually contributed.
     let shift = if auto {
@@ -1911,7 +2394,7 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
             }
             ParsedDirective::NotADirective => continue,
         };
-        let Some(replacement) = with_child(&d, state, |expanded, state| {
+        let Some(replacement) = with_child(&d, state, true, |expanded, state| {
             let mut children = expanded.children;
             // I2: resolved content in INLINE position must parse to inline-only
             // content - a single paragraph, or nothing.
@@ -2100,11 +2583,26 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                 // I7: on any rejection this yields None and the original inline
                 // nodes stay, rendering exactly as the core does with no
                 // resolver - and `with_child` releases what the child claimed.
-                return with_child(&d, state, |expanded, state| {
+                // The paragraph is replaced by what it includes, so its id is
+                // given back while the child claims; left literal, it keeps it.
+                let held = block
+                    .attrs
+                    .as_ref()
+                    .and_then(|a| a.id.clone())
+                    .filter(|id| state.id_owner(id) == Some(state.owner));
+                if let Some(id) = &held {
+                    state.release_id(id);
+                }
+                let merged = with_child(&d, state, false, |expanded, state| {
                     let mut children = expanded.children;
                     merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
                     Some(children)
                 });
+                if let (None, Some(id)) = (&merged, &held) {
+                    let owner = state.owner;
+                    state.reserve_id(id, owner);
+                }
+                return merged;
             }
             ParsedDirective::BadOption(part) => {
                 state.warn(
@@ -2277,7 +2775,10 @@ pub(crate) fn expand_includes_with_extensions(
         stack: options.source_path.clone().into_iter().collect(),
         depth: 0,
         file: options.source_path.clone(),
-        used_heading_ids: HashSet::new(),
+        used_ids: HashMap::new(),
+        inclusions: 0,
+        pending_renames: Vec::new(),
+        owner: 0,
         reservation_frames: Vec::new(),
         dependencies: Vec::new(),
         dep_index: HashMap::new(),
@@ -2291,19 +2792,15 @@ pub(crate) fn expand_includes_with_extensions(
         // Parent explicit ids are claimed FIRST (I5: parent before child), so
         // an included duplicate is the one renamed - even against a parent
         // heading that appears after the include site.
-        walk_blocks(&doc.children, &mut |block| {
-            if let BlockNode::Heading(h) = block {
-                if let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) {
-                    state.used_heading_ids.insert(id);
-                }
+        let mut claim = |attrs: &mut Option<Attrs>, _: Option<&[InlineNode]>| {
+            if let Some(id) = attrs.as_ref().and_then(|a| a.id.as_deref()) {
+                state.reserve_id(id, 0);
             }
-        });
-        state
-            .used_heading_ids
-            .extend(crate::document_ids::authored_ids(
-                std::iter::once(doc.children.as_slice())
-                    .chain(doc.footnote_defs.values().map(Vec::as_slice)),
-            ));
+        };
+        for_each_id_site(&mut doc.children, &mut claim);
+        for body in doc.footnote_defs.values_mut() {
+            for_each_id_site(body, &mut claim);
+        }
         state.footnotes.push(std::mem::take(&mut doc.footnote_defs));
         expand_blocks(&mut doc.children, &mut state);
         let mut defs = state
@@ -2324,6 +2821,7 @@ pub(crate) fn expand_includes_with_extensions(
             defs.entry(label).or_insert(body);
         }
         doc.footnote_defs = defs;
+        finish_renames(&mut doc, &mut state);
     }
     IncludeResult {
         doc,
