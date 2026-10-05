@@ -22726,7 +22726,7 @@ pub(crate) fn crossref_index_for_document(
     for blocks in doc.footnote_defs.values() {
         collect_caption_titles(blocks, &mut titles);
     }
-    crossref_index(titles, labels, id_opts)
+    crossref_index(titles, labels)
 }
 
 /// The index a collapsed `[text][]` reference resolves against, built from a
@@ -22790,7 +22790,7 @@ fn heading_index(
             false,
         );
     }
-    let mut index = crossref_index(titles, labels, id_opts);
+    let mut index = crossref_index(titles, labels);
     index.quoted = quoted;
     index.by_text = by_text;
     (index, assigned)
@@ -22955,14 +22955,12 @@ fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
 fn crossref_index(
     titles: BTreeMap<String, String>,
     labels: BTreeMap<String, CrossrefLabel>,
-    id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
     CrossrefIndex {
         titles,
         labels,
         by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
-        id_opts,
     }
 }
 
@@ -22990,10 +22988,6 @@ pub(crate) struct CrossrefIndex {
     /// `</#id>` crossrefs like any other, and are DECLINED as implicit
     /// `[label][]` reference targets (PART 11 R1).
     quoted: std::collections::BTreeSet<String>,
-    /// The heading-id transforms this index was built with. The slug FALLBACK in
-    /// `resolve_ref` has to spell a target the same way the ids were spelled, or
-    /// an opt-in transform resolves references against ids it did not produce.
-    id_opts: HeadingIdOptions,
 }
 
 impl CrossrefIndex {
@@ -23009,39 +23003,23 @@ impl CrossrefIndex {
     /// make the heading unreachable: `</#id>` still addresses it, by id rather
     /// than by wording.
     pub(crate) fn resolve_ref(&self, target: &str) -> Option<(&str, &str)> {
-        // An all-excluded label (for example a symbol-only heading reference)
-        // has no prose key. The heading still receives the fallback id `s`,
-        // but an empty invisible key must not reach that id through slugging.
-        if normalize_heading_label(target).is_empty() {
-            return None;
-        }
-        // By TEXT first (R1's index), then the id lookup the `</#id>` path uses.
-        // The fallback keeps every document whose id IS the slug of its heading
-        // text resolving exactly as before.
-        if let Some(id) = self.by_text.get(&normalize_heading_label(target)) {
-            if !self.quoted.contains(id) {
-                if let Some((id, title)) = self.titles.get_key_value(id) {
-                    return Some((id.as_str(), title.as_str()));
-                }
-            }
-        }
-        // Fallback: the slug of the label against the id index, which is what
-        // this did before the text index existed. It still answers every
-        // document whose heading id IS the slug of its text.
-        let (id, title) = self.resolve(&slugify_parse(target, self.id_opts))?;
+        // R1 matches the heading TEXT only (whitespace collapsed, NFC, exact
+        // case). Slugging the label would let id transforms fold it.
+        let id = self.by_text.get(&normalize_heading_label(target))?;
         if self.quoted.contains(id) {
             return None;
         }
-        Some((id, title))
+        let (id, title) = self.titles.get_key_value(id)?;
+        Some((id.as_str(), title.as_str()))
     }
 
-    /// Whether R1'S TEXT INDEX answers for `target` - the first of the two keys
-    /// `resolve_ref` offers, without its slug fallback.
+    /// Whether R1'S TEXT INDEX answers for `target`, which is `resolve_ref`'s
+    /// only key.
     ///
     /// A collapsed reference has to publish WHICH key answered (PART 12 §3a,
     /// markup-carve/carve#962), and `resolve_ref` cannot say: it returns the
-    /// heading either way. The two conditions are the same ones step one of
-    /// `resolve_ref` applies, and are kept beside it for that reason.
+    /// heading either way. The conditions are the ones `resolve_ref` applies,
+    /// and are kept beside it for that reason.
     pub(crate) fn answers_by_text(&self, target: &str) -> bool {
         self.by_text
             .get(&normalize_heading_label(target))

@@ -309,10 +309,6 @@ fn resolve_reference_links_inline(
                     } else if derived != *label && heading_index.answers_by_text(&derived) {
                         Some(derived)
                     } else {
-                        // The slug fallback answered, or nothing did. The
-                        // slug is not one of R1's two keys, so there is no
-                        // derived key to publish and the authored spelling
-                        // stands.
                         None
                     };
                     let lookup = key.as_deref().unwrap_or(label);

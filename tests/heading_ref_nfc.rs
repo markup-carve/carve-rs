@@ -48,9 +48,8 @@ fn a_decomposed_reference_resolves_a_precomposed_heading() {
 
 #[test]
 fn the_fold_is_on_the_text_index_not_the_slug_fallback() {
-    // The heading carries its own id, so `resolve_ref`'s slug fallback cannot
-    // answer: the slug of the label is `Café`, and no such id exists. Only a
-    // normalized TEXT index resolves this, which is what R1 describes.
+    // The heading carries its own id, so only a normalized TEXT index resolves
+    // this, which is what R1 describes.
     //
     // This is the case that failed here while three other readers resolved it.
     let out = html(&format!(
