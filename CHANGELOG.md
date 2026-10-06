@@ -26,11 +26,16 @@ references and external fragment links need manual review. See the
 - `try_to_carve_with_options` returns a `CarveWriteError`, which carries the profile violation it already reported and the writer's own refusal beside it. A caller that names the old error type has to widen it; `to_carve` stays infallible (#2333, markup-carve/carve-rs#2326).
 - A glossary reference matches its term exactly and links to the matched entry. Glossary ids preserve case, so two terms differing only in case take two ids (#2325, #2327, markup-carve/carve#2739).
 - A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
-- Heading cross-references, numbered caption and equation references, collapsed
+- Heading cross-references, numbered caption and equation references, and collapsed
   references that fall back to heading text now compare case exactly.
   Link-definition labels, footnote labels and include fragment selectors already
   did in the previous published engine.
-  Case-only mismatches no longer resolve (#2320, #2321, #2325, markup-carve/carve#2732).
+  Case-only mismatches no longer resolve (#2320, #2321, markup-carve/carve#2732).
+
+- Includes rename colliding explicit ids on any element, and each later
+  occurrence takes its own least free suffix. References written in the same
+  inclusion follow the rename (#2320, markup-carve/carve#2729,
+  markup-carve/carve#2732).
 
 ### Fixes
 
