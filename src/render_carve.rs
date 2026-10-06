@@ -3236,22 +3236,42 @@ const EMPTY_CODE_MARK: char = '\0';
 /// markup-carve/carve#2079), so the usual two backticks would close on a later
 /// two-backtick run instead of ending at a braced closer. The marks are spelled
 /// from the last to the first, so each sees the lengths chosen after it.
-fn spell_empty_code_runs(mut out: String) -> String {
-    while let Some(at) = out.rfind(EMPTY_CODE_MARK) {
-        let mut later = BTreeSet::new();
-        let mut run = 0usize;
-        for byte in out[at + 1..].bytes().chain(std::iter::once(b' ')) {
-            if byte == b'`' {
-                run += 1;
-            } else if run > 0 {
-                later.insert(run);
-                run = 0;
-            }
-        }
-        let len = (2..).find(|len| !later.contains(len)).unwrap_or(2);
-        out.replace_range(at..at + 1, &"`".repeat(len));
+fn spell_empty_code_runs(out: String) -> String {
+    if !out.contains(EMPTY_CODE_MARK) {
+        return out;
     }
-    out
+    let mut completed = BTreeSet::new();
+    let mut pending_run = 0usize;
+    let mut next_free = 2usize;
+    let mut replacements = Vec::new();
+    for (at, byte) in out.bytes().enumerate().rev() {
+        if byte == b'`' {
+            pending_run += 1;
+        } else if byte == EMPTY_CODE_MARK as u8 {
+            while completed.contains(&next_free) {
+                next_free += 1;
+            }
+            let mut len = next_free;
+            while len == pending_run || completed.contains(&len) {
+                len += 1;
+            }
+            replacements.push((at, len));
+            pending_run += len;
+        } else if pending_run > 0 {
+            completed.insert(pending_run);
+            pending_run = 0;
+        }
+    }
+    let extra: usize = replacements.iter().map(|(_, len)| len - 1).sum();
+    let mut written = String::with_capacity(out.len() + extra);
+    let mut cursor = 0;
+    for (at, len) in replacements.into_iter().rev() {
+        written.push_str(&out[cursor..at]);
+        written.extend(std::iter::repeat('`').take(len));
+        cursor = at + 1;
+    }
+    written.push_str(&out[cursor..]);
+    written
 }
 
 fn code_needs_open_run(value: &str) -> bool {
@@ -6528,6 +6548,30 @@ fn ends_in_an_escape(written: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_code_runs_account_for_adjacent_backticks() {
+        for (input, expected) in [
+            ("\0 a \0", "``` a ``"),
+            ("\0`` a ``", "````` a ``"),
+            ("\0\0", "`````"),
+            ("é [\0] [\0]", "é [```] [``]"),
+        ] {
+            assert_eq!(super::spell_empty_code_runs(input.into()), expected);
+        }
+    }
+
+    #[test]
+    fn many_empty_code_runs_are_assembled_from_the_suffix_lengths() {
+        let count = 2000;
+        let output = super::spell_empty_code_runs("[\0] ".repeat(count));
+        let lengths: Vec<_> = output
+            .split("[")
+            .skip(1)
+            .map(|part| part.find(']').unwrap())
+            .collect();
+        assert_eq!(lengths, (2..count + 2).rev().collect::<Vec<_>>());
+    }
+
     use std::cell::Cell;
 
     thread_local! {

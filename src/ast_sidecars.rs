@@ -124,6 +124,12 @@ pub(crate) fn retain_node_identity(
     let new_ast = ast_value(new_doc)?;
     let old_offsets = codepoint_bytes(old_source);
     let new_offsets = codepoint_bytes(new_source);
+    let mut adjustments = Vec::with_capacity(changes.len() + 1);
+    adjustments.push(0isize);
+    for (range, replacement_len) in changes {
+        adjustments
+            .push(adjustments.last().unwrap() + *replacement_len as isize - range.len() as isize);
+    }
     let mut old_keys = HashMap::new();
     for entry in &previous.nodes {
         if entry.path.is_empty() {
@@ -133,17 +139,14 @@ pub(crate) fn retain_node_identity(
         let Some((start, end)) = node_bytes(node, &old_offsets) else {
             continue;
         };
-        if changes.iter().any(|(range, _)| {
+        let before = changes.partition_point(|(range, _)| range.end <= start);
+        if changes.get(before).is_some_and(|(range, _)| {
             range.start < end && range.end > start
                 || range.start == range.end && range.start > start && range.start < end
         }) {
             continue;
         }
-        let adjustment: isize = changes
-            .iter()
-            .filter(|(range, _)| range.end <= start)
-            .map(|(range, replacement_len)| *replacement_len as isize - range.len() as isize)
-            .sum();
+        let adjustment = adjustments[before];
         let (Some(adjusted_start), Some(adjusted_end)) = (
             start.checked_add_signed(adjustment),
             end.checked_add_signed(adjustment),

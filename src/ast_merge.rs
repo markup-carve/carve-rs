@@ -159,37 +159,35 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
             base_hints.entry(hint).or_default().push(bi);
         }
     }
-    for bi in remaining_base(&found) {
-        let Some(hint) = identity_hint(&base[bi]) else {
-            continue;
-        };
-        let candidates = remaining_side(&found)
-            .into_iter()
-            .filter(|si| identity_hint(&side[*si]).as_ref() == Some(&hint))
-            .collect::<Vec<_>>();
-        if base_hints
-            .get(&hint)
-            .is_some_and(|indexes| indexes.len() == 1)
-            && candidates.len() == 1
-        {
-            take(&mut found, bi, candidates[0]);
+    let mut side_hints = BTreeMap::<String, Vec<usize>>::new();
+    for si in remaining_side(&found) {
+        if let Some(hint) = identity_hint(&side[si]) {
+            side_hints.entry(hint).or_default().push(si);
         }
     }
-    let kinds = remaining_base(&found)
-        .into_iter()
-        .map(|i| kind(&base[i]))
-        .collect::<BTreeSet<_>>();
-    for value_kind in kinds {
-        let bs = remaining_base(&found)
-            .into_iter()
-            .filter(|i| kind(&base[*i]) == value_kind)
-            .collect::<Vec<_>>();
-        let ss = remaining_side(&found)
-            .into_iter()
-            .filter(|i| kind(&side[*i]) == value_kind)
-            .collect::<Vec<_>>();
-        if bs.len() == 1 && ss.len() == 1 {
-            take(&mut found, bs[0], ss[0]);
+    for (hint, indexes) in &base_hints {
+        if indexes.len() == 1 {
+            if let Some(candidates) = side_hints.get(hint).filter(|items| items.len() == 1) {
+                take(&mut found, indexes[0], candidates[0]);
+            }
+        }
+    }
+    let mut base_by_kind = BTreeMap::<String, Vec<usize>>::new();
+    let mut side_by_kind = BTreeMap::<String, Vec<usize>>::new();
+    for bi in remaining_base(&found) {
+        base_by_kind.entry(kind(&base[bi])).or_default().push(bi);
+    }
+    for si in remaining_side(&found) {
+        side_by_kind.entry(kind(&side[si])).or_default().push(si);
+    }
+    for (value_kind, bs) in base_by_kind {
+        if bs.len() == 1 {
+            if let Some(ss) = side_by_kind
+                .get(&value_kind)
+                .filter(|items| items.len() == 1)
+            {
+                take(&mut found, bs[0], ss[0]);
+            }
         }
     }
     let bs = remaining_base(&found);
@@ -255,14 +253,17 @@ fn record_pairings(count: usize) {
 #[cfg(not(test))]
 fn record_pairings(_count: usize) {}
 
-fn anchor(index: usize, matched: &SideMatch, length: usize) -> (isize, isize) {
-    let before = (0..index)
-        .rev()
-        .find_map(|i| matched.side_to_base.get(&i).copied())
-        .map_or(-1, |v| v as isize);
-    let after = (index + 1..length)
-        .find_map(|i| matched.side_to_base.get(&i).copied())
-        .map_or(-1, |v| v as isize);
+fn anchor(index: usize, matched: &SideMatch) -> (isize, isize) {
+    let before = matched
+        .side_to_base
+        .range(..index)
+        .next_back()
+        .map_or(-1, |(_, value)| *value as isize);
+    let after = matched
+        .side_to_base
+        .range(index + 1..)
+        .next()
+        .map_or(-1, |(_, value)| *value as isize);
     (before, after)
 }
 
@@ -374,14 +375,29 @@ fn merge_sequence(
     let mut ours_add = BTreeMap::new();
     let mut theirs_add = BTreeMap::new();
     let mut used_theirs = BTreeSet::new();
+    let mut additions_by_content = BTreeMap::<((isize, isize), String), VecDeque<usize>>::new();
+    let mut additions_by_hint = BTreeMap::<((isize, isize), String), (String, bool)>::new();
+    let strip = strip_metadata(path);
+    for &ti in &tm.additions {
+        let at = anchor(ti, &tm);
+        let content = value_to_json(&clean(&theirs[ti], strip));
+        if let Some(hint) = identity_hint(&theirs[ti]) {
+            let entry = additions_by_hint
+                .entry((at, hint))
+                .or_insert((content.clone(), false));
+            entry.1 |= entry.0 != content;
+        }
+        additions_by_content
+            .entry((at, content))
+            .or_default()
+            .push_back(ti);
+    }
     for &oi in &om.additions {
-        let ours_hint = identity_hint(&ours[oi]);
-        if tm.additions.iter().copied().any(|ti| {
-            ours_hint.is_some()
-                && identity_hint(&theirs[ti]) == ours_hint
-                && anchor(oi, &om, ours.len()) == anchor(ti, &tm, theirs.len())
-                && !same(Some(&ours[oi]), Some(&theirs[ti]), path)
-        }) {
+        let at = anchor(oi, &om);
+        let content = value_to_json(&clean(&ours[oi], strip));
+        let collision =
+            identity_hint(&ours[oi]).and_then(|hint| additions_by_hint.get(&(at, hint)));
+        if collision.is_some_and(|(first, differing)| *differing || *first != content) {
             return record_conflict(
                 MergeConflictReason::ConcurrentSequenceEdit,
                 path,
@@ -392,11 +408,9 @@ fn merge_sequence(
                 resolver,
             );
         }
-        let same_addition = tm.additions.iter().copied().find(|ti| {
-            !used_theirs.contains(ti)
-                && anchor(oi, &om, ours.len()) == anchor(*ti, &tm, theirs.len())
-                && same(Some(&ours[oi]), Some(&theirs[*ti]), path)
-        });
+        let same_addition = additions_by_content
+            .get_mut(&(at, content))
+            .and_then(VecDeque::pop_front);
         let token = format!("o{oi}");
         ours_add.insert(oi, token.clone());
         values.insert(token.clone(), ours[oi].clone());
@@ -472,28 +486,26 @@ fn merge_sequence(
             *incoming.entry(to.clone()).or_default() += 1;
         }
     }
+    let priority = |token: &String| {
+        (
+            token.as_bytes()[0],
+            token[1..].parse::<usize>().unwrap(),
+            token.clone(),
+        )
+    };
     let mut ready = all
         .iter()
         .filter(|t| incoming[*t] == 0)
-        .cloned()
-        .collect::<Vec<_>>();
+        .map(priority)
+        .collect::<BTreeSet<_>>();
     let mut order = Vec::new();
-    while !ready.is_empty() {
-        ready.sort_by(|a, b| {
-            a.as_bytes()[0].cmp(&b.as_bytes()[0]).then_with(|| {
-                a[1..]
-                    .parse::<usize>()
-                    .unwrap()
-                    .cmp(&b[1..].parse::<usize>().unwrap())
-            })
-        });
-        let token = ready.remove(0);
+    while let Some((_, _, token)) = ready.pop_first() {
         order.push(token.clone());
         for to in edges.get(&token).into_iter().flatten() {
             let count = incoming.get_mut(to).unwrap();
             *count -= 1;
             if *count == 0 {
-                ready.push(to.clone());
+                ready.insert(priority(to));
             }
         }
     }

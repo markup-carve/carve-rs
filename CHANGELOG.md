@@ -11,6 +11,13 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Fixes
+
+- AST merging indexes identity hints and concurrent additions instead of repeatedly scanning sibling lists.
+- Batched reparsing assembles the source once and indexes edit boundaries when retaining node identities.
+- Lint warning positions use indexes or advancing cursors instead of repeatedly counting source prefixes.
+- Empty code spans choose their backtick runs in one suffix pass and assemble the output once.
+
 ## [0.1.8] - 2026-10-06
 
 ### Breaking

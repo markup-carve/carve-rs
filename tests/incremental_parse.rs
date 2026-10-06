@@ -43,3 +43,50 @@ fn overlapping_and_non_boundary_edits_are_rejected() {
     )
     .is_err());
 }
+
+#[test]
+fn batch_edits_preserve_insertion_order_and_untouched_identity() {
+    let first = carve::parse_snapshot_with_identity("one\n\ntwo\n\nthree\n\nfour");
+    let previous = first.node_identity.as_ref().unwrap();
+    let middle = previous
+        .nodes
+        .iter()
+        .find(|node| node.path == "/children/1")
+        .unwrap()
+        .id
+        .clone();
+    let second = reparse(
+        first.snapshot,
+        &[
+            TextChange {
+                range: 0..0,
+                replacement: "A".into(),
+            },
+            TextChange {
+                range: 0..0,
+                replacement: "B".into(),
+            },
+            TextChange {
+                range: 0..3,
+                replacement: "ONE".into(),
+            },
+            TextChange {
+                range: 17..21,
+                replacement: "4".into(),
+            },
+        ],
+    )
+    .unwrap();
+    assert_eq!(second.snapshot.source(), "ABONE\n\ntwo\n\nthree\n\n4");
+    assert_eq!(
+        second
+            .node_identity
+            .unwrap()
+            .nodes
+            .iter()
+            .find(|node| node.path == "/children/1")
+            .unwrap()
+            .id,
+        middle
+    );
+}

@@ -87,3 +87,15 @@ fn template_source_shape_reports_without_rewriting() {
     assert!(lint_carve("`{% raw %}`").is_empty());
     assert!(lint_carve(r"\{% raw %}").is_empty());
 }
+
+#[test]
+fn template_warning_positions_advance_across_unicode_and_lines() {
+    let source = "é {% raw %} {% note %} {% endraw %}\n漢 {% if x %}";
+    let warnings = carve::lint_carve(source);
+    let positions: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.rule == "braced-comment-in-a-template-source")
+        .map(|w| (w.line, w.column, w.start))
+        .collect();
+    assert_eq!(positions, [(1, 3, 3), (1, 24, 24), (2, 3, 41)]);
+}
