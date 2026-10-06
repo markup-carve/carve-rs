@@ -41,15 +41,30 @@ carve fmt --write notes.crv         # rewrite in canonical form
 carve fmt --migrate --write old.crv # also fix references that miss only by case
 ```
 
-`carve fmt --migrate` rewrites a `</#id>` cross-reference or a `[text][label]` /
-`[text][]` reference whose target differs only in case to the target's exact
-spelling. Every name lookup compares case exactly, so these references
-otherwise render as literal text. A reference that matches several targets
-case-insensitively is left alone and `carve lint` reports it. The library
-function is `migrate_case_only_references`.
+## Exact-case reference migration
+
+Exact-case lookup changes heading cross-references, numbered caption and equation
+references, and collapsed references that fall back to heading text.
+Link-definition labels, footnote labels and include fragment selectors were
+already case-sensitive in the previous published engine. Whitespace normalization, NFC and default heading slug derivation
+are unchanged. Case-distinct ids identify separate targets.
+
+With the new engine, run `carve lint` before deploying the rendered output.
+`carve fmt --migrate`
+repairs unambiguous case-only cross-reference and link or image label misses,
+including label mistakes that were already unresolved before this release.
+Review the result: changing a collapsed label also changes its visible text or
+image alternative text. Ambiguous matches and labels carrying inline markup
+need manual review. Include selectors, glossary references and external
+fragment links are outside this repair. Glossary ids now preserve case, so
+update links to those ids separately. Ordinary `fmt` does not apply this repair.
+
+The library function is `migrate_case_only_references`.
+
+## AST merge and patch
 
 The library exports `merge_ast`, `merge_ast_with_resolver`, `create_ast_patch`,
-and `apply_ast_patch` for the same workflow over typed `Document` values. A
+and `apply_ast_patch` for structural editing of typed `Document` values. A
 resolver can select base, ours, theirs, or a JSON-encoded replacement for each
 conflict. `ast_patch_to_json` and `ast_patch_from_json` exchange the same
 `{op,path,value}` wire format as the JS and PHP engines. The merge combines
@@ -57,7 +72,7 @@ independent field edits, insertions, deletions, and moves, while unresolved
 ambiguous edits are returned as JSON-Pointer conflicts. Derived position
 metadata is intentionally regenerated after serialization.
 
-Other options:
+## Other options
 
 ```bash
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv

@@ -118,3 +118,28 @@ fn indented_standalone_equation_is_recognized() {
         "{out}"
     );
 }
+
+#[test]
+fn case_distinct_caption_and_equation_targets_stay_separate() {
+    let html = carve::to_html(
+        r#"{#Fig}
+![upper](upper.png)
+^ Figure #: upper
+
+{#fig}
+![lower](lower.png)
+^ Figure #: lower
+
+{#Eq}
+$$`x`
+^ Equation #: upper
+
+{#eq}
+$$`y`
+^ Equation #: lower
+
+</#Fig>, </#fig>, </#FIG>, </#Eq>, </#eq>, </#EQ>.
+"#,
+    );
+    assert!(html.contains(r##"<a href="#Fig">Figure 1</a>, <a href="#fig">Figure 2</a>, &lt;/#FIG&gt;, <a href="#Eq">Equation 1</a>, <a href="#eq">Equation 2</a>, &lt;/#EQ&gt;."##), "{html}");
+}

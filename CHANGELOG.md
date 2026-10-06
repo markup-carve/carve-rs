@@ -11,20 +11,39 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Fixes
-
-- AST patch creation interns subtree comparisons once, and patch replay updates a private tree in place. Provenance ancestry and envelope extension checks avoid repeated scans.
-
 ## [0.1.8] - 2026-10-06
+
+### Compatibility and migration
+
+With the new engine, lint existing documents before deploying their output.
+`fmt --migrate` repairs unambiguous case-only reference misses. Review changes
+to collapsed link text and image alt text; include selectors, glossary
+references and external fragment links need manual review. See the
+[migration guide](https://github.com/markup-carve/carve-rs/blob/main/docs/cli.md#exact-case-reference-migration).
 
 ### Breaking
 
 - `try_to_carve_with_options` returns a `CarveWriteError`, which carries the profile violation it already reported and the writer's own refusal beside it. A caller that names the old error type has to widen it; `to_carve` stays infallible (#2333, markup-carve/carve-rs#2326).
-- A glossary id keeps its case and a glossary reference links to the entry it matched, so two terms differing only in case take two ids (#2327, markup-carve/carve#2739).
+- A glossary reference matches its term exactly and links to the matched entry. Glossary ids preserve case, so two terms differing only in case take two ids (#2325, #2327, markup-carve/carve#2739).
 - A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
-- A name lookup compares with exact case wherever one is made. A collapsed reference resolves only to a heading whose text is spelled the same way, a glossary reference only to a term spelled the same way, and an include's `#name` only to an id spelled the same way; a near miss is reported rather than resolved (#2320, #2321, #2325, markup-carve/carve#2732).
+- Heading cross-references, numbered caption and equation references, and collapsed
+  references that fall back to heading text now compare case exactly.
+  Link-definition labels, footnote labels and include fragment selectors already
+  did in the previous published engine.
+  Case-only mismatches no longer resolve (#2320, #2321, markup-carve/carve#2732).
+
+- Includes rename colliding explicit ids on any element, and each later
+  occurrence takes its own least free suffix. References written in the same
+  inclusion follow the rename (#2311, markup-carve/carve#2729,
+  markup-carve/carve#2732).
 
 ### Fixes
+
+- The upgrade guide distinguishes newly exact lookups from labels that already
+  matched case exactly, and explains migration limits. Tests keep case-distinct
+  numbered captions and equations separate (#2346).
+
+- AST patch creation interns subtree comparisons once, and patch replay updates a private tree in place. Provenance ancestry and envelope extension checks avoid repeated scans (#2345).
 
 - A single pipe carrying row attributes stays paragraph text instead of
   panicking during the table check (#2341).
@@ -77,7 +96,7 @@ which the published crate does not carry.
 - `carve lint` reports `broken-fragment-link` for a `[text](#id)` link, inline or through a reference definition, whose fragment matches no id in the rendered document, with a case-only near miss naming the real id. Bare `#`, `#top`, cross-file links and URLs are skipped, as are `#ref-` and `#cite-` fragments when citations are enabled, and the rule stays silent under any other extension. Render output is unchanged (#2300, markup-carve/carve-js#2497).
 - A cross-reference whose id exists on an element it cannot reach names that element kind and suggests the `[text](#id)` form (#2300).
 - Repeated attribute folds, class and key emission, and abbreviation lookup are indexed rather than rescanned, so 4,096 consecutive classes, inline key blocks or block attribute lines no longer cost quadratic time. First-slot order, last values, class order, abbreviation boundaries and positions are unchanged; ordinary prose throughput is not improved (#2299).
-- An include selects a block by id, and an element id that would collide in the assembled document is renamed (#2311, markup-carve/carve#2727, markup-carve/carve#2729).
+- An include selects a block by its explicit id (#2311, markup-carve/carve#2727).
 - Repeated braced closer and substitution scans are bounded rather than repeated, so a run of failed braced closers no longer costs quadratic time. Output is unchanged (#2317).
 - A nested list line's indentation is measured once per enclosing level instead of about eleven times, so the indent scanning a line at depth 200 costs falls by 2.71x, counted rather than timed. Output is unchanged, and the cost is still quadratic in depth (#2324, #2301).
 - Repeated scans are indexed rather than repeated across AST merging, batched
