@@ -795,6 +795,9 @@ const IMPLEMENTED: &[&str] = &[
     // Brought in by the same pin bump; renders byte for byte with no engine work.
     "an-unreferenced-footnote-definition-takes-its-links-out-of-the-render",
     "an-info-string-does-not-change-how-a-flush-left-fence-folds-into-a-description-body",
+    // markup-carve/carve#2752, arrived with the bump to carve 5fbf8aed:
+    // renders byte for byte on this build with no engine work.
+    "a-description-body-whose-own-block-is-a-fence-keeps-no-line-below-its-column",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

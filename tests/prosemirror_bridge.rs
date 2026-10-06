@@ -1534,8 +1534,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // degradation and drop no content. At this engine head the old corpus has
     // 1704 strict and 499 reported lossy documents; the new corpus has 1710/505.
     // table_body_source_editor_reports_partition_losses pins the six new names.
+    // Spec 5fbf8aed adds corpus 548 (markup-carve/carve#2752), a description
+    // body whose own block is a fence. Measured on this build, its only
+    // reported cause is `soft_break`, which hundreds of documents here
+    // already carry, so the lossy side takes one more document and no new
+    // cause reaches `undeclared`. 1718/505 becomes 1718/506.
     const STRICT: usize = 1710;
-    const LOSSY: usize = 505;
+    const LOSSY: usize = 506;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
