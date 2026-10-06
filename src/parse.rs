@@ -15520,7 +15520,7 @@ fn is_table_start(line: &str) -> bool {
         return false;
     }
     let (_, body) = split_row_attrs(trimmed);
-    if !body.ends_with('|') {
+    if body.len() < 2 || !body.ends_with('|') {
         return false;
     }
     let interior = &body[1..body.len() - 1];

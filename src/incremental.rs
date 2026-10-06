@@ -102,7 +102,7 @@ pub fn reparse(
         identity: old_identity,
         mut next_identity_id,
     } = snapshot;
-    let mut source = old_source.clone();
+    let mut source = String::with_capacity(old_source.len());
     let mut ordered = changes.to_vec();
     ordered.sort_by_key(|change| change.range.start);
     for pair in ordered.windows(2) {
@@ -111,18 +111,24 @@ pub fn reparse(
         }
     }
     for change in ordered.iter().rev() {
-        if change.range.start > change.range.end || change.range.end > source.len() {
+        if change.range.start > change.range.end || change.range.end > old_source.len() {
             return Err(IncrementalParseError("text change is out of bounds".into()));
         }
-        if !source.is_char_boundary(change.range.start)
-            || !source.is_char_boundary(change.range.end)
+        if !old_source.is_char_boundary(change.range.start)
+            || !old_source.is_char_boundary(change.range.end)
         {
             return Err(IncrementalParseError(
                 "text change splits a UTF-8 code point".into(),
             ));
         }
-        source.replace_range(change.range.clone(), &change.replacement);
     }
+    let mut cursor = 0;
+    for change in &ordered {
+        source.push_str(&old_source[cursor..change.range.start]);
+        source.push_str(&change.replacement);
+        cursor = change.range.end;
+    }
+    source.push_str(&old_source[cursor..]);
     let mut attempted_bytes = 0;
     let incremental = if ordered.is_empty() && plain_paragraphs {
         Some((old_document.clone(), 0))

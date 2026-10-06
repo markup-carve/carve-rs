@@ -8,6 +8,24 @@ use crate::render_depth::{push_block_children, push_inline_children};
 struct Line<'a> {
     text: &'a str,
     start: usize,
+    codepoint_starts: Option<Vec<usize>>,
+}
+
+impl<'a> Line<'a> {
+    fn new(text: &'a str, start: usize) -> Self {
+        Self {
+            text,
+            start,
+            codepoint_starts: (!text.is_ascii())
+                .then(|| text.char_indices().map(|(byte, _)| byte).collect()),
+        }
+    }
+
+    fn column(&self, offset: usize) -> usize {
+        self.codepoint_starts.as_ref().map_or(offset + 1, |starts| {
+            starts.partition_point(|byte| *byte < offset) + 1
+        })
+    }
 }
 
 fn lines(source: &str) -> Vec<Line<'_>> {
@@ -17,10 +35,7 @@ fn lines(source: &str) -> Vec<Line<'_>> {
     let mut i = 0;
     while i < bytes.len() {
         if matches!(bytes[i], b'\r' | b'\n') {
-            result.push(Line {
-                text: &source[start..i],
-                start,
-            });
+            result.push(Line::new(&source[start..i], start));
             if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
                 i += 1;
             }
@@ -28,10 +43,7 @@ fn lines(source: &str) -> Vec<Line<'_>> {
         }
         i += 1;
     }
-    result.push(Line {
-        text: &source[start..],
-        start,
-    });
+    result.push(Line::new(&source[start..], start));
     result
 }
 
@@ -48,7 +60,7 @@ fn emit(
         let offset = offset.min(row.text.len());
         out.push(LintWarning {
             line,
-            column: row.text[..offset].chars().count() + 1,
+            column: row.column(offset),
             start: row.start + offset,
             end: row.start + (offset + len).min(row.text.len()),
             rule,
@@ -315,6 +327,9 @@ pub(super) fn collect(
     let blank_line = regex::Regex::new(r"\n[ \t]*\r?\n").unwrap();
     for (rule, pattern, message) in &habits {
         let mut search = 0;
+        let mut column_byte = 0;
+        let mut column_points = 0;
+        let mut column_line = 0;
         while let Some(captures) = pattern.captures_at(source, search) {
             let m = captures
                 .get(if *rule == "djot-plus-bullet" { 1 } else { 0 })
@@ -350,9 +365,16 @@ pub(super) fn collect(
                 }
             }
             let index = rows.partition_point(|row| row.start <= m.start()) - 1;
+            if index != column_line {
+                column_line = index;
+                column_byte = rows[index].start;
+                column_points = 0;
+            }
+            column_points += source[column_byte..m.start()].chars().count();
+            column_byte = m.start();
             out.push(LintWarning {
                 line: index + 1,
-                column: source[rows[index].start..m.start()].chars().count() + 1,
+                column: column_points + 1,
                 start: m.start(),
                 end: m.end(),
                 rule,
@@ -485,9 +507,16 @@ pub(super) fn collect(
     let include = regex::Regex::new(r"\{\{([^{}]*)\}\}").unwrap();
     for (index, row) in rows.iter().enumerate() {
         let ln = index + 1;
-        for (at, ch) in row.text.char_indices() {
+        for (column, (at, ch)) in row.text.char_indices().enumerate() {
             if matches!(ch, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
-                emit(out, &rows, ln, at, ch.len_utf8(), "bidi-control-in-source", "This bidi control is preserved by canonical Carve but removed from presentation output.");
+                out.push(LintWarning {
+                    line: ln,
+                    column: column + 1,
+                    start: row.start + at,
+                    end: row.start + at + ch.len_utf8(),
+                    rule: "bidi-control-in-source",
+                    message: "This bidi control is preserved by canonical Carve but removed from presentation output.".into(),
+                });
             }
         }
         if ignored.contains(&ln) {

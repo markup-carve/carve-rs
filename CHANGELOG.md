@@ -11,6 +11,14 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Fixes
+
+- AST merging indexes identity hints and concurrent additions instead of repeatedly scanning sibling lists. Structural fingerprints are interned once per tree, so deeply nested merges and identity tracking avoid repeated subtree serialization.
+- A single pipe with row attributes remains paragraph text instead of panicking during the table check.
+- Batched reparsing assembles the source once and indexes edit boundaries when retaining node identities.
+- Lint warning positions use indexes or advancing cursors instead of repeatedly counting source prefixes.
+- Empty code spans choose their backtick runs in one suffix pass and assemble the output once.
+
 ## [0.1.8] - 2026-10-06
 
 ### Breaking

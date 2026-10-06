@@ -18,6 +18,7 @@ mod abbr_budget;
 pub mod accessibility;
 pub mod ast;
 pub mod ast_envelope;
+mod ast_fingerprint;
 pub mod ast_json;
 pub mod ast_merge;
 pub mod ast_patch;

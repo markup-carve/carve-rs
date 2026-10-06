@@ -271,6 +271,8 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
         if trimmed.starts_with('|') {
             let bytes = line.as_bytes();
             let mut i = 0;
+            let mut column_byte = 0;
+            let mut column_points = 0;
             while i < bytes.len() {
                 if bytes[i] == b'|' {
                     let mut start = i + 1;
@@ -292,7 +294,9 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
                                 && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v' | b'?')
                         })
                     {
-                        out.push(LintWarning { line: index + 1, column: line[..start].chars().count() + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
+                        column_points += line[column_byte..start].chars().count();
+                        column_byte = start;
+                        out.push(LintWarning { line: index + 1, column: column_points + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
                     }
                 }
                 i += 1;
@@ -436,7 +440,7 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
     // the separate, document-level question: does this look like a template
     // file that reached Carve before its template engine ran?
     let json = crate::ast_json::to_json(doc);
-    let mut comment_starts = Vec::new();
+    let mut comment_starts = std::collections::BTreeSet::new();
     let mut json_at = 0;
     while let Some(rel) = json[json_at..].find("\"delimited\":true") {
         let field = json_at + rel;
@@ -446,7 +450,7 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
         let digits = &json[field + offset_rel + "\"startOffset\":".len()..];
         let digit_len = digits.bytes().take_while(u8::is_ascii_digit).count();
         if let Ok(offset) = digits[..digit_len].parse::<usize>() {
-            comment_starts.push(offset);
+            comment_starts.insert(offset);
         }
         json_at = field + "\"delimited\":true".len();
     }
@@ -454,13 +458,26 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
         return;
     }
     let mut at = 0;
+    let mut position_byte = 0;
+    let mut codepoint_start = 0;
+    let mut line = 1;
+    let mut column = 1;
     while let Some(rel) = source[at..].find("{%") {
         let start = at + rel;
         let Some(close_rel) = source[start + 2..].find("%}") else {
             break;
         };
         let end = start + 2 + close_rel + 2;
-        let codepoint_start = source[..start].chars().count();
+        for ch in source[position_byte..start].chars() {
+            codepoint_start += 1;
+            if ch == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+        position_byte = start;
         if !comment_starts.contains(&codepoint_start) {
             at = end;
             continue;
@@ -472,10 +489,9 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
                     .is_some_and(|rest| rest.starts_with(char::is_whitespace))
             });
         if shaped {
-            let line_start = source[..start].rfind('\n').map_or(0, |p| p + 1);
             out.push(LintWarning {
-                line: source[..start].bytes().filter(|b| *b == b'\n').count() + 1,
-                column: source[line_start..start].chars().count() + 1,
+                line,
+                column,
                 rule: "braced-comment-in-a-template-source",
                 message: "This `{% … %}` comment is a template tag. Liquid and Nunjucks render before the converter runs, so a page that wraps its tags in `{% raw %}` hands Carve bare template text - and PART 9 §21a makes that text a comment. Reported, never rewritten: only the author knows which of the two the document meant.".to_string(),
                 start,

@@ -1974,3 +1974,89 @@ fn underscore_attribute_chains_on_emphasis_scale_linearly() {
         4096,
     );
 }
+
+#[test]
+fn concurrent_merge_additions_scale_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let base = carve::parse("");
+            let ours = carve::parse(source);
+            let theirs = carve::parse(&format!("{source}\n\nextra"));
+            assert!(matches!(
+                carve::merge_ast(&base, &ours, &theirs).unwrap(),
+                carve::MergeResult::Merged(_)
+            ));
+        },
+        |n| (0..n).map(|i| format!("paragraph {i}\n\n")).collect(),
+        "indexed merge additions",
+        1_000,
+        8_000,
+    );
+}
+
+#[test]
+fn edited_merge_identity_hints_scale_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let base = carve::parse(source);
+            let ours = carve::parse(&source.replace("base", "ours"));
+            let theirs = carve::parse(&source.replace("base", "theirs"));
+            assert!(matches!(
+                carve::merge_ast(&base, &ours, &theirs).unwrap(),
+                carve::MergeResult::Conflicts(_)
+            ));
+        },
+        |n| {
+            (0..n)
+                .map(|i| format!("{{#id{i}}}\nbase {i}\n\n"))
+                .collect()
+        },
+        "indexed merge identities",
+        1_000,
+        8_000,
+    );
+}
+
+#[test]
+fn batched_reparse_with_identity_scales_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let snapshot = carve::parse_snapshot_with_identity(source);
+            let changes: Vec<_> = source
+                .match_indices("paragraph")
+                .step_by(2)
+                .map(|(start, _)| carve::TextChange {
+                    range: start..start + 9,
+                    replacement: "replacement".into(),
+                })
+                .collect();
+            let result = carve::reparse(snapshot.snapshot, &changes).unwrap();
+            assert!(result.node_identity.is_some());
+        },
+        |n| (0..n).map(|i| format!("paragraph {i}\n\n")).collect(),
+        "indexed batch edit identity",
+        1_000,
+        8_000,
+    );
+}
+
+#[test]
+fn repeated_lint_warning_columns_scale_near_linearly() {
+    for (label, unit) in [
+        ("markdown warning columns", "é **word** "),
+        ("bidi warning columns", "é\u{202e}"),
+        ("empty include warning columns", "é {{ }} "),
+        ("table warning columns", "|<é "),
+        ("template warning positions", "é {% raw %} {% endraw %}\n"),
+    ] {
+        assert_conversion_near_linear_at(
+            |source| {
+                assert!(!carve::lint_carve(source).is_empty());
+            },
+            |n| unit.repeat(n),
+            label,
+            2_000,
+            16_000,
+        );
+    }
+}

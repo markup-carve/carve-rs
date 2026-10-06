@@ -342,3 +342,21 @@ fn canonical_empty_bodies_and_quote_prefixes_do_not_warn() {
         .iter()
         .any(|warning| warning.rule == "unattached-block-attribute"));
 }
+
+#[test]
+fn repeated_unicode_warnings_keep_codepoint_columns() {
+    let source = "é **one** **two**\n漢 **three** **four**\na\u{202e}é\u{2066}b";
+    let warnings = lint_carve(source);
+    let strong: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.rule == "markdown-strong-double-star")
+        .map(|w| (w.line, w.column))
+        .collect();
+    assert_eq!(strong, [(1, 3), (1, 11), (2, 3), (2, 13)]);
+    let bidi: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.rule == "bidi-control-in-source")
+        .map(|w| (w.line, w.column))
+        .collect();
+    assert_eq!(bidi, [(3, 2), (3, 4)]);
+}
