@@ -41,11 +41,23 @@ carve fmt --write notes.crv         # rewrite in canonical form
 carve fmt --migrate --write old.crv # also fix references that miss only by case
 ```
 
-`carve fmt --migrate` rewrites a `</#id>` cross-reference or a `[text][label]` /
-`[text][]` reference whose target differs only in case to the target's exact
-spelling. Every name lookup compares case exactly, so these references
-otherwise render as literal text. A reference that matches several targets
-case-insensitively is left alone and `carve lint` reports it. The library
+## Exact-case reference migration
+
+Exact-case lookup changes heading cross-references, numbered caption and equation
+references, collapsed references that fall back to heading text, and include
+fragment selection. Link-definition labels and footnote labels were already
+case-sensitive. Whitespace normalization, NFC and core heading slug derivation
+are unchanged. Case-distinct ids remain separate targets.
+
+Run `carve lint` before upgrading existing documents. `carve fmt --migrate`
+repairs unambiguous case-only cross-reference and link or image label misses.
+Review the result: changing a collapsed label also changes its visible text or
+image alternative text. Ambiguous matches and labels carrying inline markup
+need manual review. Include selectors, glossary references and external
+fragment links are outside this repair. Glossary ids now preserve case, so
+update links to those ids separately. Ordinary `fmt` does not apply this repair.
+
+The library
 function is `migrate_case_only_references`.
 
 The library exports `merge_ast`, `merge_ast_with_resolver`, `create_ast_patch`,
