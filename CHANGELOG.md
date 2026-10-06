@@ -11,14 +11,6 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Fixes
-
-- AST merging indexes identity hints and concurrent additions instead of repeatedly scanning sibling lists. Structural fingerprints are interned once per tree, so deeply nested merges and identity tracking avoid repeated subtree serialization.
-- A single pipe with row attributes remains paragraph text instead of panicking during the table check.
-- Batched reparsing assembles the source once and indexes edit boundaries when retaining node identities.
-- Lint warning positions use indexes or advancing cursors instead of repeatedly counting source prefixes.
-- Empty code spans choose their backtick runs in one suffix pass and assemble the output once.
-
 ## [0.1.8] - 2026-10-06
 
 ### Breaking
@@ -30,6 +22,8 @@ which the published crate does not carry.
 
 ### Fixes
 
+- A single pipe carrying row attributes stays paragraph text instead of
+  panicking during the table check (#2341).
 - `carve --carve` and `carve fmt` refuse instead of aborting when the writer cannot spell a tree. A list one level past the nesting cap whose deepest item holds a code fence exited 101 on valid input; both parse-path targets now print a diagnostic and exit non-zero, the way `--from-json` already did (#2333, markup-carve/carve-rs#2326).
 - A flush-left line below a nested item whose lead ends in a closed code fence or raw block folds into the outer item, and one below a lead ending in a heading, a one-row table or a comment leaves the list. A folded fence line takes the lazy sentinel, so the info string on it opens no block (#2332, markup-carve/carve#2734, markup-carve/carve#2741).
 - `carve lint` reports a reference image with no matching definition under `unresolved-reference-link`, the rule that already covered reference links, under no new rule id (#2336, markup-carve/carve#2740).
@@ -82,6 +76,14 @@ which the published crate does not carry.
 - An include selects a block by id, and an element id that would collide in the assembled document is renamed (#2311, markup-carve/carve#2727, markup-carve/carve#2729).
 - Repeated braced closer and substitution scans are bounded rather than repeated, so a run of failed braced closers no longer costs quadratic time. Output is unchanged (#2317).
 - A nested list line's indentation is measured once per enclosing level instead of about eleven times, so the indent scanning a line at depth 200 costs falls by 2.71x, counted rather than timed. Output is unchanged, and the cost is still quadratic in depth (#2324, #2301).
+- Repeated scans are indexed rather than repeated across AST merging, batched
+  reparsing, linting and code spans: AST merging indexes identity hints and
+  concurrent additions instead of rescanning sibling lists and interns
+  structural fingerprints once per tree, batched reparsing assembles the
+  source once and indexes edit boundaries when retaining node identities,
+  lint warning positions use indexes or advancing cursors instead of counting
+  source prefixes, and empty code spans choose their backtick runs in one
+  suffix pass and assemble the output once (#2341).
 
 ## [0.1.7] - 2026-09-29
 
