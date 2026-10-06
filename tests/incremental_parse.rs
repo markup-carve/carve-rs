@@ -111,3 +111,24 @@ fn invalid_batches_keep_the_previous_error_precedence() {
         "text change is out of bounds"
     );
 }
+
+#[test]
+fn a_single_pipe_with_attributes_stays_a_paragraph_during_reparse() {
+    for source in ["|{#one}", "|{.row}", " |{#one}", "|{title=é}"] {
+        let doc = carve::parse(source);
+        let html = carve::render_html(&doc).unwrap();
+        assert!(html.contains("<p"), "{source}: {html}");
+        assert!(!html.contains("<table"), "{source}: {html}");
+        let first = carve::parse_snapshot_with_identity("text");
+        let second = reparse(
+            first.snapshot,
+            &[TextChange {
+                range: 0..4,
+                replacement: source.into(),
+            }],
+        )
+        .unwrap();
+        let (fresh, _) = parse_with_source_layout(source);
+        assert_eq!(to_json(&second.document), to_json(&fresh));
+    }
+}
