@@ -1539,8 +1539,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // reported cause is `soft_break`, which hundreds of documents here
     // already carry, so the lossy side takes one more document and no new
     // cause reaches `undeclared`. 1718/505 becomes 1718/506.
-    const STRICT: usize = 1710;
-    const LOSSY: usize = 506;
+    // Spec 2c3d174b adds exactly one corpus document, corpus 546-5
+    // (markup-carve/carve#2759): the diff between the two pins is one `.crv`
+    // and its `.html` ADDED, with none modified and none removed, and this
+    // branch moves the submodule gitlink only, so the engine is byte-identical
+    // to the one main runs. A document whose source did not move, read by an
+    // engine that did not move, cannot change bucket, so the joiner is the
+    // whole delta. Measured on this build it drops `caption_number` and
+    // degrades nothing - the cause twenty-two documents here already carry,
+    // among them corpus 47, 318, 484-5 and 489, so no new cause reaches
+    // `undeclared`. 1718/506 becomes 1718/507, and the strict side is pinned
+    // at what it measures rather than at a floor that had lagged it by eight.
+    const STRICT: usize = 1718;
+    const LOSSY: usize = 507;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
