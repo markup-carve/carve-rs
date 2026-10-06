@@ -4,6 +4,7 @@ use serde_json::Map;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::Document;
+use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{from_json, parse_value, value_to_json, AstJsonError, Json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,21 +66,33 @@ fn clean(value: &Json, strip_metadata: bool) -> Json {
     }
 }
 
-fn strip_metadata(path: &str) -> bool {
-    !path.split('/').any(|part| part == "keyValues")
+struct MergePath {
+    segments: Vec<String>,
+    strip_metadata: bool,
 }
 
-fn same(a: Option<&Json>, b: Option<&Json>, path: &str) -> bool {
+fn same(
+    a: Option<&Json>,
+    b: Option<&Json>,
+    path: &MergePath,
+    fingerprints: &Fingerprints<'_>,
+) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => clean(a, strip_metadata(path)) == clean(b, strip_metadata(path)),
+        (Some(a), Some(b)) => {
+            fingerprints.id(a, path.strip_metadata) == fingerprints.id(b, path.strip_metadata)
+        }
         (None, None) => true,
         _ => false,
     }
 }
 
-fn pointer(path: &str, key: impl ToString) -> String {
-    let key = key.to_string().replace('~', "~0").replace('/', "~1");
-    format!("{path}/{key}")
+fn pointer(path: &MergePath) -> String {
+    let mut pointer = String::new();
+    for segment in &path.segments {
+        pointer.push('/');
+        pointer.push_str(&segment.replace('~', "~0").replace('/', "~1"));
+    }
+    pointer
 }
 
 fn kind(value: &Json) -> String {
@@ -123,22 +136,27 @@ struct SideMatch {
     additions: Vec<usize>,
 }
 
-fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
+fn match_side(
+    base: &[Json],
+    side: &[Json],
+    path: &MergePath,
+    fingerprints: &Fingerprints<'_>,
+) -> SideMatch {
     let mut found = SideMatch::default();
     fn take(found: &mut SideMatch, bi: usize, si: usize) {
         found.base_to_side.insert(bi, si);
         found.side_to_base.insert(si, bi);
     }
-    let strip = strip_metadata(path);
-    let mut exact = BTreeMap::<String, VecDeque<usize>>::new();
+    let strip = path.strip_metadata;
+    let mut exact = BTreeMap::<usize, VecDeque<usize>>::new();
     for (si, value) in side.iter().enumerate() {
         exact
-            .entry(value_to_json(&clean(value, strip)))
+            .entry(fingerprints.id(value, strip))
             .or_default()
             .push_back(si);
     }
     for (bi, value) in base.iter().enumerate() {
-        let key = value_to_json(&clean(value, strip));
+        let key = fingerprints.id(value, strip);
         if let Some(si) = exact.get_mut(&key).and_then(VecDeque::pop_front) {
             take(&mut found, bi, si);
         }
@@ -269,7 +287,7 @@ fn anchor(index: usize, matched: &SideMatch) -> (isize, isize) {
 
 fn record_conflict(
     reason: MergeConflictReason,
-    path: &str,
+    path: &MergePath,
     base: Option<&Json>,
     ours: Option<&Json>,
     theirs: Option<&Json>,
@@ -277,7 +295,7 @@ fn record_conflict(
     resolver: &mut Resolver<'_>,
 ) -> Result<Option<Json>, AstJsonError> {
     let conflict = MergeConflict {
-        path: path.into(),
+        path: pointer(path),
         reason,
         base: base.map(value_to_json),
         ours: ours.map(value_to_json),
@@ -302,12 +320,13 @@ fn merge_sequence(
     base: &[Json],
     ours: &[Json],
     theirs: &[Json],
-    path: &str,
+    path: &mut MergePath,
+    fingerprints: &Fingerprints<'_>,
     conflicts: &mut Vec<MergeConflict>,
     resolver: &mut Resolver<'_>,
 ) -> Result<Option<Json>, AstJsonError> {
-    let om = match_side(base, ours, path);
-    let tm = match_side(base, theirs, path);
+    let om = match_side(base, ours, path, fingerprints);
+    let tm = match_side(base, theirs, path, fingerprints);
     let mut values = Map::<String, Json>::new();
     let mut omitted = BTreeSet::<String>::new();
     for (i, base_value) in base.iter().enumerate() {
@@ -316,20 +335,21 @@ fn merge_sequence(
             tm.base_to_side.get(&i).copied(),
         );
         let token = format!("b{i}");
+        path.segments.push(i.to_string());
         match (oi, ti) {
             (None, None) => {
                 omitted.insert(token);
             }
-            (None, Some(ti)) if same(Some(base_value), Some(&theirs[ti]), path) => {
+            (None, Some(ti)) if same(Some(base_value), Some(&theirs[ti]), path, fingerprints) => {
                 omitted.insert(token);
             }
-            (Some(oi), None) if same(Some(base_value), Some(&ours[oi]), path) => {
+            (Some(oi), None) if same(Some(base_value), Some(&ours[oi]), path, fingerprints) => {
                 omitted.insert(token);
             }
             (None, Some(ti)) => {
                 if let Some(value) = record_conflict(
                     MergeConflictReason::DeleteEdit,
-                    &pointer(path, i),
+                    path,
                     Some(base_value),
                     None,
                     Some(&theirs[ti]),
@@ -344,7 +364,7 @@ fn merge_sequence(
             (Some(oi), None) => {
                 if let Some(value) = record_conflict(
                     MergeConflictReason::DeleteEdit,
-                    &pointer(path, i),
+                    path,
                     Some(base_value),
                     Some(&ours[oi]),
                     None,
@@ -361,7 +381,8 @@ fn merge_sequence(
                     Some(base_value),
                     Some(&ours[oi]),
                     Some(&theirs[ti]),
-                    &pointer(path, i),
+                    path,
+                    fingerprints,
                     conflicts,
                     resolver,
                 )? {
@@ -371,20 +392,21 @@ fn merge_sequence(
                 }
             }
         }
+        path.segments.pop();
     }
     let mut ours_add = BTreeMap::new();
     let mut theirs_add = BTreeMap::new();
     let mut used_theirs = BTreeSet::new();
-    let mut additions_by_content = BTreeMap::<((isize, isize), String), VecDeque<usize>>::new();
-    let mut additions_by_hint = BTreeMap::<((isize, isize), String), (String, bool)>::new();
-    let strip = strip_metadata(path);
+    let mut additions_by_content = BTreeMap::<((isize, isize), usize), VecDeque<usize>>::new();
+    let mut additions_by_hint = BTreeMap::<((isize, isize), String), (usize, bool)>::new();
+    let strip = path.strip_metadata;
     for &ti in &tm.additions {
         let at = anchor(ti, &tm);
-        let content = value_to_json(&clean(&theirs[ti], strip));
+        let content = fingerprints.id(&theirs[ti], strip);
         if let Some(hint) = identity_hint(&theirs[ti]) {
             let entry = additions_by_hint
                 .entry((at, hint))
-                .or_insert((content.clone(), false));
+                .or_insert((content, false));
             entry.1 |= entry.0 != content;
         }
         additions_by_content
@@ -394,7 +416,7 @@ fn merge_sequence(
     }
     for &oi in &om.additions {
         let at = anchor(oi, &om);
-        let content = value_to_json(&clean(&ours[oi], strip));
+        let content = fingerprints.id(&ours[oi], strip);
         let collision =
             identity_hint(&ours[oi]).and_then(|hint| additions_by_hint.get(&(at, hint)));
         if collision.is_some_and(|(first, differing)| *differing || *first != content) {
@@ -532,17 +554,18 @@ fn merge_value(
     base: Option<&Json>,
     ours: Option<&Json>,
     theirs: Option<&Json>,
-    path: &str,
+    path: &mut MergePath,
+    fingerprints: &Fingerprints<'_>,
     conflicts: &mut Vec<MergeConflict>,
     resolver: &mut Resolver<'_>,
 ) -> Result<Option<Json>, AstJsonError> {
-    if same(ours, theirs, path) {
+    if same(ours, theirs, path, fingerprints) {
         return Ok(ours.cloned());
     }
-    if same(ours, base, path) {
+    if same(ours, base, path, fingerprints) {
         return Ok(theirs.cloned());
     }
-    if same(theirs, base, path) {
+    if same(theirs, base, path, fingerprints) {
         return Ok(ours.cloned());
     }
     let (Some(ours), Some(theirs)) = (ours, theirs) else {
@@ -558,7 +581,7 @@ fn merge_value(
     };
     if let (Some(Json::Array(base)), Json::Array(ours), Json::Array(theirs)) = (base, ours, theirs)
     {
-        return merge_sequence(base, ours, theirs, path, conflicts, resolver);
+        return merge_sequence(base, ours, theirs, path, fingerprints, conflicts, resolver);
     }
     if let (Some(Json::Object(base)), Json::Object(ours), Json::Object(theirs)) =
         (base, ours, theirs)
@@ -571,17 +594,24 @@ fn merge_value(
             .collect::<BTreeSet<_>>();
         let mut out = Map::new();
         for key in keys {
-            if strip_metadata(path) && (key == "pos" || key == "srcByteLength") {
+            if path.strip_metadata && (key == "pos" || key == "srcByteLength") {
                 continue;
             }
-            if let Some(value) = merge_value(
+            let previous_strip = path.strip_metadata;
+            path.strip_metadata &= key != "keyValues";
+            path.segments.push(key.clone());
+            let merged = merge_value(
                 base.get(&key),
                 ours.get(&key),
                 theirs.get(&key),
-                &pointer(path, &key),
+                path,
+                fingerprints,
                 conflicts,
                 resolver,
-            )? {
+            );
+            path.strip_metadata = previous_strip;
+            path.segments.pop();
+            if let Some(value) = merged? {
                 out.insert(key, value);
             }
         }
@@ -628,12 +658,21 @@ fn merge_ast_inner(
     let base = parse_value(&crate::ast_json::try_to_json(base)?)?;
     let ours = parse_value(&crate::ast_json::try_to_json(ours)?)?;
     let theirs = parse_value(&crate::ast_json::try_to_json(theirs)?)?;
+    let mut fingerprints = Fingerprints::new(true, true);
+    fingerprints.add(&base);
+    fingerprints.add(&ours);
+    fingerprints.add(&theirs);
     let mut conflicts = Vec::new();
+    let mut path = MergePath {
+        segments: Vec::new(),
+        strip_metadata: true,
+    };
     let Some(mut merged) = merge_value(
         Some(&base),
         Some(&ours),
         Some(&theirs),
-        "",
+        &mut path,
+        &fingerprints,
         &mut conflicts,
         resolver,
     )?

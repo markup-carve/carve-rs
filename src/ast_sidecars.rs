@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::ast::Document;
+use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{parse_value, try_to_json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,6 +123,11 @@ pub(crate) fn retain_node_identity(
 ) -> Result<NodeIdentity, AstSidecarError> {
     let old_ast = ast_value(old_doc)?;
     let new_ast = ast_value(new_doc)?;
+    let mut fingerprints = Fingerprints::new(false, false);
+    fingerprints.add(&old_ast);
+    fingerprints.add(&new_ast);
+    let old_nodes = nodes_by_path(&old_ast);
+    let new_nodes = nodes_by_path(&new_ast);
     let old_offsets = codepoint_bytes(old_source);
     let new_offsets = codepoint_bytes(new_source);
     let mut adjustments = Vec::with_capacity(changes.len() + 1);
@@ -135,7 +141,10 @@ pub(crate) fn retain_node_identity(
         if entry.path.is_empty() {
             continue;
         }
-        let node = node_at(&old_ast, &entry.path)?;
+        let node = match old_nodes.get(&entry.path) {
+            Some(node) => *node,
+            None => node_at(&old_ast, &entry.path)?,
+        };
         let Some((start, end)) = node_bytes(node, &old_offsets) else {
             continue;
         };
@@ -153,23 +162,26 @@ pub(crate) fn retain_node_identity(
         ) else {
             continue;
         };
-        let key = (adjusted_start, adjusted_end, fingerprint(node));
+        let key = (adjusted_start, adjusted_end, fingerprints.id(node, true));
         old_keys
             .entry(key)
             .and_modify(|id| *id = None)
             .or_insert_with(|| Some(entry.id.clone()));
     }
-    let fresh_nodes = fresh_node_identity(new_doc, previous.session.clone())?.nodes;
+    let fresh_nodes = identity_from_ast(&new_ast, previous.session.clone())?.nodes;
     let mut new_key_counts = HashMap::new();
+    let mut fresh_keys = Vec::with_capacity(fresh_nodes.len());
     for entry in &fresh_nodes {
-        let node = node_at(&new_ast, &entry.path)?;
-        if let Some((start, end)) = node_bytes(node, &new_offsets) {
-            let key = (start, end, fingerprint(node));
+        let node = new_nodes[&entry.path];
+        let key = node_bytes(node, &new_offsets)
+            .map(|(start, end)| (start, end, fingerprints.id(node, true)));
+        if let Some(key) = key {
             *new_key_counts.entry(key).or_insert(0usize) += 1;
         }
+        fresh_keys.push(key);
     }
     let mut nodes = Vec::new();
-    for fresh in fresh_nodes {
+    for (fresh, key) in fresh_nodes.into_iter().zip(fresh_keys) {
         let id = if fresh.path.is_empty() {
             previous
                 .nodes
@@ -177,9 +189,7 @@ pub(crate) fn retain_node_identity(
                 .find(|entry| entry.path.is_empty())
                 .map(|entry| entry.id.clone())
         } else {
-            let node = node_at(&new_ast, &fresh.path)?;
-            node_bytes(node, &new_offsets).and_then(|(start, end)| {
-                let key = (start, end, fingerprint(node));
+            key.and_then(|key| {
                 if new_key_counts.get(&key) == Some(&1) {
                     old_keys.remove(&key).flatten()
                 } else {
@@ -202,7 +212,7 @@ pub(crate) fn retain_node_identity(
         session: previous.session.clone(),
         nodes,
     };
-    validate_identity(&sidecar, &new_ast)?;
+    validate_identity_with_nodes(&sidecar, &new_ast, &new_nodes)?;
     Ok(sidecar)
 }
 
@@ -225,20 +235,29 @@ fn node_bytes(node: &Value, offsets: &[usize]) -> Option<(usize, usize)> {
     Some((*offsets.get(start)?, *offsets.get(end)?))
 }
 
-fn fingerprint(node: &Value) -> String {
-    let mut stripped = node.clone();
-    let mut pending = vec![&mut stripped];
-    while let Some(value) = pending.pop() {
+fn nodes_by_path(ast: &Value) -> HashMap<String, &Value> {
+    let mut nodes = HashMap::new();
+    let mut pending = vec![(String::new(), ast)];
+    while let Some((path, value)) = pending.pop() {
         match value {
             Value::Object(object) => {
-                object.remove("pos");
-                pending.extend(object.values_mut());
+                for (key, child) in object.iter().filter(|(key, _)| structural_field(key)) {
+                    let key = key.replace('~', "~0").replace('/', "~1");
+                    pending.push((format!("{path}/{key}"), child));
+                }
             }
-            Value::Array(values) => pending.extend(values.iter_mut()),
+            Value::Array(array) => {
+                for (index, child) in array.iter().enumerate() {
+                    pending.push((format!("{path}/{index}"), child));
+                }
+            }
             _ => {}
         }
+        if value.get("type").and_then(Value::as_str).is_some() {
+            nodes.insert(path, value);
+        }
     }
-    serde_json::to_string(&stripped).expect("AST JSON is serializable")
+    nodes
 }
 
 fn node_at<'a>(ast: &'a Value, path: &str) -> Result<&'a Value, AstSidecarError> {
@@ -333,13 +352,34 @@ fn version(version: u32) -> Result<(), AstSidecarError> {
 }
 
 fn validate_identity(sidecar: &NodeIdentity, ast: &Value) -> Result<(), AstSidecarError> {
+    validate_identity_records(sidecar, |path| node_at(ast, path).map(|_| ()))
+}
+
+fn validate_identity_with_nodes(
+    sidecar: &NodeIdentity,
+    ast: &Value,
+    nodes: &HashMap<String, &Value>,
+) -> Result<(), AstSidecarError> {
+    validate_identity_records(sidecar, |path| {
+        if nodes.contains_key(path) {
+            Ok(())
+        } else {
+            node_at(ast, path).map(|_| ())
+        }
+    })
+}
+
+fn validate_identity_records(
+    sidecar: &NodeIdentity,
+    mut check_node: impl FnMut(&str) -> Result<(), AstSidecarError>,
+) -> Result<(), AstSidecarError> {
     version(sidecar.version)?;
     nonempty(&sidecar.session, "session")?;
     let mut ids = HashSet::new();
     let mut paths = HashSet::new();
     for entry in &sidecar.nodes {
         nonempty(&entry.id, "node id")?;
-        node_at(ast, &entry.path)?;
+        check_node(&entry.path)?;
         if !ids.insert(&entry.id) || !paths.insert(&entry.path) {
             return Err(error("node identity ids and paths must be unique"));
         }
@@ -555,8 +595,11 @@ pub fn fresh_node_identity(
     doc: &Document,
     session: impl Into<String>,
 ) -> Result<NodeIdentity, AstSidecarError> {
-    let ast = ast_value(doc)?;
-    let mut pending = vec![(String::new(), &ast)];
+    identity_from_ast(&ast_value(doc)?, session.into())
+}
+
+fn identity_from_ast(ast: &Value, session: String) -> Result<NodeIdentity, AstSidecarError> {
+    let mut pending = vec![(String::new(), ast)];
     let mut nodes = Vec::new();
     while let Some((path, value)) = pending.pop() {
         if value.get("type").and_then(Value::as_str).is_some() {
@@ -582,10 +625,10 @@ pub fn fresh_node_identity(
     }
     let sidecar = NodeIdentity {
         version: 1,
-        session: session.into(),
+        session,
         nodes,
     };
-    validate_identity(&sidecar, &ast)?;
+    validate_identity_records(&sidecar, |_| Ok(()))?;
     Ok(sidecar)
 }
 

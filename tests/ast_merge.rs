@@ -163,3 +163,21 @@ fn bounds_a_wide_ambiguous_sibling_list() {
     // pins that a refused pairing still reports the conflict (carve-rs#2190).
     assert!(matches!(result, MergeResult::Conflicts(_)));
 }
+
+#[test]
+fn escapes_attribute_keys_in_nested_conflict_paths() {
+    let make = |value| {
+        let doc = parse(&format!("[text]{{key={value}}}\n"));
+        carve::from_json(&to_json(&doc).replace("\"key\":", "\"a/b~c\":")).unwrap()
+    };
+    let base = make("base");
+    let ours = make("ours");
+    let theirs = make("theirs");
+    let MergeResult::Conflicts(conflicts) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("expected conflict")
+    };
+    assert!(conflicts.iter().any(|conflict| {
+        conflict.path.ends_with("/keyValues/a~1b~0c")
+            && conflict.reason == MergeConflictReason::BothChanged
+    }));
+}
