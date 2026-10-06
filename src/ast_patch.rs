@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::ast::Document;
+use crate::ast_fingerprint::Fingerprints;
 use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJsonError, Json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,22 +191,39 @@ fn strip_metadata(path: &str) -> bool {
     !path.split('/').any(|part| part == "keyValues")
 }
 
-fn pointer(path: &str, key: impl ToString) -> String {
-    format!(
-        "{path}/{}",
-        key.to_string().replace('~', "~0").replace('/', "~1")
-    )
+struct PatchPath {
+    segments: Vec<String>,
+    strip_metadata: bool,
 }
 
-fn build(before: &Json, after: &Json, path: &str, out: &mut Vec<AstPatchOperation>) {
-    let strip = strip_metadata(path);
-    if clean(before, strip) == clean(after, strip) {
+impl PatchPath {
+    fn pointer(&self) -> String {
+        let mut out = String::new();
+        for segment in &self.segments {
+            out.push('/');
+            out.push_str(&segment.replace('~', "~0").replace('/', "~1"));
+        }
+        out
+    }
+}
+
+fn build(
+    before: &Json,
+    after: &Json,
+    path: &mut PatchPath,
+    out: &mut Vec<AstPatchOperation>,
+    fingerprints: &Fingerprints<'_>,
+) {
+    let strip = path.strip_metadata;
+    if fingerprints.id(before, strip) == fingerprints.id(after, strip) {
         return;
     }
     match (before, after) {
         (Json::Array(before), Json::Array(after)) if before.len() == after.len() => {
             for (index, (before, after)) in before.iter().zip(after).enumerate() {
-                build(before, after, &pointer(path, index), out);
+                path.segments.push(index.to_string());
+                build(before, after, path, out, fingerprints);
+                path.segments.pop();
             }
         }
         (Json::Object(before), Json::Object(after)) => {
@@ -216,20 +234,28 @@ fn build(before: &Json, after: &Json, path: &str, out: &mut Vec<AstPatchOperatio
                 .cloned()
                 .collect::<BTreeSet<_>>();
             for key in keys {
-                let child = pointer(path, &key);
+                path.segments.push(key.clone());
+                path.strip_metadata = strip && key != "keyValues";
                 match (before.get(&key), after.get(&key)) {
-                    (Some(_), None) => out.push(AstPatchOperation::Remove { path: child }),
+                    (Some(_), None) => out.push(AstPatchOperation::Remove {
+                        path: path.pointer(),
+                    }),
                     (None, Some(value)) => {
-                        let value = value_to_json(&clean(value, strip_metadata(&child)));
-                        out.push(AstPatchOperation::Add { path: child, value });
+                        let value = value_to_json(&clean(value, path.strip_metadata));
+                        out.push(AstPatchOperation::Add {
+                            path: path.pointer(),
+                            value,
+                        });
                     }
-                    (Some(before), Some(after)) => build(before, after, &child, out),
+                    (Some(before), Some(after)) => build(before, after, path, out, fingerprints),
                     (None, None) => {}
                 }
+                path.strip_metadata = strip;
+                path.segments.pop();
             }
         }
         _ => out.push(AstPatchOperation::Replace {
-            path: path.into(),
+            path: path.pointer(),
             value: value_to_json(&clean(after, strip)),
         }),
     }
@@ -242,7 +268,14 @@ pub fn create_ast_patch(
     let before = parse_value(&try_to_json(before)?)?;
     let after = parse_value(&try_to_json(after)?)?;
     let mut operations = Vec::new();
-    build(&before, &after, "", &mut operations);
+    let mut fingerprints = Fingerprints::new(true, true);
+    fingerprints.add(&before);
+    fingerprints.add(&after);
+    let mut path = PatchPath {
+        segments: Vec::new(),
+        strip_metadata: true,
+    };
+    build(&before, &after, &mut path, &mut operations, &fingerprints);
     Ok(operations)
 }
 
@@ -285,30 +318,25 @@ fn index(value: &str, length: usize, allow_end: bool) -> Result<usize, AstPatchE
 }
 
 fn apply_at(
-    mut root: Json,
+    root: &mut Json,
     parts: &[String],
     operation: &AstPatchOperation,
-) -> Result<Json, AstPatchError> {
-    let operation_path = match operation {
-        AstPatchOperation::Add { path, .. }
-        | AstPatchOperation::Replace { path, .. }
-        | AstPatchOperation::Remove { path } => path,
-    };
-    let strip = strip_metadata(operation_path);
+    strip: bool,
+) -> Result<(), AstPatchError> {
     let (key, rest) = parts
         .split_first()
         .ok_or_else(|| AstPatchError("patch path cannot be empty here".into()))?;
     if !rest.is_empty() {
-        match &mut root {
+        match root {
             Json::Array(values) => {
                 let i = index(key, values.len(), false)?;
-                values[i] = apply_at(values[i].clone(), rest, operation)?;
+                apply_at(&mut values[i], rest, operation, strip)?;
             }
             Json::Object(values) => {
-                let child = values.get(key).cloned().ok_or_else(|| {
+                let child = values.get_mut(key).ok_or_else(|| {
                     AstPatchError(format!("path component {key:?} does not exist"))
                 })?;
-                values.insert(key.clone(), apply_at(child, rest, operation)?);
+                apply_at(child, rest, operation, strip)?;
             }
             _ => {
                 return Err(AstPatchError(format!(
@@ -316,9 +344,9 @@ fn apply_at(
                 )))
             }
         }
-        return Ok(root);
+        return Ok(());
     }
-    match &mut root {
+    match root {
         Json::Array(values) => match operation {
             AstPatchOperation::Add { value, .. } => {
                 let i = index(key, values.len(), true)?;
@@ -355,7 +383,7 @@ fn apply_at(
         },
         _ => return Err(AstPatchError("patch path parent is not a container".into())),
     }
-    Ok(root)
+    Ok(())
 }
 
 pub fn apply_ast_patch(
@@ -380,7 +408,7 @@ pub fn apply_ast_patch(
                 }
             };
         } else {
-            root = apply_at(root, &parts, operation)?;
+            apply_at(&mut root, &parts, operation, strip_metadata(path))?;
         }
     }
     let Json::Object(values) = &mut root else {

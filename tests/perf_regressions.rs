@@ -2060,3 +2060,99 @@ fn repeated_lint_warning_columns_scale_near_linearly() {
         );
     }
 }
+
+#[test]
+fn provenance_ancestry_scales_near_linearly() {
+    for reverse in [false, true] {
+        assert_conversion_near_linear_at(
+            |source| {
+                carve::from_provenance_json(source, &carve::parse("")).unwrap();
+            },
+            |n| {
+                let mut sources: Vec<_> = (0..n).map(|i| {
+                    if i == 0 { serde_json::json!({"id": "s0"}) }
+                    else { serde_json::json!({"id": format!("s{i}"), "parent": format!("s{}", i - 1)}) }
+                }).collect();
+                if reverse {
+                    sources.reverse();
+                }
+                serde_json::json!({"version": 1, "sources": sources, "nodes": []}).to_string()
+            },
+            "provenance ancestry",
+            2_000,
+            8_000,
+        );
+    }
+}
+
+#[test]
+fn deep_patch_creation_scales_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let before = carve::from_json(source).unwrap();
+            let after = carve::from_json(&source.replace("before", "after")).unwrap();
+            assert_eq!(carve::create_ast_patch(&before, &after).unwrap().len(), 1);
+        },
+        |n| {
+            let mut node = String::from(
+                r#"{"type":"paragraph","children":[{"type":"text","value":"before"}]}"#,
+            );
+            for _ in 0..n {
+                node = format!(r#"{{"type":"block_quote","children":[{node}]}}"#);
+            }
+            format!(r#"{{"type":"document","srcByteLength":0,"children":[{node}]}}"#)
+        },
+        "deep patch creation",
+        30,
+        120,
+    );
+}
+
+#[test]
+fn wide_patch_replay_scales_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let before = carve::parse(source);
+            let operations: Vec<_> = (0..before.children.len())
+                .map(|i| carve::AstPatchOperation::Replace {
+                    path: format!("/children/{i}/children/0/value"),
+                    value: "\"after\"".into(),
+                })
+                .collect();
+            carve::apply_ast_patch(&before, &operations).unwrap();
+        },
+        |n| "before\n\n".repeat(n),
+        "wide patch replay",
+        1_000,
+        8_000,
+    );
+}
+
+#[test]
+fn envelope_extension_membership_scales_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let wire: serde_json::Value = serde_json::from_str(source).unwrap();
+            let extensions = wire["extensions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["id"].as_str().unwrap().to_owned())
+                .collect();
+            carve::from_ast_envelope_json(
+                source,
+                &carve::AstEnvelopeReaderOptions {
+                    extensions,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        },
+        |n| {
+            serde_json::json!({"astVersion": "1.0", "document": {"type": "document", "srcByteLength": 0, "children": []}, "extensions": (0..n).map(|i| serde_json::json!({"id":format!("extension{i}")})).collect::<Vec<_>>()}).to_string()
+        },
+        "envelope extensions",
+        2_000,
+        8_000,
+    );
+}
