@@ -11,15 +11,21 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.8] - 2026-10-05
+## [0.1.8] - 2026-10-06
 
 ### Breaking
 
+- `try_to_carve_with_options` returns a `CarveWriteError`, which carries the profile violation it already reported and the writer's own refusal beside it. A caller that names the old error type has to widen it; `to_carve` stays infallible (#2333, markup-carve/carve-rs#2326).
+- A glossary id keeps its case and a glossary reference links to the entry it matched, so two terms differing only in case take two ids (#2327, markup-carve/carve#2739).
 - A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
 - A name lookup compares with exact case wherever one is made. A collapsed reference resolves only to a heading whose text is spelled the same way, a glossary reference only to a term spelled the same way, and an include's `#name` only to an id spelled the same way; a near miss is reported rather than resolved (#2320, #2321, #2325, markup-carve/carve#2732).
 
 ### Fixes
 
+- `carve --carve` and `carve fmt` refuse instead of aborting when the writer cannot spell a tree. A list one level past the nesting cap whose deepest item holds a code fence exited 101 on valid input; both parse-path targets now print a diagnostic and exit non-zero, the way `--from-json` already did (#2333, markup-carve/carve-rs#2326).
+- A flush-left line below a nested item whose lead ends in a closed code fence or raw block folds into the outer item, and one below a lead ending in a heading, a one-row table or a comment leaves the list. A folded fence line takes the lazy sentinel, so the info string on it opens no block (#2332, markup-carve/carve#2734, markup-carve/carve#2741).
+- `carve lint` reports a reference image with no matching definition under `unresolved-reference-link`, the rule that already covered reference links, under no new rule id (#2336, markup-carve/carve#2740).
+- `carve fmt --migrate` rewrites a reference image's case-only label the way it rewrites a link's, so `![a][Label]` migrates with `[a][Label]` (#2330, markup-carve/carve#2322).
 - A quoted attribute value, a quoted class value and a quoted link, image or reference-definition title double a backslash only where the re-parse needs it, so `t\zu` is written back as authored instead of carrying an escape the reader discards (#2224).
 - A list table keeps its grouping label and its pipe table on the Markdown, plain and ANSI targets, since the HTML carrier rewrite reaches the HTML target alone (#2225).
 - HTML import reads a literal reference-shaped tail before pairing brackets, so a superscript or subscript opener stops pairing with the tail's closing bracket and the span re-reads as itself (#2225).
@@ -51,6 +57,8 @@ which the published crate does not carry.
 
 ### Improvements
 
+- List-table spans and imported table groups are indexed rather than rescanned (#2331).
+- Borrowed HTML table cells allocate less (#2338).
 - `render_html_owned` and `render_html_owned_with_options` render a caller-owned document without cloning its tree, and the profile and loss-report facades take ownership of the temporary documents they already held (#2242).
 - A run of adjacent top-level reference definitions renders from source to HTML through the layout scanner instead of the full AST pipeline, cutting the allocation that run requested by 84%. Hosted definitions and runs the shared grammar refuses keep the existing fallback (#2240).
 - Definition collectors and the layout scanner reuse the destinations, titles and attributes they already parsed, and reference lookup borrows a key already in normalized form. Parsing 4,096 definitions and references makes 135,907 allocation requests rather than 160,473 (#2241).
