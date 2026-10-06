@@ -221,15 +221,7 @@ fn url_list_separators(name: &str) -> Option<fn(char) -> bool> {
 /// parallel path, so the two cannot drift: the rule changes WHERE the probe
 /// runs, not WHAT it denies.
 fn leads_with_dangerous_scheme(value: &str) -> bool {
-    let Some(colon) = value.find(':') else {
-        return false;
-    };
-    let scheme: String = value[..colon]
-        .chars()
-        .filter(|c| !is_url_probe_skippable(*c))
-        .collect::<String>()
-        .to_ascii_lowercase();
-    DANGEROUS_VALUE_SCHEMES.contains(&scheme.as_str())
+    has_denied_url_scheme(value)
 }
 
 /// Blank an attribute value carrying a dangerous URL scheme or a CSS
@@ -386,24 +378,43 @@ pub(crate) fn sanitize_destination<'a>(
 /// Whether `sanitize_destination` blanks `url`. The HTML importer asks the same
 /// question so it never writes a destination the sink would blank.
 pub(crate) fn has_denied_url_scheme(url: &str) -> bool {
-    let probe: String = url
-        .chars()
-        .filter(|c| !is_url_probe_skippable(*c))
-        .collect();
-    let Some(colon) = probe.find(':') else {
-        return false;
+    scheme_prefix_is_denied(url.chars())
+}
+
+fn scheme_prefix_is_denied(characters: impl Iterator<Item = char>) -> bool {
+    const MAX_SCHEME_LEN: usize = {
+        let mut longest = 0;
+        let mut i = 0;
+        while i < DANGEROUS_VALUE_SCHEMES.len() {
+            let length = DANGEROUS_VALUE_SCHEMES[i].len();
+            if length > longest {
+                longest = length;
+            }
+            i += 1;
+        }
+        longest
     };
-    // A scheme is letters/digits/+/-/. before the colon; if the prefix
-    // contains anything else it is not a URL scheme (e.g. a path segment).
-    let prefix = &probe[..colon];
-    let is_scheme = prefix
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic())
-        && prefix
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
-    is_scheme && DANGEROUS_VALUE_SCHEMES.contains(&prefix.to_ascii_lowercase().as_str())
+    let mut prefix = [0u8; MAX_SCHEME_LEN];
+    let mut length = 0;
+    for character in characters {
+        if is_url_probe_skippable(character) {
+            continue;
+        }
+        if character == ':' {
+            return DANGEROUS_VALUE_SCHEMES
+                .iter()
+                .any(|scheme| scheme.as_bytes() == &prefix[..length]);
+        }
+        if (length == 0 && !character.is_ascii_alphabetic())
+            || !(character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.'))
+            || length == prefix.len()
+        {
+            return false;
+        }
+        prefix[length] = character.to_ascii_lowercase() as u8;
+        length += 1;
+    }
+    false
 }
 
 /// Characters dropped before probing a URL's scheme: every control character
@@ -460,6 +471,122 @@ mod tests {
         assert_eq!(escape_text("a\u{202e}<b>"), "a&lt;b&gt;");
         // Nothing to strip: fast path returns the input unchanged.
         assert_eq!(escape_text("plain"), "plain");
+    }
+
+    fn previous_destination_probe(url: &str) -> bool {
+        let probe: String = url
+            .chars()
+            .filter(|c| !super::is_url_probe_skippable(*c))
+            .collect();
+        let Some(colon) = probe.find(':') else {
+            return false;
+        };
+        let prefix = &probe[..colon];
+        let is_scheme = prefix
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+        is_scheme && super::DANGEROUS_VALUE_SCHEMES.contains(&prefix.to_ascii_lowercase().as_str())
+    }
+
+    fn previous_attribute_probe(value: &str) -> bool {
+        let Some(colon) = value.find(':') else {
+            return false;
+        };
+        let scheme = value[..colon]
+            .chars()
+            .filter(|c| !super::is_url_probe_skippable(*c))
+            .collect::<String>()
+            .to_ascii_lowercase();
+        super::DANGEROUS_VALUE_SCHEMES.contains(&scheme.as_str())
+    }
+
+    #[test]
+    fn scheme_prefix_probe_preserves_both_previous_policies() {
+        let mut inserted = vec![
+            '/', '%', '+', '-', '.', '0', ':', 'é', '🙂', '\u{200B}', '\u{202E}',
+        ];
+        inserted.extend(
+            (0..=0x10ffff)
+                .filter_map(char::from_u32)
+                .filter(|c| super::is_url_probe_skippable(*c)),
+        );
+        for scheme in super::DANGEROUS_VALUE_SCHEMES.into_iter().chain([
+            "http",
+            "https",
+            "mailto",
+            "custom+scheme",
+            "",
+            "0prefix",
+            "a/relative/path",
+            "a.very.long.unknown.scheme",
+        ]) {
+            for spelling in [scheme.to_owned(), scheme.to_ascii_uppercase()] {
+                for character in &inserted {
+                    for at in 0..=spelling.len() {
+                        let url = format!(
+                            "{}{}{}:payload:tail",
+                            &spelling[..at],
+                            character,
+                            &spelling[at..]
+                        );
+                        assert_eq!(
+                            super::has_denied_url_scheme(&url),
+                            previous_destination_probe(&url),
+                            "destination {url:?}"
+                        );
+                        assert_eq!(
+                            super::leads_with_dangerous_scheme(&url),
+                            previous_attribute_probe(&url),
+                            "attribute {url:?}"
+                        );
+                    }
+                }
+            }
+        }
+        for url in [
+            "",
+            "javascript",
+            "java script",
+            "https://example.com/path",
+            "////:javascript",
+            "\u{FEFF}java\tSCRIPT:payload",
+            "data:",
+            "javascript::tail",
+        ] {
+            assert_eq!(
+                super::has_denied_url_scheme(url),
+                previous_destination_probe(url),
+                "{url:?}"
+            );
+            assert_eq!(
+                super::leads_with_dangerous_scheme(url),
+                previous_attribute_probe(url),
+                "{url:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scheme_prefix_probe_stops_before_long_destination_tails() {
+        let tail = "long/path/é/🙂/".repeat(100000);
+        for (prefix, denied) in [
+            ("https:", false),
+            ("java\tscript:", true),
+            ("unknown-long-scheme-name:", false),
+            ("/relative/", false),
+        ] {
+            let url = format!("{prefix}{tail}");
+            let visited = std::cell::Cell::new(0);
+            let characters = url.chars().inspect(|_| visited.set(visited.get() + 1));
+            assert_eq!(super::scheme_prefix_is_denied(characters), denied);
+            assert!(visited.get() <= prefix.chars().count());
+            assert_eq!(super::has_denied_url_scheme(&url), denied);
+            assert_eq!(super::leads_with_dangerous_scheme(&url), denied);
+        }
     }
 
     #[test]
