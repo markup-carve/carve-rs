@@ -90,3 +90,24 @@ fn batch_edits_preserve_insertion_order_and_untouched_identity() {
         middle
     );
 }
+
+#[test]
+fn invalid_batches_keep_the_previous_error_precedence() {
+    let result = reparse(
+        parse_snapshot("éx").snapshot,
+        &[
+            TextChange {
+                range: 1..2,
+                replacement: String::new(),
+            },
+            TextChange {
+                range: 9..10,
+                replacement: String::new(),
+            },
+        ],
+    );
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "text change is out of bounds"
+    );
+}

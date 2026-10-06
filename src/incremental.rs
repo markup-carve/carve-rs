@@ -110,8 +110,7 @@ pub fn reparse(
             return Err(IncrementalParseError("text changes overlap".into()));
         }
     }
-    let mut cursor = 0;
-    for change in &ordered {
+    for change in ordered.iter().rev() {
         if change.range.start > change.range.end || change.range.end > old_source.len() {
             return Err(IncrementalParseError("text change is out of bounds".into()));
         }
@@ -122,6 +121,9 @@ pub fn reparse(
                 "text change splits a UTF-8 code point".into(),
             ));
         }
+    }
+    let mut cursor = 0;
+    for change in &ordered {
         source.push_str(&old_source[cursor..change.range.start]);
         source.push_str(&change.replacement);
         cursor = change.range.end;
