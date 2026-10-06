@@ -15,31 +15,27 @@ which the published crate does not carry.
 
 ### Compatibility and migration
 
-Exact-case lookup changes heading cross-references, numbered caption and equation
-references, collapsed references that fall back to heading text, and include
-fragment selection. Link-definition labels and footnote labels were already
-case-sensitive. Whitespace normalization, NFC and core heading slug derivation
-are unchanged. Case-distinct ids remain separate targets.
-
-Run `carve lint` before upgrading existing documents. `carve fmt --migrate`
-repairs unambiguous case-only cross-reference and link or image label misses.
-Review the result: changing a collapsed label also changes its visible text or
-image alternative text. Ambiguous matches and labels carrying inline markup
-need manual review. Include selectors, glossary references and external
-fragment links are outside this repair. Glossary ids now preserve case, so
-update links to those ids separately. Ordinary `fmt` does not apply this repair.
+With the new engine, lint existing documents before deploying their output.
+`fmt --migrate` repairs unambiguous case-only reference misses. Review changes
+to collapsed link text and image alt text; include selectors, glossary
+references and external fragment links need manual review. See the
+[migration guide](docs/cli.md#exact-case-reference-migration).
 
 ### Breaking
 
 - `try_to_carve_with_options` returns a `CarveWriteError`, which carries the profile violation it already reported and the writer's own refusal beside it. A caller that names the old error type has to widen it; `to_carve` stays infallible (#2333, markup-carve/carve-rs#2326).
-- A glossary id keeps its case and a glossary reference links to the entry it matched, so two terms differing only in case take two ids (#2327, markup-carve/carve#2739).
+- A glossary reference matches its term exactly, and a glossary id keeps its case and links to the matched entry, so two terms differing only in case take two ids (#2327, markup-carve/carve#2739).
 - A render that blanks a denied destination scheme reports one `destination-denied` loss, so a checked render of `[x](javascript:alert(1))` refuses what it used to pass, and `--allow-loss` does not accept the code. The emitted value does not move: `href=""` is what it was. `RenderLossError` now reads "render would lose N nodes" rather than "render would drop N raw nodes", which was already wrong for `ruby-flattened` (#2243, markup-carve/carve#2679, markup-carve/carve#2681).
 - Heading cross-references, numbered caption and equation references, collapsed
   references that fall back to heading text, and include fragment selectors now
   compare case exactly. Link-definition labels and footnote labels already did.
-  Case-only mismatches no longer resolve. (#2320, #2321, #2325, markup-carve/carve#2732).
+  Case-only mismatches no longer resolve (#2320, #2321, #2325, markup-carve/carve#2732).
 
 ### Fixes
+
+- The upgrade guide distinguishes newly exact lookups from labels that already
+  matched case exactly, and explains migration limits. Tests keep case-distinct
+  numbered captions and equations separate (#2346).
 
 - AST patch creation interns subtree comparisons once, and patch replay updates a private tree in place. Provenance ancestry and envelope extension checks avoid repeated scans (#2345).
 
