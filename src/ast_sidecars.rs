@@ -499,10 +499,14 @@ fn validate_provenance(sidecar: &Provenance, ast: &Value) -> Result<(), AstSidec
             return Err(error("provenance source ids must be unique"));
         }
     }
+    let mut completed = HashSet::new();
     for source in &sidecar.sources {
         let mut seen = HashSet::new();
         let mut current = Some(source.id.as_str());
         while let Some(id) = current {
+            if completed.contains(id) {
+                break;
+            }
             if !seen.insert(id) {
                 return Err(error("provenance source parent cycle"));
             }
@@ -510,6 +514,7 @@ fn validate_provenance(sidecar: &Provenance, ast: &Value) -> Result<(), AstSidec
                 .get(id)
                 .ok_or_else(|| error(format!("unknown source {id:?}")))?;
         }
+        completed.extend(seen);
     }
     let mut paths = HashSet::new();
     for node in &sidecar.nodes {

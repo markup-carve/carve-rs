@@ -12,6 +12,7 @@
 //! it.
 
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::fmt;
 
 use crate::ast::Document;
@@ -312,6 +313,7 @@ pub fn from_ast_envelope_json(
     match object.get("extensions") {
         None | Some(Json::Null) => {}
         Some(Json::Array(entries)) => {
+            let implemented: HashSet<_> = options.extensions.iter().collect();
             for (index, entry) in entries.iter().enumerate() {
                 let extension = read_extension(entry, index)?;
                 // Absent means true. An extension a reader may ignore without
@@ -319,7 +321,7 @@ pub fn from_ast_envelope_json(
                 if extension.required == Some(false) {
                     continue;
                 }
-                if !options.extensions.contains(&extension.id) {
+                if !implemented.contains(&extension.id) {
                     return Err(AstEnvelopeError::Extension(extension.id));
                 }
             }

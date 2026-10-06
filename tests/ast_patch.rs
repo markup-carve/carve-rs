@@ -87,3 +87,59 @@ fn patch_wire_format_rejects_malformed_operations() {
     assert!(ast_patch_from_json("[{\"op\":\"replace\",\"path\":\"/type\"}]").is_err());
     assert!(ast_patch_from_json("[{\"op\":\"test\",\"path\":\"/type\",\"value\":null}]").is_err());
 }
+
+fn nested_document(depth: usize, value: &str) -> carve::Document {
+    let mut node =
+        format!(r#"{{"type":"paragraph","children":[{{"type":"text","value":"{value}"}}]}}"#);
+    for _ in 0..depth {
+        node = format!(r#"{{"type":"block_quote","children":[{node}]}}"#);
+    }
+    carve::from_json(&format!(
+        r#"{{"type":"document","srcByteLength":0,"children":[{node}]}}"#
+    ))
+    .unwrap()
+}
+
+#[test]
+fn deeply_nested_patch_preserves_paths_and_input() {
+    let before = nested_document(40, "before");
+    let after = nested_document(40, "after");
+    let original = to_json(&before);
+    let patch = create_ast_patch(&before, &after).unwrap();
+    assert_eq!(
+        patch,
+        vec![AstPatchOperation::Replace {
+            path: format!("{}/value", "/children/0".repeat(42)),
+            value: "\"after\"".into(),
+        }]
+    );
+    let replayed = apply_ast_patch(&before, &patch).unwrap();
+    assert_eq!(to_json(&replayed), to_json(&after));
+    assert_eq!(to_json(&before), original);
+    let invalid = [
+        patch[0].clone(),
+        AstPatchOperation::Remove {
+            path: "/children/99".into(),
+        },
+    ];
+    assert!(apply_ast_patch(&before, &invalid).is_err());
+    assert_eq!(to_json(&before), original);
+}
+
+#[test]
+fn provenance_validation_handles_forward_parents_and_cycles() {
+    let doc = parse("");
+    let valid = r#"{"version":1,"sources":[{"id":"a","parent":"root"},{"id":"b","parent":"root"},{"id":"root"}],"nodes":[]}"#;
+    assert!(carve::from_provenance_json(valid, &doc).is_ok());
+    let cycle =
+        r#"{"version":1,"sources":[{"id":"a","parent":"b"},{"id":"b","parent":"a"}],"nodes":[]}"#;
+    assert!(carve::from_provenance_json(cycle, &doc)
+        .unwrap_err()
+        .to_string()
+        .contains("cycle"));
+    let missing = r#"{"version":1,"sources":[{"id":"a","parent":"b"},{"id":"b","parent":"missing"}],"nodes":[]}"#;
+    assert!(carve::from_provenance_json(missing, &doc)
+        .unwrap_err()
+        .to_string()
+        .contains("unknown source"));
+}
