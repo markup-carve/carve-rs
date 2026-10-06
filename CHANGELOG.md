@@ -13,7 +13,7 @@ which the published crate does not carry.
 
 ### Fixes
 
-- AST patch creation interns subtree comparisons once, and patch replay updates a private tree in place. Provenance ancestry and envelope extension checks avoid repeated scans.
+- AST patch creation interns subtree comparisons once, and patch replay updates a private tree in place. Provenance ancestry and envelope extension checks avoid repeated scans (#2345).
 
 ## [0.1.8] - 2026-10-06
 
