@@ -354,7 +354,7 @@ fn renames_duplicate_explicit_heading_ids_deterministically() {
         "{{ a }}\n\n{{ b }}",
         &[("a", "{#dup}\n# A"), ("b", "{#dup}\n# B")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(result.html.contains("<section id=\"dup\">"));
     assert!(result.html.contains("<section id=\"dup-2\">"));
 }
@@ -365,7 +365,7 @@ fn parent_explicit_ids_win_a_collision_and_the_child_crossref_follows_the_rename
         "{{ a }}\n\n{#dup}\n# Parent",
         &[("a", "{#dup}\n# Child\n\nSee </#dup>.")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(result.html.contains("<section id=\"dup-2\">"));
     assert!(result.html.contains("href=\"#dup-2\""));
 }
@@ -378,7 +378,7 @@ fn a_child_crossref_follows_the_first_renamed_copy() {
     );
     assert_eq!(
         result.rules(),
-        vec!["include-heading-id-rename", "include-heading-id-rename"]
+        vec!["include-id-rename", "include-id-rename"]
     );
     assert!(
         result.html.contains("<section id=\"d-3\">"),
@@ -1370,7 +1370,7 @@ mod rejected_directives_have_no_side_effects {
             result.html
         );
         assert!(
-            !result.rules().contains(&"include-heading-id-rename"),
+            !result.rules().contains(&"include-id-rename"),
             "rejected directive caused a spurious rename: {:?}",
             result.rules()
         );
@@ -1877,7 +1877,7 @@ fn an_authored_id_that_equals_its_slug_is_still_explicit() {
         "{#Overview}\n# Overview\n\n{{ c.crv }}",
         &[("c.crv", "{#Overview}\n# Overview\n\nchild")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<section id=\"Overview-2\">"),
         "{}",
@@ -1904,7 +1904,7 @@ fn an_explicit_heading_id_collision_across_an_include_still_warns() {
     );
 
     assert!(
-        result.rules().contains(&"include-heading-id-rename"),
+        result.rules().contains(&"include-id-rename"),
         "{:?}",
         result.warnings
     );
@@ -2270,7 +2270,7 @@ fn a_colliding_paragraph_id_is_renamed_and_its_own_link_follows() {
             "{#tip}\nRest it overnight.\n\n[The tip above](#tip) is the one this file wrote.",
         )],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert_eq!(result.warnings[0].1.as_deref(), Some("child.crv"));
     assert!(
         result.html.contains("<p id=\"tip\">Keep"),
@@ -2288,7 +2288,7 @@ fn a_colliding_paragraph_id_is_renamed_and_its_own_link_follows() {
 #[test]
 fn a_heading_and_a_paragraph_share_one_id_namespace() {
     let result = expand("{#tip}\n# Tip\n\n{{ c.crv }}", &[("c.crv", "{#tip}\npara")]);
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"tip-2\">para</p>"),
         "{}",
@@ -2299,7 +2299,7 @@ fn a_heading_and_a_paragraph_share_one_id_namespace() {
 #[test]
 fn an_inline_span_collides_with_a_block_id() {
     let result = expand("{#s}\npara\n\n{{ c.crv }}", &[("c.crv", "x [y]{#s} z")]);
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<span id=\"s-2\">y</span>"),
         "{}",
@@ -2313,7 +2313,7 @@ fn a_list_item_id_is_renamed_too() {
         "{#li}\npara\n\n{{ c.crv }}",
         &[("c.crv", "-{#li} item\n- two")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(result.html.contains("<li id=\"li-2\">"), "{}", result.html);
 }
 
@@ -2363,7 +2363,7 @@ fn a_link_to_an_id_only_the_parent_defines_is_not_rewritten() {
         "{#top}\nparent\n\n{#tip}\nalso parent\n\n{{ c.crv }}",
         &[("c.crv", "{#tip}\nchild\n\n[up](#top) and [tip](#tip)")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(result.html.contains("href=\"#top\""), "{}", result.html);
     assert!(result.html.contains("href=\"#tip-2\""), "{}", result.html);
 }
@@ -2425,7 +2425,7 @@ fn a_collision_with_an_id_that_never_reaches_the_output_renames_nothing() {
 #[test]
 fn a_second_inclusion_of_the_same_file_is_renamed() {
     let result = expand("{{ c.crv }}\n\n{{ c.crv }}", &[("c.crv", "{#tip}\nx")]);
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"tip\">x</p>"),
         "{}",
@@ -2444,7 +2444,7 @@ fn a_rename_skips_a_name_the_file_itself_writes() {
         "{#a}\nparent\n\n{{ c.crv }}",
         &[("c.crv", "{#a}\nx\n\n{#a-2}\ny")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"a-3\">x</p>"),
         "{}",
@@ -2463,7 +2463,7 @@ fn a_selected_block_id_collides_like_any_other() {
         "{#dough}\nparent\n\n{{ r.crv #dough }}",
         &[("r.crv", "{#dough}\n```text\nflour\n```")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(result.html.contains("id=\"dough-2\""), "{}", result.html);
 }
 
@@ -2475,7 +2475,7 @@ fn each_renamed_copy_gets_its_own_name_and_links_follow_the_first() {
     );
     assert_eq!(
         result.rules(),
-        vec!["include-heading-id-rename", "include-heading-id-rename"]
+        vec!["include-id-rename", "include-id-rename"]
     );
     assert!(
         result.messages[0].contains("\"d-2\""),
@@ -2517,7 +2517,7 @@ fn a_rename_skips_a_name_a_later_include_writes() {
         "{#a}\nparent\n\n{{ c.crv }}\n\n{{ e.crv }}",
         &[("c.crv", "{#a}\nx"), ("e.crv", "{#a-2}\ny")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"a-3\">x</p>"),
         "{}",
@@ -2536,7 +2536,7 @@ fn a_rename_skips_a_name_the_files_own_include_writes() {
         "{#a}\nparent\n\n{{ c.crv }}",
         &[("c.crv", "{#a}\nx\n\n{{ g.crv }}"), ("g.crv", "{#a-2}\ny")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"a-3\">x</p>"),
         "{}",
@@ -2555,7 +2555,7 @@ fn a_rename_skips_a_name_the_parent_writes_after_the_include() {
         "{#a}\nparent\n\n{{ c.crv }}\n\n{#a-2}\nlater",
         &[("c.crv", "{#a}\nx")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"a-3\">x</p>"),
         "{}",
@@ -2596,7 +2596,7 @@ fn a_spliced_paragraph_id_still_carried_by_a_span_stays_claimed() {
             ("c.crv", "{#p}\nlast"),
         ],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<span id=\"p\">kept</span>"),
         "{}",
@@ -2624,7 +2624,7 @@ fn an_id_on_a_block_include_left_literal_is_claimed() {
     );
     assert_eq!(
         result.rules(),
-        vec!["include-unresolved", "include-heading-id-rename"]
+        vec!["include-unresolved", "include-id-rename"]
     );
     assert!(
         result.html.contains("<p id=\"p-2\">last</p>"),
@@ -2640,7 +2640,7 @@ fn an_id_on_a_literal_block_include_in_a_child_is_still_renamed() {
         &[("c.crv", "{#p}\n{{ missing.crv }}")],
     );
     assert!(
-        result.rules().contains(&"include-heading-id-rename"),
+        result.rules().contains(&"include-id-rename"),
         "{:?}",
         result.warnings
     );
@@ -2671,7 +2671,7 @@ fn an_include_paragraph_id_shared_with_a_surviving_element_stays_claimed() {
         "{#p}\nroot\n\n{#p}\n{{ c.crv }}",
         &[("c.crv", "{#p}\nchild")],
     );
-    assert_eq!(result.rules(), vec!["include-heading-id-rename"]);
+    assert_eq!(result.rules(), vec!["include-id-rename"]);
     assert!(
         result.html.contains("<p id=\"p\">root</p>"),
         "{}",
@@ -2682,4 +2682,93 @@ fn an_include_paragraph_id_shared_with_a_surviving_element_stays_claimed() {
         "{}",
         result.html
     );
+}
+
+// ---------------------------------------------------------------------------
+// How the two slots after the path are SPELLED (carve#2773, carve-rs#2356).
+//
+// The whitespace before `#section` and before each `@key:value` is optional in
+// every position. Expected readings come from the spec arbiter,
+// markup-carve/carve scripts/spec/include-directive.mjs, which carried the same
+// requirement and was fixed in the same merge; no engine was consulted.
+// ---------------------------------------------------------------------------
+
+const CHILD: &str = "{#Alpha}\n# Alpha\n\nalpha text";
+
+fn expanded_alpha(source: &str) -> Expanded {
+    expand(source, &[("c.crv", CHILD), ("my file.crv", CHILD)])
+}
+
+#[test]
+fn a_section_name_needs_no_space_in_front_of_it() {
+    let result = expanded_alpha("{{ c.crv#Alpha }}");
+    assert_eq!(result.rules(), Vec::<&str>::new());
+    assert!(result.html.contains("alpha text"), "{}", result.html);
+    assert!(!result.html.contains("{{"), "{}", result.html);
+}
+
+#[test]
+fn a_quoted_path_takes_an_adjacent_section_name_too() {
+    let result = expanded_alpha("{{ \"my file.crv\"#Alpha }}");
+    assert_eq!(result.rules(), Vec::<&str>::new());
+    assert!(result.html.contains("alpha text"), "{}", result.html);
+    assert!(!result.html.contains("{{"), "{}", result.html);
+}
+
+#[test]
+fn an_option_needs_no_space_in_front_of_it_in_either_position() {
+    for source in [
+        "{{ c.crv@shift:1 }}",
+        "{{ c.crv #Alpha@shift:1 }}",
+        "{{ c.crv#Alpha@shift:1 }}",
+    ] {
+        let result = expanded_alpha(source);
+        assert_eq!(result.rules(), Vec::<&str>::new(), "{source}");
+        assert!(result.html.contains("<h2"), "{source}: {}", result.html);
+    }
+}
+
+#[test]
+fn a_tab_separates_the_path_from_the_name() {
+    let result = expanded_alpha("{{ c.crv\t#Alpha }}");
+    assert_eq!(result.rules(), Vec::<&str>::new());
+    assert!(result.html.contains("alpha text"), "{}", result.html);
+}
+
+#[test]
+fn the_spaced_spelling_is_the_control() {
+    let result = expanded_alpha("{{ c.crv #Alpha }}");
+    assert_eq!(result.rules(), Vec::<&str>::new());
+    assert!(result.html.contains("alpha text"), "{}", result.html);
+}
+
+#[test]
+fn an_adjacent_selector_naming_nothing_warns_rather_than_going_silently_literal() {
+    let result = expanded_alpha("{{ c.crv#Missing }}");
+    assert_eq!(result.rules(), vec!["include-section"]);
+    assert_eq!(result.html, literal_html("{{ c.crv#Missing }}"));
+}
+
+#[test]
+fn a_second_section_name_warns_and_stays_literal() {
+    let result = expand(
+        "{{ c.crv #Alpha #Beta }}",
+        &[("c.crv", "{#Alpha}\nalpha\n\n{#Beta}\nbeta")],
+    );
+    assert_eq!(result.rules(), vec!["include-selection-conflict"]);
+    assert_eq!(result.html, literal_html("{{ c.crv #Alpha #Beta }}"));
+    assert!(!result.html.contains("beta"), "{}", result.html);
+}
+
+#[test]
+fn the_padding_around_the_whole_directive_is_still_required() {
+    for source in [
+        "{{c.crv@shift:1 }}",
+        "{{ c.crv@shift:1}}",
+        "{{c.crv#Alpha}}",
+    ] {
+        let result = expanded_alpha(source);
+        assert_eq!(result.rules(), Vec::<&str>::new(), "{source}");
+        assert_eq!(result.html, literal_html(source), "{source}");
+    }
 }
