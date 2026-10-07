@@ -115,9 +115,6 @@ def check_release(changelog, release, repo, tag):
         raise ValueError(f"The release for {tag} has no notes above the footer")
     if release_links(notes, repo, tag) != notes:
         raise ValueError("Release notes hold a relative link, which breaks on the releases page")
-    changelog_url = re.escape(f"https://github.com/{repo}/blob/{quote(tag, safe='')}/CHANGELOG.md")
-    if not re.search(r"\]\(" + changelog_url + r"(?:#[^)\s]*)?\)", notes):
-        raise ValueError(f"Release notes need a link to https://github.com/{repo}/blob/{tag}/CHANGELOG.md")
     unknown = sorted(references(notes, repo) - references(section, repo))
     if unknown:
         raise ValueError(f"Release notes cite what the {tag} changelog section does not: {', '.join(unknown)}")

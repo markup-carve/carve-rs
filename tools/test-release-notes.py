@@ -101,12 +101,12 @@ class ReleaseNotesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cite none"):
             self.check("Bug fixes and improvements.\n\n" + LINK + "\n" + FOOTER, changelog=changelog)
 
-    def test_changelog_link_must_be_this_repository_at_this_tag(self):
+    def test_changelog_link_is_not_constrained(self):
+        """A changelog link is optional, so the gate does not police where it points."""
         for other in ["https://github.com/markup-carve/carve-py/blob/v0.1.5/CHANGELOG.md",
                       "https://github.com/markup-carve/carve-wasm/blob/v0.1.4/CHANGELOG.md",
                       "https://example.test/CHANGELOG.md"]:
-            with self.assertRaisesRegex(ValueError, "need a link"):
-                self.check(CONDENSED.replace("https://github.com/markup-carve/carve-wasm/blob/v0.1.5/CHANGELOG.md", other) + "\n" + FOOTER)
+            self.check(CONDENSED.replace("https://github.com/markup-carve/carve-wasm/blob/v0.1.5/CHANGELOG.md", other) + "\n" + FOOTER)
 
     def test_shared_reference_does_not_cover_two_breaking_changes(self):
         changelog = CHANGELOG.replace("- Refuse unsafe destinations under a new loss code (#158, #159; markup-carve/carve#2679).",
@@ -121,9 +121,8 @@ class ReleaseNotesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reference of its own"):
             self.check("### Breaking\n\n- Refused destinations and a renamed field (#158, #170).\n\n" + LINK + "\n" + FOOTER, changelog=changelog)
 
-    def test_missing_changelog_link_fails(self):
-        with self.assertRaisesRegex(ValueError, "need a link"):
-            self.check(CONDENSED.replace(LINK, "") + "\n" + FOOTER)
+    def test_notes_without_a_changelog_link_pass(self):
+        self.check(CONDENSED.replace(LINK, "") + "\n" + FOOTER)
 
     def test_relative_link_fails(self):
         with self.assertRaisesRegex(ValueError, "relative link"):
