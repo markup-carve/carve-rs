@@ -74,22 +74,42 @@ fn grammar_version(grammar: &str) -> String {
     panic!("resources/grammar.ebnf has no 'Version:' field");
 }
 
+fn triple(version: &str) -> (u64, u64, u64) {
+    let mut parts = version.split('.').map(|p| {
+        p.parse::<u64>()
+            .unwrap_or_else(|_| panic!("version {version} is not X.Y.Z"))
+    });
+    let mut next = || {
+        parts
+            .next()
+            .unwrap_or_else(|| panic!("version {version} is not X.Y.Z"))
+    };
+    (next(), next(), next())
+}
+
 #[test]
 fn the_version_this_build_reports_is_the_newest_released_changelog_section() {
     // The left side is the manifest's `version`, which is what an embedder,
     // `--version` and the provenance stamp all end up reading. The right side is
-    // the heading the release process cuts. They are maintained in different
-    // files by different steps, so this fails from either direction.
+    // the heading the release process cuts. Between releases the manifest reads
+    // the NEXT version with `-dev` (CONTRIBUTING.md, "Versions on main"), so a
+    // build from main never claims a release it is not.
     let reported = env!("CARGO_PKG_VERSION");
     let changelog = newest_released_changelog_version(&repo_file("CHANGELOG.md"));
 
-    assert_eq!(
-        reported, changelog,
-        "this build reports version {reported}, but the newest cut CHANGELOG \
-         section is {changelog}. Either the release bumped Cargo.toml without \
-         cutting the changelog, or it cut the changelog without bumping \
-         Cargo.toml; RELEASING.md does both in one step."
-    );
+    match reported.strip_suffix("-dev") {
+        Some(next) => assert!(
+            triple(next) > triple(&changelog),
+            "this build reports {reported}, but {changelog} is already cut. \
+             Between releases Cargo.toml names the NEXT version with -dev."
+        ),
+        None => assert_eq!(
+            reported, changelog,
+            "this build reports version {reported}, but the newest cut CHANGELOG \
+             section is {changelog}. A cut drops -dev from Cargo.toml and writes \
+             the section in the same step."
+        ),
+    }
 }
 
 #[test]
