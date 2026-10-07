@@ -2156,3 +2156,67 @@ fn envelope_extension_membership_scales_near_linearly() {
         8_000,
     );
 }
+
+#[test]
+fn color_swatch_author_classes_render_near_linearly() {
+    let ext = carve::ColorSwatch::new();
+    let options = Options::new().with_extension(&ext);
+    for value in ["#fff", "invalid!"] {
+        assert_conversion_near_linear_at(
+            |source| drop(carve::to_html_with_options(source, &options)),
+            |n| {
+                format!(
+                    ":color[{value}]{{contrast {}}}",
+                    (0..n)
+                        .map(|i| format!(".c{i}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            },
+            "color swatch author classes",
+            4096,
+            16384,
+        );
+    }
+}
+
+#[test]
+fn ordered_attribute_keys_write_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            let document = carve::parse(source);
+            drop(carve::render_carve(&document).unwrap());
+        },
+        |n| {
+            let attributes = (0..n)
+                .map(|i| format!("k{i}=x"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("[x]{{{attributes}}}\n")
+        },
+        "ordered attribute keys",
+        4096,
+        16384,
+    );
+}
+
+#[test]
+fn short_backlink_names_beside_long_terms_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::html_to_ast(source, &Default::default()).unwrap()),
+        |n| {
+            format!(
+                "<ul class=\"index\"><li>{} {}</li></ul>",
+                "t".repeat(n),
+                (1..=n)
+                    .map(|i| format!(
+                        "<a class=\"index-backref\" href=\"#idx-term-{i}\" aria-label=\"x\">x</a> "
+                    ))
+                    .collect::<String>()
+            )
+        },
+        "index backlink names",
+        1024,
+        4096,
+    );
+}
