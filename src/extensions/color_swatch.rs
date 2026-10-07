@@ -233,10 +233,11 @@ fn open_attrs(
             classes.push(class);
         }
     }
+    let extension_class_count = classes.len();
     if let Some(a) = attrs {
         for class in crate::render::sanitized_classes(&a.classes) {
             let class = class.into_owned();
-            if !classes.contains(&class) {
+            if !classes[..extension_class_count].contains(&class) {
                 classes.push(class);
             }
         }
@@ -284,10 +285,11 @@ fn generic_fallback(
 ) -> String {
     let base = format!("ext-{name}");
     let mut classes = vec![base];
+    let extension_class_count = classes.len();
     if let Some(a) = attrs {
         for class in crate::render::sanitized_classes(&a.classes) {
             let class = class.into_owned();
-            if !classes.contains(&class) {
+            if !classes[..extension_class_count].contains(&class) {
                 classes.push(class);
             }
         }

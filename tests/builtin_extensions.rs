@@ -735,6 +735,40 @@ fn color_swatch_merges_author_attrs_on_outer_span() {
 }
 
 #[test]
+fn color_swatch_class_merges_keep_order_and_drop_repeated_entries() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    for (value, flag, base) in [
+        ("#fff", "", "swatch"),
+        ("#fff", "contrast ", "swatch-label"),
+        ("invalid!", "contrast ", "ext-color"),
+    ] {
+        let classes = (0..32)
+            .map(|i| format!(".c{i} .c{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let source = format!(":color[{value}]{{{flag}.{base} {classes}}}");
+        let html = carve::to_html_with_options(&source, &opts);
+        let expected = format!(
+            "class=\"{base} {}\"",
+            (0..32)
+                .map(|i| format!("c{i}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        assert!(html.contains(&expected), "{html}");
+    }
+}
+
+#[test]
+fn color_swatch_reveal_dedupes_its_extension_class() {
+    let ext = ColorSwatch::new().reveal(true);
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(":color[#fff]{.swatch .swatch-reveal .x .x}", &opts);
+    assert!(html.contains("class=\"swatch swatch-reveal x\""), "{html}");
+}
+
+#[test]
 fn color_swatch_invalid_value_defers_to_generic_fallback() {
     let ext = ColorSwatch::new();
     let opts = Options::new().with_extension(&ext);

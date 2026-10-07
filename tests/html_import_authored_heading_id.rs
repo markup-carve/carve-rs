@@ -116,3 +116,34 @@ fn an_html_heading_id_equal_to_its_slug_stays_authored() {
     assert_eq!(comparable(&parsed_json), comparable(&imported_json));
     assert_eq!(parsed.footnote_defs, imported.footnote_defs);
 }
+
+#[test]
+fn wide_heading_attributes_keep_authored_order() {
+    let attributes = (0..32)
+        .rev()
+        .map(|i| format!("data-k{i}=\"{i}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let source = format!("<h1 {attributes} id=\"Target\" class=\"kept\">Target</h1>");
+    let expected = format!(
+        "{{{} #Target .kept}}\n# Target\n",
+        attributes.replace('"', "")
+    );
+    assert_eq!(
+        html_to_carve(&source, &HtmlImportOptions::default())
+            .unwrap()
+            .value,
+        expected
+    );
+}
+
+#[test]
+fn backlink_names_are_derived_per_index_entry() {
+    let source = r##"<ul class="index"><li>first <a class="index-backref" href="#idx-first-1" aria-label="Back to first 1">x</a> <a class="index-backref" href="#idx-first-2" aria-label="authored">y</a></li><li>second <a class="index-backref" href="#idx-second-1" aria-label="Back to second">z</a></li></ul>"##;
+    let output = html_to_carve(source, &HtmlImportOptions::default())
+        .unwrap()
+        .value;
+    assert!(output.contains("aria-label=authored"), "{output}");
+    assert!(!output.contains("Back to first"), "{output}");
+    assert!(!output.contains("Back to second"), "{output}");
+}

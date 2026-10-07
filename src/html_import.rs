@@ -284,6 +284,8 @@ struct Refusal {
     live: bool,
 }
 
+type IndexBackrefEntry = (String, HashMap<usize, usize>);
+
 struct Importer<'a> {
     opts: &'a HtmlImportOptions,
     /// Whether this import is the one that WRITES SOURCE (`html_to_carve`),
@@ -360,6 +362,7 @@ struct Importer<'a> {
     /// Fallback images of formulas that imported as math, dropped where they stand.
     formula_images: HashSet<usize>,
     sibling_index: SiblingIndex,
+    index_backref_entries: RefCell<HashMap<usize, IndexBackrefEntry>>,
 }
 
 /// Where the walk's reportable state stood before a measurement that rewinds.
@@ -1380,6 +1383,18 @@ impl<'a> Importer<'a> {
     /// input did not have in that order (carve-rs#1354).
     fn slot_order_from_element(handle: &Handle, held: &Attrs) -> Vec<AttrSlot> {
         let mut order: Vec<AttrSlot> = Vec::new();
+        let mut seen =
+            (held.key_values.len() > 6).then(|| HashSet::with_capacity(held.key_values.len() + 2));
+        let mut push = |slot: AttrSlot| {
+            let unique = if let Some(seen) = &mut seen {
+                seen.insert(slot.clone())
+            } else {
+                !order.contains(&slot)
+            };
+            if unique {
+                order.push(slot);
+            }
+        };
         for name in Self::element_attr_names(handle) {
             let slot = match name.as_str() {
                 "id" if held.id.is_some() => AttrSlot::Id,
@@ -1387,24 +1402,20 @@ impl<'a> Importer<'a> {
                 other if held.key_values.contains_key(other) => AttrSlot::Key(other.to_string()),
                 _ => continue,
             };
-            if !order.contains(&slot) {
-                order.push(slot);
-            }
+            push(slot);
         }
         // A non-empty order is EXHAUSTIVE, so anything the element did not
         // spell under its own name - an attribute renamed or folded on the way
         // in - still has to appear, or the writer drops it silently.
-        if held.id.is_some() && !order.contains(&AttrSlot::Id) {
-            order.push(AttrSlot::Id);
+        if held.id.is_some() {
+            push(AttrSlot::Id);
         }
-        if !held.classes.is_empty() && !order.contains(&AttrSlot::Class) {
-            order.push(AttrSlot::Class);
+        if !held.classes.is_empty() {
+            push(AttrSlot::Class);
         }
         for key in held.key_values.keys() {
             let slot = AttrSlot::Key(key.clone());
-            if !order.contains(&slot) {
-                order.push(slot);
-            }
+            push(slot);
         }
         order
     }
@@ -1925,7 +1936,7 @@ impl<'a> Importer<'a> {
                 "code-group-label"
             };
             let mut derived = vec![("role", vec!["group".to_string()])];
-            if let Some(name) = Self::preceding_label_text(handle, label_class) {
+            if let Some(name) = self.preceding_label_text(handle, label_class) {
                 derived.push(("aria-label", vec![name]));
             }
             return Some(derived);
@@ -2010,10 +2021,10 @@ impl<'a> Importer<'a> {
     /// recursive `text`: this runs off `attrs`, before the depth counter has
     /// charged the subtree, and the importer's depth limit is a COUNTER a
     /// caller may raise past what the native stack holds.
-    fn preceding_label_text(handle: &Handle, label_class: &str) -> Option<String> {
+    fn preceding_label_text(&self, handle: &Handle, label_class: &str) -> Option<String> {
         let parent = parent_handle(handle)?;
         let siblings = parent.children.borrow();
-        let at = siblings.iter().position(|node| Rc::ptr_eq(node, handle))?;
+        let at = sibling_position(&self.sibling_index, &parent, &siblings, handle)?;
         for previous in siblings[..at].iter().rev() {
             if Self::tag(previous).is_none() {
                 continue;
@@ -2030,34 +2041,28 @@ impl<'a> Importer<'a> {
     /// survivor.
     fn index_backref_names(&self, handle: &Handle) -> Option<Vec<String>> {
         let parent = parent_handle(handle)?;
-        let siblings = parent.children.borrow();
-        let is_backref = |node: &Handle| {
-            Self::tag(node).as_deref() == Some("a") && has_class(node, "index-backref")
-        };
-        let mut ordinal = 0;
-        let mut seen = 0;
-        for node in siblings.iter() {
-            if !is_backref(node) {
-                continue;
+        let mut entries = self.index_backref_entries.borrow_mut();
+        let (term, ordinals) = entries.entry(node_key(&parent)).or_insert_with(|| {
+            let mut term = String::new();
+            let mut ordinals = HashMap::new();
+            for node in parent.children.borrow().iter() {
+                if Self::tag(node).as_deref() == Some("a") && has_class(node, "index-backref") {
+                    ordinals.insert(node_key(node), ordinals.len() + 1);
+                } else {
+                    term.push_str(&Self::flat_text(node));
+                }
             }
-            seen += 1;
-            if Rc::ptr_eq(node, handle) {
-                ordinal = seen;
-            }
-        }
-        if ordinal == 0 {
-            return None;
-        }
-        let term: String = siblings
-            .iter()
-            .filter(|node| !is_backref(node))
-            .map(Self::flat_text)
-            .collect();
-        let term = term.trim();
+            (term.trim().to_string(), ordinals)
+        });
+        let ordinal = ordinals.get(&node_key(handle))?;
         if term.is_empty() {
             return None;
         }
         let label = self.label(LABEL_INDEX_BACKREF);
+        let held_name = Self::attr(handle, "aria-label")?;
+        if held_name.len() < label.len() + term.len() + 1 {
+            return None;
+        }
         Some(vec![
             format!("{label} {term}"),
             format!("{label} {term} {ordinal}"),
@@ -6171,6 +6176,8 @@ impl<'a> Importer<'a> {
                 .filter(|identity| !identity.is_empty())
                 .collect();
             strip_footnote_backlinks(&definition.block, &identities, &definition.fragments);
+            self.sibling_index.borrow_mut().clear();
+            self.index_backref_entries.borrow_mut().clear();
 
             let body: Vec<Handle> = definition.block.children.borrow().clone();
             let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
@@ -8272,6 +8279,7 @@ fn import(
         footnote_refs: HashMap::new(),
         formula_images: HashSet::new(),
         sibling_index: RefCell::new(HashMap::new()),
+        index_backref_entries: RefCell::new(HashMap::new()),
     };
     // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
     // what it consumes: the numbers have to be on the tree as the AUTHOR wrote
@@ -8291,6 +8299,8 @@ fn import(
             HtmlImportAdapter::Word | HtmlImportAdapter::GoogleDocs
         ),
     )?;
+    importer.sibling_index.borrow_mut().clear();
+    importer.index_backref_entries.borrow_mut().clear();
     let mut children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
     // SURVIVORS ONLY, and the marks come off on BOTH exits. A candidate whose
     // paragraph an unwrapper took back off is not a loss: `caption_host` gives

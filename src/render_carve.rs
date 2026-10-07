@@ -4867,6 +4867,7 @@ fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char]) -> String 
         .as_ref()
         .is_some_and(|id| !is_explicit_id_or_class_identifier(id) || conflicts(id));
     let mut seen_keys: Vec<&str> = Vec::new();
+    let mut seen_key_set = (attrs.order.len() > 8).then(HashSet::new);
     let emit_id = |parts: &mut Vec<String>| {
         if let Some(id) = &attrs.id {
             if id_as_key {
@@ -4922,15 +4923,27 @@ fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char]) -> String 
                 AttrSlot::Id => emit_id(&mut parts),
                 AttrSlot::Class => emit_classes(&mut parts),
                 AttrSlot::Key(key) => {
-                    if !seen_keys.contains(&key.as_str()) {
+                    let unique = if let Some(seen) = &mut seen_key_set {
+                        seen.insert(key.as_str())
+                    } else if seen_keys.contains(&key.as_str()) {
+                        false
+                    } else {
+                        seen_keys.push(key.as_str());
+                        true
+                    };
+                    if unique {
                         emit_key(&mut parts, key);
-                        seen_keys.push(key);
                     }
                 }
             }
         }
         for key in attrs.key_values.keys() {
-            if !seen_keys.contains(&key.as_str()) {
+            let seen = if let Some(seen) = &seen_key_set {
+                seen.contains(key.as_str())
+            } else {
+                seen_keys.contains(&key.as_str())
+            };
+            if !seen {
                 emit_key(&mut parts, key);
             }
         }
