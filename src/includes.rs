@@ -447,12 +447,16 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
         return None;
     }
 
-    // Optional ` #section`, exactly one, immediately after the path.
+    // Optional `#section`, exactly one, after the path. The separating
+    // whitespace is OPTIONAL (carve#2773): `bare_include_path` already stops at
+    // `#`, so requiring a run left `{{ c.crv#Alpha }}` unrecognized and the
+    // whole directive literal with NO diagnostic, which is the one outcome §19
+    // forbids.
     let mut section = None;
     {
         let tail = &text[i..];
         let ws = tail.len() - tail.trim_start_matches(|c: char| c.is_whitespace()).len();
-        if ws > 0 {
+        {
             let after_ws = &tail[ws..];
             if let Some(name) = after_ws.strip_prefix('#') {
                 let mut it = name.chars();
@@ -557,6 +561,18 @@ enum ParsedDirective {
     BadOption(String),
     /// Not directive-shaped at all; no warning, stays literal silently.
     NotADirective,
+    /// A second `#section` where the grammar holds one. Carries the offending
+    /// token.
+    DuplicateSection(String),
+}
+
+/// A `#name` the section slot would have taken, had it not already been full.
+fn is_section_token(part: &str) -> bool {
+    let Some(name) = part.strip_prefix('#') else {
+        return false;
+    };
+    let mut it = name.chars();
+    it.next().is_some_and(is_explicit_ident_start) && it.all(is_ident_rest)
 }
 
 fn parse_options(raw: RawDirective) -> ParsedDirective {
@@ -570,6 +586,12 @@ fn parse_options(raw: RawDirective) -> ParsedDirective {
                 ParsedDirective::NotADirective
             }
         };
+        // `include_section` is ONE optional slot, so a second name is not a
+        // directive the author can mean. Dropping it silently returned the
+        // fragment the author did not name with nothing on the page to say so.
+        if raw.section.is_some() && is_section_token(part) {
+            return ParsedDirective::DuplicateSection(part.to_string());
+        }
         let Some(body) = part.strip_prefix('@') else {
             return bad();
         };
@@ -907,7 +929,7 @@ impl State<'_> {
         self.reserve_id(&placeholder, owner);
         let before = self.warnings.len();
         self.warn(
-            "include-heading-id-rename",
+            "include-id-rename",
             format!("Id \"{id}\" was renamed to \"{placeholder}\"."),
         );
         self.pending_renames.push(PendingRename {
@@ -2392,6 +2414,13 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
                 );
                 continue;
             }
+            ParsedDirective::DuplicateSection(part) => {
+                state.warn(
+                    "include-selection-conflict",
+                    format!("Include directive cannot name two sections: \"{part}\"."),
+                );
+                continue;
+            }
             ParsedDirective::NotADirective => continue,
         };
         let Some(replacement) = with_child(&d, state, true, |expanded, state| {
@@ -2608,6 +2637,13 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
                 state.warn(
                     "include-unknown-option",
                     format!("Unknown include option \"{part}\"."),
+                );
+                return None;
+            }
+            ParsedDirective::DuplicateSection(part) => {
+                state.warn(
+                    "include-selection-conflict",
+                    format!("Include directive cannot name two sections: \"{part}\"."),
                 );
                 return None;
             }

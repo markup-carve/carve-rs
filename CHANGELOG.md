@@ -11,6 +11,24 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Breaking
+
+- The include rename warning carries the rule id `include-id-rename`, renamed
+  from `include-heading-id-rename`. The rename pass stopped being about
+  headings in 0.1.8 and its message followed; the id did not. Hosts publish
+  `warning.rule` verbatim, so anything matching on the old id has to follow
+  (markup-carve/carve#2772).
+
+### Fixed
+
+- `{{ path#section }}` and `{{ "path"#section }}` resolve. A section name
+  needs no whitespace in front of it, in any position, and requiring a run left
+  both spellings literal with no diagnostic at all (#2356,
+  markup-carve/carve#2773).
+- A directive naming two sections warns under `include-selection-conflict` and
+  stays literal, where the second name used to be dropped without a word
+  (#2356).
+
 ## [0.1.8] - 2026-10-06
 
 ### Compatibility and migration
