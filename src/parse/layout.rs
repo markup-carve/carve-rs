@@ -725,7 +725,7 @@ fn render_layout_inline(
                     {
                         return None;
                     }
-                    (href.to_string(), None, close + 1)
+                    (Cow::Borrowed(href), None, close + 1)
                 } else if tail == b'[' {
                     let close = text[label_end + 2..].find(']')? + label_end + 2;
                     let reference = &text[label_end + 2..close];
@@ -736,7 +736,7 @@ fn render_layout_inline(
                         return None;
                     }
                     let (href, title) = active_plain_link_destination(reference)?;
-                    (href, title, close + 1)
+                    (Cow::Owned(href), title, close + 1)
                 } else {
                     return None;
                 };

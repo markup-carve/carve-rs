@@ -11,6 +11,10 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced temporary URL allocations during HTML conversion and destination filtering.
+
 ## [0.1.8] - 2026-10-06
 
 ### Compatibility and migration
