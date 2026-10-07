@@ -11,10 +11,6 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-### Changed
-
-- Reduced temporary URL allocations during HTML conversion and destination filtering.
-
 ## [0.1.8] - 2026-10-06
 
 ### Compatibility and migration
@@ -111,6 +107,7 @@ references and external fragment links need manual review. See the
   lint warning positions use indexes or advancing cursors instead of counting
   source prefixes, and empty code spans choose their backtick runs in one
   suffix pass and assemble the output once (#2341).
+- HTML conversion and destination filtering allocate fewer temporary URLs (#2351).
 
 ## [0.1.7] - 2026-09-29
 
