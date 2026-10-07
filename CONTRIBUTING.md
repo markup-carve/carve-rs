@@ -157,6 +157,19 @@ downstream blast radius. `docs/development.md` describes the pin shapes and
 `docs/engine-pin-guard.md` the guard that reads them, including what it cannot
 see.
 
+## Versions on main
+
+Between releases `main` reads the next version with a `-dev` suffix, for
+example `0.1.9-dev`, so `carve --version` and the `generated-by` provenance
+stamp never name a release a build is not. The cut drops the suffix in
+`Cargo.toml` and `Cargo.lock` together with the changelog section; once the
+release is published, the next pull request moves `main` to the following
+`-dev` version.
+
+`tests/the_version_a_build_reports_is_the_one_that_shipped.rs` checks the
+shape, and `.github/workflows/release.yml` refuses to publish a crate or
+attach binaries for any tag that is not a plain `X.Y.Z`.
+
 ## Spec changes
 
 This repository implements the language; it does not define it. Syntax and
