@@ -114,6 +114,21 @@ fn source_lossy_names() -> Vec<String> {
     names
 }
 
+/// Assert a corpus count equals the recorded measurement, naming the direction
+/// and the gap. "assertion failed" leaves the reader to work out which way the
+/// corpus moved and by how much, which is the whole content of the report.
+#[track_caller]
+fn assert_measured(label: &str, measured: usize, recorded: usize) {
+    assert!(
+        measured == recorded,
+        "{label} {} from {recorded} to {measured}, a gap of {}. \
+         This count is pinned to its measurement, not bounded by it: update the \
+         constant in the commit that moves it and name the documents that moved.",
+        if measured < recorded { "fell" } else { "rose" },
+        measured.abs_diff(recorded),
+    );
+}
+
 fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
     let result = to_prosemirror(&parse(source));
     let value = serde_json::from_str(&result.json).expect("bridge emits JSON");
@@ -846,10 +861,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
         "the declared source-lossy set moved - add or delete the entry, do not widen a count"
     );
     eprintln!("ProseMirror corpus: {covered} strict, {lossy} reported lossy");
-    // A ratchet, not a floor of one. `covered > 0` passes with a single
+    // THE MEASUREMENT, not a bound on it. `covered > 0` passes with a single
     // document, so a change that quietly moved hundreds of documents out of
     // the strict set - by reporting a type as dropped rather than carrying it -
-    // would not fail anything. Raise these when the numbers improve.
+    // would not fail anything. Update both constants on the bump that moves
+    // them, and say below which documents moved and why.
     //
     // 791/215 to 793/224 is the eleven composite-figure documents arriving with
     // the spec pin, and nothing else: the corpus went from 1006 pairs to 1017,
@@ -1550,16 +1566,25 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // among them corpus 47, 318, 484-5 and 489, so no new cause reaches
     // `undeclared`. 1718/506 becomes 1718/507, and the strict side is pinned
     // at what it measures rather than at a floor that had lagged it by eight.
+    // BOTH SIDES ARE EQUALITIES, which they were not until carve-rs#2350. A
+    // floor on the strict side could only be raised when it failed, and it
+    // fails last: the lossy ceiling trips first on an arriving document, so a
+    // bump that raised LOSSY to its measurement and left STRICT alone left
+    // slack behind. Eight bumps of that shape put the floor eight documents
+    // below the measurement, and a floor eight low cannot report a regression
+    // of fewer than eight - a real drop from 1718 to 1712 passed.
+    //
+    // Equality cannot flap here. The bucket a document lands in is a function
+    // of its bytes and this engine's code - no clock, no ordering, no shared
+    // state - and three consecutive runs at this pin read 1718/507 every time.
+    // The pair was already an equality in disguise whenever LOSSY was exact:
+    // `covered + lossy == expected_corpus_size()` below plus `lossy <= LOSSY`
+    // pins `covered >= size - LOSSY`, so the slack this fixes existed only
+    // while the ceiling itself lagged.
     const STRICT: usize = 1718;
     const LOSSY: usize = 507;
-    assert!(
-        covered >= STRICT,
-        "strict round trips fell from {STRICT} to {covered}"
-    );
-    assert!(
-        lossy <= LOSSY,
-        "reported-lossy documents rose from {LOSSY} to {lossy}"
-    );
+    assert_measured("strict round trips", covered, STRICT);
+    assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
     // exactly one of the two buckets, which is what this assertion is for -
     // a strict count that merely adds up cannot distinguish documents arriving
