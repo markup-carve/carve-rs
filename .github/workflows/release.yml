@@ -24,10 +24,10 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
-# Every job below carries a timeout-minutes bound. Without one a job inherits
-# GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
   RELEASE_TAG: ${{ inputs.version || github.event.release.tag_name || inputs.tag }}
   RELEASE_VERSION: ${{ inputs.version }}
+# Every job below carries a timeout-minutes bound. Without one a job inherits
+# GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
 jobs:
   publish:
     name: Publish to crates.io
@@ -110,6 +110,10 @@ jobs:
 
       # `--locked`: publish the dependency set the tag was tested against,
       # rather than re-resolving at release time.
+      - name: Verify the packaged crate before tagging
+        run: cargo publish --dry-run --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
       - name: Create the release tag after approval
         if: github.event_name == 'workflow_dispatch' && inputs.version != ''
         shell: bash
@@ -274,6 +278,11 @@ jobs:
             "${{ steps.package.outputs.asset }}.sha256" \
             --repo "${{ github.repository }}" --clobber
 
+    needs:
+      - publish
+      - backfill-gate
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || needs['backfill-gate'].result == 'success') }}
+
   # ---------------------------------------------------------------------------
   # Homebrew tap.
   #
@@ -285,10 +294,6 @@ jobs:
   # Needs a token with write access to markup-carve/homebrew-carve, because
   # `github.token` is scoped to this repository. Without the secret the job
   # skips and says so; it never fails a release over a missing tap.
-    needs:
-      - publish
-      - backfill-gate
-    if: ${{ !cancelled() && (needs.publish.result == 'success' || needs['backfill-gate'].result == 'success') }}
   homebrew:
     name: Update the Homebrew tap
     needs:
@@ -296,7 +301,7 @@ jobs:
       - publish-notes
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # A required reviewer approves before this runs (markup-carve/carve#2032).
+    # The release or backfill approval has already completed.
     steps:
       - name: Resolve the tag
         id: tag
@@ -421,7 +426,8 @@ jobs:
           [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ]
   publish-notes:
     name: Publish prepared release notes
-    if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.binaries.result == 'success' && github.event_name
+      == 'workflow_dispatch' && inputs.version != '' }}
     needs:
       - publish
       - binaries
