@@ -121,3 +121,61 @@ fn imported_footnotes_keep_their_identity_and_opaque_content() {
         );
     }
 }
+
+#[test]
+fn table_pipe_imports_and_round_trips() {
+    let cases: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/table-pipe-audit.json")).unwrap();
+    for case in cases.as_array().unwrap() {
+        let input = case["source"].as_str().unwrap();
+        let source = if case["mode"] == "md" {
+            carve::markdown_to_carve(input)
+        } else if case["mode"] == "native-export" {
+            carve::markdown_to_carve(&carve::to_markdown(input))
+        } else {
+            carve::migrate_djot(input).value
+        };
+        let html = carve::to_html(&source);
+        for fragment in case["contains"].as_array().unwrap() {
+            assert!(
+                html.contains(fragment.as_str().unwrap()),
+                "{} {}: {}",
+                case["mode"],
+                case["name"],
+                html
+            );
+        }
+        if let Some(excludes) = case["excludes"].as_array() {
+            for fragment in excludes {
+                assert!(
+                    !html.contains(fragment.as_str().unwrap()),
+                    "{}: {}",
+                    case["name"],
+                    html
+                );
+            }
+        }
+        if let Some(cells) = case["cells"].as_u64() {
+            assert_eq!(
+                html.matches("<th ").count(),
+                cells as usize,
+                "{}",
+                case["name"]
+            );
+        }
+        if let Some(tables) = case["tables"].as_u64() {
+            assert_eq!(
+                html.matches("<table>").count(),
+                tables as usize,
+                "{}",
+                case["name"]
+            );
+        }
+        assert_eq!(
+            carve::to_html(&carve::to_carve(&source)),
+            html,
+            "{}",
+            case["name"]
+        );
+    }
+}
