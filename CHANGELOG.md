@@ -21,6 +21,10 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Two include options with no space between them, as in
+  `{{ path @shift:1@lines:1-8 }}`, apply both. The second was read as part of
+  the first one's value, which warned `include-unknown-option` and left the
+  directive literal (#2363).
 - `{{ path#section }}` and `{{ "path"#section }}` resolve. A section name
   needs no whitespace in front of it, in any position, and requiring a run left
   both spellings literal with no diagnostic at all (#2356,

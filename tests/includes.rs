@@ -2729,6 +2729,41 @@ fn an_option_needs_no_space_in_front_of_it_in_either_position() {
 }
 
 #[test]
+fn two_options_need_no_space_between_them() {
+    for source in [
+        "{{ c.crv @shift:1@lines:2-4 }}",
+        "{{ c.crv@lines:2-4@shift:1 }}",
+        "{{ \"my file.crv\"@shift:1@lines:2-4 }}",
+    ] {
+        let result = expanded_alpha(source);
+        assert_eq!(result.rules(), Vec::<&str>::new(), "{source}");
+        assert!(result.html.contains("<h2"), "{source}: {}", result.html);
+        assert!(!result.html.contains("{{"), "{source}: {}", result.html);
+    }
+}
+
+#[test]
+fn an_adjacent_unknown_option_is_reported_on_its_own() {
+    let result = expanded_alpha("{{ c.crv @shift:1@bogus:x }}");
+    assert_eq!(result.rules(), vec!["include-unknown-option"]);
+    assert!(
+        result.messages[0].contains("\"@bogus:x\""),
+        "{:?}",
+        result.messages
+    );
+}
+
+#[test]
+fn adjacent_lines_after_a_section_is_a_selection_conflict() {
+    let result = expanded_alpha("{{ c.crv#Alpha@shift:1@lines:2-4 }}");
+    assert_eq!(result.rules(), vec!["include-selection-conflict"]);
+    assert_eq!(
+        result.html,
+        literal_html("{{ c.crv#Alpha@shift:1@lines:2-4 }}")
+    );
+}
+
+#[test]
 fn a_tab_separates_the_path_from_the_name() {
     let result = expanded_alpha("{{ c.crv\t#Alpha }}");
     assert_eq!(result.rules(), Vec::<&str>::new());
