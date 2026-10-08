@@ -88,3 +88,36 @@ fn migration_uses_the_balanced_alt_boundary() {
         source.replace("`][R]", "`][r]")
     );
 }
+#[test]
+fn imported_table_footnotes_keep_references_and_avoid_collisions() {
+    let md = "| Note[^a\\|b] | c |\n|---|---|\n\nText[^a|b].\n\n`[^a|b]`\n\n[^a|b]: Note.\n\n[^carve-import-footnote-1]: Existing.\n";
+    let written = carve::markdown_to_carve(md);
+    assert_eq!(written.matches("[^carve-import-footnote-2]").count(), 3);
+    assert!(written.contains("`[^a|b]`"));
+    assert!(written.contains("[^carve-import-footnote-1]: Existing."));
+    let html = carve::to_html(&written);
+    assert_eq!(html.matches("role=\"doc-noteref\"").count(), 2);
+    assert!(html.contains("<code>[^a|b]</code>"));
+    assert!(html.contains("Note.<a href=\"#fnref1\""));
+}
+#[test]
+fn imported_footnotes_keep_their_identity_and_opaque_content() {
+    let cases: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/markdown-table-footnotes.json")).unwrap();
+    for case in cases.as_array().unwrap() {
+        let html = carve::to_html(&carve::markdown_to_carve(case["md"].as_str().unwrap()));
+        assert_eq!(
+            html.matches("role=\"doc-noteref\"").count(),
+            case["refs"].as_u64().unwrap() as usize,
+            "{}: {}",
+            case["name"],
+            html
+        );
+        assert!(
+            html.contains(case["html"].as_str().unwrap()),
+            "{}: {}",
+            case["name"],
+            html
+        );
+    }
+}

@@ -16,7 +16,7 @@
 //! ```
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pulldown_cmark::{
     Alignment, CodeBlockKind, Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd,
@@ -143,6 +143,17 @@ fn markdown_to_ast_with_losses(
 
     let source = normalize_heading_closers(&without_nuls, options);
     let mut builder = Builder::default();
+    if source.contains("[^") && source.contains('|') {
+        for (offset, _) in source.match_indices("carve-import-footnote-") {
+            let digits: String = source[offset + "carve-import-footnote-".len()..]
+                .chars()
+                .take_while(char::is_ascii_digit)
+                .collect();
+            if let Ok(number) = digits.parse::<usize>() {
+                builder.footnote_reserved.insert(number);
+            }
+        }
+    }
     for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
         let task_marker = matches!(event, Event::TaskListMarker(_));
         let ordered = task_marker && builder.in_ordered_item();
@@ -472,11 +483,32 @@ struct Builder {
     /// Footnote numbers in order of first reference, which is the order the
     /// Carve parser assigns and therefore the one a round trip must reproduce.
     footnote_numbers: BTreeMap<String, usize>,
+    footnote_labels: BTreeMap<String, String>,
+    footnote_reserved: BTreeSet<usize>,
+    footnote_serial: usize,
     frontmatter: Option<Frontmatter>,
     losses: Vec<String>,
 }
 
 impl Builder {
+    fn footnote_label(&mut self, label: &str) -> String {
+        if !label.contains('|') {
+            return label.to_owned();
+        }
+        if let Some(renamed) = self.footnote_labels.get(label) {
+            return renamed.clone();
+        }
+        self.footnote_serial = self.footnote_serial.max(1);
+        while self.footnote_reserved.contains(&self.footnote_serial) {
+            self.footnote_serial += 1;
+        }
+        let renamed = format!("carve-import-footnote-{}", self.footnote_serial);
+        self.footnote_serial += 1;
+        self.footnote_labels
+            .insert(label.to_owned(), renamed.clone());
+        renamed
+    }
+
     /// Whether the item being filled belongs to an ORDERED list.
     ///
     /// The NEAREST list frame, not the outermost one: a bullet task list nested
@@ -526,6 +558,7 @@ impl Builder {
             }
             Event::InlineHtml(html) => self.inline_html(&html),
             Event::FootnoteReference(label) => {
+                let label = label.to_string();
                 let next = self.footnote_numbers.len() + 1;
                 let number = *self
                     .footnote_numbers
@@ -799,7 +832,7 @@ impl Builder {
             },
             Tag::TableCell => Frame::TableCell(Vec::new()),
             Tag::FootnoteDefinition(label) => Frame::FootnoteDef {
-                label: label.to_string(),
+                label: self.footnote_label(&label),
                 children: Vec::new(),
                 outer_levels: (0, 0),
             },
@@ -1233,6 +1266,41 @@ impl Builder {
             .map(|frontmatter| parse_frontmatter(&frontmatter.content))
             .unwrap_or_default();
 
+        if !self.footnote_labels.is_empty()
+            || self
+                .footnote_numbers
+                .keys()
+                .any(|label| label.contains('|'))
+        {
+            struct RenameFootnotes<'a>(&'a BTreeMap<String, String>);
+            impl crate::include_walk::SubtreeVisitor for RenameFootnotes<'_> {
+                fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+                    for block in blocks {
+                        crate::include_walk::visit_block_children(block, self);
+                    }
+                }
+                fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+                    for node in nodes {
+                        if let InlineNode::Footnote(note) = node {
+                            if let Some(label) = &note.id {
+                                if let Some(renamed) = self.0.get(label) {
+                                    note.id = Some(renamed.clone());
+                                } else if label.contains('|') {
+                                    *node = InlineNode::text(format!("[^{label}]"));
+                                }
+                            }
+                        }
+                        crate::include_walk::visit_inline_children(node, self);
+                    }
+                }
+            }
+            use crate::include_walk::SubtreeVisitor as _;
+            let mut rename = RenameFootnotes(&self.footnote_labels);
+            rename.blocks(&mut self.blocks);
+            for blocks in self.footnote_defs.values_mut() {
+                rename.blocks(blocks);
+            }
+        }
         let document = Document {
             frontmatter,
             frontmatter_raw: self.frontmatter,
