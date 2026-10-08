@@ -11,15 +11,18 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-08
+
 ### Breaking
 
 - Image alt text resolves ASCII punctuation escapes, including `\|` in
   tables. Literal backslashes before punctuation must be doubled. Native
-  writers preserve the decoded value when formatting.
+  writers preserve the decoded value when formatting (#2365,
+  markup-carve/carve#2782).
 
 - A quoted include path resolves ASCII punctuation escapes, as a quoted
   attribute value does: `"a\.crv"` names `a.crv`. A backslash before anything
-  else stays path text (markup-carve/carve#2778).
+  else stays path text (#2370, markup-carve/carve#2778).
 
 - The include rename warning carries the rule id `include-id-rename`, renamed
   from `include-heading-id-rename`. The rename pass stopped being about
@@ -35,11 +38,33 @@ which the published crate does not carry.
   directive literal (#2363).
 - `{{ path#section }}` and `{{ "path"#section }}` resolve. A section name
   needs no whitespace in front of it, in any position, and requiring a run left
-  both spellings literal with no diagnostic at all (#2356,
-  markup-carve/carve#2773).
+  both spellings literal with no diagnostic at all (#2356, #2360,
+  markup-carve/carve#2773). A name that selects nothing now reaches the
+  ordinary selection path and warns under `include-section`.
 - A directive naming two sections warns under `include-selection-conflict` and
   stays literal, where the second name used to be dropped without a word
-  (#2356).
+  (#2356, #2360).
+- Formatting a table image keeps the escape on a pipe in its title, so the
+  cell no longer splits and the decoded title is preserved (#2369).
+- An imported table footnote keeps its identity under a collision-free label,
+  while an unresolved reference, code, HTML and an image description keep
+  their contents (#2371).
+- An escaped pipe keeps its table cell boundary across Djot import and
+  Markdown export, so a code cell holding a literal backslash before `|`
+  survives the round trip. Markdown import drops the table-only escape from
+  autolink and raw HTML payloads and recovers an escaped email autolink
+  (#2374).
+
+### Improvements
+
+- Swatch rendering bounds its class checks to the extension prefix, Carve
+  writing and heading import use hash membership for large attribute lists,
+  and HTML import indexes backlink names and sibling positions (#2357).
+- Footnote lookup uses lazy target counts, subtree intervals and membership
+  sets; cleanup compacts sibling vectors once, and empty-code settlement,
+  nested-span repair and blank-row removal run in linear passes (#2362).
+- Djot import precomputes closing brackets for footnote masking and indexes
+  accepted delimiter ranges by family instead of rescanning (#2374).
 
 ## [0.1.8] - 2026-10-06
 
