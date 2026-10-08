@@ -141,7 +141,8 @@ fn markdown_to_ast_with_losses(
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
-    let source = normalize_heading_closers(&without_nuls, options);
+    let headings = normalize_heading_closers(&without_nuls, options);
+    let source = normalize_table_email_autolinks(&headings, options);
     let mut builder = Builder::default();
     if source.contains("[^") && source.contains('|') {
         for (offset, _) in source.match_indices("carve-import-footnote-") {
@@ -154,7 +155,30 @@ fn markdown_to_ast_with_losses(
             }
         }
     }
-    for (event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+    let mut table_autolink = false;
+    for (mut event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+        let in_table = builder
+            .frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::TableCell(_)));
+        if in_table {
+            match &mut event {
+                Event::Start(Tag::Link {
+                    link_type: LinkType::Autolink | LinkType::Email,
+                    dest_url,
+                    ..
+                }) => {
+                    *dest_url = dest_url.replace("\\|", "|").into();
+                    table_autolink = true;
+                }
+                Event::Text(text) if table_autolink => *text = text.replace("\\|", "|").into(),
+                Event::InlineHtml(html) => *html = html.replace("\\|", "|").into(),
+                _ => {}
+            }
+        }
+        if matches!(event, Event::End(TagEnd::Link)) {
+            table_autolink = false;
+        }
         let task_marker = matches!(event, Event::TaskListMarker(_));
         let ordered = task_marker && builder.in_ordered_item();
         let extension_reaches = task_marker && tasklist_extension_reaches(&source, &range);
@@ -226,6 +250,111 @@ fn markdown_to_ast_with_losses(
 /// (carve-rs#1877). Derived `Clone` and `Drop` recurse over the tree and have no
 /// ceiling to consult, so the only place to stop it is before it exists.
 const MAX_IMPORT_LEVELS: usize = crate::render::MAX_RENDER_DEPTH + 2;
+
+// pulldown tests email syntax before removing a table's pipe escape.
+fn normalize_table_email_autolinks<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
+    if !source.contains("\\|") || !source.contains('@') || !source.contains('<') {
+        return Cow::Borrowed(source);
+    }
+    let mut cells = Vec::new();
+    let mut opaque: Vec<(std::ops::Range<usize>, bool)> = Vec::new();
+    for (event, range) in Parser::new_ext(source, options).into_offset_iter() {
+        if matches!(event, Event::Start(Tag::TableCell)) {
+            cells.push(range.clone());
+        }
+        if matches!(
+            event,
+            Event::Code(_)
+                | Event::Html(_)
+                | Event::InlineHtml(_)
+                | Event::Start(Tag::Link { .. } | Tag::Image { .. })
+        ) {
+            let code = matches!(event, Event::Code(_));
+            if let Some(previous) = opaque
+                .last_mut()
+                .filter(|previous| previous.0.end >= range.start)
+            {
+                previous.0.end = previous.0.end.max(range.end);
+                previous.1 &= code;
+            } else {
+                opaque.push((range, code));
+            }
+        }
+    }
+    static EMAIL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let email = EMAIL.get_or_init(|| regex::Regex::new(r"<((?:[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]|\\\|)+)@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>").expect("email autolink regex"));
+    let mut cell = 0;
+    let mut protected = 0;
+    let mut output = String::new();
+    let mut copied = 0;
+    for caps in email.captures_iter(source) {
+        let value = caps.get(0).unwrap();
+        if !caps[1].contains("\\|") {
+            continue;
+        }
+        while cells
+            .get(cell)
+            .is_some_and(|range| range.end <= value.start())
+        {
+            cell += 1;
+        }
+        while opaque
+            .get(protected)
+            .is_some_and(|(range, _)| range.end <= value.start())
+        {
+            protected += 1;
+        }
+        if !cells
+            .get(cell)
+            .is_some_and(|range| range.start <= value.start() && value.end() <= range.end)
+        {
+            continue;
+        }
+        let mut blocked = false;
+        while let Some((range, code)) = opaque
+            .get(protected)
+            .filter(|(range, _)| range.start < value.end())
+        {
+            if !(*code && value.start() <= range.start && range.end <= value.end()) {
+                blocked = true;
+            }
+            if range.end > value.end() {
+                break;
+            }
+            protected += 1;
+        }
+        if blocked {
+            continue;
+        }
+        let mut before = value.start();
+        while before > 0 && source.as_bytes()[before - 1] == b'\\' {
+            before -= 1;
+        }
+        if (value.start() - before) % 2 != 0 {
+            continue;
+        }
+        let address = format!("{}@{}", caps[1].replace("\\|", "|"), &caps[2]);
+        let mut label = String::new();
+        for ch in address.chars() {
+            if ch.is_ascii_punctuation() {
+                label.push('\\');
+            }
+            label.push(ch);
+        }
+        output.push_str(&source[copied..value.start()]);
+        output.push_str(&format!(
+            "[{label}]({})",
+            markdown_destination(&address, true).replace('&', "%26")
+        ));
+        copied = value.end();
+    }
+    if copied == 0 {
+        Cow::Borrowed(source)
+    } else {
+        output.push_str(&source[copied..]);
+        Cow::Owned(output)
+    }
+}
 
 fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, str> {
     if !source.contains('\t') {

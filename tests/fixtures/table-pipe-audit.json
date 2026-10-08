@@ -1,0 +1,2385 @@
+[
+  {
+    "mode": "md",
+    "name": "text1",
+    "source": "| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image1",
+    "source": "| ![a\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code1",
+    "source": "| `a\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url1",
+    "source": "| [a](/a\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text2",
+    "source": "| a\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image2",
+    "source": "| ![a\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code2",
+    "source": "| `a\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url2",
+    "source": "| [a](/a\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text3",
+    "source": "| a\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image3",
+    "source": "| ![a\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code3",
+    "source": "| `a\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url3",
+    "source": "| [a](/a\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text4",
+    "source": "| a\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image4",
+    "source": "| ![a\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code4",
+    "source": "| `a\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url4",
+    "source": "| [a](/a\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text5",
+    "source": "| a\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image5",
+    "source": "| ![a\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code5",
+    "source": "| `a\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url5",
+    "source": "| [a](/a\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text6",
+    "source": "| a\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image6",
+    "source": "| ![a\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code6",
+    "source": "| `a\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url6",
+    "source": "| [a](/a\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text7",
+    "source": "| a\\\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image7",
+    "source": "| ![a\\\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code7",
+    "source": "| `a\\\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url7",
+    "source": "| [a](/a\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "text8",
+    "source": "| a\\\\\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "image8",
+    "source": "| ![a\\\\\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "code8",
+    "source": "| `a\\\\\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url8",
+    "source": "| [a](/a\\\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text1",
+    "source": "| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image1",
+    "source": "| ![a\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code1",
+    "source": "| `a\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url1",
+    "source": "| [a](/a\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text2",
+    "source": "| a\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image2",
+    "source": "| ![a\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code2",
+    "source": "| `a\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url2",
+    "source": "| [a](/a\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text3",
+    "source": "| a\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image3",
+    "source": "| ![a\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code3",
+    "source": "| `a\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url3",
+    "source": "| [a](/a\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text4",
+    "source": "| a\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image4",
+    "source": "| ![a\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code4",
+    "source": "| `a\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url4",
+    "source": "| [a](/a\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text5",
+    "source": "| a\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image5",
+    "source": "| ![a\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code5",
+    "source": "| `a\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url5",
+    "source": "| [a](/a\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text6",
+    "source": "| a\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image6",
+    "source": "| ![a\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code6",
+    "source": "| `a\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url6",
+    "source": "| [a](/a\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text7",
+    "source": "| a\\\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image7",
+    "source": "| ![a\\\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code7",
+    "source": "| `a\\\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url7",
+    "source": "| [a](/a\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "text8",
+    "source": "| a\\\\\\\\\\\\\\\\|b | z |\n|---|---|\n",
+    "contains": [
+      ">a\\\\\\\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "image8",
+    "source": "| ![a\\\\\\\\\\\\\\\\|b](/i) | z |\n|---|---|\n",
+    "contains": [
+      "alt=\"a\\\\\\\\|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code8",
+    "source": "| `a\\\\\\\\\\\\\\\\|b` | z |\n|---|---|\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "url8",
+    "source": "| [a](/a\\\\\\\\\\\\\\\\|b) | z |\n|---|---|\n",
+    "contains": [
+      "href=\"/a%5C%5C%5C%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference1",
+    "source": "| [a][a\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "href=\"/i\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference2",
+    "source": "| [a][a\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference3",
+    "source": "| [a][a\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference4",
+    "source": "| [a][a\\\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference5",
+    "source": "| [a][a\\\\\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference6",
+    "source": "| [a][a\\\\\\\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference7",
+    "source": "| [a][a\\\\\\\\\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\\\\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "reference8",
+    "source": "| [a][a\\\\\\\\\\\\\\\\|b] | z |\n|---|---|\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a\\\\\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "quoted> - ",
+    "source": "> - | a\\\\|b | z |\n>   |---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted> - ",
+    "source": "> - | a\\\\|b | z |\n>   |---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "quoted> 1. ",
+    "source": "> 1. | a\\\\|b | z |\n>    |---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted> 1. ",
+    "source": "> 1. | a\\\\|b | z |\n>    |---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "quoted- > ",
+    "source": "- > | a\\\\|b | z |\n  > |---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted- > ",
+    "source": "- > | a\\\\|b | z |\n  > |---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "quoted> > - ",
+    "source": "> > - | a\\\\|b | z |\n> >   |---|---|\n",
+    "contains": [
+      ">a|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted> > - ",
+    "source": "> > - | a\\\\|b | z |\n> >   |---|---|\n",
+    "contains": [
+      ">a\\|b</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "identity-a&#49;",
+    "source": "| [^a&#49;] [^a1] |\n|---|\n\n[^a&#49;]: Entity.\n[^a1]: Raw.\n",
+    "contains": [
+      "id=\"fn1\"",
+      "id=\"fn2\"",
+      "Entity.",
+      "Raw.",
+      "id=\"fn1\">\n      <p>Entity.",
+      "id=\"fn2\">\n      <p>Raw."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "identity-a&vert;b",
+    "source": "| [^a&vert;b] [^a\\|b] |\n|---|\n\n[^a&vert;b]: Entity.\n[^a|b]: Raw.\n",
+    "contains": [
+      "id=\"fn1\"",
+      "id=\"fn2\"",
+      "Entity.",
+      "Raw.",
+      "id=\"fn1\">\n      <p>Entity.",
+      "id=\"fn2\">\n      <p>Raw."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "identity-a\\!b",
+    "source": "| [^a\\!b] [^a!b] |\n|---|\n\n[^a\\!b]: Entity.\n[^a!b]: Raw.\n",
+    "contains": [
+      "id=\"fn1\"",
+      "id=\"fn2\"",
+      "Entity.",
+      "Raw.",
+      "id=\"fn1\">\n      <p>Entity.",
+      "id=\"fn2\">\n      <p>Raw."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "nested-multiline-",
+    "source": "[a [b [c] d] e](/u \"one\n two\")",
+    "contains": [
+      "href=\"/u\"",
+      "title=\"one\ntwo\""
+    ],
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "nested-multiline-!",
+    "source": "![a [b [c] d] e](/u \"one\n two\")",
+    "contains": [
+      "alt=\"a [b [c] d] e\"",
+      "title=\"one\ntwo\""
+    ],
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unfinished-note",
+    "source": "[^a[t](/u \"one\")",
+    "contains": [
+      "[^a<a href=\"/u\" title=\"one\">t</a>"
+    ],
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "raw-html",
+    "source": "| <span title=\"a\\|b\">c</span> | z |\n|---|---|\n",
+    "contains": [
+      "title=\"a|b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "autolink",
+    "source": "| <https://example.com/a\\|b> | z |\n|---|---|\n",
+    "contains": [
+      "href=\"https://example.com/a%7Cb\"",
+      ">https://example.com/a|b</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "resolved-pipe-reference",
+    "source": "| [a][q\\|r] |\n|---|\n\n[q|r]: /u\n",
+    "contains": [
+      "href=\"/u\""
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "fenced-table",
+    "source": "```\n| a\\\\|b | z |\n|---|---|\n```\n",
+    "contains": [
+      "| a\\\\|b | z |"
+    ],
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes0",
+    "source": "|= `a|b` |= z |\n",
+    "contains": [
+      "<code>a|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes1",
+    "source": "|= `a\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes2",
+    "source": "|= `a\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes3",
+    "source": "|= `a\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes4",
+    "source": "|= `a\\\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes5",
+    "source": "|= `a\\\\\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes6",
+    "source": "|= `a\\\\\\\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes7",
+    "source": "|= `a\\\\\\\\\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "code-slashes8",
+    "source": "|= `a\\\\\\\\\\\\\\\\|b` |= z |\n",
+    "contains": [
+      "<code>a\\\\\\\\\\\\\\\\|b</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "image-entity",
+    "source": "|= ![a&#124;b](/i) |= z |\n",
+    "contains": [
+      "alt=\"a&amp;#124;b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-entity",
+    "source": "|= ![a](/i \"a&#124;b\") |= z |\n",
+    "contains": [
+      "title=\"a&amp;#124;b\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "destination-backslash",
+    "source": "|= [a](/a\\|b) |= z |\n",
+    "contains": [
+      "href=\"/a%5C%7Cb\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "unknown-note",
+    "source": "|= [^a\\|b] |= z |\n",
+    "contains": [
+      "[^a\\|b]"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "opaque-note-identity",
+    "source": "|= [^q\\|r] |\n\nText[^q\\|r].\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "Note.",
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\""
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "collapsed-pipe-reference",
+    "source": "| [a\\|b][] |\n|---|\n\n[a|b]: /u\n",
+    "contains": [
+      "href=\"/u\">a|b</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-last-definition",
+    "source": "| [a][q\\|r] |\n|---|\n\n[q|r]: /first\n[q|r]: /second\n",
+    "contains": [
+      "href=\"/second\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-definition-title",
+    "source": "| [a][q\\|r] |\n|---|\n\n{title=\"T\"}\n[q|r]: /u\n",
+    "contains": [
+      "href=\"/u\" title=\"T\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-list-definition",
+    "source": "| [a][q\\|r] |\n|---|\n\n- [q|r]: /u\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-quoted-definition",
+    "source": "| [a][q\\|r] |\n|---|\n\n> [q|r]: /u\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-multiline-definition",
+    "source": "| [a][q\\|r] |\n|---|\n\n[q|r]:\n  /u\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-raw-destination-backslash",
+    "source": "| [a][q\\|r] |\n|---|\n\n[q|r]: /x\\|y\n",
+    "contains": [
+      "href=\"/x%5C%7Cy\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-adjacent-labels",
+    "source": "| [a][q\\|r][s\\|t] |\n|---|\n\n[q|r]: /u\n[s|t]: /v\n",
+    "contains": [
+      "href=\"/u\">a</a>[s|t]"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bracket-before-pipe-reference",
+    "source": "| a\\][q\\|r] |\n|---|\n\n[q|r]: /u\n",
+    "contains": [
+      ">a][q|r]</th>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bracket-before-pipe-destination",
+    "source": "| a\\](b\\\\|c) | z |\n|---|---|\n\n",
+    "contains": [
+      ">a](b\\|c)</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unfinished-destination-before-next-cell",
+    "source": "| [a](/b | c\\\\|d |\n|---|---|\n\n",
+    "contains": [
+      ">[a](/b</th>",
+      ">c\\|d</th>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unescaped-reference-pipe-splits-cell",
+    "source": "| [a][q\\|r] | [b][q|r] |\n|---|---|\n\n[q|r]: /u\n",
+    "contains": [
+      "href=\"/u\">a</a>",
+      ">[b][q</th>",
+      ">r]</th>"
+    ],
+    "cells": 3,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-autolink-pipe-1",
+    "source": "| <http://x/a\\|b> | z |\n|---|---|\n\n",
+    "contains": [
+      "&lt;http://x/a|b&gt;"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-autolink-pipe-2",
+    "source": "| <http://x/a\\\\|b> | z |\n|---|---|\n\n",
+    "contains": [
+      "&lt;http://x/a\\|b&gt;"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "attribute-pipe-slash-run",
+    "source": "| [a]{title=\"x\\\\|y\"} | z |\n|---|---|\n\n",
+    "contains": [
+      "title=\"x\\|y\">a</span>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "lazy-pipe-row-stays-paragraph",
+    "source": "para\n| a\\\\|b |\n",
+    "contains": [
+      "<p>para\n| a\\|b |</p>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-final-pipe-stays-paragraph",
+    "source": "| a | b\\\\|\n|---|---|\n",
+    "contains": [
+      "<p>| a | b\\|"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-code-prevents-table",
+    "source": "| `a | b\\\\|c |\n|---|---|\n",
+    "contains": [
+      "<code>a | b\\\\|c |\n|---|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-pipe",
+    "source": "| <a\\|b@x.com> | z |\n|---|---|\n\n",
+    "contains": [
+      "href=\"mailto:a%7Cb@x.com\">a|b@x.com</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-code-is-opaque",
+    "source": "| `<a\\|b@x.com>` | z |\n|---|---|\n\n",
+    "contains": [
+      "<code>&lt;a|b@x.com&gt;</code>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-escaped-angle-is-literal",
+    "source": "| \\<a\\|b@x.com> | z |\n|---|---|\n\n",
+    "contains": [
+      "&lt;a|b@x.com&gt;"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unresolved-pipe-reference-outside-table",
+    "source": "[a][a\\|b]\n\n[a|b]: /i\n",
+    "contains": [
+      "[a][a|b]"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-1",
+    "source": "| Text[^q\\|r] |\n|---|\n\nText[^q\\|r].\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-2",
+    "source": "| Text[^q\\\\|r] |\n|---|\n\nText[^q\\\\|r].\n\n[^q\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-3",
+    "source": "| Text[^q\\\\\\|r] |\n|---|\n\nText[^q\\\\\\|r].\n\n[^q\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-4",
+    "source": "| Text[^q\\\\\\\\|r] |\n|---|\n\nText[^q\\\\\\\\|r].\n\n[^q\\\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-5",
+    "source": "| Text[^q\\\\\\\\\\|r] |\n|---|\n\nText[^q\\\\\\\\\\|r].\n\n[^q\\\\\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-6",
+    "source": "| Text[^q\\\\\\\\\\\\|r] |\n|---|\n\nText[^q\\\\\\\\\\\\|r].\n\n[^q\\\\\\\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-7",
+    "source": "| Text[^q\\\\\\\\\\\\\\|r] |\n|---|\n\nText[^q\\\\\\\\\\\\\\|r].\n\n[^q\\\\\\\\\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-footnote-slashes-8",
+    "source": "| Text[^q\\\\\\\\\\\\\\\\|r] |\n|---|\n\nText[^q\\\\\\\\\\\\\\\\|r].\n\n[^q\\\\\\\\\\\\\\\\|r]: Note.\n",
+    "contains": [
+      "id=\"fnref1\"",
+      "id=\"fnref1-2\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-looking-attribute-is-opaque",
+    "source": "| [a]{title=\"[^q\\|r]\"} [^q\\|r] |\n|---|\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "title=\"[^q|r]\">a</span>",
+      "id=\"fnref1\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-looking-image-alt-is-opaque",
+    "source": "| ![x[^q\\|r]](/i) [^q\\|r] |\n|---|\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "alt=\"x[^q|r]\"",
+      "id=\"fnref1\"",
+      "Note."
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-definition-cannot-interrupt-paragraph",
+    "source": "para\n[q|r]: /u\n\n| [a][q\\|r] |\n|---|\n",
+    "contains": [
+      "<p>para\n[q|r]: /u</p>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-pipe-with-markup-characters",
+    "source": "| <a*\\|b*c@x.com> | z |\n|---|---|\n",
+    "contains": [
+      "href=\"mailto:a*%7Cb*c@x.com\">a*|b*c@x.com</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-definition-attribute-pipe",
+    "source": "| [a][q\\|r] |\n|---|\n\n{title=\"T|U\"}\n[q|r]: /u\n",
+    "contains": [
+      "title=\"T|U\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-reference-looking-attribute-is-opaque",
+    "source": "| [a]{title=\"[x][q\\|r]\"} |\n|---|\n\n[q|r]: /u\n",
+    "contains": [
+      "title=\"[x][q|r]\">a</span>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-backticks",
+    "source": "| <a`\\|b`c@x.com> | z |\n|---|---|\n",
+    "contains": [
+      "href=\"mailto:a%60%7Cb%60c@x.com\">a`|b`c@x.com</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-leading-pipe",
+    "source": "| <\\|a@x.com> | z |\n|---|---|\n",
+    "contains": [
+      "href=\"mailto:%7Ca@x.com\">|a@x.com</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-after-escaped-bracket",
+    "source": "| a\\](x [^q\\|r]) |\n|---|\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "Note.",
+      "id=\"fnref1\""
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-after-cross-cell-destination",
+    "source": "| [a](/b | [^q\\|r]) |\n|---|---|\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "Note.",
+      "id=\"fnref1\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unescaped-footnote-pipe-splits-cell",
+    "source": "| [^q|r] [^q\\|r] |\n|---|---|\n\n[^q|r]: Raw.\n[^q\\|r]: Escaped.\n",
+    "contains": [
+      ">[^q</th>",
+      "Escaped.",
+      "id=\"fnref1\""
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-looking-destination-is-opaque",
+    "source": "| [a](/x[^q\\|r]) [^q\\|r] |\n|---|\n\n[^q\\|r]: Note.\n",
+    "contains": [
+      "href=\"/x[^q%7Cr]\"",
+      "Note.",
+      "id=\"fnref1\""
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-backtick-before-even-pipe",
+    "source": "| a\\`b\\\\|c |\n|---|\n",
+    "contains": [
+      "a`b\\|c"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "definition-after-table",
+    "source": "| [a][q\\|r] |\n|---|\n[q|r]: /u\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "definition-after-thematic-break",
+    "source": "* * *\n[q|r]: /u\n\n| [a][q\\|r] |\n|---|\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "definition-after-quote",
+    "source": "> quote\n[q|r]: /u\n\n| [a][q\\|r] |\n|---|\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "definition-after-list",
+    "source": "- item\n[q|r]: /u\n\n| [a][q\\|r] |\n|---|\n",
+    "contains": [
+      "href=\"/u\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "padded-reference-and-stacked-attributes",
+    "source": "| [a][ q\\|r ] |\n|---|\n\n{title=\"A\"}\n{.c}\n[q|r]: /u\n",
+    "contains": [
+      "href=\"/u\" title=\"A\" class=\"c\">a</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "distinct-pipe-reference-targets",
+    "source": "| [one][a\\|b] | [two][c\\|d] |\n|---|---|\n\n[a|b]: /one\n[c|d]: /two\n",
+    "contains": [
+      "href=\"/one\">one</a>",
+      "href=\"/two\">two</a>"
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "distinct-opaque-pipe-footnotes",
+    "source": "| A[^a\\|b] | B[^a\\\\|b] |\n|---|---|\n\n[^a\\|b]: One.\n[^a\\\\|b]: Two.\n",
+    "contains": [
+      "id=\"fn1\">\n      <p>One.",
+      "id=\"fn2\">\n      <p>Two."
+    ],
+    "cells": 2,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-code-suffix",
+    "source": "[a][`x|y`]\n",
+    "contains": [
+      "[a][<code>x|y</code>]"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-table-reference-code-suffix",
+    "source": "| [a][`x\\|y`] |\n|---|\n",
+    "contains": [
+      "[a][<code>x|y</code>]"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code-interrupts-table-destination",
+    "source": "| [a](u\\|b`c) |\n|---|\n",
+    "contains": [
+      "[a](u|b<code>c) |\n|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted-unclosed-table-code",
+    "source": "> | `a | b\\\\|c |\n> |---|---|\n",
+    "contains": [
+      "<code>a | b\\\\|c |\n|---|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "listed-unclosed-table-code",
+    "source": "- | `a | b\\\\|c |\n  |---|---|\n",
+    "contains": [
+      "<code>a | b\\\\|c |\n|---|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-table-code-stops-at-quote-blank",
+    "source": "> | `a\\|b |\n>\n> after\n",
+    "contains": [
+      "<code>a\\|b |</code>",
+      "<p>after</p>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code-prefix-parentheses-stay-opaque",
+    "source": "| `x](y` `a\\|b |\n|---|\n",
+    "contains": [
+      "<code>x](y</code> <code>a\\|b |\n|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-beside-malformed-reference-brackets",
+    "source": "| ][<a\\|b@x.com>[] |\n|---|\n",
+    "contains": [
+      "href=\"mailto:a%7Cb@x.com\">a|b@x.com</a>"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "email-autolink-in-unknown-reference",
+    "source": "| [a][<a\\|b@x.com>] |\n|---|\n",
+    "contains": [
+      "[a][<a href=\"mailto:a%7Cb@x.com\">a|b@x.com</a>]"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "url-autolink-in-unknown-reference",
+    "source": "| [a][<https://e/a\\|b>] |\n|---|\n",
+    "contains": [
+      "[a][<a href=\"https://e/a%7Cb\">https://e/a|b</a>]"
+    ],
+    "cells": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-table-code-stops-at-div-close",
+    "source": "::: d\n| `a | b\\| |\n:::\n\nafter\n",
+    "contains": [
+      "<code>a | b\\| |</code>",
+      "</div>\n<p>after</p>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-table-code-stops-at-sibling-item",
+    "source": "- | `a | b\\| |\n- next\n",
+    "contains": [
+      "<code>a | b\\| |</code></li>",
+      "<li>next</li>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-table-code-stops-at-quote-drop",
+    "source": "> | `a | b\\| |\n- next\n",
+    "contains": [
+      "<code>a | b\\| |</code></p></blockquote>",
+      "<li>next</li>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-table-code-retains-interior-row",
+    "source": "| `a | b\\| |\n| m | n |\n|---|---|\n",
+    "contains": [
+      "<code>a &#124; b&#92;&#124; &#124;&#10;&#124; m &#124; n &#124;&#10;&#124;&#45;&#45;&#45;&#124;&#45;&#45;&#45;&#124;</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "root-code-keeps-heading-looking-line",
+    "source": "| `a | b\\| |\n# H\n",
+    "contains": [
+      "<code>a &#124; b&#92;&#124; &#124;&#10;&#35; H</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unfinished-footnote-prefix-before-real-note",
+    "source": "[^ [^q|r] z\\|\n\n[^q|r]: N.\n",
+    "contains": [
+      "[^ <a id=\"fnref1\"",
+      "<p>N."
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>",
+      "carve-djot-footnote-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code-in-footnote-looking-label",
+    "source": "| A[^a`\\|b] |\n|---|\n\n[^a`\\|b]: Note.\n",
+    "contains": [
+      "A[^a<code>\\|b] |\n|---|</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bracket-in-footnote-looking-label",
+    "source": "| A[^a[\\|b] |\n|---|\n\n[^a[\\|b]: Note.\n",
+    "contains": [
+      "A[^a[|b]"
+    ],
+    "cells": 1,
+    "tables": 1,
+    "excludes": [
+      "<code></code>",
+      "role=\"doc-noteref\"",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code-row-in-footnote-definition",
+    "source": "X[^n]\n\n[^n]: | `a\\|b |\n  | m | n |\n",
+    "contains": [
+      "<p>| <code>a&#92;&#124;b &#124;&#10;&#124; m &#124; n &#124;</code>"
+    ],
+    "cells": 0,
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "pipe-row-in-footnote-definition",
+    "source": "X[^n]\n\n[^n]: | a\\\\|b |\n  |---|\n",
+    "contains": [
+      "a\\|b"
+    ],
+    "cells": 1,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "invalid-attributes-cannot-end-paragraph",
+    "source": "| [a][q\\|r] |\n|---|\n\n{not attrs\n[q|r]: /u\n",
+    "contains": [
+      "[a][q\\|r]",
+      "{not attrs\n[q|r]: /u"
+    ],
+    "cells": 1,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-literal-entity-email",
+    "source": "| [a][&lt;a@x.com&gt;\\|z] | c |\n|---|---|\n",
+    "contains": [
+      "[a][&lt;a@x.com&gt;|z]"
+    ],
+    "cells": 2,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-literal-entity-url",
+    "source": "| [a][&lt;http://u.io&gt;\\|z] | c |\n|---|---|\n",
+    "contains": [
+      "[a][&lt;http://u.io&gt;|z]"
+    ],
+    "cells": 2,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-literal-entity-asterisks",
+    "source": "| [a][&#42;x&#42;\\|z] | c |\n|---|---|\n",
+    "contains": [
+      "[a][*x*|z]"
+    ],
+    "cells": 2,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-literal-entity-ticks",
+    "source": "| [a][&#96;x&#96;\\|z] | c |\n|---|---|\n",
+    "contains": [
+      "[a][`x`|z]"
+    ],
+    "cells": 2,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-literal-entity-slash",
+    "source": "| [a][&#92;\\|z] | c |\n|---|---|\n",
+    "contains": [
+      "[a][\\|z]"
+    ],
+    "cells": 2,
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "paragraph-code-retains-divider",
+    "source": "para `t\n|---|---|\nend`\n\nz\\|\n",
+    "contains": [
+      "<code>t&#10;&#124;&#45;&#45;&#45;&#124;&#45;&#45;&#45;&#124;&#10;end</code>"
+    ],
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "div-fence-remains-a-block",
+    "source": "::: d\n```\nz\\|\n```\n:::\n",
+    "contains": [
+      "<div class=\"d\">",
+      "<pre><code>z\\|\n</code></pre>"
+    ],
+    "tables": 0,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "table-before-fence",
+    "source": "| x | y\\| |\n```\nz\\|\n```\n",
+    "contains": [
+      "<pre><code>z\\|\n</code></pre>",
+      "<td>y|</td>"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "dedented-row-before-fence",
+    "source": "- | `c | d |\n| x | y\\| |\n```\nz\\|\n```\n",
+    "contains": [
+      "<li>| <code>c | d |</code></li>",
+      "<pre><code>z\\|\n</code></pre>",
+      "<td>y|</td>"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "padded-footnote-label",
+    "source": "| x[^ a\\|b ] |\n|---|\n\n[^a\\|b]: Note.\n",
+    "contains": [
+      "role=\"doc-noteref\"",
+      "Note."
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ],
+    "cells": 1
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-label-entity-email",
+    "source": "| [a\\|&lt;x@y.io&gt;][ref] | c |\n|---|---|\n",
+    "contains": [
+      "[a|&lt;x@y.io&gt;][ref]"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ],
+    "cells": 2
+  },
+  {
+    "mode": "md",
+    "name": "unknown-reference-label-entity-emphasis",
+    "source": "| [a\\|&#42;x&#42;][ref] | c |\n|---|---|\n",
+    "contains": [
+      "[a|*x*][ref]"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ],
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "code-parenthesis-at-zero",
+    "source": "(`a\nb`)\n\n| x \\| y |\n",
+    "contains": [
+      "(<code>a\nb</code>)"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "code-parenthesis-at-zero-before-bracket",
+    "source": "(`a\nb`)\n\n| x \\| y |\n[x]",
+    "contains": [
+      "(<code>a\nb</code>)",
+      "<p>[x]</p>"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "literal-reference-newline-entity",
+    "source": "| h |\n|---|\n| [a\\|b&#10;c][x] d |\n",
+    "contains": [
+      "<td>[a|b c][x] d</td>"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "nested-image-lookahead-with-external-closer",
+    "source": "| x \\| y |\n\n![![![![`]]]] `\n",
+    "contains": [
+      "![![![![<code>]]]] </code>"
+    ],
+    "tables": 1,
+    "excludes": [
+      "<code></code>"
+    ]
+  }
+]

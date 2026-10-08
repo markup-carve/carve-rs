@@ -1234,16 +1234,82 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
 /// inline, so every content pipe in a cell is escaped, one already escaped
 /// excepted.
 fn escape_cell_pipes(content: &str) -> String {
-    let mut out = String::with_capacity(content.len());
-    let mut backslashes = 0usize;
-    for ch in content.chars() {
-        if ch == '|' && backslashes % 2 == 0 {
-            out.push('\\');
-        }
-        backslashes = if ch == '\\' { backslashes + 1 } else { 0 };
-        out.push(ch);
+    if !content.contains('|') {
+        return content.to_owned();
     }
-    out
+    let bytes = content.as_bytes();
+    let mut runs = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] != b'`' {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while bytes.get(at) == Some(&b'`') {
+            at += 1;
+        }
+        runs.push((start, at - start));
+    }
+    let mut ends = vec![usize::MAX; bytes.len()];
+    let mut next = std::collections::HashMap::new();
+    for (start, width) in runs.into_iter().rev() {
+        for offset in 0..width {
+            ends[start + offset] = next.get(&(width - offset)).copied().unwrap_or(usize::MAX);
+        }
+        next.insert(width, start + width);
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            let begin = i;
+            while bytes.get(i) == Some(&b'\\') {
+                i += 1;
+            }
+            out.extend_from_slice(&bytes[begin..i]);
+            if bytes.get(i) == Some(&b'|') {
+                if (i - begin) % 2 == 0 {
+                    out.push(b'\\');
+                }
+                out.push(b'|');
+                i += 1;
+                continue;
+            }
+            if (i - begin) % 2 != 0 && i < bytes.len() {
+                out.push(bytes[i]);
+                i += 1;
+            }
+            continue;
+        }
+        let end = if bytes[i] == b'`' {
+            ends[i]
+        } else {
+            usize::MAX
+        };
+        if end != usize::MAX {
+            out.extend_from_slice(content[i..end].replace('|', "\\|").as_bytes());
+            i = end;
+            continue;
+        }
+        if bytes[i..].starts_with(b"[^") {
+            let mut close = i + 2;
+            while close < bytes.len() && !matches!(bytes[close], b'[' | b']' | b'\n') {
+                close += 1;
+            }
+            if bytes.get(close) == Some(&b']') {
+                out.extend_from_slice(content[i..=close].replace('|', "\\|").as_bytes());
+                i = close + 1;
+                continue;
+            }
+        }
+        if bytes[i] == b'|' {
+            out.push(b'\\');
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).expect("pipe escapes preserve UTF-8")
 }
 
 fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -1955,7 +2021,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     // content and gets the HTML pass for the same reason: this
                     // branch was deciding the question for brackets and
                     // skipping it for `<`.
-                    format!("\\[^{}\\]", escape_md_html(&id))
+                    format!("\\[^{}\\]", escape_md_html(&id).replace("\\", "\\\\"))
                 }
             }
         }
@@ -2145,14 +2211,16 @@ fn render_image(node: &Image) -> String {
 }
 
 fn escape_md_title(title: &str) -> String {
-    title.replace('\\', "\\\\").replace('"', "\\\"")
+    neutralize_char_refs(&title.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn escape_md_label(label: &str) -> String {
-    label
-        .replace('\\', "\\\\")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
+    neutralize_char_refs(
+        &label
+            .replace('\\', "\\\\")
+            .replace('[', "\\[")
+            .replace(']', "\\]"),
+    )
 }
 
 fn sanitize_code_lang(lang: &str) -> String {
@@ -2621,8 +2689,11 @@ fn encode_markdown_destination(url: &str, pos: Option<&Pos>, sink: DeniedSink) -
     //    (`render_ansi.rs`), and carve-php strips inside its probe.
     let sanitized = sanitize_md_url(&strip_controls(url), pos, sink);
     let mut out = String::new();
+    let pipe_destination = sanitized.contains('|');
     for ch in sanitized.chars() {
         match ch {
+            '\\' if pipe_destination => out.push_str("%5C"),
+            '|' => out.push_str("%7C"),
             ' ' => out.push_str("%20"),
             '(' => out.push_str("%28"),
             ')' => out.push_str("%29"),

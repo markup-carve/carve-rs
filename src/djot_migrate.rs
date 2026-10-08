@@ -45,7 +45,8 @@ use crate::ast::{BlockNode, FigureTarget};
 pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
-    let folded = fold_heading_continuations(body);
+    let table_pipes = normalize_djot_table_pipes(body);
+    let folded = fold_heading_continuations(&table_pipes);
     let collapsed = cached_regex!(r"(!?\[([^\[\]\n]*)\])\[\]").unwrap();
     let mut collapsed_mask = mask_code_and_destinations(&folded).into_bytes();
     let mut at = 0;
@@ -930,8 +931,9 @@ fn mask_djot_attributes(source: &str) -> String {
             }
         }
         checked = i;
-        let attached_span =
-            i > 0 && bytes[i - 1] == b']' && !bytes[i..end.min(bytes.len())].contains(&b'\n');
+        let attached_span = i > 0
+            && matches!(bytes[i - 1], b']' | b')')
+            && !bytes[i..end.min(bytes.len())].contains(&b'\n');
         let attached_block = if block_start {
             let after = source.get(end + 1..).unwrap_or("");
             let (line_tail, following) = after.split_once('\n').unwrap_or((after, ""));
@@ -1165,19 +1167,26 @@ fn rewrite_djot_inline(source: &str) -> String {
     let masked = emphasis_mask(&source);
 
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
-    let mut taken: Vec<(char, usize, usize)> = Vec::new();
+    let mut taken: std::collections::HashMap<char, std::collections::BTreeMap<usize, usize>> =
+        std::collections::HashMap::new();
 
     for rule in RULES {
         for (start, end, inner_start, inner_end) in find_pairs(&masked, rule) {
             // One delimiter run belongs to one rule. A `~~x~~` claimed by the
             // strikethrough rule must not be re-read as two subscripts.
-            if taken
-                .iter()
-                .any(|(family, s, e)| *family == rule.family && start < *e && *s < end)
+            let ranges = taken.entry(rule.family).or_default();
+            if ranges
+                .range(..=start)
+                .next_back()
+                .is_some_and(|(_, &previous_end)| previous_end > start)
+                || ranges
+                    .range(start..)
+                    .next()
+                    .is_some_and(|(&next_start, _)| next_start < end)
             {
                 continue;
             }
-            taken.push((rule.family, start, end));
+            ranges.insert(start, end);
             // Only the DELIMITERS are replaced, never the inner text, so a
             // construct of another family nested inside this one is still
             // rewritten by its own rule rather than swallowed whole.
@@ -1426,18 +1435,18 @@ fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
         }
 
         match find_closer(masked, inner_start, rule) {
-            Some(inner_end) => {
+            Ok(inner_end) => {
                 found.push((i, inner_end + closer_width, inner_start, inner_end));
                 i = inner_end + closer_width;
             }
-            None => i += width,
+            Err(paragraph_end) => i = paragraph_end,
         }
     }
 
     found
 }
 
-fn find_closer(masked: &str, from: usize, rule: &Rule) -> Option<usize> {
+fn find_closer(masked: &str, from: usize, rule: &Rule) -> Result<usize, usize> {
     let bytes = masked.as_bytes();
     let delimiter = rule.closer.as_bytes();
     let width = delimiter.len();
@@ -1450,7 +1459,7 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Option<usize> {
         // A construct never spans a blank line: that is a paragraph break, and
         // a delimiter on the far side of one closes nothing.
         if bytes[j] == b'\n' && blank_line_follows(bytes, j) {
-            return None;
+            return Err(j + 1);
         }
 
         if bytes[j..].starts_with(delimiter) {
@@ -1490,13 +1499,13 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Option<usize> {
                 continue;
             }
 
-            return Some(j);
+            return Ok(j);
         }
 
         j += 1;
     }
 
-    None
+    Err(bytes.len())
 }
 
 /// Is the newline at `index` followed by a line holding nothing but spaces and
@@ -1514,8 +1523,32 @@ fn blank_line_follows(bytes: &[u8], index: usize) -> bool {
 /// scan above cannot see a delimiter that is not one. Offsets are preserved, so
 /// a match in the mask splices into the original unchanged.
 fn mask_code_and_destinations(source: &str) -> String {
+    mask_djot_inline(source, true)
+}
+
+fn mask_djot_inline(source: &str, inline_forms: bool) -> String {
+    mask_djot_forms(source, inline_forms, true)
+}
+
+fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String {
     let bytes = source.as_bytes();
     let mut mask: Vec<u8> = bytes.to_vec();
+    let footnote_ends = if inline_forms && footnotes && source.contains("[^") {
+        let mut ends = vec![usize::MAX; bytes.len()];
+        let mut close = usize::MAX;
+        for i in (0..bytes.len()).rev() {
+            if bytes[i] == b'\n' {
+                close = usize::MAX;
+            } else if bytes[i] == b']' {
+                close = i;
+            }
+            ends[i] = close;
+        }
+        Some(ends)
+    } else {
+        None
+    };
+
     let opener = cached_regex!(r"^([ \t]*)(?:(:[ \t]+|[-*+][ \t]+|[0-9]+[.)][ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
     let boundary =
         cached_regex!(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} |\{[.#A-Za-z])").unwrap();
@@ -1608,7 +1641,8 @@ fn mask_code_and_destinations(source: &str) -> String {
         }
         offset += raw.len();
     }
-    let paragraph_ends: Vec<usize> = cached_regex!(r"\n[ \t]*\n")
+
+    let paragraph_ends: Vec<usize> = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n")
         .unwrap()
         .find_iter(source)
         .map(|value| value.start())
@@ -1618,6 +1652,10 @@ fn mask_code_and_destinations(source: &str) -> String {
     while i < bytes.len() {
         if mask[i] != bytes[i] {
             i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' && bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) {
+            i += 2;
             continue;
         }
         // An inline code span, delimited by a matching backtick run.
@@ -1645,7 +1683,7 @@ fn mask_code_and_destinations(source: &str) -> String {
         }
 
         // A link or image destination: `](...)`.
-        if bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
+        if inline_forms && bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
             if let Some(close) = bytes[i + 2..].iter().position(|b| *b == b')') {
                 let end = i + 2 + close + 1;
                 blank_out(&mut mask, i + 1, end);
@@ -1656,14 +1694,14 @@ fn mask_code_and_destinations(source: &str) -> String {
 
         // A footnote reference is one opaque token. In particular, the two
         // carets in adjacent references must never pair as superscript.
-        if bytes[i..].starts_with(b"[^") {
-            let line = &bytes[i + 2..];
-            let width = line
-                .iter()
-                .position(|byte| *byte == b'\n')
-                .unwrap_or(line.len());
-            if let Some(close) = line[..width].iter().position(|byte| *byte == b']') {
-                let end = i + 2 + close + 1;
+        if inline_forms && footnotes && bytes[i..].starts_with(b"[^") {
+            let close = footnote_ends
+                .as_ref()
+                .and_then(|ends| ends.get(i + 2))
+                .copied()
+                .unwrap_or(usize::MAX);
+            if close != usize::MAX {
+                let end = close + 1;
                 blank_out(&mut mask, i, end);
                 i = end;
                 continue;
@@ -3122,4 +3160,971 @@ mod heading_continuation_tests {
             assert_eq!(djot_to_carve(source), source);
         }
     }
+}
+
+fn djot_content_start(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    let marker_re = cached_regex!(
+        r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+)"
+    )
+    .unwrap();
+    while at < bytes.len() {
+        while matches!(bytes.get(at), Some(b' ' | b'\t')) {
+            at += 1;
+        }
+        if bytes.get(at) == Some(&b'>') {
+            at += 1;
+            continue;
+        }
+        let marker = marker_re.find(&line[at..]);
+        match marker {
+            Some(marker) => at += marker.end(),
+            None => break,
+        }
+    }
+    at
+}
+
+fn djot_table_rows(source: &str, mask: &str) -> Vec<bool> {
+    let item_re = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
+    let boundary_re = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]+\]:)").unwrap();
+    let mut offset = 0;
+    let mut previous_row = false;
+    let mut previous_block = true;
+    source
+        .split('\n')
+        .map(|line| {
+            let at = djot_content_start(line);
+            let bytes = line.as_bytes();
+            let end = line.trim_end().len().saturating_sub(1);
+            let content = &line[at..];
+            let row = (previous_block || previous_row || item_re.is_match(&line[..at]))
+                && bytes.get(at) == Some(&b'|')
+                && mask.as_bytes().get(offset + at) == Some(&b'|')
+                && bytes.get(end) == Some(&b'|')
+                && mask.as_bytes().get(offset + end) == Some(&b'|')
+                && end.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\');
+            previous_block = content.trim().is_empty() || boundary_re.is_match(content);
+            previous_row = row;
+            offset += line.len() + 1;
+            row
+        })
+        .collect()
+}
+
+fn rename_djot_pipe_footnotes(source: &str) -> String {
+    let mask = mask_djot_inline(source, false);
+    let prefix = "carve-djot-footnote-";
+    let reserved: std::collections::HashSet<usize> =
+        cached_regex!(r"(?i)carve-djot-footnote-(\d+)")
+            .unwrap()
+            .captures_iter(source)
+            .filter_map(|caps| caps[1].parse().ok())
+            .collect();
+    let mut serial = 0;
+    let spaces = cached_regex!(r"\s+").unwrap();
+    let mut labels = std::collections::HashMap::new();
+    let mut definition_ends = std::collections::HashMap::new();
+    let definitions = cached_regex!(
+        r"(?m)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\[\^([^\]\n]+)\]:"
+    )
+    .unwrap();
+    for caps in definitions.captures_iter(source) {
+        let value = caps.get(0).unwrap();
+        let at = value.start() + value.as_str().find('[').unwrap();
+        let key = spaces.replace_all(&caps[1], " ").trim().to_owned();
+        if mask.as_bytes()[at] == b'[' {
+            definition_ends.insert(at, at + 2 + caps[1].len());
+        }
+        if mask.as_bytes()[at] == b'['
+            && !key.contains('[')
+            && key.contains('|')
+            && !labels.contains_key(&key)
+        {
+            while reserved.contains(&serial) {
+                serial += 1;
+            }
+            labels.insert(key, format!("{prefix}{serial}"));
+            serial += 1;
+        }
+    }
+    if labels.is_empty() && !source.contains("[^") {
+        return source.to_owned();
+    }
+    let item_re = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
+    let boundary_re = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]+\]:)").unwrap();
+    let mut parens = std::collections::HashMap::new();
+    let mut stack = Vec::new();
+    let mut row_ranges = Vec::new();
+    let mut line_offset = 0;
+    let mut previous_row = false;
+    let mut previous_block = true;
+    for line in source.split('\n') {
+        let at = djot_content_start(line);
+        let bytes = line.as_bytes();
+        let end = line.trim_end().len().saturating_sub(1);
+        let content = &line[at..];
+        let row = (previous_block || previous_row || item_re.is_match(&line[..at]))
+            && bytes.get(at) == Some(&b'|')
+            && mask.as_bytes().get(line_offset + at) == Some(&b'|')
+            && bytes.get(end) == Some(&b'|')
+            && mask.as_bytes().get(line_offset + end) == Some(&b'|')
+            && end.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\');
+        previous_block = content.trim().is_empty() || boundary_re.is_match(content);
+        previous_row = row;
+        if row {
+            row_ranges.push((line_offset + at, line_offset + bytes.len()));
+        }
+        if row || content.trim().is_empty() {
+            stack.clear();
+        }
+        let mut i = 0;
+        while i < bytes.len() {
+            if mask.as_bytes()[line_offset + i] == b' ' {
+                i += 1;
+                continue;
+            }
+            if bytes[i] == b'{' {
+                if let Some((end, _)) = read_djot_word_attributes(line, i) {
+                    i = end;
+                    continue;
+                }
+            }
+            if bytes[i] == b'\\' && bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) {
+                i += 2;
+                continue;
+            }
+            if row
+                && bytes[i] == b'|'
+                && i.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\')
+            {
+                stack.clear();
+            } else if bytes[i] == b'(' {
+                stack.push(line_offset + i);
+            } else if bytes[i] == b')' {
+                if let Some(open) = stack.pop() {
+                    parens.insert(open, line_offset + i);
+                }
+            }
+            i += 1;
+        }
+        if row {
+            stack.clear();
+        }
+        line_offset += line.len() + 1;
+    }
+    let mut row_index = 0;
+    let bytes = source.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut images = Vec::new();
+    let mut image_depth = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            let mut next = i + 1;
+            while matches!(bytes.get(next), Some(b' ' | b'\t')) {
+                next += 1;
+            }
+            if bytes.get(next) == Some(&b'\n') {
+                images.clear();
+                image_depth = 0;
+            }
+        }
+        if mask.as_bytes()[i] == b'{' {
+            if let Some((end, _)) = read_djot_word_attributes(source, i) {
+                output.extend_from_slice(&bytes[i..end]);
+                i = end;
+                continue;
+            }
+        }
+        if mask.as_bytes()[i] == b' ' {
+            output.push(bytes[i]);
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' {
+            output.push(bytes[i]);
+            i += 1;
+            if bytes.get(i).is_some_and(u8::is_ascii_punctuation) {
+                output.push(bytes[i]);
+                i += 1;
+            }
+            continue;
+        }
+        while row_ranges.get(row_index).is_some_and(|(_, end)| *end <= i) {
+            row_index += 1;
+        }
+        let in_row = row_ranges
+            .get(row_index)
+            .is_some_and(|(start, _)| *start <= i);
+        if in_row && bytes[i] == b'|' && i.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\')
+        {
+            images.clear();
+            image_depth = 0;
+        }
+        if bytes[i..].starts_with(b"[^") {
+            let mut end = i + 2;
+            while end < bytes.len() && !matches!(bytes[end], b'[' | b']' | b'\n') {
+                end += 1;
+            }
+            if bytes.get(end) == Some(&b'[') {
+                if let Some(&definition_end) = definition_ends.get(&i) {
+                    output.extend_from_slice(&bytes[i..=definition_end]);
+                    i = definition_end + 1;
+                    continue;
+                }
+                output.extend_from_slice(b"\\[^");
+                i += 2;
+                continue;
+            }
+            if bytes.get(end) == Some(&b']') {
+                let label = &source[i + 2..end];
+                let raw_pipe = in_row
+                    && label.as_bytes().iter().enumerate().any(|(at, &ch)| {
+                        ch == b'|' && (at == 0 || label.as_bytes()[at - 1] != b'\\')
+                    });
+                if raw_pipe {
+                    images.clear();
+                    image_depth = 0;
+                }
+                let renamed = if image_depth == 0 && !raw_pipe {
+                    labels.get(spaces.replace_all(&source[i + 2..end], " ").trim())
+                } else {
+                    None
+                };
+                match renamed {
+                    Some(label) => output.extend_from_slice(format!("[^{label}]").as_bytes()),
+                    None => output.extend_from_slice(&bytes[i..=end]),
+                }
+                i = end + 1;
+                continue;
+            }
+        }
+        if bytes[i] == b'[' {
+            let image = i > 0 && bytes[i - 1] == b'!';
+            images.push(image);
+            if image {
+                image_depth += 1;
+            }
+        } else if bytes[i] == b']' && !images.is_empty() {
+            if images.pop() == Some(true) {
+                image_depth -= 1;
+            }
+            if bytes.get(i + 1) == Some(&b'(') {
+                if let Some(&end) = parens.get(&(i + 1)) {
+                    output.extend_from_slice(&bytes[i..=end]);
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        output.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(output).expect("only ASCII syntax changed")
+}
+
+fn close_djot_table_code(source: &str) -> String {
+    if !source.contains('`') {
+        return source.to_owned();
+    }
+    let bytes = source.as_bytes();
+    let paragraph_ends: Vec<usize> = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n")
+        .unwrap()
+        .find_iter(source)
+        .map(|m| m.start())
+        .collect();
+    let ticks = cached_regex!(r"`+").unwrap();
+    let mut runs: std::collections::HashMap<usize, Vec<usize>> = std::collections::HashMap::new();
+    for run in ticks.find_iter(source) {
+        runs.entry(run.len()).or_default().push(run.start());
+    }
+    let close_run = |open: usize, width: usize| {
+        runs.get(&width)
+            .and_then(|positions| positions.get(positions.partition_point(|&at| at < open + width)))
+            .copied()
+            .unwrap_or(bytes.len())
+    };
+    let mut tick_starts = Vec::new();
+    let mut tick_widths = Vec::new();
+    let query_end = if source.contains("![") || source.contains("[^") || source.contains("](") {
+        source
+            .rfind(']')
+            .unwrap_or(0)
+            .max(source.rfind(')').unwrap_or(0))
+    } else {
+        0
+    };
+    let mut at = 0;
+    while at < query_end {
+        if bytes[at] == b'\\' && bytes.get(at + 1).is_some_and(u8::is_ascii_punctuation) {
+            at += 2;
+            continue;
+        }
+        if bytes[at] != b'`' {
+            at += 1;
+            continue;
+        }
+        let width = bytes[at..].iter().take_while(|&&b| b == b'`').count();
+        tick_starts.push(at);
+        tick_widths.push(width);
+        at += width;
+    }
+    let count = tick_starts.len();
+    let tick_index = |position: usize| tick_starts.partition_point(|&at| at < position);
+    let mut next = vec![count; count + 1];
+    let mut ends = vec![bytes.len() + 1; count + 1];
+    let mut jumps = vec![count; count + 1];
+    let mut depths = vec![0; count + 1];
+    // Merge equal-length ancestor jumps so each tick stores one pointer.
+    for at in (0..count).rev() {
+        let finish = close_run(tick_starts[at], tick_widths[at]) + tick_widths[at];
+        let parent = tick_index(finish);
+        let jump = jumps[parent];
+        let farther = jumps[jump];
+        next[at] = parent;
+        ends[at] = finish;
+        depths[at] = depths[parent] + 1;
+        jumps[at] = if depths[parent] - depths[jump] == depths[jump] - depths[farther] {
+            farther
+        } else {
+            parent
+        };
+    }
+    let balanced_ticks = |from: usize, end: usize| {
+        let mut at = tick_index(from);
+        while at < count && tick_starts[at] < end {
+            let jump = jumps[at];
+            if jump < count && ends[jump] <= end {
+                at = jump;
+            } else if ends[at] <= end {
+                at = next[at];
+            } else {
+                return false;
+            }
+        }
+        true
+    };
+    let mut parens = std::collections::HashMap::new();
+    let mut labels = std::collections::HashMap::new();
+    let mut parenthesis_stack = Vec::new();
+    let mut bracket_stack = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\' && bytes.get(at + 1).is_some_and(u8::is_ascii_punctuation) {
+            at += 2;
+            continue;
+        }
+        match bytes[at] {
+            b'(' => parenthesis_stack.push(at),
+            b')' => {
+                if let Some(open) = parenthesis_stack.pop() {
+                    parens.insert(open, at);
+                }
+            }
+            b'[' => bracket_stack.push(at),
+            b']' => {
+                if let Some(open) = bracket_stack.pop() {
+                    labels.insert(open, at);
+                }
+            }
+            _ => {}
+        }
+        at += 1;
+    }
+    let block = cached_regex!(r"^(?:[-*+] |[0-9A-Za-z]+[.)] |\([0-9A-Za-z]+\) |: |#{1,6} |`{3,}|~{3,}|:{3,}|>|\||\^ |\[[^\]]+\]:)").unwrap();
+    let marker = cached_regex!(
+        r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+)"
+    )
+    .unwrap();
+    let digits = cached_regex!(r"^[0-9]+").unwrap();
+    let letters = cached_regex!(r"^[A-Za-z]+").unwrap();
+    let item_kind_of = |item: &str| {
+        letters
+            .replace(&digits.replace(item, "1"), "a")
+            .trim()
+            .to_owned()
+    };
+    let autolink =
+        cached_regex!(r"^<(?:[A-Za-z][A-Za-z0-9+.-]*:[^<>\s]*|[^<>\s@]+@[^<>\s]+)>").unwrap();
+    let div_re = cached_regex!(r"^(:{3,})(?:[ \t]+\S.*)?[ \t]*$").unwrap();
+    let close_div = cached_regex!(r"^:{3,}[ \t]*$").unwrap();
+    let quote_re = cached_regex!(r"^[ \t]*>[ ]?").unwrap();
+    let separator = cached_regex!(r"^\|[ \t:|-]*\|$").unwrap();
+    let fence_open = cached_regex!(r"^(`{3,}|~{3,})[ \t]*=?[a-zA-Z0-9_+#.-]*$").unwrap();
+    let boundary = cached_regex!(r"^(?:#{1,6} |:{3,}|\[[^\]]+\]:)").unwrap();
+    let mut paragraph = 0;
+    let mut offset = 0;
+    let mut cursor = 0;
+    let mut consumed = 0;
+    let mut item_column = 0;
+    let mut item_quote = 0;
+    let mut previous_quote = 0;
+    let mut item_kind = String::new();
+    let mut previous_block = true;
+    let mut fenced: Option<(usize, u8, usize, usize, usize)> = None;
+    let mut divs: Vec<(usize, usize, usize)> = Vec::new();
+    let mut output = String::new();
+    for line in source.split('\n') {
+        let at = djot_content_start(line);
+        let line_end = offset + line.len();
+        let (depth, content) = quoted(line);
+        let trimmed = content.trim_start();
+        let indent = content.len() - trimmed.len();
+        let item = marker.find(trimmed);
+        let old_column = item_column;
+        let old_quote = item_quote;
+        let began_inside = offset < consumed;
+        if !began_inside {
+            if fenced.is_some_and(|(_, _, owner_depth, _, owner_item)| {
+                !trimmed.is_empty()
+                    && (depth < owner_depth || (depth == owner_depth && indent < owner_item))
+            }) {
+                fenced = None;
+            }
+            if let Some((width, ch, owner_depth, column, _)) = fenced {
+                let run = trimmed.bytes().take_while(|&b| b == ch).count();
+                if depth == owner_depth
+                    && indent <= column
+                    && run >= width
+                    && trimmed[run..].trim_matches([' ', '\t']).is_empty()
+                {
+                    fenced = None;
+                    previous_block = true;
+                }
+                offset = line_end + 1;
+                continue;
+            }
+            if let Some(opening) = fence_open
+                .captures(&line[at..])
+                .filter(|_| previous_block || item.is_some())
+            {
+                fenced = Some((
+                    opening[1].len(),
+                    opening[1].as_bytes()[0],
+                    depth,
+                    at,
+                    item.map_or(item_column, |item| indent + item.len()),
+                ));
+                offset = line_end + 1;
+                continue;
+            }
+            if let Some(item) = item {
+                item_column = indent
+                    + if item.as_str().starts_with("[^") {
+                        1
+                    } else {
+                        item.len()
+                    };
+                item_quote = depth;
+                item_kind = item_kind_of(item.as_str());
+            } else if !trimmed.is_empty()
+                && (depth < item_quote
+                    || (depth == item_quote
+                        && indent < item_column
+                        && (block.is_match(trimmed)
+                            || (trimmed.starts_with('{')
+                                && read_djot_word_attributes(trimmed, 0).is_some()))))
+            {
+                item_column = 0;
+            }
+            if let Some(div) = div_re.captures(&line[at..]) {
+                if divs.last().is_some_and(|&(width, owner_depth, _)| {
+                    depth == owner_depth && close_div.is_match(&line[at..]) && div[1].len() >= width
+                }) {
+                    divs.pop();
+                } else {
+                    divs.push((div[1].len(), depth, at));
+                }
+            }
+            if line.as_bytes().get(at) == Some(&b'|')
+                && ((old_column > 0 && depth <= old_quote && indent < old_column)
+                    || depth < previous_quote)
+            {
+                output.push_str(&source[cursor..offset]);
+                output.push('\n');
+                cursor = offset;
+            }
+            previous_quote = depth;
+        }
+        let mut i = (offset + at).max(consumed);
+        let mut pending = Vec::new();
+        let mut footnotes = Vec::new();
+        while i < line_end {
+            if bytes[i] == b'\\' && bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) {
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'{' {
+                if let Some((end, _)) = read_djot_word_attributes(source, i) {
+                    i = end;
+                    continue;
+                }
+            }
+            if bytes[i] == b'<' {
+                if let Some(auto) = autolink.find(&source[i..]) {
+                    i += auto.len();
+                    continue;
+                }
+            }
+            if bytes[i..].starts_with(b"![") {
+                if let Some(&end) = labels
+                    .get(&(i + 1))
+                    .filter(|&&end| balanced_ticks(i + 2, end))
+                {
+                    i = end + 1;
+                    continue;
+                }
+            }
+            if bytes[i..].starts_with(b"[^") {
+                let mut end = i + 2;
+                while end < line_end && !matches!(bytes[end], b'[' | b']') {
+                    end += 1;
+                }
+                if bytes.get(end) == Some(&b']') && balanced_ticks(i + 2, end) {
+                    i = end + 1;
+                    continue;
+                }
+                footnotes.push(i);
+            }
+            if bytes[i..].starts_with(b"](") {
+                if let Some(&end) = parens
+                    .get(&(i + 1))
+                    .filter(|&&end| end <= line_end && balanced_ticks(i + 2, end))
+                {
+                    i = end + 1;
+                    continue;
+                }
+            }
+            if bytes[i] == b']' {
+                footnotes.clear();
+            }
+            if bytes[i] == b'(' {
+                pending.push(i);
+            } else if bytes[i] == b')' {
+                pending.pop();
+            }
+            if bytes[i] != b'`' {
+                i += source[i..].chars().next().unwrap().len_utf8();
+                continue;
+            }
+            let width = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            let candidate = close_run(i, width);
+            if candidate + width <= line_end {
+                i = candidate + width;
+                consumed = i;
+                continue;
+            }
+            while paragraph_ends.get(paragraph).is_some_and(|&end| end <= i) {
+                paragraph += 1;
+            }
+            let mut limit = candidate.min(
+                paragraph_ends
+                    .get(paragraph)
+                    .copied()
+                    .unwrap_or(bytes.len()),
+            );
+            let mut separate = false;
+            let mut next = line_end + 1;
+            while next < limit {
+                let newline = source[next..].find('\n').map(|at| next + at);
+                let end = newline.unwrap_or(bytes.len());
+                let (next_depth, next_content) = quoted(&source[next..end]);
+                let next_trimmed = next_content.trim_start();
+                let next_indent = next_content.len() - next_trimmed.len();
+                let closes_div = divs.last().is_some_and(|&(width, owner_depth, column)| {
+                    next_depth == owner_depth
+                        && next_indent <= column + 3
+                        && close_div.is_match(next_trimmed)
+                        && next_trimmed.trim().len() >= width
+                });
+                let outside = (depth > 0 && next_depth < depth)
+                    || (item_column > 0 && next_depth <= item_quote && next_indent < item_column);
+                let attributes = next_trimmed.starts_with('{')
+                    && read_djot_word_attributes(next_trimmed, 0).is_some();
+                if closes_div || (outside && (block.is_match(next_trimmed) || attributes)) {
+                    limit = next - 1;
+                    let next_item = marker
+                        .find(next_trimmed)
+                        .map(|item| item_kind_of(item.as_str()));
+                    separate = outside
+                        && (next_depth < depth || next_item.as_deref() != Some(item_kind.as_str()));
+                    break;
+                }
+                let Some(newline) = newline else {
+                    break;
+                };
+                next = newline + 1;
+            }
+            let closed = candidate <= limit && candidate < bytes.len();
+            let end = if closed { candidate } else { limit };
+            let mut payload = &source[i + width..end];
+            payload = payload.strip_suffix('\n').unwrap_or(payload);
+            if payload.starts_with(" `") {
+                payload = &payload[1..];
+            }
+            if payload.ends_with("` ") {
+                payload = &payload[..payload.len() - 1];
+            }
+            let normalized: Vec<String> = payload
+                .split('\n')
+                .enumerate()
+                .map(|(n, value)| {
+                    if n == 0 {
+                        return value.trim_end_matches([' ', '\t']).to_owned();
+                    }
+                    let mut rest = value;
+                    for _ in 0..depth {
+                        let Some(prefix) = quote_re.find(rest) else {
+                            break;
+                        };
+                        rest = &rest[prefix.end()..];
+                    }
+                    rest.trim_matches([' ', '\t']).to_owned()
+                })
+                .collect();
+            let raw_code = normalized.iter().skip(1).any(|value| {
+                (block.is_match(value) || value.starts_with('{'))
+                    && (!separator.is_match(value) || line.as_bytes().get(at) != Some(&b'|'))
+            }) || (item_kind.starts_with("[^") && normalized.len() > 1);
+            let raw_payload = if raw_code {
+                let mut html = String::from("<code>");
+                for ch in normalized.join("\n").chars() {
+                    if ch.is_ascii_punctuation() || ch == '\n' {
+                        html.push_str(&format!("&#{};", ch as u32));
+                    } else {
+                        html.push(ch);
+                    }
+                }
+                html.push_str("</code>");
+                html
+            } else {
+                String::new()
+            };
+            if raw_code {
+                payload = &raw_payload;
+            }
+            let fence_width = ticks
+                .find_iter(payload)
+                .map(|run| run.len() + 1)
+                .max()
+                .unwrap_or(1);
+            let fence = "`".repeat(fence_width);
+            let pad = if payload.starts_with('`')
+                || payload.ends_with('`')
+                || (payload.starts_with(' ')
+                    && payload.ends_with(' ')
+                    && !payload.trim().is_empty())
+            {
+                " "
+            } else {
+                ""
+            };
+            let mut escapes: Vec<usize> = pending
+                .iter()
+                .copied()
+                .filter(|&k| k > 0 && bytes[k - 1] == b']')
+                .chain(footnotes.iter().copied())
+                .collect();
+            escapes.sort_unstable();
+            for escape in escapes {
+                output.push_str(&source[cursor..escape]);
+                output.push('\\');
+                cursor = escape;
+            }
+            output.push_str(&source[cursor..i]);
+            output.push_str(&format!(
+                "{fence}{pad}{payload}{pad}{fence}{}",
+                if raw_code { "{=html}" } else { "" }
+            ));
+            cursor = if closed { end + width } else { end };
+            consumed = cursor;
+            if separate && !closed {
+                output.push('\n');
+            }
+            i = consumed;
+        }
+        previous_block = !began_inside
+            && consumed <= line_end
+            && (trimmed.is_empty()
+                || boundary.is_match(trimmed)
+                || (trimmed.starts_with('{') && read_djot_word_attributes(trimmed, 0).is_some())
+                || (line.as_bytes().get(at) == Some(&b'|')
+                    && line.trim_end().ends_with('|')
+                    && !line.trim_end().ends_with("\\|")));
+        offset = line_end + 1;
+    }
+    output.push_str(&source[cursor..]);
+    output
+}
+
+fn normalize_djot_table_pipes(source: &str) -> String {
+    if !source.contains("\\|") {
+        return source.to_owned();
+    }
+    fn punctuation(byte: Option<&u8>) -> bool {
+        byte.is_some_and(u8::is_ascii_punctuation)
+    }
+    use std::collections::HashMap;
+    let renamed = rename_djot_pipe_footnotes(&close_djot_table_code(source));
+    let source = renamed.as_str();
+    let mask = mask_djot_inline(source, false);
+    let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
+    let mut offsets = Vec::with_capacity(lines.len());
+    let mut offset = 0;
+    for line in &lines {
+        offsets.push(offset);
+        offset += line.len() + 1;
+    }
+    let definition_re = cached_regex!(r"^\[([^\[\]\n^][^\[\]\n]*)\]:[ \t]*(\S*)[ \t]*$").unwrap();
+    let spaces = cached_regex!(r"\s+").unwrap();
+    let escapes = cached_regex!(r"\\([!-/:-@\[-`{-~])").unwrap();
+    let item_re = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
+    let boundary_re = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\[[^\]]+\]:)").unwrap();
+    let attribute_pipes_re = cached_regex!(r"\\+\|?|\|").unwrap();
+    let mut definitions: HashMap<String, (String, String)> = HashMap::new();
+    let row_flags = djot_table_rows(source, &mask);
+    let thematic_re = cached_regex!(r"^(?:\*[ \t]*){3,}$|^(?:-[ \t]*){3,}$").unwrap();
+    for n in 0..lines.len() {
+        let line = lines[n].clone();
+        let at = djot_content_start(&line);
+        if mask.as_bytes().get(offsets[n] + at) != Some(&b'[') {
+            continue;
+        }
+        let Some(definition) = definition_re.captures(&line[at..]) else {
+            continue;
+        };
+        if !definition[1].contains('|') {
+            continue;
+        }
+        let previous_line = if n > 0 { lines[n - 1].as_str() } else { "" };
+        let previous_at = djot_content_start(previous_line);
+        let previous = previous_line[previous_at..].trim();
+        let opens_item = item_re.is_match(&line[..at]);
+        if !previous.is_empty()
+            && !row_flags.get(n.wrapping_sub(1)).copied().unwrap_or(false)
+            && at >= previous_at
+            && !thematic_re.is_match(previous)
+            && !boundary_re.is_match(previous)
+            && !(previous.starts_with('{')
+                && read_djot_word_attributes(previous, 0)
+                    .is_some_and(|(end, _)| end == previous.len()))
+            && !opens_item
+            && line[..at].bytes().filter(|&b| b == b'>').count()
+                <= previous_line[..previous_at]
+                    .bytes()
+                    .filter(|&b| b == b'>')
+                    .count()
+        {
+            lines[n] = format!("{}\\{}", &line[..at], &line[at..]);
+            continue;
+        }
+        let mut target = definition[2].to_owned();
+        let mut end = n;
+        while end + 1 < lines.len() {
+            let next = &lines[end + 1];
+            let next_at = djot_content_start(next);
+            if next_at <= at
+                || next[next_at..].is_empty()
+                || next[next_at..].chars().any(char::is_whitespace)
+                || mask.as_bytes().get(offsets[end + 1] + next_at) == Some(&b' ')
+            {
+                break;
+            }
+            target.push_str(&next[next_at..]);
+            end += 1;
+        }
+        if target.is_empty() {
+            continue;
+        }
+        let mut attribute_parts = Vec::new();
+        for k in (0..n).rev() {
+            let value = lines[k][djot_content_start(&lines[k])..].trim();
+            let parsed = if value.starts_with('{') {
+                read_djot_word_attributes(value, 0)
+            } else {
+                None
+            };
+            if !parsed.is_some_and(|(end, _)| end == value.len()) {
+                break;
+            }
+            attribute_parts.push(value);
+        }
+        definitions.insert(
+            spaces.replace_all(&definition[1], " ").trim().to_owned(),
+            (target.clone(), attribute_parts.into_iter().rev().collect()),
+        );
+        lines[n] = format!("{}[{}]: {}", &line[..at], &definition[1], target);
+        for continuation in &mut lines[n + 1..=end] {
+            continuation.clear();
+        }
+    }
+    let mut previous_row = false;
+    let mut previous_block = true;
+    let mut result = Vec::with_capacity(lines.len());
+    for (n, line) in lines.iter().enumerate() {
+        let at = djot_content_start(line);
+        let bytes = line.as_bytes();
+        let line_mask = mask
+            .as_bytes()
+            .get(offsets[n]..offsets[n] + line.len())
+            .unwrap_or(&[]);
+        let row = bytes.get(at) == Some(&b'|') && line_mask.get(at) == Some(&b'|');
+        let allowed = previous_block || previous_row || item_re.is_match(&line[..at]);
+        let content = &line[at..];
+        previous_block = content.trim().is_empty() || boundary_re.is_match(content);
+        let trimmed = line.trim_end().as_bytes();
+        previous_row = row
+            && allowed
+            && trimmed.last() == Some(&b'|')
+            && line_mask.get(trimmed.len().saturating_sub(1)) == Some(&b'|')
+            && trimmed.get(trimmed.len().saturating_sub(2)) != Some(&b'\\');
+        if !row {
+            result.push(line.clone());
+            continue;
+        }
+        if !previous_row {
+            result.push(format!("{}\\{}", &line[..at], &line[at..]));
+            continue;
+        }
+        let mut brackets = HashMap::new();
+        let mut bracket_pairs = Vec::new();
+        let mut parens = HashMap::new();
+        let mut bracket_stack = Vec::new();
+        let mut paren_stack = Vec::new();
+        let mut i = at;
+        while i < bytes.len() {
+            if line_mask.get(i) == Some(&b' ') {
+                i += 1;
+                continue;
+            }
+            if bytes[i] == b'{' {
+                if let Some((end, _)) = read_djot_word_attributes(line, i) {
+                    i = end;
+                    continue;
+                }
+            }
+            if bytes[i] == b'|' && i.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\') {
+                bracket_stack.clear();
+                paren_stack.clear();
+                i += 1;
+                continue;
+            }
+            if bytes[i] == b'\\' {
+                let begin = i;
+                while bytes.get(i) == Some(&b'\\') {
+                    i += 1;
+                }
+                if (i - begin) % 2 != 0 && punctuation(bytes.get(i)) {
+                    i += 1;
+                }
+                continue;
+            }
+            match bytes[i] {
+                b'[' => bracket_stack.push(i),
+                b']' => {
+                    if let Some(open) = bracket_stack.pop() {
+                        brackets.insert(open, i);
+                        bracket_pairs.push((open, i));
+                    }
+                }
+                b'(' => paren_stack.push(i),
+                b')' => {
+                    if let Some(open) = paren_stack.pop() {
+                        parens.insert(open, i);
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        let mut destinations = vec![0i32; bytes.len() + 1];
+        let mut references: HashMap<usize, (usize, String)> = HashMap::new();
+        for (open, close) in bracket_pairs {
+            if bytes.get(open + 1) == Some(&b'^') {
+                continue;
+            }
+            let next = close + 1;
+            if bytes.get(next) == Some(&b'(') {
+                if let Some(&last) = parens.get(&next) {
+                    destinations[next + 1] += 1;
+                    destinations[last] -= 1;
+                }
+            } else if bytes.get(next) == Some(&b'[') && !references.contains_key(&open) {
+                let Some(&last) = brackets.get(&next) else {
+                    continue;
+                };
+                let label = if last == next + 1 {
+                    &line[open + 1..close]
+                } else {
+                    &line[next + 1..last]
+                };
+                let decoded = escapes.replace_all(label, "$1");
+                let key = spaces.replace_all(&decoded, " ");
+                let Some((target, attrs)) = definitions.get(key.trim()) else {
+                    continue;
+                };
+                let target = target
+                    .replace('\\', "%5C")
+                    .replace('|', "%7C")
+                    .replace('(', "%28")
+                    .replace(')', "%29")
+                    .replace('<', "%3C")
+                    .replace('>', "%3E")
+                    .replace(' ', "%20");
+                let attrs = attribute_pipes_re.replace_all(attrs, |caps: &regex::Captures<'_>| {
+                    let value = &caps[0];
+                    if value.ends_with('|') && (value.len() - 1) % 2 == 0 {
+                        format!("{}\\|", &value[..value.len() - 1])
+                    } else {
+                        value.to_owned()
+                    }
+                });
+                references.insert(next, (last + 1, format!("({target}){attrs}")));
+            }
+        }
+        let mut inside = 0;
+        for count in &mut destinations {
+            inside += *count;
+            *count = inside;
+        }
+        let mut output = Vec::with_capacity(bytes.len());
+        i = 0;
+        while i < bytes.len() {
+            if let Some((end, text)) = references.get(&i) {
+                output.extend_from_slice(text.as_bytes());
+                i = *end;
+                continue;
+            }
+            if line_mask.get(i) == Some(&b' ') || bytes[i] != b'\\' {
+                output.push(bytes[i]);
+                i += 1;
+                continue;
+            }
+            let begin = i;
+            while bytes.get(i) == Some(&b'\\') {
+                i += 1;
+            }
+            let run = i - begin;
+            if bytes.get(i) != Some(&b'|') {
+                output.extend_from_slice(&bytes[begin..i]);
+                if run % 2 != 0 && punctuation(bytes.get(i)) {
+                    output.push(bytes[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            if destinations[begin] > 0 {
+                output.extend_from_slice("%5C".repeat(run / 2).as_bytes());
+                output.extend_from_slice(b"%7C");
+            } else {
+                output.extend_from_slice("\\".repeat(run + usize::from(run % 2 == 0)).as_bytes());
+                output.push(b'|');
+            }
+            i += 1;
+        }
+        result.push(String::from_utf8(output).expect("only ASCII syntax changed"));
+    }
+    result.join("\n")
 }
