@@ -882,11 +882,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "316-an-image-s-alt-text-closes-where-a-link-s-text-closes-4",
-    "Image alt text resolves ASCII punctuation escapes; the spec update is pending.",
-    r#"<p>a <img src="/i.png" alt="t]z"> b</p>"#,
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
