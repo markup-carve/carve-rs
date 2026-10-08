@@ -45,7 +45,9 @@ use crate::ast::{BlockNode, FigureTarget};
 pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
-    let table_pipes = normalize_djot_table_pipes(body);
+    let fence_closers = normalize_djot_fences(body);
+    let autolinks = normalize_djot_autolinks(&fence_closers);
+    let table_pipes = normalize_djot_table_pipes(&autolinks);
     let folded = fold_heading_continuations(&table_pipes);
     let collapsed = cached_regex!(r"(!?\[([^\[\]\n]*)\])\[\]").unwrap();
     let mut collapsed_mask = mask_code_and_destinations(&folded).into_bytes();
@@ -783,34 +785,31 @@ fn list_marker(line: &str) -> bool {
                 .all(|ch| ch.is_ascii_alphanumeric()))
 }
 
-fn nested_block(lines: &[&str], line: usize, quote: &str, columns: usize) -> bool {
-    for candidate in lines[..line].iter().rev() {
-        let Some(candidate) = candidate.strip_prefix(quote) else {
-            break;
-        };
-        if candidate.trim().is_empty() {
-            continue;
-        }
-        let (candidate_columns, _) = leading_indent(candidate);
-        if candidate_columns >= columns {
-            continue;
-        }
-        return list_marker(candidate);
-    }
-    false
-}
-
 fn convert_djot_block_markers(source: &str) -> String {
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
+    let mut nested_lines = Vec::with_capacity(masked.len());
+    let mut ancestors: Vec<(usize, bool)> = Vec::new();
+    for line in &masked {
+        if line.trim().is_empty() {
+            nested_lines.push(false);
+            continue;
+        }
+        let (columns, _) = leading_indent(line);
+        while ancestors.last().is_some_and(|top| top.0 >= columns) {
+            ancestors.pop();
+        }
+        nested_lines.push(ancestors.last().is_some_and(|top| top.1));
+        ancestors.push((columns, list_marker(line)));
+    }
     let mut containers: Vec<(usize, bool)> = Vec::new();
     let host_prefix = cached_regex!(r"^(?:[ \t]*> ?|[ \t]*(?:(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\([0-9A-Za-z]+\)) +(?:\[[ xX]\] +)?|: |\[\^[^\]\r\n]+\]: +))").unwrap();
     for index in 0..lines.len() {
         let prefix = quote_prefix_len(masked[index]);
         let quote = &masked[index][..prefix];
         let rest = &masked[index][prefix..];
-        let (columns, indent_bytes) = leading_indent(rest);
+        let (_, indent_bytes) = leading_indent(rest);
         let content = &rest[indent_bytes..];
         if content.trim().is_empty() {
             continue;
@@ -855,7 +854,7 @@ fn convert_djot_block_markers(source: &str) -> String {
                 && tail.starts_with([' ', '\t'])
                 && !tail.trim().is_empty()
             {
-                let nested = nested_block(&masked, index, quote, columns);
+                let nested = quote.is_empty() && nested_lines[index];
                 let authored = &lines[index];
                 let authored_rest = &authored[prefix + indent_bytes..];
                 lines[index] = format!(
@@ -883,7 +882,7 @@ fn convert_djot_block_markers(source: &str) -> String {
             count += 1;
         }
         if valid && count >= 3 {
-            let nested = nested_block(&masked, index, quote, columns);
+            let nested = quote.is_empty() && nested_lines[index];
             lines[index] = format!(
                 "{}{}***",
                 quote,
@@ -1527,10 +1526,18 @@ fn mask_code_and_destinations(source: &str) -> String {
 }
 
 fn mask_djot_inline(source: &str, inline_forms: bool) -> String {
-    mask_djot_forms(source, inline_forms, true)
+    mask_djot_forms(source, inline_forms, true, None, &[])
 }
 
-fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String {
+type FenceLineCallback<'a> = &'a mut dyn FnMut(usize, &str);
+
+fn mask_djot_forms(
+    source: &str,
+    inline_forms: bool,
+    footnotes: bool,
+    mut on_fence_line: Option<FenceLineCallback<'_>>,
+    row_boundaries: &[bool],
+) -> String {
     let bytes = source.as_bytes();
     let mut mask: Vec<u8> = bytes.to_vec();
     let footnote_ends = if inline_forms && footnotes && source.contains("[^") {
@@ -1549,18 +1556,30 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
         None
     };
 
-    let opener = cached_regex!(r"^([ \t]*)(?:(:[ \t]+|[-*+][ \t]+|[0-9]+[.)][ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
+    let opener = cached_regex!(r"^([ \t]*)(?:(\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
     let boundary =
         cached_regex!(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} |\{[.#A-Za-z])").unwrap();
     let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
     let mut previous_block = true;
+    let mut fence_target = String::new();
+    let mut fence_dedent = 0;
+    let mut fence_normalize = false;
+    let mut normalize_boundary = true;
+    let normalize_boundary_pattern =
+        cached_regex!(r"^[ \t]*(?:#{1,6} |:{3,}|\{[.#A-Za-z])").unwrap();
     let mut offset = 0;
     let marker_pattern = cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+\S").unwrap();
     let thematic_pattern = cached_regex!(r"^(?:([*-])[ \t]*){3,}$").unwrap();
-    let mut ancestors: Vec<Vec<(usize, bool)>> = Vec::new();
-    for raw in source.split_inclusive('\n') {
+    let native_marker = cached_regex!(r"\(([0-9A-Za-z]+)\)([ \t]+)$").unwrap();
+    let marker_prefix = cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+").unwrap();
+    let footnote_prefix = cached_regex!(r"^([ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+)*)\[\^[^\]\n]+\]:").unwrap();
+    let empty_footnote = cached_regex!(r"^[ \t]*\[\^[^\]\n]+\]:[ \t]*$").unwrap();
+    let mut ancestors: Vec<Vec<(usize, usize, usize)>> = Vec::new();
+    for (line_index, raw) in source.split_inclusive('\n').enumerate() {
         let line = raw.trim_end_matches('\n');
         let (depth, content) = quoted(line);
+        let can_normalize =
+            normalize_boundary || row_boundaries.get(line_index.wrapping_sub(1)) == Some(&true);
         let prefix_len = line.len() - content.len();
         if fence.is_some_and(|(_, _, _, _, owner_depth)| {
             depth < owner_depth && !content.trim().is_empty()
@@ -1568,22 +1587,60 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
             fence = None;
         }
         let indent = content.len() - content.trim_start_matches([' ', '\t']).len();
+        if fence.is_some_and(|(_, _, _, minimum, owner_depth)| {
+            minimum.is_some_and(|minimum| indent < minimum)
+                && !content.trim().is_empty()
+                && depth == owner_depth
+        }) {
+            fence = None;
+        }
         let mut nested = false;
+        let mut owner_column = 0;
+        let mut owner_indent = 0;
         ancestors.truncate(depth + 1);
-        if !content.trim().is_empty() {
+        if fence.is_none() && !content.trim().is_empty() {
             ancestors.resize_with(depth + 1, Vec::new);
             let mut view = line;
             for (level, stack) in ancestors.iter_mut().enumerate() {
                 let columns = view.len() - view.trim_start_matches([' ', '\t']).len();
-                while stack.last().is_some_and(|(prior, _)| *prior >= columns) {
+                while stack.last().is_some_and(|(prior, _, _)| *prior >= columns) {
                     stack.pop();
                 }
                 if level == depth {
-                    nested = stack.last().is_some_and(|(_, marker)| *marker);
+                    owner_column = stack.last().map_or(0, |top| top.1);
+                    owner_indent = stack.last().map_or(0, |top| top.2);
+                    nested = owner_column > 0;
                 }
                 let marker =
                     !thematic_pattern.is_match(view.trim()) && marker_pattern.is_match(view);
-                stack.push((columns, marker));
+                let prefix = marker_prefix.find(view).map_or("", |value| value.as_str());
+                let note = footnote_prefix.captures(view);
+                let column = if let Some(note) = &note {
+                    native_marker.replace_all(&note[1], "$1.$2").len() + 2
+                } else if marker {
+                    native_marker.replace(prefix, "$1.$2").len()
+                } else {
+                    stack.last().map_or(0, |top| top.1)
+                };
+                let owning_indent = if let Some(note) = &note {
+                    note[1].len()
+                } else if marker {
+                    columns
+                } else {
+                    stack.last().map_or(0, |top| top.2)
+                };
+                if note.is_some() && marker {
+                    stack.push((
+                        columns,
+                        native_marker.replace(prefix, "$1.$2").len(),
+                        columns,
+                    ));
+                }
+                stack.push((
+                    note.as_ref().map_or(columns, |note| note[1].len()),
+                    column,
+                    owning_indent,
+                ));
                 if level < depth {
                     let after = view
                         .trim_start_matches([' ', '\t'])
@@ -1593,50 +1650,84 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
                 }
             }
         }
-        if fence.is_some_and(|(_, _, _, minimum, owner_depth)| {
-            minimum.is_some_and(|minimum| indent < minimum)
-                && !content.trim().is_empty()
-                && depth == owner_depth
-        }) {
-            fence = None;
-        }
-        if let Some((ch, run, maximum, _, owner_depth)) = fence {
+        if let Some((ch, run, _, _, owner_depth)) = fence {
             blank_out(&mut mask, offset, offset + line.len());
             let candidate = &content[indent..];
             let length = candidate.bytes().take_while(|byte| *byte == ch).count();
             if depth == owner_depth
-                && indent <= maximum
                 && length >= run
                 && candidate[length..].trim_matches([' ', '\t']).is_empty()
             {
+                if let Some(callback) = on_fence_line.as_mut().filter(|_| fence_normalize) {
+                    callback(
+                        line_index,
+                        &format!("{}{}{}", &line[..prefix_len], fence_target, candidate),
+                    );
+                }
+                normalize_boundary = fence_normalize;
                 fence = None;
                 previous_block = true;
+            } else if fence_normalize && depth == owner_depth {
+                if let Some(callback) = on_fence_line.as_mut() {
+                    callback(
+                        line_index,
+                        &format!(
+                            "{}{}{}",
+                            &line[..prefix_len],
+                            fence_target,
+                            &content[fence_dedent.min(indent)..]
+                        ),
+                    );
+                }
             }
         } else if let Some(open) = opener.captures(content) {
             let marker = open.get(2).map_or("", |value| value.as_str());
             if !marker.starts_with(':') || previous_block {
                 let container = if !marker.is_empty() {
-                    Some(open[1].len() + marker.len())
-                } else if !open[1].is_empty() && nested {
-                    Some(open[1].len())
+                    Some(open[1].len() + 1)
+                } else if nested {
+                    Some(owner_indent + 1)
                 } else {
                     None
                 };
+                let target_column = if marker.starts_with("[^") {
+                    open[1].len() + 2
+                } else if !marker.is_empty() {
+                    open[1].len() + native_marker.replace(marker, "$1.$2").len()
+                } else if nested {
+                    owner_column
+                } else {
+                    0
+                };
+                fence_normalize = can_normalize || !marker.is_empty();
+                fence_dedent = open[1].len() + marker.len();
+                fence_target = " ".repeat(target_column);
+                let native_prefix = native_marker.replace(marker, "$1.$2");
+                if fence_normalize && (marker.is_empty() || native_prefix != marker) {
+                    if let Some(callback) = on_fence_line.as_mut() {
+                        callback(
+                            line_index,
+                            &format!(
+                                "{}{}{}",
+                                &line[..prefix_len],
+                                if marker.is_empty() {
+                                    fence_target.clone()
+                                } else {
+                                    format!("{}{}", &open[1], native_prefix)
+                                },
+                                &content[fence_dedent..]
+                            ),
+                        );
+                    }
+                }
                 let start = open.get(3).unwrap().start() + prefix_len;
-                fence = Some((
-                    open[3].as_bytes()[0],
-                    open[3].len(),
-                    if marker.is_empty() {
-                        open[1].len().max(3)
-                    } else {
-                        container.unwrap()
-                    },
-                    container,
-                    depth,
-                ));
+                fence = Some((open[3].as_bytes()[0], open[3].len(), 0, container, depth));
                 blank_out(&mut mask, offset + start, offset + line.len());
             }
         } else {
+            normalize_boundary = content.trim().is_empty()
+                || empty_footnote.is_match(content)
+                || normalize_boundary_pattern.is_match(content);
             previous_block = content.trim().is_empty() || boundary.is_match(content);
         }
         offset += raw.len();
@@ -1647,6 +1738,30 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
         .find_iter(source)
         .map(|value| value.start())
         .collect();
+    let autolinks: std::collections::HashMap<usize, usize> = cached_regex!(r"<[^<>\s]+>")
+        .unwrap()
+        .find_iter(source)
+        .filter(|value| {
+            cached_regex!(r"[^:]@|[A-Za-z]:")
+                .unwrap()
+                .is_match(value.as_str())
+        })
+        .map(|value| (value.start(), value.end()))
+        .collect();
+    let mut destination_ends = std::collections::HashMap::new();
+    if inline_forms && source.contains("](") {
+        let mut close = None;
+        for at in (0..bytes.len()).rev() {
+            if bytes[at] == b')' {
+                close = Some(at + 1);
+            }
+            if bytes[at..].starts_with(b"](") {
+                if let Some(end) = close {
+                    destination_ends.insert(at, end);
+                }
+            }
+        }
+    }
     let mut paragraph_index = 0;
     let mut i = 0;
     while i < bytes.len() {
@@ -1656,6 +1771,10 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
         }
         if bytes[i] == b'\\' && bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) {
             i += 2;
+            continue;
+        }
+        if let Some(end) = autolinks.get(&i) {
+            i = *end;
             continue;
         }
         // An inline code span, delimited by a matching backtick run.
@@ -1684,8 +1803,7 @@ fn mask_djot_forms(source: &str, inline_forms: bool, footnotes: bool) -> String 
 
         // A link or image destination: `](...)`.
         if inline_forms && bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
-            if let Some(close) = bytes[i + 2..].iter().position(|b| *b == b')') {
-                let end = i + 2 + close + 1;
+            if let Some(end) = destination_ends.get(&i).copied() {
                 blank_out(&mut mask, i + 1, end);
                 i = end;
                 continue;
@@ -3162,6 +3280,274 @@ mod heading_continuation_tests {
     }
 }
 
+fn normalize_djot_fences(source: &str) -> String {
+    if !source.contains("```") && !source.contains("~~~") {
+        return if source.contains("\\|") {
+            close_djot_table_code(source)
+        } else {
+            source.to_owned()
+        };
+    }
+    let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
+    let rows = djot_table_rows(source, &mask_djot_inline(source, false));
+    mask_djot_forms(
+        source,
+        false,
+        false,
+        Some(&mut |line, replacement| {
+            lines[line] = replacement.to_owned();
+        }),
+        &rows,
+    );
+    let normalized = lines.join("\n");
+    let indented_ticks = cached_regex!(r"^[ \t]+`{3,}").unwrap();
+    if source.contains("\\|")
+        || source
+            .lines()
+            .any(|line| indented_ticks.is_match(quoted(line).1))
+    {
+        close_djot_table_code(&normalized)
+    } else {
+        normalized
+    }
+}
+
+fn normalize_djot_autolinks(source: &str) -> String {
+    if !source.contains('<') {
+        return source.to_owned();
+    }
+    let bytes = source.as_bytes();
+    let code_mask = mask_djot_inline(source, false);
+    let mut mask = mask_code_and_destinations(source).into_bytes();
+    let rows = djot_table_rows(source, &code_mask);
+    let definition_pattern = cached_regex!(r"^\[[^\^\]\n][^\]\n]*\]:|^\[\]:").unwrap();
+    let boundary_pattern =
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\^\]][^\]]*\]:|\[\]:)")
+            .unwrap();
+    let continuation_pattern = cached_regex!(r"^\S+$").unwrap();
+    let mut definition_indent = None;
+    let mut definition_offset = 0;
+    let mut previous_content = "";
+    for (definition_line, line) in source.split('\n').enumerate() {
+        let at = djot_content_start(line);
+        let content = &line[at..];
+        let boundary = previous_content.is_empty()
+            || rows.get(definition_line.wrapping_sub(1)) == Some(&true)
+            || boundary_pattern.is_match(previous_content);
+        let definition = code_mask.as_bytes().get(definition_offset + at) == Some(&b'[')
+            && definition_pattern.is_match(content)
+            && boundary;
+        let continuation = definition_indent.is_some_and(|indent| at > indent)
+            && continuation_pattern.is_match(content);
+        if definition || continuation {
+            blank_out(&mut mask, definition_offset, definition_offset + line.len());
+            if definition {
+                definition_indent = Some(at);
+            }
+        } else {
+            definition_indent = None;
+        }
+        previous_content = content.trim();
+        definition_offset += line.len() + 1;
+    }
+
+    let valid_angle = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
+    let email = cached_regex!(r"[^:]@").unwrap();
+    let authority_pattern = cached_regex!(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/?#\\]*").unwrap();
+    let angle_ends: std::collections::HashMap<usize, usize> = cached_regex!(r"<[^<>\s]+>")
+        .unwrap()
+        .find_iter(source)
+        .filter(|value| valid_angle.is_match(value.as_str()))
+        .map(|value| (value.start(), value.end()))
+        .collect();
+    let mut image_autolinks = HashSet::new();
+    let mut paren_ends = std::collections::HashMap::new();
+    let mut parens = Vec::new();
+    let mut quote = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if let Some(ch) = quote {
+            if bytes[i] == ch || bytes[i] == b'\n' {
+                quote = None;
+            }
+        } else if !parens.is_empty()
+            && i > 0
+            && matches!(bytes[i - 1], b' ' | b'\t')
+            && matches!(bytes[i], b'"' | b'\'')
+        {
+            quote = Some(bytes[i]);
+        } else if bytes[i] == b'(' {
+            parens.push(i);
+        } else if bytes[i] == b')' {
+            if let Some(start) = parens.pop() {
+                paren_ends.insert(start, i);
+            }
+        }
+        i += 1;
+    }
+    let mut bracket_ends = std::collections::HashMap::new();
+    let mut nested_brackets = HashSet::new();
+    let mut stack = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if let Some(end) = angle_ends.get(&i) {
+            i = *end;
+            continue;
+        }
+        if bytes[i] == b'[' {
+            if let Some(parent) = stack.last() {
+                nested_brackets.insert(*parent);
+            }
+            stack.push(i);
+        }
+        if bytes[i] == b']' {
+            if let Some(start) = stack.pop() {
+                bracket_ends.insert(start, i);
+            }
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        let mut end = None;
+        if bytes[i] == b'{' && mask[i] == b'{' {
+            end = read_djot_word_attributes(source, i).map(|value| value.0);
+        }
+        if bytes[i] == b'!' && mask[i] == b'!' && bytes.get(i + 1) == Some(&b'[') {
+            if let Some(close) = bracket_ends.get(&(i + 1)) {
+                if bytes
+                    .get(close + 1)
+                    .is_some_and(|byte| matches!(byte, b'(' | b'['))
+                {
+                    let mut angles = Vec::new();
+                    let mut plain = true;
+                    let mut at = i + 2;
+                    while at < *close {
+                        if let Some(end) = angle_ends.get(&at).filter(|end| **end <= *close) {
+                            angles.push(at);
+                            at = *end;
+                            continue;
+                        }
+                        if b"`{_*~^\\[".contains(&bytes[at]) {
+                            plain = false;
+                            break;
+                        }
+                        at += 1;
+                    }
+                    if plain {
+                        image_autolinks.extend(angles);
+                    }
+                    end = Some(close + 1);
+                }
+            }
+        }
+        if bytes[i] == b']' && bytes.get(i + 1) == Some(&b'[') {
+            if let Some(close) = bracket_ends.get(&(i + 1)) {
+                end = Some(close + 1);
+            }
+        }
+        if bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
+            if let Some(close) = paren_ends.get(&(i + 1)) {
+                end = Some(close + 1);
+            }
+        }
+        if bytes[i] == b'[' && bytes.get(i + 1) == Some(&b'^') {
+            if let Some(close) = bracket_ends.get(&i) {
+                if !nested_brackets.contains(&i) {
+                    end = Some(close + 1);
+                }
+            }
+        }
+        if let Some(end) = end {
+            blank_out(&mut mask, i, end);
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    let mut out = String::with_capacity(source.len());
+    let mut copied = 0;
+    let mut line = 0;
+    let mut offset = 0;
+    for capture in cached_regex!(r"<([^<>\s]+)>")
+        .unwrap()
+        .captures_iter(source)
+    {
+        let matched = capture.get(0).unwrap();
+        let at = matched.start();
+        while offset < at {
+            if bytes[offset] == b'\n' {
+                line += 1;
+            }
+            offset += 1;
+        }
+        let image = image_autolinks.contains(&at) && code_mask.as_bytes()[at] == b'<';
+        if (!image && mask[at] != b'<') || is_escaped(bytes, at) {
+            continue;
+        }
+        let body = capture[1].to_owned();
+        if !valid_angle.is_match(&body)
+            || (!image
+                && !body.contains(['[', ']', '`', '|', '\\'])
+                && !(email.is_match(&body) && body.contains(':')))
+        {
+            continue;
+        }
+        if rows[line] && body.contains(['|', '`']) {
+            continue;
+        }
+        let mut label = String::new();
+        for ch in body.chars() {
+            if ch.is_ascii_punctuation() {
+                label.push('\\');
+            }
+            label.push(ch);
+        }
+        let destination = if email.is_match(&body) {
+            format!("mailto:{body}")
+        } else {
+            body.clone()
+        };
+        let authority = authority_pattern
+            .find(&destination)
+            .map_or(0, |value| value.end());
+        let mut target = String::new();
+        for (at, ch) in destination.char_indices() {
+            match ch {
+                '`' => target.push_str("%60"),
+                '|' => target.push_str("%7C"),
+                '\\' => target.push_str("\\\\"),
+                '[' if at >= authority => target.push_str("%5B"),
+                ']' if at >= authority => target.push_str("%5D"),
+                '(' => target.push_str("%28"),
+                ')' => target.push_str("%29"),
+                _ => target.push(ch),
+            }
+        }
+        out.push_str(&source[copied..at]);
+        if image {
+            out.push_str(&label);
+        } else {
+            out.push_str(&format!("[{label}]({target})"));
+        }
+        copied = matched.end();
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
 fn djot_content_start(line: &str) -> usize {
     let bytes = line.as_bytes();
     let mut at = 0;
@@ -3533,9 +3919,9 @@ fn close_djot_table_code(source: &str) -> String {
         }
         at += 1;
     }
-    let block = cached_regex!(r"^(?:[-*+] |[0-9A-Za-z]+[.)] |\([0-9A-Za-z]+\) |: |#{1,6} |`{3,}|~{3,}|:{3,}|>|\||\^ |\[[^\]]+\]:)").unwrap();
+    let block = cached_regex!(r"^(?:[-*+] |(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)] |\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\) |: |#{1,6} |`{3,}|~{3,}|:{3,}|>|\||\^ |\[[^\]]+\]:)").unwrap();
     let marker = cached_regex!(
-        r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+)"
+        r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+)"
     )
     .unwrap();
     let digits = cached_regex!(r"^[0-9]+").unwrap();
@@ -3600,12 +3986,26 @@ fn close_djot_table_code(source: &str) -> String {
                 .captures(&line[at..])
                 .filter(|_| previous_block || item.is_some())
             {
+                if item.is_none()
+                    && (depth < item_quote || (depth == item_quote && indent < item_column))
+                {
+                    item_column = indent;
+                    item_quote = depth;
+                    item_kind.clear();
+                }
                 fenced = Some((
                     opening[1].len(),
                     opening[1].as_bytes()[0],
                     depth,
                     at,
-                    item.map_or(item_column, |item| indent + item.len()),
+                    item.map_or(item_column.min(indent), |item| {
+                        indent
+                            + if item.as_str().starts_with("[^") {
+                                2
+                            } else {
+                                item.len()
+                            }
+                    }),
                 ));
                 offset = line_end + 1;
                 continue;
@@ -3613,7 +4013,7 @@ fn close_djot_table_code(source: &str) -> String {
             if let Some(item) = item {
                 item_column = indent
                     + if item.as_str().starts_with("[^") {
-                        1
+                        2
                     } else {
                         item.len()
                     };
@@ -3867,7 +4267,7 @@ fn normalize_djot_table_pipes(source: &str) -> String {
         byte.is_some_and(u8::is_ascii_punctuation)
     }
     use std::collections::HashMap;
-    let renamed = rename_djot_pipe_footnotes(&close_djot_table_code(source));
+    let renamed = rename_djot_pipe_footnotes(source);
     let source = renamed.as_str();
     let mask = mask_djot_inline(source, false);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
