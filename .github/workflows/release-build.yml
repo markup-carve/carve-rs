@@ -73,6 +73,10 @@ jobs:
       # Guard: the crate version AND the CHANGELOG must match the release tag,
       # so a mistyped tag, a forgotten version bump, or an un-cut changelog
       # cannot publish the wrong version.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
       - name: Verify approval and checked tag before publishing
         working-directory: ${{ github.workspace }}
         if: ${{ inputs.publish }}
@@ -117,10 +121,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 tools/check-changelog-completeness.py "${{ inputs.tag }}"
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
 
       - name: The release notes match this tag's changelog
         shell: bash
@@ -218,6 +218,12 @@ jobs:
           # `tests/spec` is 1200+ files this job never reads.
 
           fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      # The stored notes must match the tagged changelog before uploading assets.
+      # Relative changelog links resolve against this tag in the release body.
       - name: Verify approval and checked tag before publishing
         working-directory: ${{ github.workspace }}
         if: ${{ inputs.publish }}
@@ -235,12 +241,6 @@ jobs:
           CANDIDATE_TAG: ${{ inputs.tag }}
         run: |
           git tag "$CANDIDATE_TAG" "${{ inputs.source_sha }}"
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      # The stored notes must match the tagged changelog before uploading assets.
-      # Relative changelog links resolve against this tag in the release body.
       - name: The release notes match this tag's changelog
         shell: bash
         env:
@@ -338,6 +338,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Verify approval and checked tag before publishing
         working-directory: ${{ github.workspace }}
         if: ${{ inputs.publish }}
