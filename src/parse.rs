@@ -21104,9 +21104,8 @@ fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Opti
         read_link_target(bytes, after_alt + 1, bounds.last_close_paren)?;
     // Only a valid `(target)` reaches here, so the alt copy is deferred off the
     // failing-`![...]()` path that would otherwise be O(n) per position.
-    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
-        .ok()?
-        .to_string();
+    let raw_alt = std::str::from_utf8(&bytes[start + 2..alt_close]).ok()?;
+    let alt = unescape_title(raw_alt);
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
@@ -21149,9 +21148,8 @@ fn parse_reference_image(
     }
     let label_close = reference_label_close(bytes, after_alt)?;
     let after_label = label_close + 1;
-    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
-        .ok()?
-        .to_string();
+    let raw_alt = std::str::from_utf8(&bytes[start + 2..alt_close]).ok()?;
+    let alt = unescape_title(raw_alt);
     let label = std::str::from_utf8(&bytes[after_alt + 1..label_close])
         .ok()?
         .to_string();
@@ -21160,7 +21158,11 @@ fn parse_reference_image(
     if label.is_empty() && alt.is_empty() {
         return None;
     }
-    let ref_label = if label.is_empty() { alt.clone() } else { label };
+    let ref_label = if label.is_empty() {
+        raw_alt.to_string()
+    } else {
+        label
+    };
     let mut attrs = None;
     let mut after = after_label;
     if bytes.get(after) == Some(&b'{') {
@@ -22106,7 +22108,7 @@ fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
 /// Resolve backslash escapes in a link/image title: `\X` becomes `X` when X is
 /// ASCII punctuation (so `\"` is a literal quote), otherwise the backslash is
 /// kept. Mirrors carve-js's unescapeAttrValue.
-fn unescape_title(s: &str) -> String {
+pub(crate) fn unescape_title(s: &str) -> String {
     let mut out = String::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

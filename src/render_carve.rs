@@ -3814,9 +3814,11 @@ fn render_inline_body(
             }
         }
         InlineNode::Link(link) => render_link(session, link, ctx),
-        InlineNode::Image(image) => {
-            render_image_with_attrs(image, render_inline_attrs(&image.attrs, ctx))
-        }
+        InlineNode::Image(image) => render_image_with_attrs(
+            image,
+            render_inline_attrs(&image.attrs, ctx),
+            ctx.table_cell_depth > 0,
+        ),
         InlineNode::Span(span) => {
             let attrs = render_inline_attrs(&span.attrs, ctx);
             format!(
@@ -4439,10 +4441,10 @@ fn escape_note_reference_label(label: &str, ctx: &CarveContext) -> String {
 }
 
 fn render_image(node: &Image) -> String {
-    render_image_with_attrs(node, render_attrs(&node.attrs))
+    render_image_with_attrs(node, render_attrs(&node.attrs), false)
 }
 
-fn render_image_with_attrs(node: &Image, attrs: String) -> String {
+fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
@@ -4457,11 +4459,20 @@ fn render_image_with_attrs(node: &Image, attrs: String) -> String {
     let title = node
         .title
         .as_ref()
-        .map(|title| format!(" \"{}\"", escape_quoted(title)))
+        .map(|title| {
+            format!(
+                " \"{}\"",
+                if in_table {
+                    escape_quoted(title).replace('`', "\\`")
+                } else {
+                    escape_quoted(title)
+                }
+            )
+        })
         .unwrap_or_default();
     format!(
         "![{}]({}{title}){}",
-        escape_image_alt(&node.alt),
+        escape_image_alt(&node.alt, in_table),
         escape_destination(&node.src),
         attrs
     )
@@ -6051,13 +6062,22 @@ fn escape_plain_line(text: &str) -> String {
 }
 
 /// An image's ALT TEXT, written between `![` and `]`.
-fn escape_image_alt(text: &str) -> String {
-    if crate::parse::raw_bracket_run_closes(text) {
-        return text.to_string();
+fn escape_image_alt(text: &str, in_table: bool) -> String {
+    let escaped = if crate::parse::raw_bracket_run_closes(text)
+        && crate::parse::unescape_title(text) == text
+    {
+        text.to_string()
+    } else {
+        text.replace('\\', "\\\\")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
+            .replace('`', "\\`")
+    };
+    if in_table {
+        escaped.replace('|', "\\|")
+    } else {
+        escaped
     }
-    text.replace('\\', "\\\\")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
 }
 
 /// Which characters the destination scan would read differently if emitted

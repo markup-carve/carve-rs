@@ -1693,3 +1693,6 @@ mod a_reference_inside_a_line_block_resolves;
 
 #[path = "../html_roundtrip_stability.rs"]
 mod html_roundtrip_stability;
+
+#[path = "../image_alt_escapes.rs"]
+mod image_alt_escapes;

@@ -173,19 +173,16 @@ fn inline_content_between_brackets_still_gets_its_escape() {
 }
 
 #[test]
-fn an_alt_with_no_carve_spelling_keeps_the_escape() {
-    // A bare unbalanced `]`. `parse` cannot produce this alt; an ingested AST
-    // can. Escaping is not a representation of the value either, but it keeps
-    // the image a well-formed image instead of letting the stray `]` split the
-    // line, and it settles - the escaped alt IS representable.
+fn an_ingested_alt_escapes_brackets_and_preserves_backslashes() {
+    // An ingested unmatched bracket has an escaped native spelling.
     let once = ingested(r#"{"type":"image","src":"/i.png","alt":"t]z"}"#);
     assert_eq!(once, "![t\\]z](/i.png)\n");
     assert_eq!(fmt(&once), once, "the fallback does not settle");
 
-    // A backslash already in the value is not doubled, because the run closes.
+    // A literal backslash before punctuation is escaped separately.
     assert_eq!(
         ingested(r#"{"type":"image","src":"/i.png","alt":"t\\]z"}"#),
-        "![t\\]z](/i.png)\n"
+        "![t\\\\\\]z](/i.png)\n"
     );
 }
 
