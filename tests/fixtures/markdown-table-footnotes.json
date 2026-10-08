@@ -58,5 +58,23 @@
     "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-&#49;].\n\n[^a|b]: First.\n\n[^carve-import-footnote-&#49;]: Second.\n",
     "refs": 2,
     "html": "Second."
+  },
+  {
+    "name": "trailing space collision",
+    "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-1 ].\n\n[^a|b]: First.\n\n[^carve-import-footnote-1 ]: Second.\n",
+    "refs": 2,
+    "html": "Second."
+  },
+  {
+    "name": "leading space collision",
+    "md": "| [^a\\|b] |\n|---|\n\nText[^ carve-import-footnote-1].\n\n[^a|b]: First.\n\n[^ carve-import-footnote-1]: Second.\n",
+    "refs": 2,
+    "html": "Second."
+  },
+  {
+    "name": "trailing tab collision",
+    "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-1\t].\n\n[^a|b]: First.\n\n[^carve-import-footnote-1\t]: Second.\n",
+    "refs": 2,
+    "html": "Second."
   }
 ]
