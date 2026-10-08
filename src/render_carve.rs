@@ -4463,7 +4463,7 @@ fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> Strin
             format!(
                 " \"{}\"",
                 if in_table {
-                    escape_quoted(title).replace('`', "\\`")
+                    escape_quoted(title).replace('`', "\\`").replace('|', "\\|")
                 } else {
                     escape_quoted(title)
                 }

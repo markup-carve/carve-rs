@@ -73,9 +73,9 @@ fn migrate_escaped_image_alt() {
 
 #[test]
 fn escaped_backtick_beside_code_cell() {
-    let source = "| ![a\\`b](/i \"c\\`d\") | `x` |\n|---|---|\n";
+    let source = "| ![a\\`b](/i \"c\\`d\\|e\") | `x` |\n|---|---|\n";
     let expected = carve::to_html(source);
-    assert!(expected.contains("alt=\"a`b\" title=\"c`d\""));
+    assert!(expected.contains("alt=\"a`b\" title=\"c`d|e\""));
     assert!(expected.contains("<code>x</code>"));
     assert_eq!(carve::to_html(&carve::to_carve(source)), expected);
 }
