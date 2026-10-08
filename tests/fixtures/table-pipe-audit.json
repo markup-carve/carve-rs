@@ -2381,5 +2381,830 @@
     "excludes": [
       "<code></code>"
     ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a|b-False",
+    "source": "<http://u/[^a|b]>\n\n[^a|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a%7Cb%5D\"",
+      ">http://u/[^a|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a|b-True",
+    "source": "| x \\| y |\n\n<http://u/[^a|b]>\n\n[^a|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a%7Cb%5D\"",
+      ">http://u/[^a|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a|b-False",
+    "source": "<x[^a|b]@y.io>\n\n[^a|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a%7Cb%5D@y.io\"",
+      ">x[^a|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a|b-True",
+    "source": "| x \\| y |\n\n<x[^a|b]@y.io>\n\n[^a|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a%7Cb%5D@y.io\"",
+      ">x[^a|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a\\|b-False",
+    "source": "<http://u/[^a\\|b]>\n\n[^a\\|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a\\%7Cb%5D\"",
+      ">http://u/[^a\\|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a\\|b-True",
+    "source": "| x \\| y |\n\n<http://u/[^a\\|b]>\n\n[^a\\|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a\\%7Cb%5D\"",
+      ">http://u/[^a\\|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a\\|b-False",
+    "source": "<x[^a\\|b]@y.io>\n\n[^a\\|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a\\%7Cb%5D@y.io\"",
+      ">x[^a\\|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a\\|b-True",
+    "source": "| x \\| y |\n\n<x[^a\\|b]@y.io>\n\n[^a\\|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a\\%7Cb%5D@y.io\"",
+      ">x[^a\\|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a\\\\|b-False",
+    "source": "<http://u/[^a\\\\|b]>\n\n[^a\\\\|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a\\\\%7Cb%5D\"",
+      ">http://u/[^a\\\\|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-url-a\\\\|b-True",
+    "source": "| x \\| y |\n\n<http://u/[^a\\\\|b]>\n\n[^a\\\\|b]: Note.\n",
+    "contains": [
+      "href=\"http://u/%5B^a\\\\%7Cb%5D\"",
+      ">http://u/[^a\\\\|b]</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a\\\\|b-False",
+    "source": "<x[^a\\\\|b]@y.io>\n\n[^a\\\\|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a\\\\%7Cb%5D@y.io\"",
+      ">x[^a\\\\|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "opaque-email-a\\\\|b-True",
+    "source": "| x \\| y |\n\n<x[^a\\\\|b]@y.io>\n\n[^a\\\\|b]: Note.\n",
+    "contains": [
+      "href=\"mailto:x%5B^a\\\\%7Cb%5D@y.io\"",
+      ">x[^a\\\\|b]@y.io</a>"
+    ],
+    "excludes": [
+      "doc-noteref",
+      "Note."
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "fence-close-```-  ```",
+    "source": "```\nx\n  ```\n\n| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      "<code>x\n</code>",
+      ">a|b</th>"
+    ],
+    "tables": 1,
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "fence-close-  ```- ```",
+    "source": "  ```\nx\n ```\n\n| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      "<code>x\n</code>",
+      ">a|b</th>"
+    ],
+    "tables": 1,
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "fence-close-~~~-   ~~~",
+    "source": "~~~\nx\n   ~~~\n\n| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      "<code>x\n</code>",
+      ">a|b</th>"
+    ],
+    "tables": 1,
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "fence-close-> ```->   ```",
+    "source": "> ```\n> x\n>   ```\n\n| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      "<code>x\n</code>",
+      ">a|b</th>"
+    ],
+    "tables": 1,
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "fence-close-- ```-   ```",
+    "source": "- ```\n  x\n   ```\n\n| a\\|b | z |\n|---|---|\n",
+    "contains": [
+      "<code>x\n</code>",
+      ">a|b</th>"
+    ],
+    "tables": 1,
+    "cells": 2
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[^a|b] image",
+    "source": "![<http://u/[^a|b]>](/i)\n",
+    "contains": [
+      "alt=\"http://u/[^a|b]\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[^a\\|b] image",
+    "source": "![<http://u/[^a\\|b]>](/i)\n",
+    "contains": [
+      "alt=\"http://u/[^a\\|b]\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-x[^a|b]@y.io image",
+    "source": "![<x[^a|b]@y.io>](/i)\n",
+    "contains": [
+      "alt=\"x[^a|b]@y.io\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-x:y[^a|b]@z.io image",
+    "source": "![<x:y[^a|b]@z.io>](/i)\n",
+    "contains": [
+      "alt=\"x:y[^a|b]@z.io\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[x][] image",
+    "source": "![<http://u/[x][]>](/i)\n",
+    "contains": [
+      "alt=\"http://u/[x][]\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[a](b) image",
+    "source": "![<http://u/[a](b)>](/i)\n",
+    "contains": [
+      "alt=\"http://u/[a](b)\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/a\\|b image",
+    "source": "![<http://u/a\\|b>](/i)\n",
+    "contains": [
+      "alt=\"http://u/a\\|b\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/a&amp;[b] image",
+    "source": "![<http://u/a&amp;[b]>](/i)\n",
+    "contains": [
+      "alt=\"http://u/a&amp;amp;[b]\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/é[^a|b] image",
+    "source": "![<http://u/é[^a|b]>](/i)\n",
+    "contains": [
+      "alt=\"http://u/é[^a|b]\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/(a|b) image",
+    "source": "![<http://u/(a|b)>](/i)\n",
+    "contains": [
+      "alt=\"http://u/(a|b)\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/a`b image",
+    "source": "![<http://u/a`b>](/i)\n",
+    "contains": [
+      "alt=\"http://u/a`b\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-x`b@y.io image",
+    "source": "![<x`b@y.io>](/i)\n",
+    "contains": [
+      "alt=\"x`b@y.io\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-x:y[^a|b]@z.io paragraph",
+    "source": "<x:y[^a|b]@z.io>\n",
+    "contains": [
+      "href=\"mailto:x:y%5B^a%7Cb%5D@z.io\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/a`b paragraph",
+    "source": "<http://u/a`b>\n",
+    "contains": [
+      "href=\"http://u/a%60b\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-x`b@y.io paragraph",
+    "source": "<x`b@y.io>\n",
+    "contains": [
+      "href=\"mailto:x%60b@y.io\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[a](b) dest",
+    "source": "[x](<http://u/[a](b)>)\n",
+    "contains": [
+      "href=\"&lt;http://u/[a](b)&gt;\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "autolink-context-http://u/[a](b) title",
+    "source": "[x](/i \"<http://u/[a](b)>\")\n",
+    "contains": [
+      "href=\"/i\"",
+      "title=\"&lt;http://u/[a](b)&gt;\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\"",
+      "class=\"ext-"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "paragraph-fence-'a\\n  ```\\nx\\n ```\\n'",
+    "source": "a\n  ```\nx\n ```\n",
+    "contains": [
+      "a",
+      "x"
+    ],
+    "excludes": [
+      "<pre>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "paragraph-fence-'- a\\n  ```\\n  x\\n  ```\\n'",
+    "source": "- a\n  ```\n  x\n  ```\n",
+    "contains": [
+      "a",
+      "x"
+    ],
+    "excludes": [
+      "<pre>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "paragraph-fence-'a\\n~~~\\nx\\n  ~~~\\n'",
+    "source": "a\n~~~\nx\n  ~~~\n",
+    "contains": [
+      "a",
+      "x"
+    ],
+    "excludes": [
+      "<pre>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "nested-block-markers",
+    "source": "- outer\n\n  (1) nested\n\n    ***\n\n  (2) second\n\n***\n",
+    "contains": [
+      "outer",
+      "nested",
+      "second",
+      "<ol>",
+      "<hr>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "plain-image-alt-with-opaque-url-prefix",
+    "source": "![alt <http://u/[^a|b]> suffix](/i)\n",
+    "contains": [
+      "alt=\"alt http://u/[^a|b] suffix\""
+    ],
+    "excludes": [
+      "doc-noteref"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "plain-image-alt-with-opaque-email-prefix",
+    "source": "![alt <x[^a|b]@y.io> suffix](/i)\n",
+    "contains": [
+      "alt=\"alt x[^a|b]@y.io suffix\""
+    ],
+    "excludes": [
+      "doc-noteref",
+      "class=\"mention\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-root-deep-closer",
+    "source": "```\nx\n        ```\n\nafter\n",
+    "contains": [
+      "<code>x\n</code>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-root-indent-closer",
+    "source": "  ```\n  x\n     ```\n\nafter\n",
+    "contains": [
+      "<code>x\n</code>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-list-paragraph-owner",
+    "source": "- a\n\n  paragraph\n\n   ```\n   x\n     ```\n",
+    "contains": [
+      "<li><p>a</p>",
+      "<p>paragraph</p>",
+      "<code>x\n</code>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-enclosed-ordered-fence",
+    "source": "(1) ```\n x\n     ```\n",
+    "contains": [
+      "<ol>",
+      "<code>x\n</code>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-footnote-fence-owner",
+    "source": "T[^n]\n\n[^n]: N\n\n  ```\n  code\n  ```\n\nafter\n",
+    "contains": [
+      "<p>after</p>",
+      "<li id=\"fn1\">\n      <p>N</p>\n      <pre><code>code\n</code></pre>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-quoted-footnote-fence",
+    "source": "> T[^n]\n>\n> [^n]: N\n>\n>   ```\n>   code\n>   ```\n\nafter\n",
+    "contains": [
+      "<p>after</p>",
+      "<li id=\"fn1\">\n      <p>N</p>\n      <pre><code>code\n</code></pre>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-reference-value-angle",
+    "source": "[r]: <http://x/[y]>\n\n[a][r]\n",
+    "contains": [
+      "href=\"&lt;http://x/[y]&gt;\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-reference-value-quote",
+    "source": "> [r]: <http://x/[y]>\n>\n> [a][r]\n",
+    "contains": [
+      "href=\"&lt;http://x/[y]&gt;\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-reference-value-table",
+    "source": "| a |\n[r]: <http://x/[y]>\n\n[a][r]\n",
+    "contains": [
+      "<table>",
+      "href=\"&lt;http://x/[y]&gt;\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-bracket-prefix",
+    "source": "a [<http://u/]>\n",
+    "contains": [
+      "a [<a href=\"http://u/%5D\">http://u/]</a>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-outer-brackets",
+    "source": "[x <http://u/a]b> y]\n",
+    "contains": [
+      "[x <a href=\"http://u/a%5Db\">http://u/a]b</a> y]"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-ipv6-path",
+    "source": "<http://[::1]/[x]>\n",
+    "contains": [
+      "href=\"http://[::1]/%5Bx%5D\"",
+      ">http://[::1]/[x]</a>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-email-priority",
+    "source": "<http://u@x/y>\n",
+    "contains": [
+      "href=\"mailto:http://u@x/y\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-mailto",
+    "source": "<mailto:x@y>\n",
+    "contains": [
+      "href=\"mailto:mailto:x@y\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-autolink-raw-backslash",
+    "source": "<http://x/a\\b>\n",
+    "contains": [
+      "href=\"http://x/a\\b\"",
+      ">http://x/a\\b</a>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-image-alt-prefix",
+    "source": "![prefix <http://x/[y]> suffix](i)\n",
+    "contains": [
+      "alt=\"prefix http://x/[y] suffix\""
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-fence-after-table",
+    "source": "| a |\n  ```\n  x\n  ```\n",
+    "contains": [
+      "<table>",
+      "<code>x\n</code>"
+    ],
+    "excludes": [
+      "```",
+      "<code>\ncode\n</code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-unfinished-images",
+    "source": "![a](![a](![a](![a](![a](![a](![a](![a](",
+    "contains": [
+      "![a](![a](![a](![a](![a](![a](![a](![a]("
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "review-unfinished-links",
+    "source": "[a](b \"[a](b \"[a](b \"[a](b \"[a](b \"[a](b \"[a](b \"[a](b \"",
+    "contains": [
+      "[a](b “[a](b “[a](b “[a](b “[a](b “[a](b “[a](b “[a](b “"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "list-footnote-sibling",
+    "source": "- [^n]: q\n\n  ```\n  y\n  ```\n",
+    "contains": [
+      "<li>\n    <pre><code>y\n</code></pre>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "list-footnote-sibling-closer",
+    "source": "- [^n]: q\n\n  ```\n  y\n   ```\n",
+    "contains": [
+      "<li>\n    <pre><code>y\n</code></pre>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "ordered-footnote-sibling",
+    "source": "1. [^n]: q\n\n   ```\n   y\n   ```\n",
+    "contains": [
+      "<li>\n    <pre><code>y\n</code></pre>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "indented-footnote-sibling",
+    "source": "  [^n]: q\n\n  ```\n  y\n  ```\n\nafter\n",
+    "contains": [
+      "<pre><code>y\n</code></pre>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "nested-footnote-sibling",
+    "source": "- a\n\n  [^n]: q\n\n  ```\n  y\n  ```\n\nafter\n",
+    "contains": [
+      "<pre><code>y\n</code></pre>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-inline-fence",
+    "source": "T[^n]\n\n[^n]: ```\n y\n ```\n\nafter\n",
+    "contains": [
+      "<pre><code>y\n</code></pre>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-fence-following-inline",
+    "source": "  [^n]: q\n\n  ```\n  y\n  ```\n\np `a\n- b`\n\nafter\n",
+    "contains": [
+      "<pre><code>y\n</code></pre>",
+      "<p>p <code>a&#10;&#45; b</code></p>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "footnote-fence-following-table",
+    "source": "  [^n]: q\n\n  ```\n  y\n  ```\n\n| x |\n",
+    "contains": [
+      "<pre><code>y\n</code></pre>",
+      "<td>x</td>"
+    ],
+    "excludes": [
+      "```",
+      "<code></code>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "one-column-footnote-fence",
+    "source": "T[^n]\n\n[^n]: N\n\n ```\n x\n ```\n\nafter\n",
+    "contains": [
+      "<li id=\"fn1\">\n      <p>N</p>\n      <pre><code>x\n</code></pre>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "quoted-fence-retains-parent-list-owner",
+    "source": "| q\\|r |\n\n- a\n\n  > ```\n  > x\n  > ```\n  p `a\n  - b`\n\nafter\n",
+    "contains": [
+      "<td>q|r</td>",
+      "<blockquote>",
+      "<pre><code>x\n</code></pre>",
+      "p <code>a&#10;&#45; b</code>",
+      "<p>after</p>"
+    ],
+    "excludes": [
+      "```",
+      "<li>b"
+    ]
   }
 ]

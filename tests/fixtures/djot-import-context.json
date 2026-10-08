@@ -117,7 +117,7 @@
   ],
   [
     "a <http://e.com/[x][]> c\n\n[x]: /u",
-    "href=\"http://e.com/[x][]\""
+    "href=\"http://e.com/%5Bx%5D%5B%5D\""
   ],
   [
     "# x\n\nNote [x]: see. Go to [x][].",
