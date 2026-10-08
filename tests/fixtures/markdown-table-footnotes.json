@@ -52,5 +52,11 @@
     "md": "Para[^a|b]\n[^a|b]: Note.\n\n| T[^a\\|b] |\n|---|\n",
     "refs": 2,
     "html": "Note."
+  },
+  {
+    "name": "decoded label collision",
+    "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-&#49;].\n\n[^a|b]: First.\n\n[^carve-import-footnote-&#49;]: Second.\n",
+    "refs": 2,
+    "html": "Second."
   }
 ]
