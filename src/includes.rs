@@ -575,10 +575,53 @@ fn is_section_token(part: &str) -> bool {
     it.next().is_some_and(is_explicit_ident_start) && it.all(is_ident_rest)
 }
 
+/// The option tail split into tokens. A token ends at whitespace or at an `@`
+/// outside a quoted run, since the whitespace before an option is optional
+/// (carve#2773): `@shift:1@lines:1-8` is two options.
+fn option_parts(tail: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start: Option<usize> = None;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for (i, c) in tail.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        if c.is_whitespace() {
+            if let Some(s) = start.take() {
+                parts.push(&tail[s..i]);
+            }
+            continue;
+        }
+        if c == '@' {
+            if let Some(s) = start.filter(|&s| s < i) {
+                parts.push(&tail[s..i]);
+            }
+            start = Some(i);
+            continue;
+        }
+        if c == '"' || c == '\'' {
+            quote = Some(c);
+        }
+        start.get_or_insert(i);
+    }
+    if let Some(s) = start {
+        parts.push(&tail[s..]);
+    }
+    parts
+}
+
 fn parse_options(raw: RawDirective) -> ParsedDirective {
     let mut lines = None;
     let mut shift = Shift::By(0);
-    for part in raw.options.split_whitespace() {
+    for part in option_parts(&raw.options) {
         let bad = || {
             if part.starts_with('@') {
                 ParsedDirective::BadOption(part.to_string())
