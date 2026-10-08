@@ -2728,6 +2728,36 @@ fn an_option_needs_no_space_in_front_of_it_in_either_position() {
     }
 }
 
+// carve#2778: a quoted path takes the escape set of a quoted attribute value.
+#[test]
+fn a_quoted_path_decodes_escaped_punctuation_and_keeps_other_pairs() {
+    for (source, path) in [
+        (r#"{{ "a\"b.crv" }}"#, r#"a"b.crv"#),
+        (r#"{{ "a\\b.crv" }}"#, r"a\b.crv"),
+        (r#"{{ "a\.crv" }}"#, "a.crv"),
+        (r#"{{ "a\#b.crv" }}"#, "a#b.crv"),
+        (r#"{{ "notes\new.crv" }}"#, r"notes\new.crv"),
+        (r#"{{ "a\101.crv" }}"#, r"a\101.crv"),
+    ] {
+        let result = expand(source, &[(path, "included")]);
+        assert_eq!(result.rules(), Vec::<&str>::new(), "{source}");
+        assert!(
+            result.html.contains("included"),
+            "{source}: {}",
+            result.html
+        );
+    }
+}
+
+#[test]
+fn a_quoted_path_opens_the_decoded_name_not_the_spelled_one() {
+    let result = expand(
+        r#"{{ "a\.crv" }}"#,
+        &[("a.crv", "decoded"), (r"a\.crv", "kept")],
+    );
+    assert_eq!(result.html, "<p>decoded</p>");
+}
+
 #[test]
 fn two_options_need_no_space_between_them() {
     for source in [
