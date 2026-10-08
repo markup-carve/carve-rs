@@ -1,0 +1,56 @@
+[
+  {
+    "name": "multiword note",
+    "md": "| [^a\\|b] |\n|---|\n\n[^a|b]: Several words here.\n",
+    "refs": 1,
+    "html": "Several words here."
+  },
+  {
+    "name": "empty note",
+    "md": "| [^a\\|b] |\n|---|\n\n[^a|b]:\n",
+    "refs": 1,
+    "html": "role=\"doc-endnotes\""
+  },
+  {
+    "name": "numeric label",
+    "md": "Text[^1]\n\n[^1]: Numeric.\n",
+    "refs": 1,
+    "html": "Numeric."
+  },
+  {
+    "name": "unmatched escaped definition",
+    "md": "| [^a\\|b] |\n|---|\n\n[^a\\|b]: Note.\n",
+    "refs": 0,
+    "html": "[^a|b]"
+  },
+  {
+    "name": "unmatched case variant",
+    "md": "Text[^A|B]\n\n[^a|b]: Note.\n",
+    "refs": 0,
+    "html": "[^A|B]"
+  },
+  {
+    "name": "code spans",
+    "md": "| [^a\\|b] | `[^a\\|b]` |\n|---|---|\n\n[^a|b]: Note.\n",
+    "refs": 1,
+    "html": "<code>[^a|b]</code>"
+  },
+  {
+    "name": "literal HTML attribute",
+    "md": "<span title=\"[^a|b]\">x</span> Ref[^a|b].\n\n[^a|b]: Note.\n",
+    "refs": 1,
+    "html": "title=\"[^a|b]\""
+  },
+  {
+    "name": "autolink text",
+    "md": "<http://x.y/[^a|b]> Ref[^a|b].\n\n[^a|b]: Note.\n",
+    "refs": 1,
+    "html": "http://x.y/"
+  },
+  {
+    "name": "paragraph interruption",
+    "md": "Para[^a|b]\n[^a|b]: Note.\n\n| T[^a\\|b] |\n|---|\n",
+    "refs": 2,
+    "html": "Note."
+  }
+]
