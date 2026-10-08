@@ -1,41 +1,46 @@
 name: Release
 
-# Publishing a GitHub Release (draft -> publish) creates the tag and holds the
-# notes; this workflow then publishes the crate to crates.io. The published
+# Dispatch with a version to approve the release before creating its tag.
+# Existing published-release events remain supported. The published
 # release body is a condensed summary checked against the tagged CHANGELOG section and footer.
 # This workflow verifies the stored notes before publishing the crate or assets.
 on:
   release:
     types: [published]
   # Backfill: a release that predates the binaries job can be given its assets
-  # without cutting a new version. Only the `binaries` job honours this - a
-  # dispatch must never re-publish a crate.
+  # without cutting a new version. Set version to start a new release.
   workflow_dispatch:
     inputs:
       tag:
         description: "Existing release tag to attach binaries to (e.g. 0.1.3)"
-        required: true
+        required: false
         type: string
 
+      version:
+        description: New version to publish; leave empty when backfilling the tag input
+        required: false
+        type: string
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
 
+  RELEASE_TAG: ${{ inputs.version || github.event.release.tag_name || inputs.tag }}
+  RELEASE_VERSION: ${{ inputs.version }}
 # Every job below carries a timeout-minutes bound. Without one a job inherits
 # GitHub's 360-minute default, and a stalled step can burn hours unnoticed.
 jobs:
   publish:
     name: Publish to crates.io
     # A manual dispatch exists to backfill binaries onto an existing release;
-    # it must not re-publish the crate.
-    if: github.event_name == 'release'
+    # the version input starts a new crate release.
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # A required reviewer approves before this runs (markup-carve/carve#2032).
     environment: release
     permissions:
       id-token: write # OIDC for crates.io Trusted Publishing
-      contents: read
+      contents: write
     env:
       # First publish of a brand-new crate cannot use OIDC Trusted Publishing
       # (no crate yet = no trusted-publisher config to point at). Set a
@@ -46,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || github.sha }}
           submodules: recursive
           # The completeness gate below walks every merge back to the previous
           # tag, so it needs the tags and the history behind them.
@@ -57,7 +62,7 @@ jobs:
       # cannot publish the wrong version.
       - name: Verify version and changelog match the release tag
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="$RELEASE_TAG"
           VER="$(grep -m1 -E '^version[[:space:]]*=' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           # main reads X.Y.Z-dev between releases; only a cut version publishes.
           if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -81,7 +86,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          python3 tools/check-changelog-completeness.py "${{ github.event.release.tag_name }}"
+          python3 tools/check-changelog-completeness.py "$RELEASE_TAG"
 
       - uses: actions/setup-python@v6
         with:
@@ -91,7 +96,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash tools/run-release-notes-gate.sh "$GITHUB_REF_NAME"
+        run: bash tools/run-release-notes-gate.sh "$RELEASE_TAG"
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -105,6 +110,23 @@ jobs:
 
       # `--locked`: publish the dependency set the tag was tested against,
       # rather than re-resolving at release time.
+      - name: Verify the packaged crate before tagging
+        run: cargo publish --dry-run --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+      - name: Create the release tag after approval
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version must be X.Y.Z"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            remote="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}" | tail -1 | cut -f1)"
+            [ "$remote" = "$GITHUB_SHA" ] || { echo "::error::Existing tag points to another commit"; exit 1; }
+          else
+            git tag "$RELEASE_TAG" "$GITHUB_SHA"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
       - run: cargo publish --locked
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
@@ -117,8 +139,8 @@ jobs:
   # These assets are what a Homebrew formula, a Scoop manifest, a Dockerfile or
   # a plain `curl | tar` line can point at.
   #
-  # Deliberately NOT gated on `publish`: a crates.io hiccup should not also cost
-  # the binaries, and the two have no ordering relationship.
+  # New-release assets follow the protected crate publish.
+  # Existing-release backfills use their own protected approval.
   binaries:
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -157,7 +179,7 @@ jobs:
       - name: Resolve the tag
         id: tag
         shell: bash
-        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Only a plain X.Y.Z release gets binaries
         shell: bash
@@ -186,7 +208,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash tools/run-release-notes-gate.sh "$GITHUB_REF_NAME"
+        run: bash tools/run-release-notes-gate.sh "$RELEASE_TAG"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -256,6 +278,11 @@ jobs:
             "${{ steps.package.outputs.asset }}.sha256" \
             --repo "${{ github.repository }}" --clobber
 
+    needs:
+      - publish
+      - backfill-gate
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || needs['backfill-gate'].result == 'success') }}
+
   # ---------------------------------------------------------------------------
   # Homebrew tap.
   #
@@ -269,15 +296,16 @@ jobs:
   # skips and says so; it never fails a release over a missing tap.
   homebrew:
     name: Update the Homebrew tap
-    needs: binaries
+    needs:
+      - binaries
+      - publish-notes
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # A required reviewer approves before this runs (markup-carve/carve#2032).
-    environment: release
+    # The release or backfill approval has already completed.
     steps:
       - name: Resolve the tag
         id: tag
-        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Is the tap token configured?
         id: gate
@@ -377,3 +405,43 @@ jobs:
           git add Formula/carve.rb
           git commit -m "carve ${{ steps.tag.outputs.tag }}"
           git push
+    if: ${{ !cancelled() && needs.binaries.result == 'success' && (needs['publish-notes'].result == 'success' ||
+      github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.version == '' && inputs.tag
+      != '')) }}
+  backfill-gate:
+    name: Approve existing-release asset backfill
+    if: github.event_name == 'workflow_dispatch' && inputs.version == '' && inputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Verify the existing public release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag must be X.Y.Z"; exit 1; }
+          [ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = false ]
+  publish-notes:
+    name: Publish prepared release notes
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.binaries.result == 'success' && github.event_name
+      == 'workflow_dispatch' && inputs.version != '' }}
+    needs:
+      - publish
+      - binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the prepared draft after packages and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          id="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate | jq -cs --arg tag "$RELEASE_TAG" '[.[][] | select(.tag_name == $tag)] | first | .id // empty')"
+          [ -n "$id" ]
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id" -X PATCH -f tag_name="$RELEASE_TAG" -F draft=false >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/releases/$id" | jq -e --arg tag "$RELEASE_TAG" '(.tag_name == $tag) and (.draft == false)'
