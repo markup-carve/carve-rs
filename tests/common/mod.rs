@@ -90,3 +90,5 @@ pub fn exact_test_name(module_path: &str, test: &str) -> String {
         None => test.to_string(),
     }
 }
+
+pub(crate) mod footnote_fanout;

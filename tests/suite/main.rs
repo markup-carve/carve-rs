@@ -1045,6 +1045,8 @@ mod html_import_checkbox_type_case;
 mod html_import_definition_list;
 #[path = "../html_import_details_and_quote.rs"]
 mod html_import_details_and_quote;
+#[path = "../html_import_footnote_fanout.rs"]
+mod html_import_footnote_fanout;
 #[path = "../html_import_hard_depth.rs"]
 mod html_import_hard_depth;
 #[path = "../html_import_ins_and_ol_type.rs"]

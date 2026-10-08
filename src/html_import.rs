@@ -359,6 +359,8 @@ struct Importer<'a> {
     /// dropped would be an address the allocator may hand to a live node next,
     /// so the map pins every node it can answer for.
     footnote_refs: HashMap<usize, (Handle, String)>,
+    detached_footnote_blocks: HashSet<usize>,
+    admonition_title_ids: RefCell<Option<AdmonitionTitleIndex>>,
     /// Fallback images of formulas that imported as math, dropped where they stand.
     formula_images: HashSet<usize>,
     sibling_index: SiblingIndex,
@@ -596,6 +598,26 @@ struct FootnoteCandidate {
     reference: Handle,
     block: Handle,
     fragment: String,
+    marked: std::cell::Cell<Option<bool>>,
+    backlink: std::cell::Cell<Option<bool>>,
+}
+
+impl FootnoteCandidate {
+    fn is_marked(&self) -> bool {
+        self.marked.get().unwrap_or_else(|| {
+            let marked = is_footnote_reference_marked(&self.reference);
+            self.marked.set(Some(marked));
+            marked
+        })
+    }
+
+    fn is_backlink(&self) -> bool {
+        self.backlink.get().unwrap_or_else(|| {
+            let backlink = is_footnote_backlink_marked(&self.reference);
+            self.backlink.set(Some(backlink));
+            backlink
+        })
+    }
 }
 
 /// One recognized note: its block and every reference bound to it.
@@ -603,6 +625,208 @@ struct FootnoteGroup {
     block: Handle,
     refs: Vec<Handle>,
     fragments: Vec<String>,
+}
+
+#[derive(Default)]
+struct FootnoteLookups {
+    target_counts: Option<HashMap<usize, usize>>,
+    anchors: HashMap<usize, Option<HashMap<String, Vec<Handle>>>>,
+    anchor_ranges: Option<HashMap<String, Vec<(usize, Handle)>>>,
+    inverse_ranges: HashMap<String, Vec<(usize, usize)>>,
+    inverse_first: HashMap<(usize, String), Option<usize>>,
+    subtree_ends: Option<HashMap<usize, usize>>,
+    nearest_blocks: Option<HashMap<usize, Option<Handle>>>,
+}
+
+impl FootnoteLookups {
+    fn target_count(
+        &mut self,
+        node: &Handle,
+        elements: &[Handle],
+        used: &HashSet<String>,
+    ) -> usize {
+        let counts = self.target_counts.get_or_insert_with(|| {
+            let mut counts = HashMap::with_capacity(elements.len());
+            for element in elements.iter().rev() {
+                let count = usize::from(is_footnote_fragment_target(element, used))
+                    + counts.get(&node_key(element)).copied().unwrap_or(0);
+                counts.insert(node_key(element), count);
+                if let Some(parent) = parent_handle(element) {
+                    *counts.entry(node_key(&parent)).or_default() += count;
+                }
+            }
+            counts
+        });
+        counts.get(&node_key(node)).copied().unwrap_or(0)
+    }
+
+    fn contains(
+        &mut self,
+        ancestor: &Handle,
+        node: &Handle,
+        elements: &[Handle],
+        order: &HashMap<usize, usize>,
+    ) -> bool {
+        let mut current = parent_handle(node);
+        for _ in 0..8 {
+            let Some(handle) = current else { return false };
+            if Rc::ptr_eq(&handle, ancestor) {
+                return true;
+            }
+            current = parent_handle(&handle);
+        }
+        if current.is_none() {
+            return false;
+        }
+        match (order.get(&node_key(ancestor)), order.get(&node_key(node))) {
+            (Some(start), Some(at)) => {
+                start < at && *at <= self.subtree_end(ancestor, elements, order)
+            }
+            _ => false,
+        }
+    }
+
+    fn nearest_block(&mut self, node: &Handle, elements: &[Handle]) -> Option<Handle> {
+        let nearest = self.nearest_blocks.get_or_insert_with(|| {
+            let mut nearest: HashMap<usize, Option<Handle>> =
+                HashMap::with_capacity(elements.len());
+            for element in elements {
+                let block = if Importer::tag(element)
+                    .map(|tag| FOOTNOTE_DEFINITION_BLOCKS.contains(&tag.as_str()))
+                    .unwrap_or(false)
+                {
+                    Some(element.clone())
+                } else {
+                    parent_handle(element)
+                        .and_then(|parent| nearest.get(&node_key(&parent)).cloned().flatten())
+                };
+                nearest.insert(node_key(element), block);
+            }
+            nearest
+        });
+        nearest.get(&node_key(node)).cloned().flatten()
+    }
+
+    fn anchors_for(&mut self, block: &Handle) -> Option<&HashMap<String, Vec<Handle>>> {
+        self.anchors
+            .entry(node_key(block))
+            .or_insert_with(|| {
+                let mut indexed: HashMap<String, Vec<Handle>> = HashMap::new();
+                let mut stack: Vec<Handle> =
+                    block.children.borrow().iter().rev().cloned().collect();
+                let mut visited = 0;
+                while let Some(node) = stack.pop() {
+                    if !matches!(node.data, NodeData::Element { .. }) {
+                        continue;
+                    }
+                    visited += 1;
+                    if visited > 64 {
+                        return None;
+                    }
+                    if Importer::tag(&node).as_deref() == Some("a") {
+                        let href = Importer::attr(&node, "href").unwrap_or_default();
+                        indexed.entry(href).or_default().push(node.clone());
+                    }
+                    stack.extend(node.children.borrow().iter().rev().cloned());
+                }
+                Some(indexed)
+            })
+            .as_ref()
+    }
+
+    fn subtree_end(
+        &mut self,
+        block: &Handle,
+        elements: &[Handle],
+        order: &HashMap<usize, usize>,
+    ) -> usize {
+        let ends = self.subtree_ends.get_or_insert_with(|| {
+            let mut ends = order.clone();
+            for element in elements.iter().rev() {
+                if let Some(parent) = parent_handle(element) {
+                    let end = ends[&node_key(element)];
+                    if let Some(parent_end) = ends.get_mut(&node_key(&parent)) {
+                        *parent_end = (*parent_end).max(end);
+                    }
+                }
+            }
+            ends
+        });
+        ends[&node_key(block)]
+    }
+
+    fn anchor_range(
+        &mut self,
+        href: &str,
+        elements: &[Handle],
+        order: &HashMap<usize, usize>,
+    ) -> Option<&Vec<(usize, Handle)>> {
+        self.anchor_ranges
+            .get_or_insert_with(|| {
+                let mut ranges: HashMap<String, Vec<(usize, Handle)>> = HashMap::new();
+                for element in elements {
+                    if Importer::tag(element).as_deref() == Some("a") {
+                        let key = Importer::attr(element, "href").unwrap_or_default();
+                        ranges
+                            .entry(key)
+                            .or_default()
+                            .push((order[&node_key(element)], element.clone()));
+                    }
+                }
+                ranges
+            })
+            .get(href)
+    }
+
+    fn has_anchor(
+        &mut self,
+        block: &Handle,
+        href: &str,
+        elements: &[Handle],
+        order: &HashMap<usize, usize>,
+    ) -> bool {
+        if let Some(small) = self.anchors_for(block) {
+            return small.contains_key(href);
+        }
+        let end = self.subtree_end(block, elements, order);
+        let start = order[&node_key(block)];
+        let Some(range) = self.anchor_range(href, elements, order) else {
+            return false;
+        };
+        range
+            .get(range.partition_point(|(at, _)| *at <= start))
+            .map(|(at, _)| *at <= end)
+            .unwrap_or(false)
+    }
+
+    fn first_inverse_in_range(
+        &mut self,
+        block: &Handle,
+        href: &str,
+        by_reference: &HashMap<usize, usize>,
+        elements: &[Handle],
+        order: &HashMap<usize, usize>,
+    ) -> Option<usize> {
+        if !self.inverse_ranges.contains_key(href) {
+            let eligible = self
+                .anchor_range(href, elements, order)?
+                .iter()
+                .filter_map(|(at, anchor)| {
+                    by_reference
+                        .get(&node_key(anchor))
+                        .map(|index| (*at, *index))
+                })
+                .collect();
+            self.inverse_ranges.insert(href.to_string(), eligible);
+        }
+        let end = self.subtree_end(block, elements, order);
+        let start = order[&node_key(block)];
+        let range = &self.inverse_ranges[href];
+        range
+            .get(range.partition_point(|(at, _)| *at <= start))
+            .filter(|(at, _)| *at <= end)
+            .map(|(_, index)| *index)
+    }
 }
 
 impl<'a> Importer<'a> {
@@ -944,7 +1168,7 @@ impl<'a> Importer<'a> {
                 | "footer"
                 | "figure"
                 // Synthetic, never present in real HTML input: the marker
-                // `mark_footnote_placement` leaves where a non-final endnotes
+                // `FootnotePruner` leaves where a non-final endnotes
                 // section sat. It belongs here because it STANDS WHERE A
                 // `<section>` STOOD, and a name this list does not recognize is
                 // buffered as INLINE - which put the placement inside the
@@ -1961,7 +2185,11 @@ impl<'a> Importer<'a> {
         // shape (carve-js#1296's family, reachable here since carve-rs#1240 made
         // the aside survive the import).
         if tag == "p" && has("admonition-title") && is_counted_admonition_title(handle) {
-            return admonition_title_id(handle).map(|id| vec![("id", vec![id])]);
+            let mut ids = self.admonition_title_ids.borrow_mut();
+            let ids = ids.get_or_insert_with(|| {
+                AdmonitionTitleIndex::new(handle, &self.detached_footnote_blocks)
+            });
+            return ids.title_id(handle).map(|id| vec![("id", vec![id])]);
         }
 
         // THE REFERENCE GOES WITH THE ELEMENT IT NAMES. What makes this derived
@@ -5227,16 +5455,16 @@ impl<'a> Importer<'a> {
         path: &str,
     ) -> Option<usize> {
         let mut last = None;
-        let mut index = 0;
-        for (r, (tr, _)) in trs.iter().enumerate() {
-            if index >= rows.len() {
-                break;
+        let mut source_index = 0;
+        rows.retain(|row| {
+            let r = source_index;
+            source_index += 1;
+            let Some((tr, _)) = trs.get(r) else {
+                return true;
+            };
+            if !Self::blank_table_row(row) {
+                return true;
             }
-            if !Self::blank_table_row(&rows[index]) {
-                index += 1;
-                continue;
-            }
-            rows.remove(index);
             self.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,
                 "Dropped a row whose every cell is empty: Carve reads such a row as text".into(),
@@ -5245,7 +5473,8 @@ impl<'a> Importer<'a> {
                 tr,
             );
             last = Some(r);
-        }
+            false
+        });
         last
     }
 
@@ -6145,23 +6374,26 @@ impl<'a> Importer<'a> {
         }
 
         let targets = footnote_fragment_targets(&elements);
-        let candidates = resolve_footnote_pair_direction(
-            footnote_pair_candidates(&elements, &targets, heuristic),
-            &order,
-        );
+        let mut lookups = FootnoteLookups::default();
+        let candidates =
+            footnote_pair_candidates(&elements, &targets, heuristic, &order, &mut lookups);
+        let candidates =
+            resolve_footnote_pair_direction(candidates, &order, &elements, &mut lookups);
         if candidates.is_empty() {
             return Ok(BTreeMap::new());
         }
 
         let definitions = attach_remaining_footnote_references(
             &elements,
-            group_footnote_definitions(candidates, &order),
+            group_footnote_definitions(candidates, &order, &elements, &mut lookups),
             heuristic,
         );
+        drop(lookups);
 
         let mut defs = BTreeMap::new();
         let mut containers: Vec<Handle> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
+        let mut detached: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
 
         for (index, definition) in definitions.iter().enumerate() {
             let label = (index + 1).to_string();
@@ -6175,13 +6407,23 @@ impl<'a> Importer<'a> {
                 .map(footnote_anchor_identity)
                 .filter(|identity| !identity.is_empty())
                 .collect();
-            strip_footnote_backlinks(&definition.block, &identities, &definition.fragments);
+            strip_footnote_backlinks(
+                &definition.block,
+                &identities,
+                &definition.fragments,
+                self.admonition_title_ids.get_mut().as_mut(),
+            );
             self.sibling_index.borrow_mut().clear();
             self.index_backref_entries.borrow_mut().clear();
 
             let body: Vec<Handle> = definition.block.children.borrow().clone();
             let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
             defs.insert(label.clone(), blocks);
+            self.detached_footnote_blocks
+                .insert(node_key(&definition.block));
+            if let Some(index) = self.admonition_title_ids.get_mut() {
+                index.remove_subtree(&definition.block);
+            }
 
             for reference in &definition.refs {
                 let site = footnote_reference_site(reference);
@@ -6191,11 +6433,25 @@ impl<'a> Importer<'a> {
 
             if let Some(container) = parent_handle(&definition.block) {
                 if seen.insert(node_key(&container)) {
-                    containers.push(container);
+                    containers.push(container.clone());
                 }
+                detached
+                    .entry(node_key(&container))
+                    .or_insert_with(|| (container, HashSet::new()))
+                    .1
+                    .insert(node_key(&definition.block));
             }
-            footnote_detach(&definition.block);
         }
+        for (_, (parent, removed)) in detached {
+            parent
+                .children
+                .borrow_mut()
+                .retain(|child| !removed.contains(&node_key(child)));
+        }
+        for definition in &definitions {
+            definition.block.parent.set(None);
+        }
+        self.detached_footnote_blocks.clear();
 
         // Kept unique, because every note in one list names the SAME
         // container: pruning it once per note walked that list's children
@@ -6206,14 +6462,13 @@ impl<'a> Importer<'a> {
         // container, and a document with two endnotes sections has one place the
         // renderer will rebuild them, so a second directive would spell a
         // position no render can honour.
-        let mut marked = false;
+        let mut pruning = FootnotePruner::default();
         for container in &containers {
-            let removed_from = prune_empty_footnote_container(container);
-            if !marked {
-                marked = mark_footnote_placement(removed_from);
-            }
+            pruning.prune(container);
         }
+        pruning.finish();
 
+        *self.admonition_title_ids.get_mut() = None;
         Ok(defs)
     }
 }
@@ -6301,6 +6556,8 @@ fn footnote_pair_candidates(
     elements: &[Handle],
     targets: &HashMap<String, Handle>,
     heuristic: bool,
+    order: &HashMap<usize, usize>,
+    lookups: &mut FootnoteLookups,
 ) -> Vec<FootnoteCandidate> {
     let mut anchors: Vec<(Handle, String)> = Vec::new();
     let mut used: HashSet<String> = HashSet::new();
@@ -6319,6 +6576,14 @@ fn footnote_pair_candidates(
         anchors.push((element.clone(), fragment.to_string()));
     }
 
+    if anchors.is_empty()
+        || (!heuristic
+            && !anchors.iter().any(|(anchor, _)| {
+                Importer::attr(anchor, "role").as_deref() == Some("doc-noteref")
+            }))
+    {
+        return Vec::new();
+    }
     let mut candidates = Vec::new();
     for (anchor, fragment) in anchors {
         // OUTSIDE THE HEURISTIC ONLY THE AUTHORED ROLE OPENS A PAIR. The vendor
@@ -6327,15 +6592,18 @@ fn footnote_pair_candidates(
         if !heuristic && Importer::attr(&anchor, "role").as_deref() != Some("doc-noteref") {
             continue;
         }
-        let Some(block) = resolve_footnote_definition_block(&targets[&fragment], &used) else {
+        let Some(block) =
+            resolve_footnote_definition_block(&targets[&fragment], elements, &used, lookups)
+        else {
             continue;
         };
-        if footnote_contains(&block, &anchor) {
+        if lookups.contains(&block, &anchor, elements, order) {
             continue;
         }
 
         let identity = footnote_anchor_identity(&anchor);
-        let mutual = !identity.is_empty() && footnote_block_links_to(&block, &identity);
+        let mutual = !identity.is_empty()
+            && lookups.has_anchor(&block, &format!("#{identity}"), elements, order);
         if !mutual && !is_footnote_reference_marked(&anchor) {
             continue;
         }
@@ -6344,6 +6612,8 @@ fn footnote_pair_candidates(
             reference: anchor,
             block,
             fragment,
+            marked: std::cell::Cell::new(None),
+            backlink: std::cell::Cell::new(None),
         });
     }
     candidates
@@ -6363,8 +6633,14 @@ fn footnote_pair_candidates(
 /// taking it would move every block in the document into one note - which here
 /// is the climb running off the top past `<body>` and `<html>`, neither of
 /// which is a definition block.
-fn resolve_footnote_definition_block(target: &Handle, used: &HashSet<String>) -> Option<Handle> {
+fn resolve_footnote_definition_block(
+    target: &Handle,
+    elements: &[Handle],
+    used: &HashSet<String>,
+    lookups: &mut FootnoteLookups,
+) -> Option<Handle> {
     let mut block = target.clone();
+    let mut depth = 0;
     while !Importer::tag(&block)
         .map(|tag| FOOTNOTE_DEFINITION_BLOCKS.contains(&tag.as_str()))
         .unwrap_or(false)
@@ -6374,6 +6650,11 @@ fn resolve_footnote_definition_block(target: &Handle, used: &HashSet<String>) ->
             return None;
         }
         block = parent;
+        depth += 1;
+        if depth == 8 {
+            block = lookups.nearest_block(&block, elements)?;
+            break;
+        }
     }
 
     if let Some(parent) = parent_handle(&block) {
@@ -6382,24 +6663,13 @@ fn resolve_footnote_definition_block(target: &Handle, used: &HashSet<String>) ->
             .unwrap_or(false);
         if wraps
             && !Importer::attr(&parent, "id").unwrap_or_default().is_empty()
-            && count_footnote_targets(&parent, used) == 1
+            && lookups.target_count(&parent, elements, used) == 1
         {
             block = parent;
         }
     }
 
     Some(block)
-}
-
-/// How many referenced fragment targets this element holds, itself included.
-fn count_footnote_targets(node: &Handle, used: &HashSet<String>) -> usize {
-    let mut count = usize::from(is_footnote_fragment_target(node, used));
-    for child in node.children.borrow().iter() {
-        if matches!(child.data, NodeData::Element { .. }) {
-            count += count_footnote_targets(child, used);
-        }
-    }
-    count
 }
 
 fn is_footnote_fragment_target(node: &Handle, used: &HashSet<String>) -> bool {
@@ -6425,6 +6695,8 @@ fn is_footnote_fragment_target(node: &Handle, used: &HashSet<String>) -> bool {
 fn resolve_footnote_pair_direction(
     candidates: Vec<FootnoteCandidate>,
     order: &HashMap<usize, usize>,
+    elements: &[Handle],
+    lookups: &mut FootnoteLookups,
 ) -> Vec<FootnoteCandidate> {
     let mut by_reference: HashMap<usize, usize> = HashMap::with_capacity(candidates.len());
     for (index, candidate) in candidates.iter().enumerate() {
@@ -6433,7 +6705,14 @@ fn resolve_footnote_pair_direction(
 
     let mut kept = Vec::new();
     for (index, candidate) in candidates.iter().enumerate() {
-        let inverse = inverse_footnote_candidate(&candidates, &by_reference, candidate);
+        let inverse = inverse_footnote_candidate(
+            &candidates,
+            &by_reference,
+            candidate,
+            elements,
+            order,
+            lookups,
+        );
         if inverse
             .map(|other| footnote_reference_side_wins(&candidates[other], candidate, order))
             .unwrap_or(false)
@@ -6463,24 +6742,40 @@ fn inverse_footnote_candidate(
     candidates: &[FootnoteCandidate],
     by_reference: &HashMap<usize, usize>,
     candidate: &FootnoteCandidate,
+    elements: &[Handle],
+    order: &HashMap<usize, usize>,
+    lookups: &mut FootnoteLookups,
 ) -> Option<usize> {
     let identity = footnote_anchor_identity(&candidate.reference);
     if identity.is_empty() {
         return None;
     }
     let wanted = format!("#{identity}");
-    for anchor in footnote_anchors_under(&candidate.block) {
-        if Importer::attr(&anchor, "href").as_deref() != Some(wanted.as_str()) {
-            continue;
+    let key = (node_key(&candidate.block), wanted.clone());
+    let first = if let Some(first) = lookups.inverse_first.get(&key) {
+        *first
+    } else if let Some(small) = lookups.anchors_for(&candidate.block) {
+        let anchors = small.get(&wanted)?;
+        let first = anchors
+            .iter()
+            .find_map(|anchor| by_reference.get(&node_key(anchor)).copied());
+        let cache = anchors.len() >= 8;
+        if cache {
+            lookups.inverse_first.insert(key, first);
         }
-        let Some(&index) = by_reference.get(&node_key(&anchor)) else {
-            continue;
-        };
-        if footnote_contains(&candidates[index].block, &candidate.reference) {
-            return Some(index);
-        }
-    }
-    None
+        first
+    } else {
+        lookups.first_inverse_in_range(&candidate.block, &wanted, by_reference, elements, order)
+    };
+    // Equal hrefs resolve to the same block through the first fragment target.
+    first.filter(|&index| {
+        lookups.contains(
+            &candidates[index].block,
+            &candidate.reference,
+            elements,
+            order,
+        )
+    })
 }
 
 fn footnote_reference_side_wins(
@@ -6488,14 +6783,14 @@ fn footnote_reference_side_wins(
     second: &FootnoteCandidate,
     order: &HashMap<usize, usize>,
 ) -> bool {
-    let first_marked = is_footnote_reference_marked(&first.reference);
-    let second_marked = is_footnote_reference_marked(&second.reference);
+    let first_marked = first.is_marked();
+    let second_marked = second.is_marked();
     if first_marked != second_marked {
         return first_marked;
     }
 
-    let first_back = is_footnote_backlink_marked(&first.reference);
-    let second_back = is_footnote_backlink_marked(&second.reference);
+    let first_back = first.is_backlink();
+    let second_back = second.is_backlink();
     if first_back != second_back {
         return second_back;
     }
@@ -6510,18 +6805,21 @@ fn footnote_reference_side_wins(
 /// One entry per definition block, carrying every reference bound to it.
 ///
 /// A block that contains another definition block is a container, not a note:
-/// keeping both would move a subtree into two places at once. The containers
-/// are found by climbing from each block, one walk per note rather than one
-/// per PAIR of notes.
+/// keeping both would move a subtree into two places at once. The next group
+/// in document order reveals whether a block contains a note.
 fn group_footnote_definitions(
     candidates: Vec<FootnoteCandidate>,
     order: &HashMap<usize, usize>,
+    elements: &[Handle],
+    lookups: &mut FootnoteLookups,
 ) -> Vec<FootnoteGroup> {
     let mut index_of: HashMap<usize, usize> = HashMap::new();
     let mut groups: Vec<FootnoteGroup> = Vec::new();
+    let mut fragments: Vec<Option<HashSet<String>>> = Vec::new();
     for candidate in candidates {
         let key = node_key(&candidate.block);
         let index = *index_of.entry(key).or_insert_with(|| {
+            fragments.push(None);
             groups.push(FootnoteGroup {
                 block: candidate.block.clone(),
                 refs: Vec::new(),
@@ -6530,28 +6828,28 @@ fn group_footnote_definitions(
             groups.len() - 1
         });
         groups[index].refs.push(candidate.reference);
-        if !groups[index].fragments.contains(&candidate.fragment) {
+        let known = if groups[index].fragments.len() < 8 {
+            groups[index].fragments.contains(&candidate.fragment)
+        } else {
+            !fragments[index]
+                .get_or_insert_with(|| groups[index].fragments.iter().cloned().collect())
+                .insert(candidate.fragment.clone())
+        };
+        if !known {
             groups[index].fragments.push(candidate.fragment);
         }
     }
 
-    let mut containers: HashSet<usize> = HashSet::new();
-    for group in &groups {
-        let mut ancestor = parent_handle(&group.block);
-        while let Some(node) = ancestor {
-            if index_of.contains_key(&node_key(&node)) {
-                containers.insert(node_key(&node));
-            }
-            ancestor = parent_handle(&node);
-        }
-    }
-
-    let mut kept: Vec<FootnoteGroup> = groups
+    groups.sort_by_key(|group| order.get(&node_key(&group.block)).copied().unwrap_or(0));
+    let containers: HashSet<usize> = groups
+        .windows(2)
+        .filter(|pair| lookups.contains(&pair[0].block, &pair[1].block, elements, order))
+        .map(|pair| node_key(&pair[0].block))
+        .collect();
+    groups
         .into_iter()
         .filter(|group| !containers.contains(&node_key(&group.block)))
-        .collect();
-    kept.sort_by_key(|group| order.get(&node_key(&group.block)).copied().unwrap_or(0));
-    kept
+        .collect()
 }
 
 /// Bind every remaining anchor that addresses a confirmed note.
@@ -6585,6 +6883,8 @@ fn attach_remaining_footnote_references(
         inside.insert(node_key(&definition.block));
     }
 
+    let mut references: Vec<Option<HashSet<usize>>> =
+        (0..definitions.len()).map(|_| None).collect();
     for element in elements {
         if Importer::tag(element).as_deref() != Some("a") {
             continue;
@@ -6607,11 +6907,17 @@ fn attach_remaining_footnote_references(
         if inside.contains(&node_key(element)) {
             continue;
         }
-        if !definitions[index]
-            .refs
-            .iter()
-            .any(|reference| Rc::ptr_eq(reference, element))
-        {
+        let known = if definitions[index].refs.len() < 8 {
+            definitions[index]
+                .refs
+                .iter()
+                .any(|reference| Rc::ptr_eq(reference, element))
+        } else {
+            !references[index]
+                .get_or_insert_with(|| definitions[index].refs.iter().map(node_key).collect())
+                .insert(node_key(element))
+        };
+        if !known {
             definitions[index].refs.push(element.clone());
         }
     }
@@ -6624,13 +6930,6 @@ fn footnote_anchor_identity(anchor: &Handle) -> String {
         Some(id) if !id.is_empty() => id,
         _ => Importer::attr(anchor, "name").unwrap_or_default(),
     }
-}
-
-fn footnote_block_links_to(block: &Handle, fragment: &str) -> bool {
-    let wanted = format!("#{fragment}");
-    footnote_anchors_under(block)
-        .iter()
-        .any(|anchor| Importer::attr(anchor, "href").as_deref() == Some(wanted.as_str()))
 }
 
 fn footnote_anchors_under(node: &Handle) -> Vec<Handle> {
@@ -6737,79 +7036,108 @@ fn is_counted_admonition_title(node: &Handle) -> bool {
 /// The id the renderer derives for this title paragraph - `adm-1`, `adm-2`, …
 /// in document order, which is the order the renderer's own counter runs in,
 /// PUT THROUGH THE ID NAMESPACE the renderer allocates in.
-fn admonition_title_id(node: &Handle) -> Option<String> {
-    let mut root = node.clone();
-    while let Some(parent) = parent_handle(&root) {
-        root = parent;
-    }
-    // PASS A: the namespace the renderer's registry holds when the first
-    // admonition renders - every explicit `{#id}` and every heading id, which
-    // in rendered HTML are simply the `id` attributes on the page. The counted
-    // title paragraphs are SKIPPED: their ids are the ones being predicted, and
-    // seeding the registry with them would make every prediction collide with
-    // the value it is trying to reproduce.
-    let mut used: BTreeMap<String, usize> = BTreeMap::new();
-    let mut titles: Vec<Handle> = Vec::new();
-    let mut stack = vec![root];
-    while let Some(current) = stack.pop() {
-        if is_counted_admonition_title(&current) {
-            titles.push(current.clone());
-        } else if let Some(id) =
-            Importer::attr(&current, "id").filter(|id| id.starts_with(ADMONITION_ID_PREFIX))
-        {
-            // ONLY THE IDS THAT CAN COLLIDE. Every name the allocation below
-            // looks up starts with `adm-`, so filtering to that prefix is
-            // EXACT rather than a heuristic - and it keeps the map the size of
-            // the colliding names instead of the size of the document, which
-            // matters because this walk already runs once per title.
-            //
-            // First reservation wins, exactly as `DocumentIdRegistry::reserve`
-            // has it; a repeat is a no-op rather than a second claim.
-            used.entry(id).or_insert(1);
-        }
-        // Reversed, so the children are visited left to right once popped -
-        // the order the renderer emitted them in.
-        for child in current.children.borrow().iter().rev() {
-            stack.push(child.clone());
-        }
-    }
-    // PASS B: allocate in document order, so a title's id depends on what the
-    // titles before it took as well as on what the author took.
-    for (index, title) in titles.iter().enumerate() {
-        let allocated =
-            allocate_document_id(&mut used, &format!("{ADMONITION_ID_PREFIX}{}", index + 1));
-        if Rc::ptr_eq(title, node) {
-            return Some(allocated);
-        }
-    }
-    None
+/// Replays the renderer's ID allocation over the remaining DOM.
+/// Derived counters have disjoint suffix namespaces; only authored IDs reserve
+/// names that another title allocation can encounter.
+struct AdmonitionTitleIndex {
+    nodes: HashMap<usize, (Option<usize>, Option<String>)>,
+    counts: Vec<usize>,
+    reserved: HashMap<String, usize>,
+    suffixes: HashMap<String, usize>,
 }
 
-/// `DocumentIdRegistry::unique_id`, replayed over an id set read off the HTML.
-///
-/// A second copy of nine lines, and deliberately not a call into the renderer's
-/// registry: that one is a thread-local installed for the duration of one HTML
-/// RENDER, seeded from a `Document` this side does not have. What the importer
-/// has is the rendered page, where the same namespace is spelled as `id`
-/// attributes. The rule it replays is `base`, then `base-2`, `base-3`, … past
-/// anything already taken, remembering the per-base counter so repeated calls
-/// continue rather than restart.
-fn allocate_document_id(used: &mut BTreeMap<String, usize>, base: &str) -> String {
-    let Some(&count) = used.get(base) else {
-        used.insert(base.to_owned(), 1);
-        return base.to_owned();
-    };
-    let mut n = count;
-    let candidate = loop {
-        n += 1;
-        let candidate = format!("{base}-{n}");
-        if !used.contains_key(&candidate) {
-            break candidate;
+impl AdmonitionTitleIndex {
+    fn new(node: &Handle, detached: &HashSet<usize>) -> Self {
+        let mut root = node.clone();
+        while let Some(parent) = parent_handle(&root) {
+            root = parent;
         }
-    };
-    used.insert(base.to_owned(), n);
-    used.insert(candidate.clone(), 1);
-    candidate
+        let mut nodes = HashMap::new();
+        let mut reserved = HashMap::new();
+        let mut titles = 0;
+        let mut stack = vec![root];
+        while let Some(current) = stack.pop() {
+            if detached.contains(&node_key(&current)) {
+                continue;
+            }
+            if is_counted_admonition_title(&current) {
+                titles += 1;
+                nodes.insert(node_key(&current), (Some(titles), None));
+            } else if let Some(id) =
+                Importer::attr(&current, "id").filter(|id| id.starts_with(ADMONITION_ID_PREFIX))
+            {
+                *reserved.entry(id.clone()).or_insert(0) += 1;
+                nodes.insert(node_key(&current), (None, Some(id)));
+            }
+            stack.extend(current.children.borrow().iter().rev().cloned());
+        }
+        let mut counts = vec![0; titles + 1];
+        for (position, count) in counts.iter_mut().enumerate().skip(1) {
+            *count = position & position.wrapping_neg();
+        }
+        Self {
+            nodes,
+            counts,
+            reserved,
+            suffixes: HashMap::new(),
+        }
+    }
+
+    fn title_id(&mut self, node: &Handle) -> Option<String> {
+        let (position, _) = self.nodes.get(&node_key(node))?;
+        let mut position = (*position)?;
+        let mut ordinal = 0;
+        while position > 0 {
+            ordinal += self.counts[position];
+            position &= position - 1;
+        }
+        let base = format!("{ADMONITION_ID_PREFIX}{ordinal}");
+        if !self.reserved.contains_key(&base) {
+            return Some(base);
+        }
+        // Different title counters have disjoint suffix namespaces.
+        let suffix = self.suffixes.entry(base.clone()).or_insert(2);
+        while self.reserved.contains_key(&format!("{base}-{suffix}")) {
+            *suffix += 1;
+        }
+        Some(format!("{base}-{suffix}"))
+    }
+
+    fn remove_node(&mut self, node: &Handle) {
+        let Some((position, id)) = self.nodes.remove(&node_key(node)) else {
+            return;
+        };
+        if let Some(mut position) = position {
+            while position < self.counts.len() {
+                self.counts[position] -= 1;
+                position += position & position.wrapping_neg();
+            }
+        }
+        if let Some(id) = id {
+            let count = self.reserved.get_mut(&id).expect("indexed reservation");
+            *count -= 1;
+            if *count == 0 {
+                self.reserved.remove(&id);
+                if let Some((base, suffix)) = id.rsplit_once('-') {
+                    if let Ok(value) = suffix.parse::<usize>() {
+                        if value >= 2 && value.to_string() == suffix {
+                            if let Some(next) = self.suffixes.get_mut(base) {
+                                *next = (*next).min(value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn remove_subtree(&mut self, node: &Handle) {
+        let mut stack = vec![node.clone()];
+        while let Some(current) = stack.pop() {
+            self.remove_node(&current);
+            stack.extend(current.children.borrow().iter().cloned());
+        }
+    }
 }
 
 /// The node's parent, restored into the cell it was read out of.
@@ -6823,37 +7151,36 @@ fn parent_handle(node: &Handle) -> Option<Handle> {
     parent
 }
 
-fn footnote_contains(ancestor: &Handle, node: &Handle) -> bool {
-    let mut current = parent_handle(node);
-    while let Some(handle) = current {
-        if Rc::ptr_eq(&handle, ancestor) {
-            return true;
+fn footnote_detach_many(nodes: impl IntoIterator<Item = Handle>) {
+    let mut nodes = nodes.into_iter();
+    let Some(first) = nodes.next() else { return };
+    let Some(second) = nodes.next() else {
+        if let Some(parent) = parent_handle(&first) {
+            let mut children = parent.children.borrow_mut();
+            if let Some(at) = children.iter().position(|child| Rc::ptr_eq(child, &first)) {
+                children.remove(at);
+            }
+            first.parent.set(None);
         }
-        current = parent_handle(&handle);
-    }
-    false
-}
-
-fn footnote_detach(node: &Handle) {
-    let Some(parent) = parent_handle(node) else {
         return;
     };
-    let mut children = parent.children.borrow_mut();
-    if let Some(index) = children.iter().position(|child| Rc::ptr_eq(child, node)) {
-        children.remove(index);
+    let mut groups: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
+    for node in [first, second].into_iter().chain(nodes) {
+        if let Some(parent) = parent_handle(&node) {
+            groups
+                .entry(node_key(&parent))
+                .or_insert_with(|| (parent, HashSet::new()))
+                .1
+                .insert(node_key(&node));
+            node.parent.set(None);
+        }
     }
-    drop(children);
-    node.parent.set(None);
-}
-
-fn footnote_previous_sibling(node: &Handle) -> Option<Handle> {
-    let parent = parent_handle(node)?;
-    let children = parent.children.borrow();
-    let index = children.iter().position(|child| Rc::ptr_eq(child, node))?;
-    if index == 0 {
-        return None;
+    for (_, (parent, removed)) in groups {
+        parent
+            .children
+            .borrow_mut()
+            .retain(|child| !removed.contains(&node_key(child)));
     }
-    Some(children[index - 1].clone())
 }
 
 /// Remove the rule that separates the notes from the body.
@@ -6868,31 +7195,37 @@ fn footnote_previous_sibling(node: &Handle) -> Option<Handle> {
 fn remove_footnote_separator(first: &Handle) {
     let mut node = first.clone();
     loop {
-        let mut previous = footnote_previous_sibling(&node);
-        while let Some(candidate) = &previous {
-            if !is_footnote_chrome_node(candidate) {
-                break;
-            }
-            previous = footnote_previous_sibling(candidate);
-        }
-
-        if let Some(candidate) = previous {
-            match Importer::tag(&candidate).as_deref() {
-                Some("hr") | Some("br") => {
-                    footnote_detach(&candidate);
-                    continue;
-                }
-                _ => return,
-            }
-        }
-
         let Some(parent) = parent_handle(&node) else {
             return;
         };
-        match Importer::tag(&parent).as_deref() {
-            Some("body") | Some("html") | None => return,
-            Some(_) => node = parent,
+        let children = parent.children.borrow();
+        let Some(index) = children.iter().position(|child| Rc::ptr_eq(child, &node)) else {
+            return;
+        };
+        let mut removed = Vec::new();
+        let mut stopped = false;
+        for previous in children[..index].iter().rev() {
+            if is_footnote_chrome_node(previous) {
+                continue;
+            }
+            if matches!(Importer::tag(previous).as_deref(), Some("hr") | Some("br")) {
+                removed.push(previous.clone());
+            } else {
+                stopped = true;
+                break;
+            }
         }
+        drop(children);
+        footnote_detach_many(removed);
+        if stopped
+            || matches!(
+                Importer::tag(&parent).as_deref(),
+                None | Some("body") | Some("html")
+            )
+        {
+            return;
+        }
+        node = parent;
     }
 }
 
@@ -6927,43 +7260,89 @@ fn is_footnote_chrome_node(node: &Handle) -> bool {
 /// an anchor that IS the fragment target the reference points at, with a
 /// fragment href - is what removes the marker anchor that is the note's anchor
 /// and its back-link and its visible marker in one element.
-fn strip_footnote_backlinks(block: &Handle, identities: &[String], fragments: &[String]) {
+fn strip_footnote_backlinks(
+    block: &Handle,
+    identities: &[String],
+    fragments: &[String],
+    mut title_index: Option<&mut AdmonitionTitleIndex>,
+) {
+    let identity_set: Option<HashSet<&str>> =
+        (identities.len() >= 8).then(|| identities.iter().map(String::as_str).collect());
+    let fragment_set: Option<HashSet<&str>> =
+        (fragments.len() >= 8).then(|| fragments.iter().map(String::as_str).collect());
+    let mut anchors = Vec::new();
+    let mut parents = Vec::new();
     for anchor in footnote_anchors_under(block) {
         let href = Importer::attr(&anchor, "href").unwrap_or_default();
         let target = href.strip_prefix('#');
         let points_back = target
-            .map(|fragment| identities.iter().any(|identity| identity == fragment))
+            .map(|fragment| {
+                identity_set
+                    .as_ref()
+                    .map(|set| set.contains(fragment))
+                    .unwrap_or_else(|| identities.iter().any(|identity| identity == fragment))
+            })
             .unwrap_or(false);
-        let is_marker = target.is_some() && fragments.contains(&footnote_anchor_identity(&anchor));
+        let is_marker = target.is_some() && {
+            let identity = footnote_anchor_identity(&anchor);
+            fragment_set
+                .as_ref()
+                .map(|set| set.contains(identity.as_str()))
+                .unwrap_or_else(|| fragments.contains(&identity))
+        };
         if !is_footnote_backlink_marked(&anchor) && !points_back && !is_marker {
             continue;
         }
-
-        let parent = parent_handle(&anchor);
-        footnote_detach(&anchor);
-        let Some(parent) = parent else { continue };
+        if let Some(parent) = parent_handle(&anchor) {
+            if matches!(
+                Importer::tag(&parent).as_deref(),
+                Some("sup") | Some("span")
+            ) {
+                parents.push(parent);
+            }
+        }
+        if let Some(index) = title_index.as_deref_mut() {
+            index.remove_subtree(&anchor);
+        }
+        anchors.push(anchor);
+    }
+    footnote_detach_many(anchors);
+    if parents.is_empty() {
+        return;
+    }
+    let mut seen = HashSet::new();
+    let mut ordered = Vec::new();
+    for parent in parents.into_iter().rev() {
+        if seen.insert(node_key(&parent)) {
+            ordered.push(parent);
+        }
+    }
+    let mut empty = HashSet::new();
+    let mut detached = Vec::new();
+    for parent in ordered.into_iter().rev() {
         if !matches!(
             Importer::tag(&parent).as_deref(),
             Some("sup") | Some("span")
         ) {
             continue;
         }
-        // MEASURED (markup-carve/carve-rs#1345): a `<sup>` holding the backlink
-        // and one U+00A0 was read as emptied and detached, taking the content
-        // space with it; the same `<sup>` holding a word survived as `{^Z^}`.
-        let emptied = parent
-            .children
-            .borrow()
-            .iter()
-            .all(|child| match &child.data {
-                NodeData::Element { .. } => false,
-                NodeData::Text { .. } => dom_text_is_layout_only(child),
-                _ => true,
-            });
+        let emptied = parent.children.borrow().iter().all(|child| {
+            empty.contains(&node_key(child))
+                || match &child.data {
+                    NodeData::Element { .. } => false,
+                    NodeData::Text { .. } => dom_text_is_layout_only(child),
+                    _ => true,
+                }
+        });
         if emptied {
-            footnote_detach(&parent);
+            empty.insert(node_key(&parent));
+            if let Some(index) = title_index.as_deref_mut() {
+                index.remove_node(&parent);
+            }
+            detached.push(parent);
         }
     }
+    footnote_detach_many(detached);
 }
 
 /// The node a reference occupies: the anchor, or the `<sup>` that holds
@@ -6999,108 +7378,172 @@ fn footnote_reference_site(reference: &Handle) -> Handle {
     parent
 }
 
-/// Drop a container the notes left empty, so the `<hr>` and the `<ol>` that
-/// held them do not import as a thematic break beside an empty list.
-///
-/// A separator written AFTER the notes survives the explicit search and is
-/// swept up here instead.
-fn prune_empty_footnote_container(node: &Handle) -> Option<(Handle, usize)> {
-    let mut current = Some(node.clone());
-    // The slot the OUTERMOST removed node sat in, which is the one the section
-    // itself occupied. An inner one names a position inside a container that is
-    // about to be detached too, so a marker put there would be detached with it.
-    let mut removed_from = None;
-    while let Some(handle) = current {
-        match Importer::tag(&handle).as_deref() {
-            None | Some("body") | Some("html") => return removed_from,
-            Some(_) => {}
-        }
-        let holds_content = handle.children.borrow().iter().any(|child| {
-            if is_footnote_chrome_node(child) {
-                return false;
-            }
-            !matches!(Importer::tag(child).as_deref(), Some("hr") | Some("br"))
-        });
-        if holds_content {
-            return removed_from;
-        }
-        let parent = parent_handle(&handle);
-        let index = parent.as_ref().and_then(|parent| {
-            parent
-                .children
-                .borrow()
-                .iter()
-                .position(|child| Rc::ptr_eq(child, &handle))
-        });
-        footnote_detach(&handle);
-        if let (Some(parent), Some(index)) = (parent.clone(), index) {
-            removed_from = Some((parent, index));
-        }
-        current = parent;
-    }
-    removed_from
-}
-
 /// The synthetic element `mark_footnote_placement` leaves where a non-final
 /// endnotes section sat. It exists only between the footnote pass and the block
 /// walk, and no real HTML input can carry the name.
+/// Marks the removed notes' position until the block import consumes it.
 const FOOTNOTE_PLACEMENT_TAG: &str = "carve-footnote-placement";
 
-/// Put a `::: footnotes` directive back where the endnotes section stood.
-///
-/// ONLY WHEN SOMETHING ACTUALLY FOLLOWS IT, checked OUTWARD through the
-/// ancestors rather than among the immediate siblings alone: a section last in a
-/// `<div>` that is itself followed by a paragraph is still not last in the
-/// document. A section that IS last needs no directive and gets none - the
-/// definitions already render there, and writing one would put a construct in
-/// the source the input never distinguished - so every document that was already
-/// right stays byte-identical.
-fn mark_footnote_placement(removed_from: Option<(Handle, usize)>) -> bool {
-    let Some((parent, index)) = removed_from else {
-        return false;
-    };
-    if !footnote_content_follows(&parent, index) {
-        return false;
-    }
-    let marker = Node::new(NodeData::Element {
-        name: QualName::new(None, ns!(html), FOOTNOTE_PLACEMENT_TAG.into()),
-        attrs: RefCell::new(Vec::new()),
-        template_contents: RefCell::new(None),
-        mathml_annotation_xml_integration_point: false,
-    });
-    marker.parent.set(Some(Rc::downgrade(&parent)));
-    let mut children = parent.children.borrow_mut();
-    let at = index.min(children.len());
-    children.insert(at, marker);
-    true
+struct FootnotePruneView {
+    node: Handle,
+    children: Vec<Handle>,
+    positions: HashMap<usize, usize>,
+    following: Vec<usize>,
+    content: usize,
 }
 
-/// Is there content after INDEX in PARENT, or after PARENT in any ancestor?
-fn footnote_content_follows(parent: &Handle, index: usize) -> bool {
-    let mut node = Some(parent.clone());
-    let mut from = index;
-    while let Some(handle) = node {
-        if handle.children.borrow()[from.min(handle.children.borrow().len())..]
-            .iter()
-            .any(|child| !is_footnote_chrome_node(child))
-        {
-            return true;
-        }
-        let Some(up) = parent_handle(&handle) else {
-            return false;
-        };
-        let Some(at) = up
-            .children
-            .borrow()
-            .iter()
-            .position(|child| Rc::ptr_eq(child, &handle))
-        else {
-            return false;
-        };
-        from = at + 1;
-        node = Some(up);
+#[derive(Default)]
+struct FootnotePruner {
+    views: HashMap<usize, FootnotePruneView>,
+    removed: HashSet<usize>,
+    changed: HashSet<usize>,
+    placement: Option<(Handle, usize, Handle)>,
+}
+
+impl FootnotePruner {
+    fn packaging(node: &Handle) -> bool {
+        is_footnote_chrome_node(node)
+            || matches!(Importer::tag(node).as_deref(), Some("hr") | Some("br"))
     }
-    false
+
+    fn view(&mut self, node: &Handle) -> &mut FootnotePruneView {
+        self.views.entry(node_key(node)).or_insert_with(|| {
+            let children = node.children.borrow().clone();
+            let positions = children
+                .iter()
+                .enumerate()
+                .map(|(i, child)| (node_key(child), i))
+                .collect();
+            let mut following = vec![children.len(); children.len() + 1];
+            let mut content = 0;
+            for i in (0..children.len()).rev() {
+                let child = &children[i];
+                if !self.removed.contains(&node_key(child)) && !Self::packaging(child) {
+                    content += 1;
+                }
+                following[i] = if is_footnote_chrome_node(child) {
+                    following[i + 1]
+                } else {
+                    i
+                };
+            }
+            FootnotePruneView {
+                node: node.clone(),
+                children,
+                positions,
+                following,
+                content,
+            }
+        })
+    }
+
+    fn content_from(&mut self, parent: &Handle, from: usize) -> bool {
+        self.view(parent);
+        let view = self.views.get_mut(&node_key(parent)).unwrap();
+        let mut traversed = Vec::new();
+        let mut index = view
+            .following
+            .get(from)
+            .copied()
+            .unwrap_or(view.children.len());
+        while index < view.children.len() && self.removed.contains(&node_key(&view.children[index]))
+        {
+            traversed.push(index);
+            index = view.following[index + 1];
+        }
+        for at in traversed {
+            view.following[at] = index;
+        }
+        if let Some(slot) = view.following.get_mut(from) {
+            *slot = index;
+        }
+        index < view.children.len()
+    }
+
+    fn content_follows(&mut self, parent: &Handle, mut from: usize) -> bool {
+        let mut node = parent.clone();
+        loop {
+            if self.content_from(&node, from) {
+                return true;
+            }
+            let Some(up) = parent_handle(&node) else {
+                return false;
+            };
+            let Some(at) = self.view(&up).positions.get(&node_key(&node)).copied() else {
+                return false;
+            };
+            if self.removed.contains(&node_key(&node)) {
+                return false;
+            }
+            node = up;
+            from = at + 1;
+        }
+    }
+
+    // Keep one marker at the outermost removed slot, only when content follows.
+    fn prune(&mut self, container: &Handle) {
+        let mut node = container.clone();
+        let mut slot = None;
+        loop {
+            if self.removed.contains(&node_key(&node))
+                || matches!(
+                    Importer::tag(&node).as_deref(),
+                    None | Some("body") | Some("html")
+                )
+                || self.view(&node).content != 0
+            {
+                break;
+            }
+            let Some(parent) = parent_handle(&node) else {
+                break;
+            };
+            let Some(index) = self.view(&parent).positions.get(&node_key(&node)).copied() else {
+                break;
+            };
+            self.removed.insert(node_key(&node));
+            if !Self::packaging(&node) {
+                self.view(&parent).content -= 1;
+            }
+            self.changed.insert(node_key(&parent));
+            node.parent.set(None);
+            slot = Some((parent.clone(), index));
+            node = parent;
+        }
+        if let Some((parent, index)) = slot {
+            if self.placement.is_none() && self.content_follows(&parent, index) {
+                let marker = Node::new(NodeData::Element {
+                    name: QualName::new(None, ns!(html), FOOTNOTE_PLACEMENT_TAG.into()),
+                    attrs: RefCell::new(Vec::new()),
+                    template_contents: RefCell::new(None),
+                    mathml_annotation_xml_integration_point: false,
+                });
+                marker.parent.set(Some(Rc::downgrade(&parent)));
+                self.view(&parent).content += 1;
+                self.changed.insert(node_key(&parent));
+                self.placement = Some((parent, index, marker));
+            }
+        }
+    }
+
+    fn finish(self) {
+        for key in self.changed {
+            let view = &self.views[&key];
+            let mut kept = Vec::with_capacity(view.children.len());
+            for i in 0..=view.children.len() {
+                if let Some((parent, index, marker)) = &self.placement {
+                    if node_key(parent) == key && *index == i {
+                        kept.push(marker.clone());
+                    }
+                }
+                if let Some(child) = view.children.get(i) {
+                    if !self.removed.contains(&node_key(child)) {
+                        kept.push(child.clone());
+                    }
+                }
+            }
+            *view.node.children.borrow_mut() = kept;
+        }
+    }
 }
 
 /// Whether an HTML element name is one of the seven PART 9 §10 spells as a
@@ -7328,21 +7771,20 @@ fn visible(nodes: &[InlineNode]) -> bool {
 /// A line's leading LAYOUT whitespace, dropped after a hard break: the parser
 /// drops it from the line the break opens, so writing it breaks `fmt`'s fixed
 /// point (markup-carve/carve-rs#1706).
-fn drop_space_after_hard_break(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
-    let mut index = 1;
-    while index < nodes.len() {
-        if matches!(nodes[index - 1], InlineNode::HardBreak(_)) {
-            if let InlineNode::Text(text) = &mut nodes[index] {
+fn drop_space_after_hard_break(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    let mut kept = Vec::with_capacity(nodes.len());
+    for mut node in nodes {
+        if matches!(kept.last(), Some(InlineNode::HardBreak(_))) {
+            if let InlineNode::Text(text) = &mut node {
                 text.value = text.value.trim_start_matches(is_layout_space).to_string();
                 if text.value.is_empty() {
-                    nodes.remove(index);
                     continue;
                 }
             }
         }
-        index += 1;
+        kept.push(node);
     }
-    nodes
+    kept
 }
 
 /// A link's or span's edge whitespace stands outside it, as one space that
@@ -7778,67 +8220,62 @@ fn settle_empty_code_spans(
     keep: &mut impl FnMut(&mut Code, bool) -> bool,
     emptied: &mut impl FnMut(),
 ) {
-    let mut index = 0;
-    while index < nodes.len() {
-        let after = followed || crate::render_carve::run_reads_on(&nodes[index + 1..]);
-        if let InlineNode::Code(code) = &mut nodes[index] {
+    if !nodes.iter_mut().any(|node| {
+        matches!(node, InlineNode::Code(code) if code.value.is_empty())
+            || crate::render_carve::empty_code_run_children_mut(node).is_some()
+    }) {
+        return;
+    }
+    let original = std::mem::take(nodes);
+    let mut reads_on = vec![false; original.len() + 1];
+    let mut blank_rest = vec![true; original.len() + 1];
+    for i in (0..original.len()).rev() {
+        reads_on[i] = reads_on[i + 1]
+            || !matches!(&original[i], InlineNode::Text(text) if text.value.is_empty());
+        blank_rest[i] = blank_rest[i + 1]
+            && matches!(&original[i], InlineNode::Text(text) if text.value.trim().is_empty());
+    }
+    nodes.reserve(original.len());
+    let mut join = false;
+    for (index, mut node) in original.into_iter().enumerate() {
+        let after = followed || reads_on[index + 1];
+        if let InlineNode::Code(code) = &mut node {
             if code.value.is_empty() {
-                // Trailing whitespace is trimmed rather than read into the run,
-                // as carve-php's importer trims it.
-                let blank_rest = nodes[index + 1..].iter().all(
-                    |next| matches!(next, InlineNode::Text(text) if text.value.trim().is_empty()),
-                );
                 let ends = crate::render_carve::empty_code_position_ends_its_run(
-                    followed || (after && !blank_rest),
+                    followed || (after && !blank_rest[index + 1]),
                     labelled,
                     cell_not_last,
                 );
-                let InlineNode::Code(code) = &mut nodes[index] else {
-                    unreachable!();
-                };
                 if !keep(code, ends) {
-                    nodes.remove(index);
-                    merge_text_at(nodes, index);
+                    join = true;
                     continue;
                 }
                 if ends && writing {
-                    nodes.truncate(index + 1);
+                    append_inline_boundary(nodes, node, join);
+                    break;
                 }
             }
         } else if let Some((braced, children)) =
-            crate::render_carve::empty_code_run_children_mut(&mut nodes[index])
+            crate::render_carve::empty_code_run_children_mut(&mut node)
         {
             let held = !children.is_empty();
-            if braced {
-                settle_empty_code_spans(
-                    children,
-                    false,
-                    labelled,
-                    cell_not_last,
-                    writing,
-                    keep,
-                    emptied,
-                );
-            } else {
-                settle_empty_code_spans(
-                    children,
-                    after,
-                    true,
-                    cell_not_last,
-                    writing,
-                    keep,
-                    emptied,
-                );
-            }
-            // An emptied pair such as `{**}` reads back as its delimiters.
+            settle_empty_code_spans(
+                children,
+                if braced { false } else { after },
+                if braced { labelled } else { true },
+                cell_not_last,
+                writing,
+                keep,
+                emptied,
+            );
             if braced && held && children.is_empty() {
-                nodes.remove(index);
-                merge_text_at(nodes, index);
                 emptied();
+                join = true;
                 continue;
             }
         }
-        index += 1;
+        append_inline_boundary(nodes, node, join);
+        join = false;
     }
 }
 
@@ -7993,14 +8430,14 @@ fn strip_span_marks(nodes: &mut [InlineNode]) {
 
 /// Replace each marked span under `nodes` that `unwrap` names with its children.
 fn take_span_marks(nodes: &mut Vec<InlineNode>, unwrap: &mut impl FnMut(usize) -> bool) {
-    let mut index = 0;
-    while index < nodes.len() {
-        if let Some((_, children)) =
-            crate::render_carve::empty_code_run_children_mut(&mut nodes[index])
-        {
+    let original = std::mem::take(nodes);
+    nodes.reserve(original.len());
+    let mut join = false;
+    for mut node in original {
+        if let Some((_, children)) = crate::render_carve::empty_code_run_children_mut(&mut node) {
             take_span_marks(children, unwrap);
         }
-        let mark = match &mut nodes[index] {
+        let mark = match &node {
             InlineNode::Emphasis(Emphasis { pos, .. })
             | InlineNode::CriticInsert(CriticInsert { pos, .. })
             | InlineNode::CriticDelete(CriticDelete { pos, .. }) => {
@@ -8008,39 +8445,37 @@ fn take_span_marks(nodes: &mut Vec<InlineNode>, unwrap: &mut impl FnMut(usize) -
             }
             _ => None,
         };
-        if let Some(mark) = mark {
-            if unwrap(mark) {
-                let children = match nodes.remove(index) {
-                    InlineNode::Emphasis(e) => e.children,
-                    InlineNode::CriticInsert(i) => i.children,
-                    InlineNode::CriticDelete(d) => d.children,
-                    _ => unreachable!(),
-                };
-                let count = children.len();
-                nodes.splice(index..index, children);
-                merge_text_at(nodes, index + count);
-                merge_text_at(nodes, index);
-                index = index.saturating_sub(1);
-                continue;
+        if mark.map(&mut *unwrap).unwrap_or(false) {
+            let children = match node {
+                InlineNode::Emphasis(e) => e.children,
+                InlineNode::CriticInsert(i) => i.children,
+                InlineNode::CriticDelete(d) => d.children,
+                _ => unreachable!(),
+            };
+            let mut children = children.into_iter();
+            if let Some(first) = children.next() {
+                append_inline_boundary(nodes, first, true);
+                nodes.extend(children);
             }
+            join = true;
+        } else {
+            append_inline_boundary(nodes, node, join);
+            join = false;
         }
-        index += 1;
     }
 }
 
-/// Join the text runs a removal at `index` left side by side.
-fn merge_text_at(nodes: &mut Vec<InlineNode>, index: usize) {
-    if index == 0 || index >= nodes.len() {
-        return;
-    }
-    if let (InlineNode::Text(_), InlineNode::Text(_)) = (&nodes[index - 1], &nodes[index]) {
-        let InlineNode::Text(next) = nodes.remove(index) else {
-            unreachable!();
-        };
-        if let InlineNode::Text(previous) = &mut nodes[index - 1] {
+/// Join text only across a boundary exposed by a removal or unwrapping.
+fn append_inline_boundary(nodes: &mut Vec<InlineNode>, node: InlineNode, join: bool) {
+    if join {
+        if let (Some(InlineNode::Text(previous)), InlineNode::Text(next)) =
+            (nodes.last_mut(), &node)
+        {
             previous.value.push_str(&next.value);
+            return;
         }
     }
+    nodes.push(node);
 }
 
 /// Every inline sequence under `blocks`, with whether it is a table cell that
@@ -8277,6 +8712,8 @@ fn import(
         empty_code_spans: Vec::new(),
         braced_kind_spans: Vec::new(),
         footnote_refs: HashMap::new(),
+        detached_footnote_blocks: HashSet::new(),
+        admonition_title_ids: RefCell::new(None),
         formula_images: HashSet::new(),
         sibling_index: RefCell::new(HashMap::new()),
         index_backref_entries: RefCell::new(HashMap::new()),
@@ -8360,10 +8797,12 @@ fn import(
             },
         );
     };
-    for blocks in footnote_defs.values_mut() {
-        for_each_inline_run(blocks, &mut settle);
+    if !empty_code_spans.is_empty() {
+        for blocks in footnote_defs.values_mut() {
+            for_each_inline_run(blocks, &mut settle);
+        }
+        for_each_inline_run(&mut children, &mut settle);
     }
-    for_each_inline_run(&mut children, &mut settle);
     let mut depth_above: HashMap<usize, usize> = HashMap::new();
     for index in emptied_wrappers.into_inner() {
         let (node, path) = &empty_code_spans[index];
