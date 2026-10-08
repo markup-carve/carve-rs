@@ -76,5 +76,11 @@
     "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-1\t].\n\n[^a|b]: First.\n\n[^carve-import-footnote-1\t]: Second.\n",
     "refs": 2,
     "html": "Second."
+  },
+  {
+    "name": "form feed collision",
+    "md": "| [^a\\|b] |\n|---|\n\nText[^carve-import-footnote-1\f].\n\n[^a|b]: First.\n\n[^carve-import-footnote-1\f]: Second.\n",
+    "refs": 2,
+    "html": "Second."
   }
 ]
