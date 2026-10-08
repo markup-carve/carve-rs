@@ -34,8 +34,11 @@ fn it_survives_alongside_the_other_editorial_marks() {
 
 #[test]
 fn markdown_keeps_a_critic_comment() {
-    // Markdown has no critic syntax, so the text is what degrades gracefully.
-    assert_eq!(carve::to_markdown("b{# note #}\n"), "b note\n");
+    // Markdown has no critic syntax, so it carries the HTML target's span.
+    assert_eq!(
+        carve::to_markdown("b{# note #}\n"),
+        "b<span class=\"critic-comment\"> note </span>\n"
+    );
 }
 
 #[test]

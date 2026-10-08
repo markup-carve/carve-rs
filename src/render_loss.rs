@@ -194,6 +194,29 @@ pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
     });
 }
 
+/// One row per editorial comment a text target writes as bare text, in
+/// document order (markup-carve/carve#2791).
+pub(crate) fn record_editorial_comment_flattened(pos: Option<&Pos>) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code
+            .entry("editorial-comment-flattened")
+            .or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "editorial-comment-flattened",
+                format: None,
+                target: c.target,
+                node_type: RawNodeType::Inline,
+                pos: pos.cloned(),
+                message: "Flattened an editorial comment into the surrounding text".to_string(),
+            });
+        }
+    });
+}
+
 pub(crate) fn record_ruby_in_document(doc: &Document) {
     if !COLLECTOR.with(|slot| {
         slot.borrow()

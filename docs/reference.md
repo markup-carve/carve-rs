@@ -67,9 +67,11 @@ Set `strict: true` to return `RenderLossError` before a value is published.
 Reports keep the complete count and retain 100 positioned entries by default;
 the existing string-returning functions remain available.
 
-Three codes reach that report: `raw-format-dropped` for a raw node the target
-omits, `ruby-flattened` for a `ruby` node a target cannot carry natively, and
-`destination-denied` for a URL the PART 9 section 25 sink denylist blanked. A
+Four codes reach that report: `raw-format-dropped` for a raw node the target
+omits, `ruby-flattened` for a `ruby` node a target cannot carry natively,
+`editorial-comment-flattened` for an editorial comment (`{#note#}`) that the
+Plain or ANSI target writes as bare text, and `destination-denied` for a URL the
+PART 9 section 25 sink denylist blanked. A
 link destination, an autolink destination and an image source each take their
 own row on the targets that emit a destination, in both safe modes. The emitted
 value does not change: `href=""` is what it always was, and the row is what

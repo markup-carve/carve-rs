@@ -897,7 +897,10 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
         InlineNode::Comment(_) => String::new(),
-        InlineNode::CriticComment(c) => strip_terminal_controls(&c.text),
+        InlineNode::CriticComment(c) => {
+            crate::render_loss::record_editorial_comment_flattened(c.pos.as_ref());
+            strip_terminal_controls(&c.text)
+        }
         // A RESOLVED cross-reference renders exactly like a link to the same
         // heading, because that is what it is - the href is a fragment, so the
         // `(href)` suffix a link would add is suppressed there too. Only an

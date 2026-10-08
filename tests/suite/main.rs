@@ -917,6 +917,8 @@ mod digit_leading_explicit_identifiers;
 mod directive_titles;
 #[path = "../document_summary.rs"]
 mod document_summary;
+#[path = "../editorial_comment_flattened.rs"]
+mod editorial_comment_flattened;
 #[path = "../empty_block_contributes_no_line.rs"]
 mod empty_block_contributes_no_line;
 #[path = "../empty_container_body.rs"]
