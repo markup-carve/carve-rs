@@ -2220,3 +2220,164 @@ fn short_backlink_names_beside_long_terms_import_near_linearly() {
         4096,
     );
 }
+
+#[path = "common/footnote_fanout.rs"]
+mod footnote_fanout;
+
+fn assert_footnote_fanout(shape: &str, small: usize, large: usize) {
+    let options = HtmlImportOptions {
+        adapter: carve::HtmlImportAdapter::Word,
+        ..Default::default()
+    };
+    assert_conversion_near_linear_at(
+        |source| drop(html_to_ast(source, &options).unwrap()),
+        |n| footnote_fanout::source(shape, n),
+        shape,
+        small,
+        large,
+    );
+}
+
+#[test]
+fn footnote_fanout_backlinks_import_near_linearly() {
+    assert_footnote_fanout("backlinks", 1024, 4096);
+}
+#[test]
+fn footnote_fanout_wrapped_backlinks_import_near_linearly() {
+    assert_footnote_fanout("wrapped-backlinks", 1024, 4096);
+}
+#[test]
+fn footnote_fanout_shared_wrappers_import_near_linearly() {
+    assert_footnote_fanout("shared-wrapper", 2048, 8192);
+}
+#[test]
+fn footnote_fanout_empty_wrappers_import_near_linearly() {
+    assert_footnote_fanout("empty-wrappers", 4096, 16384);
+}
+#[test]
+fn footnote_fanout_separators_import_near_linearly() {
+    assert_footnote_fanout("separators", 128, 512);
+}
+
+#[test]
+fn footnote_fanout_duplicate_identities_import_near_linearly() {
+    assert_footnote_fanout("duplicate-identities", 1024, 4096);
+}
+#[test]
+fn footnote_fanout_deep_shared_wrapper_import_near_linearly() {
+    assert_footnote_fanout("deep-shared-wrapper", 512, 2048);
+}
+
+#[test]
+fn footnote_fanout_overlapping_backlink_blocks_import_near_linearly() {
+    assert_footnote_fanout("nested-backlink-blocks", 512, 2048);
+}
+#[test]
+fn footnote_fanout_deep_aliases_reject_near_linearly() {
+    on_big_stack(|| {
+        let options = HtmlImportOptions {
+            adapter: carve::HtmlImportAdapter::Word,
+            ..Default::default()
+        };
+        assert_conversion_near_linear_at(
+            |source| {
+                assert!(matches!(
+                    html_to_ast(source, &options),
+                    Err(carve::HtmlImportError::DepthLimit)
+                ))
+            },
+            |n| footnote_fanout::source("deep-alias-targets", n),
+            "deep footnote aliases",
+            512,
+            2048,
+        );
+    });
+}
+
+#[path = "common/wide_import_repairs.rs"]
+mod wide_import_repairs;
+
+#[test]
+fn many_empty_code_spans_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::html_to_carve(source, &Default::default()).unwrap()),
+        |n| wide_import_repairs::source("empty-code", n),
+        "empty code spans",
+        4096,
+        16384,
+    );
+}
+#[test]
+fn many_nested_same_kind_spans_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::html_to_carve(source, &Default::default()).unwrap()),
+        |n| wide_import_repairs::source("nested-spans", n),
+        "nested same-kind spans",
+        4096,
+        16384,
+    );
+}
+
+#[test]
+fn layout_after_many_hard_breaks_imports_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(html_to_ast(source, &Default::default()).unwrap()),
+        |n| wide_import_repairs::source("hard-break-padding", n),
+        "hard break padding",
+        4096,
+        16384,
+    );
+}
+
+#[test]
+fn footnote_fanout_long_inverse_backlink_classes_import_near_linearly() {
+    assert_footnote_fanout("long-inverse-class", 1024, 4096);
+}
+#[test]
+fn footnote_fanout_long_inverse_reference_classes_import_near_linearly() {
+    assert_footnote_fanout("long-inverse-ref-class", 1024, 4096);
+}
+
+#[test]
+fn many_blank_table_rows_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::html_to_carve(source, &Default::default()).unwrap()),
+        |n| wide_import_repairs::source("blank-table-rows", n),
+        "blank table rows",
+        8192,
+        32768,
+    );
+}
+
+#[test]
+fn many_admonition_titles_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| drop(html_to_ast(source, &Default::default()).unwrap()),
+        |n| wide_import_repairs::source("admonition-titles", n),
+        "admonition title ids",
+        1024,
+        4096,
+    );
+}
+
+#[test]
+fn many_note_admonition_titles_import_near_linearly() {
+    assert_conversion_near_linear_at(
+        |source| {
+            drop(
+                html_to_ast(
+                    source,
+                    &HtmlImportOptions {
+                        adapter: carve::HtmlImportAdapter::Word,
+                        ..Default::default()
+                    },
+                )
+                .unwrap(),
+            )
+        },
+        |n| wide_import_repairs::source("note-admonition-titles", n),
+        "note admonition title ids",
+        512,
+        2048,
+    );
+}
