@@ -16090,6 +16090,15 @@ fn split_table_cells_seeded(
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
         index += 1;
+        if open_len.is_none()
+            && ch == '\\'
+            && chars.peek().is_some_and(|next| next.is_ascii_punctuation())
+        {
+            buf.push(ch);
+            buf.push(chars.next().unwrap());
+            index += 1;
+            continue;
+        }
         if ch == '`' {
             let mut run = 1usize;
             buf.push(ch);
@@ -21104,9 +21113,8 @@ fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Opti
         read_link_target(bytes, after_alt + 1, bounds.last_close_paren)?;
     // Only a valid `(target)` reaches here, so the alt copy is deferred off the
     // failing-`![...]()` path that would otherwise be O(n) per position.
-    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
-        .ok()?
-        .to_string();
+    let raw_alt = std::str::from_utf8(&bytes[start + 2..alt_close]).ok()?;
+    let alt = unescape_title(raw_alt);
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
@@ -21149,9 +21157,8 @@ fn parse_reference_image(
     }
     let label_close = reference_label_close(bytes, after_alt)?;
     let after_label = label_close + 1;
-    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
-        .ok()?
-        .to_string();
+    let raw_alt = std::str::from_utf8(&bytes[start + 2..alt_close]).ok()?;
+    let alt = unescape_title(raw_alt);
     let label = std::str::from_utf8(&bytes[after_alt + 1..label_close])
         .ok()?
         .to_string();
@@ -21160,7 +21167,11 @@ fn parse_reference_image(
     if label.is_empty() && alt.is_empty() {
         return None;
     }
-    let ref_label = if label.is_empty() { alt.clone() } else { label };
+    let ref_label = if label.is_empty() {
+        raw_alt.to_string()
+    } else {
+        label
+    };
     let mut attrs = None;
     let mut after = after_label;
     if bytes.get(after) == Some(&b'{') {
@@ -21808,19 +21819,8 @@ pub(crate) fn bracketed_run_body(text: &str) -> Option<String> {
     read_bracketed(text.as_bytes(), 0).map(|(body, _)| body)
 }
 
-/// Does a RAW bracketed run re-read as itself when written between `[` and `]`?
-///
-/// The writer needs this because a raw run - an image's alt text - resolves no
-/// escapes: whatever sits between the brackets IS the value, backslashes and
-/// all. So the writer cannot neutralize a `]` by escaping it. It can only ask
-/// whether the reader's own scan would close where it is about to put the `]`,
-/// and write the run verbatim when it does.
-///
-/// It is the READER's scan rather than a second spelling of it: the same
-/// [`read_bracketed`] the inline pass closes a link's text with, run over the
-/// run wrapped in the brackets it will be written between. Balance,
-/// escape-awareness and opacity inside a verbatim span or an editorial comment
-/// therefore hold by construction.
+/// Whether the reader closes a bracketed run at its final delimiter.
+/// This checks syntax; callers separately check escape decoding.
 pub(crate) fn raw_bracket_run_closes(text: &str) -> bool {
     let wrapped = format!("[{text}]");
     read_bracketed(wrapped.as_bytes(), 0).is_some_and(|(_, after)| after == wrapped.len())
@@ -22106,7 +22106,7 @@ fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
 /// Resolve backslash escapes in a link/image title: `\X` becomes `X` when X is
 /// ASCII punctuation (so `\"` is a literal quote), otherwise the backslash is
 /// kept. Mirrors carve-js's unescapeAttrValue.
-fn unescape_title(s: &str) -> String {
+pub(crate) fn unescape_title(s: &str) -> String {
     let mut out = String::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

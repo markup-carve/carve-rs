@@ -13,6 +13,10 @@ which the published crate does not carry.
 
 ### Breaking
 
+- Image alt text resolves ASCII punctuation escapes, including `\|` in
+  tables. Literal backslashes before punctuation must be doubled. Native
+  writers preserve the decoded value when formatting.
+
 - The include rename warning carries the rule id `include-id-rename`, renamed
   from `include-heading-id-rename`. The rename pass stopped being about
   headings in 0.1.8 and its message followed; the id did not. Hosts publish

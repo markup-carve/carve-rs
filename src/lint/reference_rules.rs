@@ -458,17 +458,23 @@ pub(super) fn case_only_edits(
                 match targets.image_reference(label).as_slice() {
                     [only] => {
                         let spelling = only.spelling();
-                        // Only a plain alt proves the bracket is the reference's
-                        // own; a trailing attribute block stays.
-                        let collapsed = format!("![{label}][]");
-                        let explicit = format!("![{}][{label}]", image.alt);
-                        let head = if label == image.alt && raw.starts_with(&collapsed) {
-                            Some((collapsed, format!("![{spelling}][]")))
-                        } else if raw.starts_with(&explicit) {
-                            Some((explicit, format!("![{}][{spelling}]", image.alt)))
-                        } else {
-                            None
-                        };
+                        let head = raw
+                            .strip_prefix('!')
+                            .and_then(crate::parse::bracketed_run_body)
+                            .and_then(|raw_alt| {
+                                if crate::parse::unescape_title(&raw_alt) != image.alt {
+                                    return None;
+                                }
+                                let collapsed = format!("![{raw_alt}][]");
+                                let explicit = format!("![{raw_alt}][{label}]");
+                                if raw_alt == label && raw.starts_with(&collapsed) {
+                                    Some((collapsed, format!("![{spelling}][]")))
+                                } else if raw.starts_with(&explicit) {
+                                    Some((explicit, format!("![{raw_alt}][{spelling}]")))
+                                } else {
+                                    None
+                                }
+                            });
                         head.and_then(|(head, new_head)| {
                             let rest = &raw[head.len()..];
                             (rest.is_empty() || rest.starts_with('{')).then(|| {
