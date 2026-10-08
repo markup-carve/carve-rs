@@ -1,0 +1,33 @@
+{
+  "workflow": ".github/workflows/release.yml",
+  "publisher": ".github/workflows/release-build.yml",
+  "publisher_environments": [
+    "release"
+  ],
+  "registries": {
+    "crates": "carve-lang"
+  },
+  "assets": [
+    "carve-{version}-x86_64-unknown-linux-gnu.tar.gz",
+    "carve-{version}-x86_64-unknown-linux-gnu.tar.gz.sha256",
+    "carve-{version}-aarch64-unknown-linux-gnu.tar.gz",
+    "carve-{version}-aarch64-unknown-linux-gnu.tar.gz.sha256",
+    "carve-{version}-x86_64-unknown-linux-musl.tar.gz",
+    "carve-{version}-x86_64-unknown-linux-musl.tar.gz.sha256",
+    "carve-{version}-aarch64-apple-darwin.tar.gz",
+    "carve-{version}-aarch64-apple-darwin.tar.gz.sha256",
+    "carve-{version}-x86_64-apple-darwin.tar.gz",
+    "carve-{version}-x86_64-apple-darwin.tar.gz.sha256",
+    "carve-{version}-x86_64-pc-windows-msvc.zip",
+    "carve-{version}-x86_64-pc-windows-msvc.zip.sha256"
+  ],
+  "versions": [
+    {
+      "path": "Cargo.toml",
+      "field": [
+        "package",
+        "version"
+      ]
+    }
+  ]
+}
