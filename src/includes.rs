@@ -392,8 +392,9 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
     // the source), or bare.
     let rest = &text[i..];
     let (path, after_path) = if let Some(body) = rest.strip_prefix('"') {
-        // `"((?:\\.|[^"\\])*)"`: a backslash escapes the following character,
-        // and only `\"` / `\\` unescape (every other pair stays verbatim).
+        // `"((?:\\.|[^"\\])*)"`: a backslash escapes the following character.
+        // It decodes before ASCII punctuation, as in a quoted attribute value
+        // (carve#2778); every other pair stays verbatim.
         let mut out = String::new();
         let mut chars = body.char_indices();
         let mut close = None;
@@ -401,7 +402,7 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
             match c {
                 '\\' => {
                     let (_, next) = chars.next()?;
-                    if next == '"' || next == '\\' {
+                    if next.is_ascii_punctuation() {
                         out.push(next);
                     } else {
                         out.push('\\');

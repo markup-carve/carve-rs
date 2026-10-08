@@ -17,6 +17,10 @@ which the published crate does not carry.
   tables. Literal backslashes before punctuation must be doubled. Native
   writers preserve the decoded value when formatting.
 
+- A quoted include path resolves ASCII punctuation escapes, as a quoted
+  attribute value does: `"a\.crv"` names `a.crv`. A backslash before anything
+  else stays path text (markup-carve/carve#2778).
+
 - The include rename warning carries the rule id `include-id-rename`, renamed
   from `include-heading-id-rename`. The rename pass stopped being about
   headings in 0.1.8 and its message followed; the id did not. Hosts publish
