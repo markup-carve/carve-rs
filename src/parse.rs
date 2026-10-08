@@ -16090,6 +16090,15 @@ fn split_table_cells_seeded(
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
         index += 1;
+        if open_len.is_none()
+            && ch == '\\'
+            && chars.peek().is_some_and(|next| next.is_ascii_punctuation())
+        {
+            buf.push(ch);
+            buf.push(chars.next().unwrap());
+            index += 1;
+            continue;
+        }
         if ch == '`' {
             let mut run = 1usize;
             buf.push(ch);
@@ -21810,19 +21819,8 @@ pub(crate) fn bracketed_run_body(text: &str) -> Option<String> {
     read_bracketed(text.as_bytes(), 0).map(|(body, _)| body)
 }
 
-/// Does a RAW bracketed run re-read as itself when written between `[` and `]`?
-///
-/// The writer needs this because a raw run - an image's alt text - resolves no
-/// escapes: whatever sits between the brackets IS the value, backslashes and
-/// all. So the writer cannot neutralize a `]` by escaping it. It can only ask
-/// whether the reader's own scan would close where it is about to put the `]`,
-/// and write the run verbatim when it does.
-///
-/// It is the READER's scan rather than a second spelling of it: the same
-/// [`read_bracketed`] the inline pass closes a link's text with, run over the
-/// run wrapped in the brackets it will be written between. Balance,
-/// escape-awareness and opacity inside a verbatim span or an editorial comment
-/// therefore hold by construction.
+/// Whether the reader closes a bracketed run at its final delimiter.
+/// This checks syntax; callers separately check escape decoding.
 pub(crate) fn raw_bracket_run_closes(text: &str) -> bool {
     let wrapped = format!("[{text}]");
     read_bracketed(wrapped.as_bytes(), 0).is_some_and(|(_, after)| after == wrapped.len())

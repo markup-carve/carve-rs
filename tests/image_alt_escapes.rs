@@ -61,3 +61,30 @@ fn table_image_stays_native() {
 fn unresolved_image_stays_literal() {
     assert!(carve::to_html("x ![a\\|b][missing] y").contains("![a\\|b][missing]"));
 }
+
+#[test]
+fn migrate_escaped_image_alt() {
+    let source = "x ![a\\|b][R] y\n\n[r]: /i\n";
+    assert_eq!(
+        carve::migrate_case_only_references(source, &carve::Options::default()),
+        "x ![a\\|b][r] y\n\n[r]: /i\n"
+    );
+}
+
+#[test]
+fn escaped_backtick_beside_code_cell() {
+    let source = "| ![a\\`b](/i \"c\\`d\") | `x` |\n|---|---|\n";
+    let expected = carve::to_html(source);
+    assert!(expected.contains("alt=\"a`b\" title=\"c`d\""));
+    assert!(expected.contains("<code>x</code>"));
+    assert_eq!(carve::to_html(&carve::to_carve(source)), expected);
+}
+
+#[test]
+fn migration_uses_the_balanced_alt_boundary() {
+    let source = "x ![a\\|b `][]`][R]{title=\"] [R]\"} y\n\n[r]: /i\n";
+    assert_eq!(
+        carve::migrate_case_only_references(source, &carve::Options::default()),
+        source.replace("`][R]", "`][r]")
+    );
+}
