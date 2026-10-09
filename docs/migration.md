@@ -73,6 +73,11 @@ report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics. An
 ordered task item keeps its marker as text, as in `1. [x] done`, because Carve
 spells a checkbox only behind a bullet. The report adds a
 `structure-unspellable` warning beside `fidelity-unverified` for that lost box.
+A raw span whose content would end a content line in whitespace takes a
+`raw-span-whitespace-trimmed` warning, degraded/exact, at the source line:
+CARVE-P2-025 drops the run and a verbatim run crossing a line break is no
+exception, so the bytes are written and never read back
+(markup-carve/carve#2804).
 A bullet task item reads a box even when its label names a link reference
 definition, which then goes unused: `- [x] done`
 with `[x]: /u` beneath it imports as `- [x] done`, following cmark-gfm rather than

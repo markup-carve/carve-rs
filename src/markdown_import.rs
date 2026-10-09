@@ -28,7 +28,27 @@ use crate::render_carve;
 pub(crate) struct MarkdownImportLoss {
     pub message: String,
     pub line: Option<usize>,
+    pub kind: MarkdownLossKind,
 }
+
+/// Which report row a loss becomes.
+///
+/// The code and the fidelity belong to the kind rather than to the producer:
+/// `Unspellable` is a shape the syntax cannot spell at all and is dropped,
+/// while `RawSpanWhitespaceTrimmed` keeps the span and loses a whitespace run
+/// inside it, which is what degraded covers (markup-carve/carve#2804).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MarkdownLossKind {
+    Unspellable,
+    RawSpanWhitespaceTrimmed,
+}
+
+/// A raw span whose content ends a line in whitespace, which CARVE-P2-025
+/// drops from every content line - a verbatim run crossing a line break
+/// included.
+pub(crate) const RAW_SPAN_WHITESPACE_TRIMMED: &str =
+    "A raw span ends a content line in whitespace, which Carve drops; \
+     the whitespace did not reach the converted source";
 
 /// A front matter block the importer claimed, and whether its opener named the
 /// format.
@@ -128,6 +148,7 @@ pub(crate) fn markdown_to_carve_with_losses(
             .map(|message| MarkdownImportLoss {
                 message,
                 line: None,
+                kind: MarkdownLossKind::Unspellable,
             }),
     );
     render_carve(&document).map(|value| (value, losses, notices))
@@ -341,6 +362,7 @@ fn markdown_to_ast_with_losses(
                 builder.losses.push(MarkdownImportLoss {
                     message: crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE.to_owned(),
                     line: Some(builder.current_line),
+                    kind: MarkdownLossKind::Unspellable,
                 });
             }
             builder.inline(InlineNode::text(&source[range.start..range.end]));
@@ -1048,12 +1070,42 @@ impl Builder {
     }
 
     fn raw_inline(&mut self, content: String) {
+        self.report_raw_span_trailing_whitespace(&content);
         self.inline(InlineNode::RawInline(RawInline {
             format: "html".to_string(),
             content,
             injected: false,
             pos: None,
         }));
+    }
+
+    /// Report every whitespace run a raw span would leave at the end of a
+    /// content line.
+    ///
+    /// CARVE-P2-025 drops such a run from every content line and a verbatim
+    /// run crossing a line break is no exception, so the bytes are written and
+    /// never read back (markup-carve/carve#2804). Whitespace anywhere else in
+    /// the span survives and is not reported.
+    fn report_raw_span_trailing_whitespace(&mut self, content: &str) {
+        let newlines = content.matches('\n').count();
+        if newlines == 0 {
+            return;
+        }
+        // `current_line` is the line the event that OPENED the span starts on,
+        // which is the first line of its content.
+        let start = self.current_line;
+        for (index, line) in content.split('\n').enumerate() {
+            if index == newlines {
+                break;
+            }
+            if line.ends_with([' ', '\t', '\u{b}', '\u{c}']) {
+                self.losses.push(MarkdownImportLoss {
+                    message: RAW_SPAN_WHITESPACE_TRIMMED.to_owned(),
+                    line: Some(start + index),
+                    kind: MarkdownLossKind::RawSpanWhitespaceTrimmed,
+                });
+            }
+        }
     }
 
     /// Collect one line of a block-level HTML element into the frame the
@@ -1469,7 +1521,7 @@ impl Builder {
                     self.losses.push(MarkdownImportLoss { message: format!(
                         "Dropped a {kind} table row of {} blank {cell}; Carve spells no row whose every cell is blank",
                         cells.len()
-                    ), line: Some(self.current_line) });
+                    ), line: Some(self.current_line), kind: MarkdownLossKind::Unspellable });
                     return;
                 }
                 let row = TableRow {
