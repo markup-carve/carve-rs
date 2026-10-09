@@ -1966,6 +1966,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
+            IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
+
+            let label = escape_text(&strip_controls(&link.text));
+
+            IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
             let title = link
                 .attrs
                 .as_ref()
@@ -1974,7 +1979,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 .unwrap_or_default();
             format!(
                 "[{}]({}{title})",
-                strip_controls(&link.text),
+                label,
                 encode_markdown_destination(&link.href, link.pos.as_ref(), DeniedSink::Destination)
             )
         }
@@ -2007,10 +2012,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 // A footnote body is an aside, not part of the label it sits in
                 // -- the HTML target renders it outside the anchor entirely. So
                 // a reference inside one is not nested and still links.
+                // Its Markdown body still sits inside the outer label brackets.
                 let outer = std::mem::replace(&mut ctx.link_depth, 0);
-                let outer_text = IN_LINK_TEXT.with(|d| d.replace(0));
                 let rendered = render_inlines(inline, ctx, depth + 1);
-                IN_LINK_TEXT.with(|d| d.set(outer_text));
                 ctx.link_depth = outer;
                 format!("^[{rendered}]")
             } else {
@@ -2172,10 +2176,12 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     }
     ctx.link_depth += 1;
     IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
+
     // Render the label through the anchor-unwrapping view.
     let children = unwrap_nested_anchors(&node.children);
     let text = render_inlines(children.as_ref(), ctx, depth);
     IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
+
     ctx.link_depth -= 1;
     // A fragment naming a heading is written as that heading's GFM slug, which
     // needs no encoding; any other fragment is still the author's destination
@@ -2406,7 +2412,11 @@ fn escape_text(text: &str) -> String {
                 continue;
             }
             '[' => {
-                carry(C_BRACKET, &mut out);
+                if !autolinks {
+                    out.push_str("\\[");
+                } else {
+                    carry(C_BRACKET, &mut out);
+                }
                 continue;
             }
             // Markdown metacharacters. The ASTERISK keeps M1 unconditionally

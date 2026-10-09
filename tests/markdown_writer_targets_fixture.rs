@@ -10,7 +10,9 @@ fn the_markdown_writer_matches_the_shared_fixture() {
     .unwrap();
     let cases = cases.as_array().unwrap();
     assert!(cases.len() >= 3, "the fixture is empty");
-    for case in cases {
+    let label_cases: Value =
+        serde_json::from_str(include_str!("fixtures/markdown-link-label-brackets.json")).unwrap();
+    for case in cases.iter().chain(label_cases.as_array().unwrap().iter()) {
         let name = case["name"].as_str().unwrap();
         let out = match case["carve"].as_str() {
             Some(source) => carve::to_markdown(source),
