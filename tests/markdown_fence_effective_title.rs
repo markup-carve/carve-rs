@@ -51,3 +51,36 @@ fn a_grouping_label_rides_along() {
         "```php \"f.php\" [Build]"
     );
 }
+
+#[test]
+fn a_backtick_title_uses_a_tilde_fence_longer_than_the_payload() {
+    let source = "```php \"src/`Auth.php\"\n~~~\n$ok = true;\n```\n";
+    let markdown = carve::to_markdown(source);
+    assert!(markdown.starts_with("~~~~php \"src/`Auth.php\"\n"));
+    let events: Vec<_> = pulldown_cmark::Parser::new(&markdown).collect();
+    assert!(events.iter().any(|event| matches!(event, pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(pulldown_cmark::CodeBlockKind::Fenced(info))) if info.as_ref() == "php \"src/`Auth.php\"")));
+    let payload: String = events
+        .iter()
+        .filter_map(|event| match event {
+            pulldown_cmark::Event::Text(text) => Some(text.as_ref()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(payload, "~~~\n$ok = true;\n");
+}
+
+#[test]
+fn a_leading_tilde_in_the_language_stays_outside_the_fence() {
+    let mut doc = carve::parse("```php \"a`b\"\nbody\n```\n\nafter\n");
+    let carve::BlockNode::CodeBlock(code) = &mut doc.children[0] else {
+        panic!("expected code")
+    };
+    code.lang = Some("~x".into());
+    let markdown = carve::render_markdown(&doc).unwrap();
+    assert!(markdown.starts_with("~~~ ~x \"a`b\"\n"));
+    let events: Vec<_> = pulldown_cmark::Parser::new(&markdown).collect();
+    assert!(events.iter().any(|event| matches!(event, pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(pulldown_cmark::CodeBlockKind::Fenced(info))) if info.starts_with("~x "))));
+    assert!(events.iter().any(
+        |event| matches!(event, pulldown_cmark::Event::Text(text) if text.as_ref() == "after")
+    ));
+}
