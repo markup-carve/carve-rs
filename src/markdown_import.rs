@@ -30,6 +30,18 @@ pub(crate) struct MarkdownImportLoss {
     pub line: Option<usize>,
 }
 
+/// A front matter block the importer claimed, and whether its opener named the
+/// format.
+///
+/// A typed opener is front matter unconditionally (CARVE-P2-030), so the
+/// reading was declared rather than derived, and the report says `exact` where
+/// a bare `---` claimed by the shape test says `inferred`
+/// (markup-carve/carve#2806).
+pub(crate) struct FrontmatterNotice {
+    pub message: String,
+    pub typed_opener: bool,
+}
+
 fn markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
         return destination.to_string();
@@ -105,7 +117,7 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
-) -> Result<(String, Vec<MarkdownImportLoss>, Vec<String>), crate::RenderCarveError> {
+) -> Result<(String, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     let (mut document, mut losses, notices) = markdown_to_ast_with_losses(markdown)?;
     // ONLY ON THE WRITING PATH, as the HTML importer does it: the AST keeps the
     // nesting the source carried, and only a Carve SPELLING has to give it up
@@ -185,7 +197,7 @@ fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
 
 fn markdown_to_ast_with_losses(
     markdown: &str,
-) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<String>), crate::RenderCarveError> {
+) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
     } else {
@@ -406,8 +418,8 @@ fn markdown_to_ast_with_losses(
     let notices = document
         .frontmatter_raw
         .iter()
-        .map(|frontmatter| {
-            if typed {
+        .map(|frontmatter| FrontmatterNotice {
+            message: if typed {
                 format!(
                     "Converted the leading `---{}` block into frontmatter; a typed opener names the block's format",
                     frontmatter.format
@@ -417,7 +429,8 @@ fn markdown_to_ast_with_losses(
                     "Converted the leading `---` block into `{}` frontmatter; its first content line has the shape of a mapping",
                     frontmatter.format
                 )
-            }
+            },
+            typed_opener: typed,
         })
         .collect();
     crate::render_depth::refuse_if_too_deep(&document, "carve")?;
@@ -1992,6 +2005,36 @@ mod tests {
         assert_eq!(raw.content, "key = 1");
     }
 
+    /// One triple across all three engines (markup-carve/carve#2806):
+    /// `normalized` because an alternate block form was resolved, `line:1`
+    /// because a synthesized block starts there, and a confidence that follows
+    /// the opener. A typed opener declared its format, so nothing is inferred.
+    #[test]
+    fn the_synthesized_row_carries_one_triple() {
+        for (source, confidence) in [
+            (
+                "---\ntitle: x\n---\n\n# Heading\n\nText here.\n",
+                crate::ImportConfidence::Inferred,
+            ),
+            (
+                "---yaml\ntitle: x\n---\n\n# Heading\n\nText here.\n",
+                crate::ImportConfidence::Exact,
+            ),
+        ] {
+            let report = crate::migrate_markdown(source).report;
+            let rows: Vec<_> = report
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == "frontmatter-synthesized")
+                .collect();
+            assert_eq!(rows.len(), 1, "{:?}", report.diagnostics);
+            assert_eq!(rows[0].severity, crate::HtmlImportSeverity::Info);
+            assert_eq!(rows[0].fidelity, crate::ImportFidelity::Normalized);
+            assert_eq!(rows[0].confidence, confidence, "{source:?}");
+            assert_eq!(rows[0].path.as_deref(), Some("line:1"));
+        }
+    }
+
     /// CommonMark example 96: a thematic break, two setext `h2`s, a paragraph.
     /// The break comes out in a spelling that cannot reopen frontmatter.
     #[test]
@@ -2017,7 +2060,7 @@ mod tests {
             .filter(|d| d.code == "frontmatter-synthesized")
             .collect();
         assert_eq!(synthesized.len(), 1, "{:?}", report.diagnostics);
-        assert_eq!(synthesized[0].fidelity, crate::ImportFidelity::Preserved);
+        assert_eq!(synthesized[0].fidelity, crate::ImportFidelity::Normalized);
         // The typed path reports too, with its own reason.
         let typed = crate::migrate_markdown("---toml\nkey = 1\n---\n\nB\n").report;
         assert_eq!(

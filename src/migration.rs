@@ -213,16 +213,25 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
         }));
     // Reported, not a loss: the block's content survives byte-exact, and the
     // reader is told that a `---` run changed meaning (markup-carve/carve#2799).
+    //
+    // `normalized` because an alternate block form was resolved - the same
+    // bytes could have read as a thematic break over a setext heading - and
+    // `line:1` because a synthesized block starts there. The confidence
+    // follows the opener (markup-carve/carve#2806).
     result
         .report
         .diagnostics
-        .extend(notices.into_iter().map(|message| MigrationDiagnostic {
+        .extend(notices.into_iter().map(|notice| MigrationDiagnostic {
             code: "frontmatter-synthesized".to_owned(),
-            message,
+            message: notice.message,
             severity: HtmlImportSeverity::Info,
-            fidelity: MigrationFidelity::Preserved,
-            confidence: MigrationConfidence::Exact,
-            path: None,
+            fidelity: MigrationFidelity::Normalized,
+            confidence: if notice.typed_opener {
+                MigrationConfidence::Exact
+            } else {
+                MigrationConfidence::Inferred
+            },
+            path: Some("line:1".to_owned()),
         }));
     Ok(result)
 }
