@@ -177,3 +177,24 @@ fn footnote_looking_code_text_does_not_consume_an_endnote() {
     assert!(rendered.contains("<code>x1</code>"));
     assert!(rendered.contains("note"));
 }
+
+#[test]
+fn template_content_is_charged_to_both_import_limits() {
+    let html = "<p><code><template><b>x</b></template>word</code></p>";
+    let low_nodes = HtmlImportOptions {
+        max_nodes: 5,
+        ..Default::default()
+    };
+    let low_depth = HtmlImportOptions {
+        max_depth: 4,
+        ..Default::default()
+    };
+    let enough = HtmlImportOptions {
+        max_nodes: 6,
+        max_depth: 5,
+        ..Default::default()
+    };
+    assert!(carve::html_to_ast(html, &low_nodes).is_err());
+    assert!(carve::html_to_ast(html, &low_depth).is_err());
+    assert!(carve::html_to_ast(html, &enough).is_ok());
+}

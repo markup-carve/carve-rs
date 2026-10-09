@@ -1546,7 +1546,18 @@ impl<'a> Importer<'a> {
     fn charge_subtree(&mut self, h: &Handle, depth: usize) -> Result<(), HtmlImportError> {
         let mut pending = vec![(h.clone(), depth)];
         while let Some((current, current_depth)) = pending.pop() {
-            for child in current.children.borrow().iter() {
+            let source = if let NodeData::Element {
+                template_contents, ..
+            } = &current.data
+            {
+                template_contents
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| current.clone())
+            } else {
+                current.clone()
+            };
+            for child in source.children.borrow().iter() {
                 self.enter(current_depth + 1)?;
                 pending.push((child.clone(), current_depth + 1));
             }
