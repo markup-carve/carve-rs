@@ -1752,3 +1752,6 @@ mod raw_reference_label_brackets;
 
 #[path = "../code_block_child_markup.rs"]
 mod code_block_child_markup;
+
+#[path = "../markdown_wrapper_hard_breaks.rs"]
+mod markdown_wrapper_hard_breaks;

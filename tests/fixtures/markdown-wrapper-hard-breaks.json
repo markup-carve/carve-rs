@@ -1,0 +1,87 @@
+[
+  {
+    "source": ":: word \\\n: definition\n",
+    "markdown": "<strong>word \\\n</strong>\n\ndefinition\n",
+    "html": "<p><strong>word <br />\n</strong></p>\n<p>definition</p>\n"
+  },
+  {
+    "source": ":: word\\\n: definition\n",
+    "markdown": "<strong>word\\\n</strong>\n\ndefinition\n",
+    "html": "<p><strong>word<br />\n</strong></p>\n<p>definition</p>\n"
+  },
+  {
+    "source": ":: word\t\\\n: definition\n",
+    "markdown": "<strong>word\t\\\n</strong>\n\ndefinition\n",
+    "html": "<p><strong>word\t<br />\n</strong></p>\n<p>definition</p>\n"
+  },
+  {
+    "source": ":: word  \\\n: definition\n",
+    "markdown": "<strong>word  \\\n</strong>\n\ndefinition\n",
+    "html": "<p><strong>word  <br />\n</strong></p>\n<p>definition</p>\n"
+  },
+  {
+    "source": ":: term\nnext \\\n: definition\n",
+    "markdown": "<strong>term\nnext \\\n</strong>\n\ndefinition\n",
+    "html": "<p><strong>term\nnext <br />\n</strong></p>\n<p>definition</p>\n"
+  },
+  {
+    "source": "{*a \\\n*}\n",
+    "markdown": "<strong>a\\\n</strong>\n",
+    "html": "<p><strong>a<br />\n</strong></p>\n"
+  },
+  {
+    "source": "{/a \\\n/}\n",
+    "markdown": "<em>a\\\n</em>\n",
+    "html": "<p><em>a<br />\n</em></p>\n"
+  },
+  {
+    "source": "{~a \\\n~}\n",
+    "markdown": "<del>a\\\n</del>\n",
+    "html": "<p><del>a<br />\n</del></p>\n"
+  },
+  {
+    "source": "x {*a\\\n*} y\n",
+    "markdown": "x <strong>a\\\n</strong> y\n",
+    "html": "<p>x <strong>a<br />\n</strong> y</p>\n"
+  },
+  {
+    "source": "x {/a\\\n/} y\n",
+    "markdown": "x <em>a\\\n</em> y\n",
+    "html": "<p>x <em>a<br />\n</em> y</p>\n"
+  },
+  {
+    "source": "x {~a\\\n~} y\n",
+    "markdown": "x <del>a\\\n</del> y\n",
+    "html": "<p>x <del>a<br />\n</del> y</p>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ p\\\n:::\n^ g\\\n",
+    "markdown": "![a](x.png)\n\n<em>p\\\n</em>\n\n<strong>g\\\n</strong>\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p<br />\n</em></p>\n<p><strong>g<br />\n</strong></p>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ p \\\n:::\n^ g \\\n",
+    "markdown": "![a](x.png)\n\n<em>p \\\n</em>\n\n<strong>g \\\n</strong>\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p <br />\n</em></p>\n<p><strong>g <br />\n</strong></p>\n"
+  },
+  {
+    "source": "{*\na\\\n*}\n",
+    "markdown": "<strong>a\\\n</strong>\n",
+    "html": "<p><strong>a<br />\n</strong></p>\n"
+  },
+  {
+    "source": "{/\na\\\n/}\n",
+    "markdown": "<em>a\\\n</em>\n",
+    "html": "<p><em>a<br />\n</em></p>\n"
+  },
+  {
+    "source": "{~\na\\\n~}\n",
+    "markdown": "<del>a\\\n</del>\n",
+    "html": "<p><del>a<br />\n</del></p>\n"
+  },
+  {
+    "source": "{*\n{/a/}\\\n*}\n",
+    "markdown": "<strong>*a*\\\n</strong>\n",
+    "html": "<p><strong><em>a</em><br />\n</strong></p>\n"
+  }
+]

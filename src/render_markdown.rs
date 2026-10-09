@@ -1438,6 +1438,10 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
         if inner.is_empty() {
             return String::new();
         }
+        let lead = &inner[..inner.len() - inner.trim_start().len()];
+        if ends_escaped(core) && lead.contains('\n') {
+            return format!("{lead}{open_tag}{}{close_tag}", &inner[lead.len()..]);
+        }
         return format!("{open_tag}{inner}{close_tag}");
     }
     let lead = &inner[..inner.len() - inner.trim_start().len()];
