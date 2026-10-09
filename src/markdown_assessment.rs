@@ -799,7 +799,12 @@ mod tests {
 
     #[test]
     fn unsupported_input_and_changed_output_fail_closed() {
-        for source in ["https://example.org", "[^note]\n\n[^note]: note", "\0"] {
+        for source in [
+            "https://example.org",
+            "[^note]\n\n[^note]: note",
+            "Text[^1]\n\n[^1]: note\n\n    1) item\n",
+            "\0",
+        ] {
             assert!(
                 crate::migrate_markdown(source)
                     .report
