@@ -105,7 +105,7 @@ fn the_writer_escapes_an_arrow_in_a_half() {
     let json = r#"{"type":"document","children":[{"type":"paragraph","children":[{"type":"substitution","old":[{"type":"text","value":"a~>b"}],"new":[{"type":"text","value":"c~}d"}]}]}],"srcByteLength":0}"#;
     let doc = carve::from_json(json).unwrap();
     let written = carve::render_carve(&doc).unwrap();
-    assert_eq!(written, "{~a\\~>b~>c~\\}d~}\n");
+    assert_eq!(written, "{~a\\~>b~>c\\~}d~}\n");
     assert_eq!(carve::to_html(&written), carve::render_html(&doc).unwrap());
 }
 
