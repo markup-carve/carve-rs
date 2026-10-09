@@ -356,7 +356,12 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             } else {
                 ""
             };
-            format!("{fence}{info}\n{content}{ending}{fence}\n\n")
+            let info_separator = if fence.starts_with('~') && info.starts_with('~') {
+                " "
+            } else {
+                ""
+            };
+            format!("{fence}{info_separator}{info}\n{content}{ending}{fence}\n\n")
         }
         BlockNode::BlockQuote(quote) => {
             let outer = ctx.previous_list.take();
