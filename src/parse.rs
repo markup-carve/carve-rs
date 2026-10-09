@@ -21083,6 +21083,8 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         // the quote, and quote flanking reads that character: `\{"quoted"`
         // opens on the brace exactly as an unescaped `{` would (corpus 163).
         Some(InlineNode::NonBreakingSpace(_)) => '\u{00a0}',
+        // A line break is whitespace to quote flanking (markup-carve/carve#2822).
+        Some(InlineNode::SoftBreak(_) | InlineNode::HardBreak(_)) => '\n',
         Some(InlineNode::EscapedText(t)) => t.value.chars().last().unwrap_or('x'),
         None => '\0',
         Some(_) => 'x',
