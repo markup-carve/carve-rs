@@ -10,6 +10,9 @@
 #[path = "../braced_span_host_boundaries.rs"]
 mod braced_span_host_boundaries;
 
+#[path = "../the_markdown_target_carries_attributes_on_an_unspellable_inline.rs"]
+mod the_markdown_target_carries_attributes_on_an_unspellable_inline;
+
 #[path = "../common/mod.rs"]
 mod common;
 
