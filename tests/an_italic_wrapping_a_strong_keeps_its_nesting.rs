@@ -43,7 +43,7 @@ fn a_strike_wrapping_a_strong_is_untouched() {
 }
 
 #[test]
-fn an_italic_whose_content_only_starts_with_the_strong_marker_is_untouched() {
-    assert_eq!(carve("{/{*x*} y/}\n"), "/*x* y/\n");
+fn an_italic_starting_with_a_strong_cannot_open_a_later_combined_pair() {
+    assert_eq!(carve("{/{*x*} y/}\n"), "{/*x* y/}\n");
     assert!(round_trips("{/{*x*} y/}\n"));
 }

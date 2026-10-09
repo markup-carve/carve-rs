@@ -1713,3 +1713,6 @@ mod an_ordered_list_names_its_delimiter_in_html;
 
 #[path = "../ordered_dialect_boundaries.rs"]
 mod ordered_dialect_boundaries;
+
+#[path = "../quoted_attribute_pair_escapes.rs"]
+mod quoted_attribute_pair_escapes;

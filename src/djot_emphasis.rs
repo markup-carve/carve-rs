@@ -76,24 +76,26 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut braces = Vec::new();
     let mut bracket_pairs = Vec::new();
     let quoted_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*").unwrap();
-    let stars = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:\*[ \t]*){3,}$").unwrap();
+    let stars = cached_regex!(r"^(?:[ \t]*>)*[ \t]*(?:\*[ \t]*){3,}$").unwrap();
     let block_start = cached_regex!(r"^[ \t]*(?:`{3,}|~{3,}|:{3,}|#{1,6}[ \t])").unwrap();
     let marker = cached_regex!(r"^[ \t]*(?:[-*+][ \t]|[0-9]+[.)][ \t]|\|)").unwrap();
     let mut previous_blank = true;
     let mut container = false;
     let mut list_column = None;
-    let structural_prefix = cached_regex!(
-        r"^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[[ xX-]\][ \t]+)?)*[ \t]*$"
-    )
-    .unwrap();
     let item_prefix = cached_regex!(r"^[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+").unwrap();
     let mut line_start = 0;
+    let mut line_end = bytes.len();
+    let mut structural_end = 0;
+    let mut thematic_line = false;
     let mut i = 0;
     while i < bytes.len() {
         if i == line_start {
             let end = source[i..]
                 .find('\n')
                 .map_or(bytes.len(), |offset| i + offset);
+            line_end = end;
+            structural_end = i + structural_prefix_end(&source[i..end]);
+            thematic_line = stars.is_match(&source[i..end]);
             let line = quoted_prefix.replace(&source[i..end], "");
             let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
             if !line.trim().is_empty()
@@ -178,17 +180,14 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             i += 1;
             continue;
         }
-        if ch == b'*' && structural_prefix.is_match(&source[line_start..i]) {
-            let end = source[i..]
-                .find('\n')
-                .map_or(bytes.len(), |offset| i + offset);
-            if stars.is_match(&source[line_start..end]) {
-                for (at, byte) in bytes.iter().enumerate().take(end).skip(i) {
+        if ch == b'*' && i <= structural_end {
+            if thematic_line {
+                for (at, byte) in bytes.iter().enumerate().take(line_end).skip(i) {
                     if *byte == b'*' {
                         structural.insert(at);
                     }
                 }
-                i = end;
+                i = line_end;
                 continue;
             }
             if bytes.get(i + 1).is_some_and(|byte| b" \t".contains(byte)) {
@@ -437,5 +436,103 @@ impl Renderer<'_> {
         let token = format!("{}{}\0", self.literal_prefix, literals.len());
         literals.push(value.to_string());
         token
+    }
+}
+
+fn structural_prefix_end(line: &str) -> usize {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    let spaces = |at: &mut usize| {
+        while bytes.get(*at).is_some_and(|ch| b" \t".contains(ch)) {
+            *at += 1;
+        }
+    };
+    loop {
+        spaces(&mut at);
+        if bytes.get(at) != Some(&b'>') {
+            break;
+        }
+        at += 1;
+    }
+    loop {
+        let start = at;
+        let mut end = at;
+        if bytes.get(end).is_some_and(|ch| b"-*+".contains(ch)) {
+            end += 1;
+        } else {
+            while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+                end += 1;
+            }
+            if end == start || !bytes.get(end).is_some_and(|ch| b".)".contains(ch)) {
+                break;
+            }
+            end += 1;
+        }
+        if !bytes.get(end).is_some_and(|ch| b" \t".contains(ch)) {
+            break;
+        }
+        at = end;
+        spaces(&mut at);
+        if bytes.get(at) == Some(&b'[')
+            && bytes.get(at + 1).is_some_and(|ch| b" xX-".contains(ch))
+            && bytes.get(at + 2) == Some(&b']')
+            && bytes.get(at + 3).is_some_and(|ch| b" \t".contains(ch))
+        {
+            at += 3;
+            spaces(&mut at);
+        }
+    }
+    at
+}
+
+#[cfg(test)]
+mod structural_prefix_tests {
+    use super::{convert, structural_prefix_end};
+
+    #[test]
+    fn agrees_with_the_prefix_grammar_at_each_asterisk() {
+        let grammar = regex::Regex::new(
+            r"^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+(?:\[[ xX-]\][ \t]+)?)*[ \t]*$",
+        )
+        .unwrap();
+        let chunks = [
+            "* ", "+ ", "- ", "12. ", "3)\t", "[x] ", "[ ]\t", ">", "> ", " ", "\t", "\\*", "*a*",
+            "1.", "[X]", "[*]", "é", "x",
+        ];
+        let mut seed = 7_u32;
+        for _ in 0..1000 {
+            let mut line = String::new();
+            for _ in 0..12 {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                line.push_str(chunks[seed as usize % chunks.len()]);
+            }
+            let end = structural_prefix_end(&line);
+            for (at, ch) in line.char_indices() {
+                if ch == '*' {
+                    assert_eq!(at <= end, grammar.is_match(&line[..at]), "{line} at {at}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn long_marker_chains_preserve_the_trailing_emphasis() {
+        for count in [1000, 4000, 16000] {
+            let markers = "* ".repeat(count);
+            let source = format!("{markers}_a_");
+            assert_eq!(
+                convert(&source, &source, str::to_string),
+                format!("{markers}/a/")
+            );
+        }
+    }
+
+    #[test]
+    fn line_facts_reset_after_a_thematic_break() {
+        let source = "***\n* _a_\n> * _b_";
+        assert_eq!(
+            convert(source, source, str::to_string),
+            "***\n* /a/\n> * /b/"
+        );
     }
 }
