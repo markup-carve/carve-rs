@@ -1588,8 +1588,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 19-smart-typography-dashes-and-quotes-10, which degrades
     // `smart_punctuation` and `soft_break` with nothing dropped, the same causes
     // as its sibling 19-3: reported-lossy rises to 508.
+    // The pin moves on to carve 5d9795d, and the whole delta is ONE DOCUMENT
+    // ARRIVING. The corpus diff between the two pins is a single `.crv` file
+    // added with its golden, none modified and none removed, and this branch
+    // touches `tests/` only - so the engine is byte-identical to the one main
+    // runs and no pre-existing document can change bucket. The joiner is
+    // 19-smart-typography-dashes-and-quotes-11, `'tis the season to be
+    // 'jolly'`, and it degrades `smart_punctuation` alone with nothing
+    // dropped - the kind its siblings 19-3 and 19-10 already carry, so no new
+    // kind appears. Strict holds at 1723 and reported-lossy rises to 509.
     const STRICT: usize = 1723;
-    const LOSSY: usize = 508;
+    const LOSSY: usize = 509;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
