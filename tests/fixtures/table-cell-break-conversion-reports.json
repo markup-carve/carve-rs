@@ -419,5 +419,48 @@
       ]
     },
     "diagnostics": []
+  },
+  {
+    "name": "table caption",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "caption": [
+            {
+              "type": "text",
+              "value": "a"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": "b"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
   }
 ]
