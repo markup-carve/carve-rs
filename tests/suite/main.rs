@@ -1758,3 +1758,6 @@ mod markdown_wrapper_hard_breaks;
 
 #[path = "../table_cell_break_conversion_reports.rs"]
 mod table_cell_break_conversion_reports;
+
+#[path = "../short_caption_conversion_reports.rs"]
+mod short_caption_conversion_reports;

@@ -194,6 +194,13 @@ pub fn conversion_diagnostics(
                     )),
                     _ => {}
                 }
+                if matches!(ty, Some("table" | "figure")) && object.contains_key("shortCaption") {
+                    losses.push((
+                        ConversionDiagnosticCode::FieldUnspellable,
+                        Some("shortCaption"),
+                        "Carve source cannot spell a short caption",
+                    ));
+                }
                 if ty == Some("table") && source_partition_preserved(object) == Some(false) {
                     losses.push((
                         ConversionDiagnosticCode::FieldUnspellable,

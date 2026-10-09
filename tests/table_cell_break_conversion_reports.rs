@@ -49,6 +49,6 @@ fn unrendered_short_caption_does_not_report_a_flattened_break() {
     let ast: serde_json::Value = serde_json::json!({"type": "document", "srcByteLength": 0, "children": [{"type": "table", "rows": [{"type": "table_row", "cells": [{"type": "table_cell", "header": false, "blocks": [{"type": "table", "rows": [{"type": "table_row", "cells": [{"type": "table_cell", "header": false, "children": [{"type": "text", "value": "a"}]}]}], "shortCaption": [{"type": "text", "value": "short"}, {"type": "hard_break"}, {"type": "text", "value": "caption"}]}]}]}]}]});
     let doc = carve::from_json(&ast.to_string()).unwrap();
     let report = carve::conversion_diagnostics(&doc, 100).unwrap();
-    assert_eq!(report.total_diagnostics, 1);
+    assert_eq!(report.total_diagnostics, 2);
     assert!(report.diagnostics.iter().all(|d| d.node != "hard_break"));
 }
