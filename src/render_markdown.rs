@@ -2406,7 +2406,11 @@ fn escape_text(text: &str) -> String {
                 continue;
             }
             '[' => {
-                carry(C_BRACKET, &mut out);
+                if autolinks {
+                    carry(C_BRACKET, &mut out);
+                } else {
+                    out.push_str("\\[");
+                }
                 continue;
             }
             // Markdown metacharacters. The ASTERISK keeps M1 unconditionally
