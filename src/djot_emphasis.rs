@@ -34,6 +34,8 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut valid_braces = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
+    let mut last_escaped = None;
+    let raw_attribute = cached_regex!(r"^\{=[^\s{}`]+\}").unwrap();
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'\n' {
@@ -45,7 +47,8 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             }
             brace_line_start = at + 1;
         }
-        if bytes[at] == b'\\' {
+        if bytes[at] == b'\\' && bytes.get(at + 1) != Some(&b'\n') {
+            last_escaped = Some(at + 1);
             at += 2;
             continue;
         }
@@ -56,7 +59,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
                     .is_some_and(|byte| b"+-=^~".contains(byte))
             {
                 pending_braces.entry(bytes[at + 1]).or_default().push(at);
-            } else if bytes[at] == b'}' && at > 0 {
+            } else if bytes[at] == b'}' && at > 0 && last_escaped != Some(at - 1) {
                 if let Some(start) = pending_braces
                     .get_mut(&bytes[at - 1])
                     .and_then(|stack| stack.pop())
@@ -282,6 +285,32 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut literal_prefix = "\0DJOTLITERAL\0".to_string();
     while source.contains(&literal_prefix) {
         literal_prefix.push('\0');
+    }
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if mask[at] == b'{'
+            && bytes
+                .get(at + 1)
+                .is_some_and(|kind| b"+-=^~_*".contains(kind))
+            && !valid_braces.contains(&at)
+            && !starts.contains_key(&at)
+        {
+            if at > 0
+                && bytes[at - 1] == b'`'
+                && mask[at - 1] == b' '
+                && raw_attribute.is_match(&source[at..])
+            {
+                at += 1;
+                continue;
+            }
+            literal_brackets.insert(at);
+            literal_brackets.insert(at + 1);
+        }
+        at += 1;
     }
     let renderer = Renderer {
         source,
