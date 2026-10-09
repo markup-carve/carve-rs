@@ -85,6 +85,53 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     Some(kind)
 }
 
+/// Whether a BARE `---` block's content has the SHAPE of a mapping.
+///
+/// A shape test by byte scanning, never a parse (markup-carve/carve#2799).
+/// Three YAML libraries disagree on edge cases, so carve-js, carve-php and
+/// carve-rs each scan to this one rule and agree byte for byte instead. It
+/// therefore differs from a parse on malformed content such as
+/// `title: [unclosed`, which counts as a mapping here; that is deliberate.
+///
+/// A TYPED opener is never asked: `---FORMAT` says what the block is, and a
+/// break is a dash run and nothing else (PART 1), so the collision this test
+/// resolves cannot arise there.
+pub(crate) fn has_mapping_shape(content: &str) -> bool {
+    let Some(line) = content.lines().find(|line| {
+        let bare = line.trim_start_matches([' ', '\t']);
+        !bare.is_empty() && !bare.starts_with('#')
+    }) else {
+        // An empty or comment-only block has no mapping in it.
+        return false;
+    };
+    // The key is at column 0: a double- or single-quoted string, or a run that
+    // starts with neither whitespace nor `-`, `[`, `{`, `"`, `'`, `#` and holds
+    // no `:`. A space, a tab or the line end must follow the colon.
+    let Some(rest) = after_mapping_key(line) else {
+        return false;
+    };
+    let rest = rest.as_bytes();
+    rest.first() == Some(&b':') && matches!(rest.get(1), None | Some(b' ') | Some(b'\t'))
+}
+
+/// The key of a mapping line at column 0, returning what follows it.
+fn after_mapping_key(line: &str) -> Option<&str> {
+    let first = line.chars().next()?;
+    if first == '"' || first == '\'' {
+        let end = line[1..].find(first)?;
+        return Some(&line[1 + end + 1..]);
+    }
+    if first.is_whitespace() || matches!(first, '-' | '[' | '{' | '#') {
+        return None;
+    }
+    let end = line.find(':')?;
+    // An empty key is no key.
+    if end == 0 {
+        return None;
+    }
+    Some(&line[end..])
+}
+
 /// Whether `source` opens a frontmatter block, by the parser's own test.
 pub(crate) fn opens_frontmatter(source: &str) -> bool {
     let normalized = normalize_source(source);

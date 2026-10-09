@@ -33,7 +33,9 @@ trailing line endings. When the imported text matches and no known loss was
 reported, `literal-text-verified` records preserved/exact evidence. All other
 inputs retain the dropped/fallback `fidelity-unverified` warning.
 
-Markdown also reports each blank GFM
+Markdown reports each leading `---` block it converts to frontmatter as
+`frontmatter-synthesized`, info/preserved: the content survives byte-exact and
+only the reading of the `---` run changed. It also reports each blank GFM
 table row it drops as `structure-unspellable`. This deliberately
 fails closed at the worst-case outcome: byte differences are not evidence of
 semantic fidelity.

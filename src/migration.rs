@@ -152,7 +152,7 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 
 /// Migrate Markdown while preserving a typed canonical-writer failure.
 pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
-    let (value, losses) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
     let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
     result
         .report
@@ -162,6 +162,19 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
             message,
             severity: HtmlImportSeverity::Warning,
             fidelity: MigrationFidelity::Dropped,
+            confidence: MigrationConfidence::Exact,
+            path: None,
+        }));
+    // Reported, not a loss: the block's content survives byte-exact, and the
+    // reader is told that a `---` run changed meaning (markup-carve/carve#2799).
+    result
+        .report
+        .diagnostics
+        .extend(notices.into_iter().map(|message| MigrationDiagnostic {
+            code: "frontmatter-synthesized".to_owned(),
+            message,
+            severity: HtmlImportSeverity::Info,
+            fidelity: MigrationFidelity::Preserved,
             confidence: MigrationConfidence::Exact,
             path: None,
         }));
