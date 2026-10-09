@@ -284,9 +284,10 @@ pub fn conversion_diagnostics(
                 pending.extend(children.into_iter().rev().map(|(field, value)| {
                     (
                         value,
-                        in_table_cell
-                            || (ty == Some("table_cell")
-                                && (field == "children" || field == "blocks")),
+                        !(ty == Some("table_cell") && object.contains_key("span"))
+                            && (in_table_cell
+                                || (ty == Some("table_cell")
+                                    && (field == "children" || field == "blocks"))),
                     )
                 }));
             }

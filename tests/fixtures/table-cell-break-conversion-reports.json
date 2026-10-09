@@ -379,5 +379,45 @@
         "node": "hard_break"
       }
     ]
+  },
+  {
+    "name": "span placeholder ignored break",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "hard_break"
+                    }
+                  ],
+                  "span": "colspan"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
   }
 ]
