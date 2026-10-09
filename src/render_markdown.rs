@@ -1421,13 +1421,7 @@ fn ends_escaped(core: &str) -> bool {
     core.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1
 }
 
-/// A delimiter run only opens emphasis while it is left-flanking, which a run
-/// followed by whitespace never is (CommonMark 6.2), so `** x**` reads back as
-/// literal text. The padding is content, so it moves outside the delimiters
-/// rather than being trimmed away. Content that has no safe delimiter form at
-/// all - only padding, or a trailing escape that would swallow the closing run,
-/// which is how a hard break at the edge arrives - falls back to inline HTML,
-/// the way this renderer already spells underline, sub, super and highlight.
+/// Trim outer ASCII padding after building a wrapper on its own line.
 fn pad_outside_on_its_own_line(
     inner: String,
     delimiter: &str,
@@ -1437,6 +1431,13 @@ fn pad_outside_on_its_own_line(
     trim_non_nbsp(&pad_outside(inner, delimiter, open_tag, close_tag)).to_string()
 }
 
+/// A delimiter run only opens emphasis while it is left-flanking, which a run
+/// followed by whitespace never is (CommonMark 6.2), so `** x**` reads back as
+/// literal text. The padding is content, so it moves outside the delimiters
+/// rather than being trimmed away. Content that has no safe delimiter form at
+/// all - only padding, or a trailing escape that would swallow the closing run,
+/// which is how a hard break at the edge arrives - falls back to inline HTML,
+/// the way this renderer already spells underline, sub, super and highlight.
 fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) -> String {
     // The class stays Rust's `White_Space` rather than narrowing to
     // CommonMark 2.1. carve-js and carve-php can state the narrow class
