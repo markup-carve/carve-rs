@@ -5357,18 +5357,18 @@
   },
   {
     "mode": "djot",
-    "name": "forced-subscript-closer-cannot-start-bare-span",
+    "name": "forced-subscript-closer-stays-literal-in-bare-span",
     "source": "a~b~} c~d",
     "contains": [
-      "a~b~} c~d"
+      "<p>a<sub>b~} c</sub>d</p>"
     ]
   },
   {
     "mode": "djot",
-    "name": "forced-superscript-closer-cannot-start-bare-span",
+    "name": "forced-superscript-closer-stays-literal-in-bare-span",
     "source": "a^b^} c^d",
     "contains": [
-      "a^b^} c^d"
+      "<p>a<sup>b^} c</sup>d</p>"
     ]
   },
   {
