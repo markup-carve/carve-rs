@@ -473,5 +473,35 @@
     "name": "control-94",
     "source": "a \\{~b~}{.c}",
     "html": "<p>a <span class=\"c\">{~b~}</span></p>"
+  },
+  {
+    "name": "review-0",
+    "source": "*bold*{.x-}word{.c}",
+    "html": "<p><strong class=\"x-\">bold</strong><span class=\"c\">word</span></p>"
+  },
+  {
+    "name": "review-1",
+    "source": "[text]{.a_}word{.c}",
+    "html": "<p><span class=\"a_\">text</span><span class=\"c\">word</span></p>"
+  },
+  {
+    "name": "review-2",
+    "source": "`code`{.x-}word{.c}",
+    "html": "<p><code class=\"x-\">code</code><span class=\"c\">word</span></p>"
+  },
+  {
+    "name": "review-3",
+    "source": "[t](u){k=v-}word{.c}",
+    "html": "<p><a href=\"u\" k=\"v-\">t</a><span class=\"c\">word</span></p>"
+  },
+  {
+    "name": "review-4",
+    "source": "_a {*b_ c*}{.c}",
+    "html": "<p><em>a {*b</em><span class=\"c\">c*}</span></p>"
+  },
+  {
+    "name": "review-5",
+    "source": "*a {_b* c_}{.c}",
+    "html": "<p><strong>a {_b</strong><span class=\"c\">c_}</span></p>"
   }
 ]

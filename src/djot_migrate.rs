@@ -637,6 +637,8 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         }
     }
     let mut brace_stack: Vec<(usize, bool, usize)> = Vec::new();
+    let mut read_brace_attributes = NativeAttributeReader::new(source);
+    let mut attribute_end = 0;
     let mut spaces = 0;
     let mut escaped = None;
     let mut last_escaped = None;
@@ -664,7 +666,11 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         if masked.as_bytes()[at] != source.as_bytes()[at] {
             continue;
         }
+        if ch == '{' && at >= attribute_end {
+            attribute_end = read_brace_attributes.read(at).map_or(at, |(end, _)| end);
+        }
         if ch == '}'
+            && at >= attribute_end
             && at > 0
             && b"+-=~^*_".contains(&source.as_bytes()[at - 1])
             && !paired_closes.contains(&(at + 1))

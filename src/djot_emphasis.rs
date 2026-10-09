@@ -201,7 +201,10 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
-                        if let Some(paired) = paired.as_deref_mut() {
+                        if let Some(paired) = paired
+                            .as_deref_mut()
+                            .filter(|_| b"+-=".contains(&bytes[start + 1]))
+                        {
                             paired.insert(start + 1, at + 1);
                         }
                         for stack in pending_braces.values_mut() {
