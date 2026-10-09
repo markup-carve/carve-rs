@@ -22026,6 +22026,30 @@ fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
 ///
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
+pub(crate) fn structural_bracket_offsets(source: &str) -> Vec<usize> {
+    let bytes = source.as_bytes();
+    let mut offsets = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'`' => {
+                i = skip_code_span(bytes, i)
+                    .unwrap_or_else(|| i + bytes[i..].iter().take_while(|&&b| b == b'`').count());
+            }
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i).unwrap();
+            }
+            b'[' | b']' => {
+                offsets.push(i);
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    offsets
+}
+
 fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
     // For each position, the `[` of the INNERMOST bracket run holding it, or

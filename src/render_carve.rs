@@ -103,6 +103,7 @@ struct BracketScope {
     /// nodes. The run between them would isolate the delimiters it crosses, so
     /// the OPENER carries the escape (markup-carve/carve-php#2756).
     crossing_openers: HashSet<(usize, usize)>,
+    fixed: HashSet<(usize, usize)>,
     /// A `]` whose own `[` is escaped and which therefore falls through to an
     /// OUTER opener across the same boundary. It takes an escape too, or the
     /// writer's next pass escapes that outer opener instead and the formatter
@@ -4360,24 +4361,26 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                     .filter(|c| matches!(c, '[' | ']'))
                     .count()
             });
+        let structural = verbatim.then(|| crate::parse::structural_bracket_offsets(value));
         let brackets = value.char_indices().filter(|(_, c)| matches!(c, '[' | ']'));
         for (ordinal, (offset, ch)) in brackets.enumerate() {
-            if verbatim {
-                let slashes = value.as_bytes()[..offset]
-                    .iter()
-                    .rev()
-                    .take_while(|&&b| b == b'\\')
-                    .count();
-                if slashes % 2 == 1 {
-                    continue;
-                }
+            if structural
+                .as_ref()
+                .is_some_and(|sites| sites.binary_search(&offset).is_err())
+            {
+                continue;
             }
             let key = (at, ordinal);
+            if verbatim {
+                scope.fixed.insert(key);
+            }
             if reference == Some(ordinal) {
                 let same_host = scope.literal_hosts.remove(&host);
                 let crossing = !scope.literal_hosts.is_empty();
                 for (_, openers) in scope.literal_hosts.drain() {
-                    scope.crossing_openers.extend(openers);
+                    scope
+                        .crossing_openers
+                        .extend(openers.into_iter().filter(|key| !scope.fixed.contains(key)));
                 }
                 if let Some(openers) = same_host {
                     scope.literal_hosts.insert(host, openers);
@@ -4418,6 +4421,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         seq: &[Bracket],
         escaped: &HashSet<(usize, usize)>,
         escapes_crossing_closer: bool,
+        fixed: &HashSet<(usize, usize)>,
     ) -> Reading {
         let mut open: Vec<Open> = Vec::new();
         let mut pairs = Vec::new();
@@ -4428,7 +4432,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                 }
             } else if let Some(opener) = open.pop() {
                 pairs.push((opener, (key, host)));
-                if escapes_crossing_closer && opener.1 != host {
+                if escapes_crossing_closer && opener.1 != host && !fixed.contains(&key) {
                     open.push(opener);
                 }
             }
@@ -4454,13 +4458,13 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     // decide it - which brackets survive is not known until the run is complete -
     // and leaving it undecided is what made the formatter non-idempotent: `fmt`
     // ran pass two itself and escaped one more bracket every time (carve-rs#2209).
-    let (first, _) = resolve(&seq, &scope.crossing_openers, false);
+    let (first, _) = resolve(&seq, &scope.crossing_openers, false, &scope.fixed);
     for (opener, closer) in first {
-        if opener.1 != closer.1 {
+        if opener.1 != closer.1 && !scope.fixed.contains(&opener.0) {
             scope.crossing_openers.insert(opener.0);
         }
     }
-    let (second, unclosed) = resolve(&seq, &scope.crossing_openers, true);
+    let (second, unclosed) = resolve(&seq, &scope.crossing_openers, true, &scope.fixed);
     for (opener, closer) in second {
         if opener.1 == closer.1 {
             scope.paired_closers.insert(closer.0);

@@ -11,11 +11,11 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-- Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact (carve-rs#2417).
-
 ### Fixed
 
 - Markdown export uses a safe tilde fence for headers and labels containing backticks (carve-rs#2419).
+
+- Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact (carve-rs#2417).
 
 - HTML import reports discarded code-span markup, attributes and comments, and removes active subtree text. Pipe-cell line breaks are folded only when writing source (carve-rs#2415).
 
