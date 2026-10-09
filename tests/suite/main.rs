@@ -1732,3 +1732,6 @@ mod djot_attribute_wire;
 
 #[path = "../crossref_literal_target.rs"]
 mod crossref_literal_target;
+
+#[path = "../code_span_child_markup.rs"]
+mod code_span_child_markup;

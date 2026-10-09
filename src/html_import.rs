@@ -5960,6 +5960,61 @@ impl<'a> Importer<'a> {
             );
             return Ok(Vec::new());
         }
+        if Self::inside_code_span(h)
+            && matches!(
+                tag.as_str(),
+                "q" | "math"
+                    | "ruby"
+                    | "em"
+                    | "i"
+                    | "strong"
+                    | "b"
+                    | "del"
+                    | "ins"
+                    | "s"
+                    | "strike"
+                    | "u"
+                    | "mark"
+                    | "sub"
+                    | "sup"
+                    | "code"
+                    | "a"
+                    | "img"
+                    | "br"
+                    | "span"
+                    | "summary"
+                    | "input"
+                    | "abbr"
+                    | "time"
+                    | "samp"
+                    | "var"
+                    | "kbd"
+                    | "cite"
+                    | "dfn"
+            )
+            && !(tag == "span"
+                && matches!(&h.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty()))
+        {
+            let dropped = matches!(tag.as_str(), "img" | "br" | "input");
+            self.diag(
+                if dropped {
+                    HtmlImportDiagnosticCode::ElementDropped
+                } else {
+                    HtmlImportDiagnosticCode::ElementUnwrapped
+                },
+                format!(
+                    "{} <{tag}> inside <code>",
+                    if dropped { "Dropped" } else { "Unwrapped" }
+                ),
+                if dropped {
+                    HtmlImportSeverity::Warning
+                } else {
+                    HtmlImportSeverity::Info
+                },
+                path,
+                h,
+            );
+        }
         if tag == "q" {
             let attrs = self.attrs(h, path);
             let (open, close) = if self.quote_depth % 2 == 0 {

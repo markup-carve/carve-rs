@@ -1,0 +1,57 @@
+[
+  {
+    "name": "strong",
+    "html": "<p><code><strong>word</strong></code></p>",
+    "loss": true
+  },
+  {
+    "name": "em",
+    "html": "<p><code><em>word</em></code></p>",
+    "loss": true
+  },
+  {
+    "name": "u",
+    "html": "<p><code><u>word</u></code></p>",
+    "loss": true
+  },
+  {
+    "name": "s",
+    "html": "<p><code><s>word</s></code></p>",
+    "loss": true
+  },
+  {
+    "name": "code",
+    "html": "<p><code><code>word</code></code></p>",
+    "loss": true
+  },
+  {
+    "name": "span",
+    "html": "<p><code><span class=\"k\">word</span></code></p>",
+    "loss": true
+  },
+  {
+    "name": "a",
+    "html": "<p><code><a href=\"u\">word</a></code></p>",
+    "loss": true
+  },
+  {
+    "name": "img",
+    "html": "<p><code><img src=\"u\" alt=\"a\">word</code></p>",
+    "loss": true
+  },
+  {
+    "name": "br",
+    "html": "<p><code><br>word</code></p>",
+    "loss": true
+  },
+  {
+    "name": "plain",
+    "html": "<p><code>word</code></p>",
+    "loss": false
+  },
+  {
+    "name": "strong behind a neutral span",
+    "html": "<p><code><span><strong>word</strong></span></code></p>",
+    "loss": true
+  }
+]
