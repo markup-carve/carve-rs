@@ -1770,5 +1770,200 @@
     "source": "{title=\"a\\<b\"}\n| hi | z |\n|---|---|",
     "html": "<table title=\"a\\&lt;b\"><tr><th>hi</th><th>z</th></tr></table>",
     "table": true
+  },
+  {
+    "name": "validity-0",
+    "source": "word{a=bad.val}",
+    "html": "<p>word{a=bad.val}</p>"
+  },
+  {
+    "name": "validity-1",
+    "source": "word{a=x/y}",
+    "html": "<p>word{a=x/y}</p>"
+  },
+  {
+    "name": "validity-2",
+    "source": "word{a=x@y}",
+    "html": "<p>word{a=x@y}</p>"
+  },
+  {
+    "name": "validity-3",
+    "source": "word{key}",
+    "html": "<p>word{key}</p>"
+  },
+  {
+    "name": "validity-4",
+    "source": "word{a=good_val}",
+    "html": "<p><span a=\"good_val\">word</span></p>"
+  },
+  {
+    "name": "validity-5",
+    "source": "word{a=good:val}",
+    "html": "<p><span a=\"good:val\">word</span></p>"
+  },
+  {
+    "name": "validity-6",
+    "source": "word{a=42}",
+    "html": "<p><span a=\"42\">word</span></p>"
+  },
+  {
+    "name": "validity-7",
+    "source": "[word]{a=bad.val}",
+    "html": "<p>[word]{a=bad.val}</p>"
+  },
+  {
+    "name": "validity-8",
+    "source": "[word]{a=x/y}",
+    "html": "<p>[word]{a=x/y}</p>"
+  },
+  {
+    "name": "validity-9",
+    "source": "[word]{a=x@y}",
+    "html": "<p>[word]{a=x@y}</p>"
+  },
+  {
+    "name": "validity-10",
+    "source": "[word]{key}",
+    "html": "<p>[word]{key}</p>"
+  },
+  {
+    "name": "validity-11",
+    "source": "[word]{a=good_val}",
+    "html": "<p><span a=\"good_val\">word</span></p>"
+  },
+  {
+    "name": "validity-12",
+    "source": "[word]{a=good:val}",
+    "html": "<p><span a=\"good:val\">word</span></p>"
+  },
+  {
+    "name": "validity-13",
+    "source": "[word]{a=42}",
+    "html": "<p><span a=\"42\">word</span></p>"
+  },
+  {
+    "name": "validity-14",
+    "source": "_word_{a=bad.val}",
+    "html": "<p><em>word</em>{a=bad.val}</p>"
+  },
+  {
+    "name": "validity-15",
+    "source": "_word_{a=x/y}",
+    "html": "<p><em>word</em>{a=x/y}</p>"
+  },
+  {
+    "name": "validity-16",
+    "source": "_word_{a=x@y}",
+    "html": "<p><em>word</em>{a=x@y}</p>"
+  },
+  {
+    "name": "validity-17",
+    "source": "_word_{key}",
+    "html": "<p><em>word</em>{key}</p>"
+  },
+  {
+    "name": "validity-18",
+    "source": "_word_{a=good_val}",
+    "html": "<p><em a=\"good_val\">word</em></p>"
+  },
+  {
+    "name": "validity-19",
+    "source": "_word_{a=good:val}",
+    "html": "<p><em a=\"good:val\">word</em></p>"
+  },
+  {
+    "name": "validity-20",
+    "source": "_word_{a=42}",
+    "html": "<p><em a=\"42\">word</em></p>"
+  },
+  {
+    "name": "validity-21",
+    "source": "[word](u){a=bad.val}",
+    "html": "<p><a href=\"u\">word</a>{a=bad.val}</p>"
+  },
+  {
+    "name": "validity-22",
+    "source": "[word](u){a=x/y}",
+    "html": "<p><a href=\"u\">word</a>{a=x/y}</p>"
+  },
+  {
+    "name": "validity-23",
+    "source": "[word](u){a=x@y}",
+    "html": "<p><a href=\"u\">word</a>{a=x@y}</p>"
+  },
+  {
+    "name": "validity-24",
+    "source": "[word](u){key}",
+    "html": "<p><a href=\"u\">word</a>{key}</p>"
+  },
+  {
+    "name": "validity-25",
+    "source": "[word](u){a=good_val}",
+    "html": "<p><a href=\"u\" a=\"good_val\">word</a></p>"
+  },
+  {
+    "name": "validity-26",
+    "source": "[word](u){a=good:val}",
+    "html": "<p><a href=\"u\" a=\"good:val\">word</a></p>"
+  },
+  {
+    "name": "validity-27",
+    "source": "[word](u){a=42}",
+    "html": "<p><a href=\"u\" a=\"42\">word</a></p>"
+  },
+  {
+    "name": "validity-28",
+    "source": "`word`{a=bad.val}",
+    "html": "<p><code>word</code>{a=bad.val}</p>"
+  },
+  {
+    "name": "validity-29",
+    "source": "`word`{a=x/y}",
+    "html": "<p><code>word</code>{a=x/y}</p>"
+  },
+  {
+    "name": "validity-30",
+    "source": "`word`{a=x@y}",
+    "html": "<p><code>word</code>{a=x@y}</p>"
+  },
+  {
+    "name": "validity-31",
+    "source": "`word`{key}",
+    "html": "<p><code>word</code>{key}</p>"
+  },
+  {
+    "name": "validity-32",
+    "source": "`word`{a=good_val}",
+    "html": "<p><code a=\"good_val\">word</code></p>"
+  },
+  {
+    "name": "validity-33",
+    "source": "`word`{a=good:val}",
+    "html": "<p><code a=\"good:val\">word</code></p>"
+  },
+  {
+    "name": "validity-34",
+    "source": "`word`{a=42}",
+    "html": "<p><code a=\"42\">word</code></p>"
+  },
+  {
+    "name": "validity-35",
+    "source": "{key}\nword",
+    "html": "<p>{key}\nword</p>"
+  },
+  {
+    "name": "validity-36",
+    "source": "{a=bad.val}\nword",
+    "html": "<p>{a=bad.val}\nword</p>"
+  },
+  {
+    "name": "validity-37",
+    "source": "`[w]{a=bad.val}`",
+    "html": "<p><code>[w]{a=bad.val}</code></p>"
+  },
+  {
+    "name": "validity-38",
+    "source": "[w](u{a=bad.val})",
+    "html": "<p><a href=\"u{a=bad.val}\">w</a></p>"
   }
 ]

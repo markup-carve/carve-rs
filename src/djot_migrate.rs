@@ -45,7 +45,8 @@ use crate::ast::{BlockNode, FigureTarget};
 pub fn djot_to_carve(djot: &str) -> String {
     let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
-    let attributes = normalize_djot_attribute_lines(body);
+    let literal_attributes = escape_invalid_djot_attributes(body);
+    let attributes = normalize_djot_attribute_lines(&literal_attributes);
     let fence_closers = normalize_djot_fences(&attributes);
     let references = fold_djot_references(&fence_closers);
     let footnotes = normalize_djot_footnotes(&references);
@@ -284,6 +285,34 @@ fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
     Some(line)
 }
 
+fn escape_invalid_djot_attributes(source: &str) -> String {
+    let mask = mask_code_and_destinations(source);
+    let prefix = cached_regex!(r"^\{[A-Za-z][A-Za-z0-9_-]*(?:=|})").unwrap();
+    let mut output = String::new();
+    let mut cursor = 0;
+    let mut at = 0;
+    while at < source.len() {
+        if mask.as_bytes()[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if mask.as_bytes()[at] == b'{' {
+            if let Some((end, _)) = read_djot_word_attributes(source, at) {
+                at = end;
+                continue;
+            }
+            if prefix.is_match(&source[at..]) {
+                output.push_str(&source[cursor..at]);
+                output.push_str("\\{");
+                cursor = at + 1;
+            }
+        }
+        at += 1;
+    }
+    output.push_str(&source[cursor..]);
+    output
+}
+
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
     read_djot_attributes(source, start, false, false)
 }
@@ -368,7 +397,7 @@ fn read_djot_attributes(
         let bare_end = |from: usize| {
             let mut end = from;
             for ch in source[from..].chars() {
-                if ch.is_whitespace() || "{}%\"'=<>".contains(ch) {
+                if !(ch.is_ascii_alphanumeric() || "_:-".contains(ch)) {
                     break;
                 }
                 end += ch.len_utf8();
