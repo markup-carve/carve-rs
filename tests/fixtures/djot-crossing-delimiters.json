@@ -658,5 +658,35 @@
     "name": "table",
     "source": "| {=a {~b=} c~} | ok |",
     "html": "<table><tr><td><mark>a {~b</mark> c~}</td><td>ok</td></tr></table>"
+  },
+  {
+    "name": "review-0",
+    "source": "_a {*b_ c*}",
+    "html": "<p><em>a {*b</em> c*}</p>"
+  },
+  {
+    "name": "review-1",
+    "source": "*a {_b* c_}",
+    "html": "<p><strong>a {_b</strong> c_}</p>"
+  },
+  {
+    "name": "review-2",
+    "source": "*a {*b* c*}",
+    "html": "<p><strong>a {*b</strong> c*}</p>"
+  },
+  {
+    "name": "review-3",
+    "source": "_a {*b_ c*} d_",
+    "html": "<p><em>a {*b</em> c*} d_</p>"
+  },
+  {
+    "name": "review-4",
+    "source": "{*a\\*} b*}",
+    "html": "<p><strong>a*} b</strong></p>"
+  },
+  {
+    "name": "review-5",
+    "source": "{_a\\_} b_}",
+    "html": "<p><em>a_} b</em></p>"
   }
 ]

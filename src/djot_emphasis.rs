@@ -320,12 +320,17 @@ fn process(
             i += 1;
             continue;
         }
-        if ch == b'{' && valid_braces.contains(&i) {
+        if ch == b'{'
+            && valid_braces.contains(&i)
+            && !bytes.get(i + 1).is_some_and(|ch| b"_*".contains(ch))
+        {
             braces.push(i);
             i += 1;
             continue;
         }
         if ch == b'}'
+            && i > 0
+            && !super::is_escaped(bytes, i - 1)
             && braces
                 .last()
                 .is_some_and(|at| bytes[i - 1] == bytes[at + 1])
