@@ -1750,3 +1750,6 @@ mod raw_reference_label_brackets;
 
 #[path = "../code_block_child_markup.rs"]
 mod code_block_child_markup;
+
+#[path = "../djot_crossing_delimiters.rs"]
+mod djot_crossing_delimiters;

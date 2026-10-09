@@ -190,7 +190,7 @@ fn process(
             if bytes[at] == b'{'
                 && bytes
                     .get(at + 1)
-                    .is_some_and(|byte| b"+-=^~".contains(byte))
+                    .is_some_and(|byte| b"+-=^~_*".contains(byte))
             {
                 pending_braces.entry(bytes[at + 1]).or_default().push(at);
             } else if bytes[at] == b'}' && at > 0 && last_escaped != Some(at - 1) {
@@ -201,6 +201,11 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
+                        for stack in pending_braces.values_mut() {
+                            while stack.last().is_some_and(|at| *at > start) {
+                                stack.pop();
+                            }
+                        }
                     }
                 }
             }
@@ -357,9 +362,9 @@ fn process(
         if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
             can_close
                 && opener.1 < i
-                && braces.last().map_or(true, |at| {
-                    opener.0 > *at || (paired.is_some() && opener.2 && opener.0 == *at)
-                })
+                && braces
+                    .last()
+                    .map_or(true, |at| opener.0 > *at || (opener.2 && opener.0 == *at))
         }) {
             clear(&mut openers, start);
             pairs.push(Pair {
@@ -372,6 +377,9 @@ fn process(
                 children: Vec::new(),
                 kinds: kind_bit(ch),
             });
+            if forced_close && braces.last() == Some(&start) {
+                braces.pop();
+            }
             i += if forced_close { 2 } else { 1 };
         } else if can_open {
             let key = marker + usize::from(forced_open) * 4;
