@@ -11,7 +11,7 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-## [0.1.9] - 2026-10-08
+## [0.1.9] - 2026-10-09
 
 ### Breaking
 
@@ -35,7 +35,7 @@ which the published crate does not carry.
 - Two include options with no space between them, as in
   `{{ path @shift:1@lines:1-8 }}`, apply both. The second was read as part of
   the first one's value, which warned `include-unknown-option` and left the
-  directive literal (#2363).
+  directive literal (#2363, #2364).
 - `{{ path#section }}` and `{{ "path"#section }}` resolve. A section name
   needs no whitespace in front of it, in any position, and requiring a run left
   both spellings literal with no diagnostic at all (#2356, #2360,
@@ -54,6 +54,16 @@ which the published crate does not carry.
   survives the round trip. Markdown import drops the table-only escape from
   autolink and raw HTML payloads and recovers an escaped email autolink
   (#2374).
+- Djot import keeps opaque content opaque: an autolink label survives footnote
+  aliasing and delimiter conversion, a fence keeps its code and owner after
+  indentation is mapped, a reference-definition value stays literal, and URL
+  conversion preserves IPv6 authority brackets, raw backslashes and Djot's
+  email priority (#2376).
+- Markdown wraps an editorial comment in the same span the HTML target uses,
+  instead of dropping it. The plain and ANSI targets keep their output and
+  report one render-loss row per comment under the new code
+  `editorial-comment-flattened`, which `--allow-loss` accepts (#2378,
+  markup-carve/carve#2791).
 
 ### Improvements
 
@@ -64,7 +74,11 @@ which the published crate does not carry.
   sets; cleanup compacts sibling vectors once, and empty-code settlement,
   nested-span repair and blank-row removal run in linear passes (#2362).
 - Djot import precomputes closing brackets for footnote masking and indexes
-  accepted delimiter ranges by family instead of rescanning (#2374).
+  accepted delimiter ranges by family instead of rescanning (#2374). Repeated
+  thematic breaks and parenthesized list markers use an indentation stack
+  instead of rescanning the preceding lines per marker, and an unfinished image
+  or quoted-link destination is resolved from a single reverse index rather than
+  a fresh forward search per `](` (#2376).
 
 ## [0.1.8] - 2026-10-06
 
