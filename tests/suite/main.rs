@@ -1775,3 +1775,5 @@ mod unused_continuation_fence_payload;
 
 #[path = "../markdown_code_span_whitespace.rs"]
 mod markdown_code_span_whitespace;
+#[path = "../djot_crossing_delimiters.rs"]
+mod djot_crossing_delimiters;
