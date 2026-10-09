@@ -37,6 +37,7 @@ pub mod includes;
 pub mod incremental;
 mod index_budget;
 pub mod lint;
+mod markdown_assessment;
 pub mod markdown_import;
 pub mod migration;
 mod parse;

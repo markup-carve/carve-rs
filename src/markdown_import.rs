@@ -541,7 +541,7 @@ fn normalize_heading_closers<'a>(source: &'a str, options: Options) -> Cow<'a, s
 /// - A literal space, `x` or `X` inside the pair. `[<TAB>]` is not a state.
 /// - Whitespace after the pair ON THE SAME LINE. `- [ ]` at a line end is text,
 ///   and so is `- [ ]` with its label on the next line.
-fn tasklist_extension_reaches(source: &str, marker: &std::ops::Range<usize>) -> bool {
+pub(crate) fn tasklist_extension_reaches(source: &str, marker: &std::ops::Range<usize>) -> bool {
     // pulldown's range opens at the marker's leading indentation rather than at
     // the bracket, so the bracket is found inside it.
     let Some(bracket) = source[marker.start..marker.end]

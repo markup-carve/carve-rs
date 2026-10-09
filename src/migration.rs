@@ -153,6 +153,36 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 /// Migrate Markdown while preserving a typed canonical-writer failure.
 pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
     let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    let assessment = crate::markdown_assessment::assess(source, &value);
+    if assessment.complete
+        && notices.is_empty()
+        && losses.len()
+            <= assessment
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "structure-unspellable")
+                .count()
+    {
+        let literal = assessed(source, value.clone(), SourceFormat::Markdown, false);
+        if literal
+            .report
+            .diagnostics
+            .first()
+            .is_some_and(|row| row.code == "literal-text-verified")
+        {
+            return Ok(literal);
+        }
+        return Ok(MigrationResult {
+            value,
+            report: MigrationReport {
+                schema_version: 2,
+                source_format: SourceFormat::Markdown,
+                mode: None,
+                adapter: None,
+                diagnostics: assessment.diagnostics,
+            },
+        });
+    }
     let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
     result
         .report
