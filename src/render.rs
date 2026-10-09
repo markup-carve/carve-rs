@@ -1534,12 +1534,11 @@ fn render_block(
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
-                indent(out, level);
-                // Escape instead of emitting when raw HTML is disabled.
                 if options.allow_raw_html {
+                    indent(out, level);
                     out.push_str(&r.content);
                 } else {
-                    out.push_str(&escape_text(&r.content));
+                    render_escaped_raw_block(out, r, level);
                 }
             } else {
                 crate::render_loss::record_raw_drop(
@@ -1844,6 +1843,25 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     out.push('>');
     write_escaped_text_nbsp(out, &c.content);
     out.push_str("</code></pre>");
+}
+
+/// A raw block a safe policy escapes is shown as source: the PART 10 §6 fenced
+/// code block with the raw format as its language (markup-carve/carve#2795).
+/// A raw payload leaves its last line ending implicit; a code payload keeps it.
+fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
+    let mut content = r.content.clone();
+    if crate::ast::fenced_payload_needs_ending(&content) {
+        content.push('\n');
+    }
+    let code = CodeBlock {
+        attrs: None,
+        lang: Some(r.format.clone()),
+        title: None,
+        label: None,
+        content,
+        pos: None,
+    };
+    render_code_block(out, &code, level);
 }
 
 fn attrs_has_key(attrs: &Option<Attrs>, key: &str) -> bool {
@@ -4924,5 +4942,26 @@ mod borrowed_preparation_tests {
             assert_eq!(borrowed, owned, "{source}");
             assert_eq!(before, crate::ast_json::to_json(&doc), "{source}");
         }
+    }
+}
+
+#[cfg(test)]
+mod escaped_raw_block {
+    use super::render_escaped_raw_block;
+    use crate::ast::RawBlock;
+
+    #[test]
+    fn the_class_is_the_recorded_format_verbatim() {
+        let raw = RawBlock {
+            format: "latex".to_string(),
+            content: "\\emph{x}".to_string(),
+            pos: None,
+        };
+        let mut out = String::new();
+        render_escaped_raw_block(&mut out, &raw, 0);
+        assert_eq!(
+            out,
+            "<pre><code class=\"language-latex\">\\emph{x}\n</code></pre>"
+        );
     }
 }

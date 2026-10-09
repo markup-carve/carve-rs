@@ -103,6 +103,8 @@ as command-line values.
 `--no-raw-html` (alias `--safe`) escapes `=html` raw
 blocks and spans instead of emitting them verbatim, which is the safe choice when
 rendering untrusted input; it composes with every format and with `--profile`.
+In HTML an escaped raw block is written like a fenced code block of that
+language, `<pre><code class="language-html">`, so it keeps its line breaks.
 `--profile NAME` (`full` | `article` | `comment` | `minimal`) restricts which
 constructs are allowed at all and caps input length, and `--profile-base-host`
 gives its link policy a host to judge internal vs external links against; see

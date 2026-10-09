@@ -586,6 +586,8 @@ mod an_escaped_closing_pipe_is_an_escape;
 mod an_escaped_marker_ends_no_delimiter_run;
 #[path = "../an_escaped_marker_leaves_the_next_run_spelled.rs"]
 mod an_escaped_marker_leaves_the_next_run_spelled;
+#[path = "../an_escaped_raw_block_is_held_by_pre_code.rs"]
+mod an_escaped_raw_block_is_held_by_pre_code;
 #[path = "../an_html_comment_imports_as_a_carve_comment.rs"]
 mod an_html_comment_imports_as_a_carve_comment;
 #[path = "../an_html_import_drops_a_denied_scheme_destination.rs"]
