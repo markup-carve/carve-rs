@@ -5,7 +5,7 @@ use crate::{
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
 use pulldown_cmark::{CodeBlockKind, Event, LinkType, Options, Parser, Tag, TagEnd};
-use std::sync::OnceLock;
+use std::{collections::BTreeSet, sync::OnceLock};
 
 pub(crate) struct Assessment {
     pub diagnostics: Vec<MigrationDiagnostic>,
@@ -49,18 +49,34 @@ enum Shape {
     Element(String, Vec<(String, String)>, Vec<Shape>),
 }
 
-fn shape(html: &str) -> Vec<Shape> {
-    fn visit(node: &Handle) -> Vec<Shape> {
+fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
+    fn visit(node: &Handle, list_marker: Option<&str>) -> Vec<Shape> {
         match &node.data {
             NodeData::Text { contents } => vec![Shape::Text(contents.borrow().to_string())],
-            NodeData::Comment { contents } => vec![Shape::Comment(contents.to_string())],
+            NodeData::Comment { contents } => {
+                if list_marker.is_some_and(|marker| contents.as_ref() == marker) {
+                    Vec::new()
+                } else {
+                    vec![Shape::Comment(contents.to_string())]
+                }
+            }
             NodeData::Element { name, attrs, .. } => {
                 let tag = if name.local.as_ref() == "del" {
                     "s".to_owned()
                 } else {
                     name.local.to_string()
                 };
-                let mut children: Vec<_> = node.children.borrow().iter().flat_map(visit).collect();
+                let generated_delimiter = tag == "ol"
+                    && node.children.borrow().iter().any(|child| {
+                        matches!(&child.data, NodeData::Comment { contents }
+                            if list_marker.is_some_and(|marker| contents.as_ref() == marker))
+                    });
+                let mut children: Vec<_> = node
+                    .children
+                    .borrow()
+                    .iter()
+                    .flat_map(|node| visit(node, list_marker))
+                    .collect();
                 let layout = |child: &Shape| matches!(child, Shape::Text(value) if value.trim_matches([' ', '\t', '\r', '\n']).is_empty());
                 if tag == "section" && children.iter().any(|child| matches!(child, Shape::Element(tag, _, _) if matches!(tag.as_str(), "h1"|"h2"|"h3"|"h4"|"h5"|"h6"))) {
                     children.retain(|child| !layout(child));
@@ -111,7 +127,6 @@ fn shape(html: &str) -> Vec<Shape> {
                             && matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
                             || (key == "scope" && tag == "th")
                             || (key == "aria-label" && tag == "input")
-                            || (key == "data-delim" && tag == "ol" && attr.value.as_ref() == ")")
                         {
                             return None;
                         }
@@ -124,14 +139,43 @@ fn shape(html: &str) -> Vec<Shape> {
                         Some((key, attr.value.to_string()))
                     })
                     .collect();
+                if generated_delimiter {
+                    attributes.push(("data-delim".to_owned(), ")".to_owned()));
+                }
                 attributes.sort();
                 vec![Shape::Element(tag, attributes, children)]
             }
-            _ => node.children.borrow().iter().flat_map(visit).collect(),
+            _ => node
+                .children
+                .borrow()
+                .iter()
+                .flat_map(|node| visit(node, list_marker))
+                .collect(),
         }
     }
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
-    visit(&dom.document)
+    visit(&dom.document, list_marker)
+}
+
+fn unused_list_marker(source: &str, value: &str) -> String {
+    const PREFIX: &str = "carve-migration-list-delimiter-";
+    let mut occupied = BTreeSet::new();
+    for text in [source, value] {
+        for (offset, _) in text.match_indices(PREFIX) {
+            let rest = &text[offset + PREFIX.len()..];
+            let digits = rest
+                .bytes()
+                .take_while(|byte| byte.is_ascii_digit())
+                .count();
+            if let Ok(number) = rest[..digits].parse::<u64>() {
+                occupied.insert(number);
+            }
+        }
+    }
+    let counter = (0u64..)
+        .find(|counter| !occupied.contains(counter))
+        .unwrap();
+    format!("{PREFIX}{counter}:)")
 }
 
 fn is_atx_heading(source: &str) -> bool {
@@ -213,6 +257,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         ));
     }
     let mut events = Vec::new();
+    let expected_list_marker = unused_list_marker(&source, value);
     let mut content_spans = Vec::new();
     let mut lists = Vec::new();
     let mut authored_ordered_delimiters = Vec::new();
@@ -227,6 +272,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     });
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
+        let mut paren_list = false;
         if !matches!(event, Event::Start(_) | Event::End(_)) {
             content_spans.push(range.clone());
         }
@@ -264,12 +310,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         lists.push(start.is_some());
                         if start.is_some() {
                             let marker = source[range.clone()].trim_start_matches([' ', '\t']);
-                            authored_ordered_delimiters.push(
-                                marker
-                                    .chars()
-                                    .find(|character| !character.is_ascii_digit())
-                                    .unwrap_or('.'),
-                            );
+                            let delimiter = marker
+                                .chars()
+                                .find(|character| !character.is_ascii_digit())
+                                .unwrap_or('.');
+                            paren_list = delimiter == ')';
+                            authored_ordered_delimiters.push(delimiter);
                         }
                         Some((
                             if start.is_some() {
@@ -468,6 +514,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             diagnostics.push(diagnostic(construct, &line_starts, range.start, fidelity));
         }
         events.push(event);
+        if paren_list {
+            events.push(Event::Html(format!("<!--{expected_list_marker}-->").into()));
+        }
     }
     let mut coverage_changes = vec![0_i32; line_starts.len() + 1];
     for span in content_spans.iter().chain(&definition_spans) {
@@ -524,11 +573,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 ..crate::Options::default()
             },
         );
-        // CommonMark HTML omits delimiter metadata. Verify it against the source
-        // before comparing HTML without the generated attribute.
+        // Mark only parser-authored lists in the expected HTML. Raw HTML
+        // attributes remain part of the comparison.
         let document = crate::parse(value);
         complete = authored_ordered_delimiters == ordered_delimiters(&document.children)
-            && shape(&expected) == shape(&actual);
+            && shape(&expected, Some(&expected_list_marker)) == shape(&actual, None);
     }
     diagnostics.sort_by_key(|row| {
         row.path
@@ -773,6 +822,17 @@ mod tests {
         assert!(assess("10) foo\n    - bar\n", "10) foo\n    - bar\n").complete);
         assert!(!assess("10) foo\n    - bar\n", "10. foo\n    - bar\n").complete);
         assert!(!assess("10) a  b\n    - c\n", "10) a b\n    - c\n").complete);
+        assert!(
+            assess(
+                "<ol data-delim=\")\"><li>one</li></ol>\n",
+                "``` =html\n<ol data-delim=\")\"><li>one</li></ol>\n```\n"
+            )
+            .complete
+        );
+        assert!(!assess(
+            "<ol>\n<li>one</li>\n</ol>\n\n<ol>\n<li>one</li>\n</ol>\n",
+            "``` =html\n<ol data-delim=\")\">\n<li>one</li>\n</ol>\n\n<ol>\n<li>one</li>\n</ol>\n```\n"
+        ).complete);
         assert!(
             !assess(
                 "<ol data-delim=\")\"><li>one</li></ol>\n",

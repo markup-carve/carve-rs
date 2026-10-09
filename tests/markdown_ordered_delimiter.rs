@@ -47,7 +47,8 @@ fn markdown_import_keeps_the_authored_ordered_delimiter() {
         ("1. one\n2. two\n", "1. one\n2. two\n"),
         ("- outer\n  1) inner\n", "- outer\n  1) inner\n"),
         ("> 1) quoted\n", "> 1) quoted\n"),
-        ("1)\n", "1)\n"),
+        ("1)\n", "1) +\n"),
+        ("1. outer\n   1) inner\n", "1. outer\n   1) inner\n"),
     ];
     for (source, expected) in cases {
         let imported = carve::migrate_markdown(source);
