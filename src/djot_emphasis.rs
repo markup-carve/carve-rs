@@ -35,6 +35,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
     let mut last_escaped = None;
+    let raw_attribute = cached_regex!(r"^\{=[^\s{}`]+\}").unwrap();
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'\n' {
@@ -301,9 +302,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             if at > 0
                 && bytes[at - 1] == b'`'
                 && mask[at - 1] == b' '
-                && cached_regex!(r"^\{=[^\s{}`]+\}")
-                    .unwrap()
-                    .is_match(&source[at..])
+                && raw_attribute.is_match(&source[at..])
             {
                 at += 1;
                 continue;
