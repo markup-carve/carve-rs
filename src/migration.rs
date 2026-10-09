@@ -249,7 +249,25 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
 }
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
-    assessed(source, djot_to_carve(source), SourceFormat::Djot, false)
+    let stripped = crate::djot_migrate::strip_footnote_definition_attributes(source);
+    let value = stripped.restore(&djot_to_carve(&stripped.source));
+    let mut result = assessed(
+        source,
+        value,
+        SourceFormat::Djot,
+        !stripped.losses.is_empty(),
+    );
+    for line in stripped.losses {
+        result.report.diagnostics.push(MigrationDiagnostic {
+            code: "djot-footnote-definition-attributes-dropped".into(),
+            message: "Carve cannot represent attributes on a footnote definition; they were dropped instead of applying them to later content.".into(),
+            severity: HtmlImportSeverity::Warning,
+            fidelity: MigrationFidelity::Dropped,
+            confidence: MigrationConfidence::Exact,
+            path: Some(format!("line:{line}")),
+        });
+    }
+    result
 }
 
 pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {

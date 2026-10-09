@@ -43,7 +43,8 @@ use crate::ast::{BlockNode, FigureTarget};
 
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
+    let stripped_definitions = strip_footnote_definition_attributes(djot);
+    let normalized = &stripped_definitions.source;
     let (frontmatter, separator, body) = split_frontmatter(&normalized);
     let literal_attributes = escape_invalid_djot_attributes(body);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
@@ -193,13 +194,13 @@ pub fn djot_to_carve(djot: &str) -> String {
             })
             .into_owned()
     };
-    if frontmatter.is_empty() {
+    stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
         format!("{frontmatter}{separator}")
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
-    }
+    })
 }
 
 fn quote_djot_attribute(value: &str, carve: bool) -> String {
@@ -5866,4 +5867,132 @@ fn normalize_djot_table_pipes(source: &str) -> String {
         result.push(String::from_utf8(output).expect("only ASCII syntax changed"));
     }
     result.join("\n")
+}
+
+pub(crate) struct DjotFootnoteAttributeStrip {
+    pub source: String,
+    pub losses: Vec<usize>,
+    comments: HashSet<usize>,
+}
+
+impl DjotFootnoteAttributeStrip {
+    pub fn restore(&self, text: &str) -> String {
+        cached_regex!(r"\x00DJOTNOTEATTR(\d+)\x00")
+            .unwrap()
+            .replace_all(text, |caps: &regex::Captures<'_>| {
+                if caps[1]
+                    .parse::<usize>()
+                    .ok()
+                    .is_some_and(|id| self.comments.contains(&id))
+                {
+                    "%%".to_owned()
+                } else {
+                    caps[0].to_owned()
+                }
+            })
+            .into_owned()
+    }
+}
+
+pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteAttributeStrip {
+    let source = input.replace("\r\n", "\n").replace('\r', "\n");
+    if !source.contains('{') || !source.contains("[^") {
+        return DjotFootnoteAttributeStrip {
+            source,
+            losses: Vec::new(),
+            comments: HashSet::new(),
+        };
+    }
+    let (frontmatter, separator, body) = split_frontmatter(&source);
+    let header = if frontmatter.is_empty() {
+        String::new()
+    } else {
+        format!("{frontmatter}{separator}")
+    };
+    let header_lines = header.bytes().filter(|ch| *ch == b'\n').count();
+    let mask = mask_code_and_destinations(body);
+    let original: Vec<&str> = body.split('\n').collect();
+    let mut lines: Vec<String> = original.iter().map(|line| (*line).to_owned()).collect();
+    let mut losses = Vec::new();
+    let reserved: HashSet<usize> = cached_regex!(r"\x00DJOTNOTEATTR(\d+)\x00")
+        .unwrap()
+        .captures_iter(&source)
+        .filter_map(|caps| caps[1].parse().ok())
+        .collect();
+    let mut comments = HashSet::new();
+    let mut serial = 0;
+    let mut offset = 0;
+    let mut boundary = true;
+    let mut pending = Vec::new();
+    let mut owner = String::new();
+    let prefix_pattern =
+        cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*(?:(?:[-*+]|[0-9]+[.)]|[A-Za-z][.)])[ \t]+)?")
+            .unwrap();
+    let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+    for (n, &line) in original.iter().enumerate() {
+        let prefix = prefix_pattern.find(line).unwrap().as_str();
+        let content = line[prefix.len()..].trim_end();
+        let indent = quote_pattern.replace(prefix, "");
+        let scope = format!(
+            "{}:{}",
+            prefix.bytes().filter(|ch| *ch == b'>').count(),
+            indent
+                .chars()
+                .map(|ch| if ch == '\t' { ch } else { ' ' })
+                .collect::<String>()
+        );
+        let attrs = if content.starts_with('{')
+            && mask.as_bytes().get(offset + prefix.len()) == Some(&b'{')
+        {
+            read_djot_word_attributes(content, 0)
+        } else {
+            None
+        };
+        let standalone = attrs.as_ref().is_some_and(|(end, _)| *end == content.len());
+        if standalone
+            && (boundary || !pending.is_empty() || prefix.bytes().any(|ch| b"-*+.)".contains(&ch)))
+        {
+            if !pending.is_empty() && scope != owner {
+                pending.clear();
+            }
+            pending.push(n);
+            owner = scope;
+        } else {
+            if !pending.is_empty()
+                && scope == owner
+                && cached_regex!(r"^\[\^[^\]\n]+\]:(?:[ \t]|$)")
+                    .unwrap()
+                    .is_match(content)
+                && mask.as_bytes().get(offset + prefix.len()) == Some(&b'[')
+            {
+                lines[n] = format!("{}\n{line}", prefix.trim_end());
+                for &at in &pending {
+                    let raw = original[at];
+                    let start = raw.find('{').unwrap();
+                    if read_djot_word_attributes(raw[start..].trim_end(), 0)
+                        .is_some_and(|(_, wire)| wire != "{}")
+                    {
+                        losses.push(header_lines + at + 1);
+                    }
+                    while reserved.contains(&serial) {
+                        serial += 1;
+                    }
+                    comments.insert(serial);
+                    lines[at] = format!("{}\0DJOTNOTEATTR{serial}\0", &raw[..start]);
+                    serial += 1;
+                }
+            }
+            pending.clear();
+        }
+        boundary = content.is_empty()
+            || cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|(?:[-*][ \t]*){3,}$)")
+                .unwrap()
+                .is_match(content);
+        offset += line.len() + 1;
+    }
+    DjotFootnoteAttributeStrip {
+        source: header + &lines.join("\n"),
+        losses,
+        comments,
+    }
 }
