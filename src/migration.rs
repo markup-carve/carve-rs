@@ -192,6 +192,14 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
         });
     }
     let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
+    if result
+        .report
+        .diagnostics
+        .first()
+        .is_some_and(|row| row.code == "literal-text-verified")
+    {
+        result.report.diagnostics[0].path = Some("line:1".to_owned());
+    }
     result
         .report
         .diagnostics
