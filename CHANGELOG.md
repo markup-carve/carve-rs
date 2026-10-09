@@ -13,8 +13,6 @@ which the published crate does not carry.
 
 ### Fixed
 
-- Markdown import retains an ordered list's authored `)` delimiter in both the AST and Carve source, including nested lists and adjacent lists with different delimiters.
-
 - Ordered-list formatting and HTML import keep adjacent alphabetic and Roman lists separate. A hard list boundary also ends the dialect lookahead (carve-rs#2399).
 
 - A profile that denies raw blocks but allows code blocks keeps the escaped payload in a code block, including its format, attributes and line endings (markup-carve/carve#2801).
