@@ -18,6 +18,10 @@ let options = carve::Options::new()
 let html = carve::try_to_html_with_options(untrusted, &options)?;
 ```
 
+With raw HTML off, a ` ```=html ` block renders as
+`<pre><code class="language-html">` holding the escaped payload, the same markup a
+` ```html ` code fence gets. A span is escaped in place.
+
 Use the `try_*` entry points here, not `to_html_with_options`. The infallible
 wrappers are `try_…().unwrap_or_default()`, so a profile rejection - input past
 `max_length`, or a denied construct when the profile's action is `Error` - comes

@@ -158,7 +158,7 @@ fn raw_html_escaped_when_disabled() {
     );
     assert_eq!(
         carve::to_html_with_options("```=html\n<img onerror=x>\n```", &off).trim(),
-        "&lt;img onerror=x&gt;"
+        "<pre><code class=\"language-html\">&lt;img onerror=x&gt;\n</code></pre>"
     );
 }
 
