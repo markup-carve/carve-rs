@@ -263,5 +263,30 @@
     "name": "unicode-bom-escape",
     "source": "\\{a﻿x\\_b}{.c}",
     "html": "<p>{a﻿x<span class=\"c\">_b}</span></p>"
+  },
+  {
+    "name": "review-image-alt",
+    "source": "before ![a {x} [b]{.c}](u) after",
+    "html": "<p>before <img alt=\"a {x} b\" src=\"u\"> after</p>"
+  },
+  {
+    "name": "review-code-backslash",
+    "source": "\\{a`c\\`}{.c}",
+    "html": "<p>{a<code>c\\</code><span class=\"c\">}</span></p>"
+  },
+  {
+    "name": "review-raw-code-backslash",
+    "source": "{see `C:\\`}{.path}",
+    "html": "<p>{see <code>C:\\</code><span class=\"path\">}</span></p>"
+  },
+  {
+    "name": "review-code-bracket-backslash",
+    "source": "\\{a`c[\\`}{.c}",
+    "html": "<p>{a<code>c[\\</code><span class=\"c\">}</span></p>"
+  },
+  {
+    "name": "review-image-alt-two-braces",
+    "source": "before ![a {x} {y} [b]{.c}](u) after",
+    "html": "<p>before <img alt=\"a {x} {y} b\" src=\"u\"> after</p>"
   }
 ]

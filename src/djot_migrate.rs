@@ -61,7 +61,7 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
     let inline = normalize::inline(&folded_references);
     let references = normalize::references(&inline);
     let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions), &inherited);
-    let links = normalize_djot_links(&footnotes);
+    let links = normalize_djot_links(&footnotes, &inherited);
     let autolinks = normalize_djot_autolinks(&links);
     let table_pipes = normalize_djot_table_pipes(&autolinks);
     let folded = fold_heading_continuations(&table_pipes);
@@ -352,6 +352,19 @@ fn mask_djot_attribute_source(source: &str) -> String {
         }
     }
     String::from_utf8(mask).expect("attribute masks preserve UTF-8")
+}
+
+fn remove_inherited_attribute_markers(source: &str, inherited: &HashSet<String>) -> String {
+    cached_regex!(r"\x00DJOTINVALIDATTR[0-9]+\x00")
+        .unwrap()
+        .replace_all(source, |value: &regex::Captures<'_>| {
+            if inherited.contains(&value[0]) {
+                String::new()
+            } else {
+                value[0].to_owned()
+            }
+        })
+        .into_owned()
 }
 
 fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
@@ -775,6 +788,7 @@ fn protect_attributed_words(
     let mut last_inline_end = None;
     let mut escaped = None;
     let mut last_escaped = None;
+    let inherited_marker = cached_regex!(r"\A\x00DJOTINVALIDATTR[0-9]+\x00").unwrap();
     for (at, ch) in source.char_indices() {
         if djot_word_whitespace(ch) {
             last_space = Some(at);
@@ -783,10 +797,15 @@ fn protect_attributed_words(
             last_inline_end = Some(at);
         }
         if let Some(begin) = escaped.take() {
+            if masked.as_bytes()[begin] != source.as_bytes()[begin]
+                || masked.as_bytes()[at] != source.as_bytes()[at]
+            {
+                last_inline_end = Some(at + ch.len_utf8());
+                continue;
+            }
             last_escaped = Some(at);
             let marker_start = at + ch.len_utf8();
-            let generated = cached_regex!(r"\A\x00DJOTINVALIDATTR[0-9]+\x00")
-                .unwrap()
+            let generated = inherited_marker
                 .find(&source[marker_start..])
                 .filter(|value| inherited.contains(value.as_str()));
             if let Some(marker) = generated {
@@ -4031,7 +4050,7 @@ mod heading_continuation_tests {
     }
 }
 
-fn normalize_djot_links(source: &str) -> String {
+fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     use std::collections::HashMap;
     if !source.contains("](") {
         return source.to_owned();
@@ -4317,6 +4336,7 @@ fn normalize_djot_links(source: &str) -> String {
             && label.contains(&b'[')
         {
             let raw = String::from_utf8(label).expect("image labels preserve UTF-8");
+            let raw = remove_inherited_attribute_markers(&raw, inherited);
             let converted = djot_to_carve(&format!("DJOTALT {raw} DJOTEND"));
             let plain = crate::to_plain_text_with_options(
                 &converted,
@@ -4693,6 +4713,7 @@ fn normalize_djot_footnotes(
     let mut line_heads = HashSet::new();
     let mut empty_definitions = HashSet::new();
     let key_of = |key: &str| {
+        let key = remove_inherited_attribute_markers(key, inherited);
         cached_regex!(r"[ \t\r\n]+")
             .unwrap()
             .replace_all(
