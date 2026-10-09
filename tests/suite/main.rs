@@ -1755,3 +1755,6 @@ mod code_block_child_markup;
 
 #[path = "../markdown_wrapper_hard_breaks.rs"]
 mod markdown_wrapper_hard_breaks;
+
+#[path = "../table_cell_break_conversion_reports.rs"]
+mod table_cell_break_conversion_reports;
