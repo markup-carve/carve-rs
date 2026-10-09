@@ -22051,7 +22051,6 @@ pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
 ///
 /// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
 /// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
-
 fn compute_bracket_matches(bytes: &[u8]) -> (Vec<usize>, Vec<usize>) {
     let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
     // For each position, the `[` of the INNERMOST bracket run holding it, or
