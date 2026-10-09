@@ -3,7 +3,15 @@ use carve::{from_json, parse, render_carve, to_carve, to_html, to_json, RenderCa
 
 #[test]
 fn a_crossref_target_keeps_its_literal_backslashes() {
-    for target in [r"p\an", r"ls\-greet", r"a\\b", "a\\", "日本語"] {
+    for target in [
+        r"p\an",
+        r"ls\-greet",
+        r"a\\b",
+        "a\\",
+        "日本語",
+        "a\x0cb",
+        "a\x0bb",
+    ] {
         let source = format!("See </#{target}>.\n");
         let once = to_carve(&source);
         assert_eq!(once, source);
@@ -22,7 +30,7 @@ fn a_crossref_target_keeps_its_literal_backslashes() {
 
 #[test]
 fn an_ingested_target_without_a_spelling_is_refused() {
-    for target in ["", "a>b", "a b", "a\tb", "a\nb", "a\rb", "a\x0cb"] {
+    for target in ["", "a>b", "a b", "a\tb", "a\nb", "a\rb"] {
         let value = serde_json::json!({
             "type":"document", "srcByteLength":0,
             "children":[{"type":"paragraph", "children":[{"type":"heading_ref", "target":target}]}]
