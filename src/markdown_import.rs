@@ -173,10 +173,12 @@ fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
     } else {
         "yaml".to_owned()
     };
-    // Markdown closes the block on `---` or `...`; an unclosed one is none.
+    // Markdown closes the block on `---` or `...`, either carrying a trailing
+    // run of spaces and tabs (PART 1 - PART 2 drops that run). A form feed is
+    // content and closes nothing.
     let mut offset = 0;
     let (content_end, body_start) = rest.split_inclusive('\n').find_map(|line| {
-        if matches!(line.trim_end_matches('\n'), "---" | "...") {
+        if matches!(line.trim_end_matches(['\n', ' ', '\t']), "---" | "...") {
             return Some((offset, offset + line.len()));
         }
         offset += line.len();

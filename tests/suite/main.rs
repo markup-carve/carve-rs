@@ -1012,6 +1012,8 @@ mod footnote_ref_number_is_serialized;
 mod formatter_parity_regressions;
 #[path = "../formatting_around_a_link_keeps_only_separating_space.rs"]
 mod formatting_around_a_link_keeps_only_separating_space;
+#[path = "../frontmatter_closer_carries_a_trailing_run.rs"]
+mod frontmatter_closer_carries_a_trailing_run;
 #[path = "../frontmatter_opener_carries_its_format_token.rs"]
 mod frontmatter_opener_carries_its_format_token;
 #[path = "../frontmatter_opener_slot_is_a_space.rs"]

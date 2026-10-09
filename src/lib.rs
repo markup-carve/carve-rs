@@ -479,15 +479,11 @@ fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
         return (None, source);
     };
     let rest = &source[first_nl + 1..];
-    let (content_len, after) = if rest == "---" {
-        (0, rest.len())
-    } else if let Some(r) = rest.strip_prefix("---\n") {
-        (0, rest.len() - r.len())
-    } else if let Some(close) = rest.find("\n---\n") {
-        (close, close + 5)
-    } else if let Some(close) = rest.strip_suffix("\n---").map(str::len) {
-        (close, rest.len())
-    } else {
+    // The closer test comes from the parser's helper for the same reason the
+    // opener test does: a trailing run of spaces or tabs on the closer is not
+    // content, and `fmt` must not disagree with the parse about where the block
+    // ends (carve-rs#2407).
+    let Some((content_len, after)) = parse::find_frontmatter_closer(rest) else {
         return (None, source);
     };
     // The opening delimiter carries the format token for EVERY format, the
