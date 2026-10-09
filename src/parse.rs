@@ -11639,15 +11639,15 @@ fn parse_list(
         start,
         ol_type,
         bare_marker: is_ordered && first_marker.marker.is_empty(),
-        delim: first_delim.map(char::from),
+        // Only the non-default spelling is recorded: the schema calls `delim`
+        // of `.` and `bullet_char` of `-` absent, so writing them would give
+        // one document two legal trees (carve#2828). NOT "drop the field": `)`
+        // and `*` ride through, and dropping those breaks the fields instead.
+        delim: first_delim.map(char::from).filter(|c| *c != '.'),
         bullet_char: if is_ordered {
             None
         } else {
-            first_marker
-                .marker
-                .chars()
-                .next()
-                .filter(|c| *c == '-' || *c == '*')
+            first_marker.marker.chars().next().filter(|c| *c == '*')
         },
         tight,
         items,

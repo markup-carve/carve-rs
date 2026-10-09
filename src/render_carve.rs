@@ -1865,9 +1865,13 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
         | (BlockNode::LineBlock(_), BlockNode::LineBlock(_))
         | (BlockNode::DefinitionList(_), BlockNode::DefinitionList(_)) => true,
         (BlockNode::List(left), BlockNode::List(right)) => {
+            // Compared through the defaults, like the two marker checks above:
+            // a parse records neither `.` nor `-` (carve#2828), so an ingested
+            // tree that spells one out describes the same marker and has to
+            // merge the same way.
             left.ordered == right.ordered
-                && left.delim == right.delim
-                && left.bullet_char == right.bullet_char
+                && left.delim.unwrap_or('.') == right.delim.unwrap_or('.')
+                && left.bullet_char.unwrap_or('-') == right.bullet_char.unwrap_or('-')
                 && left.ol_type == right.ol_type
         }
         _ => false,
