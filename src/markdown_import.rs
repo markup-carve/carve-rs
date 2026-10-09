@@ -683,6 +683,7 @@ enum Frame {
     List {
         ordered: bool,
         start: Option<usize>,
+        delim: Option<char>,
         items: Vec<ListItem>,
         /// A list is loose when any item holds more than one block, which
         /// CommonMark decides by blank lines between items; the parser has
@@ -864,7 +865,7 @@ impl Builder {
         }
 
         match event {
-            Event::Start(tag) => self.start(tag, empty_title),
+            Event::Start(tag) => self.start(tag, source, empty_title),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
             Event::Code(code) => self.inline(InlineNode::code(code.to_string(), None)),
@@ -1071,7 +1072,7 @@ impl Builder {
         }
     }
 
-    fn start(&mut self, tag: Tag<'_>, empty_title: bool) {
+    fn start(&mut self, tag: Tag<'_>, source: &str, empty_title: bool) {
         if matches!(
             tag,
             Tag::Paragraph
@@ -1103,6 +1104,14 @@ impl Builder {
             Tag::List(start) => Frame::List {
                 ordered: start.is_some(),
                 start: start.map(|start| start as usize),
+                delim: start.and_then(|_| {
+                    let marker = source.trim_start_matches([' ', '\t']);
+                    let digits = marker
+                        .bytes()
+                        .take_while(|byte| byte.is_ascii_digit())
+                        .count();
+                    (digits > 0 && marker.as_bytes().get(digits) == Some(&b')')).then_some(')')
+                }),
                 items: Vec::new(),
                 tight: true,
             },
@@ -1275,6 +1284,7 @@ impl Builder {
             Frame::List {
                 ordered,
                 start,
+                delim,
                 items,
                 tight,
             } => self.block(BlockNode::List(List {
@@ -1285,7 +1295,7 @@ impl Builder {
                 start: start.filter(|start| *start != 1),
                 ol_type: None,
                 bare_marker: false,
-                delim: None,
+                delim,
                 bullet_char: None,
                 tight,
                 items,
