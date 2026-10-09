@@ -719,6 +719,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
     }
     let masked = String::from_utf8(masked).expect("footnote masks preserve UTF-8");
     let mut literal_braces = std::collections::HashMap::new();
+    let paired_closes: HashSet<usize> = paired.values().copied().collect();
     let mut escaped_brace_closes = HashSet::new();
     for note in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
         if is_escaped(source.as_bytes(), note.start())
@@ -735,11 +736,13 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
     let mut brace_stack: Vec<(usize, bool, usize)> = Vec::new();
     let mut spaces = 0;
     let mut escaped = None;
+    let mut last_escaped = None;
     for (at, ch) in source.char_indices() {
         if ch.is_whitespace() {
             spaces += 1;
         }
         if let Some(begin) = escaped.take() {
+            last_escaped = Some(at);
             if ch == '{' && masked.as_bytes()[at] == b'{' {
                 brace_stack.push((begin, true, spaces));
             } else if ch == '}' || ch == ']' {
@@ -757,6 +760,17 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         }
         if masked.as_bytes()[at] != source.as_bytes()[at] {
             continue;
+        }
+        if ch == '}'
+            && at > 0
+            && b"+-=~^*_".contains(&source.as_bytes()[at - 1])
+            && !paired_closes.contains(&(at + 1))
+        {
+            let escaped_marker = last_escaped == Some(at - 1);
+            literal_braces.insert(at, if escaped_marker { at - 2 } else { at - 1 });
+            if escaped_marker {
+                escaped_brace_closes.insert(at);
+            }
         }
         if ch == '{' {
             brace_stack.push((at, false, spaces));
@@ -854,7 +868,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             }
             spans.push(format!(
                 "{}[{}{body}]{attrs}",
-                if word > 0 && source.as_bytes()[word - 1] == b']' {
+                if word > 0 && b"]^!".contains(&source.as_bytes()[word - 1]) {
                     "{%%}"
                 } else {
                     ""

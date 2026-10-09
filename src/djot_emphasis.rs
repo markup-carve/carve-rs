@@ -57,7 +57,7 @@ fn process(
     source: &str,
     mask: &str,
     convert_plain: impl Fn(&str) -> String,
-    paired: Option<&mut HashMap<usize, usize>>,
+    mut paired: Option<&mut HashMap<usize, usize>>,
     losses: &mut Vec<usize>,
 ) -> String {
     let bytes = source.as_bytes();
@@ -218,6 +218,9 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
+                        if let Some(paired) = paired.as_deref_mut() {
+                            paired.insert(start + 1, at + 1);
+                        }
                         for stack in pending_braces.values_mut() {
                             while stack.last().is_some_and(|at| *at > start) {
                                 stack.pop();
