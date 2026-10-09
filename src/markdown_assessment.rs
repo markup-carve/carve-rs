@@ -91,6 +91,7 @@ fn shape(html: &str) -> Vec<Shape> {
                             && matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6"))
                             || (key == "scope" && tag == "th")
                             || (key == "aria-label" && tag == "input")
+                            || (key == "data-delim" && tag == "ol" && attr.value.as_ref() == ")")
                         {
                             return None;
                         }
@@ -125,6 +126,28 @@ fn is_atx_heading(source: &str) -> bool {
             .as_bytes()
             .get(hashes)
             .map_or(true, |byte| matches!(byte, b' ' | b'\t'))
+}
+
+fn ordered_delimiters(blocks: &[crate::BlockNode]) -> Vec<char> {
+    let mut found = Vec::new();
+    let mut pending: Vec<_> = blocks.iter().rev().collect();
+    while let Some(block) = pending.pop() {
+        match block {
+            crate::BlockNode::List(list) => {
+                if list.ordered {
+                    found.push(list.delim.unwrap_or('.'));
+                }
+                for item in list.items.iter().rev() {
+                    pending.extend(item.children.iter().rev());
+                }
+            }
+            crate::BlockNode::BlockQuote(quote) => pending.extend(quote.children.iter().rev()),
+            crate::BlockNode::Section(section) => pending.extend(section.children.iter().rev()),
+            crate::BlockNode::Div(div) => pending.extend(div.children.iter().rev()),
+            _ => {}
+        }
+    }
+    found
 }
 
 /// Assess the native parser's occurrences and verify the document the writer produced.
@@ -172,6 +195,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut events = Vec::new();
     let mut content_spans = Vec::new();
     let mut lists = Vec::new();
+    let mut authored_ordered_delimiters = Vec::new();
     let mut link_depth = 0usize;
     let mut code_depth = 0usize;
     let mut html_block = false;
@@ -218,6 +242,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     Tag::BlockQuote(_) => Some(("block-quote", Preserved)),
                     Tag::List(start) => {
                         lists.push(start.is_some());
+                        if start.is_some() {
+                            let marker = source[range.clone()].trim_start_matches([' ', '\t']);
+                            authored_ordered_delimiters.push(
+                                marker
+                                    .chars()
+                                    .find(|character| !character.is_ascii_digit())
+                                    .unwrap_or('.'),
+                            );
+                        }
                         Some((
                             if start.is_some() {
                                 "ordered-list"
@@ -471,7 +504,11 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 ..crate::Options::default()
             },
         );
-        complete = shape(&expected) == shape(&actual);
+        // CommonMark HTML omits delimiter metadata. Verify it against the source
+        // before comparing HTML without the generated attribute.
+        let document = crate::parse(value);
+        complete = authored_ordered_delimiters == ordered_delimiters(&document.children)
+            && shape(&expected) == shape(&actual);
     }
     diagnostics.sort_by_key(|row| {
         row.path
@@ -705,5 +742,20 @@ mod tests {
         }
         assert!(!assess("**strong**", "wrong").complete);
         assert!(!assess("a  b", "a b").complete);
+    }
+
+    #[test]
+    fn ordered_delimiter_evidence_cannot_be_normalized_away() {
+        assert!(assess("1) one\n", "1) one\n").complete);
+        assert!(assess("1. one\n", "1. one\n").complete);
+        assert!(!assess("1) one\n", "1. one\n").complete);
+        assert!(!assess("1. one\n", "1) one\n").complete);
+        assert!(
+            !assess(
+                "<ol data-delim=\")\"><li>one</li></ol>\n",
+                "``` =html\n<ol><li>one</li></ol>\n```\n"
+            )
+            .complete
+        );
     }
 }
