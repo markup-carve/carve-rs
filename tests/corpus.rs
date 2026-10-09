@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "an-ordered-list-carries-its-authored-delimiter",
     "multiple-table-bodies-have-positional-source-metadata",
     "empty-table-bodies-keep-their-source-boundaries",
     "a-table-with-no-bodies-keeps-its-head-and-foot",
@@ -840,34 +841,7 @@ fn corpus_pairs() -> Vec<String> {
 }
 
 fn expected_corpus_size() -> usize {
-    // The authored examples the corpus is derived from. `docs/examples` is
-    // generated output as of markup-carve/carve#1194 and is no longer
-    // committed.
-    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/resources/examples");
-    let entries =
-        fs::read_dir(&examples).unwrap_or_else(|e| panic!("read_dir {}: {e}", examples.display()));
-    let mut count = 0;
-    for entry in entries {
-        let path = entry.expect("read spec example entry").path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let source =
-            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-        count += source
-            .lines()
-            .filter(|line| {
-                let line = line.trim();
-                let colons = line.bytes().take_while(|b| *b == b':').count();
-                colons >= 3
-                    && line[colons..].strip_prefix(" compare").is_some_and(|rest| {
-                        rest.is_empty() || rest.starts_with(char::is_whitespace)
-                    })
-            })
-            .count();
-    }
-    assert!(count > 0, "no ::: compare blocks found in spec examples");
-    count
+    crate::common::expected_corpus_size()
 }
 
 /// Pairs this engine renders DIFFERENTLY from the pinned corpus, because it
@@ -882,12 +856,7 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "31-ordered-list-start-and-delimiter-2",
-    "markup-carve/carve#2796: PART 10 §12 carries the authored `)` as `data-delim`, \
-     and the pinned golden predates the clause.",
-    "<ol data-delim=\")\">\n  <li>one</li>\n  <li>two</li>\n</ol>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].
@@ -1613,3 +1582,28 @@ corpus_test!(
     c_a_block_opener_indented_under_a_definition_term_is_term_text_at_every_depth,
     "a-block-opener-indented-under-a-definition-term-is-term-text-at-every-depth"
 );
+
+#[test]
+fn declared_population_counts_pairs_and_ignores_literal_fences() {
+    let source = "````text\n::: compare\n```carve\nfake\n```\n```html\nfake\n```\n:::\n````\n::: compare no-render\n````carve\n::: compare\n```html\nliteral\n```\n:::\n````\n```html\n<p>first</p>\n```\n```carve\nsecond\n```\n```html\n<p>second</p>\n```\n:::\n";
+    assert_eq!(crate::common::count_declared_pairs(source), Ok(2));
+    assert_eq!(
+        crate::common::count_declared_pairs(&source.replace('\n', "\r\n")),
+        Ok(2)
+    );
+}
+
+#[test]
+fn declared_population_refuses_invalid_source() {
+    for source in [
+        "::: compare\n:::",
+        "::: compare\n```carve\nx\n```\n:::",
+        "::: compare\n```html\nx\n```\n:::",
+        "::: compare",
+    ] {
+        assert!(
+            crate::common::count_declared_pairs(source).is_err(),
+            "{source:?}"
+        );
+    }
+}

@@ -1629,8 +1629,9 @@ mod layout_html_tests {
         // destination, 108-security-hardening-5, was already off this path for
         // its autolink, so the count moves by two rather than three.
         // Plain-space trimming adds corpus 104 and both corpus 268 documents.
+        // Spec 26ffb7d3 adds the all-dot list 549-...-2; its exact shadow parity is checked above.
         assert_eq!(
-            accepted, 57,
+            accepted, 58,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

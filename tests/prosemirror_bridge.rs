@@ -1581,7 +1581,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // `covered + lossy == expected_corpus_size()` below plus `lossy <= LOSSY`
     // pins `covered >= size - LOSSY`, so the slack this fixes existed only
     // while the ceiling itself lagged.
-    const STRICT: usize = 1718;
+    // Spec 26ffb7d3 adds the five 549-an-ordered-list-carries-its-authored-delimiter
+    // documents. Each round-trips without a reported loss: strict rises by five
+    // to 1723 and reported-lossy stays at 507.
+    const STRICT: usize = 1723;
     const LOSSY: usize = 507;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
@@ -1595,7 +1598,7 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // written at, and the assertion broke on a pull request that touches none
     // of this (carve-rs#1416).
     //
-    // `common::expected_corpus_size()` counts the `::: compare` blocks in the
+    // `common::expected_corpus_size()` counts declared fence pairs in the
     // spec's own examples - a route to the number that does not read the
     // corpus directory this sweep reads - so a truncated checkout still fails
     // here rather than passing by not existing. The other corpus sweeps in
