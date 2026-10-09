@@ -157,8 +157,12 @@ pub fn djot_to_carve(djot: &str) -> String {
             format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
         })
         .into_owned();
-    let (held, prefix, mut spans) = protect_attributed_strong(&folded);
-    let words = protect_attributed_words(&held, &prefix, &mut spans);
+    let mut prefix = "\0DJOTSTRONG".to_string();
+    while folded.contains(&prefix) {
+        prefix.push('\0');
+    }
+    let mut spans = Vec::new();
+    let words = protect_attributed_words(&folded, &prefix, &mut spans);
     let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
     while words.contains(&empty_term) {
         empty_term.push('\0');
@@ -197,8 +201,34 @@ pub fn djot_to_carve(djot: &str) -> String {
     }
 }
 
-fn quote_djot_attribute(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+fn quote_djot_attribute(value: &str, carve: bool) -> String {
+    let mut output = String::from("\"");
+    for ch in value.chars() {
+        if ch == '\\' || ch == '"' || (carve && ch.is_ascii_punctuation()) {
+            output.push('\\');
+        }
+        output.push(ch);
+    }
+    output.push('"');
+    output
+}
+
+fn decode_djot_attribute(value: &str) -> String {
+    let collapsed = cached_regex!(r"[ \r\n]+").unwrap().replace_all(value, " ");
+    let mut chars = collapsed.chars().peekable();
+    let mut output = String::new();
+    while let Some(ch) = chars.next() {
+        if ch == '\\'
+            && chars
+                .peek()
+                .is_some_and(|next| ".,\\/#!$%^&*;:{}=-_`~+[]()'\"?|".contains(*next))
+        {
+            output.push(chars.next().unwrap());
+        } else {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn strip_image_alt_attributes(label: &str) -> String {
@@ -255,6 +285,15 @@ fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
+    read_djot_attributes(source, start, false, false)
+}
+
+fn read_djot_attributes(
+    source: &str,
+    start: usize,
+    carve: bool,
+    table: bool,
+) -> Option<(usize, String)> {
     let bytes = source.as_bytes();
     let quote_prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut parts = Vec::new();
@@ -297,6 +336,18 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
             }
         }
         if bytes.get(i) == Some(&b'}') {
+            if carve && table {
+                let mut at = start;
+                while at <= i {
+                    if bytes[at] == b'\\' {
+                        at += 2;
+                    } else if bytes[at] == b'|' {
+                        return None;
+                    } else {
+                        at += 1;
+                    }
+                }
+            }
             return (!parts.is_empty()).then(|| (i + 1, format!("{{{}}}", parts.join(" "))));
         }
         if bytes.get(i) == Some(&b'%') {
@@ -328,15 +379,29 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
             let kind = bytes[i] as char;
             i += 1;
             let from = i;
-            i = bare_end(i);
+            for ch in source[from..].chars() {
+                let valid = if kind == '#' {
+                    !(ch.is_whitespace() && ch != '\u{85}')
+                        && ch != '\u{feff}'
+                        && !r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch)
+                } else {
+                    ch.is_ascii_alphanumeric() || "_:-".contains(ch)
+                };
+                if !valid {
+                    break;
+                }
+                i += ch.len_utf8();
+            }
             if i == from {
                 return None;
             }
             let value = &source[from..i];
             let invalid = if kind == '#' {
-                value
-                    .chars()
-                    .any(|ch| ch.is_whitespace() || r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch))
+                value.chars().any(|ch| {
+                    (ch.is_whitespace() && ch != '\u{85}')
+                        || ch == '\u{feff}'
+                        || r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch)
+                })
             } else {
                 !value
                     .bytes()
@@ -355,7 +420,7 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
                 format!(
                     "{}={}",
                     if kind == '#' { "id" } else { "class" },
-                    quote_djot_attribute(value)
+                    quote_djot_attribute(value, carve)
                 )
             });
         } else {
@@ -391,7 +456,7 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
                     return None;
                 }
                 i += 1;
-                let value = &source[from..i];
+                let value = &source[from + 1..i - 1];
                 let folded = if value.contains('\n') {
                     let (depth, _, _) = djot_attribute_context(source, start);
                     let mut lines = value.split('\n');
@@ -408,13 +473,19 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
                 } else {
                     value.to_owned()
                 };
-                parts.push(format!("{key}{folded}"));
+                parts.push(format!(
+                    "{key}{}",
+                    quote_djot_attribute(&decode_djot_attribute(&folded), carve)
+                ));
             } else {
                 i = bare_end(i);
                 if i == from {
                     return None;
                 }
-                parts.push(format!("{key}{}", quote_djot_attribute(&source[from..i])));
+                parts.push(format!(
+                    "{key}{}",
+                    quote_djot_attribute(&source[from..i], carve)
+                ));
             }
         }
         if i < bytes.len() {
@@ -427,23 +498,64 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
     None
 }
 
+struct NativeAttributeReader<'a> {
+    source: &'a str,
+    line_end: usize,
+    table: bool,
+}
+
+impl<'a> NativeAttributeReader<'a> {
+    fn new(source: &'a str) -> Self {
+        let line_end = source.find('\n').unwrap_or(source.len());
+        let line = &source[..line_end];
+        Self {
+            source,
+            line_end,
+            table: line.as_bytes().get(emphasis::structural_prefix_end(line)) == Some(&b'|'),
+        }
+    }
+
+    fn read(&mut self, start: usize) -> Option<(usize, String)> {
+        while self.line_end < start {
+            let line_start = self.line_end + 1;
+            self.line_end = self.source[line_start..]
+                .find('\n')
+                .map_or(self.source.len(), |at| line_start + at);
+            let line = &self.source[line_start..self.line_end];
+            self.table = line.as_bytes().get(emphasis::structural_prefix_end(line)) == Some(&b'|');
+        }
+        read_djot_attributes(self.source, start, true, self.table)
+    }
+}
+
 fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
+    if !source.contains('{') {
+        return source.to_owned();
+    }
+    let paired = emphasis::paired_openers(source, &emphasis_mask(source));
+    let mut read_native = NativeAttributeReader::new(source);
     let masked = mask_code_and_destinations(source);
     let bytes = source.as_bytes();
     let mut output = String::new();
     let mut cursor = 0;
     let mut i = 0;
     let last_close = source.rfind('}');
-    let last_delimiters = b"_*~^".map(|ch| source.rfind(ch as char));
     while last_close.is_some_and(|end| i <= end) {
         if bytes[i] != b'{' || masked.as_bytes()[i] != b'{' || is_escaped(bytes, i) {
             i += 1;
             continue;
         }
-        let Some((end, attrs)) = read_djot_word_attributes(source, i) else {
+        let Some((mut end, mut attrs)) = read_native.read(i) else {
             i += 1;
             continue;
         };
+        while bytes.get(end) == Some(&b'{') {
+            let Some((next_end, next_attrs)) = read_native.read(end) else {
+                break;
+            };
+            end = next_end;
+            attrs.push_str(&next_attrs);
+        }
         let mut word = i;
         if i > 0 && masked.as_bytes()[i - 1] == bytes[i - 1] && !b"`*_~^]}>".contains(&bytes[i - 1])
         {
@@ -457,19 +569,11 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
                 word = cursor + at;
             }
         }
-        if let Some(closer) = bytes.get(end).filter(|ch| b"_*~^".contains(ch)) {
-            if let Some(at) = (word..i)
-                .rev()
-                .find(|at| bytes[*at] == *closer && !is_escaped(bytes, *at))
-            {
-                word = at + 1;
-            }
-        } else if word < i
-            && b"_*~^".contains(&bytes[word])
-            && last_delimiters[b"_*~^".iter().position(|ch| *ch == bytes[word]).unwrap()]
-                .is_some_and(|at| at >= end)
-        {
-            word = i;
+        let paired_word = (word..i)
+            .rev()
+            .find(|at| paired.get(at).is_some_and(|close| *close > end));
+        if let Some(at) = paired_word {
+            word = at + 1;
         }
         if word > 0
             && bytes[word - 1] == b'{'
@@ -549,63 +653,6 @@ fn fold_heading_continuations(source: &str) -> String {
         result.push(folded);
     }
     result.join("\n")
-}
-
-fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
-    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern = PATTERN.get_or_init(|| regex::Regex::new(r#"\*([^*\n{}]+)(\{(?:\s*(?:[.#][^\s{}"=]+|[\w:-]+=(?:"(?:\\.|[^"\\])*"|[^\s{}"]+)))+\s*\})([^*\n{}]*)\*"#).unwrap());
-    let masked = mask_code_and_destinations(source);
-    let mut prefix = "\0DJOTSTRONG".to_string();
-    while source.contains(&prefix) {
-        prefix.push('\0');
-    }
-    let mut attribute_token = "\0DJOTATTR\0".to_string();
-    while source.contains(&attribute_token) {
-        attribute_token.push('\0');
-    }
-    let mut spans = Vec::new();
-    let held = pattern
-        .replace_all(source, |caps: &regex::Captures<'_>| {
-            let whole = caps.get(0).unwrap();
-            let start = whole.start();
-            let end = whole.end();
-            if masked.as_bytes().get(start) != Some(&b'*')
-                || masked.as_bytes().get(end - 1) != Some(&b'*')
-                || caps[3].ends_with('\\')
-                || (start > 0 && matches!(source.as_bytes()[start - 1], b'\\' | b'*'))
-                || source.as_bytes().get(end) == Some(&b'*')
-                || source[start + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_whitespace)
-                || source[..end - 1]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_whitespace)
-            {
-                return whole.as_str().to_string();
-            }
-            let before = &caps[1];
-            let word_start = before
-                .rfind(|c: char| c.is_whitespace() || "*{}[]`_~^".contains(c))
-                .map_or(0, |i| i + before[i..].chars().next().unwrap().len_utf8());
-            if word_start == before.len() {
-                return whole.as_str().to_string();
-            }
-            let body = rewrite_djot_body(&format!(
-                "{}[{}]{}{}",
-                &before[..word_start],
-                &before[word_start..],
-                attribute_token,
-                &caps[3]
-            ));
-            let span = format!("{{*{}*}}", body.replace(&attribute_token, &caps[2]));
-            let key = format!("{prefix}{}\0", spans.len());
-            spans.push(span);
-            key
-        })
-        .into_owned();
-    (held, prefix, spans)
 }
 
 /// Site generators conventionally remove a leading YAML envelope before Djot
@@ -3341,17 +3388,22 @@ mod attribute_list_tests {
             "{#id}\n> Block quote\n",
             "{#id}\n# Heading\n",
             "[nested [span]{.blue}]{#ident}\n",
-            "[span]{title=\"_*#literal*\"}\n",
         ] {
             assert_eq!(djot_to_carve(source), source, "{source}");
         }
+        assert_eq!(
+            crate::to_html(&djot_to_carve("[span]{title=\"_*#literal*\"}\n")),
+            "<p><span title=\"_*#literal*\">span</span></p>"
+        );
     }
 
     #[test]
     fn multiline_attribute_lists_are_canonicalized() {
         assert_eq!(
-            djot_to_carve("{#id .class\n  style=\"color:red\"}\nA paragraph\n"),
-            "{#id .class style=\"color:red\"}\nA paragraph\n"
+            crate::to_html(&djot_to_carve(
+                "{#id .class\n  style=\"color:red\"}\nA paragraph\n"
+            )),
+            "<p id=\"id\" class=\"class\" style=\"color:red\">A paragraph</p>"
         );
     }
 
@@ -3360,7 +3412,10 @@ mod attribute_list_tests {
         let source = "_a [x]{.a\n\n.b} b_";
         assert!(!djot_to_carve(source).contains("/a"));
         assert!(!crate::to_html(&djot_to_carve("para\n{#id}\nnext")).contains("id=\"id\""));
-        assert!(djot_to_carve("a { \"q\n[x]{title=\"_a_\"}").contains("[x]{title=\"_a_\"}"));
+        assert!(
+            crate::to_html(&djot_to_carve("a { \"q\n[x]{title=\"_a_\"}"))
+                .contains("<span title=\"_a_\">x</span>")
+        );
         assert_eq!(
             crate::to_html(&djot_to_carve("[x]{#a\n.b}")),
             "<p><span id=\"a\" class=\"b\">x</span></p>"

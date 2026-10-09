@@ -20,7 +20,7 @@ fn kind_bit(kind: u8) -> u8 {
         2
     }
 }
-fn clear(openers: &mut [Vec<(usize, usize, bool)>; 4], from: usize) {
+fn clear(openers: &mut [Vec<(usize, usize, bool)>; 8], from: usize) {
     for stack in openers {
         while stack.last().is_some_and(|opener| opener.0 >= from) {
             stack.pop();
@@ -29,8 +29,46 @@ fn clear(openers: &mut [Vec<(usize, usize, bool)>; 4], from: usize) {
 }
 
 pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> String) -> String {
+    process(source, mask, convert_plain, None)
+}
+
+pub(super) fn paired_openers(source: &str, mask: &str) -> HashMap<usize, usize> {
+    let mut paired = HashMap::new();
+    process(source, mask, str::to_string, Some(&mut paired));
+    paired
+}
+
+fn process(
+    source: &str,
+    mask: &str,
+    convert_plain: impl Fn(&str) -> String,
+    paired: Option<&mut HashMap<usize, usize>>,
+) -> String {
     let bytes = source.as_bytes();
-    let mask = mask.as_bytes();
+    let mut mask = mask.as_bytes().to_vec();
+    let code_mask = super::mask_code_and_destinations(source);
+    let mut attributes = HashMap::new();
+    let mut read_native = super::NativeAttributeReader::new(source);
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if code_mask.as_bytes()[at] == b'{' && mask[at] != b' ' {
+            if let Some((end, wire)) = read_native.read(at) {
+                for byte in &mut mask[at..end] {
+                    if *byte != b'\n' {
+                        *byte = b' ';
+                    }
+                }
+                attributes.insert(at, (end, wire));
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
     let mut valid_braces = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
@@ -72,7 +110,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
         }
         at += 1;
     }
-    let mut openers: [Vec<(usize, usize, bool)>; 4] = std::array::from_fn(|_| Vec::new());
+    let mut openers: [Vec<(usize, usize, bool)>; 8] = std::array::from_fn(|_| Vec::new());
     let mut pairs = Vec::<Pair>::new();
     let mut structural = HashSet::new();
     let mut brackets = Vec::new();
@@ -179,7 +217,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             i += 1;
             continue;
         }
-        if ch != b'_' && ch != b'*' {
+        if ch != b'_' && ch != b'*' && !(paired.is_some() && b"~^".contains(&ch)) {
             i += 1;
             continue;
         }
@@ -208,9 +246,20 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
                     .is_some_and(|byte| !b" \t\r\n".contains(byte)));
         let can_close =
             !forced_open && (forced_close || (i > 0 && !b" \t\r\n".contains(&bytes[i - 1])));
-        let key = usize::from(ch == b'*') + usize::from(forced_close) * 2;
+        let marker = match ch {
+            b'_' => 0,
+            b'*' => 1,
+            b'~' => 2,
+            b'^' => 3,
+            _ => unreachable!(),
+        };
+        let key = marker + usize::from(forced_close) * 4;
         if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
-            can_close && opener.1 < i && braces.last().map_or(true, |at| opener.0 > *at)
+            can_close
+                && opener.1 < i
+                && braces.last().map_or(true, |at| {
+                    opener.0 > *at || (paired.is_some() && opener.2 && opener.0 == *at)
+                })
         }) {
             clear(&mut openers, start);
             pairs.push(Pair {
@@ -225,12 +274,18 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             });
             i += if forced_close { 2 } else { 1 };
         } else if can_open {
-            let key = usize::from(ch == b'*') + usize::from(forced_open) * 2;
+            let key = marker + usize::from(forced_open) * 4;
             openers[key].push((i - usize::from(forced_open), i + 1, forced_open));
             i += 1;
         } else {
             i += if forced_close { 2 } else { 1 };
         }
+    }
+    if let Some(paired) = paired {
+        for pair in pairs {
+            paired.insert(pair.open_end - 1, pair.end);
+        }
+        return String::new();
     }
     pairs.sort_by_key(|pair| (pair.start, std::cmp::Reverse(pair.end)));
     let mut roots = Vec::new();
@@ -314,7 +369,8 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     }
     let renderer = Renderer {
         source,
-        mask,
+        mask: &mask,
+        attributes: &attributes,
         pairs: &pairs,
         structural: &structural,
         literal_brackets: &literal_brackets,
@@ -366,6 +422,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
 struct Renderer<'a> {
     source: &'a str,
     mask: &'a [u8],
+    attributes: &'a HashMap<usize, (usize, String)>,
     pairs: &'a [Pair],
     structural: &'a HashSet<usize>,
     literal_brackets: &'a HashSet<usize>,
@@ -379,6 +436,15 @@ impl Renderer<'_> {
         let mut out = Vec::new();
         let mut i = start;
         while i < end {
+            if let Some((attribute_end, wire)) = self
+                .attributes
+                .get(&i)
+                .filter(|(attribute_end, _)| *attribute_end <= end)
+            {
+                out.extend_from_slice(self.protect(wire).as_bytes());
+                i = *attribute_end;
+                continue;
+            }
             let ch = bytes[i];
             if ch == b'\\' {
                 out.push(ch);
@@ -468,7 +534,7 @@ impl Renderer<'_> {
     }
 }
 
-fn structural_prefix_end(line: &str) -> usize {
+pub(super) fn structural_prefix_end(line: &str) -> usize {
     let bytes = line.as_bytes();
     let mut at = 0;
     let spaces = |at: &mut usize| {
