@@ -2055,13 +2055,17 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // Visible content: the HTML target renders it as
         // `<span class="critic-comment"> note </span>`, so dropping it here made two
         // targets of one engine disagree about whether the document says it. Markdown
-        // has no critic syntax, so the text is what degrades gracefully -- escaped
-        // like any other text, since a comment carrying Markdown metacharacters must
-        // not become live markup when the output is re-rendered. carve-php kept it
+        // has no critic syntax, so it carries the same span (markup-carve/carve#2791)
+        // around the text, escaped like any other text, since a comment carrying
+        // Markdown metacharacters must not become live markup when the output is
+        // re-rendered. carve-php kept it
         // (carve#352, corpus 33-editorial-markup); plain and ANSI were fixed in
         // carve-rs#322.
         InlineNode::Comment(_) => String::new(),
-        InlineNode::CriticComment(c) => escape_text(&strip_controls(&c.text)),
+        InlineNode::CriticComment(c) => format!(
+            "<span class=\"critic-comment\">{}</span>",
+            escape_text(&strip_controls(&c.text))
+        ),
         // A RESOLVED cross-reference is a link to that target, so it renders as
         // one - `[Title](#id)` - under exactly the condition `render_link` uses:
         // only when this target will EMIT that id. A Markdown heading carries

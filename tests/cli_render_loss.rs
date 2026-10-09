@@ -102,17 +102,21 @@ fn table_section_attributes_are_not_a_render_loss() {
     assert!(report.contains("\"totalLosses\":0"), "{report}");
 }
 
-/// `--allow-loss` offers two of CARVE-P2-024's three codes and refuses every
-/// other name.
+/// `--allow-loss` offers every render-loss code except `destination-denied` and
+/// refuses every other name.
 ///
-/// `destination-denied` is the third code and is deliberately NOT offered:
+/// `destination-denied` is deliberately NOT offered:
 /// markup-carve/carve#2679 ruled that a blanked destination owes a row and left
 /// whether a security refusal should be allow-listable undecided, so the flag
 /// stayed as it was. The row below pins that gap rather than leaving it to
 /// whichever way a later edit happens to fall.
 #[test]
-fn allow_loss_offers_two_of_the_three_codes() {
-    for code in ["raw-format-dropped", "ruby-flattened"] {
+fn allow_loss_offers_every_code_but_destination_denied() {
+    for code in [
+        "raw-format-dropped",
+        "ruby-flattened",
+        "editorial-comment-flattened",
+    ] {
         let accepted = run_input(&["--plain", "--allow-loss", code], "text\n");
         assert!(accepted.status.success(), "{code}: {:?}", accepted.stderr);
     }
@@ -127,7 +131,7 @@ fn allow_loss_offers_two_of_the_three_codes() {
         let stderr = String::from_utf8_lossy(&refused.stderr);
         assert_eq!(
             stderr.trim_end(),
-            "carve: --allow-loss expects raw-format-dropped or ruby-flattened"
+            "carve: --allow-loss expects raw-format-dropped, ruby-flattened or editorial-comment-flattened"
         );
     }
     let help = run_input(&["--help"], "");
