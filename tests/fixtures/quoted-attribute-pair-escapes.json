@@ -1,0 +1,2114 @@
+[
+  {
+    "name": "strong-*-span-closer",
+    "source": "{*a [b]{title=\"*\\}\"} c*}",
+    "html": "<p><strong>a <span title=\"*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-closer",
+    "source": "{*a /b/{title=\"*\\}\"} c*}",
+    "html": "<p><strong>a <em title=\"*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-closer",
+    "source": "{*a `b`{title=\"*\\}\"} c*}",
+    "html": "<p><strong>a <code title=\"*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-closer",
+    "source": "{*a [b](u){title=\"*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" title=\"*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-span-syntax",
+    "source": "{*a [b]{title=\"x\\[\\]\\`\\{\\}*\\}\"} c*}",
+    "html": "<p><strong>a <span title=\"x[]`{}*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-syntax",
+    "source": "{*a /b/{title=\"x\\[\\]\\`\\{\\}*\\}\"} c*}",
+    "html": "<p><strong>a <em title=\"x[]`{}*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-syntax",
+    "source": "{*a `b`{title=\"x\\[\\]\\`\\{\\}*\\}\"} c*}",
+    "html": "<p><strong>a <code title=\"x[]`{}*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-syntax",
+    "source": "{*a [b](u){title=\"x\\[\\]\\`\\{\\}*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" title=\"x[]`{}*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-span-backslash",
+    "source": "{*a [b]{title=\"x\\\\*\\}\"} c*}",
+    "html": "<p><strong>a <span title=\"x\\*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-backslash",
+    "source": "{*a /b/{title=\"x\\\\*\\}\"} c*}",
+    "html": "<p><strong>a <em title=\"x\\*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-backslash",
+    "source": "{*a `b`{title=\"x\\\\*\\}\"} c*}",
+    "html": "<p><strong>a <code title=\"x\\*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-backslash",
+    "source": "{*a [b](u){title=\"x\\\\*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" title=\"x\\*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-span-pipe",
+    "source": "{*a [b]{title=\"x\\|*\\}\"} c*}",
+    "html": "<p><strong>a <span title=\"x|*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-pipe",
+    "source": "{*a /b/{title=\"x\\|*\\}\"} c*}",
+    "html": "<p><strong>a <em title=\"x|*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-pipe",
+    "source": "{*a `b`{title=\"x\\|*\\}\"} c*}",
+    "html": "<p><strong>a <code title=\"x|*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-pipe",
+    "source": "{*a [b](u){title=\"x\\|*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" title=\"x|*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-closer",
+    "source": "{/a [b]{title=\"/\\}\"} c/}",
+    "html": "<p><em>a <span title=\"/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-closer",
+    "source": "{/a *b*{title=\"/\\}\"} c/}",
+    "html": "<p><em>a <strong title=\"/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-closer",
+    "source": "{/a `b`{title=\"/\\}\"} c/}",
+    "html": "<p><em>a <code title=\"/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-closer",
+    "source": "{/a [b](u){title=\"/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" title=\"/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-syntax",
+    "source": "{/a [b]{title=\"x\\[\\]\\`\\{\\}/\\}\"} c/}",
+    "html": "<p><em>a <span title=\"x[]`{}/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-syntax",
+    "source": "{/a *b*{title=\"x\\[\\]\\`\\{\\}/\\}\"} c/}",
+    "html": "<p><em>a <strong title=\"x[]`{}/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-syntax",
+    "source": "{/a `b`{title=\"x\\[\\]\\`\\{\\}/\\}\"} c/}",
+    "html": "<p><em>a <code title=\"x[]`{}/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-syntax",
+    "source": "{/a [b](u){title=\"x\\[\\]\\`\\{\\}/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" title=\"x[]`{}/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-backslash",
+    "source": "{/a [b]{title=\"x\\\\/\\}\"} c/}",
+    "html": "<p><em>a <span title=\"x\\/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-backslash",
+    "source": "{/a *b*{title=\"x\\\\/\\}\"} c/}",
+    "html": "<p><em>a <strong title=\"x\\/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-backslash",
+    "source": "{/a `b`{title=\"x\\\\/\\}\"} c/}",
+    "html": "<p><em>a <code title=\"x\\/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-backslash",
+    "source": "{/a [b](u){title=\"x\\\\/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" title=\"x\\/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-pipe",
+    "source": "{/a [b]{title=\"x\\|/\\}\"} c/}",
+    "html": "<p><em>a <span title=\"x|/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-pipe",
+    "source": "{/a *b*{title=\"x\\|/\\}\"} c/}",
+    "html": "<p><em>a <strong title=\"x|/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-pipe",
+    "source": "{/a `b`{title=\"x\\|/\\}\"} c/}",
+    "html": "<p><em>a <code title=\"x|/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-pipe",
+    "source": "{/a [b](u){title=\"x\\|/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" title=\"x|/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-closer",
+    "source": "{_a [b]{title=\"_\\}\"} c_}",
+    "html": "<p><u>a <span title=\"_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-closer",
+    "source": "{_a /b/{title=\"_\\}\"} c_}",
+    "html": "<p><u>a <em title=\"_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-closer",
+    "source": "{_a `b`{title=\"_\\}\"} c_}",
+    "html": "<p><u>a <code title=\"_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-closer",
+    "source": "{_a [b](u){title=\"_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" title=\"_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-syntax",
+    "source": "{_a [b]{title=\"x\\[\\]\\`\\{\\}_\\}\"} c_}",
+    "html": "<p><u>a <span title=\"x[]`{}_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-syntax",
+    "source": "{_a /b/{title=\"x\\[\\]\\`\\{\\}_\\}\"} c_}",
+    "html": "<p><u>a <em title=\"x[]`{}_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-syntax",
+    "source": "{_a `b`{title=\"x\\[\\]\\`\\{\\}_\\}\"} c_}",
+    "html": "<p><u>a <code title=\"x[]`{}_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-syntax",
+    "source": "{_a [b](u){title=\"x\\[\\]\\`\\{\\}_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" title=\"x[]`{}_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-backslash",
+    "source": "{_a [b]{title=\"x\\\\_\\}\"} c_}",
+    "html": "<p><u>a <span title=\"x\\_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-backslash",
+    "source": "{_a /b/{title=\"x\\\\_\\}\"} c_}",
+    "html": "<p><u>a <em title=\"x\\_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-backslash",
+    "source": "{_a `b`{title=\"x\\\\_\\}\"} c_}",
+    "html": "<p><u>a <code title=\"x\\_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-backslash",
+    "source": "{_a [b](u){title=\"x\\\\_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" title=\"x\\_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-pipe",
+    "source": "{_a [b]{title=\"x\\|_\\}\"} c_}",
+    "html": "<p><u>a <span title=\"x|_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-pipe",
+    "source": "{_a /b/{title=\"x\\|_\\}\"} c_}",
+    "html": "<p><u>a <em title=\"x|_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-pipe",
+    "source": "{_a `b`{title=\"x\\|_\\}\"} c_}",
+    "html": "<p><u>a <code title=\"x|_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-pipe",
+    "source": "{_a [b](u){title=\"x\\|_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" title=\"x|_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-closer",
+    "source": "{~a [b]{title=\"~\\}\"} c~}",
+    "html": "<p><s>a <span title=\"~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-closer",
+    "source": "{~a /b/{title=\"~\\}\"} c~}",
+    "html": "<p><s>a <em title=\"~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-closer",
+    "source": "{~a `b`{title=\"~\\}\"} c~}",
+    "html": "<p><s>a <code title=\"~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-closer",
+    "source": "{~a [b](u){title=\"~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" title=\"~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-syntax",
+    "source": "{~a [b]{title=\"x\\[\\]\\`\\{\\}~\\}\"} c~}",
+    "html": "<p><s>a <span title=\"x[]`{}~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-syntax",
+    "source": "{~a /b/{title=\"x\\[\\]\\`\\{\\}~\\}\"} c~}",
+    "html": "<p><s>a <em title=\"x[]`{}~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-syntax",
+    "source": "{~a `b`{title=\"x\\[\\]\\`\\{\\}~\\}\"} c~}",
+    "html": "<p><s>a <code title=\"x[]`{}~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-syntax",
+    "source": "{~a [b](u){title=\"x\\[\\]\\`\\{\\}~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" title=\"x[]`{}~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-backslash",
+    "source": "{~a [b]{title=\"x\\\\~\\}\"} c~}",
+    "html": "<p><s>a <span title=\"x\\~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-backslash",
+    "source": "{~a /b/{title=\"x\\\\~\\}\"} c~}",
+    "html": "<p><s>a <em title=\"x\\~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-backslash",
+    "source": "{~a `b`{title=\"x\\\\~\\}\"} c~}",
+    "html": "<p><s>a <code title=\"x\\~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-backslash",
+    "source": "{~a [b](u){title=\"x\\\\~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" title=\"x\\~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-pipe",
+    "source": "{~a [b]{title=\"x\\|~\\}\"} c~}",
+    "html": "<p><s>a <span title=\"x|~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-pipe",
+    "source": "{~a /b/{title=\"x\\|~\\}\"} c~}",
+    "html": "<p><s>a <em title=\"x|~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-pipe",
+    "source": "{~a `b`{title=\"x\\|~\\}\"} c~}",
+    "html": "<p><s>a <code title=\"x|~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-pipe",
+    "source": "{~a [b](u){title=\"x\\|~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" title=\"x|~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-closer",
+    "source": "{^a [b]{title=\"^\\}\"} c^}",
+    "html": "<p><sup>a <span title=\"^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-closer",
+    "source": "{^a /b/{title=\"^\\}\"} c^}",
+    "html": "<p><sup>a <em title=\"^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-closer",
+    "source": "{^a `b`{title=\"^\\}\"} c^}",
+    "html": "<p><sup>a <code title=\"^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-closer",
+    "source": "{^a [b](u){title=\"^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" title=\"^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-syntax",
+    "source": "{^a [b]{title=\"x\\[\\]\\`\\{\\}^\\}\"} c^}",
+    "html": "<p><sup>a <span title=\"x[]`{}^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-syntax",
+    "source": "{^a /b/{title=\"x\\[\\]\\`\\{\\}^\\}\"} c^}",
+    "html": "<p><sup>a <em title=\"x[]`{}^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-syntax",
+    "source": "{^a `b`{title=\"x\\[\\]\\`\\{\\}^\\}\"} c^}",
+    "html": "<p><sup>a <code title=\"x[]`{}^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-syntax",
+    "source": "{^a [b](u){title=\"x\\[\\]\\`\\{\\}^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" title=\"x[]`{}^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-backslash",
+    "source": "{^a [b]{title=\"x\\\\^\\}\"} c^}",
+    "html": "<p><sup>a <span title=\"x\\^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-backslash",
+    "source": "{^a /b/{title=\"x\\\\^\\}\"} c^}",
+    "html": "<p><sup>a <em title=\"x\\^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-backslash",
+    "source": "{^a `b`{title=\"x\\\\^\\}\"} c^}",
+    "html": "<p><sup>a <code title=\"x\\^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-backslash",
+    "source": "{^a [b](u){title=\"x\\\\^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" title=\"x\\^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-pipe",
+    "source": "{^a [b]{title=\"x\\|^\\}\"} c^}",
+    "html": "<p><sup>a <span title=\"x|^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-pipe",
+    "source": "{^a /b/{title=\"x\\|^\\}\"} c^}",
+    "html": "<p><sup>a <em title=\"x|^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-pipe",
+    "source": "{^a `b`{title=\"x\\|^\\}\"} c^}",
+    "html": "<p><sup>a <code title=\"x|^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-pipe",
+    "source": "{^a [b](u){title=\"x\\|^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" title=\"x|^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-closer",
+    "source": "{,a [b]{title=\",\\}\"} c,}",
+    "html": "<p><sub>a <span title=\",}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-closer",
+    "source": "{,a /b/{title=\",\\}\"} c,}",
+    "html": "<p><sub>a <em title=\",}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-closer",
+    "source": "{,a `b`{title=\",\\}\"} c,}",
+    "html": "<p><sub>a <code title=\",}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-closer",
+    "source": "{,a [b](u){title=\",\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" title=\",}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-syntax",
+    "source": "{,a [b]{title=\"x\\[\\]\\`\\{\\},\\}\"} c,}",
+    "html": "<p><sub>a <span title=\"x[]`{},}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-syntax",
+    "source": "{,a /b/{title=\"x\\[\\]\\`\\{\\},\\}\"} c,}",
+    "html": "<p><sub>a <em title=\"x[]`{},}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-syntax",
+    "source": "{,a `b`{title=\"x\\[\\]\\`\\{\\},\\}\"} c,}",
+    "html": "<p><sub>a <code title=\"x[]`{},}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-syntax",
+    "source": "{,a [b](u){title=\"x\\[\\]\\`\\{\\},\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" title=\"x[]`{},}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-backslash",
+    "source": "{,a [b]{title=\"x\\\\,\\}\"} c,}",
+    "html": "<p><sub>a <span title=\"x\\,}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-backslash",
+    "source": "{,a /b/{title=\"x\\\\,\\}\"} c,}",
+    "html": "<p><sub>a <em title=\"x\\,}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-backslash",
+    "source": "{,a `b`{title=\"x\\\\,\\}\"} c,}",
+    "html": "<p><sub>a <code title=\"x\\,}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-backslash",
+    "source": "{,a [b](u){title=\"x\\\\,\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" title=\"x\\,}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-pipe",
+    "source": "{,a [b]{title=\"x\\|,\\}\"} c,}",
+    "html": "<p><sub>a <span title=\"x|,}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-pipe",
+    "source": "{,a /b/{title=\"x\\|,\\}\"} c,}",
+    "html": "<p><sub>a <em title=\"x|,}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-pipe",
+    "source": "{,a `b`{title=\"x\\|,\\}\"} c,}",
+    "html": "<p><sub>a <code title=\"x|,}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-pipe",
+    "source": "{,a [b](u){title=\"x\\|,\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" title=\"x|,}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-closer",
+    "source": "{=a [b]{title=\"=\\}\"} c=}",
+    "html": "<p><mark>a <span title=\"=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-closer",
+    "source": "{=a /b/{title=\"=\\}\"} c=}",
+    "html": "<p><mark>a <em title=\"=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-closer",
+    "source": "{=a `b`{title=\"=\\}\"} c=}",
+    "html": "<p><mark>a <code title=\"=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-closer",
+    "source": "{=a [b](u){title=\"=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" title=\"=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-syntax",
+    "source": "{=a [b]{title=\"x\\[\\]\\`\\{\\}=\\}\"} c=}",
+    "html": "<p><mark>a <span title=\"x[]`{}=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-syntax",
+    "source": "{=a /b/{title=\"x\\[\\]\\`\\{\\}=\\}\"} c=}",
+    "html": "<p><mark>a <em title=\"x[]`{}=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-syntax",
+    "source": "{=a `b`{title=\"x\\[\\]\\`\\{\\}=\\}\"} c=}",
+    "html": "<p><mark>a <code title=\"x[]`{}=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-syntax",
+    "source": "{=a [b](u){title=\"x\\[\\]\\`\\{\\}=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" title=\"x[]`{}=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-backslash",
+    "source": "{=a [b]{title=\"x\\\\=\\}\"} c=}",
+    "html": "<p><mark>a <span title=\"x\\=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-backslash",
+    "source": "{=a /b/{title=\"x\\\\=\\}\"} c=}",
+    "html": "<p><mark>a <em title=\"x\\=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-backslash",
+    "source": "{=a `b`{title=\"x\\\\=\\}\"} c=}",
+    "html": "<p><mark>a <code title=\"x\\=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-backslash",
+    "source": "{=a [b](u){title=\"x\\\\=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" title=\"x\\=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-pipe",
+    "source": "{=a [b]{title=\"x\\|=\\}\"} c=}",
+    "html": "<p><mark>a <span title=\"x|=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-pipe",
+    "source": "{=a /b/{title=\"x\\|=\\}\"} c=}",
+    "html": "<p><mark>a <em title=\"x|=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-pipe",
+    "source": "{=a `b`{title=\"x\\|=\\}\"} c=}",
+    "html": "<p><mark>a <code title=\"x|=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-pipe",
+    "source": "{=a [b](u){title=\"x\\|=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" title=\"x|=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-closer",
+    "source": "{+a [b]{title=\"+\\}\"} c+}",
+    "html": "<p><ins>a <span title=\"+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-closer",
+    "source": "{+a /b/{title=\"+\\}\"} c+}",
+    "html": "<p><ins>a <em title=\"+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-closer",
+    "source": "{+a `b`{title=\"+\\}\"} c+}",
+    "html": "<p><ins>a <code title=\"+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-closer",
+    "source": "{+a [b](u){title=\"+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" title=\"+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-syntax",
+    "source": "{+a [b]{title=\"x\\[\\]\\`\\{\\}+\\}\"} c+}",
+    "html": "<p><ins>a <span title=\"x[]`{}+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-syntax",
+    "source": "{+a /b/{title=\"x\\[\\]\\`\\{\\}+\\}\"} c+}",
+    "html": "<p><ins>a <em title=\"x[]`{}+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-syntax",
+    "source": "{+a `b`{title=\"x\\[\\]\\`\\{\\}+\\}\"} c+}",
+    "html": "<p><ins>a <code title=\"x[]`{}+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-syntax",
+    "source": "{+a [b](u){title=\"x\\[\\]\\`\\{\\}+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" title=\"x[]`{}+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-backslash",
+    "source": "{+a [b]{title=\"x\\\\+\\}\"} c+}",
+    "html": "<p><ins>a <span title=\"x\\+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-backslash",
+    "source": "{+a /b/{title=\"x\\\\+\\}\"} c+}",
+    "html": "<p><ins>a <em title=\"x\\+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-backslash",
+    "source": "{+a `b`{title=\"x\\\\+\\}\"} c+}",
+    "html": "<p><ins>a <code title=\"x\\+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-backslash",
+    "source": "{+a [b](u){title=\"x\\\\+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" title=\"x\\+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-pipe",
+    "source": "{+a [b]{title=\"x\\|+\\}\"} c+}",
+    "html": "<p><ins>a <span title=\"x|+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-pipe",
+    "source": "{+a /b/{title=\"x\\|+\\}\"} c+}",
+    "html": "<p><ins>a <em title=\"x|+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-pipe",
+    "source": "{+a `b`{title=\"x\\|+\\}\"} c+}",
+    "html": "<p><ins>a <code title=\"x|+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-pipe",
+    "source": "{+a [b](u){title=\"x\\|+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" title=\"x|+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-closer",
+    "source": "{-a [b]{title=\"-\\}\"} c-}",
+    "html": "<p><del>a <span title=\"-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-closer",
+    "source": "{-a /b/{title=\"-\\}\"} c-}",
+    "html": "<p><del>a <em title=\"-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-closer",
+    "source": "{-a `b`{title=\"-\\}\"} c-}",
+    "html": "<p><del>a <code title=\"-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-closer",
+    "source": "{-a [b](u){title=\"-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" title=\"-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-syntax",
+    "source": "{-a [b]{title=\"x\\[\\]\\`\\{\\}-\\}\"} c-}",
+    "html": "<p><del>a <span title=\"x[]`{}-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-syntax",
+    "source": "{-a /b/{title=\"x\\[\\]\\`\\{\\}-\\}\"} c-}",
+    "html": "<p><del>a <em title=\"x[]`{}-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-syntax",
+    "source": "{-a `b`{title=\"x\\[\\]\\`\\{\\}-\\}\"} c-}",
+    "html": "<p><del>a <code title=\"x[]`{}-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-syntax",
+    "source": "{-a [b](u){title=\"x\\[\\]\\`\\{\\}-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" title=\"x[]`{}-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-backslash",
+    "source": "{-a [b]{title=\"x\\\\-\\}\"} c-}",
+    "html": "<p><del>a <span title=\"x\\-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-backslash",
+    "source": "{-a /b/{title=\"x\\\\-\\}\"} c-}",
+    "html": "<p><del>a <em title=\"x\\-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-backslash",
+    "source": "{-a `b`{title=\"x\\\\-\\}\"} c-}",
+    "html": "<p><del>a <code title=\"x\\-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-backslash",
+    "source": "{-a [b](u){title=\"x\\\\-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" title=\"x\\-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-pipe",
+    "source": "{-a [b]{title=\"x\\|-\\}\"} c-}",
+    "html": "<p><del>a <span title=\"x|-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-pipe",
+    "source": "{-a /b/{title=\"x\\|-\\}\"} c-}",
+    "html": "<p><del>a <em title=\"x|-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-pipe",
+    "source": "{-a `b`{title=\"x\\|-\\}\"} c-}",
+    "html": "<p><del>a <code title=\"x|-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-pipe",
+    "source": "{-a [b](u){title=\"x\\|-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" title=\"x|-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-span-closer-id",
+    "source": "{*a [b]{id=\"*\\}\"} c*}",
+    "html": "<p><strong>a <span id=\"*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-span-closer-class",
+    "source": "{*a [b]{class=\"*\\}\"} c*}",
+    "html": "<p><strong>a <span class=\"*}\">b</span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-closer-id",
+    "source": "{*a /b/{id=\"*\\}\"} c*}",
+    "html": "<p><strong>a <em id=\"*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-mark-closer-class",
+    "source": "{*a /b/{class=\"*\\}\"} c*}",
+    "html": "<p><strong>a <em class=\"*}\">b</em> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-closer-id",
+    "source": "{*a `b`{id=\"*\\}\"} c*}",
+    "html": "<p><strong>a <code id=\"*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-code-closer-class",
+    "source": "{*a `b`{class=\"*\\}\"} c*}",
+    "html": "<p><strong>a <code class=\"*}\">b</code> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-closer-id",
+    "source": "{*a [b](u){id=\"*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" id=\"*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "strong-*-link-closer-class",
+    "source": "{*a [b](u){class=\"*\\}\"} c*}",
+    "html": "<p><strong>a <a href=\"u\" class=\"*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-closer-id",
+    "source": "{/a [b]{id=\"/\\}\"} c/}",
+    "html": "<p><em>a <span id=\"/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-span-closer-class",
+    "source": "{/a [b]{class=\"/\\}\"} c/}",
+    "html": "<p><em>a <span class=\"/}\">b</span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-closer-id",
+    "source": "{/a *b*{id=\"/\\}\"} c/}",
+    "html": "<p><em>a <strong id=\"/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-mark-closer-class",
+    "source": "{/a *b*{class=\"/\\}\"} c/}",
+    "html": "<p><em>a <strong class=\"/}\">b</strong> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-closer-id",
+    "source": "{/a `b`{id=\"/\\}\"} c/}",
+    "html": "<p><em>a <code id=\"/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-code-closer-class",
+    "source": "{/a `b`{class=\"/\\}\"} c/}",
+    "html": "<p><em>a <code class=\"/}\">b</code> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-closer-id",
+    "source": "{/a [b](u){id=\"/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" id=\"/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "em-/-link-closer-class",
+    "source": "{/a [b](u){class=\"/\\}\"} c/}",
+    "html": "<p><em>a <a href=\"u\" class=\"/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-closer-id",
+    "source": "{_a [b]{id=\"_\\}\"} c_}",
+    "html": "<p><u>a <span id=\"_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-span-closer-class",
+    "source": "{_a [b]{class=\"_\\}\"} c_}",
+    "html": "<p><u>a <span class=\"_}\">b</span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-closer-id",
+    "source": "{_a /b/{id=\"_\\}\"} c_}",
+    "html": "<p><u>a <em id=\"_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-mark-closer-class",
+    "source": "{_a /b/{class=\"_\\}\"} c_}",
+    "html": "<p><u>a <em class=\"_}\">b</em> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-closer-id",
+    "source": "{_a `b`{id=\"_\\}\"} c_}",
+    "html": "<p><u>a <code id=\"_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-code-closer-class",
+    "source": "{_a `b`{class=\"_\\}\"} c_}",
+    "html": "<p><u>a <code class=\"_}\">b</code> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-closer-id",
+    "source": "{_a [b](u){id=\"_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" id=\"_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "u-_-link-closer-class",
+    "source": "{_a [b](u){class=\"_\\}\"} c_}",
+    "html": "<p><u>a <a href=\"u\" class=\"_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-closer-id",
+    "source": "{~a [b]{id=\"~\\}\"} c~}",
+    "html": "<p><s>a <span id=\"~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-span-closer-class",
+    "source": "{~a [b]{class=\"~\\}\"} c~}",
+    "html": "<p><s>a <span class=\"~}\">b</span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-closer-id",
+    "source": "{~a /b/{id=\"~\\}\"} c~}",
+    "html": "<p><s>a <em id=\"~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-mark-closer-class",
+    "source": "{~a /b/{class=\"~\\}\"} c~}",
+    "html": "<p><s>a <em class=\"~}\">b</em> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-closer-id",
+    "source": "{~a `b`{id=\"~\\}\"} c~}",
+    "html": "<p><s>a <code id=\"~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-code-closer-class",
+    "source": "{~a `b`{class=\"~\\}\"} c~}",
+    "html": "<p><s>a <code class=\"~}\">b</code> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-closer-id",
+    "source": "{~a [b](u){id=\"~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" id=\"~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del-~-link-closer-class",
+    "source": "{~a [b](u){class=\"~\\}\"} c~}",
+    "html": "<p><s>a <a href=\"u\" class=\"~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-closer-id",
+    "source": "{^a [b]{id=\"^\\}\"} c^}",
+    "html": "<p><sup>a <span id=\"^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-span-closer-class",
+    "source": "{^a [b]{class=\"^\\}\"} c^}",
+    "html": "<p><sup>a <span class=\"^}\">b</span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-closer-id",
+    "source": "{^a /b/{id=\"^\\}\"} c^}",
+    "html": "<p><sup>a <em id=\"^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-mark-closer-class",
+    "source": "{^a /b/{class=\"^\\}\"} c^}",
+    "html": "<p><sup>a <em class=\"^}\">b</em> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-closer-id",
+    "source": "{^a `b`{id=\"^\\}\"} c^}",
+    "html": "<p><sup>a <code id=\"^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-code-closer-class",
+    "source": "{^a `b`{class=\"^\\}\"} c^}",
+    "html": "<p><sup>a <code class=\"^}\">b</code> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-closer-id",
+    "source": "{^a [b](u){id=\"^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" id=\"^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sup-^-link-closer-class",
+    "source": "{^a [b](u){class=\"^\\}\"} c^}",
+    "html": "<p><sup>a <a href=\"u\" class=\"^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-closer-id",
+    "source": "{,a [b]{id=\",\\}\"} c,}",
+    "html": "<p><sub>a <span id=\",}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-span-closer-class",
+    "source": "{,a [b]{class=\",\\}\"} c,}",
+    "html": "<p><sub>a <span class=\",}\">b</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-closer-id",
+    "source": "{,a /b/{id=\",\\}\"} c,}",
+    "html": "<p><sub>a <em id=\",}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-mark-closer-class",
+    "source": "{,a /b/{class=\",\\}\"} c,}",
+    "html": "<p><sub>a <em class=\",}\">b</em> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-closer-id",
+    "source": "{,a `b`{id=\",\\}\"} c,}",
+    "html": "<p><sub>a <code id=\",}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-code-closer-class",
+    "source": "{,a `b`{class=\",\\}\"} c,}",
+    "html": "<p><sub>a <code class=\",}\">b</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-closer-id",
+    "source": "{,a [b](u){id=\",\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" id=\",}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "sub-,-link-closer-class",
+    "source": "{,a [b](u){class=\",\\}\"} c,}",
+    "html": "<p><sub>a <a href=\"u\" class=\",}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-closer-id",
+    "source": "{=a [b]{id=\"=\\}\"} c=}",
+    "html": "<p><mark>a <span id=\"=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-span-closer-class",
+    "source": "{=a [b]{class=\"=\\}\"} c=}",
+    "html": "<p><mark>a <span class=\"=}\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-closer-id",
+    "source": "{=a /b/{id=\"=\\}\"} c=}",
+    "html": "<p><mark>a <em id=\"=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-mark-closer-class",
+    "source": "{=a /b/{class=\"=\\}\"} c=}",
+    "html": "<p><mark>a <em class=\"=}\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-closer-id",
+    "source": "{=a `b`{id=\"=\\}\"} c=}",
+    "html": "<p><mark>a <code id=\"=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-code-closer-class",
+    "source": "{=a `b`{class=\"=\\}\"} c=}",
+    "html": "<p><mark>a <code class=\"=}\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-closer-id",
+    "source": "{=a [b](u){id=\"=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" id=\"=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "mark-=-link-closer-class",
+    "source": "{=a [b](u){class=\"=\\}\"} c=}",
+    "html": "<p><mark>a <a href=\"u\" class=\"=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-closer-id",
+    "source": "{+a [b]{id=\"+\\}\"} c+}",
+    "html": "<p><ins>a <span id=\"+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-span-closer-class",
+    "source": "{+a [b]{class=\"+\\}\"} c+}",
+    "html": "<p><ins>a <span class=\"+}\">b</span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-closer-id",
+    "source": "{+a /b/{id=\"+\\}\"} c+}",
+    "html": "<p><ins>a <em id=\"+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-mark-closer-class",
+    "source": "{+a /b/{class=\"+\\}\"} c+}",
+    "html": "<p><ins>a <em class=\"+}\">b</em> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-closer-id",
+    "source": "{+a `b`{id=\"+\\}\"} c+}",
+    "html": "<p><ins>a <code id=\"+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-code-closer-class",
+    "source": "{+a `b`{class=\"+\\}\"} c+}",
+    "html": "<p><ins>a <code class=\"+}\">b</code> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-closer-id",
+    "source": "{+a [b](u){id=\"+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" id=\"+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "ins-+-link-closer-class",
+    "source": "{+a [b](u){class=\"+\\}\"} c+}",
+    "html": "<p><ins>a <a href=\"u\" class=\"+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-closer-id",
+    "source": "{-a [b]{id=\"-\\}\"} c-}",
+    "html": "<p><del>a <span id=\"-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---span-closer-class",
+    "source": "{-a [b]{class=\"-\\}\"} c-}",
+    "html": "<p><del>a <span class=\"-}\">b</span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-closer-id",
+    "source": "{-a /b/{id=\"-\\}\"} c-}",
+    "html": "<p><del>a <em id=\"-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---mark-closer-class",
+    "source": "{-a /b/{class=\"-\\}\"} c-}",
+    "html": "<p><del>a <em class=\"-}\">b</em> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-closer-id",
+    "source": "{-a `b`{id=\"-\\}\"} c-}",
+    "html": "<p><del>a <code id=\"-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---code-closer-class",
+    "source": "{-a `b`{class=\"-\\}\"} c-}",
+    "html": "<p><del>a <code class=\"-}\">b</code> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-closer-id",
+    "source": "{-a [b](u){id=\"-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" id=\"-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "del---link-closer-class",
+    "source": "{-a [b](u){class=\"-\\}\"} c-}",
+    "html": "<p><del>a <a href=\"u\" class=\"-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bold child followed by punctuation and another emphasis",
+    "source": "{/*a*,/} {/*c*/}",
+    "html": "<p><em><strong>a</strong>,</em> <em><strong>c</strong></em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bold child followed by adjacent combined emphasis",
+    "source": "{/*a*,/}*/c/*",
+    "html": "<p><em><strong>a</strong>,</em><strong><em>c</em></strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bold child followed by nested emphasis in a span",
+    "source": "{/*b*[{/*x*/}]{.x}/}",
+    "html": "<p><em><strong>b</strong><span class=\"x\"><em><strong>x</strong></em></span></em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-title-closing-bracket",
+    "source": "[a [b]{title=\"x\\]\"} c]{}",
+    "html": "<p><span>a <span title=\"x]\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-id-closing-bracket",
+    "source": "[a [b]{id=\"x\\]\"} c]{}",
+    "html": "<p><span>a <span id=\"x]\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-class-closing-bracket",
+    "source": "[a [b]{class=\"x\\]\"} c]{}",
+    "html": "<p><span>a <span class=\"x]\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-title-opening-bracket",
+    "source": "[a [b]{title=\"x\\[\"} c]{}",
+    "html": "<p><span>a <span title=\"x[\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-id-opening-bracket",
+    "source": "[a [b]{id=\"x\\[\"} c]{}",
+    "html": "<p><span>a <span id=\"x[\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-class-opening-bracket",
+    "source": "[a [b]{class=\"x\\[\"} c]{}",
+    "html": "<p><span>a <span class=\"x[\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-title-backtick",
+    "source": "[a [b]{title=\"x\\`\"} c]{}",
+    "html": "<p><span>a <span title=\"x`\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-id-backtick",
+    "source": "[a [b]{id=\"x\\`\"} c]{}",
+    "html": "<p><span>a <span id=\"x`\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-class-backtick",
+    "source": "[a [b]{class=\"x\\`\"} c]{}",
+    "html": "<p><span>a <span class=\"x`\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-title-paired-syntax",
+    "source": "[a [b]{title=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <span title=\"x[]`{}\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-id-paired-syntax",
+    "source": "[a [b]{id=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <span id=\"x[]`{}\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-span-class-paired-syntax",
+    "source": "[a [b]{class=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <span class=\"x[]`{}\">b</span> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-title-closing-bracket",
+    "source": "[a *b*{title=\"x\\]\"} c]{}",
+    "html": "<p><span>a <strong title=\"x]\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-id-closing-bracket",
+    "source": "[a *b*{id=\"x\\]\"} c]{}",
+    "html": "<p><span>a <strong id=\"x]\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-class-closing-bracket",
+    "source": "[a *b*{class=\"x\\]\"} c]{}",
+    "html": "<p><span>a <strong class=\"x]\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-title-opening-bracket",
+    "source": "[a *b*{title=\"x\\[\"} c]{}",
+    "html": "<p><span>a <strong title=\"x[\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-id-opening-bracket",
+    "source": "[a *b*{id=\"x\\[\"} c]{}",
+    "html": "<p><span>a <strong id=\"x[\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-class-opening-bracket",
+    "source": "[a *b*{class=\"x\\[\"} c]{}",
+    "html": "<p><span>a <strong class=\"x[\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-title-backtick",
+    "source": "[a *b*{title=\"x\\`\"} c]{}",
+    "html": "<p><span>a <strong title=\"x`\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-id-backtick",
+    "source": "[a *b*{id=\"x\\`\"} c]{}",
+    "html": "<p><span>a <strong id=\"x`\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-class-backtick",
+    "source": "[a *b*{class=\"x\\`\"} c]{}",
+    "html": "<p><span>a <strong class=\"x`\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-title-paired-syntax",
+    "source": "[a *b*{title=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <strong title=\"x[]`{}\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-id-paired-syntax",
+    "source": "[a *b*{id=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <strong id=\"x[]`{}\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-mark-class-paired-syntax",
+    "source": "[a *b*{class=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <strong class=\"x[]`{}\">b</strong> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-title-closing-bracket",
+    "source": "[a `b`{title=\"x\\]\"} c]{}",
+    "html": "<p><span>a <code title=\"x]\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-id-closing-bracket",
+    "source": "[a `b`{id=\"x\\]\"} c]{}",
+    "html": "<p><span>a <code id=\"x]\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-class-closing-bracket",
+    "source": "[a `b`{class=\"x\\]\"} c]{}",
+    "html": "<p><span>a <code class=\"x]\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-title-opening-bracket",
+    "source": "[a `b`{title=\"x\\[\"} c]{}",
+    "html": "<p><span>a <code title=\"x[\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-id-opening-bracket",
+    "source": "[a `b`{id=\"x\\[\"} c]{}",
+    "html": "<p><span>a <code id=\"x[\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-class-opening-bracket",
+    "source": "[a `b`{class=\"x\\[\"} c]{}",
+    "html": "<p><span>a <code class=\"x[\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-title-backtick",
+    "source": "[a `b`{title=\"x\\`\"} c]{}",
+    "html": "<p><span>a <code title=\"x`\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-id-backtick",
+    "source": "[a `b`{id=\"x\\`\"} c]{}",
+    "html": "<p><span>a <code id=\"x`\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-class-backtick",
+    "source": "[a `b`{class=\"x\\`\"} c]{}",
+    "html": "<p><span>a <code class=\"x`\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-title-paired-syntax",
+    "source": "[a `b`{title=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <code title=\"x[]`{}\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-id-paired-syntax",
+    "source": "[a `b`{id=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <code id=\"x[]`{}\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-code-class-paired-syntax",
+    "source": "[a `b`{class=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <code class=\"x[]`{}\">b</code> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-title-closing-bracket",
+    "source": "[a [b](v){title=\"x\\]\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" title=\"x]\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-id-closing-bracket",
+    "source": "[a [b](v){id=\"x\\]\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" id=\"x]\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-class-closing-bracket",
+    "source": "[a [b](v){class=\"x\\]\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" class=\"x]\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-title-opening-bracket",
+    "source": "[a [b](v){title=\"x\\[\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" title=\"x[\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-id-opening-bracket",
+    "source": "[a [b](v){id=\"x\\[\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" id=\"x[\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-class-opening-bracket",
+    "source": "[a [b](v){class=\"x\\[\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" class=\"x[\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-title-backtick",
+    "source": "[a [b](v){title=\"x\\`\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" title=\"x`\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-id-backtick",
+    "source": "[a [b](v){id=\"x\\`\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" id=\"x`\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-class-backtick",
+    "source": "[a [b](v){class=\"x\\`\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" class=\"x`\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-title-paired-syntax",
+    "source": "[a [b](v){title=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" title=\"x[]`{}\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-id-paired-syntax",
+    "source": "[a [b](v){id=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" id=\"x[]`{}\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-span-link-class-paired-syntax",
+    "source": "[a [b](v){class=\"x\\[\\]\\`\\{\\}\"} c]{}",
+    "html": "<p><span>a <a href=\"v\" class=\"x[]`{}\">b</a> c</span></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-title-closing-bracket",
+    "source": "[a [b]{title=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <span title=\"x]\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-id-closing-bracket",
+    "source": "[a [b]{id=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <span id=\"x]\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-class-closing-bracket",
+    "source": "[a [b]{class=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <span class=\"x]\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-title-opening-bracket",
+    "source": "[a [b]{title=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <span title=\"x[\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-id-opening-bracket",
+    "source": "[a [b]{id=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <span id=\"x[\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-class-opening-bracket",
+    "source": "[a [b]{class=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <span class=\"x[\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-title-backtick",
+    "source": "[a [b]{title=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <span title=\"x`\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-id-backtick",
+    "source": "[a [b]{id=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <span id=\"x`\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-class-backtick",
+    "source": "[a [b]{class=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <span class=\"x`\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-title-paired-syntax",
+    "source": "[a [b]{title=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <span title=\"x[]`{}\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-id-paired-syntax",
+    "source": "[a [b]{id=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <span id=\"x[]`{}\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-span-class-paired-syntax",
+    "source": "[a [b]{class=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <span class=\"x[]`{}\">b</span> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-title-closing-bracket",
+    "source": "[a *b*{title=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong title=\"x]\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-id-closing-bracket",
+    "source": "[a *b*{id=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong id=\"x]\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-class-closing-bracket",
+    "source": "[a *b*{class=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong class=\"x]\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-title-opening-bracket",
+    "source": "[a *b*{title=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong title=\"x[\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-id-opening-bracket",
+    "source": "[a *b*{id=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong id=\"x[\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-class-opening-bracket",
+    "source": "[a *b*{class=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong class=\"x[\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-title-backtick",
+    "source": "[a *b*{title=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong title=\"x`\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-id-backtick",
+    "source": "[a *b*{id=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong id=\"x`\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-class-backtick",
+    "source": "[a *b*{class=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong class=\"x`\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-title-paired-syntax",
+    "source": "[a *b*{title=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong title=\"x[]`{}\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-id-paired-syntax",
+    "source": "[a *b*{id=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong id=\"x[]`{}\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-mark-class-paired-syntax",
+    "source": "[a *b*{class=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <strong class=\"x[]`{}\">b</strong> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-title-closing-bracket",
+    "source": "[a `b`{title=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <code title=\"x]\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-id-closing-bracket",
+    "source": "[a `b`{id=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <code id=\"x]\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-class-closing-bracket",
+    "source": "[a `b`{class=\"x\\]\"} c](u)",
+    "html": "<p><a href=\"u\">a <code class=\"x]\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-title-opening-bracket",
+    "source": "[a `b`{title=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <code title=\"x[\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-id-opening-bracket",
+    "source": "[a `b`{id=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <code id=\"x[\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-class-opening-bracket",
+    "source": "[a `b`{class=\"x\\[\"} c](u)",
+    "html": "<p><a href=\"u\">a <code class=\"x[\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-title-backtick",
+    "source": "[a `b`{title=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <code title=\"x`\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-id-backtick",
+    "source": "[a `b`{id=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <code id=\"x`\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-class-backtick",
+    "source": "[a `b`{class=\"x\\`\"} c](u)",
+    "html": "<p><a href=\"u\">a <code class=\"x`\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-title-paired-syntax",
+    "source": "[a `b`{title=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <code title=\"x[]`{}\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-id-paired-syntax",
+    "source": "[a `b`{id=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <code id=\"x[]`{}\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "root-link-code-class-paired-syntax",
+    "source": "[a `b`{class=\"x\\[\\]\\`\\{\\}\"} c](u)",
+    "html": "<p><a href=\"u\">a <code class=\"x[]`{}\">b</code> c</a></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-title-closing-bracket",
+    "source": "{=a [b]{title=\"x\\]\"} c=}",
+    "html": "<p><mark>a <span title=\"x]\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-id-closing-bracket",
+    "source": "{=a [b]{id=\"x\\]\"} c=}",
+    "html": "<p><mark>a <span id=\"x]\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-class-closing-bracket",
+    "source": "{=a [b]{class=\"x\\]\"} c=}",
+    "html": "<p><mark>a <span class=\"x]\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-title-opening-bracket",
+    "source": "{=a [b]{title=\"x\\[\"} c=}",
+    "html": "<p><mark>a <span title=\"x[\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-id-opening-bracket",
+    "source": "{=a [b]{id=\"x\\[\"} c=}",
+    "html": "<p><mark>a <span id=\"x[\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-class-opening-bracket",
+    "source": "{=a [b]{class=\"x\\[\"} c=}",
+    "html": "<p><mark>a <span class=\"x[\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-title-backtick",
+    "source": "{=a [b]{title=\"x\\`\"} c=}",
+    "html": "<p><mark>a <span title=\"x`\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-id-backtick",
+    "source": "{=a [b]{id=\"x\\`\"} c=}",
+    "html": "<p><mark>a <span id=\"x`\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-class-backtick",
+    "source": "{=a [b]{class=\"x\\`\"} c=}",
+    "html": "<p><mark>a <span class=\"x`\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-title-quoted-spaces",
+    "source": "{=a [b]{title=\"two words\"} c=}",
+    "html": "<p><mark>a <span title=\"two words\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-id-quoted-spaces",
+    "source": "{=a [b]{id=\"two words\"} c=}",
+    "html": "<p><mark>a <span id=\"two words\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-span-class-quoted-spaces",
+    "source": "{=a [b]{class=\"two words\"} c=}",
+    "html": "<p><mark>a <span class=\"two words\">b</span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-title-closing-bracket",
+    "source": "{=a /b/{title=\"x\\]\"} c=}",
+    "html": "<p><mark>a <em title=\"x]\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-id-closing-bracket",
+    "source": "{=a /b/{id=\"x\\]\"} c=}",
+    "html": "<p><mark>a <em id=\"x]\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-class-closing-bracket",
+    "source": "{=a /b/{class=\"x\\]\"} c=}",
+    "html": "<p><mark>a <em class=\"x]\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-title-opening-bracket",
+    "source": "{=a /b/{title=\"x\\[\"} c=}",
+    "html": "<p><mark>a <em title=\"x[\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-id-opening-bracket",
+    "source": "{=a /b/{id=\"x\\[\"} c=}",
+    "html": "<p><mark>a <em id=\"x[\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-class-opening-bracket",
+    "source": "{=a /b/{class=\"x\\[\"} c=}",
+    "html": "<p><mark>a <em class=\"x[\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-title-backtick",
+    "source": "{=a /b/{title=\"x\\`\"} c=}",
+    "html": "<p><mark>a <em title=\"x`\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-id-backtick",
+    "source": "{=a /b/{id=\"x\\`\"} c=}",
+    "html": "<p><mark>a <em id=\"x`\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-class-backtick",
+    "source": "{=a /b/{class=\"x\\`\"} c=}",
+    "html": "<p><mark>a <em class=\"x`\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-title-quoted-spaces",
+    "source": "{=a /b/{title=\"two words\"} c=}",
+    "html": "<p><mark>a <em title=\"two words\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-id-quoted-spaces",
+    "source": "{=a /b/{id=\"two words\"} c=}",
+    "html": "<p><mark>a <em id=\"two words\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-mark-class-quoted-spaces",
+    "source": "{=a /b/{class=\"two words\"} c=}",
+    "html": "<p><mark>a <em class=\"two words\">b</em> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-title-closing-bracket",
+    "source": "{=a `b`{title=\"x\\]\"} c=}",
+    "html": "<p><mark>a <code title=\"x]\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-id-closing-bracket",
+    "source": "{=a `b`{id=\"x\\]\"} c=}",
+    "html": "<p><mark>a <code id=\"x]\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-class-closing-bracket",
+    "source": "{=a `b`{class=\"x\\]\"} c=}",
+    "html": "<p><mark>a <code class=\"x]\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-title-opening-bracket",
+    "source": "{=a `b`{title=\"x\\[\"} c=}",
+    "html": "<p><mark>a <code title=\"x[\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-id-opening-bracket",
+    "source": "{=a `b`{id=\"x\\[\"} c=}",
+    "html": "<p><mark>a <code id=\"x[\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-class-opening-bracket",
+    "source": "{=a `b`{class=\"x\\[\"} c=}",
+    "html": "<p><mark>a <code class=\"x[\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-title-backtick",
+    "source": "{=a `b`{title=\"x\\`\"} c=}",
+    "html": "<p><mark>a <code title=\"x`\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-id-backtick",
+    "source": "{=a `b`{id=\"x\\`\"} c=}",
+    "html": "<p><mark>a <code id=\"x`\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-class-backtick",
+    "source": "{=a `b`{class=\"x\\`\"} c=}",
+    "html": "<p><mark>a <code class=\"x`\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-title-quoted-spaces",
+    "source": "{=a `b`{title=\"two words\"} c=}",
+    "html": "<p><mark>a <code title=\"two words\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-id-quoted-spaces",
+    "source": "{=a `b`{id=\"two words\"} c=}",
+    "html": "<p><mark>a <code id=\"two words\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-code-class-quoted-spaces",
+    "source": "{=a `b`{class=\"two words\"} c=}",
+    "html": "<p><mark>a <code class=\"two words\">b</code> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-title-closing-bracket",
+    "source": "{=a [b](v){title=\"x\\]\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" title=\"x]\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-id-closing-bracket",
+    "source": "{=a [b](v){id=\"x\\]\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" id=\"x]\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-class-closing-bracket",
+    "source": "{=a [b](v){class=\"x\\]\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" class=\"x]\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-title-opening-bracket",
+    "source": "{=a [b](v){title=\"x\\[\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" title=\"x[\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-id-opening-bracket",
+    "source": "{=a [b](v){id=\"x\\[\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" id=\"x[\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-class-opening-bracket",
+    "source": "{=a [b](v){class=\"x\\[\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" class=\"x[\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-title-backtick",
+    "source": "{=a [b](v){title=\"x\\`\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" title=\"x`\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-id-backtick",
+    "source": "{=a [b](v){id=\"x\\`\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" id=\"x`\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-class-backtick",
+    "source": "{=a [b](v){class=\"x\\`\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" class=\"x`\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-title-quoted-spaces",
+    "source": "{=a [b](v){title=\"two words\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" title=\"two words\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-id-quoted-spaces",
+    "source": "{=a [b](v){id=\"two words\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" id=\"two words\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "highlight-quoted-link-class-quoted-spaces",
+    "source": "{=a [b](v){class=\"two words\"} c=}",
+    "html": "<p><mark>a <a href=\"v\" class=\"two words\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "image-export-keeps-bracket-scanner-available",
+    "source": "a ![i](u) b",
+    "html": "<p>a <img src=\"u\" alt=\"i\"> b</p>",
+    "roundTrip": true
+  }
+]
