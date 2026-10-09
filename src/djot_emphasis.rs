@@ -30,7 +30,29 @@ fn clear(openers: &mut [Vec<(usize, usize, bool)>; 4], from: usize) {
 
 pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> String) -> String {
     let bytes = source.as_bytes();
-    let mask = mask.as_bytes();
+    let mut mask = mask.as_bytes().to_vec();
+    let code_mask = super::mask_code_and_destinations(source);
+    let mut attributes = HashMap::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\' {
+            at += 2;
+            continue;
+        }
+        if code_mask.as_bytes()[at] == b'{' && mask[at] != b' ' {
+            if let Some((end, wire)) = super::read_djot_attributes(source, at, true) {
+                for byte in &mut mask[at..end] {
+                    if *byte != b'\n' {
+                        *byte = b' ';
+                    }
+                }
+                attributes.insert(at, (end, wire));
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
     let mut valid_braces = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
@@ -314,7 +336,8 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     }
     let renderer = Renderer {
         source,
-        mask,
+        mask: &mask,
+        attributes: &attributes,
         pairs: &pairs,
         structural: &structural,
         literal_brackets: &literal_brackets,
@@ -366,6 +389,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
 struct Renderer<'a> {
     source: &'a str,
     mask: &'a [u8],
+    attributes: &'a HashMap<usize, (usize, String)>,
     pairs: &'a [Pair],
     structural: &'a HashSet<usize>,
     literal_brackets: &'a HashSet<usize>,
@@ -379,6 +403,15 @@ impl Renderer<'_> {
         let mut out = Vec::new();
         let mut i = start;
         while i < end {
+            if let Some((attribute_end, wire)) = self
+                .attributes
+                .get(&i)
+                .filter(|(attribute_end, _)| *attribute_end <= end)
+            {
+                out.extend_from_slice(self.protect(wire).as_bytes());
+                i = *attribute_end;
+                continue;
+            }
             let ch = bytes[i];
             if ch == b'\\' {
                 out.push(ch);
