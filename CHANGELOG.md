@@ -59,6 +59,11 @@ which the published crate does not carry.
   indentation is mapped, a reference-definition value stays literal, and URL
   conversion preserves IPv6 authority brackets, raw backslashes and Djot's
   email priority (#2376).
+- Markdown wraps an editorial comment in the same span the HTML target uses,
+  instead of dropping it. The plain and ANSI targets keep their output and
+  report one render-loss row per comment under the new code
+  `editorial-comment-flattened`, which `--allow-loss` accepts (#2378,
+  markup-carve/carve#2791).
 
 ### Improvements
 
