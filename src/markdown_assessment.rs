@@ -113,6 +113,20 @@ fn shape(html: &str) -> Vec<Shape> {
     visit(&dom.document)
 }
 
+fn is_atx_heading(source: &str) -> bool {
+    let line = source
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim_start_matches([' ', '\t']);
+    let hashes = line.bytes().take_while(|byte| *byte == b'#').count();
+    (1..=6).contains(&hashes)
+        && line
+            .as_bytes()
+            .get(hashes)
+            .is_none_or(|byte| matches!(byte, b' ' | b'\t'))
+}
+
 /// Assess the native parser's occurrences and verify the document the writer produced.
 pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     use crate::html_import::ImportFidelity::{Degraded, Dropped, Normalized, Preserved};
@@ -128,7 +142,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         source.push('\n');
     }
     let mut line_starts = vec![0];
-    line_starts.extend(source.bytes().enumerate().filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)));
+    line_starts.extend(
+        source
+            .bytes()
+            .enumerate()
+            .filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)),
+    );
     let mut options = Options::empty();
     options.insert(
         Options::ENABLE_TABLES
@@ -140,7 +159,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let parser = Parser::new_ext(&source, options);
     let mut diagnostics = Vec::new();
     let mut complete = true;
+    let mut definition_spans = Vec::new();
     for (_, definition) in parser.reference_definitions().iter() {
+        definition_spans.push(definition.span.clone());
         diagnostics.push(diagnostic(
             "reference-definition",
             &line_starts,
@@ -149,9 +170,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         ));
     }
     let mut events = Vec::new();
+    let mut content_spans = Vec::new();
     let mut lists = Vec::new();
     let mut link_depth = 0usize;
     let mut code_depth = 0usize;
+    let mut html_block = false;
+    let mut html_fragments = 0usize;
     static BARE: OnceLock<regex::Regex> = OnceLock::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
     let bare = BARE.get_or_init(|| {
@@ -162,15 +186,18 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut assessment = None;
         match &event {
             Event::Start(tag) => {
+                if matches!(tag, Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock) {
+                    content_spans.push(range.clone());
+                }
                 assessment = match tag {
                     Tag::Paragraph => Some(("paragraph", Preserved)),
                     Tag::Heading { .. } => Some((
-                        if source[range.clone()].trim_start().starts_with('#') {
+                        if is_atx_heading(&source[range.clone()]) {
                             "atx-heading"
                         } else {
                             "setext-heading"
                         },
-                        if source[range.clone()].trim_start().starts_with('#') {
+                        if is_atx_heading(&source[range.clone()]) {
                             Preserved
                         } else {
                             Normalized
@@ -230,12 +257,18 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         complete = false;
                         None
                     }
-                    Tag::HtmlBlock => None,
+                    Tag::HtmlBlock => {
+                        html_block = true;
+                        Some(("raw-html", Degraded))
+                    }
                     _ => {
                         complete = false;
                         None
                     }
                 };
+            }
+            Event::End(TagEnd::HtmlBlock) => {
+                html_block = false;
             }
             Event::End(TagEnd::List(_)) => {
                 lists.pop();
@@ -246,18 +279,32 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             Event::End(TagEnd::CodeBlock) => {
                 code_depth = code_depth.saturating_sub(1);
             }
-            Event::Text(_) if code_depth == 0 => {
+            Event::Text(text) if code_depth == 0 => {
                 let input = &source[range.clone()];
                 if range.start > 0
-                    && source[..range.start].bytes().rev().take_while(|byte| *byte == b'\\').count() % 2 == 1
+                    && source[..range.start]
+                        .bytes()
+                        .rev()
+                        .take_while(|byte| *byte == b'\\')
+                        .count()
+                        % 2
+                        == 1
                     && input.starts_with(|character: char| character.is_ascii_punctuation())
                 {
-                    diagnostics.push(diagnostic("escape", &line_starts, range.start - 1, Normalized));
+                    diagnostics.push(diagnostic(
+                        "escape",
+                        &line_starts,
+                        range.start - 1,
+                        Normalized,
+                    ));
                 }
                 if link_depth == 0 && bare.is_match(input) {
                     complete = false;
                 }
                 for matched in rewrite.find_iter(input) {
+                    if text.as_ref() == input {
+                        continue;
+                    }
                     diagnostics.push(diagnostic(
                         if matched.as_str().starts_with('&') {
                             "entity"
@@ -283,9 +330,13 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 assessment = Some(("thematic-break", Preserved));
             }
             Event::Html(html) | Event::InlineHtml(html) => {
-                if !value.contains(html.as_ref())
-                    || html.to_lowercase().contains("<section")
+                html_fragments += 1;
+                let lower = html.to_lowercase();
+                if html_fragments > 128
+                    || !value.contains(html.as_ref())
                     || [
+                        "<section",
+                        "</section",
                         "<h1",
                         "<h2",
                         "<h3",
@@ -298,29 +349,47 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         "</h4",
                         "</h5",
                         "</h6",
-                        "</section",
+                        "<input",
                     ]
                     .iter()
-                    .any(|tag| html.to_lowercase().contains(tag))
-                    || html.to_lowercase().contains("<input")
+                    .any(|tag| lower.contains(tag))
                 {
                     complete = false;
                 }
-                assessment = Some(("raw-html", Degraded));
+                if !html_block {
+                    assessment = Some(("raw-html", Degraded));
+                }
             }
-            Event::TaskListMarker(checked) => {
-                if lists.last() == Some(&true)
-                    && crate::markdown_import::tasklist_extension_reaches(&source, &range)
-                {
-                    diagnostics.push(diagnostic("ordered-task", &line_starts, range.start, Dropped));
-                    events.push(Event::Text(if *checked {
-                        "[x] ".into()
-                    } else {
-                        "[ ] ".into()
-                    }));
+            Event::TaskListMarker(_) => {
+                let reaches = crate::markdown_import::tasklist_extension_reaches(&source, &range);
+                let ordered = lists.last() == Some(&true);
+                if ordered || !reaches {
+                    if ordered && reaches {
+                        diagnostics.push(diagnostic(
+                            "ordered-task",
+                            &line_starts,
+                            range.start,
+                            Dropped,
+                        ));
+                    }
+                    events.push(Event::Text(source[range.clone()].into()));
+                    let separator: String = source[range.end..]
+                        .chars()
+                        .take_while(|character| matches!(character, ' ' | '\t'))
+                        .collect();
+                    if !separator.is_empty() {
+                        events.push(Event::Text(separator.into()));
+                    } else if source[range.end..].starts_with('\n') {
+                        events.push(Event::SoftBreak);
+                    }
                     continue;
                 }
-                diagnostics.push(diagnostic("bullet-task", &line_starts, range.start, Preserved));
+                diagnostics.push(diagnostic(
+                    "bullet-task",
+                    &line_starts,
+                    range.start,
+                    Preserved,
+                ));
                 events.push(event);
                 events.push(Event::Text(" ".into()));
                 continue;
@@ -334,6 +403,46 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             diagnostics.push(diagnostic(construct, &line_starts, range.start, fidelity));
         }
         events.push(event);
+    }
+    let mut covered_lines = vec![false; line_starts.len()];
+    for span in content_spans.iter().chain(&definition_spans) {
+        let first = line_starts
+            .partition_point(|start| *start <= span.start)
+            .saturating_sub(1);
+        let end = line_starts.partition_point(|start| *start < span.end);
+        if first < end {
+            covered_lines[first..end].fill(true);
+        }
+    }
+    for (index, start) in line_starts
+        .iter()
+        .copied()
+        .enumerate()
+        .filter(|(_, start)| *start < source.len())
+    {
+        if covered_lines[index] {
+            continue;
+        }
+        let end = source[start..]
+            .find('\n')
+            .map_or(source.len(), |end| start + end + 1);
+        let line = &source[start..end];
+        if line.trim_start().starts_with('[') && line.contains("]:") {
+            let definitions = Parser::new_ext(line, options);
+            if definitions.reference_definitions().iter().next().is_none() {
+                complete = false;
+            }
+            for (_, definition) in definitions.reference_definitions().iter() {
+                diagnostics.push(diagnostic(
+                    "reference-definition",
+                    &line_starts,
+                    start + definition.span.start,
+                    Normalized,
+                ));
+            }
+        } else if line.contains("]:") {
+            complete = false;
+        }
     }
     if complete {
         let mut expected = String::new();
@@ -450,6 +559,85 @@ mod tests {
             .diagnostics
             .iter()
             .any(|row| row.code == "fidelity-unverified"));
+    }
+
+    #[test]
+    fn setext_hashtags_and_multiline_html_blocks_have_one_construct_row() {
+        let result = crate::migrate_markdown("#hashtag\n===\n");
+        assert!(result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "markdown-setext-heading"
+                && row.fidelity == MigrationFidelity::Normalized));
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "markdown-atx-heading"));
+        let result = crate::migrate_markdown("<div>\nx\n</div>\n");
+        let raw: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "raw-preserved")
+            .collect();
+        assert_eq!(raw.len(), 1);
+        assert_eq!(raw[0].path.as_deref(), Some("line:1"));
+    }
+
+    #[test]
+    fn duplicate_definitions_are_assessed_and_code_definitions_are_content() {
+        let result = crate::migrate_markdown(
+            "[ref]: https://one.example\n[ref]: https://two.example\n\nSee [ref].",
+        );
+        let paths: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "markdown-reference-definition")
+            .map(|row| row.path.as_deref())
+            .collect();
+        assert_eq!(paths, vec![Some("line:1"), Some("line:2")]);
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "fidelity-unverified"));
+        let code = crate::migrate_markdown("```\n[ref]: https://example.org\n```\n");
+        assert_eq!(code.report.diagnostics.len(), 1);
+        assert_eq!(code.report.diagnostics[0].code, "markdown-fenced-code");
+    }
+
+    #[test]
+    fn literal_entity_spellings_are_not_reported_as_decoded_entities() {
+        for source in [
+            "&bogus;",
+            "&notit;",
+            "&#11141111;",
+            "&#x1234567;",
+            "<https://example.org/&copy;>",
+        ] {
+            let result = crate::migrate_markdown(source);
+            assert!(
+                !result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "markdown-entity"),
+                "{source}"
+            );
+        }
+        let result = crate::migrate_markdown("x\\\\!");
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "markdown-escape")
+                .count(),
+            1
+        );
     }
 
     #[test]

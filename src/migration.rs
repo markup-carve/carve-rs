@@ -119,10 +119,14 @@ fn assessed(
     }
     let diagnostics = vec![MigrationDiagnostic {
         code: "fidelity-unverified".to_owned(),
-        message: format!(
+        message: if source_format == SourceFormat::Markdown {
+            "Markdown construct assessment is incomplete.".to_owned()
+        } else {
+            format!(
             "Fidelity was not reported by the {} importer; dropped is a conservative worst-case release-gate classification",
             source_format.as_str()
-        ),
+        )
+        },
         severity: HtmlImportSeverity::Warning,
         fidelity: MigrationFidelity::Dropped,
         confidence: MigrationConfidence::Fallback,

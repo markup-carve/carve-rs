@@ -97,13 +97,12 @@ fn both_entry_points_say_the_same_thing() {
             .collect::<Vec<_>>(),
         [MESSAGE]
     );
-    // Everything but `path` matches too: an HTML importer locates the `<input>`
-    // it read and a Markdown importer has no element to locate.
+    // Both reports identify the loss; Markdown uses its original source line.
     for row in rows {
         assert_eq!(row.severity, carve::HtmlImportSeverity::Warning);
         assert_eq!(row.fidelity, carve::MigrationFidelity::Dropped);
         assert_eq!(row.confidence, carve::MigrationConfidence::Exact);
-        assert_eq!(row.path, None);
+        assert_eq!(row.path.as_deref(), Some("line:1"));
     }
 }
 
