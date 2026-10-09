@@ -11,7 +11,7 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
-- Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact.
+- Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact (carve-rs#2417).
 
 ### Fixed
 
