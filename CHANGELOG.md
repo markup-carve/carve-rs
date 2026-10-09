@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Formatting preserves literal backslashes in cross-reference targets. Targets with no source spelling are refused. The reader keeps form feed in a target, matching the grammar and the other engines (carve-rs#2413).
+
 - Ordered-list formatting and HTML import keep adjacent alphabetic and Roman lists separate. A hard list boundary also ends the dialect lookahead (carve-rs#2399).
 
 - A profile that denies raw blocks but allows code blocks keeps the escaped payload in a code block, including its format, attributes and line endings (markup-carve/carve#2801).

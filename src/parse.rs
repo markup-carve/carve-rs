@@ -21817,7 +21817,7 @@ fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
     }
     let close = inner
         .bytes()
-        .position(|b| b == b'>' || b.is_ascii_whitespace())?;
+        .position(|b| matches!(b, b'>' | b' ' | b'\t' | b'\r' | b'\n'))?;
     if inner.as_bytes()[close] != b'>' {
         bounds
             .crossref_invalid_range

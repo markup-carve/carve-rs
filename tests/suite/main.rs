@@ -1727,3 +1727,6 @@ mod djot_failed_braced_openers;
 
 #[path = "../djot_attribute_wire.rs"]
 mod djot_attribute_wire;
+
+#[path = "../crossref_literal_target.rs"]
+mod crossref_literal_target;

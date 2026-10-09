@@ -4092,7 +4092,7 @@ fn render_inline_body(
             format!("{{#{}#}}", escape_critic_text(&comment.text))
         }
         InlineNode::CrossRef(crossref) => {
-            format!("</#{}>", escape_crossref_target(&crossref.target))
+            format!("</#{}>", spell_crossref_target(&crossref.target))
         }
         InlineNode::CaptionNumber(_) => "#".to_string(),
         InlineNode::CitationGroup(group) => group.raw.clone(),
@@ -4441,7 +4441,7 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     }
     if node.from_crossref {
         if let Some(target) = node.href.strip_prefix('#') {
-            return format!("</#{}>", escape_crossref_target(target));
+            return format!("</#{}>", spell_crossref_target(target));
         }
     }
     let text =
@@ -6540,8 +6540,18 @@ fn escape_autolink_href(text: &str) -> String {
         .replace('>', "\\>")
 }
 
-fn escape_crossref_target(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('>', "\\>")
+fn spell_crossref_target(text: &str) -> String {
+    if text.is_empty()
+        || text
+            .bytes()
+            .any(|b| matches!(b, b'>' | b' ' | b'\t' | b'\r' | b'\n' | 0))
+    {
+        crate::render_carve_error::record_unspellable(
+            "heading_ref",
+            "an empty target or a target with a closer, whitespace or NUL has no Carve source spelling",
+        );
+    }
+    text.to_owned()
 }
 
 fn escape_critic_text(text: &str) -> String {
