@@ -1965,11 +1965,19 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             escape_text(&resolve_nbsp(&strip_controls(&lit.content)))
         }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
-        InlineNode::AutoLink(link) => format!(
-            "[{}]({})",
-            strip_controls(&link.text),
-            encode_markdown_destination(&link.href, link.pos.as_ref(), DeniedSink::Destination)
-        ),
+        InlineNode::AutoLink(link) => {
+            let title = link
+                .attrs
+                .as_ref()
+                .and_then(|attrs| attrs.key_values.get("title"))
+                .map(|title| format!(" \"{}\"", escape_md_title(&strip_controls(title))))
+                .unwrap_or_default();
+            format!(
+                "[{}]({}{title})",
+                strip_controls(&link.text),
+                encode_markdown_destination(&link.href, link.pos.as_ref(), DeniedSink::Destination)
+            )
+        }
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => escape_text(&format!("#{}", strip_controls(&tag.name))),
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx, depth + 1),
@@ -2174,7 +2182,11 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     // (PART 11 sections 11 and 11a).
     if let Some(slug) = fragment_id(&node.href).and_then(|id| ctx.heading_slugs.get(id)) {
         let destination = format!("#{slug}");
-        if let Some(title) = &node.title {
+        if let Some(title) = node.title.as_ref().or_else(|| {
+            node.attrs
+                .as_ref()
+                .and_then(|attrs| attrs.key_values.get("title"))
+        }) {
             format!(
                 "[{text}]({destination} \"{}\")",
                 escape_md_title(&strip_controls(title))
@@ -2185,7 +2197,11 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     } else {
         let href =
             encode_markdown_destination(&node.href, node.pos.as_ref(), DeniedSink::Destination);
-        if let Some(title) = &node.title {
+        if let Some(title) = node.title.as_ref().or_else(|| {
+            node.attrs
+                .as_ref()
+                .and_then(|attrs| attrs.key_values.get("title"))
+        }) {
             format!(
                 "[{text}]({href} \"{}\")",
                 escape_md_title(&strip_controls(title))
@@ -2202,7 +2218,11 @@ fn render_image(node: &Image) -> String {
     }
     let src = encode_markdown_destination(&node.src, node.pos.as_ref(), DeniedSink::ImageSource);
     let alt = escape_md_label(&strip_controls(&node.alt));
-    if let Some(title) = &node.title {
+    if let Some(title) = node.title.as_ref().or_else(|| {
+        node.attrs
+            .as_ref()
+            .and_then(|attrs| attrs.key_values.get("title"))
+    }) {
         format!(
             "![{}]({} \"{}\")",
             alt,

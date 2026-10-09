@@ -4357,5 +4357,570 @@
     "contains": [
       "href=\"/a[^a%20b]\""
     ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-0",
+    "source": "[a](/u){title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-1",
+    "source": "![a](/u){title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-2",
+    "source": "[a](/u){title=\"\"}",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-3",
+    "source": "![a](/u){title=\"\"}",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-4",
+    "source": "[a](/u \"Node\"){title=\"Attribute\"}",
+    "contains": [
+      "title=\"Node\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-5",
+    "source": "![a](/u \"Node\"){title=\"Attribute\"}",
+    "contains": [
+      "title=\"Node\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-6",
+    "source": "[a][r]\n\n[r]: /u {title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-7",
+    "source": "![a][r]\n\n[r]: /u {title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-8",
+    "source": "| [a](/u){title=\"T\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "markdown-preserves-effective-title-9",
+    "source": "| ![a](/u){title=\"T\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-False-0",
+    "source": "[a](/u \"T|U\")",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-False-1",
+    "source": "[a](/u \"T\\\\|U\")",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-False-2",
+    "source": "[a](/u \"T\\\\\\\\|U\")",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-False-3",
+    "source": "[a](/u \"`|`\")",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-False-4",
+    "source": "[a](/u \"a \\\"quote\\\" & <b>\")",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-True-0",
+    "source": "[a](/u){title=\"T|U\"}",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-True-1",
+    "source": "[a](/u){title=\"T\\\\|U\"}",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-True-2",
+    "source": "[a](/u){title=\"T\\\\\\\\|U\"}",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-True-3",
+    "source": "[a](/u){title=\"`|`\"}",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-False-True-4",
+    "source": "[a](/u){title=\"a \\\"quote\\\" & <b>\"}",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-False-0",
+    "source": "![a](/u \"T|U\")",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-False-1",
+    "source": "![a](/u \"T\\\\|U\")",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-False-2",
+    "source": "![a](/u \"T\\\\\\\\|U\")",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-False-3",
+    "source": "![a](/u \"`|`\")",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-False-4",
+    "source": "![a](/u \"a \\\"quote\\\" & <b>\")",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-True-0",
+    "source": "![a](/u){title=\"T|U\"}",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-True-1",
+    "source": "![a](/u){title=\"T\\\\|U\"}",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-True-2",
+    "source": "![a](/u){title=\"T\\\\\\\\|U\"}",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-True-3",
+    "source": "![a](/u){title=\"`|`\"}",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-False-True-True-4",
+    "source": "![a](/u){title=\"a \\\"quote\\\" & <b>\"}",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-False-0",
+    "source": "| [a](/u \"T\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-False-1",
+    "source": "| [a](/u \"T\\\\\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-False-2",
+    "source": "| [a](/u \"T\\\\\\\\\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-False-3",
+    "source": "| [a](/u \"\\`\\|\\`\") |\n|---|",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-False-4",
+    "source": "| [a](/u \"a \\\"quote\\\" & <b>\") |\n|---|",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-True-0",
+    "source": "| [a](/u){title=\"T\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-True-1",
+    "source": "| [a](/u){title=\"T\\\\\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-True-2",
+    "source": "| [a](/u){title=\"T\\\\\\\\\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-True-3",
+    "source": "| [a](/u){title=\"\\`\\|\\`\"} |\n|---|",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-False-True-4",
+    "source": "| [a](/u){title=\"a \\\"quote\\\" & <b>\"} |\n|---|",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-False-0",
+    "source": "| ![a](/u \"T\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-False-1",
+    "source": "| ![a](/u \"T\\\\\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-False-2",
+    "source": "| ![a](/u \"T\\\\\\\\\\|U\") |\n|---|",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-False-3",
+    "source": "| ![a](/u \"\\`\\|\\`\") |\n|---|",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-False-4",
+    "source": "| ![a](/u \"a \\\"quote\\\" & <b>\") |\n|---|",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-True-0",
+    "source": "| ![a](/u){title=\"T\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-True-1",
+    "source": "| ![a](/u){title=\"T\\\\\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-True-2",
+    "source": "| ![a](/u){title=\"T\\\\\\\\\\|U\"} |\n|---|",
+    "contains": [
+      "title=\"T\\\\|U\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-True-3",
+    "source": "| ![a](/u){title=\"\\`\\|\\`\"} |\n|---|",
+    "contains": [
+      "title=\"`|`\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "title-round-trip-True-True-True-4",
+    "source": "| ![a](/u){title=\"a \\\"quote\\\" & <b>\"} |\n|---|",
+    "contains": [
+      "title=\"a &quot;quote&quot; &amp; &lt;b&gt;\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-False-False-T",
+    "source": "<https://x>{title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-False-False-",
+    "source": "<https://x>{title=\"\"}",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-False-True-T",
+    "source": "<x@example.com>{title=\"T\"}",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-False-True-",
+    "source": "<x@example.com>{title=\"\"}",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-True-False-T",
+    "source": "| <https://x>{title=\"T\"} |\n|---|",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-True-False-",
+    "source": "| <https://x>{title=\"\"} |\n|---|",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-True-True-T",
+    "source": "| <x@example.com>{title=\"T\"} |\n|---|",
+    "contains": [
+      "title=\"T\""
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "autolink-title-True-True-",
+    "source": "| <x@example.com>{title=\"\"} |\n|---|",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "markdown-reference-empty-title-0",
+    "source": "[a][r]\n\n[r]: /u \"\"",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "markdown-reference-empty-title-1",
+    "source": "![a][R]\n\n[r]: /u ''",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "markdown-reference-empty-title-2",
+    "source": "[a](/u ())",
+    "contains": [
+      "title=\"\""
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "empty-title-distinguishes-destination-0",
+    "source": "[a]( \"\")",
+    "contains": [
+      "href="
+    ],
+    "excludes": [
+      "title="
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "empty-title-distinguishes-destination-1",
+    "source": "[a]( ())",
+    "contains": [
+      "href="
+    ],
+    "excludes": [
+      "title="
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "empty-title-distinguishes-destination-2",
+    "source": "![a]( '')",
+    "contains": [
+      "src="
+    ],
+    "excludes": [
+      "title="
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "empty-title-distinguishes-destination-3",
+    "source": "[a](<> \"\")",
+    "contains": [
+      "<p>a</p>"
+    ],
+    "excludes": [
+      "title="
+    ]
+  },
+  {
+    "mode": "md",
+    "name": "empty-title-distinguishes-destination-4",
+    "source": "[a][r]\n\n[r]: <> \"\"",
+    "contains": [
+      "<p>a</p>"
+    ],
+    "excludes": [
+      "title="
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "explicit-empty-title-wins-0",
+    "source": "[a](/u \"\"){title=\"Attribute\"}",
+    "contains": [
+      "title=\"\""
+    ],
+    "excludes": [
+      "Attribute"
+    ]
+  },
+  {
+    "mode": "native-export",
+    "name": "explicit-empty-title-wins-1",
+    "source": "![a](/u \"\"){title=\"Attribute\"}",
+    "contains": [
+      "title=\"\""
+    ],
+    "excludes": [
+      "Attribute"
+    ]
   }
 ]
