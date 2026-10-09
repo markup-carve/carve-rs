@@ -1,5 +1,103 @@
 [
   {
+    "name": "tab-code-opacity",
+    "source": "```\n\tcode\n```\n\n{.c}\n[^n]: note\n\nx[^n]",
+    "lossLines": [
+      5
+    ],
+    "html": "<pre><code>\tcode\n</code></pre><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "one-space-note-body",
+    "source": "{.c}\n[^n]: note\n a\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note\na<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "indented-one-space-body",
+    "source": "{.c}\n  [^n]: note\n   body\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note\nbody<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "list-note-paragraphs",
+    "source": "- {.c}\n  [^n]: note\n\n  a\n\n  b\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<ul><li><p>a</p><p>b</p></li></ul><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "list-note-sibling-paragraph",
+    "source": "- {.c}\n  [^n]: note\n\n  a\n- b\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<ul><li>a</li><li>b</li></ul><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "parent-note-body",
+    "source": "[^m]: m\n\n  {.c}\n  [^n]: note\n\n  more\n\nx[^n][^m]",
+    "lossLines": [
+      3
+    ],
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a id=\"fnref2\" href=\"#fn2\" role=\"doc-noteref\"><sup>2</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li><li id=\"fn2\"><p>m</p><p>more<a href=\"#fnref2\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "root-note-body",
+    "source": "{.c}\n  [^n]: note\n\n  para2\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<p>para2</p><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "tab-list",
+    "source": "-\t{.c}\n\t[^n]: note\n\n\tpara2\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<ul><li>para2</li></ul><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "nbsp-paragraph",
+    "source": "a\n \n{.c}\n[^n]: note\n\nx[^n]",
+    "lossLines": []
+  },
+  {
+    "name": "backtick-value",
+    "source": "{title=\"`\"}\n[^n]: a ` b\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>a <code> b</code><a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "list-sibling",
+    "source": "- {.c}\n  [^n]: note\n- b\n\nx[^n]",
+    "lossLines": [
+      1
+    ],
+    "html": "<ul><li></li><li>b</li></ul><p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "after-reference",
+    "source": "[r]: u\n{.c}\n[^n]: note\n\nx[^n]",
+    "lossLines": [
+      2
+    ],
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "reference-destination",
+    "source": "[r]:\n  {.c}\n[^n]: note\n\nx[^n]",
+    "lossLines": []
+  },
+  {
     "name": "root-class",
     "source": "{.c}\n[^n]: note\n\nx[^n]",
     "lossLines": [

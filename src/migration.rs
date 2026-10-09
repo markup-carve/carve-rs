@@ -250,7 +250,7 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
     let stripped = crate::djot_migrate::strip_footnote_definition_attributes(source);
-    let value = stripped.restore(&djot_to_carve(&stripped.source));
+    let value = djot_to_carve(source);
     let mut result = assessed(
         source,
         value,
