@@ -104,6 +104,7 @@ struct BracketScope {
     /// the OPENER carries the escape (markup-carve/carve-php#2756).
     crossing_openers: HashSet<(usize, usize)>,
     fixed: HashSet<(usize, usize)>,
+    incomplete_raw: bool,
     /// A `]` whose own `[` is escaped and which therefore falls through to an
     /// OUTER opener across the same boundary. It takes an escape too, or the
     /// writer's next pass escapes that outer opener instead and the formatter
@@ -4361,7 +4362,17 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                     .filter(|c| matches!(c, '[' | ']'))
                     .count()
             });
-        let structural = verbatim.then(|| crate::parse::structural_bracket_offsets(value));
+        let structural = if verbatim {
+            match crate::parse::structural_bracket_offsets(value) {
+                Some(sites) => Some(sites),
+                None => {
+                    scope.incomplete_raw = true;
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let brackets = value.char_indices().filter(|(_, c)| matches!(c, '[' | ']'));
         for (ordinal, (offset, ch)) in brackets.enumerate() {
             if structural
@@ -4445,7 +4456,7 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         ..BracketScope::default()
     };
     let mut seq = Vec::new();
-    if !walk(nodes, 0, &mut seq, &mut scope) {
+    if !walk(nodes, 0, &mut seq, &mut scope) || scope.incomplete_raw {
         return BracketScope {
             claimed: true,
             ..BracketScope::default()
