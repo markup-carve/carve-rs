@@ -43,13 +43,17 @@ use crate::ast::{BlockNode, FigureTarget};
 
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    let normalized = djot.replace("\r\n", "\n").replace('\r', "\n");
-    let (frontmatter, separator, body) = split_frontmatter(&normalized);
+    djot_to_carve_prepared(&strip_footnote_definition_attributes(djot))
+}
+
+pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
+    let normalized = &stripped_definitions.source;
+    let (frontmatter, separator, body) = split_frontmatter(normalized);
     let literal_attributes = escape_invalid_djot_attributes(body);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
     let fence_closers = normalize_djot_fences(&attributes);
     let references = fold_djot_references(&fence_closers);
-    let footnotes = normalize_djot_footnotes(&references);
+    let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions));
     let links = normalize_djot_links(&footnotes);
     let autolinks = normalize_djot_autolinks(&links);
     let table_pipes = normalize_djot_table_pipes(&autolinks);
@@ -193,13 +197,13 @@ pub fn djot_to_carve(djot: &str) -> String {
             })
             .into_owned()
     };
-    if frontmatter.is_empty() {
+    stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
         format!("{frontmatter}{separator}")
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
-    }
+    })
 }
 
 fn quote_djot_attribute(value: &str, carve: bool) -> String {
@@ -2156,6 +2160,12 @@ fn mask_djot_forms(
         if let Some(end) = autolinks.get(&i) {
             i = *end;
             continue;
+        }
+        if bytes[i] == b'{' {
+            if let Some((end, _)) = read_djot_word_attributes(source, i) {
+                i = end;
+                continue;
+            }
         }
         // An inline code span, delimited by a matching backtick run.
         if bytes[i] == b'`' {
@@ -4291,7 +4301,10 @@ fn djot_note_alias(
         .clone()
 }
 
-fn normalize_djot_footnotes(source: &str) -> String {
+fn normalize_djot_footnotes(
+    source: &str,
+    boundaries: Option<&DjotFootnoteAttributeStrip>,
+) -> String {
     use std::collections::HashMap;
     if !source.contains("[^") {
         return source.to_owned();
@@ -4352,7 +4365,8 @@ fn normalize_djot_footnotes(source: &str) -> String {
         let previous_line = n.checked_sub(1).map_or("", |n| note_lines[n]);
         let previous_prefix = prefix.find(previous_line).unwrap().as_str();
         let previous = previous_line[previous_prefix.len()..].trim();
-        let boundary = previous.is_empty()
+        let boundary = boundaries.is_some_and(|strip| strip.is_boundary(previous_line))
+            || previous.is_empty()
             || thematic.is_match(previous_line)
             || at < previous_prefix.len() && item.is_match(previous_prefix)
             || n.checked_sub(1).is_some_and(|n| rows.get(n) == Some(&true))
@@ -5866,4 +5880,338 @@ fn normalize_djot_table_pipes(source: &str) -> String {
         result.push(String::from_utf8(output).expect("only ASCII syntax changed"));
     }
     result.join("\n")
+}
+
+pub(crate) struct DjotFootnoteAttributeStrip {
+    pub source: String,
+    pub losses: Vec<usize>,
+    comments: HashSet<usize>,
+}
+
+impl DjotFootnoteAttributeStrip {
+    fn is_boundary(&self, line: &str) -> bool {
+        cached_regex!(r"\x00DJOTNOTEATTR(\d+)\x00$")
+            .unwrap()
+            .captures(line.trim_end())
+            .and_then(|caps| caps[1].parse::<usize>().ok())
+            .is_some_and(|id| self.comments.contains(&id))
+    }
+
+    pub fn restore(&self, text: &str) -> String {
+        cached_regex!(r"\x00DJOTNOTEATTR(\d+)\x00")
+            .unwrap()
+            .replace_all(text, |caps: &regex::Captures<'_>| {
+                if caps[1]
+                    .parse::<usize>()
+                    .ok()
+                    .is_some_and(|id| self.comments.contains(&id))
+                {
+                    "%%".to_owned()
+                } else {
+                    caps[0].to_owned()
+                }
+            })
+            .into_owned()
+    }
+}
+
+pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteAttributeStrip {
+    let source = input.replace("\r\n", "\n").replace('\r', "\n");
+    if !source.contains('{') || !source.contains("[^") {
+        return DjotFootnoteAttributeStrip {
+            source,
+            losses: Vec::new(),
+            comments: HashSet::new(),
+        };
+    }
+    let (frontmatter, separator, body) = split_frontmatter(&source);
+    let header = if frontmatter.is_empty() {
+        String::new()
+    } else {
+        format!("{frontmatter}{separator}")
+    };
+    let header_lines = header.bytes().filter(|ch| *ch == b'\n').count();
+    let mut fence_lines = HashSet::new();
+    mask_djot_fences(
+        body,
+        Some(&mut |line, _| {
+            fence_lines.insert(line);
+        }),
+        &[],
+        true,
+    );
+    let mask = mask_djot_inline(body, false);
+    let original: Vec<&str> = body.split('\n').collect();
+    let mut lines: Vec<String> = original.iter().map(|line| (*line).to_owned()).collect();
+    let mut losses = Vec::new();
+    let reserved: HashSet<usize> = cached_regex!(r"\x00DJOTNOTEATTR(\d+)\x00")
+        .unwrap()
+        .captures_iter(&source)
+        .filter_map(|caps| caps[1].parse().ok())
+        .collect();
+    let mut comments = HashSet::new();
+    let mut serial = 0;
+    let mut offset = 0;
+    let mut boundary = true;
+    struct Group {
+        line: usize,
+        end: usize,
+        start: usize,
+        wire: String,
+    }
+    let mut pending: Vec<Group> = Vec::new();
+    let mut quote_depth = 0;
+    let mut list_column = None;
+    let mut list_quote_depth = 0;
+    let mut consumed_until = 0;
+    let mut heading = false;
+    let mut table = false;
+    let mut dedent: Option<(usize, usize, usize)> = None;
+    let mut note_parents = Vec::new();
+    let mut metadata_note = false;
+    let mut note_column = None;
+    let mut reference_column = None;
+    let mut div_widths = Vec::new();
+    let prefix_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]?|[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*[ \t]*").unwrap();
+    let quote_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+    let block_pattern_0 = cached_regex!(r"^\S+$").unwrap();
+    let block_pattern_1 = cached_regex!(r"^\[\^[^\]\n]+\]:(?:[ \t]|$)").unwrap();
+    let block_pattern_2 = cached_regex!(r"^(?:[ \t]*>[ \t]?)*[ \t]*").unwrap();
+    let block_pattern_3 =
+        cached_regex!(r"^\[(?:[^\^\]\n][^\]\n]*)?\]:(?:[ \t]+\S*[ \t]*|)$").unwrap();
+    let block_pattern_4 = cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap();
+    let block_pattern_5 = cached_regex!(r"^(:{3,})(?:[ \t].*)?$").unwrap();
+    let block_pattern_6 = cached_regex!(r"^(?:[-*][ \t]*){3,}$").unwrap();
+    for (n, &line) in original.iter().enumerate() {
+        if offset < consumed_until {
+            offset += line.len() + 1;
+            continue;
+        }
+        let prefix = prefix_pattern.find(line).unwrap().as_str();
+        let content = line[prefix.len()..].trim_end_matches([' ', '\t']);
+        let depth = prefix.bytes().filter(|ch| *ch == b'>').count();
+        let marker = prefix.bytes().any(|ch| b"-*+.)".contains(&ch));
+        let mut column = quote_pattern.replace(prefix, "").len();
+        if mask.as_bytes().get(offset + prefix.len()) != Some(&b' ')
+            && prefix.contains('\t')
+            && (boundary || !pending.is_empty() || list_column.is_some())
+        {
+            if let Some(col) =
+                list_column.filter(|col| !marker && depth == list_quote_depth && column + 1 == *col)
+            {
+                column = col;
+                let quotes = quote_pattern.find(prefix).unwrap().as_str();
+                lines[n] = format!(
+                    "{}{}{}",
+                    quotes.replace('\t', " "),
+                    " ".repeat(column),
+                    &line[prefix.len()..]
+                );
+            } else {
+                lines[n] = format!("{}{}", prefix.replace('\t', " "), &line[prefix.len()..]);
+            }
+        }
+        if let Some((dedent_column, delta, dedent_depth)) = dedent {
+            let quotes = quote_pattern.find(line).unwrap().as_str();
+            let indent = line[quotes.len()..]
+                .bytes()
+                .take_while(|ch| *ch == b' ' || *ch == b'\t')
+                .count();
+            if !content.is_empty() && (depth != dedent_depth || indent < dedent_column) {
+                dedent = None;
+            } else if !content.is_empty() {
+                lines[n] = format!("{}{}", quotes, &line[quotes.len() + delta..]);
+            }
+        }
+        while note_column.is_some_and(|col| !content.is_empty() && column + 1 < col) {
+            if metadata_note
+                && list_column.is_some_and(|col| column >= col)
+                && n > 0
+                && lines[n - 1].bytes().all(|ch| ch == b' ' || ch == b'\t')
+            {
+                while reserved.contains(&serial) {
+                    serial += 1;
+                }
+                comments.insert(serial);
+                lines[n - 1] = format!(
+                    "{}\0DJOTNOTEATTR{serial}\0",
+                    " ".repeat(list_column.unwrap())
+                );
+                serial += 1;
+            }
+            note_column = note_parents.pop();
+            metadata_note = false;
+            boundary = true;
+        }
+        if note_column.is_some_and(|col| !content.is_empty() && column + 1 == col) {
+            let raw = lines[n].clone();
+            let quotes = quote_pattern.find(&raw).unwrap().as_str();
+            lines[n] = format!("{} {}", quotes, &raw[quotes.len()..]);
+            column += 1;
+        }
+        let parent_note_column = note_column;
+        if depth < quote_depth {
+            boundary = true;
+            heading = false;
+        }
+        if list_column.is_some_and(|col| {
+            depth != list_quote_depth || !content.is_empty() && !marker && column < col
+        }) {
+            list_column = None;
+            boundary = true;
+            heading = false;
+        }
+        let opens_item = marker && (boundary || !pending.is_empty() || list_column.is_some());
+        let opens_quote = depth > quote_depth && (boundary || !pending.is_empty() || opens_item);
+        if opens_item || opens_quote {
+            pending.clear();
+            heading = false;
+        }
+        if opens_item {
+            list_column = Some(column);
+            list_quote_depth = depth;
+        }
+        if opens_quote || depth < quote_depth {
+            quote_depth = depth;
+        }
+        if let Some(reference) = reference_column {
+            if !content.is_empty()
+                && column > reference
+                && !marker
+                && block_pattern_0.is_match(content)
+            {
+                offset += line.len() + 1;
+                boundary = false;
+                pending.clear();
+                continue;
+            }
+            reference_column = None;
+            if !content.is_empty() {
+                boundary = true;
+            }
+        }
+        let block_allowed = boundary || !pending.is_empty() || opens_item || opens_quote;
+        let mut handled_note = false;
+        let attrs = if content.starts_with('{')
+            && mask.as_bytes().get(offset + prefix.len()) == Some(&b'{')
+        {
+            read_djot_word_attributes(body, offset + prefix.len())
+        } else {
+            None
+        };
+        let standalone = attrs.as_ref().is_some_and(|(end, _)| {
+            let trailing = body[*end..].find('\n').map_or(body.len(), |at| end + at);
+            body[*end..trailing]
+                .bytes()
+                .all(|ch| ch == b' ' || ch == b'\t')
+        });
+        if standalone && block_allowed {
+            let (end, wire) = attrs.unwrap();
+            pending.push(Group {
+                line: n,
+                end,
+                start: offset,
+                wire,
+            });
+            consumed_until = end;
+        } else {
+            if !pending.is_empty()
+                && block_pattern_1.is_match(content)
+                && mask.as_bytes().get(offset + prefix.len()) == Some(&b'[')
+            {
+                handled_note = true;
+                let quote_prefix = quote_pattern.find(prefix).unwrap().as_str();
+                let target_column = list_column
+                    .unwrap_or(0)
+                    .max(parent_note_column.unwrap_or(0));
+                let note_prefix = format!("{}{}", quote_prefix, " ".repeat(target_column));
+                if column > target_column {
+                    dedent = Some((column, column - target_column, depth));
+                }
+                lines[n] = format!("{}{}", note_prefix, &line[prefix.len()..]);
+                for group in &pending {
+                    if group.wire != "{}" {
+                        losses.push(header_lines + group.line + 1);
+                    }
+                    let mut at = group.line;
+                    let mut position = group.start;
+                    while at < n && position < group.end {
+                        let raw = lines[at].clone();
+                        let lead = if at == group.line {
+                            &raw[..raw.find('{').unwrap()]
+                        } else {
+                            block_pattern_2.find(&raw).unwrap().as_str()
+                        };
+                        while reserved.contains(&serial) {
+                            serial += 1;
+                        }
+                        comments.insert(serial);
+                        lines[at] = format!("{lead}\0DJOTNOTEATTR{serial}\0");
+                        serial += 1;
+                        position += raw.len() + 1;
+                        at += 1;
+                    }
+                }
+            }
+            pending.clear();
+        }
+        let reference = block_allowed
+            && mask.as_bytes().get(offset + prefix.len()) == Some(&b'[')
+            && block_pattern_3.is_match(content);
+        if reference {
+            reference_column = Some(column);
+            heading = false;
+        }
+        let note = block_pattern_1.is_match(content);
+        if note && block_allowed && mask.as_bytes().get(offset + prefix.len()) == Some(&b'[') {
+            if let Some(parent) = note_column {
+                note_parents.push(parent);
+            }
+            note_column = Some(column + 2);
+            metadata_note = handled_note;
+            heading = false;
+        }
+        if standalone || fence_lines.contains(&n) || content.is_empty() {
+            heading = false;
+        } else if block_allowed && block_pattern_4.is_match(content) {
+            heading = true;
+        }
+        let row = (block_allowed || table)
+            && content.starts_with('|')
+            && content.ends_with('|')
+            && mask.as_bytes().get(offset + prefix.len()) == Some(&b'|')
+            && !is_escaped(
+                body.as_bytes(),
+                offset + line.trim_end_matches([' ', '\t']).len() - 1,
+            );
+        table = row;
+        let colon = block_pattern_5.captures(content);
+        let mut div = false;
+        if let Some(colon) = colon {
+            let bare = content.bytes().all(|ch| ch == b':');
+            if block_allowed || !div_widths.is_empty() && bare {
+                div = true;
+                let width = colon[1].len();
+                if div_widths.last().is_some_and(|old| width >= *old) && bare {
+                    div_widths.pop();
+                } else {
+                    div_widths.push(width);
+                }
+                heading = false;
+            }
+        }
+        boundary = content.is_empty()
+            || reference
+            || fence_lines.contains(&n)
+            || row
+            || div
+            || heading
+            || block_allowed && block_pattern_6.is_match(content);
+        offset += line.len() + 1;
+    }
+    DjotFootnoteAttributeStrip {
+        source: header + &lines.join("\n"),
+        losses,
+        comments,
+    }
 }
