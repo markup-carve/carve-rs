@@ -1249,7 +1249,7 @@ fn rewrite_djot_inline(source: &str) -> String {
         std::collections::HashMap::new();
 
     for rule in RULES {
-        for (start, end, inner_start, inner_end) in find_pairs(&masked, rule) {
+        for (start, end, inner_start, inner_end) in find_pairs(&masked, rule, &source) {
             // One delimiter run belongs to one rule. A `~~x~~` claimed by the
             // strikethrough rule must not be re-read as two subscripts.
             let ranges = taken.entry(rule.family).or_default();
@@ -1454,14 +1454,13 @@ fn is_escaped(bytes: &[u8], index: usize) -> bool {
 
 /// Every `(start, end, inner_start, inner_end)` this rule matches, scanning
 /// left to right and never overlapping itself.
-fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
+fn find_pairs(masked: &str, rule: &Rule, source: &str) -> Vec<(usize, usize, usize, usize)> {
     let bytes = masked.as_bytes();
     let delimiter = rule.delimiter.as_bytes();
     let width = delimiter.len();
     let closer_width = rule.closer.len();
     let mut found = Vec::new();
     let mut i = 0;
-
     while i + width + closer_width <= bytes.len() {
         if !bytes[i..].starts_with(delimiter) {
             i += 1;
@@ -1470,6 +1469,18 @@ fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
 
         // An escaped delimiter is literal text and opens nothing.
         if is_escaped(bytes, i) {
+            i += width;
+            continue;
+        }
+        if matches!(rule.delimiter, "~" | "^") && bytes.get(i + width) == Some(&b'}') {
+            i += width;
+            continue;
+        }
+        if matches!(rule.delimiter, "~" | "^")
+            && i > 0
+            && source.as_bytes()[i - 1] == b'{'
+            && !is_escaped(source.as_bytes(), i - 1)
+        {
             i += width;
             continue;
         }
@@ -1504,15 +1515,16 @@ fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
 
         let inner_start = i + width;
         // An opener is not one when whitespace follows it.
-        if bytes
-            .get(inner_start)
-            .is_some_and(|b| b.is_ascii_whitespace())
+        if !rule.delimiter.starts_with('{')
+            && bytes
+                .get(inner_start)
+                .is_some_and(|b| b.is_ascii_whitespace())
         {
             i += width;
             continue;
         }
 
-        match find_closer(masked, inner_start, rule) {
+        match find_closer(masked, inner_start, rule, source) {
             Ok(inner_end) => {
                 found.push((i, inner_end + closer_width, inner_start, inner_end));
                 i = inner_end + closer_width;
@@ -1524,7 +1536,7 @@ fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
     found
 }
 
-fn find_closer(masked: &str, from: usize, rule: &Rule) -> Result<usize, usize> {
+fn find_closer(masked: &str, from: usize, rule: &Rule, source: &str) -> Result<usize, usize> {
     let bytes = masked.as_bytes();
     let delimiter = rule.closer.as_bytes();
     let width = delimiter.len();
@@ -1534,9 +1546,15 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Result<usize, usize> {
     let mut j = from;
 
     while j + width <= bytes.len() {
+        if rule.delimiter.starts_with('{')
+            && bytes[j..].starts_with(rule.delimiter.as_bytes())
+            && !is_escaped(source.as_bytes(), j)
+        {
+            return Err(j);
+        }
         // A construct never spans a blank line: that is a paragraph break, and
         // a delimiter on the far side of one closes nothing.
-        if bytes[j] == b'\n' && blank_line_follows(bytes, j) {
+        if bytes[j] == b'\n' && quoted_blank_line_follows(source.as_bytes(), j, true) {
             return Err(j + 1);
         }
 
@@ -1545,11 +1563,17 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Result<usize, usize> {
                 j += width;
                 continue;
             }
+            if matches!(rule.delimiter, "~" | "^") && bytes.get(j + width) == Some(&b'}') {
+                return Err(j + width);
+            }
 
             // A closer is not one when whitespace precedes it, and an empty
             // pair is not a construct.
             let preceded_by_space = j > from && bytes[j - 1].is_ascii_whitespace();
-            if j == from || preceded_by_space {
+            if j == from && rule.delimiter.starts_with('{') {
+                return Err(j + width);
+            }
+            if j == from || (preceded_by_space && !rule.delimiter.starts_with('{')) {
                 j += 1;
                 continue;
             }
@@ -1589,9 +1613,19 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Result<usize, usize> {
 /// Is the newline at `index` followed by a line holding nothing but spaces and
 /// tabs, i.e. a paragraph break?
 fn blank_line_follows(bytes: &[u8], index: usize) -> bool {
+    quoted_blank_line_follows(bytes, index, false)
+}
+
+fn quoted_blank_line_follows(bytes: &[u8], index: usize, quoted: bool) -> bool {
     let mut k = index + 1;
     while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\t') {
         k += 1;
+    }
+    while quoted && bytes.get(k) == Some(&b'>') {
+        k += 1;
+        while matches!(bytes.get(k), Some(b' ' | b'\t')) {
+            k += 1;
+        }
     }
 
     k >= bytes.len() || bytes[k] == b'\n'
