@@ -85,6 +85,39 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     Some(kind)
 }
 
+/// Whether `line` is a frontmatter delimiter: `---` followed by nothing but a
+/// trailing run of spaces and tabs.
+///
+/// PART 1: "PART 2 drops that trailing `whitespace` (spaces and tabs), so
+/// `---<TAB>` and `---<SP><TAB>` are bare frontmatter delimiters". A form feed
+/// is content, so `---<FF>` is no delimiter, and a tab BEFORE a format token
+/// stays out of this test - the format slot's terminal is `space` alone, which
+/// `frontmatter_format_token` enforces.
+pub(crate) fn is_frontmatter_delimiter(line: &str) -> bool {
+    line.strip_prefix("---")
+        .is_some_and(|tail| tail.bytes().all(|b| b == b' ' || b == b'\t'))
+}
+
+/// The closer of a frontmatter block, given everything after the opener line.
+///
+/// Returns the content length (the newline before the closer excluded) and the
+/// offset just past the closer's own line ending. It scans LINES rather than
+/// searching for `"\n---\n"`, because a closer may carry a trailing run and a
+/// substring search cannot see one (carve-rs#2407).
+pub(crate) fn find_frontmatter_closer(rest: &str) -> Option<(usize, usize)> {
+    let mut at = 0;
+    loop {
+        let (line, next) = match rest[at..].find('\n') {
+            Some(nl) => (&rest[at..at + nl], Some(at + nl + 1)),
+            None => (&rest[at..], None),
+        };
+        if is_frontmatter_delimiter(line) {
+            return Some((at.saturating_sub(1), next.unwrap_or(rest.len())));
+        }
+        at = next?;
+    }
+}
+
 /// Whether a BARE `---` block's content has the SHAPE of a mapping.
 ///
 /// A shape test by byte scanning, never a parse (markup-carve/carve#2799).
@@ -151,17 +184,10 @@ pub(super) fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatt
         return (BTreeMap::new(), None, source);
     };
     let rest = &source[first_nl + 1..];
-    // The closer is a line that is exactly `---`. It may be the FIRST line of
-    // `rest` (an empty frontmatter, `---\n---`) or follow a newline.
-    let (content_len, after) = if rest == "---" {
-        (0, rest.len())
-    } else if let Some(r) = rest.strip_prefix("---\n") {
-        (0, rest.len() - r.len())
-    } else if let Some(close) = rest.find("\n---\n") {
-        (close, close + 5)
-    } else if let Some(close) = rest.strip_suffix("\n---").map(|s| s.len()) {
-        (close, rest.len())
-    } else {
+    // The closer is a line of `---` plus an optional trailing run of spaces and
+    // tabs. It may be the FIRST line of `rest` (an empty frontmatter,
+    // `---\n---`) or follow a newline.
+    let Some((content_len, after)) = find_frontmatter_closer(rest) else {
         return (BTreeMap::new(), None, source);
     };
     let frontmatter_src = &rest[..content_len];
