@@ -5370,5 +5370,451 @@
     "contains": [
       "a^b^} c^d"
     ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-1-plain",
+    "source": "~a\\~b~ c",
+    "contains": [
+      "<sub>a~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-1-quote",
+    "source": "> ~a\\~b~ c",
+    "contains": [
+      "<sub>a~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-1-list",
+    "source": "- ~a\\~b~ c",
+    "contains": [
+      "<sub>a~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-1-table",
+    "source": "| ~a\\~b~ c | z |\n|---|---|",
+    "contains": [
+      "<sub>a~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-2-plain",
+    "source": "~a\\\\~b~ c",
+    "contains": [
+      "<sub>a\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-2-quote",
+    "source": "> ~a\\\\~b~ c",
+    "contains": [
+      "<sub>a\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-2-list",
+    "source": "- ~a\\\\~b~ c",
+    "contains": [
+      "<sub>a\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-2-table",
+    "source": "| ~a\\\\~b~ c | z |\n|---|---|",
+    "contains": [
+      "<sub>a\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-3-plain",
+    "source": "~a\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-3-quote",
+    "source": "> ~a\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-3-list",
+    "source": "- ~a\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-3-table",
+    "source": "| ~a\\\\\\~b~ c | z |\n|---|---|",
+    "contains": [
+      "<sub>a\\~b</sub> c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-4-plain",
+    "source": "~a\\\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-4-quote",
+    "source": "> ~a\\\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-4-list",
+    "source": "- ~a\\\\\\\\~b~ c",
+    "contains": [
+      "<sub>a\\\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-subscript-4-table",
+    "source": "| ~a\\\\\\\\~b~ c | z |\n|---|---|",
+    "contains": [
+      "<sub>a\\\\</sub>b~ c"
+    ],
+    "excludes": [
+      "<s>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-1-plain",
+    "source": "^a\\^b^ c",
+    "contains": [
+      "<sup>a^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-1-quote",
+    "source": "> ^a\\^b^ c",
+    "contains": [
+      "<sup>a^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-1-list",
+    "source": "- ^a\\^b^ c",
+    "contains": [
+      "<sup>a^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-1-table",
+    "source": "| ^a\\^b^ c | z |\n|---|---|",
+    "contains": [
+      "<sup>a^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-2-plain",
+    "source": "^a\\\\^b^ c",
+    "contains": [
+      "<sup>a\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-2-quote",
+    "source": "> ^a\\\\^b^ c",
+    "contains": [
+      "<sup>a\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-2-list",
+    "source": "- ^a\\\\^b^ c",
+    "contains": [
+      "<sup>a\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-2-table",
+    "source": "| ^a\\\\^b^ c | z |\n|---|---|",
+    "contains": [
+      "<sup>a\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-3-plain",
+    "source": "^a\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-3-quote",
+    "source": "> ^a\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-3-list",
+    "source": "- ^a\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-3-table",
+    "source": "| ^a\\\\\\^b^ c | z |\n|---|---|",
+    "contains": [
+      "<sup>a\\^b</sup> c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-4-plain",
+    "source": "^a\\\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-4-quote",
+    "source": "> ^a\\\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-4-list",
+    "source": "- ^a\\\\\\\\^b^ c",
+    "contains": [
+      "<sup>a\\\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-bare-superscript-4-table",
+    "source": "| ^a\\\\\\\\^b^ c | z |\n|---|---|",
+    "contains": [
+      "<sup>a\\\\</sup>b^ c"
+    ],
+    "excludes": [
+      "<s>",
+      "<u>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-subscript-quoted-paragraph-break-1",
+    "source": "> ~x\n>\n> y~",
+    "contains": [
+      "<p>~x</p>",
+      "<p>y~</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-subscript-quoted-paragraph-break-2",
+    "source": "> > ~x\n> >\n> > y~",
+    "contains": [
+      "<p>~x</p>",
+      "<p>y~</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-subscript-quoted-paragraph-break-3",
+    "source": "> > > ~x\n> > >\n> > > y~",
+    "contains": [
+      "<p>~x</p>",
+      "<p>y~</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-superscript-quoted-paragraph-break-1",
+    "source": "> ^x\n>\n> y^",
+    "contains": [
+      "<p>^x</p>",
+      "<p>y^</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-superscript-quoted-paragraph-break-2",
+    "source": "> > ^x\n> >\n> > y^",
+    "contains": [
+      "<p>^x</p>",
+      "<p>y^</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bare-superscript-quoted-paragraph-break-3",
+    "source": "> > > ^x\n> > >\n> > > y^",
+    "contains": [
+      "<p>^x</p>",
+      "<p>y^</p>"
+    ],
+    "excludes": [
+      "<sub>",
+      "<sup>"
+    ]
   }
 ]
