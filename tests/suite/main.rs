@@ -415,6 +415,8 @@ mod a_raw_block_keeps_its_attributes;
 mod a_raw_bracketed_run_is_written_as_authored;
 #[path = "../a_raw_kept_element_reports_its_descendants_attributes.rs"]
 mod a_raw_kept_element_reports_its_descendants_attributes;
+#[path = "../a_raw_span_ending_a_line_in_whitespace_is_degraded.rs"]
+mod a_raw_span_ending_a_line_in_whitespace_is_degraded;
 #[path = "../a_reference_inside_an_inline_note_resolves.rs"]
 mod a_reference_inside_an_inline_note_resolves;
 #[path = "../a_referenced_abbreviation_definition_splits_by_target.rs"]

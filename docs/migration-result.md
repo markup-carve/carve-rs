@@ -41,6 +41,23 @@ form resolved. Confidence follows the opener, `inferred` for a bare `---` and
 `structure-unspellable`. This deliberately fails closed at the worst-case
 outcome: byte differences are not evidence of semantic fidelity.
 
+Markdown reports `raw-span-whitespace-trimmed`, warning/degraded/exact, at the
+source line of every raw span whose content would end a content line in
+whitespace. CARVE-P2-025 drops a whitespace run at the end of every content
+line, and a verbatim run crossing a line break is no exception, so this input:
+
+```markdown
+<a href="foo  
+bar">
+```
+
+is written with its two spaces and read back without them. Degraded rather than
+dropped, because the span and its text survive and the whitespace does not; it
+is reported rather than respelled as a raw block, which would keep the bytes at
+the cost of a different block structure (markup-carve/carve#2804). Whitespace a
+raw span carries anywhere but a line end is not reported, because Carve keeps
+it.
+
 Version 2 renames version 1's `Carried` value to `Preserved` and adds
 `Normalized`. Consumers should inspect `schema_version` before interpreting
 the fidelity enum.

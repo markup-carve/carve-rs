@@ -1,3 +1,4 @@
+use crate::markdown_import::MarkdownLossKind;
 use crate::{
     bbcode_to_carve, djot_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter,
     HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
@@ -203,13 +204,24 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
     result
         .report
         .diagnostics
-        .extend(losses.into_iter().map(|loss| MigrationDiagnostic {
-            code: "structure-unspellable".to_owned(),
-            message: loss.message,
-            severity: HtmlImportSeverity::Warning,
-            fidelity: MigrationFidelity::Dropped,
-            confidence: MigrationConfidence::Exact,
-            path: loss.line.map(|line| format!("line:{line}")),
+        .extend(losses.into_iter().map(|loss| {
+            MigrationDiagnostic {
+                code: match loss.kind {
+                    MarkdownLossKind::Unspellable => "structure-unspellable",
+                    MarkdownLossKind::RawSpanWhitespaceTrimmed => "raw-span-whitespace-trimmed",
+                }
+                .to_owned(),
+                message: loss.message,
+                severity: HtmlImportSeverity::Warning,
+                // Degraded where the span and its text survive and a whitespace
+                // run inside it does not (markup-carve/carve#2804).
+                fidelity: match loss.kind {
+                    MarkdownLossKind::Unspellable => MigrationFidelity::Dropped,
+                    MarkdownLossKind::RawSpanWhitespaceTrimmed => MigrationFidelity::Degraded,
+                },
+                confidence: MigrationConfidence::Exact,
+                path: loss.line.map(|line| format!("line:{line}")),
+            }
         }));
     // Reported, not a loss: the block's content survives byte-exact, and the
     // reader is told that a `---` run changed meaning (markup-carve/carve#2799).
