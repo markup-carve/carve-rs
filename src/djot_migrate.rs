@@ -3388,17 +3388,22 @@ mod attribute_list_tests {
             "{#id}\n> Block quote\n",
             "{#id}\n# Heading\n",
             "[nested [span]{.blue}]{#ident}\n",
-            "[span]{title=\"_*#literal*\"}\n",
         ] {
             assert_eq!(djot_to_carve(source), source, "{source}");
         }
+        assert_eq!(
+            crate::to_html(&djot_to_carve("[span]{title=\"_*#literal*\"}\n")),
+            "<p><span title=\"_*#literal*\">span</span></p>"
+        );
     }
 
     #[test]
     fn multiline_attribute_lists_are_canonicalized() {
         assert_eq!(
-            djot_to_carve("{#id .class\n  style=\"color:red\"}\nA paragraph\n"),
-            "{#id .class style=\"color:red\"}\nA paragraph\n"
+            crate::to_html(&djot_to_carve(
+                "{#id .class\n  style=\"color:red\"}\nA paragraph\n"
+            )),
+            "<p id=\"id\" class=\"class\" style=\"color:red\">A paragraph</p>"
         );
     }
 
@@ -3407,7 +3412,10 @@ mod attribute_list_tests {
         let source = "_a [x]{.a\n\n.b} b_";
         assert!(!djot_to_carve(source).contains("/a"));
         assert!(!crate::to_html(&djot_to_carve("para\n{#id}\nnext")).contains("id=\"id\""));
-        assert!(djot_to_carve("a { \"q\n[x]{title=\"_a_\"}").contains("[x]{title=\"_a_\"}"));
+        assert!(
+            crate::to_html(&djot_to_carve("a { \"q\n[x]{title=\"_a_\"}"))
+                .contains("<span title=\"_a_\">x</span>")
+        );
         assert_eq!(
             crate::to_html(&djot_to_carve("[x]{#a\n.b}")),
             "<p><span id=\"a\" class=\"b\">x</span></p>"
