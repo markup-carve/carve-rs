@@ -427,7 +427,7 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             // as a leading bold line, then the body. Both are written before
             // the body, so they separate it from a list above (§10o).
             let title = admonition.title.as_ref().map(|title| {
-                pad_outside(
+                pad_outside_on_its_own_line(
                     render_title_inlines(title, ctx),
                     "**",
                     "<strong>",
@@ -452,7 +452,7 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Directive(d) => {
             let title = d.title.as_ref().map(|title| {
-                pad_outside(
+                pad_outside_on_its_own_line(
                     render_title_inlines(title, ctx),
                     "**",
                     "<strong>",
@@ -951,7 +951,7 @@ fn render_definition_list(
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
-            let term = pad_outside(
+            let term = pad_outside_on_its_own_line(
                 render_block_inlines(term, ctx),
                 "**",
                 "<strong>",
@@ -1326,7 +1326,7 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         match child {
             BlockNode::Figure(figure) => {
                 let target = render_figure_target(figure, ctx, depth);
-                let caption = pad_outside(
+                let caption = pad_outside_on_its_own_line(
                     render_block_inlines(&figure.caption, ctx),
                     "*",
                     "<em>",
@@ -1338,12 +1338,13 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         }
     }
     if let Some(caption) = &node.caption {
-        out.push_str(&pad_outside(
+        let caption = pad_outside_on_its_own_line(
             render_block_inlines(caption, ctx),
             "**",
             "<strong>",
             "</strong>",
-        ));
+        );
+        out.push_str(&caption);
         out.push_str("\n\n");
     }
     out
@@ -1420,6 +1421,16 @@ fn ends_escaped(core: &str) -> bool {
     core.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1
 }
 
+/// Trim outer ASCII padding after building a wrapper on its own line.
+fn pad_outside_on_its_own_line(
+    inner: String,
+    delimiter: &str,
+    open_tag: &str,
+    close_tag: &str,
+) -> String {
+    trim_non_nbsp(&pad_outside(inner, delimiter, open_tag, close_tag)).to_string()
+}
+
 /// A delimiter run only opens emphasis while it is left-flanking, which a run
 /// followed by whitespace never is (CommonMark 6.2), so `** x**` reads back as
 /// literal text. The padding is content, so it moves outside the delimiters
@@ -1437,6 +1448,10 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
     if core.is_empty() || ends_escaped(core) || content_grows_the_run(core, delimiter) {
         if inner.is_empty() {
             return String::new();
+        }
+        let lead = &inner[..inner.len() - inner.trim_start().len()];
+        if ends_escaped(core) && lead.contains('\n') {
+            return format!("{lead}{open_tag}{}{close_tag}", &inner[lead.len()..]);
         }
         return format!("{open_tag}{inner}{close_tag}");
     }
@@ -2324,7 +2339,7 @@ fn fragment_id(href: &str) -> Option<&str> {
 fn prepend_label(body: String, label: Option<&str>) -> String {
     match label {
         Some(label) if !label.is_empty() => {
-            let l = pad_outside(escape_text(label), "**", "<strong>", "</strong>");
+            let l = pad_outside_on_its_own_line(escape_text(label), "**", "<strong>", "</strong>");
             if body.is_empty() {
                 format!("{l}\n\n")
             } else {
