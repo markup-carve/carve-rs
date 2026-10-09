@@ -13554,6 +13554,9 @@ fn collect_indented_block_mapped_with_columns(
         //     column names - which for a column below the item's content column
         //     is no container at all.
         if lead_is_continuation && lines.is_empty() {
+            if indent == 0 && detect_list_marker_full(line).is_some() {
+                break;
+            }
             if indent == 0 {
                 // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
                 // and `col_map` parallel to `lines`, and a push that skips them
@@ -13570,7 +13573,9 @@ fn collect_indented_block_mapped_with_columns(
                 cur.consume();
                 continue;
             }
-            break;
+            if indent <= strip_cols {
+                break;
+            }
         }
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;

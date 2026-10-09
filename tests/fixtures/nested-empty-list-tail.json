@@ -1,0 +1,57 @@
+[
+  {
+    "source": "- +\n- tail\n",
+    "html": "<ul>\n  <li></li>\n  <li>tail</li>\n</ul>",
+    "formatted": "- +\n- tail\n"
+  },
+  {
+    "source": "- +\n1. tail\n",
+    "html": "<ul>\n  <li></li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>",
+    "formatted": "- +\n\n1. tail\n"
+  },
+  {
+    "source": "- - +\n- tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>",
+    "formatted": "- - +\n- tail\n"
+  },
+  {
+    "source": "- - +\n1. tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>",
+    "formatted": "- - +\n\n1. tail\n"
+  },
+  {
+    "source": "- - - +\n- tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>",
+    "formatted": "- - - +\n- tail\n"
+  },
+  {
+    "source": "- - - +\n1. tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>",
+    "formatted": "- - - +\n\n1. tail\n"
+  },
+  {
+    "source": "- - - - +\n- tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li></li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>",
+    "formatted": "- - - - +\n- tail\n"
+  },
+  {
+    "source": "- - - - +\n1. tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li>\n            <ul>\n              <li></li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<ol>\n  <li>tail</li>\n</ol>",
+    "formatted": "- - - - +\n\n1. tail\n"
+  },
+  {
+    "source": "- - {.x}\n- tail\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n  <li>tail</li>\n</ul>",
+    "formatted": "- - +\n- tail\n"
+  },
+  {
+    "source": "- - +\n  Z\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    Z\n  </li>\n</ul>",
+    "formatted": "- - +\n  Z\n"
+  },
+  {
+    "source": "- - - +\n    mid\n+\nout\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n        mid\n      </li>\n    </ul>\n    out\n  </li>\n</ul>",
+    "formatted": "- - - +\n    mid\n+\nout\n"
+  }
+]
