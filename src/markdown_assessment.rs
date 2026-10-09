@@ -82,6 +82,26 @@ fn shape(html: &str) -> Vec<Shape> {
                 ) {
                     children.retain(|child| !layout(child));
                 }
+                if tag == "li" {
+                    for index in 0..children.len().saturating_sub(1) {
+                        let nested_list = matches!(
+                            &children[index + 1],
+                            Shape::Element(tag, _, _) if matches!(tag.as_str(), "ul" | "ol")
+                        );
+                        if nested_list {
+                            if let Shape::Text(value) = &mut children[index] {
+                                if let Some(newline) = value.rfind('\n') {
+                                    if value[newline + 1..]
+                                        .bytes()
+                                        .all(|byte| matches!(byte, b' ' | b'\t'))
+                                    {
+                                        value.truncate(newline + 1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 let mut attributes: Vec<_> = attrs
                     .borrow()
                     .iter()
@@ -750,6 +770,9 @@ mod tests {
         assert!(assess("1. one\n", "1. one\n").complete);
         assert!(!assess("1) one\n", "1. one\n").complete);
         assert!(!assess("1. one\n", "1) one\n").complete);
+        assert!(assess("10) foo\n    - bar\n", "10) foo\n    - bar\n").complete);
+        assert!(!assess("10) foo\n    - bar\n", "10. foo\n    - bar\n").complete);
+        assert!(!assess("10) a  b\n    - c\n", "10) a b\n    - c\n").complete);
         assert!(
             !assess(
                 "<ol data-delim=\")\"><li>one</li></ol>\n",
