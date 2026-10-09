@@ -13,6 +13,9 @@ mod braced_span_host_boundaries;
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../a_default_list_marker_is_not_recorded.rs"]
+mod a_default_list_marker_is_not_recorded;
+
 #[path = "../exact_case_lookups.rs"]
 mod exact_case_lookups;
 #[path = "../table_body_source.rs"]
