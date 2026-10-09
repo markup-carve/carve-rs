@@ -287,6 +287,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn indexed_queries_skip_label_and_destination_arrows() {
+        let text = "{~a [x~>y](u~>z) b~>c~} {~d~>e~}";
+        let hosts = HashMap::from([
+            (text.find('[').unwrap(), text.find(']').unwrap() + 1),
+            (text.find('(').unwrap(), text.find(')').unwrap() + 1),
+        ]);
+        let first = text.find(" b~>").unwrap() + 2;
+        let second = text.rfind("~>").unwrap();
+        let mut scanner = SubstitutionScanner::default();
+        let mut code = None;
+        for (from, to, expected) in [
+            (0, text.len(), Some(first)),
+            (1, text.len(), Some(first)),
+            (first + 2, text.len(), Some(second)),
+            (1, first, None),
+        ] {
+            assert_eq!(
+                scanner.find(text.as_bytes(), from, to, &mut code, &hosts),
+                expected
+            );
+        }
+    }
+
+    #[test]
     fn indexed_queries_keep_the_original_limit_and_opaque_rules() {
         let tokens = [
             "x", "~>", "{%", "{#", "%}", "#}", "`", "``", "\\", "{~", "~}",

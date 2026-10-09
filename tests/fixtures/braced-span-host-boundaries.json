@@ -604,5 +604,137 @@
     "source": "{~a~>b [x~>y] c~}",
     "html": "<p><del>a</del><ins>b [x~&gt;y] c</ins></p>",
     "roundTrip": true
+  },
+  {
+    "name": "/ unclosed code holds brackets",
+    "source": "{/a`b [c/}d]",
+    "html": "<p><em>a<code>b [c</code></em>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ unclosed code holds escaped closer",
+    "source": "{/a`b [c\\/}d]",
+    "html": "<p><em>a<code>b [c\\</code></em>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* unclosed code holds brackets",
+    "source": "{*a`b [c*}d]",
+    "html": "<p><strong>a<code>b [c</code></strong>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* unclosed code holds escaped closer",
+    "source": "{*a`b [c\\*}d]",
+    "html": "<p><strong>a<code>b [c\\</code></strong>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ unclosed code holds brackets",
+    "source": "{_a`b [c_}d]",
+    "html": "<p><u>a<code>b [c</code></u>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ unclosed code holds escaped closer",
+    "source": "{_a`b [c\\_}d]",
+    "html": "<p><u>a<code>b [c\\</code></u>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ unclosed code holds brackets",
+    "source": "{^a`b [c^}d]",
+    "html": "<p><sup>a<code>b [c</code></sup>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ unclosed code holds escaped closer",
+    "source": "{^a`b [c\\^}d]",
+    "html": "<p><sup>a<code>b [c\\</code></sup>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", unclosed code holds brackets",
+    "source": "{,a`b [c,}d]",
+    "html": "<p><sub>a<code>b [c</code></sub>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", unclosed code holds escaped closer",
+    "source": "{,a`b [c\\,}d]",
+    "html": "<p><sub>a<code>b [c\\</code></sub>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ unclosed code holds brackets",
+    "source": "{~a`b [c~}d]",
+    "html": "<p><s>a<code>b [c</code></s>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ unclosed code holds escaped closer",
+    "source": "{~a`b [c\\~}d]",
+    "html": "<p><s>a<code>b [c\\</code></s>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= unclosed code holds brackets",
+    "source": "{=a`b [c=}d]",
+    "html": "<p><mark>a<code>b [c</code></mark>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= unclosed code holds escaped closer",
+    "source": "{=a`b [c\\=}d]",
+    "html": "<p><mark>a<code>b [c\\</code></mark>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ unclosed code holds brackets",
+    "source": "{+a`b [c+}d]",
+    "html": "<p><ins>a<code>b [c</code></ins>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- unclosed code holds brackets",
+    "source": "{-a`b [c-}d]",
+    "html": "<p><del>a<code>b [c</code></del>d]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "unclosed code holds a closing bracket",
+    "source": "[{*a`b] c*}",
+    "html": "<p>[<strong>a<code>b] c</code></strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "code starts after closed label 0",
+    "source": "[{*a]`b*}",
+    "html": "<p>[{*a]<code>b*}</code></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "code starts after closed label 1",
+    "source": "[{+a]`b+}",
+    "html": "<p>[{+a]<code>b+}</code></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "code starts after closed label 2",
+    "source": "[{~a]`b~}",
+    "html": "<p>[{~a]<code>b~}</code></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "code starts after closed label 3",
+    "source": "[{~a~>b]`c~}",
+    "html": "<p>[{<s>a</s>&gt;b]<code>c~}</code></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "code starts after closed label 4",
+    "source": "x [{*a] y `b*}",
+    "html": "<p>x [{*a] y <code>b*}</code></p>",
+    "roundTrip": true
   }
 ]

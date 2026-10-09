@@ -20565,8 +20565,15 @@ fn parse_critic_markup(
 /// forced emphasis forms already read (markup-carve/carve#2577, carve-rs#2173),
 /// applied to the critic family as the same rule in another spelling
 /// (carve-rs#2212).
+// Brackets inside an unclosed verbatim run are content until its raw closer.
 fn braced_closer_shares_the_run(bounds: &InlineBounds<'_>, open: usize, close: usize) -> bool {
     bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
+        || bounds
+            .braced_closers
+            .borrow()
+            .as_ref()
+            .and_then(BracedClosers::last_verbatim_start)
+            .is_some_and(|start| bounds.bracket_run_at(start) == bounds.bracket_run_at(open))
 }
 
 fn parse_footnote_ref(
@@ -24604,7 +24611,7 @@ fn parse_forced_emphasis(
     // before an emphasis marker, so a `delim}` inside one is that run's content
     // and cannot close a span opened outside it (markup-carve/carve#2577,
     // carve-rs#2173). The bare and the combined forms read the same rule.
-    if bounds.bracket_run_at(j) != bounds.bracket_run_at(i) {
+    if !braced_closer_shares_the_run(bounds, i, j) {
         return None;
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
