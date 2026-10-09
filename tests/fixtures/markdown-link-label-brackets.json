@@ -22,5 +22,45 @@
     "rule": "CARVE-P11-023",
     "carve": "before ![a [b] c](/u)\n",
     "markdown": "before ![a \\[b\\] c](/u)\n"
+  },
+  {
+    "name": "bracket-label-generated-context-0",
+    "carve": "# a [b] c\n\nsee </#a-b-c>",
+    "markdown": "# a [b\\] c\n\nsee [a \\[b\\] c](#a-b-c)\n"
+  },
+  {
+    "name": "bracket-label-generated-context-1",
+    "carve": "[a ^[note [x] y] b](/u)",
+    "markdown": "[a ^[note \\[x\\] y] b](/u)\n"
+  },
+  {
+    "name": "bracket-label-generated-context-2",
+    "carve": "{#fig-sun}\n![A sunset](sun.jpg)\n^ Fig [x] #: A\n\nSee </#fig-sun> ok.",
+    "markdown": "![A sunset](sun.jpg)\nFig [x\\] 1: A\n\nSee Fig [x\\] 1 ok.\n"
+  },
+  {
+    "name": "bracket-label-generated-context-3",
+    "carve": "<https://x/[b]>",
+    "markdown": "[https://x/\\[b\\]](https://x/[b])\n"
+  },
+  {
+    "name": "bracket-label-generated-context-4",
+    "carve": "a [b] c",
+    "markdown": "a [b\\] c\n"
+  },
+  {
+    "name": "bracket-label-generated-context-5",
+    "carve": "[a [b] c][r]\n\n[r]: /u",
+    "markdown": "[a \\[b\\] c](/u)\n"
+  },
+  {
+    "name": "bracket-label-autolink-context-0",
+    "carve": "{#f}\n![A](s.jpg)\n^ See www.x.com #: A\n\nSee </#f> ok.",
+    "markdown": "![A](s.jpg)\nSee www\\.x.com 1: A\n\nSee See www\\.x.com 1 ok.\n"
+  },
+  {
+    "name": "bracket-label-autolink-context-1",
+    "carve": "[a ^[www.x.com [x] y] b](/u)",
+    "markdown": "[a ^[www.x.com \\[x\\] y] b](/u)\n"
   }
 ]
