@@ -1721,6 +1721,12 @@ impl<'a> Importer<'a> {
             .collect()
     }
 
+    /// Whether `data-delim` IS the list's delimiter: the one PART 10 §12
+    /// writes. Any other value is the author's attribute.
+    fn reads_delim(ol: &Handle) -> bool {
+        Self::attr(ol, "data-delim").as_deref() == Some(")")
+    }
+
     /// Whether `data-task-state` IS the item's state: one PART 10 §11 writes,
     /// on an EMPTY box. Anything else is the author's attribute.
     fn reads_task_state(li: &Handle) -> bool {
@@ -1902,6 +1908,7 @@ impl<'a> Importer<'a> {
                 // by having been recognized, not discarded.
                 | ("math", "display" | "alttext" | "xmlns")
         ) || (tag == "li" && name == "data-task-state" && Self::reads_task_state(handle))
+            || (tag == "ol" && name == "data-delim" && Self::reads_delim(handle))
     }
 
     /// The CSS mapping: every declaration that reaches a slot, and one
@@ -3085,7 +3092,8 @@ impl<'a> Importer<'a> {
                 start,
                 ol_type,
                 bare_marker: false,
-                delim: None,
+                // PART 10 §12, the only place the delimiter survives a render.
+                delim: (ordered && Self::reads_delim(h)).then_some(')'),
                 bullet_char: None,
                 tight,
                 items,

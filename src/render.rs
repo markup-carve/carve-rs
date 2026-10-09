@@ -1908,6 +1908,11 @@ fn render_list(
         if let Some(start) = l.start.filter(|start| *start != 1) {
             write!(out, " start=\"{start}\"").unwrap();
         }
+        // PART 10 §12: the authored delimiter, which HTML has no attribute of
+        // its own for, trailing `type` and `start` and only where it is `)`.
+        if let Some(delim) = l.delim.filter(|delim| *delim == ')') {
+            write!(out, " data-delim=\"{}\"", escape_attr(&delim.to_string())).unwrap();
+        }
     }
     write_attrs(out, &l.attrs);
     out.push_str(">\n");

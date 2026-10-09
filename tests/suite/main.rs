@@ -1702,3 +1702,6 @@ mod html_roundtrip_stability;
 
 #[path = "../image_alt_escapes.rs"]
 mod image_alt_escapes;
+
+#[path = "../an_ordered_list_names_its_delimiter_in_html.rs"]
+mod an_ordered_list_names_its_delimiter_in_html;
