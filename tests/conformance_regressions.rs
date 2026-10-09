@@ -596,9 +596,10 @@ fn smart_quote_flanking_html_double() {
     assert_eq!(html("a\"b"), "<p>a”b</p>");
     // Empty `""` at true start: the first opens, and the second follows an
     // opening curly quote (an opening context), so it opens too -> `““`,
-    // matching carve-js / carve-php. After a soft break both close.
+    // matching carve-js / carve-php. A soft break is whitespace, so after one
+    // both open as well (markup-carve/carve#2822).
     assert_eq!(html("\"\""), "<p>““</p>");
-    assert_eq!(html("a\"b\n\"\""), "<p>a”b\n””</p>");
+    assert_eq!(html("a\"b\n\"\""), "<p>a”b\n““</p>");
 }
 
 #[test]
@@ -629,8 +630,8 @@ fn smart_quote_flanking_plain() {
     assert_eq!(carve::to_plain_text("}\"q\"").trim(), "}”q”");
     assert_eq!(carve::to_plain_text("the '70s").trim(), "the ’70s");
     assert_eq!(carve::to_plain_text("'word'").trim(), "‘word’");
-    // Plain text joins a soft break as a space; both marks still close.
-    assert_eq!(carve::to_plain_text("a\"b\n\"\"").trim(), "a”b ””");
+    // Plain text joins a soft break as a space; both marks open, as in HTML.
+    assert_eq!(carve::to_plain_text("a\"b\n\"\"").trim(), "a”b ““");
     // Node boundary in plain text closes too.
     assert_eq!(carve::to_plain_text("*x*'s").trim(), "x’s");
 }

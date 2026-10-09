@@ -1584,8 +1584,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 26ffb7d3 adds the five 549-an-ordered-list-carries-its-authored-delimiter
     // documents. Each round-trips without a reported loss: strict rises by five
     // to 1723 and reported-lossy stays at 507.
+    // Spec a895b116 (markup-carve/carve#2827) adds
+    // 19-smart-typography-dashes-and-quotes-10, which degrades
+    // `smart_punctuation` and `soft_break` with nothing dropped, the same causes
+    // as its sibling 19-3: reported-lossy rises to 508.
     const STRICT: usize = 1723;
-    const LOSSY: usize = 507;
+    const LOSSY: usize = 508;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
