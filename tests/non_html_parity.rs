@@ -93,7 +93,10 @@ fn markdown_code_fence_keeps_quoted_header() {
 
 #[test]
 fn markdown_critic_delete_renders_as_del_element() {
-    assert_eq!(carve::to_markdown("{-del-}"), "<del>del</del>\n");
+    assert_eq!(
+        carve::to_markdown("{-del-}"),
+        "<del class=\"critic-delete\">del</del>\n"
+    );
     assert_eq!(carve::to_markdown("{+ins+}"), "<ins>ins</ins>\n");
 }
 

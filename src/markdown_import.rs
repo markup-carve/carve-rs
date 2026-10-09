@@ -713,6 +713,36 @@ fn task_marker_separator(source: &str, end: usize) -> Option<InlineNode> {
 /// tracking indentation. Each frame owns the children it collects, which is why
 /// a block frame and an inline frame are different variants rather than one
 /// frame plus two side stacks that could drift out of step.
+/// `<del class="critic-delete">` and nothing wider: one double-quoted class
+/// attribute and no other, which is the shape PART 11 section 8c emits for a
+/// deletion (markup-carve/carve#2845).
+fn is_critic_delete_open(value: &str) -> bool {
+    let Some(inner) = value
+        .strip_prefix('<')
+        .and_then(|rest| rest.strip_suffix('>'))
+    else {
+        return false;
+    };
+    let inner = inner.trim_end();
+    let Some(attrs) = inner
+        .get(..3)
+        .filter(|name| name.eq_ignore_ascii_case("del"))
+        .map(|_| inner[3..].trim_start())
+    else {
+        return false;
+    };
+    let Some(rest) = attrs
+        .get(..5)
+        .filter(|key| key.eq_ignore_ascii_case("class"))
+        .map(|_| attrs[5..].trim_start())
+    else {
+        return false;
+    };
+    rest.strip_prefix('=')
+        .map(str::trim_start)
+        .is_some_and(|value| value == "\"critic-delete\"")
+}
+
 enum Frame {
     Paragraph(Vec<InlineNode>),
     Heading(u8, Vec<InlineNode>),
@@ -770,6 +800,14 @@ enum Frame {
         tag: String,
         children: Vec<InlineNode>,
     },
+    /// `<del class="critic-delete">`, which PART 11 section 8c spells a
+    /// deletion with so it stops colliding with the bare `<del>` a `strike`
+    /// falls back to (markup-carve/carve#2845).
+    HtmlDelete {
+        tag: String,
+        open: String,
+        children: Vec<InlineNode>,
+    },
     /// An inline HTML run with no native Carve node. `tag` is the outer tag
     /// whose closing fragment completes the run; standalone fragments have
     /// already been emitted and never need a frame.
@@ -821,7 +859,8 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
         Frame::Emphasis(..)
         | Frame::Link { .. }
         | Frame::HtmlEmphasis { .. }
-        | Frame::HtmlInsert { .. } => (0, 1),
+        | Frame::HtmlInsert { .. }
+        | Frame::HtmlDelete { .. } => (0, 1),
         // A paragraph, heading or cell OPENS an inline sequence rather than
         // nesting inside one, and the rest hold text.
         Frame::Paragraph(_)
@@ -997,7 +1036,8 @@ impl Builder {
             let closes_top = match self.frames.last() {
                 Some(Frame::HtmlEmphasis { tag: open, .. })
                 | Some(Frame::HtmlCode { tag: open, .. })
-                | Some(Frame::HtmlInsert { tag: open, .. }) => open.eq_ignore_ascii_case(tag.name),
+                | Some(Frame::HtmlInsert { tag: open, .. })
+                | Some(Frame::HtmlDelete { tag: open, .. }) => open.eq_ignore_ascii_case(tag.name),
                 _ => false,
             };
             if closes_top {
@@ -1014,6 +1054,17 @@ impl Builder {
         }
 
         let name = tag.name.to_ascii_lowercase();
+        // The one attributed tag that converts: section 8c writes a deletion as
+        // `<del class="critic-delete">` and the Carve construct carries that
+        // class itself, so nothing drops (markup-carve/carve#2845).
+        if name == "del" && is_critic_delete_open(value) {
+            self.push_frame(Frame::HtmlDelete {
+                tag: name,
+                open: value.to_string(),
+                children: Vec::new(),
+            });
+            return;
+        }
         // Only a BARE native tag converts to a Carve construct. An attributed
         // tag (`<b class="x">`) opens a raw-inline run instead, so its
         // attributes survive verbatim rather than being dropped.
@@ -1307,6 +1358,7 @@ impl Builder {
                 Frame::HtmlEmphasis { .. }
                     | Frame::HtmlCode { .. }
                     | Frame::HtmlInsert { .. }
+                    | Frame::HtmlDelete { .. }
                     | Frame::RawInline { .. }
             )
         ) {
@@ -1438,6 +1490,12 @@ impl Builder {
                 self.raw_inline(format!("<{tag}>"));
                 if !content.is_empty() {
                     self.text(&content);
+                }
+            }
+            Frame::HtmlDelete { open, children, .. } => {
+                self.raw_inline(open);
+                for child in children {
+                    self.inline(child);
                 }
             }
             Frame::RawInline { content, .. } => self.raw_inline(content),
@@ -1595,6 +1653,32 @@ impl Builder {
     /// building the Carve construct. The caller has confirmed the top frame is
     /// the one the end tag pairs with; anything reaching the generic `close()`
     /// was left unpaired and falls back to raw there instead.
+    /// Take the inline run's trailing node when it is a deletion, so the
+    /// insertion that just closed can fold it into one substitution.
+    fn take_trailing_critic_delete(&mut self) -> Option<Vec<InlineNode>> {
+        let children = match self.frames.last_mut() {
+            Some(Frame::Paragraph(children))
+            | Some(Frame::Heading(_, children))
+            | Some(Frame::Emphasis(_, children))
+            | Some(Frame::HtmlEmphasis { children, .. })
+            | Some(Frame::HtmlInsert { children, .. })
+            | Some(Frame::HtmlDelete { children, .. })
+            | Some(Frame::Link { children, .. })
+            | Some(Frame::TableCell(children))
+            | Some(Frame::ListItem {
+                pending: children, ..
+            }) => children,
+            _ => return None,
+        };
+        if !matches!(children.last(), Some(InlineNode::CriticDelete(_))) {
+            return None;
+        }
+        match children.pop() {
+            Some(InlineNode::CriticDelete(delete)) => Some(delete.children),
+            _ => None,
+        }
+    }
+
     fn close_matched_html(&mut self) {
         match self.pop_frame() {
             Some(Frame::HtmlEmphasis { kind, children, .. }) => {
@@ -1609,7 +1693,37 @@ impl Builder {
                 self.inline(InlineNode::code(content, None));
             }
             Some(Frame::HtmlInsert { children, .. }) => {
+                // A deletion immediately followed by an insertion is ONE
+                // construct, not two: section 8c writes a substitution as that
+                // pair, and leaving them apart would read it back as a deletion
+                // beside an unrelated insertion (markup-carve/carve#2845).
+                if let Some(old) = self.take_trailing_critic_delete() {
+                    self.inline(InlineNode::CriticSubstitute(CriticSubstitute {
+                        old,
+                        new: children,
+                        pos: None,
+                    }));
+                    return;
+                }
                 self.inline(InlineNode::CriticInsert(CriticInsert {
+                    children,
+                    attrs: None,
+                    pos: None,
+                }));
+            }
+            Some(Frame::HtmlDelete { open, children, .. }) => {
+                // A body that would close or re-open the braced construct stays
+                // the raw span the tag arrived as, rather than leaning on the
+                // writer's escapes to hold it together.
+                if breaks_out_of_a_critic_body(&children) {
+                    self.raw_inline(open);
+                    for child in children {
+                        self.inline(child);
+                    }
+                    self.raw_inline("</del>".to_string());
+                    return;
+                }
+                self.inline(InlineNode::CriticDelete(CriticDelete {
                     children,
                     attrs: None,
                     pos: None,
@@ -1645,6 +1759,7 @@ impl Builder {
             | Some(Frame::Emphasis(_, children))
             | Some(Frame::HtmlEmphasis { children, .. })
             | Some(Frame::HtmlInsert { children, .. })
+            | Some(Frame::HtmlDelete { children, .. })
             | Some(Frame::Link { children, .. })
             | Some(Frame::TableCell(children)) => children.push(node),
             // A TIGHT item spells its content with no paragraph around it, so
@@ -1784,6 +1899,13 @@ fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>
 /// is kept. A break contributes nothing, which is what this importer already
 /// did with one and is deliberately not changed here: a newline inside `alt`
 /// would have to be written back into a single-line image spelling.
+/// A deletion body that would close or re-open the braced construct it is about
+/// to be written into (markup-carve/carve#2845).
+fn breaks_out_of_a_critic_body(children: &[InlineNode]) -> bool {
+    let text: String = children.iter().map(inline_text).collect();
+    text.contains(['{', '}', '\\', '\n']) || text.contains("~>")
+}
+
 fn inline_text(node: &InlineNode) -> String {
     match node {
         InlineNode::Text(text) => text.value.clone(),

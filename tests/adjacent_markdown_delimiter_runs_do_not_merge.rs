@@ -159,7 +159,7 @@ fn a_strike_beside_an_emphasis_is_not_a_seam_at_all() {
 fn two_adjacent_deletes_are_inline_html_already() {
     assert_eq!(
         carve::to_markdown("a {-x-}{-y-}\n"),
-        "a <del>x</del><del>y</del>\n"
+        "a <del class=\"critic-delete\">x</del><del class=\"critic-delete\">y</del>\n"
     );
 }
 
