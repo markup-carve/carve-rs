@@ -1,0 +1,20 @@
+name: Tag push refused
+
+# Releases start by dispatching release.yml. Its tag job creates the tag after
+# the approval, with the workflow token, which triggers no workflow - so this
+# only ever fires for a tag pushed by hand, before anyone approved it.
+on:
+  push:
+    tags: ['**']
+
+permissions: {}
+
+jobs:
+  refuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: This repository releases by dispatch
+        run: |
+          echo "::error::$GITHUB_REF_NAME was pushed by hand, so no release ran for it. Delete it (git push origin :refs/tags/$GITHUB_REF_NAME) and dispatch release.yml with the version; the tag is created there, after approval."
+          exit 1

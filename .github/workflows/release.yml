@@ -1,12 +1,9 @@
 name: Release
 
 # Dispatch with a version to approve the release before creating its tag.
-# Existing published-release events remain supported. The published
-# release body is a condensed summary checked against the tagged CHANGELOG section and footer.
+# The published release body is a condensed summary checked against the tagged CHANGELOG section and footer.
 # This workflow verifies the stored notes before publishing the crate or assets.
 on:
-  release:
-    types: [published]
   # Backfill: a release that predates the binaries job can be given its assets
   # without cutting a new version. Set version to start a new release.
   workflow_dispatch:
