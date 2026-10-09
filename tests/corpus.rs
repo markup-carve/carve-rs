@@ -882,7 +882,12 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
+    "31-ordered-list-start-and-delimiter-2",
+    "markup-carve/carve#2796: PART 10 §12 carries the authored `)` as `data-delim`, \
+     and the pinned golden predates the clause.",
+    "<ol data-delim=\")\">\n  <li>one</li>\n  <li>two</li>\n</ol>",
+)];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

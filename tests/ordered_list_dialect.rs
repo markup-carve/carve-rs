@@ -20,7 +20,10 @@ fn ambiguous_roman_letter_resolves_by_sibling() {
 #[test]
 fn delimiter_change_starts_a_new_list() {
     let html = carve::to_html("1. a\n2) b\n");
-    assert!(html.contains("</ol>\n<ol start=\"2\">"), "{html}");
+    assert!(
+        html.contains("</ol>\n<ol start=\"2\" data-delim=\")\">"),
+        "{html}"
+    );
 }
 
 #[test]

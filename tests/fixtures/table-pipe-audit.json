@@ -4922,5 +4922,453 @@
     "excludes": [
       "Attribute"
     ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-00",
+    "source": "H{~ 2 ~}O",
+    "contains": [
+      "<p>H<sub> 2 </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-01",
+    "source": "> H{~ 2 ~}O",
+    "contains": [
+      "<p>H<sub> 2 </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-02",
+    "source": "- H{~ 2 ~}O",
+    "contains": [
+      "H<sub> 2 </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-03",
+    "source": "| H{~ 2 ~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub> 2 </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-04",
+    "source": "H{~2 ~}O",
+    "contains": [
+      "<p>H<sub>2 </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-05",
+    "source": "> H{~2 ~}O",
+    "contains": [
+      "<p>H<sub>2 </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-06",
+    "source": "- H{~2 ~}O",
+    "contains": [
+      "H<sub>2 </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-07",
+    "source": "| H{~2 ~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub>2 </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-08",
+    "source": "H{~ ~}O",
+    "contains": [
+      "<p>H<sub> </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-09",
+    "source": "> H{~ ~}O",
+    "contains": [
+      "<p>H<sub> </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-10",
+    "source": "- H{~ ~}O",
+    "contains": [
+      "H<sub> </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-11",
+    "source": "| H{~ ~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub> </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-12",
+    "source": "H{~~}O",
+    "contains": [
+      "<p>H{~~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-13",
+    "source": "> H{~~}O",
+    "contains": [
+      "<p>H{~~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-14",
+    "source": "- H{~~}O",
+    "contains": [
+      "H{~~}O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-15",
+    "source": "| H{~~}O | z |\n|---|---|\n",
+    "contains": [
+      "H{~~}O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-16",
+    "source": "H{~\n2\n~}O",
+    "contains": [
+      "<p>H<sub>\n2\n</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-17",
+    "source": "> H{~\n> 2\n> ~}O",
+    "contains": [
+      "<p>H<sub>\n2\n</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-18",
+    "source": "- H{~\n  2\n  ~}O",
+    "contains": [
+      "H<sub>\n2\n</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-19",
+    "source": "H{~a~b~}O",
+    "contains": [
+      "<p>H<sub>a~b</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-20",
+    "source": "> H{~a~b~}O",
+    "contains": [
+      "<p>H<sub>a~b</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-21",
+    "source": "- H{~a~b~}O",
+    "contains": [
+      "H<sub>a~b</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-22",
+    "source": "| H{~a~b~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub>a~b</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-23",
+    "source": "H{~a\\~b~}O",
+    "contains": [
+      "<p>H<sub>a~b</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-24",
+    "source": "> H{~a\\~b~}O",
+    "contains": [
+      "<p>H<sub>a~b</sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-25",
+    "source": "- H{~a\\~b~}O",
+    "contains": [
+      "H<sub>a~b</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-26",
+    "source": "| H{~a\\~b~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub>a~b</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-27",
+    "source": "H{~a `{~` ~}O",
+    "contains": [
+      "<p>H<sub>a <code>{~</code> </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-28",
+    "source": "> H{~a `{~` ~}O",
+    "contains": [
+      "<p>H<sub>a <code>{~</code> </sub>O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-29",
+    "source": "- H{~a `{~` ~}O",
+    "contains": [
+      "H<sub>a <code>{~</code> </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-30",
+    "source": "| H{~a `{~` ~}O | z |\n|---|---|\n",
+    "contains": [
+      "H<sub>a <code>{~</code> </sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-31",
+    "source": "H{~x\n\ny~}O",
+    "contains": [
+      "<p>H{~x</p>\n<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-33",
+    "source": "- H{~x\n  \n  y~}O",
+    "contains": [
+      "<p>H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-34",
+    "source": "{= x =}",
+    "contains": [
+      "<p><mark> x </mark></p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-35",
+    "source": "> {= x =}",
+    "contains": [
+      "<p><mark> x </mark></p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-36",
+    "source": "- {= x =}",
+    "contains": [
+      "<mark> x </mark>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-inline-context-37",
+    "source": "| {= x =} | z |\n|---|---|\n",
+    "contains": [
+      "<mark> x </mark>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-quoted-paragraph-break",
+    "source": "> H{~x\n> \n> y~}O",
+    "contains": [
+      "<p>H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-nested-quoted-paragraph-break",
+    "source": "> > H{~x\n> > \n> > y~}O",
+    "contains": [
+      "<p>H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-masked-code-line-plain",
+    "source": "H{~x\n`code`\ny~}O",
+    "contains": [
+      "H<sub>x\n<code>code</code>\ny</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-masked-code-line-quoted",
+    "source": "> H{~x\n> `code`\n> y~}O",
+    "contains": [
+      "H<sub>x\n<code>code</code>\ny</sub>O"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-superscript-inner-caret",
+    "source": "{^a^b^}",
+    "contains": [
+      "<sup>a^b</sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-superscript-spaced-inner-caret",
+    "source": "{^ a^b ^}",
+    "contains": [
+      "<sup> a^b </sup>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-lazy-quoted-paragraph-break",
+    "source": "> a\nH{~x\n>\n> y~}O",
+    "contains": [
+      "H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-lazy-nested-quoted-paragraph-break",
+    "source": "> > a\n> H{~x\n> >\n> > y~}O",
+    "contains": [
+      "H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-quote-in-bullet-paragraph-break",
+    "source": "- > H{~x\n  >\n  > y~}O",
+    "contains": [
+      "<p>H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-quote-in-numbered-item-paragraph-break",
+    "source": "1. > H{~x\n   >\n   > y~}O",
+    "contains": [
+      "<p>H{~x</p>",
+      "<p>y~}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "braced-superscript-quoted-paragraph-break",
+    "source": "> H{^x\n>\n> y^}O",
+    "contains": [
+      "<p>H{^x</p>",
+      "<p>y^}O</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-brace-before-bare-subscript",
+    "source": "\\{~a~ b",
+    "contains": [
+      "{<sub>a</sub> b"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "escaped-brace-before-bare-superscript",
+    "source": "\\{^a^ b",
+    "contains": [
+      "{<sup>a</sup> b"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-note-prefix-before-bare-superscript",
+    "source": "[^a^ b",
+    "contains": [
+      "[<sup>a</sup> b"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "bracket-description-inside-bare-superscript",
+    "source": "x ^[y]^ z",
+    "contains": [
+      "x <sup>[y]</sup> z"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "unclosed-braced-subscript-before-closed-inner-span",
+    "source": "{~a {~b~} c",
+    "contains": [
+      "{~a <sub>b</sub> c"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "forced-subscript-closer-cannot-start-bare-span",
+    "source": "a~b~} c~d",
+    "contains": [
+      "a~b~} c~d"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "forced-superscript-closer-cannot-start-bare-span",
+    "source": "a^b^} c^d",
+    "contains": [
+      "a^b^} c^d"
+    ]
   }
 ]

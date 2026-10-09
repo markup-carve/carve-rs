@@ -328,6 +328,8 @@ mod a_lone_image_at_an_items_content_column_keeps_the_items_looseness;
 mod a_lone_image_is_a_block_not_a_synthesized_paragraph;
 #[path = "../a_lone_pipe_line_does_not_panic.rs"]
 mod a_lone_pipe_line_does_not_panic;
+#[path = "../a_markdown_line_keeps_a_trailing_form_feed.rs"]
+mod a_markdown_line_keeps_a_trailing_form_feed;
 #[path = "../a_markdown_link_with_an_empty_destination_is_its_text.rs"]
 mod a_markdown_link_with_an_empty_destination_is_its_text;
 #[path = "../a_markdown_run_that_cannot_flank_falls_back.rs"]
@@ -1702,3 +1704,6 @@ mod html_roundtrip_stability;
 
 #[path = "../image_alt_escapes.rs"]
 mod image_alt_escapes;
+
+#[path = "../an_ordered_list_names_its_delimiter_in_html.rs"]
+mod an_ordered_list_names_its_delimiter_in_html;

@@ -242,9 +242,23 @@ fn markdown_to_ast_with_losses(
         }
     }
     let mut table_autolink = false;
+    let mut text_end = None;
     let mut parser = Parser::new_ext(&source, options).into_offset_iter();
     while let Some((mut event, range)) = parser.next() {
         builder.current_line = line_starts.partition_point(|start| *start <= range.start);
+        if let Some((kept, rest)) = text_end.take().and_then(|end| {
+            let (kept, rest) = stripped_line_end(&source, end)?;
+            // An event starting inside the run already carries those characters.
+            let inside = range.start >= end
+                && range.start < end + kept.len() + rest
+                && !matches!(event, Event::HardBreak);
+            (!inside).then_some((kept, rest))
+        }) {
+            builder.push(Event::Text(kept.into()), kept, false);
+            if matches!(event, Event::HardBreak) && rest < 2 {
+                event = Event::SoftBreak;
+            }
+        }
         let empty_title = match &event {
             Event::Start(
                 Tag::Link {
@@ -343,6 +357,31 @@ fn markdown_to_ast_with_losses(
                 builder.raw_html(indent);
             }
         }
+        let line_text = matches!(
+            event,
+            Event::Text(_)
+                | Event::Code(_)
+                | Event::InlineHtml(_)
+                | Event::FootnoteReference(_)
+                | Event::End(
+                    TagEnd::Emphasis
+                        | TagEnd::Strong
+                        | TagEnd::Strikethrough
+                        | TagEnd::Link
+                        | TagEnd::Image
+                )
+        ) && !builder.frames.iter().any(|frame| {
+            matches!(
+                frame,
+                Frame::TableCell(_)
+                    | Frame::CodeBlock { .. }
+                    | Frame::Metadata(_)
+                    | Frame::RawHtml(_)
+            )
+        });
+        if line_text {
+            text_end = Some(range.end);
+        }
         builder.push(event, &source[range], empty_title);
         if builder.over_depth {
             break;
@@ -383,6 +422,22 @@ fn markdown_to_ast_with_losses(
         .collect();
     crate::render_depth::refuse_if_too_deep(&document, "carve")?;
     Ok((document, losses, notices))
+}
+
+/// The vertical tabs and form feeds pulldown-cmark stripped from the end of a
+/// line along with its spaces and tabs, and how many spaces and tabs follow
+/// them. CommonMark strips only spaces and tabs (4.8 paragraphs, 6.7 soft line
+/// breaks), and only two spaces make a hard break (6.6), so both characters
+/// are content.
+fn stripped_line_end(source: &str, text_end: usize) -> Option<(&str, usize)> {
+    let tail = &source[text_end..];
+    let run = tail
+        .bytes()
+        .take_while(|byte| matches!(byte, b' ' | b'\t' | 0x0b | 0x0c))
+        .count();
+    let kept = tail[..run].rfind(['\u{b}', '\u{c}'])? + 1;
+    matches!(tail.as_bytes().get(run), None | Some(b'\n' | b'\r'))
+        .then(|| (&tail[..kept], run - kept))
 }
 
 /// The nesting the importer will BUILD, in AST levels (PART 9 §25).
