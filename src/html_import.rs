@@ -4168,33 +4168,11 @@ impl<'a> Importer<'a> {
     /// A `<figure>` is NOT one of them. It has its own rows and its own rulings
     /// (markup-carve/carve#1716, markup-carve/carve#1723), and reaches neither
     /// arm.
-    /// Is `h` inside a `<code>` element?
-    fn inside_code_span(h: &Handle) -> bool {
-        let mut current = parent_handle(h);
-        while let Some(node) = current {
-            if Self::tag(&node).as_deref() == Some("code") {
-                return true;
-            }
-            current = parent_handle(&node);
-        }
-        false
-    }
-
     fn report_unsupported_element(&mut self, h: &Handle, tag: &str, path: &str) -> bool {
         if Self::has_content_to_unwrap(h) {
-            // INSIDE A CODE SPAN THE ROW NAMES IT. The loss there is not the
-            // wrapper going away, which is what the generic wording describes -
-            // it is that a verbatim slot cannot hold the boundary the wrapper
-            // marked, which the `structure-unspellable` row above it states
-            // (markup-carve/carve#2441).
-            let message = if Self::inside_code_span(h) {
-                format!("Unwrapped <{tag}> inside <code>")
-            } else {
-                format!("Unwrapped unsupported <{tag}> element")
-            };
             self.diag(
                 HtmlImportDiagnosticCode::ElementUnwrapped,
-                message,
+                format!("Unwrapped unsupported <{tag}> element"),
                 HtmlImportSeverity::Info,
                 path,
                 h,
@@ -5991,14 +5969,22 @@ impl<'a> Importer<'a> {
                     HtmlImportDiagnosticCode::AttributeDropped,
                     format!(
                         "Dropped {} on <{tag}> inside <code>: a code span holds only text",
-                        attr.name.local
+                        attr.name.prefix.as_ref().map_or_else(
+                            || attr.name.local.to_string(),
+                            |prefix| format!("{prefix}:{}", attr.name.local)
+                        )
                     ),
                     HtmlImportSeverity::Info,
                     &child_path,
                     &child,
                 );
             }
-            if is_flattened_block(&child) {
+            if is_flattened_block(&child)
+                || matches!(
+                    tag.as_str(),
+                    "address" | "dialog" | "fieldset" | "form" | "hgroup" | "menu" | "search"
+                )
+            {
                 runs.push(String::new());
                 pending.push(Frame::Boundary);
             }
@@ -6022,7 +6008,7 @@ impl<'a> Importer<'a> {
             );
         }
         let mut value = runs.concat();
-        if self.cell_depth > 0 && value.contains(['\r', '\n']) {
+        if self.writing && self.cell_depth > 0 && value.contains(['\r', '\n']) {
             self.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,
                 "Flattened a line break in <code> inside a table cell: a table row is one line"
@@ -6622,11 +6608,12 @@ fn footnote_document_elements(root: &Handle) -> Vec<Handle> {
         if !matches!(node.data, NodeData::Element { .. }) {
             continue;
         }
-        let children = node.children.borrow();
-        for child in children.iter().rev() {
-            stack.push(child.clone());
+        if !matches!(Importer::tag(&node).as_deref(), Some("code" | "pre")) {
+            let children = node.children.borrow();
+            for child in children.iter().rev() {
+                stack.push(child.clone());
+            }
         }
-        drop(children);
         elements.push(node);
     }
     elements

@@ -151,3 +151,29 @@ fn discarded_active_descendants_are_charged_to_the_budget() {
         assert_eq!(html_to_carve(html, &opts).is_ok(), max_nodes == 4);
     }
 }
+
+#[test]
+fn ast_table_code_preserves_line_breaks() {
+    let result = carve::html_to_ast(
+        "<table><tr><td><code>x\ny</code></td></tr></table>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert!(result.report.diagnostics.is_empty());
+    let carve::BlockNode::Table(table) = &result.value.children[0] else {
+        panic!("expected table");
+    };
+    let carve::InlineNode::Code(code) = &table.rows[0].cells[0].children[0] else {
+        panic!("expected code span");
+    };
+    assert_eq!(code.value, "x\ny");
+}
+
+#[test]
+fn footnote_looking_code_text_does_not_consume_an_endnote() {
+    let html = "<p><code>x<sup><a href=\"#fn1\" role=\"doc-noteref\">1</a></sup></code></p><section role=\"doc-endnotes\"><ol><li id=\"fn1\"><p>note</p></li></ol></section>";
+    let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+    let rendered = to_html(&result.value);
+    assert!(rendered.contains("<code>x1</code>"));
+    assert!(rendered.contains("note"));
+}
