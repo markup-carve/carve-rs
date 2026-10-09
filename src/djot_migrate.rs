@@ -37,6 +37,9 @@ macro_rules! cached_regex {
 #[path = "djot_emphasis.rs"]
 mod emphasis;
 
+#[path = "djot_import_normalize.rs"]
+mod normalize;
+
 use std::collections::HashSet;
 
 use crate::ast::{BlockNode, FigureTarget};
@@ -51,8 +54,12 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
     let (frontmatter, separator, body) = split_frontmatter(normalized);
     let literal_attributes = escape_invalid_djot_attributes(body);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
-    let fence_closers = normalize_djot_fences(&attributes);
-    let references = fold_djot_references(&fence_closers);
+    let fences = normalize_djot_fences(&attributes);
+    let blocks = normalize::blocks(&fences);
+    let fence_closers = normalize::table_edges(&blocks);
+    let folded_references = fold_djot_references(&fence_closers);
+    let inline = normalize::inline(&folded_references);
+    let references = normalize::references(&inline);
     let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions));
     let links = normalize_djot_links(&footnotes);
     let autolinks = normalize_djot_autolinks(&links);
@@ -204,6 +211,10 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
     } else {
         format!("{}{}{}", frontmatter, separator, converted)
     })
+}
+
+pub(crate) fn djot_to_carve_with_losses(source: &str) -> (String, Vec<crate::MigrationDiagnostic>) {
+    (djot_to_carve(source), normalize::losses(source))
 }
 
 fn quote_djot_attribute(value: &str, carve: bool) -> String {
@@ -364,6 +375,19 @@ fn escape_invalid_djot_attributes(source: &str) -> String {
     output
 }
 
+struct DjotAttributeToken {
+    key: String,
+    source: String,
+    append: bool,
+}
+
+fn read_djot_attribute_tokens(
+    source: &str,
+    start: usize,
+) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
+    read_djot_attributes_with_tokens(source, start, false, false)
+}
+
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
     read_djot_attributes(source, start, false, false)
 }
@@ -374,9 +398,19 @@ fn read_djot_attributes(
     carve: bool,
     table: bool,
 ) -> Option<(usize, String)> {
+    read_djot_attributes_with_tokens(source, start, carve, table).map(|(end, wire, _)| (end, wire))
+}
+
+fn read_djot_attributes_with_tokens(
+    source: &str,
+    start: usize,
+    carve: bool,
+    table: bool,
+) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
     let bytes = source.as_bytes();
     let quote_prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut parts = Vec::new();
+    let mut tokens = Vec::new();
     let mut i = start + 1;
     let mut context = None;
     while i < bytes.len() {
@@ -428,7 +462,7 @@ fn read_djot_attributes(
                     }
                 }
             }
-            return Some((i + 1, format!("{{{}}}", parts.join(" "))));
+            return Some((i + 1, format!("{{{}}}", parts.join(" ")), tokens));
         }
         if bytes.get(i) == Some(&b'%') {
             let mut end = i + 1;
@@ -503,6 +537,15 @@ fn read_djot_attributes(
                     quote_djot_attribute(value, carve)
                 )
             });
+            tokens.push(DjotAttributeToken {
+                key: if kind == '#' { "id" } else { "class" }.to_owned(),
+                source: if kind == '#' {
+                    format!("id={}", quote_djot_attribute(value, carve))
+                } else {
+                    parts.last().unwrap().clone()
+                },
+                append: kind == '.',
+            });
         } else {
             let key_start = i;
             if !bytes.get(i).is_some_and(|ch| ch.is_ascii_alphabetic()) {
@@ -567,6 +610,15 @@ fn read_djot_attributes(
                     quote_djot_attribute(&source[from..i], carve)
                 ));
             }
+            tokens.push(DjotAttributeToken {
+                key: key.trim_end_matches('=').to_owned(),
+                source: if bytes[from] == b'"' || source[key_start..i].contains('\n') {
+                    parts.last().unwrap().clone()
+                } else {
+                    source[key_start..i].to_owned()
+                },
+                append: false,
+            });
         }
         if i < bytes.len() {
             let next = source[i..].chars().next()?;
@@ -784,16 +836,18 @@ fn fold_heading_continuations(source: &str) -> String {
         let level = line.bytes().take_while(|byte| *byte == b'#').count();
         if (i > 0 && !lines[i - 1].trim().is_empty())
             || !(1..=6).contains(&level)
-            || line.as_bytes().get(level) != Some(&b' ')
+            || line
+                .as_bytes()
+                .get(level)
+                .is_some_and(|b| !matches!(b, b' ' | b'\t'))
             || masks[i].as_bytes().first() != Some(&b'#')
-            || line[level..].trim().is_empty()
         {
             result.push(line.to_string());
             i += 1;
             continue;
         }
         let prefix = format!("{} ", "#".repeat(level));
-        let mut folded = line.to_string();
+        let mut folded = format!("{} {}", "#".repeat(level), line[level..].trim_start());
         i += 1;
         while i < lines.len() {
             if folded
@@ -818,11 +872,17 @@ fn fold_heading_continuations(source: &str) -> String {
                 }
                 next
             };
-            folded.push(' ');
+            if !folded.ends_with(' ') {
+                folded.push(' ');
+            }
             folded.push_str(part);
             i += 1;
         }
-        result.push(folded);
+        result.push(if folded[level..].trim().is_empty() {
+            line.to_owned()
+        } else {
+            folded
+        });
     }
     result.join("\n")
 }
@@ -1015,6 +1075,11 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             continue;
         }
         if !stack.last().is_some_and(|frame| frame.ready) {
+            lines[index] = format!(
+                "{}{}",
+                " ".repeat(stack.last().unwrap().target),
+                lines[index].trim_start()
+            );
             continue;
         }
         let (indent, _) = leading_indent(&lines[index]);
@@ -1459,6 +1524,25 @@ fn emphasis_mask(source: &str) -> String {
         }
         i += 1;
     }
+    let mut at = 0;
+    while at < bytes.len() {
+        if mask[at] == b'{' && !is_escaped(bytes, at) {
+            if let Some((end, _)) = read_djot_word_attributes(source, at) {
+                if source[at..end].starts_with("{#") && source[at..end].ends_with("#}") {
+                    at = end;
+                    continue;
+                }
+                for byte in &mut mask[at..end] {
+                    if *byte != b'\n' {
+                        *byte = 0;
+                    }
+                }
+                at = end;
+                continue;
+            }
+        }
+        at += 1;
+    }
     String::from_utf8(mask).expect("inline masks preserve UTF-8 boundaries")
 }
 
@@ -1833,9 +1917,12 @@ fn find_closer(masked: &str, from: usize, rule: &Rule, source: &str) -> Result<u
                 }
             }
 
-            // For a single-character rule the closer must not be part of a
-            // longer run, which belongs to the longer rule.
-            if symmetric && width == 1 && bytes.get(j + 1) == Some(&delimiter[0]) {
+            // Adjacent subscript or superscript spans can share a delimiter run.
+            if symmetric
+                && width == 1
+                && !matches!(rule.delimiter, "~" | "^")
+                && bytes.get(j + 1) == Some(&delimiter[0])
+            {
                 j += 2;
                 continue;
             }
@@ -2099,6 +2186,24 @@ fn mask_djot_forms(
     on_fence_line: Option<FenceLineCallback<'_>>,
     row_boundaries: &[bool],
 ) -> String {
+    mask_djot_forms_with_options(
+        source,
+        inline_forms,
+        footnotes,
+        on_fence_line,
+        row_boundaries,
+        OpaqueOptions::default(),
+    )
+}
+
+fn mask_djot_forms_with_options(
+    source: &str,
+    inline_forms: bool,
+    footnotes: bool,
+    on_fence_line: Option<FenceLineCallback<'_>>,
+    row_boundaries: &[bool],
+    options: OpaqueOptions,
+) -> String {
     let bytes = source.as_bytes();
     let footnote_ends = if inline_forms && footnotes && source.contains("[^") {
         let mut ends = vec![usize::MAX; bytes.len()];
@@ -2118,108 +2223,20 @@ fn mask_djot_forms(
 
     let mut mask = mask_djot_fences(source, on_fence_line, row_boundaries, false).into_bytes();
 
-    let paragraph_ends: Vec<usize> = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n")
-        .unwrap()
-        .find_iter(source)
-        .map(|value| value.start())
-        .collect();
-    let autolinks: std::collections::HashMap<usize, usize> = cached_regex!(r"<[^<>\s]+>")
-        .unwrap()
-        .find_iter(source)
-        .filter(|value| {
-            cached_regex!(r"[^:]@|[A-Za-z]:")
-                .unwrap()
-                .is_match(value.as_str())
-        })
-        .map(|value| (value.start(), value.end()))
-        .collect();
-    let mut destination_ends = std::collections::HashMap::new();
-    if inline_forms && source.contains("](") {
-        let mut close = None;
-        for at in (0..bytes.len()).rev() {
-            if bytes[at] == b')' {
-                close = Some(at + 1);
-            }
-            if bytes[at..].starts_with(b"](") {
-                if let Some(end) = close {
-                    destination_ends.insert(at, end);
+    mask = mask_djot_opaque(&String::from_utf8(mask).unwrap(), options);
+    if inline_forms && footnotes {
+        if let Some(ends) = footnote_ends {
+            for (at, _) in source.match_indices("[^") {
+                if mask[at] != b'[' || is_escaped(bytes, at) {
+                    continue;
+                }
+                let close = ends.get(at + 2).copied().unwrap_or(usize::MAX);
+                if close != usize::MAX {
+                    blank_out(&mut mask, at, close + 1);
                 }
             }
         }
     }
-    let mut paragraph_index = 0;
-    let mut i = 0;
-    while i < bytes.len() {
-        if mask[i] != bytes[i] {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'\\' && bytes.get(i + 1).is_some_and(u8::is_ascii_punctuation) {
-            i += 2;
-            continue;
-        }
-        if let Some(end) = autolinks.get(&i) {
-            i = *end;
-            continue;
-        }
-        if bytes[i] == b'{' {
-            if let Some((end, _)) = read_djot_word_attributes(source, i) {
-                i = end;
-                continue;
-            }
-        }
-        // An inline code span, delimited by a matching backtick run.
-        if bytes[i] == b'`' {
-            let run = bytes[i..].iter().take_while(|b| **b == b'`').count();
-            while paragraph_ends
-                .get(paragraph_index)
-                .is_some_and(|end| *end <= i)
-            {
-                paragraph_index += 1;
-            }
-            let paragraph_end = paragraph_ends
-                .get(paragraph_index)
-                .copied()
-                .unwrap_or(bytes.len());
-            if let Some(close) = find_backtick_close(&bytes[..paragraph_end], i + run, run) {
-                blank_out(&mut mask, i, close + run);
-                i = close + run;
-                continue;
-            } else {
-                blank_out(&mut mask, i, paragraph_end);
-                i = paragraph_end;
-                continue;
-            }
-        }
-
-        // A link or image destination: `](...)`.
-        if inline_forms && bytes[i] == b']' && bytes.get(i + 1) == Some(&b'(') {
-            if let Some(end) = destination_ends.get(&i).copied() {
-                blank_out(&mut mask, i + 1, end);
-                i = end;
-                continue;
-            }
-        }
-
-        // A footnote reference is one opaque token. In particular, the two
-        // carets in adjacent references must never pair as superscript.
-        if inline_forms && footnotes && bytes[i..].starts_with(b"[^") {
-            let close = footnote_ends
-                .as_ref()
-                .and_then(|ends| ends.get(i + 2))
-                .copied()
-                .unwrap_or(usize::MAX);
-            if close != usize::MAX {
-                let end = close + 1;
-                blank_out(&mut mask, i, end);
-                i = end;
-                continue;
-            }
-        }
-
-        i += 1;
-    }
-
     let metadata = cached_regex!(r"(?m)^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?:{3,}[ \t]+([A-Za-z_][A-Za-z0-9_.-]*)").unwrap();
     let item_metadata = cached_regex!(r"(?:[-*+]|[0-9]+[.)])[ \t]+:{3,}").unwrap();
     for caps in metadata.captures_iter(source) {
@@ -2234,6 +2251,196 @@ fn mask_djot_forms(
         }
     }
     String::from_utf8(mask).unwrap_or_else(|_| source.to_string())
+}
+
+// All import scans share the same mask; code padding leaves ordinary code visible.
+#[derive(Clone, Copy)]
+struct OpaqueOptions {
+    code: bool,
+    unclosed_code: bool,
+    autolinks: bool,
+    destinations: bool,
+    attribute_values: bool,
+}
+
+impl Default for OpaqueOptions {
+    fn default() -> Self {
+        Self {
+            code: true,
+            unclosed_code: true,
+            autolinks: true,
+            destinations: true,
+            attribute_values: true,
+        }
+    }
+}
+
+fn mask_djot_opaque(source: &str, options: OpaqueOptions) -> Vec<u8> {
+    mask_djot_opaque_with_comments(source, options).0
+}
+
+fn mask_djot_opaque_with_comments(
+    source: &str,
+    options: OpaqueOptions,
+) -> (Vec<u8>, Vec<(usize, usize)>) {
+    let reference_boundary =
+        cached_regex!(r"^(?:#{1,6} |:{3,}|[`~]{3,}|\{|\[[^\]]+\]:|(?:[*-][ \t]*){3,}$)").unwrap();
+    let paragraph_break = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n").unwrap();
+    let autolink = cached_regex!(r"^<[^<>\s]+>").unwrap();
+    let autolink_scheme = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
+    let attribute_value = cached_regex!(r#"=\s*("(?:\\.|[^"\\])*"|[^\s{}%]+)"#).unwrap();
+    let table_prefix =
+        cached_regex!(r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\|").unwrap();
+    let definition_prefix = cached_regex!(
+        r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\[(?:[^\]\n^][^\]\n]*)$"
+    )
+    .unwrap();
+    let raw_format = cached_regex!(r"^\{=[^}\n]*\}").unwrap();
+    let mut comments = Vec::new();
+    let bytes = source.as_bytes();
+    let mut mask = bytes.to_vec();
+    let breaks: Vec<_> = paragraph_break
+        .find_iter(source)
+        .map(|m| m.start())
+        .collect();
+    let mut boundary = 0;
+    let mut brackets = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        while breaks.get(boundary).is_some_and(|end| *end <= at) {
+            boundary += 1;
+            brackets.clear();
+        }
+        let paragraph_end = breaks.get(boundary).copied().unwrap_or(bytes.len());
+        if bytes[at] == b'\\' {
+            at = (at + 2).min(bytes.len());
+            continue;
+        }
+        if bytes[at] == b'<' {
+            if let Some(angle) = autolink.find(&source[at..]) {
+                if autolink_scheme.is_match(angle.as_str()) {
+                    if options.autolinks {
+                        blank_out(&mut mask, at, at + angle.end());
+                    }
+                    at += angle.end();
+                    continue;
+                }
+            }
+        }
+        if bytes[at] == b'{' {
+            if bytes.get(at + 1) == Some(&b'%') {
+                let mut end = at + 2;
+                while end < bytes.len() && bytes[end] != b'}' && !bytes[end..].starts_with(b"%}") {
+                    end += 1;
+                }
+                if bytes.get(end) == Some(&b'%') {
+                    end += 1;
+                }
+                if bytes.get(end) == Some(&b'}') {
+                    comments.push((at, end + 1));
+                    if !read_djot_word_attributes(source, at)
+                        .is_some_and(|(close, _)| close == end + 1)
+                    {
+                        blank_out(&mut mask, at, end + 1);
+                    }
+                    at = end + 1;
+                    continue;
+                }
+            }
+            if let Some((end, _)) = read_djot_word_attributes(source, at) {
+                for value in attribute_value.captures_iter(&source[at..end]) {
+                    let value = value.get(1).unwrap();
+                    if options.attribute_values {
+                        blank_out(&mut mask, at + value.start(), at + value.end());
+                    }
+                }
+                at = end;
+                continue;
+            }
+        }
+        if bytes[at] == b'[' {
+            brackets.push(at);
+            at += 1;
+            continue;
+        }
+        if bytes[at] == b']' && brackets.pop().is_some() {
+            if bytes.get(at + 1) == Some(&b'(') {
+                let mut end = at + 2;
+                let mut depth = 1;
+                let line_start = source[..at].rfind('\n').map_or(0, |n| n + 1);
+                let table = table_prefix.is_match(&source[line_start..at]);
+                while end < paragraph_end {
+                    if table && matches!(bytes[end], b'|' | b'`')
+                        || bytes.get(at + 2) == Some(&b'<') && bytes[end] == b'`'
+                    {
+                        break;
+                    }
+                    if bytes[end] == b'\\' {
+                        end += 2;
+                        continue;
+                    }
+                    if bytes[end] == b'(' {
+                        depth += 1;
+                    }
+                    if bytes[end] == b')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    end += 1;
+                }
+                if depth == 0 {
+                    if options.destinations {
+                        blank_out(&mut mask, at + 1, end + 1);
+                    }
+                    at = end + 1;
+                    continue;
+                }
+            }
+            if bytes.get(at + 1) == Some(&b':') {
+                let line_start = source[..at].rfind('\n').map_or(0, |n| n + 1);
+                let definition = definition_prefix.is_match(&source[line_start..at]);
+                let previous = source[..line_start]
+                    .strip_suffix('\n')
+                    .unwrap_or("")
+                    .rsplit('\n')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                let boundary =
+                    line_start == 0 || previous.is_empty() || reference_boundary.is_match(previous);
+                if definition && boundary {
+                    let end = source[at..].find('\n').map_or(bytes.len(), |n| at + n);
+                    if options.destinations {
+                        blank_out(&mut mask, at + 2, end);
+                    }
+                    at = end;
+                    continue;
+                }
+            }
+        }
+        if bytes[at] != b'`' {
+            at += 1;
+            continue;
+        }
+        let width = bytes[at..].iter().take_while(|b| **b == b'`').count();
+        if let Some(close) = find_backtick_close(&bytes[..paragraph_end], at + width, width) {
+            let end = close + width;
+            let raw = raw_format.find(&source[end..]);
+            let math = at > 0 && bytes[at - 1] == b'$';
+            if options.code || raw.is_some() || math {
+                blank_out(&mut mask, at - usize::from(math), end);
+            }
+            at = end + raw.map_or(0, |m| m.end());
+        } else if options.code && options.unclosed_code {
+            blank_out(&mut mask, at, paragraph_end);
+            at = paragraph_end;
+        } else {
+            at += width;
+        }
+    }
+    (mask, comments)
 }
 
 fn blank_out(mask: &mut [u8], from: usize, to: usize) {
@@ -2945,7 +3152,7 @@ mod tests {
     fn the_run_collapses_inside_an_item_too() {
         assert_eq!(
             djot_to_carve("- outer\n  - inner\n\n\n\n\n  - inner2\n"),
-            "- outer\n  - inner\n\n  - inner2\n"
+            "- outer\n  \\- inner\n\n  - inner2\n"
         );
     }
 
@@ -3155,7 +3362,7 @@ mod tests {
     #[test]
     fn the_plus_bullet_becomes_a_dash() {
         assert_eq!(djot_to_carve("+ one\n+ two\n"), "- one\n- two\n");
-        assert_eq!(djot_to_carve("+ a\n  + b\n"), "- a\n  - b\n");
+        assert_eq!(djot_to_carve("+ a\n  + b\n"), "- a\n  \\+ b\n");
     }
 
     /// BOUND: a lone `+` IS the Carve continuation marker, and mid-line text is
@@ -3678,12 +3885,8 @@ mod heading_continuation_tests {
             );
         }
         assert_eq!(djot_to_carve("# A\n{.class}\n"), "# A\n");
-        for source in [
-            "```\n# A\n# B\n```\n",
-            "`x\n# A\n# B\ny`\n",
-            "para\n# A\nB\n",
-            "# A\\\nB\n",
-        ] {
+        assert_eq!(djot_to_carve("para\n# A\nB\n"), "para\n\\# A\nB\n");
+        for source in ["```\n# A\n# B\n```\n", "`x\n# A\n# B\ny`\n", "# A\\\nB\n"] {
             assert_eq!(djot_to_carve(source), source);
         }
     }
@@ -3694,7 +3897,17 @@ fn normalize_djot_links(source: &str) -> String {
     if !source.contains("](") {
         return source.to_owned();
     }
-    let mask = mask_djot_inline(source, false);
+    let mask = mask_djot_forms_with_options(
+        source,
+        false,
+        true,
+        None,
+        &[],
+        OpaqueOptions {
+            destinations: false,
+            ..OpaqueOptions::default()
+        },
+    );
     let rows = djot_table_rows(source, &mask);
     let bytes = source.as_bytes();
     let angles: HashMap<_, _> = cached_regex!(r"<[^<>\s]+>")
@@ -4666,8 +4879,29 @@ fn normalize_djot_autolinks(source: &str) -> String {
         return source.to_owned();
     }
     let bytes = source.as_bytes();
-    let code_mask = mask_djot_inline(source, false);
-    let mut mask = mask_code_and_destinations(source).into_bytes();
+    let code_mask = mask_djot_forms_with_options(
+        source,
+        false,
+        true,
+        None,
+        &[],
+        OpaqueOptions {
+            autolinks: false,
+            ..OpaqueOptions::default()
+        },
+    );
+    let mut mask = mask_djot_forms_with_options(
+        source,
+        true,
+        true,
+        None,
+        &[],
+        OpaqueOptions {
+            autolinks: false,
+            ..OpaqueOptions::default()
+        },
+    )
+    .into_bytes();
     let rows = djot_table_rows(source, &code_mask);
     let definition_pattern = cached_regex!(r"^\[[^\^\]\n][^\]\n]*\]:|^\[\]:").unwrap();
     let boundary_pattern =
@@ -5634,7 +5868,19 @@ fn normalize_djot_table_pipes(source: &str) -> String {
     use std::collections::HashMap;
     let renamed = rename_djot_pipe_footnotes(source);
     let source = renamed.as_str();
-    let mask = mask_djot_inline(source, false);
+    let mask = mask_djot_forms_with_options(
+        source,
+        false,
+        true,
+        None,
+        &[],
+        OpaqueOptions {
+            autolinks: false,
+            attribute_values: false,
+            destinations: false,
+            ..OpaqueOptions::default()
+        },
+    );
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let mut offsets = Vec::with_capacity(lines.len());
     let mut offset = 0;

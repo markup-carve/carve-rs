@@ -1,6 +1,8 @@
 #[test]
 fn word_attributes_survive_djot_import() {
     for (source, expected) in [
+        ("foo\\*bar{.c}", "<p><span class=\"c\">foo*bar</span></p>"),
+        ("foo\\_bar{.c}", "<p><span class=\"c\">foo_bar</span></p>"),
 ("x^a\\^b{.c}^","<p>x<sup><span class=\"c\">a^b</span></sup></p>"),
 ("a\\\\^b{.c}^","<p>a\\<sup><span class=\"c\">b</span></sup></p>"),
 ("x {.c}","<p>x&nbsp;</p>"),

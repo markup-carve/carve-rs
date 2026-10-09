@@ -5816,5 +5816,366 @@
       "<sub>",
       "<sup>"
     ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-attributes-262",
+    "source": "hi{}\n",
+    "contains": [
+      "<p>hi</p>"
+    ],
+    "excludes": [
+      "<p>hi{}</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-attributes-270",
+    "source": "{}\nhi\n",
+    "contains": [
+      "<p>hi</p>"
+    ],
+    "excludes": []
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-attributes-296",
+    "source": "text{a=x\n# non-heading\n",
+    "contains": [
+      "<p>text{a=x",
+      "# non-heading</p>"
+    ],
+    "excludes": [
+      "<p>text{a=x</p>",
+      "<h1>non-heading</h1>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-attributes-304",
+    "source": "{a=x\n# non-heading\n",
+    "contains": [
+      "<p>{a=x",
+      "# non-heading</p>"
+    ],
+    "excludes": [
+      "<p>{a=x</p>",
+      "<h1>non-heading</h1>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-block-quote-135",
+    "source": "aaa\n> bbb\n",
+    "contains": [
+      "<p>aaa",
+      "&gt; bbb</p>"
+    ],
+    "excludes": [
+      "<p>aaa</p>",
+      "<blockquote><p>bbb</p></blockquote>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-code-blocks-32",
+    "source": "``` not a code block ```\n",
+    "contains": [
+      "<p><code> not a code block </code></p>"
+    ],
+    "excludes": [
+      "<p><code>not a code block</code></p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-escapes-39",
+    "source": "ab \t \\  \t\nc\n",
+    "contains": [
+      "<p>ab<br>",
+      "c</p>"
+    ],
+    "excludes": [
+      "<p>ab \t <br>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-fenced-divs-16",
+    "source": ":::::::::: foo\nHi\n\n> A block quote.\n:::::::::::\n",
+    "contains": [
+      "<p>Hi</p>",
+      "<blockquote><p>A block quote.</p></blockquote>"
+    ],
+    "excludes": [
+      "<div>\n"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-fenced-divs-31",
+    "source": "{#bar .foo}\n:::\nHi\n\n> A block quote.\n:::::::::::::\n",
+    "contains": [
+      "<p>Hi</p>",
+      "<blockquote><p>A block quote.</p></blockquote>"
+    ],
+    "excludes": [
+      "<div>\n"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-fenced-divs-72",
+    "source": "Paragraph text\n::::\nHi\n::::\n",
+    "contains": [
+      "<p>Paragraph text",
+      "Hi"
+    ],
+    "excludes": [
+      "<p>Paragraph text</p>",
+      "<p>Hi</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-fenced-divs-98",
+    "source": "::::::::: foo\nHi\n::::\n",
+    "contains": [
+      "<p>Hi"
+    ],
+    "excludes": [
+      "<p>Hi</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-headings-32",
+    "source": "##\nheading\n\npara\n",
+    "contains": [
+      "<h2>heading</h2>",
+      "<p>para</p>"
+    ],
+    "excludes": [
+      "heading</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-headings-97",
+    "source": "   ##    Heading\n",
+    "contains": [
+      "<h2>Heading</h2>"
+    ],
+    "excludes": [
+      "<p>##    Heading</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-links-and-images-84",
+    "source": "[link][a and\nb]\n\n[a and b]: url\n",
+    "contains": [
+      "<p><a href=\"url\">link</a></p>"
+    ],
+    "excludes": [
+      "<p>[link][a and",
+      "b]</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-links-and-images-129",
+    "source": "{title=foo}\n[ref]: /url\n\n[ref][]\n",
+    "contains": [
+      "<p><a href=\"/url\" title=\"foo\">ref</a></p>"
+    ],
+    "excludes": [
+      "<p title=\"foo\"><a href=\"/url\">ref</a></p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-links-and-images-140",
+    "source": "{title=foo}\n[ref]: /url\n\n[ref][]{title=bar}\n",
+    "contains": [
+      "<p><a href=\"/url\" title=\"bar\">ref</a></p>"
+    ],
+    "excludes": [
+      "<p title=\"foo\"><a href=\"/url\" title=\"bar\">ref</a></p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-links-and-images-149",
+    "source": "[link _and_ link][]\n\n[link and link]: url\n",
+    "contains": [
+      "<p><a href=\"url\">link <em>and</em> link</a></p>"
+    ],
+    "excludes": [
+      "<p>[link /and/ link][]</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-thematic-breaks-25",
+    "source": "hello\n\n   *-*-*-*\n\nthere\n",
+    "contains": [
+      "<p>hello</p>",
+      "<p>there</p>",
+      "<hr>"
+    ],
+    "excludes": [
+      "<strong>-</strong>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-regression-3",
+    "source": "{1--}\n\n{1-}\n",
+    "contains": [
+      "<p>{1--}</p>",
+      "<p>{1-}</p>"
+    ],
+    "excludes": [
+      "<p>{1–}</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-regression-14",
+    "source": "\n|`|\n",
+    "contains": [
+      "<p>|<code>|</code></p>"
+    ],
+    "excludes": []
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-smart-112",
+    "source": "{''}hi{''}\n",
+    "contains": [
+      "<p>‘’hi‘’</p>"
+    ],
+    "excludes": [
+      "<p>{‘‘}hi{‘‘}</p>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-tables-94",
+    "source": "|---|---|\n| a | b |\n",
+    "contains": [
+      "<tr><td>a</td><td>b</td></tr>"
+    ],
+    "excludes": [
+      "—"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-326",
+    "source": "1. one\n\n 1. two\n",
+    "contains": [
+      "<li>one",
+      "<li>two</li>"
+    ],
+    "excludes": [
+      "<li>one</li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-29",
+    "source": "- one\n\n - two\n\n  - three\n",
+    "contains": [
+      "<li>one",
+      "<li>two",
+      "<li>three</li>"
+    ],
+    "excludes": [
+      "<li>one</li>",
+      "<li>two</li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-125",
+    "source": "- a\n- b\n+ c\n",
+    "contains": [
+      "<li>a</li>",
+      "<li>b</li>",
+      "<li>c</li>"
+    ],
+    "excludes": [
+      "b</li>\n  <li>c"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-task-lists-38",
+    "source": "- [ ] foo\n+ [ ] bar\n* [ ] baz\n",
+    "contains": [
+      "<li><input type=\"checkbox\" disabled aria-label=\"foo\"> foo</li>",
+      "<li><input type=\"checkbox\" disabled aria-label=\"bar\"> bar</li>",
+      "<li><input type=\"checkbox\" disabled aria-label=\"baz\"> baz</li>"
+    ],
+    "excludes": [
+      "foo</li>\n  <li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-15",
+    "source": "- one\n - two\n  - three\n",
+    "contains": [
+      "<li>one",
+      "- two",
+      "- three</li>"
+    ],
+    "excludes": [
+      "<li>three</li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-160",
+    "source": "- a\n  - b\n\n  - c\n- d\n",
+    "contains": [
+      "<li>a",
+      "- b",
+      "<li>c</li>",
+      "<li>d</li>"
+    ],
+    "excludes": [
+      "<li><p>b</p></li>",
+      "<li><p>c</p></li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-lists-249",
+    "source": "- a\n\n  - b\n  - c\n\n- d\n",
+    "contains": [
+      "<li>a",
+      "<li>b</li>",
+      "<li>c</li>",
+      "<li>d</li>"
+    ],
+    "excludes": [
+      "<li><p>a</p>",
+      "<li><p>d</p></li>"
+    ]
+  },
+  {
+    "mode": "djot",
+    "name": "djot-js-sourcepos-1-indented-list",
+    "source": " - a\n - b\n",
+    "contains": [
+      "<li>a</li>",
+      "<li>b</li>"
+    ],
+    "excludes": [
+      "<p>"
+    ]
   }
 ]
