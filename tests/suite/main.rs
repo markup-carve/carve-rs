@@ -7,6 +7,9 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../braced_span_host_boundaries.rs"]
+mod braced_span_host_boundaries;
+
 #[path = "../common/mod.rs"]
 mod common;
 

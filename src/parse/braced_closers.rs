@@ -2,6 +2,8 @@ use super::substitution_scanner::SubstitutionScanner;
 use super::{delim_brace_slot, find_seq, skip_code_span, DELIM_BRACE_SLOTS, MAX_NESTING_DEPTH};
 use std::collections::HashMap;
 
+const RAW_CLOSE_FLAG: usize = 1 << (usize::BITS - 1);
+
 pub(super) struct CodeSpanIndex {
     runs: Vec<(usize, usize)>,
     ends_by_width: HashMap<usize, Vec<usize>>,
@@ -52,6 +54,8 @@ impl CodeSpanIndex {
 #[derive(Default)]
 pub(super) struct BracedClosers {
     queries: usize,
+    last_verbatim_start: Option<usize>,
+    opaque: HashMap<usize, usize>,
     states: HashMap<(u8, usize, usize), Option<usize>>,
     substitutions: SubstitutionScanner,
     code_ends: Option<CodeSpanIndex>,
@@ -65,29 +69,53 @@ pub(super) struct BracedClosers {
 }
 
 impl BracedClosers {
+    pub(super) fn with_hosts(opaque: HashMap<usize, usize>) -> Self {
+        Self {
+            opaque,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn substitution(&mut self, bytes: &[u8], open: usize) -> Option<(usize, usize)> {
         if bytes.get(open + 1) != Some(&b'~') {
             return None;
         }
         let pair = self.close(bytes, open, b'~')?;
         self.substitutions
-            .find(bytes, open + 2, pair, &mut self.code_ends)
+            .find(bytes, open + 2, pair, &mut self.code_ends, &self.opaque)
             .map(|arrow| (pair, arrow))
     }
 
     pub(super) fn close(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
         self.queries += 1;
-        if let Some(dense) = &self.dense {
-            return dense.close(open + 2, delim);
-        }
-        match self.scan(bytes, open + 2, delim, 0) {
-            Ok(result) => result,
-            Err(()) => {
-                self.pending = 0;
-                self.states = HashMap::new();
-                self.build_dense(bytes);
-                self.dense.as_ref().unwrap().close(open + 2, delim)
+        let result = if let Some(dense) = &self.dense {
+            dense.close(open + 2, delim)
+        } else {
+            match self.scan(bytes, open + 2, delim, 0) {
+                Ok(result) => result,
+                Err(()) => {
+                    self.pending = 0;
+                    self.states = HashMap::new();
+                    self.build_dense(bytes);
+                    self.dense.as_ref().unwrap().close(open + 2, delim)
+                }
             }
+        };
+        self.last_verbatim_start = result
+            .filter(|stop| stop & RAW_CLOSE_FLAG != 0)
+            .map(|stop| stop & !RAW_CLOSE_FLAG);
+        result.and_then(|stop| self.resolve_stop(bytes, delim, stop))
+    }
+
+    pub(super) fn last_verbatim_start(&self) -> Option<usize> {
+        self.last_verbatim_start
+    }
+
+    fn resolve_stop(&mut self, bytes: &[u8], delim: u8, stop: usize) -> Option<usize> {
+        if stop & RAW_CLOSE_FLAG != 0 {
+            self.raw_close(bytes, stop & !RAW_CLOSE_FLAG, delim)
+        } else {
+            Some(stop)
         }
     }
 
@@ -145,7 +173,8 @@ impl BracedClosers {
             let next = bytes[at + 1];
             if (bytes[at] == b'`'
                 && (at == 0 || bytes[at - 1] != b'`' || (at > 1 && bytes[at - 2] == b'\\')))
-                || (bytes[at] == b'\\' && next == b'`')
+                || self.opaque.contains_key(&at)
+                || bytes[at] == b'\\'
                 || (bytes[at] == b'{'
                     && matches!(
                         next,
@@ -162,21 +191,28 @@ impl BracedClosers {
         let mut after_pair = Vec::new();
         for &at in &points[..points.len() - 1] {
             after_pair.push(index(at + 2));
-            let step = match bytes[at] {
-                b'\\' if bytes[at + 1] == b'`' => BracedStep::Jump(index(at + 2)),
-                b'`' => match self.code_end(bytes, at) {
-                    Some(end) => BracedStep::Jump(index(end)),
-                    None => {
-                        let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
-                        for &delim in b"+-~#/*_^,=" {
-                            let slot = delim_brace_slot(delim).unwrap();
-                            raw[slot] = self.raw_close(bytes, at, delim).map_or(usize::MAX, index);
+            let step = if let Some(&end) = self.opaque.get(&at) {
+                BracedStep::Jump(index(end))
+            } else {
+                match bytes[at] {
+                    b'\\' => BracedStep::Jump(index(at + 2)),
+                    b'`' => match self.code_end(bytes, at) {
+                        Some(end) => BracedStep::Jump(index(end)),
+                        None => {
+                            let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
+                            for &delim in b"+-~#/*_^,=" {
+                                let slot = delim_brace_slot(delim).unwrap();
+                                raw[slot] =
+                                    self.raw_close(bytes, at, delim).map_or(usize::MAX, index);
+                            }
+                            BracedStep::Raw(Box::new(raw))
                         }
-                        BracedStep::Raw(Box::new(raw))
+                    },
+                    b'{' => {
+                        BracedStep::Scope(delim_brace_slot(bytes[at + 1]).unwrap(), index(at + 2))
                     }
-                },
-                b'{' => BracedStep::Scope(delim_brace_slot(bytes[at + 1]).unwrap(), index(at + 2)),
-                delim => BracedStep::Closer(delim_brace_slot(delim).unwrap()),
+                    delim => BracedStep::Closer(delim_brace_slot(delim).unwrap()),
+                }
             };
             steps.push(step);
         }
@@ -188,12 +224,28 @@ impl BracedClosers {
                 for slot in 0..DELIM_BRACE_SLOTS {
                     current[slot][at] = match &steps[at] {
                         BracedStep::Jump(next) => current[slot][*next],
-                        BracedStep::Raw(raw) => raw[slot],
+                        BracedStep::Raw(raw) => {
+                            if raw[slot] == usize::MAX {
+                                usize::MAX
+                            } else {
+                                at | RAW_CLOSE_FLAG
+                            }
+                        }
                         BracedStep::Closer(closer) if *closer == slot => at,
                         BracedStep::Scope(kind, from)
                             if *kind != slot && depth < MAX_NESTING_DEPTH =>
                         {
-                            let close = previous[*kind][*from];
+                            let encoded = previous[*kind][*from];
+                            let close = if encoded == usize::MAX {
+                                usize::MAX
+                            } else if encoded & RAW_CLOSE_FLAG != 0 {
+                                match &steps[encoded & !RAW_CLOSE_FLAG] {
+                                    BracedStep::Raw(raw) => raw[*kind],
+                                    _ => unreachable!(),
+                                }
+                            } else {
+                                encoded
+                            };
                             if close != usize::MAX && points[close] > points[at] + 2 {
                                 current[slot][after_pair[close]]
                             } else {
@@ -256,7 +308,7 @@ impl BracedClosers {
     /// A backtick run's closer is searched for across the rest of the block, so a
     /// closer inside a closed code span is code (ruling markup-carve/carve#2079).
     /// A run with no closer ends at this pair's closer (markup-carve/carve#2056).
-    /// An escaped backtick opens no span; other escapes are left alone.
+    /// An escaped character opens or closes no span outside verbatim content.
     fn scan(
         &mut self,
         bytes: &[u8],
@@ -288,8 +340,13 @@ impl BracedClosers {
             {
                 self.steps += 1;
             }
+            if let Some(&end) = self.opaque.get(&j) {
+                j = end;
+                resume = true;
+                continue;
+            }
             match bytes[j] {
-                b'\\' if bytes[j + 1] == b'`' => {
+                b'\\' => {
                     j += 2;
                     resume = true;
                 }
@@ -298,7 +355,7 @@ impl BracedClosers {
                         j = end;
                         resume = true;
                     }
-                    None => break self.raw_close(bytes, j, delim),
+                    None => break self.raw_close(bytes, j, delim).map(|_| j | RAW_CLOSE_FLAG),
                 },
                 b if b == delim && bytes[j + 1] == b'}' => break Some(j),
                 b'{' if bytes[j + 1] != delim
@@ -310,6 +367,7 @@ impl BracedClosers {
                 {
                     match if self.has_closer(bytes, j + 2, bytes[j + 1]) {
                         self.scan(bytes, j + 2, bytes[j + 1], depth + 1)?
+                            .and_then(|stop| self.resolve_stop(bytes, bytes[j + 1], stop))
                     } else {
                         None
                     } {
@@ -347,7 +405,7 @@ impl DenseBracedClosers {
     fn close(&self, from: usize, delim: u8) -> Option<usize> {
         let at = self.points.partition_point(|&point| point < from);
         let stop = *self.stops[delim_brace_slot(delim)?].get(at)?;
-        (stop != usize::MAX).then(|| self.points[stop])
+        (stop != usize::MAX).then(|| self.points[stop & !RAW_CLOSE_FLAG] | (stop & RAW_CLOSE_FLAG))
     }
 }
 
@@ -358,7 +416,7 @@ mod braced_closer_memo_tests {
         let mut j = open + 2;
         while j + 1 < bytes.len() {
             match bytes[j] {
-                b'\\' if bytes[j + 1] == b'`' => j += 2,
+                b'\\' => j += 2,
                 b'`' => match skip_code_span(bytes, j) {
                     Some(end) => j = end,
                     None => return find_seq(bytes, j, &[delim, b'}']),
@@ -380,6 +438,58 @@ mod braced_closer_memo_tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn dense_hosts_preserve_queries_inside_and_outside_labels() {
+        let text = "{*a [{*b*}]{} [x](u*}) c*}";
+        let label = text.find('[').unwrap();
+        let label_end = text.find(']').unwrap() + 1;
+        let destination = text.find('(').unwrap();
+        let destination_end = text.find(')').unwrap() + 1;
+        let hosts = HashMap::from([(label, label_end), (destination, destination_end)]);
+        let mut sparse = BracedClosers::with_hosts(hosts.clone());
+        let mut dense = BracedClosers::with_hosts(hosts);
+        dense.build_dense(text.as_bytes());
+        for (open, expected) in [
+            (0, text.rfind("*}").unwrap()),
+            (label + 1, text.find("*}").unwrap()),
+        ] {
+            assert_eq!(sparse.close(text.as_bytes(), open, b'*'), Some(expected));
+            assert_eq!(dense.close(text.as_bytes(), open, b'*'), Some(expected));
+        }
+    }
+
+    #[test]
+    fn sparse_and_dense_keep_verbatim_closer_origins() {
+        let text = "{*a`b [c*}d]";
+        let hosts = HashMap::from([(6, 12)]);
+        let mut sparse = BracedClosers::with_hosts(hosts.clone());
+        let mut dense = BracedClosers::with_hosts(hosts);
+        dense.build_dense(text.as_bytes());
+        for memo in [&mut sparse, &mut dense] {
+            assert_eq!(memo.close(text.as_bytes(), 0, b'*'), Some(8));
+            assert_eq!(memo.last_verbatim_start(), Some(3));
+        }
+    }
+
+    #[test]
+    fn repeated_label_closers_share_forward_states() {
+        let text = "{,a [b,}] ".repeat(4000) + ",}";
+        let mut hosts = HashMap::new();
+        for (at, byte) in text.bytes().enumerate() {
+            if byte == b'[' {
+                hosts.insert(at, at + 5);
+            }
+        }
+        let mut memo = BracedClosers::with_hosts(hosts);
+        for open in (0..text.len() - 2).step_by(10) {
+            assert_eq!(
+                memo.close(text.as_bytes(), open, b','),
+                Some(text.len() - 2)
+            );
+        }
+        assert!(memo.steps < text.len() * 8, "{} steps", memo.steps);
     }
 
     #[test]
@@ -424,7 +534,10 @@ mod braced_closer_memo_tests {
                             ..Default::default()
                         };
                         assert_eq!(
-                            capped.scan(bytes, open + 2, delim, depth).unwrap(),
+                            capped
+                                .scan(bytes, open + 2, delim, depth)
+                                .unwrap()
+                                .and_then(|stop| capped.resolve_stop(bytes, delim, stop)),
                             reference_close(bytes, open, delim, depth),
                             "{text:?}, {open}, {delim}, {depth}"
                         );

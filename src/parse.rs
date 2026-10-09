@@ -19222,10 +19222,86 @@ fn position_citation_items_from_map(
 }
 
 impl InlineBounds<'_> {
-    fn braced_closers(&self) -> std::cell::RefMut<'_, BracedClosers> {
+    fn braced_closers(&self, bytes: &[u8]) -> std::cell::RefMut<'_, BracedClosers> {
         std::cell::RefMut::map(self.braced_closers.borrow_mut(), |memo| {
-            memo.get_or_insert_with(BracedClosers::default)
+            memo.get_or_insert_with(|| BracedClosers::with_hosts(self.braced_hosts(bytes)))
         })
+    }
+
+    fn braced_hosts(&self, bytes: &[u8]) -> HashMap<usize, usize> {
+        let mut hosts = HashMap::new();
+        for (open, &close) in self.matches.iter().enumerate() {
+            if bytes.get(open) == Some(&b'[') && close != usize::MAX && close > open {
+                hosts.insert(open, close + 1);
+            }
+        }
+        if !bytes.windows(2).any(|pair| pair == b"](") {
+            return hosts;
+        }
+        let mut whitespace = vec![false; bytes.len()];
+        if let Ok(text) = std::str::from_utf8(bytes) {
+            for (at, ch) in text.char_indices() {
+                whitespace[at] = ch.is_whitespace();
+            }
+        }
+        let mut stops = vec![bytes.len(); bytes.len() + 2];
+        let mut quotes = [vec![None; bytes.len() + 2], vec![None; bytes.len() + 2]];
+        for at in (0..bytes.len()).rev() {
+            stops[at] = match bytes[at] {
+                b'\\' if matches!(bytes.get(at + 1), Some(b'\\' | b'(' | b')')) => stops[at + 2],
+                b'(' => {
+                    let close = stops[at + 1];
+                    if bytes.get(close) == Some(&b')') {
+                        stops[close + 1]
+                    } else {
+                        usize::MAX
+                    }
+                }
+                b')' => at,
+                _ if whitespace[at] => at,
+                _ => stops[at + 1],
+            };
+            for (slot, quote) in (*b"\"'").into_iter().enumerate() {
+                quotes[slot][at] = if bytes[at] == b'\\' && at + 1 < bytes.len() {
+                    quotes[slot][at + 2]
+                } else if bytes[at] == quote {
+                    Some(at)
+                } else {
+                    quotes[slot][at + 1]
+                };
+            }
+        }
+        let mut covered = 0;
+        for at in 1..bytes.len() {
+            if at < covered
+                || bytes[at - 1] != b']'
+                || bytes[at] != b'('
+                || !opens_a_link(bytes, at - 1, self)
+            {
+                continue;
+            }
+            let stop = stops[at + 1];
+            if stop <= at + 1 || stop >= bytes.len() {
+                continue;
+            }
+            let title_at = stop + usize::from(bytes[stop] == b' ');
+            let complete = match bytes.get(title_at) {
+                Some(b'"') => {
+                    quotes[0][title_at + 1].is_some_and(|end| bytes.get(end + 1) == Some(&b')'))
+                }
+                Some(b'\'') => {
+                    quotes[1][title_at + 1].is_some_and(|end| bytes.get(end + 1) == Some(&b')'))
+                }
+                _ => bytes[stop] == b')',
+            };
+            if complete {
+                if let Some((_, _, end)) = read_link_target(bytes, at + 1, self.last_close_paren) {
+                    hosts.insert(at, end);
+                    covered = end;
+                }
+            }
+        }
+        hosts
     }
 
     /// True when a `]` occurs at or after `pos`.
@@ -20338,7 +20414,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'+', start) {
                 return None;
             }
-            let pair = bounds.braced_closers().close(bytes, start, b'+')?;
+            let pair = bounds.braced_closers(bytes).close(bytes, start, b'+')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -20391,7 +20467,7 @@ fn parse_critic_markup(
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
-            let pair = bounds.braced_closers().close(bytes, start, b'-')?;
+            let pair = bounds.braced_closers(bytes).close(bytes, start, b'-')?;
             if !braced_closer_shares_the_run(bounds, start, pair) {
                 return None;
             }
@@ -20489,8 +20565,16 @@ fn parse_critic_markup(
 /// forced emphasis forms already read (markup-carve/carve#2577, carve-rs#2173),
 /// applied to the critic family as the same rule in another spelling
 /// (carve-rs#2212).
+// Brackets inside an unclosed verbatim run are content until its raw closer.
 fn braced_closer_shares_the_run(bounds: &InlineBounds<'_>, open: usize, close: usize) -> bool {
-    bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
+    bounds.bracket_run_at(open).is_none()
+        || bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
+        || bounds
+            .braced_closers
+            .borrow()
+            .as_ref()
+            .and_then(BracedClosers::last_verbatim_start)
+            .is_some_and(|start| bounds.bracket_run_at(start) == bounds.bracket_run_at(open))
 }
 
 fn parse_footnote_ref(
@@ -24520,7 +24604,7 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
-    let j = bounds.braced_closers().close(bytes, i, delim)?;
+    let j = bounds.braced_closers(bytes).close(bytes, i, delim)?;
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
@@ -24528,7 +24612,7 @@ fn parse_forced_emphasis(
     // before an emphasis marker, so a `delim}` inside one is that run's content
     // and cannot close a span opened outside it (markup-carve/carve#2577,
     // carve-rs#2173). The bare and the combined forms read the same rule.
-    if bounds.bracket_run_at(j) != bounds.bracket_run_at(i) {
+    if !braced_closer_shares_the_run(bounds, i, j) {
         return None;
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
@@ -24558,7 +24642,7 @@ fn parse_forced_emphasis(
 /// (ruling B on markup-carve/carve#2083), and an escaped one never does. A pair
 /// with no such arrow is a forced strike.
 fn substitution_at(bytes: &[u8], open: usize, bounds: &InlineBounds<'_>) -> Option<(usize, usize)> {
-    bounds.braced_closers().substitution(bytes, open)
+    bounds.braced_closers(bytes).substitution(bytes, open)
 }
 
 thread_local! {
@@ -25040,7 +25124,7 @@ fn braced_inline_scan(
         }
         find_seq(bytes, content, &pair)?
     } else {
-        bounds.braced_closers().close(bytes, open, delim)?
+        bounds.braced_closers(bytes).close(bytes, open, delim)?
     };
     if close == content {
         return None;
