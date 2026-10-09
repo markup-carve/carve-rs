@@ -1780,3 +1780,6 @@ mod djot_crossing_delimiters;
 
 #[path = "../djot_literal_closer_attributes.rs"]
 mod djot_literal_closer_attributes;
+
+#[path = "../djot_escaped_brace_atoms.rs"]
+mod djot_escaped_brace_atoms;

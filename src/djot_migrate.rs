@@ -52,7 +52,7 @@ pub fn djot_to_carve(djot: &str) -> String {
 pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
     let normalized = &stripped_definitions.source;
     let (frontmatter, separator, body) = split_frontmatter(normalized);
-    let literal_attributes = escape_invalid_djot_attributes(body);
+    let (literal_attributes, inherited) = escape_invalid_djot_attributes(body);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
     let fences = normalize_djot_fences(&attributes);
     let blocks = normalize::blocks(&fences);
@@ -60,7 +60,7 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
     let folded_references = fold_djot_references(&fence_closers);
     let inline = normalize::inline(&folded_references);
     let references = normalize::references(&inline);
-    let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions));
+    let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions), &inherited);
     let links = normalize_djot_links(&footnotes);
     let autolinks = normalize_djot_autolinks(&links);
     let table_pipes = normalize_djot_table_pipes(&autolinks);
@@ -174,7 +174,7 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
         prefix.push('\0');
     }
     let mut spans = Vec::new();
-    let words = protect_attributed_words(&folded, &prefix, &mut spans);
+    let words = protect_attributed_words(&folded, &prefix, &mut spans, &inherited);
     let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
     while words.contains(&empty_term) {
         empty_term.push('\0');
@@ -204,6 +204,16 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
             })
             .into_owned()
     };
+    let converted = cached_regex!(r"\x00DJOTINVALIDATTR[0-9]+\x00")
+        .unwrap()
+        .replace_all(&converted, |caps: &regex::Captures<'_>| {
+            if inherited.contains(&caps[0]) {
+                String::new()
+            } else {
+                caps[0].to_string()
+            }
+        })
+        .into_owned();
     stripped_definitions.restore(&if frontmatter.is_empty() {
         converted
     } else if converted.is_empty() {
@@ -344,8 +354,23 @@ fn mask_djot_attribute_source(source: &str) -> String {
     String::from_utf8(mask).expect("attribute masks preserve UTF-8")
 }
 
-fn escape_invalid_djot_attributes(source: &str) -> String {
+fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
     let mask = mask_djot_attribute_source(source);
+    let reserved: HashSet<String> = cached_regex!(r"\x00DJOTINVALIDATTR[0-9]+\x00")
+        .unwrap()
+        .find_iter(source)
+        .map(|value| value.as_str().to_owned())
+        .collect();
+    let mut inherited = HashSet::new();
+    let mut serial = 0usize;
+    let mut marker = || loop {
+        let value = format!("\0DJOTINVALIDATTR{serial}\0");
+        serial += 1;
+        if !reserved.contains(&value) {
+            inherited.insert(value.clone());
+            return value;
+        }
+    };
     let mut output = String::new();
     let mut cursor = 0;
     let mut at = 0;
@@ -366,6 +391,7 @@ fn escape_invalid_djot_attributes(source: &str) -> String {
             {
                 output.push_str(&source[cursor..at]);
                 output.push_str("\\{");
+                output.push_str(&marker());
                 cursor = at + 1;
                 // Every brace inside the same rejected run is literal Djot text too, so a
                 // later pass must not read one as a forced quote and swallow it.
@@ -389,7 +415,7 @@ fn escape_invalid_djot_attributes(source: &str) -> String {
         at += 1;
     }
     output.push_str(&source[cursor..]);
-    output
+    (output, inherited)
 }
 
 struct DjotAttributeToken {
@@ -705,8 +731,16 @@ fn escaped_word_character(source: &str, at: usize, cursor: usize) -> bool {
     slashes % 2 == 1
 }
 
-fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
-    if !source.contains('{') {
+fn djot_word_whitespace(ch: char) -> bool {
+    (ch.is_whitespace() && ch != '\u{85}') || ch == '\u{feff}'
+}
+
+fn protect_attributed_words(
+    source: &str,
+    prefix: &str,
+    spans: &mut Vec<String>,
+    inherited: &HashSet<String>,
+) -> String {    if !source.contains('{') {
         return source.to_owned();
     }
     let paired = emphasis::paired_openers(source, &emphasis_mask(source));
@@ -733,20 +767,35 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             escaped_brace_closes.insert(note.end() - 1);
         }
     }
-    let mut brace_stack: Vec<(usize, bool, usize)> = Vec::new();
+    let mut brace_stack: Vec<(usize, bool, Option<usize>)> = Vec::new();
     let mut read_brace_attributes = NativeAttributeReader::new(source);
     let mut attribute_end = 0;
-    let mut spaces = 0;
+    let mut last_space = None;
+    let mut last_atom_escape = None;
+    let mut last_inline_end = None;
     let mut escaped = None;
     let mut last_escaped = None;
     for (at, ch) in source.char_indices() {
-        if ch.is_whitespace() {
-            spaces += 1;
+        if djot_word_whitespace(ch) {
+            last_space = Some(at);
+        }
+        if paired_closes.contains(&at) {
+            last_inline_end = Some(at);
         }
         if let Some(begin) = escaped.take() {
             last_escaped = Some(at);
+            let marker_start = at + ch.len_utf8();
+            let generated = cached_regex!(r"\A\x00DJOTINVALIDATTR[0-9]+\x00")
+                .unwrap()
+                .find(&source[marker_start..])
+                .filter(|value| inherited.contains(value.as_str()));
+            if let Some(marker) = generated {
+                literal_braces.insert(marker_start + marker.len() - 1, marker_start);
+            } else if ch.is_ascii_punctuation() {
+                last_atom_escape = Some(begin);
+            }
             if ch == '{' && masked.as_bytes()[at] == b'{' {
-                brace_stack.push((begin, true, spaces));
+                brace_stack.push((begin, true, last_space));
             } else if ch == '}' || ch == ']' {
                 if ch == '}' && brace_stack.last().is_some_and(|(_, literal, _)| *literal) {
                     brace_stack.pop();
@@ -761,6 +810,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             continue;
         }
         if masked.as_bytes()[at] != source.as_bytes()[at] {
+            last_inline_end = Some(at + ch.len_utf8());
             continue;
         }
         if ch == '{' && at >= attribute_end {
@@ -779,11 +829,33 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             }
         }
         if ch == '{' {
-            brace_stack.push((at, false, spaces));
+            brace_stack.push((
+                at,
+                at >= attribute_end
+                    && source
+                        .as_bytes()
+                        .get(at + 1)
+                        .is_some_and(|ch| ch.is_ascii_alphabetic() || b".#% \t".contains(ch)),
+                last_space,
+            ));
         } else if ch == '}' {
-            if let Some((begin, true, opening_spaces)) = brace_stack.pop() {
-                if spaces == opening_spaces && !escaped_brace_closes.contains(&at) {
-                    literal_braces.insert(at, begin);
+            if let Some((begin, true, opening_space)) = brace_stack.pop() {
+                if !escaped_brace_closes.contains(&at) {
+                    if let Some(from) = last_atom_escape.max(last_inline_end).filter(|from| {
+                        *from >= begin && last_space.map_or(true, |space| *from > space)
+                    }) {
+                        literal_braces.insert(at, from);
+                        escaped_brace_closes.insert(at);
+                    } else {
+                        literal_braces.insert(
+                            at,
+                            if last_space == opening_space {
+                                begin
+                            } else {
+                                at
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -839,7 +911,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
                     word = at - 1;
                     continue;
                 }
-                if ch.is_whitespace()
+                if djot_word_whitespace(ch)
                     || "\"'{}[]`\0>|".contains(ch)
                     || masked.as_bytes()[at] != bytes[at]
                 {
@@ -4585,6 +4657,7 @@ fn djot_note_alias(
 fn normalize_djot_footnotes(
     source: &str,
     boundaries: Option<&DjotFootnoteAttributeStrip>,
+    inherited: &HashSet<String>,
 ) -> String {
     use std::collections::HashMap;
     if !source.contains("[^") {
@@ -4615,7 +4688,7 @@ fn normalize_djot_footnotes(
         .captures_iter(source)
         .filter_map(|c| c[1].parse().ok())
         .collect();
-    let mut serial = 0;
+    let mut serial = 0usize;
     let mut offset = 0;
     let mut line_heads = HashSet::new();
     let mut empty_definitions = HashSet::new();
@@ -4711,14 +4784,23 @@ fn normalize_djot_footnotes(
         i += 1;
     }
     let mut malformed_ends = HashMap::new();
-    let malformed_prefix = cached_regex!(r"^\{[A-Za-z][\w-]*=").unwrap();
+    let malformed_prefix =
+        cached_regex!(r"^\{(\x00DJOTINVALIDATTR[0-9]+\x00)?[A-Za-z][\w-]*=").unwrap();
     let mut next_brace = None;
     for at in (0..bytes.len()).rev() {
         if bytes[at] == b'\n' {
             next_brace = None;
         } else if bytes[at] == b'}' {
             next_brace = Some(at + 1);
-        } else if bytes[at] == b'{' && malformed_prefix.is_match(&source[at..]) {
+        } else if bytes[at] == b'{'
+            && malformed_prefix
+                .captures(&source[at..])
+                .is_some_and(|value| {
+                    value
+                        .get(1)
+                        .map_or(true, |marker| inherited.contains(marker.as_str()))
+                })
+        {
             if let Some(end) = next_brace {
                 malformed_ends.insert(at, end);
             }
@@ -5279,7 +5361,7 @@ fn rename_djot_pipe_footnotes(source: &str) -> String {
             .captures_iter(source)
             .filter_map(|caps| caps[1].parse().ok())
             .collect();
-    let mut serial = 0;
+    let mut serial = 0usize;
     let spaces = cached_regex!(r"\s+").unwrap();
     let mut labels = std::collections::HashMap::new();
     let mut definition_ends = std::collections::HashMap::new();
@@ -6269,7 +6351,7 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
         .filter_map(|caps| caps[1].parse().ok())
         .collect();
     let mut comments = HashSet::new();
-    let mut serial = 0;
+    let mut serial = 0usize;
     let mut offset = 0;
     let mut boundary = true;
     struct Group {
