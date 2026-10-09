@@ -78,6 +78,40 @@ definition, which then goes unused: `- [x] done`
 with `[x]: /u` beneath it imports as `- [x] done`, following cmark-gfm rather than
 GitHub's endpoint.
 
+A leading `---` block becomes frontmatter under one rule
+(markup-carve/carve#2799). A typed opener - `---yaml`, `---toml`, `---json`,
+any `frontmatter_format` of letters and digits, with PART 1's optional single
+space as in `--- toml` - is frontmatter whatever its content: the author has
+said what the block is. A bare `---` collides with a thematic break and a
+setext underline, so it is frontmatter only when its content has the shape of a
+mapping.
+
+The shape test is byte scanning, not a YAML parse, so the Carve engines agree
+on the same bytes. Blank lines and lines whose first non-space character is `#`
+are skipped; the first remaining line must hold, at column 0, a key followed by
+`:` and then a space, a tab or the line end. The key is a quoted string, or a
+run starting with neither whitespace nor `-`, `[`, `{`, `"`, `'`, `#` that
+holds no `:`. A block with no remaining line is not a mapping. It differs from
+a parse on malformed content: `title: [unclosed` counts as frontmatter, which
+is deliberate.
+
+Where the test says no, the block keeps CommonMark's meaning. The import of
+
+```
+---
+Foo
+---
+Bar
+---
+Baz
+```
+
+is a thematic break, two `h2` headings and a paragraph, and the writer picks a
+break spelling that cannot gain a frontmatter closer from a later break.
+
+Every conversion to frontmatter is reported as `frontmatter-synthesized`,
+info/preserved, in the migration report.
+
 Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages. Like Markdown,
 it reports unverified fidelity and fails closed under `--check-loss`.

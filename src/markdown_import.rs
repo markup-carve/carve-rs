@@ -95,20 +95,20 @@ pub fn markdown_to_carve(markdown: &str) -> String {
 
 /// Convert Markdown source without hiding a canonical-writer refusal.
 pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarveError> {
-    markdown_to_carve_with_losses(markdown).map(|(value, _)| value)
+    markdown_to_carve_with_losses(markdown).map(|(value, _, _)| value)
 }
 
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
-) -> Result<(String, Vec<String>), crate::RenderCarveError> {
-    let (mut document, mut losses) = markdown_to_ast_with_losses(markdown)?;
+) -> Result<(String, Vec<String>, Vec<String>), crate::RenderCarveError> {
+    let (mut document, mut losses, notices) = markdown_to_ast_with_losses(markdown)?;
     // ONLY ON THE WRITING PATH, as the HTML importer does it: the AST keeps the
     // nesting the source carried, and only a Carve SPELLING has to give it up
     // (carve-rs#2098).
     losses.extend(crate::html_import::unwrap_same_kind_spans_for_writing(
         &mut document,
     ));
-    render_carve(&document).map(|value| (value, losses))
+    render_carve(&document).map(|value| (value, losses, notices))
 }
 
 /// Convert Markdown source to a Carve [`Document`].
@@ -123,23 +123,93 @@ pub fn markdown_to_ast(markdown: &str) -> Document {
 
 /// Build a Markdown document, returning a typed refusal when nesting is too deep.
 pub fn try_markdown_to_ast(markdown: &str) -> Result<Document, crate::RenderCarveError> {
-    markdown_to_ast_with_losses(markdown).map(|(document, _)| document)
+    markdown_to_ast_with_losses(markdown).map(|(document, _, _)| document)
+}
+
+/// A leading `---` block as the source spells it.
+struct LeadingBlock {
+    /// The canonical format token; a bare opener reads as `yaml` (PART 1).
+    format: String,
+    content: String,
+    /// Everything after the closer.
+    body: String,
+    is_frontmatter: bool,
+    /// Whether the opener carried a format token, lenient space and all.
+    typed: bool,
+}
+
+/// Read a leading frontmatter block, by PART 1's `frontmatter_open`
+/// production. `None` when the source opens no closed block at all.
+fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
+    let source = markdown.replace("\r\n", "\n").replace('\r', "\n");
+    let rest = source.strip_prefix("---")?;
+    let (opener_tail, rest) = rest.split_once('\n')?;
+    let token = crate::parse::frontmatter_format_token(opener_tail)?;
+    let typed = !token.is_empty();
+    let format = if typed {
+        token.to_owned()
+    } else {
+        "yaml".to_owned()
+    };
+    // Markdown closes the block on `---` or `...`; an unclosed one is none.
+    let mut offset = 0;
+    let (content_end, body_start) = rest.split_inclusive('\n').find_map(|line| {
+        if matches!(line.trim_end_matches('\n'), "---" | "...") {
+            return Some((offset, offset + line.len()));
+        }
+        offset += line.len();
+        None
+    })?;
+    let content = rest[..content_end].trim_end_matches('\n').to_owned();
+    Some(LeadingBlock {
+        // A TYPED opener is front matter whatever its content: `---FORMAT`
+        // says what the block is, so there is nothing left to infer. The shape
+        // test governs the BARE `---` alone (markup-carve/carve#2799).
+        is_frontmatter: typed || crate::parse::has_mapping_shape(&content),
+        format,
+        content,
+        body: rest[body_start..].to_owned(),
+        typed,
+    })
 }
 
 fn markdown_to_ast_with_losses(
     markdown: &str,
-) -> Result<(Document, Vec<String>), crate::RenderCarveError> {
+) -> Result<(Document, Vec<String>, Vec<String>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
     } else {
         Cow::Borrowed(markdown)
+    };
+    let leading = leading_frontmatter_block(&without_nuls);
+    // A TYPED opener is invisible to pulldown-cmark, which knows only the bare
+    // `---` form: it read `---toml` as paragraph text and the closer below as
+    // a setext underline, so the table landed inside an `h2` (carve-rs#2388).
+    // The block is claimed here instead; the bare form stays on pulldown's own
+    // metadata-block path, which is the one every other test covers.
+    let claimed = leading.as_ref().filter(|block| block.typed);
+    let without_nuls = match claimed {
+        Some(block) => Cow::Owned(block.body.clone()),
+        None => without_nuls,
     };
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+    // THE GATE (markup-carve/carve#2799). Metadata blocks stay OFF when the
+    // leading `---` block is not mapping-shaped, so pulldown-cmark reads it as
+    // CommonMark does - a thematic break and a setext heading - instead of
+    // handing the walk a `Tag::MetadataBlock` to claim. Deciding it here is
+    // what makes the rejected case come out with CommonMark's meaning; a
+    // post-pass over emitted text could only patch the spelling.
+    //
+    // They stay off for a claimed typed block too, so a `---` opening the
+    // BODY cannot be read as a second frontmatter block.
+    let gated = claimed.is_some() || leading.as_ref().is_some_and(|block| !block.is_frontmatter);
+    if !gated {
+        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+    }
 
     let headings = normalize_heading_closers(&without_nuls, options);
     let source = normalize_table_email_autolinks(&headings, options);
@@ -264,9 +334,37 @@ fn markdown_to_ast_with_losses(
     if builder.over_depth {
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
-    let result = builder.finish();
-    crate::render_depth::refuse_if_too_deep(&result.0, "carve")?;
-    Ok(result)
+    let (mut document, losses) = builder.finish();
+    if let Some(block) = claimed {
+        document.frontmatter_raw = Some(Frontmatter {
+            format: block.format.clone(),
+            content: block.content.clone(),
+            pos: None,
+        });
+        document.frontmatter = crate::parse::frontmatter_map(&block.format, &block.content);
+    }
+    // EVERY conversion is reported (markup-carve/carve#2799), whichever path
+    // claimed the block, and the message names the reason it was claimed.
+    let typed = claimed.is_some();
+    let notices = document
+        .frontmatter_raw
+        .iter()
+        .map(|frontmatter| {
+            if typed {
+                format!(
+                    "Converted the leading `---{}` block into frontmatter; a typed opener names the block's format",
+                    frontmatter.format
+                )
+            } else {
+                format!(
+                    "Converted the leading `---` block into `{}` frontmatter; its first content line has the shape of a mapping",
+                    frontmatter.format
+                )
+            }
+        })
+        .collect();
+    crate::render_depth::refuse_if_too_deep(&document, "carve")?;
+    Ok((document, losses, notices))
 }
 
 /// The nesting the importer will BUILD, in AST levels (PART 9 §25).
@@ -1689,6 +1787,169 @@ fn is_void_html_tag(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// markup-carve/carve#2799. A BARE `---` block becomes frontmatter only
+    /// when its first content line has the shape of a mapping.
+    #[test]
+    fn only_a_mapping_shaped_bare_block_becomes_frontmatter() {
+        let cases: &[(&str, bool, &str)] = &[
+            ("---\ntitle: Hi\n---\nB\n", true, "a real mapping"),
+            ("---\n# just a note\n---\nB\n", false, "comment only"),
+            ("---\n---\nB\n", false, "empty block"),
+            (
+                "---\n# note\ntitle: Hi\n---\nB\n",
+                true,
+                "comment above a key",
+            ),
+            ("---\n\"my key\": Hi\n---\nB\n", true, "double-quoted key"),
+            ("---\n'my key': Hi\n---\nB\n", true, "single-quoted key"),
+            ("---\nfoo:bar: Hi\n---\nB\n", false, "key holding a colon"),
+            ("---\ntitle:Hi\n---\nB\n", false, "no space after the colon"),
+            ("---\n- one\n---\nB\n", false, "a list, not a mapping"),
+            (
+                "---\ntitle: [unclosed\n---\nB\n",
+                true,
+                "malformed but mapping-shaped",
+            ),
+            (
+                "---\nFoo\n---\nBar\n---\nBaz\n",
+                false,
+                "CommonMark example 96",
+            ),
+            ("---\n  title: Hi\n---\nB\n", false, "key not at column 0"),
+            ("---\ntitle:\n---\nB\n", true, "colon at end of line"),
+            (
+                "---\n{a: 1}\n---\nB\n",
+                false,
+                "a flow mapping is not a key line",
+            ),
+            ("---\n: Hi\n---\nB\n", false, "an empty key is no key"),
+        ];
+        for (markdown, expected, label) in cases {
+            let document = markdown_to_ast(markdown);
+            assert_eq!(
+                document.frontmatter_raw.is_some(),
+                *expected,
+                "{label}: {markdown:?} came out {:?}",
+                document.frontmatter_raw
+            );
+        }
+    }
+
+    /// carve-rs#2388. A typed opener was read as paragraph text, with the
+    /// closer below acting as a setext underline, so the payload landed in an
+    /// `h2`. It is detected now - and never shape-tested, because `---FORMAT`
+    /// says what the block is (markup-carve/carve#2799).
+    #[test]
+    fn a_typed_opener_is_frontmatter_whatever_its_content() {
+        let cases: &[(&str, &str, &str, &str)] = &[
+            (
+                "---toml\n[table]\ntitle = \"Hi\"\n---\n\nBody.\n",
+                "toml",
+                "[table]\ntitle = \"Hi\"",
+                "a table header",
+            ),
+            (
+                "--- toml\ntitle = \"Hi\"\n---\n\nBody.\n",
+                "toml",
+                "title = \"Hi\"",
+                "PART 1's lenient one-space form",
+            ),
+            (
+                "---json\n{\"a\": 1}\n---\n\nBody.\n",
+                "json",
+                "{\"a\": 1}",
+                "a json object, no shape rule needed",
+            ),
+            (
+                "---yaml\nFoo\n---\n\nBody.\n",
+                "yaml",
+                "Foo",
+                "a scalar payload is the author's business",
+            ),
+            (
+                "---neon\n- one\n---\n\nBody.\n",
+                "neon",
+                "- one",
+                "any frontmatter_format",
+            ),
+            (
+                "---toml\n---\n\nBody.\n",
+                "toml",
+                "",
+                "an empty typed block",
+            ),
+        ];
+        for (markdown, format, content, label) in cases {
+            let document = markdown_to_ast(markdown);
+            let raw = document
+                .frontmatter_raw
+                .as_ref()
+                .unwrap_or_else(|| panic!("{label}: {markdown:?} kept no frontmatter"));
+            assert_eq!(&raw.format, format, "{label}");
+            assert_eq!(&raw.content, content, "{label}");
+        }
+        // The lenient spelling canonicalizes to `---toml` on the way out.
+        assert_eq!(
+            markdown_to_carve("--- toml\ntitle = \"Hi\"\n---\n\nBody.\n"),
+            "---toml\ntitle = \"Hi\"\n---\n\nBody.\n"
+        );
+    }
+
+    /// A claimed typed block leaves pulldown's metadata path off, so a `---`
+    /// opening the BODY cannot be read as a second frontmatter block.
+    #[test]
+    fn a_claimed_typed_block_does_not_let_the_body_open_another() {
+        let document = markdown_to_ast("---toml\nkey = 1\n---\n---\ntitle: Hi\n---\n");
+        let raw = document.frontmatter_raw.as_ref().expect("the typed block");
+        assert_eq!(raw.format, "toml");
+        assert_eq!(raw.content, "key = 1");
+    }
+
+    /// CommonMark example 96: a thematic break, two setext `h2`s, a paragraph.
+    /// The break comes out in a spelling that cannot reopen frontmatter.
+    #[test]
+    fn example_96_keeps_its_commonmark_meaning() {
+        assert_eq!(
+            markdown_to_carve("---\nFoo\n---\nBar\n---\nBaz\n"),
+            "---\n\n## Foo\n\n## Bar\n\nBaz\n"
+        );
+        // The writer's own frontmatter-safe fallback covers the shapes where a
+        // byte-0 `---` could gain a closer from a later break.
+        assert_eq!(markdown_to_carve("---\n---\nB\n"), "***\n\n***\n\nB\n");
+        assert!(!crate::parse::opens_frontmatter(&markdown_to_carve(
+            "---\n# just a note\n---\nB\n"
+        )));
+    }
+
+    #[test]
+    fn every_frontmatter_conversion_is_reported() {
+        let report = crate::migrate_markdown("---\ntitle: Hi\n---\nB\n").report;
+        let synthesized: Vec<_> = report
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "frontmatter-synthesized")
+            .collect();
+        assert_eq!(synthesized.len(), 1, "{:?}", report.diagnostics);
+        assert_eq!(synthesized[0].fidelity, crate::ImportFidelity::Preserved);
+        // The typed path reports too, with its own reason.
+        let typed = crate::migrate_markdown("---toml\nkey = 1\n---\n\nB\n").report;
+        assert_eq!(
+            typed
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == "frontmatter-synthesized")
+                .count(),
+            1,
+            "{:?}",
+            typed.diagnostics
+        );
+        let declined = crate::migrate_markdown("---\nFoo\n---\nBar\n---\nBaz\n").report;
+        assert!(declined
+            .diagnostics
+            .iter()
+            .all(|d| d.code != "frontmatter-synthesized"));
+    }
 
     #[test]
     fn emphasis_takes_the_carve_spelling() {
