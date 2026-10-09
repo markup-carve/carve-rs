@@ -171,7 +171,6 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     }
     let mut events = Vec::new();
     let mut content_spans = Vec::new();
-    let mut container_spans = Vec::new();
     let mut lists = Vec::new();
     let mut link_depth = 0usize;
     let mut code_depth = 0usize;
@@ -190,9 +189,6 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut assessment = None;
         match &event {
             Event::Start(tag) => {
-                if matches!(tag, Tag::Item | Tag::BlockQuote(_)) {
-                    container_spans.push(range.clone());
-                }
                 if matches!(
                     tag,
                     Tag::Paragraph
@@ -420,33 +416,23 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         }
         events.push(event);
     }
-    let mut covered_lines = vec![false; line_starts.len()];
+    let mut coverage_changes = vec![0_i32; line_starts.len() + 1];
     for span in content_spans.iter().chain(&definition_spans) {
         let first = line_starts
             .partition_point(|start| *start <= span.start)
             .saturating_sub(1);
         let end = line_starts.partition_point(|start| *start < span.end);
         if first < end {
-            covered_lines[first..end].fill(true);
+            coverage_changes[first] += 1;
+            coverage_changes[end] -= 1;
         }
     }
-    let mut container_depth_changes = vec![0_i32; line_starts.len() + 1];
-    for span in container_spans {
-        let first = line_starts
-            .partition_point(|start| *start <= span.start)
-            .saturating_sub(1);
-        let end = line_starts.partition_point(|start| *start < span.end);
-        if first < end {
-            container_depth_changes[first] += 1;
-            container_depth_changes[end] -= 1;
-        }
-    }
-    let mut container_depth = 0;
-    let container_lines: Vec<_> = container_depth_changes
+    let mut coverage_depth = 0;
+    let covered_lines: Vec<_> = coverage_changes
         .into_iter()
         .map(|change| {
-            container_depth += change;
-            container_depth > 0
+            coverage_depth += change;
+            coverage_depth > 0
         })
         .collect();
     for (index, start) in line_starts
@@ -462,22 +448,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             .find('\n')
             .map_or(source.len(), |end| start + end + 1);
         let line = &source[start..end];
-        if container_lines[index] && line.contains("]:") {
-            complete = false;
-        } else if line.trim_start().starts_with('[') && line.contains("]:") {
-            let definitions = Parser::new_ext(line, options);
-            if definitions.reference_definitions().iter().next().is_none() {
-                complete = false;
-            }
-            for (_, definition) in definitions.reference_definitions().iter() {
-                diagnostics.push(diagnostic(
-                    "reference-definition",
-                    &line_starts,
-                    start + definition.span.start,
-                    Normalized,
-                ));
-            }
-        } else if line.contains("]:") {
+        if line.contains("]:") {
             complete = false;
         }
     }
@@ -624,19 +595,17 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_definitions_are_assessed_and_code_definitions_are_content() {
+    fn duplicate_definitions_remain_unverified_and_code_definitions_are_content() {
         let result = crate::migrate_markdown(
             "[ref]: https://one.example\n[ref]: https://two.example\n\nSee [ref].",
         );
-        let paths: Vec<_> = result
-            .report
-            .diagnostics
-            .iter()
-            .filter(|row| row.code == "markdown-reference-definition")
-            .map(|row| row.path.as_deref())
-            .collect();
-        assert_eq!(paths, vec![Some("line:1"), Some("line:2")]);
-        assert!(!result
+        let assessment = assess(
+            "[ref]: https://one.example\n[ref]: https://two.example\n\nSee [ref].",
+            &result.value,
+        );
+        assert!(!assessment.complete);
+        assert!(assessment.diagnostics.is_empty());
+        assert!(result
             .report
             .diagnostics
             .iter()
@@ -668,6 +637,18 @@ mod tests {
                 .iter()
                 .any(|row| row.code == "fidelity-unverified"));
         }
+        let multiline = crate::migrate_markdown("[x]: /a\n[x]: /b\n\"t\n[y]: /c\n\"\n");
+        assert!(!multiline
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "markdown-reference-definition"
+                && row.path.as_deref() == Some("line:4")));
+        assert!(multiline
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "fidelity-unverified"));
         let duplicate = crate::migrate_markdown("[x]: /a\n\n- [x]: /b\n");
         assert!(duplicate
             .report
