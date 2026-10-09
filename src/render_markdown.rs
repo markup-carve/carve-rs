@@ -1847,16 +1847,19 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             ),
             EmphasisKind::Underline => {
                 format!(
-                    "<u>{}</u>",
+                    "<u{}>{}</u>",
+                    crate::render::render_attrs(&emphasis.attrs),
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
             // PART 11 section 8c: no Markdown delimiter spelling exists, so the
-            // target uses inline HTML. Other attributes go the way an ordinary
-            // span's do on this target, which is nowhere.
+            // target uses inline HTML, carrying the construct's attribute set
+            // onto the element the way ruby already does. `smallcaps` is a BASE
+            // class merged into the author's class slot, as on the HTML target.
             EmphasisKind::SmallCaps => {
                 format!(
-                    "<span class=\"smallcaps\">{}</span>",
+                    "<span{}>{}</span>",
+                    crate::render::render_attrs_with_base_class(&emphasis.attrs, "smallcaps"),
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
@@ -1868,19 +1871,22 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             ),
             EmphasisKind::Sub => {
                 format!(
-                    "<sub>{}</sub>",
+                    "<sub{}>{}</sub>",
+                    crate::render::render_attrs(&emphasis.attrs),
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
             EmphasisKind::Super => {
                 format!(
-                    "<sup>{}</sup>",
+                    "<sup{}>{}</sup>",
+                    crate::render::render_attrs(&emphasis.attrs),
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
             EmphasisKind::Highlight => {
                 format!(
-                    "<mark>{}</mark>",
+                    "<mark{}>{}</mark>",
+                    crate::render::render_attrs(&emphasis.attrs),
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
