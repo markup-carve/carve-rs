@@ -1,0 +1,466 @@
+[
+  {
+    "name": "middle",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": "b"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "leading",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "trailing",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    },
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "nested",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "strong",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        },
+                        {
+                          "type": "hard_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": "b"
+                        },
+                        {
+                          "type": "hard_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": "c"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      },
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "block cell",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        },
+                        {
+                          "type": "hard_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": "b"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "outside a cell",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "a"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": "b"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  },
+  {
+    "name": "raw HTML break",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "raw_inline",
+                      "format": "html",
+                      "content": "<br>"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  },
+  {
+    "name": "empty cell",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": []
+                },
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "filler"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  },
+  {
+    "name": "block cell diagnostic order",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "small_caps",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "a"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "hard_break"
+                        },
+                        {
+                          "type": "text",
+                          "value": "b"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "structure-unspellable",
+        "node": "small_caps"
+      },
+      {
+        "code": "structure-unspellable",
+        "node": "hard_break"
+      }
+    ]
+  },
+  {
+    "name": "span placeholder ignored break",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "a"
+                    }
+                  ]
+                },
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "hard_break"
+                    }
+                  ],
+                  "span": "colspan"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  },
+  {
+    "name": "table caption",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "caption": [
+            {
+              "type": "text",
+              "value": "a"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": "b"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  }
+]

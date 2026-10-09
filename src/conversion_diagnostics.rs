@@ -132,19 +132,24 @@ pub fn conversion_diagnostics(
     max_diagnostics: usize,
 ) -> Result<ConversionDiagnostics, AstJsonError> {
     let ast = parse_value(&try_to_json(doc)?)?;
-    let mut pending = vec![&ast];
+    let mut pending = vec![(&ast, false)];
     let mut report = ConversionDiagnostics {
         file: None,
         diagnostics: Vec::new(),
         total_diagnostics: 0,
         truncated: false,
     };
-    while let Some(value) = pending.pop() {
+    while let Some((value, in_table_cell)) = pending.pop() {
         match value {
             Value::Object(object) => {
                 let ty = object.get("type").and_then(Value::as_str);
                 let mut losses = Vec::new();
                 match ty {
+                    Some("hard_break") if in_table_cell => losses.push((
+                        ConversionDiagnosticCode::StructureUnspellable,
+                        None,
+                        "Carve source cannot spell a hard break in a single-line table cell",
+                    )),
                     Some("small_caps") => losses.push((
                         ConversionDiagnosticCode::StructureUnspellable,
                         None,
@@ -270,12 +275,25 @@ pub fn conversion_diagnostics(
                 };
                 let mut children = object
                     .iter()
-                    .filter(|(field, _)| crate::ast_sidecars::structural_field(field))
+                    .filter(|(field, _)| {
+                        field.as_str() != "shortCaption"
+                            && crate::ast_sidecars::structural_field(field)
+                    })
                     .collect::<Vec<_>>();
                 children.sort_by_key(|(field, _)| priority(field));
-                pending.extend(children.into_iter().rev().map(|(_, value)| value));
+                pending.extend(children.into_iter().rev().map(|(field, value)| {
+                    (
+                        value,
+                        !(ty == Some("table_cell") && object.contains_key("span"))
+                            && (in_table_cell
+                                || (ty == Some("table_cell")
+                                    && (field == "children" || field == "blocks"))),
+                    )
+                }));
             }
-            Value::Array(values) => pending.extend(values.iter().rev()),
+            Value::Array(values) => {
+                pending.extend(values.iter().rev().map(|value| (value, in_table_cell)))
+            }
             _ => {}
         }
     }
