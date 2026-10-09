@@ -1546,7 +1546,18 @@ impl<'a> Importer<'a> {
     fn charge_subtree(&mut self, h: &Handle, depth: usize) -> Result<(), HtmlImportError> {
         let mut pending = vec![(h.clone(), depth)];
         while let Some((current, current_depth)) = pending.pop() {
-            for child in current.children.borrow().iter() {
+            let source = if let NodeData::Element {
+                template_contents, ..
+            } = &current.data
+            {
+                template_contents
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| current.clone())
+            } else {
+                current.clone()
+            };
+            for child in source.children.borrow().iter() {
                 self.enter(current_depth + 1)?;
                 pending.push((child.clone(), current_depth + 1));
             }
@@ -4168,33 +4179,11 @@ impl<'a> Importer<'a> {
     /// A `<figure>` is NOT one of them. It has its own rows and its own rulings
     /// (markup-carve/carve#1716, markup-carve/carve#1723), and reaches neither
     /// arm.
-    /// Is `h` inside a `<code>` element?
-    fn inside_code_span(h: &Handle) -> bool {
-        let mut current = parent_handle(h);
-        while let Some(node) = current {
-            if Self::tag(&node).as_deref() == Some("code") {
-                return true;
-            }
-            current = parent_handle(&node);
-        }
-        false
-    }
-
     fn report_unsupported_element(&mut self, h: &Handle, tag: &str, path: &str) -> bool {
         if Self::has_content_to_unwrap(h) {
-            // INSIDE A CODE SPAN THE ROW NAMES IT. The loss there is not the
-            // wrapper going away, which is what the generic wording describes -
-            // it is that a verbatim slot cannot hold the boundary the wrapper
-            // marked, which the `structure-unspellable` row above it states
-            // (markup-carve/carve#2441).
-            let message = if Self::inside_code_span(h) {
-                format!("Unwrapped <{tag}> inside <code>")
-            } else {
-                format!("Unwrapped unsupported <{tag}> element")
-            };
             self.diag(
                 HtmlImportDiagnosticCode::ElementUnwrapped,
-                message,
+                format!("Unwrapped unsupported <{tag}> element"),
                 HtmlImportSeverity::Info,
                 path,
                 h,
@@ -5901,6 +5890,154 @@ impl<'a> Importer<'a> {
         })]
     }
 
+    fn code_span(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        enum Frame {
+            Node(Handle, String, usize),
+            Boundary,
+        }
+        let mut runs = vec![String::new()];
+        let mut pending = Vec::new();
+        let push_children =
+            |pending: &mut Vec<Frame>, parent: &Handle, path: &str, depth: usize| {
+                for (i, child) in parent.children.borrow().iter().enumerate().rev() {
+                    pending.push(Frame::Node(
+                        child.clone(),
+                        Self::child_path(path, child, i),
+                        depth + 1,
+                    ));
+                }
+            };
+        push_children(&mut pending, h, path, depth);
+        while let Some(frame) = pending.pop() {
+            let Frame::Node(child, child_path, child_depth) = frame else {
+                runs.push(String::new());
+                continue;
+            };
+            self.enter(child_depth)?;
+            if let NodeData::Text { contents } = &child.data {
+                runs.last_mut().unwrap().push_str(&contents.borrow());
+                continue;
+            }
+            if matches!(child.data, NodeData::Comment { .. }) {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    "Dropped a comment inside <code>: a code span holds only text".into(),
+                    HtmlImportSeverity::Warning,
+                    &child_path,
+                    &child,
+                );
+                continue;
+            }
+            let Some(tag) = Self::tag(&child) else {
+                push_children(&mut pending, &child, &child_path, child_depth);
+                continue;
+            };
+            if Self::is_active_tag(&child) {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    format!("Dropped active <{tag}> element"),
+                    HtmlImportSeverity::Warning,
+                    &child_path,
+                    &child,
+                );
+                self.charge_subtree(&child, child_depth)?;
+                continue;
+            }
+            let raw_attrs = if let NodeData::Element { attrs, .. } = &child.data {
+                attrs.borrow().clone()
+            } else {
+                Vec::new()
+            };
+            if !(tag == "span" && raw_attrs.is_empty()) {
+                let dropped = child.children.borrow().is_empty();
+                self.diag(
+                    if dropped {
+                        HtmlImportDiagnosticCode::ElementDropped
+                    } else {
+                        HtmlImportDiagnosticCode::ElementUnwrapped
+                    },
+                    format!(
+                        "{} <{tag}> inside <code>",
+                        if dropped { "Dropped" } else { "Unwrapped" }
+                    ),
+                    if dropped {
+                        HtmlImportSeverity::Warning
+                    } else {
+                        HtmlImportSeverity::Info
+                    },
+                    &child_path,
+                    &child,
+                );
+            }
+            for attr in raw_attrs {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    format!(
+                        "Dropped {} on <{tag}> inside <code>: a code span holds only text",
+                        attr.name.prefix.as_ref().map_or_else(
+                            || attr.name.local.to_string(),
+                            |prefix| format!("{prefix}:{}", attr.name.local)
+                        )
+                    ),
+                    HtmlImportSeverity::Info,
+                    &child_path,
+                    &child,
+                );
+            }
+            if is_flattened_block(&child)
+                || matches!(
+                    tag.as_str(),
+                    "address" | "dialog" | "fieldset" | "form" | "hgroup" | "menu" | "search"
+                )
+            {
+                runs.push(String::new());
+                pending.push(Frame::Boundary);
+            }
+            push_children(&mut pending, &child, &child_path, child_depth);
+        }
+        if runs
+            .iter()
+            .filter(|run| {
+                run.chars()
+                    .any(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}'))
+            })
+            .count()
+            > 1
+        {
+            self.diag(
+                HtmlImportDiagnosticCode::StructureUnspellable,
+                "A code span's value cannot hold the block boundary inside <code>".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+        }
+        let mut value = runs.concat();
+        if self.writing && self.cell_depth > 0 && value.contains(['\r', '\n']) {
+            self.diag(
+                HtmlImportDiagnosticCode::StructureUnspellable,
+                "Flattened a line break in <code> inside a table cell: a table row is one line"
+                    .into(),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            value = value.replace("\r\n", " ").replace(['\r', '\n'], " ");
+        }
+        if !value.is_empty() {
+            return Ok(vec![InlineNode::code(value, attrs)]);
+        }
+        let pos = Some(candidate_mark(self.empty_code_spans.len()));
+        self.empty_code_spans.push((h.clone(), path.to_owned()));
+        Ok(vec![InlineNode::Code(Code { value, attrs, pos })])
+    }
+
     fn inline(
         &mut self,
         h: &Handle,
@@ -6083,6 +6220,9 @@ impl<'a> Importer<'a> {
             }
         }
         let attrs = self.attrs(h, path);
+        if tag == "code" {
+            return self.code_span(h, path, depth, attrs);
+        }
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;
         if tag == "span" {
             // AFTER the children have been walked, which is what keeps the
@@ -6142,51 +6282,6 @@ impl<'a> Importer<'a> {
             "mark" => emphasis(EmphasisKind::Highlight),
             "sub" => emphasis(EmphasisKind::Sub),
             "sup" => emphasis(EmphasisKind::Super),
-            "code" => {
-                let mut value = Self::text(h);
-                // THE JOIN IS REPORTED, AND NOTHING IS INSERTED
-                // (markup-carve/carve#2441). A code span's value is a verbatim
-                // TEXT slot, so the single space section 1b gives an inline-only
-                // slot at a flattened block boundary would be a byte the author
-                // never wrote - the `adjacent-code-spans` fixture next door
-                // separates two spans with an empty comment for the same reason.
-                // Reading the element's text is what keeps the bytes right and
-                // what hides the boundary from the flatten, so the loss is
-                // announced on the PART 11 section 1d channel instead.
-                if h.children.borrow().iter().any(|child| {
-                    Self::tag(child).is_some_and(|tag| {
-                        Self::is_block_tag(&tag)
-                            || matches!(
-                                tag.as_str(),
-                                "li" | "dt" | "dd" | "td" | "th" | "tr" | "caption" | "figcaption"
-                            )
-                    })
-                }) {
-                    self.diag(
-                        HtmlImportDiagnosticCode::StructureUnspellable,
-                        "A code span's value cannot hold the block boundary inside <code>".into(),
-                        HtmlImportSeverity::Warning,
-                        path,
-                        h,
-                    );
-                }
-                if self.cell_depth > 0 && value.contains(['\r', '\n']) {
-                    self.diag(
-                        HtmlImportDiagnosticCode::StructureUnspellable,
-                        "Flattened a line break in <code> inside a table cell: a table row is one line".into(),
-                        HtmlImportSeverity::Warning,
-                        path,
-                        h,
-                    );
-                    value = value.replace("\r\n", " ").replace(['\r', '\n'], " ");
-                }
-                if !value.is_empty() {
-                    return Ok(vec![InlineNode::code(value, attrs)]);
-                }
-                let pos = Some(candidate_mark(self.empty_code_spans.len()));
-                self.empty_code_spans.push((h.clone(), path.to_owned()));
-                InlineNode::Code(Code { value, attrs, pos })
-            }
             // PART 9 §25's sink would blank this destination, so it is one
             // Carve cannot carry: imported like an empty one, reported as a
             // dropped attribute (markup-carve/carve#2254).
@@ -6524,11 +6619,12 @@ fn footnote_document_elements(root: &Handle) -> Vec<Handle> {
         if !matches!(node.data, NodeData::Element { .. }) {
             continue;
         }
-        let children = node.children.borrow();
-        for child in children.iter().rev() {
-            stack.push(child.clone());
+        if !matches!(Importer::tag(&node).as_deref(), Some("code" | "pre")) {
+            let children = node.children.borrow();
+            for child in children.iter().rev() {
+                stack.push(child.clone());
+            }
         }
-        drop(children);
         elements.push(node);
     }
     elements
