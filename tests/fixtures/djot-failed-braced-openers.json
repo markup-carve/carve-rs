@@ -1,0 +1,287 @@
+[
+  {
+    "name": "failed-brace-0",
+    "source": "{^a^",
+    "html": "<p>{^a^</p>"
+  },
+  {
+    "name": "failed-brace-1",
+    "source": "{^a ^b^",
+    "html": "<p>{^a <sup>b</sup></p>"
+  },
+  {
+    "name": "failed-brace-2",
+    "source": "{^a ^b^}",
+    "html": "<p><sup>a ^b</sup></p>"
+  },
+  {
+    "name": "failed-brace-3",
+    "source": "{^a\\^}",
+    "html": "<p>{^a^}</p>"
+  },
+  {
+    "name": "failed-brace-4",
+    "source": "{~a~",
+    "html": "<p>{~a~</p>"
+  },
+  {
+    "name": "failed-brace-5",
+    "source": "{~a ~b~",
+    "html": "<p>{~a <sub>b</sub></p>"
+  },
+  {
+    "name": "failed-brace-6",
+    "source": "{~a ~b~}",
+    "html": "<p><sub>a ~b</sub></p>"
+  },
+  {
+    "name": "failed-brace-7",
+    "source": "{~a\\~}",
+    "html": "<p>{~a~}</p>"
+  },
+  {
+    "name": "failed-brace-8",
+    "source": "{=a=",
+    "html": "<p>{=a=</p>"
+  },
+  {
+    "name": "failed-brace-9",
+    "source": "{=a =b=",
+    "html": "<p>{=a =b=</p>"
+  },
+  {
+    "name": "failed-brace-10",
+    "source": "{=a =b=}",
+    "html": "<p><mark>a =b</mark></p>"
+  },
+  {
+    "name": "failed-brace-11",
+    "source": "{=a\\=}",
+    "html": "<p>{=a=}</p>"
+  },
+  {
+    "name": "failed-brace-12",
+    "source": "{*a*",
+    "html": "<p>{*a*</p>"
+  },
+  {
+    "name": "failed-brace-13",
+    "source": "{*a *b*",
+    "html": "<p>{*a <strong>b</strong></p>"
+  },
+  {
+    "name": "failed-brace-14",
+    "source": "{*a *b*}",
+    "html": "<p><strong>a *b</strong></p>"
+  },
+  {
+    "name": "failed-brace-15",
+    "source": "{*a\\*}",
+    "html": "<p>{*a*}</p>"
+  },
+  {
+    "name": "failed-brace-16",
+    "source": "{_a_",
+    "html": "<p>{_a_</p>"
+  },
+  {
+    "name": "failed-brace-17",
+    "source": "{_a _b_",
+    "html": "<p>{_a <em>b</em></p>"
+  },
+  {
+    "name": "failed-brace-18",
+    "source": "{_a _b_}",
+    "html": "<p><em>a _b</em></p>"
+  },
+  {
+    "name": "failed-brace-19",
+    "source": "{_a\\_}",
+    "html": "<p>{_a_}</p>"
+  },
+  {
+    "name": "failed-brace-20",
+    "source": "{+a+",
+    "html": "<p>{+a+</p>"
+  },
+  {
+    "name": "failed-brace-21",
+    "source": "{+a +b+",
+    "html": "<p>{+a +b+</p>"
+  },
+  {
+    "name": "failed-brace-22",
+    "source": "{+a +b+}",
+    "html": "<p><ins>a +b</ins></p>"
+  },
+  {
+    "name": "failed-brace-23",
+    "source": "{+a\\+}",
+    "html": "<p>{+a+}</p>"
+  },
+  {
+    "name": "failed-brace-24",
+    "source": "{-a-",
+    "html": "<p>{-a-</p>"
+  },
+  {
+    "name": "failed-brace-25",
+    "source": "{-a -b-",
+    "html": "<p>{-a -b-</p>"
+  },
+  {
+    "name": "failed-brace-26",
+    "source": "{-a -b-}",
+    "html": "<p><del>a -b</del></p>"
+  },
+  {
+    "name": "failed-brace-27",
+    "source": "{-a\\-}",
+    "html": "<p>{-a-}</p>"
+  },
+  {
+    "name": "code-^",
+    "source": "`{^a^`",
+    "html": "<p><code>{^a^</code></p>"
+  },
+  {
+    "name": "attribute-^",
+    "source": "[a]{title=\"{^a^\"}",
+    "html": "<p><span title=\"{^a^\">a</span></p>"
+  },
+  {
+    "name": "code-~",
+    "source": "`{~a~`",
+    "html": "<p><code>{~a~</code></p>"
+  },
+  {
+    "name": "attribute-~",
+    "source": "[a]{title=\"{~a~\"}",
+    "html": "<p><span title=\"{~a~\">a</span></p>"
+  },
+  {
+    "name": "code-=",
+    "source": "`{=a=`",
+    "html": "<p><code>{=a=</code></p>"
+  },
+  {
+    "name": "attribute-=",
+    "source": "[a]{title=\"{=a=\"}",
+    "html": "<p><span title=\"{=a=\">a</span></p>"
+  },
+  {
+    "name": "code-*",
+    "source": "`{*a*`",
+    "html": "<p><code>{*a*</code></p>"
+  },
+  {
+    "name": "attribute-*",
+    "source": "[a]{title=\"{*a*\"}",
+    "html": "<p><span title=\"{*a*\">a</span></p>"
+  },
+  {
+    "name": "code-_",
+    "source": "`{_a_`",
+    "html": "<p><code>{_a_</code></p>"
+  },
+  {
+    "name": "attribute-_",
+    "source": "[a]{title=\"{_a_\"}",
+    "html": "<p><span title=\"{_a_\">a</span></p>"
+  },
+  {
+    "name": "code-+",
+    "source": "`{+a+`",
+    "html": "<p><code>{+a+</code></p>"
+  },
+  {
+    "name": "attribute-+",
+    "source": "[a]{title=\"{+a+\"}",
+    "html": "<p><span title=\"{+a+\">a</span></p>"
+  },
+  {
+    "name": "code--",
+    "source": "`{-a-`",
+    "html": "<p><code>{-a-</code></p>"
+  },
+  {
+    "name": "attribute--",
+    "source": "[a]{title=\"{-a-\"}",
+    "html": "<p><span title=\"{-a-\">a</span></p>"
+  },
+  {
+    "name": "raw-html-code-suffix",
+    "source": "a `<b>x</b>`{=html} b",
+    "html": "<p>a <b>x</b> b</p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-^",
+    "source": "{^a\\^} ^b^",
+    "html": "<p>{^a^} <sup>b</sup></p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-~",
+    "source": "{~a\\~} ~b~",
+    "html": "<p>{~a~} <sub>b</sub></p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-=",
+    "source": "{=a\\=} =b=",
+    "html": "<p>{=a=} =b=</p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-*",
+    "source": "{*a\\*} *b*",
+    "html": "<p>{*a*} <strong>b</strong></p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-_",
+    "source": "{_a\\_} _b_",
+    "html": "<p>{_a_} <em>b</em></p>"
+  },
+  {
+    "name": "escaped-closer-then-bare-+",
+    "source": "{+a\\+} +b+",
+    "html": "<p>{+a+} +b+</p>"
+  },
+  {
+    "name": "escaped-closer-then-bare--",
+    "source": "{-a\\-} -b-",
+    "html": "<p>{-a-} -b-</p>"
+  },
+  {
+    "name": "hard-break-before-blank-line",
+    "source": "{^a\\\n\n^b^",
+    "html": "<p>{^a<br>\n</p>\n<p><sup>b</sup></p>"
+  },
+  {
+    "name": "invalid-id-remains-literal-0",
+    "source": "{#y#} x",
+    "html": "<p>{#y#} x</p>"
+  },
+  {
+    "name": "invalid-id-remains-literal-1",
+    "source": "a {#y#} b",
+    "html": "<p>a {#y#} b</p>"
+  },
+  {
+    "name": "invalid-id-remains-literal-2",
+    "source": "[a]{#y#}",
+    "html": "<p>[a]{#y#}</p>"
+  },
+  {
+    "name": "id-and-raw-unicode-0",
+    "source": "word{#über}",
+    "html": "<p><span id=\"über\">word</span></p>"
+  },
+  {
+    "name": "id-and-raw-unicode-1",
+    "source": "word{#a;b}",
+    "html": "<p><span id=\"a;b\">word</span></p>"
+  },
+  {
+    "name": "id-and-raw-unicode-2",
+    "source": "a `x`{=html } b",
+    "html": "<p>a <code>x</code>{=html&nbsp;} b</p>"
+  }
+]

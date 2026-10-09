@@ -333,6 +333,18 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
                 return None;
             }
             let value = &source[from..i];
+            let invalid = if kind == '#' {
+                value
+                    .chars()
+                    .any(|ch| ch.is_whitespace() || r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch))
+            } else {
+                !value
+                    .bytes()
+                    .all(|ch| ch.is_ascii_alphanumeric() || b"_:-".contains(&ch))
+            };
+            if invalid {
+                return None;
+            }
             let identifier = value
                 .bytes()
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == b'_' || ch == b'-')
