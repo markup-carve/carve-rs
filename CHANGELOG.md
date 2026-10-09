@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- HTML code-block import keeps sibling text, omits active payloads and reports discarded child markup, comments and attributes (carve-rs#2423).
+
 - Markdown export uses a safe tilde fence for headers and labels containing backticks (carve-rs#2419).
 
 - Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact (carve-rs#2417).

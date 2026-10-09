@@ -1747,3 +1747,6 @@ mod code_span_child_markup;
 
 #[path = "../raw_reference_label_brackets.rs"]
 mod raw_reference_label_brackets;
+
+#[path = "../code_block_child_markup.rs"]
+mod code_block_child_markup;

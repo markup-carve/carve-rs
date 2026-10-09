@@ -2879,7 +2879,7 @@ impl<'a> Importer<'a> {
                 .find(|n| Self::tag(n).as_deref() == Some("code"))
                 .unwrap_or(h);
             let lang = self.code_language(h, code);
-            let content = Self::text(code);
+            let content = self.code_text(h, path, depth, true, (Some(code), lang.as_deref()))?;
             return Ok(vec![BlockNode::CodeBlock(CodeBlock {
                 attrs,
                 lang,
@@ -5890,13 +5890,17 @@ impl<'a> Importer<'a> {
         })]
     }
 
-    fn code_span(
+    fn code_text(
         &mut self,
         h: &Handle,
         path: &str,
         depth: usize,
-        attrs: Option<Attrs>,
-    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        block: bool,
+        language: (Option<&Handle>, Option<&str>),
+    ) -> Result<String, HtmlImportError> {
+        let (language_wrapper, lang) = language;
+        let context = if block { "pre" } else { "code" };
+        let description = if block { "a code block" } else { "a code span" };
         enum Frame {
             Node(Handle, String, usize),
             Boundary,
@@ -5927,7 +5931,7 @@ impl<'a> Importer<'a> {
             if matches!(child.data, NodeData::Comment { .. }) {
                 self.diag(
                     HtmlImportDiagnosticCode::ElementDropped,
-                    "Dropped a comment inside <code>: a code span holds only text".into(),
+                    format!("Dropped a comment inside <{context}>: {description} holds only text"),
                     HtmlImportSeverity::Warning,
                     &child_path,
                     &child,
@@ -5954,7 +5958,7 @@ impl<'a> Importer<'a> {
             } else {
                 Vec::new()
             };
-            if !(tag == "span" && raw_attrs.is_empty()) {
+            if !(tag == "span" && raw_attrs.is_empty() || block && tag == "code") {
                 let dropped = child.children.borrow().is_empty();
                 self.diag(
                     if dropped {
@@ -5963,7 +5967,7 @@ impl<'a> Importer<'a> {
                         HtmlImportDiagnosticCode::ElementUnwrapped
                     },
                     format!(
-                        "{} <{tag}> inside <code>",
+                        "{} <{tag}> inside <{context}>",
                         if dropped { "Dropped" } else { "Unwrapped" }
                     ),
                     if dropped {
@@ -5976,16 +5980,49 @@ impl<'a> Importer<'a> {
                 );
             }
             for attr in raw_attrs {
+                if language_wrapper.is_some_and(|wrapper| Rc::ptr_eq(wrapper, &child)) {
+                    if let Some(lang) = lang {
+                        let name = attr.name.local.as_ref();
+                        let value = attr.value.as_ref();
+                        let consumed = attr.name.prefix.is_none()
+                            && attr.name.ns.as_ref().is_empty()
+                            && ((name == "data-lang"
+                                && value.trim_matches(|c| {
+                                    matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
+                                }) == lang)
+                                || (name == "class"
+                                    && !value
+                                        .trim_matches(|c| {
+                                            matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
+                                        })
+                                        .is_empty()
+                                    && value
+                                        .split(|c| {
+                                            matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
+                                        })
+                                        .filter(|token| !token.is_empty())
+                                        .all(|token| {
+                                            token == format!("language-{lang}")
+                                                || token == format!("lang-{lang}")
+                                        })));
+                        if consumed {
+                            continue;
+                        }
+                    }
+                }
+                let name = attr.name.prefix.as_ref().map_or_else(
+                    || attr.name.local.to_string(),
+                    |prefix| format!("{prefix}:{}", attr.name.local),
+                );
+                let unsafe_attribute = is_dangerous_attr_name(&name)
+                    || ((tag == "a" && name == "href" || tag == "img" && name == "src")
+                        && has_denied_url_scheme(&attr.value));
                 self.diag(
                     HtmlImportDiagnosticCode::AttributeDropped,
                     format!(
-                        "Dropped {} on <{tag}> inside <code>: a code span holds only text",
-                        attr.name.prefix.as_ref().map_or_else(
-                            || attr.name.local.to_string(),
-                            |prefix| format!("{prefix}:{}", attr.name.local)
-                        )
+                        "Dropped {name} on <{tag}> inside <{context}>: {description} holds only text"
                     ),
-                    HtmlImportSeverity::Info,
+                    if block && unsafe_attribute { HtmlImportSeverity::Warning } else { HtmlImportSeverity::Info },
                     &child_path,
                     &child,
                 );
@@ -6001,14 +6038,15 @@ impl<'a> Importer<'a> {
             }
             push_children(&mut pending, &child, &child_path, child_depth);
         }
-        if runs
-            .iter()
-            .filter(|run| {
-                run.chars()
-                    .any(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}'))
-            })
-            .count()
-            > 1
+        if !block
+            && runs
+                .iter()
+                .filter(|run| {
+                    run.chars()
+                        .any(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}'))
+                })
+                .count()
+                > 1
         {
             self.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,
@@ -6018,7 +6056,17 @@ impl<'a> Importer<'a> {
                 h,
             );
         }
-        let mut value = runs.concat();
+        Ok(runs.concat())
+    }
+
+    fn code_span(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        let mut value = self.code_text(h, path, depth, false, (None, None))?;
         if self.writing && self.cell_depth > 0 && value.contains(['\r', '\n']) {
             self.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,

@@ -1,0 +1,200 @@
+[
+  {
+    "name": "plain",
+    "html": "<pre><code>abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "bold markup",
+    "html": "<pre><code>a<strong>b</strong>c</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped"
+    ]
+  },
+  {
+    "name": "comment",
+    "html": "<pre><code>a<!--note-->b</code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-dropped"
+    ]
+  },
+  {
+    "name": "active script",
+    "html": "<pre><code>a<script>secret</script>b</code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-dropped"
+    ]
+  },
+  {
+    "name": "active style",
+    "html": "<pre><code>a<style>secret</style>b</code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-dropped"
+    ]
+  },
+  {
+    "name": "active template",
+    "html": "<pre><code>a<template>secret</template>b</code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-dropped"
+    ]
+  },
+  {
+    "name": "active noscript",
+    "html": "<pre><code>a<noscript>secret</noscript>b</code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-dropped"
+    ]
+  },
+  {
+    "name": "sibling text and code",
+    "html": "<pre>before<code>first</code>after<code>second</code>end</pre><p>after</p>",
+    "content": "beforefirstaftersecondend",
+    "codes": []
+  },
+  {
+    "name": "plain wrapper",
+    "html": "<pre><span><code>abc</code></span></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "nested markup",
+    "html": "<pre><span><code>a<b>b</b>c</code></span></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped"
+    ]
+  },
+  {
+    "name": "language class",
+    "html": "<pre><code class=\"language-js\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "language and styling",
+    "html": "<pre><code class=\"language-js token\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "data language",
+    "html": "<pre><code data-lang=\"js\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "code title",
+    "html": "<pre><code title=\"label\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "later language class",
+    "html": "<pre><code>ab</code><code class=\"language-js\">c</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "payload whitespace",
+    "html": "<pre>\n a\n\n b\n</pre><p>after</p>",
+    "content": " a\n\n b\n",
+    "codes": []
+  },
+  {
+    "name": "pretty printed wrapper",
+    "html": "<pre>\n  <code>abc\n</code>\n</pre><p>after</p>",
+    "content": "  abc\n\n",
+    "codes": []
+  },
+  {
+    "name": "ASCII form feed language",
+    "html": "<pre><code data-lang=\"js\f\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "NBSP is not language whitespace",
+    "html": "<pre class=\"language-js\"><code data-lang=\"\u00a0js\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "unsafe code attribute",
+    "html": "<pre><code onclick=\"x\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "unsafe wrapper sink",
+    "html": "<pre><span srcdoc=\"x\">abc</span></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "block children retain literal text",
+    "html": "<pre><code><div>a</div><div>b</div></code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-unwrapped",
+      "element-unwrapped"
+    ]
+  },
+  {
+    "name": "whitespace class is not a language hint",
+    "html": "<pre class=\"language-js\"><code class=\" \">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "denied descendant URL",
+    "html": "<pre><a href=\"javascript:x\">abc</a></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "safe descendant URL",
+    "html": "<pre><a href=\"/u\">abc</a></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": []
+  }
+]
