@@ -3151,6 +3151,12 @@ fn render_inlines_with_caption(
         crate::render_depth::record("carve");
         return String::new();
     }
+    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH && nodes.len() == 1
+    {
+        if let InlineNode::Text(text) = &nodes[0] {
+            return text.value.clone();
+        }
+    }
     // Flatten before the writer checks neighboring nodes. A ruby base can
     // start with `[` or a code fence, which changes how preceding text escapes.
     let original = nodes;

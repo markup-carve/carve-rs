@@ -124,6 +124,19 @@ fn imported_footnotes_keep_their_identity_and_opaque_content() {
 
 #[test]
 fn table_pipe_imports_and_round_trips() {
+    std::thread::Builder::new()
+        .stack_size(if cfg!(debug_assertions) {
+            16 * 1024 * 1024
+        } else {
+            2 * 1024 * 1024
+        })
+        .spawn(table_pipe_imports_and_round_trips_inner)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn table_pipe_imports_and_round_trips_inner() {
     let cases: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/table-pipe-audit.json")).unwrap();
     for case in cases.as_array().unwrap() {
@@ -171,11 +184,17 @@ fn table_pipe_imports_and_round_trips() {
                 case["name"]
             );
         }
-        assert_eq!(
-            carve::to_html(&carve::to_carve(&source)),
-            html,
-            "{}",
-            case["name"]
-        );
+        let round_trip = carve::to_html(&carve::to_carve(&source));
+        if case["finalCodeNewlineLoss"] == true {
+            let diagnostics = carve::conversion_diagnostics(&carve::parse(&source), 100).unwrap();
+            assert_eq!(diagnostics.total_diagnostics, 1);
+            assert_eq!(diagnostics.diagnostics[0].field.as_deref(), Some("content"));
+            assert_eq!(
+                round_trip,
+                html.replace("<code>code</code>", "<code>code\n</code>")
+            );
+        } else {
+            assert_eq!(round_trip, html, "{}", case["name"]);
+        }
     }
 }
