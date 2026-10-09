@@ -33,6 +33,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
     let mut mask = mask.as_bytes().to_vec();
     let code_mask = super::mask_code_and_destinations(source);
     let mut attributes = HashMap::new();
+    let mut read_native = super::NativeAttributeReader::new(source);
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'\\' {
@@ -40,7 +41,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             continue;
         }
         if code_mask.as_bytes()[at] == b'{' && mask[at] != b' ' {
-            if let Some((end, wire)) = super::read_djot_attributes(source, at, true) {
+            if let Some((end, wire)) = read_native.read(at) {
                 for byte in &mut mask[at..end] {
                     if *byte != b'\n' {
                         *byte = b' ';
@@ -501,7 +502,7 @@ impl Renderer<'_> {
     }
 }
 
-fn structural_prefix_end(line: &str) -> usize {
+pub(super) fn structural_prefix_end(line: &str) -> usize {
     let bytes = line.as_bytes();
     let mut at = 0;
     let spaces = |at: &mut usize| {

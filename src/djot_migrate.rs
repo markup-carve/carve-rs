@@ -281,10 +281,15 @@ fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
-    read_djot_attributes(source, start, false)
+    read_djot_attributes(source, start, false, false)
 }
 
-fn read_djot_attributes(source: &str, start: usize, carve: bool) -> Option<(usize, String)> {
+fn read_djot_attributes(
+    source: &str,
+    start: usize,
+    carve: bool,
+    table: bool,
+) -> Option<(usize, String)> {
     let bytes = source.as_bytes();
     let quote_prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut parts = Vec::new();
@@ -327,13 +332,16 @@ fn read_djot_attributes(source: &str, start: usize, carve: bool) -> Option<(usiz
             }
         }
         if bytes.get(i) == Some(&b'}') {
-            let line_start = source[..start].rfind('\n').map_or(0, |at| at + 1);
-            if carve && cached_regex!(r"^(?:[ \t]*>|[ \t]*(?:[-*+]|[0-9]+[.)])[ \t]+)*[ \t]*\|").unwrap().is_match(&source[line_start..start]) {
+            if carve && table {
                 let mut at = start;
                 while at <= i {
-                    if bytes[at] == b'\\' { at += 2; }
-                    else if bytes[at] == b'|' { return None; }
-                    else { at += 1; }
+                    if bytes[at] == b'\\' {
+                        at += 2;
+                    } else if bytes[at] == b'|' {
+                        return None;
+                    } else {
+                        at += 1;
+                    }
                 }
             }
             return (!parts.is_empty()).then(|| (i + 1, format!("{{{}}}", parts.join(" "))));
@@ -369,7 +377,7 @@ fn read_djot_attributes(source: &str, start: usize, carve: bool) -> Option<(usiz
             let from = i;
             for ch in source[from..].chars() {
                 let valid = if kind == '#' {
-                    !ch.is_whitespace()
+                    !(ch.is_whitespace() && ch != '\u{85}')
                         && ch != '\u{feff}'
                         && !r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch)
                 } else {
@@ -385,9 +393,11 @@ fn read_djot_attributes(source: &str, start: usize, carve: bool) -> Option<(usiz
             }
             let value = &source[from..i];
             let invalid = if kind == '#' {
-                value
-                    .chars()
-                    .any(|ch| ch.is_whitespace() || r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch))
+                value.chars().any(|ch| {
+                    (ch.is_whitespace() && ch != '\u{85}')
+                        || ch == '\u{feff}'
+                        || r#"][~!@#$%^&*(){}`,.<>\|=+/?"#.contains(ch)
+                })
             } else {
                 !value
                     .bytes()
@@ -484,7 +494,38 @@ fn read_djot_attributes(source: &str, start: usize, carve: bool) -> Option<(usiz
     None
 }
 
+struct NativeAttributeReader<'a> {
+    source: &'a str,
+    line_end: usize,
+    table: bool,
+}
+
+impl<'a> NativeAttributeReader<'a> {
+    fn new(source: &'a str) -> Self {
+        let line_end = source.find('\n').unwrap_or(source.len());
+        let line = &source[..line_end];
+        Self {
+            source,
+            line_end,
+            table: line.as_bytes().get(emphasis::structural_prefix_end(line)) == Some(&b'|'),
+        }
+    }
+
+    fn read(&mut self, start: usize) -> Option<(usize, String)> {
+        while self.line_end < start {
+            let line_start = self.line_end + 1;
+            self.line_end = self.source[line_start..]
+                .find('\n')
+                .map_or(self.source.len(), |at| line_start + at);
+            let line = &self.source[line_start..self.line_end];
+            self.table = line.as_bytes().get(emphasis::structural_prefix_end(line)) == Some(&b'|');
+        }
+        read_djot_attributes(self.source, start, true, self.table)
+    }
+}
+
 fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
+    let mut read_native = NativeAttributeReader::new(source);
     let masked = mask_code_and_destinations(source);
     let bytes = source.as_bytes();
     let mut output = String::new();
@@ -497,10 +538,17 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             i += 1;
             continue;
         }
-        let Some((end, attrs)) = read_djot_attributes(source, i, true) else {
+        let Some((mut end, mut attrs)) = read_native.read(i) else {
             i += 1;
             continue;
         };
+        while bytes.get(end) == Some(&b'{') {
+            let Some((next_end, next_attrs)) = read_native.read(end) else {
+                break;
+            };
+            end = next_end;
+            attrs.push_str(&next_attrs);
+        }
         let mut word = i;
         if i > 0 && masked.as_bytes()[i - 1] == bytes[i - 1] && !b"`*_~^]}>".contains(&bytes[i - 1])
         {
@@ -526,7 +574,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             && last_delimiters[b"_*~^".iter().position(|ch| *ch == bytes[word]).unwrap()]
                 .is_some_and(|at| at >= end)
         {
-            word = i;
+            word += 1;
         }
         if word > 0
             && bytes[word - 1] == b'{'
@@ -611,6 +659,7 @@ fn fold_heading_continuations(source: &str) -> String {
 fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let pattern = PATTERN.get_or_init(|| regex::Regex::new(r#"\*([^*\n{}]+)(\{(?:\s*(?:[.#][^\s{}"=]+|[\w:-]+=(?:"(?:\\.|[^"\\])*"|[^\s{}"]+)))+\s*\})([^*\n{}]*)\*"#).unwrap());
+    let mut read_native = NativeAttributeReader::new(source);
     let masked = mask_code_and_destinations(source);
     let mut prefix = "\0DJOTSTRONG".to_string();
     while source.contains(&prefix) {
@@ -642,7 +691,7 @@ fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
             {
                 return whole.as_str().to_string();
             }
-            let Some((_, attributes)) = read_djot_attributes(&caps[2], 0, true) else {
+            let Some((_, attributes)) = read_native.read(start + 1 + caps[1].len()) else {
                 return whole.as_str().to_string();
             };
             let before = &caps[1];
@@ -650,7 +699,8 @@ fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
                 .rfind(|c: char| c.is_whitespace() || "*{}[]`_~^".contains(c))
                 .map_or(0, |i| i + before[i..].chars().next().unwrap().len_utf8());
             if word_start == before.len()
-                || (word_start > 0 && b")]`".contains(&before.as_bytes()[word_start - 1]))
+                || masked.as_bytes()[start + 1 + word_start]
+                    != source.as_bytes()[start + 1 + word_start]
             {
                 return whole.as_str().to_string();
             }
