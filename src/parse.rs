@@ -22014,6 +22014,12 @@ fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
 
 /// Locate structural brackets in a self-contained verbatim run.
 pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
+    if source
+        .lines()
+        .any(|line| line.trim_start_matches([' ', '\t']).starts_with("%%"))
+    {
+        return None;
+    }
     let bytes = source.as_bytes();
     let mut offsets = Vec::new();
     let mut i = 0;
