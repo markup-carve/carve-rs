@@ -19261,7 +19261,7 @@ impl InlineBounds<'_> {
                 _ if whitespace[at] => at,
                 _ => stops[at + 1],
             };
-            for (slot, quote) in [b'"', b'\''].into_iter().enumerate() {
+            for (slot, quote) in (*b"\"'").into_iter().enumerate() {
                 quotes[slot][at] = if bytes[at] == b'\\' && at + 1 < bytes.len() {
                     quotes[slot][at + 2]
                 } else if bytes[at] == quote {
