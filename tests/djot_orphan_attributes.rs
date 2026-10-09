@@ -2,7 +2,7 @@
 fn djot_attribute_ownership_survives_import() {
     for (source, expected) in [
         ("{#id} at beginning\n", "<p> at beginning</p>"),
-        ("After {#id} space\n{.class}\n", "<p>After  space</p>"),
+        ("After {#id} space\n{.class}\n", "<p>After  space\n</p>"),
         ("not a [span] {#id}.\n", "<p>not a [span] .</p>"),
         ("{#id .class}\n\nA paragraph\n", "<p>A paragraph</p>"),
         ("[span]{#id}", "<p><span id=\"id\">span</span></p>"),

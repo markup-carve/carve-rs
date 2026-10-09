@@ -2250,5 +2250,1217 @@
     "name": "validity-review-14",
     "source": "[x]{title=\"{a=b.c}\"}",
     "html": "<p><span title=\"{a=b.c}\">x</span></p>"
+  },
+  {
+    "name": "owner-0",
+    "source": "word{}",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-1",
+    "source": "[word]{}",
+    "html": "<p><span>word</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-2",
+    "source": "_word_{}",
+    "html": "<p><em>word</em></p>",
+    "table": true
+  },
+  {
+    "name": "owner-3",
+    "source": "*word*{}",
+    "html": "<p><strong>word</strong></p>",
+    "table": true
+  },
+  {
+    "name": "owner-4",
+    "source": "`word`{}",
+    "html": "<p><code>word</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-5",
+    "source": "[word](u){}",
+    "html": "<p><a href=\"u\">word</a></p>",
+    "table": true
+  },
+  {
+    "name": "owner-6",
+    "source": "{}\nnext",
+    "html": "<p>next</p>",
+    "table": true
+  },
+  {
+    "name": "owner-7",
+    "source": "word\n{}\nnext",
+    "html": "<p>word\n\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-8",
+    "source": "> word{}",
+    "html": "<blockquote><p>word</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-9",
+    "source": "> [word]{}",
+    "html": "<blockquote><p><span>word</span></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-10",
+    "source": "> _word_{}",
+    "html": "<blockquote><p><em>word</em></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-11",
+    "source": "> *word*{}",
+    "html": "<blockquote><p><strong>word</strong></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-12",
+    "source": "> `word`{}",
+    "html": "<blockquote><p><code>word</code></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-13",
+    "source": "> [word](u){}",
+    "html": "<blockquote><p><a href=\"u\">word</a></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-14",
+    "source": "> {}\n> next",
+    "html": "<blockquote><p>next</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-15",
+    "source": "> word\n> {}\n> next",
+    "html": "<blockquote><p>word\n\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-16",
+    "source": "- word{}",
+    "html": "<ul><li>word</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-17",
+    "source": "- [word]{}",
+    "html": "<ul><li><span>word</span></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-18",
+    "source": "- _word_{}",
+    "html": "<ul><li><em>word</em></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-19",
+    "source": "- *word*{}",
+    "html": "<ul><li><strong>word</strong></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-20",
+    "source": "- `word`{}",
+    "html": "<ul><li><code>word</code></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-21",
+    "source": "- [word](u){}",
+    "html": "<ul><li><a href=\"u\">word</a></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-22",
+    "source": "- {}\n  next",
+    "html": "<ul><li>next</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-23",
+    "source": "- word\n  {}\n  next",
+    "html": "<ul><li>word\n\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-24",
+    "source": "> - word{}",
+    "html": "<blockquote><ul><li>word</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-25",
+    "source": "> - [word]{}",
+    "html": "<blockquote><ul><li><span>word</span></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-26",
+    "source": "> - _word_{}",
+    "html": "<blockquote><ul><li><em>word</em></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-27",
+    "source": "> - *word*{}",
+    "html": "<blockquote><ul><li><strong>word</strong></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-28",
+    "source": "> - `word`{}",
+    "html": "<blockquote><ul><li><code>word</code></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-29",
+    "source": "> - [word](u){}",
+    "html": "<blockquote><ul><li><a href=\"u\">word</a></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-30",
+    "source": "> - {}\n>   next",
+    "html": "<blockquote><ul><li>next</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-31",
+    "source": "> - word\n>   {}\n>   next",
+    "html": "<blockquote><ul><li>word\n\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-32",
+    "source": "word{%%}",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-33",
+    "source": "[word]{%%}",
+    "html": "<p><span>word</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-34",
+    "source": "_word_{%%}",
+    "html": "<p><em>word</em></p>",
+    "table": true
+  },
+  {
+    "name": "owner-35",
+    "source": "*word*{%%}",
+    "html": "<p><strong>word</strong></p>",
+    "table": true
+  },
+  {
+    "name": "owner-36",
+    "source": "`word`{%%}",
+    "html": "<p><code>word</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-37",
+    "source": "[word](u){%%}",
+    "html": "<p><a href=\"u\">word</a></p>",
+    "table": true
+  },
+  {
+    "name": "owner-38",
+    "source": "{%%}\nnext",
+    "html": "<p>next</p>",
+    "table": true
+  },
+  {
+    "name": "owner-39",
+    "source": "word\n{%%}\nnext",
+    "html": "<p>word\n\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-40",
+    "source": "> word{%%}",
+    "html": "<blockquote><p>word</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-41",
+    "source": "> [word]{%%}",
+    "html": "<blockquote><p><span>word</span></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-42",
+    "source": "> _word_{%%}",
+    "html": "<blockquote><p><em>word</em></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-43",
+    "source": "> *word*{%%}",
+    "html": "<blockquote><p><strong>word</strong></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-44",
+    "source": "> `word`{%%}",
+    "html": "<blockquote><p><code>word</code></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-45",
+    "source": "> [word](u){%%}",
+    "html": "<blockquote><p><a href=\"u\">word</a></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-46",
+    "source": "> {%%}\n> next",
+    "html": "<blockquote><p>next</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-47",
+    "source": "> word\n> {%%}\n> next",
+    "html": "<blockquote><p>word\n\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-48",
+    "source": "- word{%%}",
+    "html": "<ul><li>word</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-49",
+    "source": "- [word]{%%}",
+    "html": "<ul><li><span>word</span></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-50",
+    "source": "- _word_{%%}",
+    "html": "<ul><li><em>word</em></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-51",
+    "source": "- *word*{%%}",
+    "html": "<ul><li><strong>word</strong></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-52",
+    "source": "- `word`{%%}",
+    "html": "<ul><li><code>word</code></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-53",
+    "source": "- [word](u){%%}",
+    "html": "<ul><li><a href=\"u\">word</a></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-54",
+    "source": "- {%%}\n  next",
+    "html": "<ul><li>next</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-55",
+    "source": "- word\n  {%%}\n  next",
+    "html": "<ul><li>word\n\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-56",
+    "source": "> - word{%%}",
+    "html": "<blockquote><ul><li>word</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-57",
+    "source": "> - [word]{%%}",
+    "html": "<blockquote><ul><li><span>word</span></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-58",
+    "source": "> - _word_{%%}",
+    "html": "<blockquote><ul><li><em>word</em></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-59",
+    "source": "> - *word*{%%}",
+    "html": "<blockquote><ul><li><strong>word</strong></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-60",
+    "source": "> - `word`{%%}",
+    "html": "<blockquote><ul><li><code>word</code></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-61",
+    "source": "> - [word](u){%%}",
+    "html": "<blockquote><ul><li><a href=\"u\">word</a></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-62",
+    "source": "> - {%%}\n>   next",
+    "html": "<blockquote><ul><li>next</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-63",
+    "source": "> - word\n>   {%%}\n>   next",
+    "html": "<blockquote><ul><li>word\n\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-64",
+    "source": "word{% a %}",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-65",
+    "source": "[word]{% a %}",
+    "html": "<p><span>word</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-66",
+    "source": "_word_{% a %}",
+    "html": "<p><em>word</em></p>",
+    "table": true
+  },
+  {
+    "name": "owner-67",
+    "source": "*word*{% a %}",
+    "html": "<p><strong>word</strong></p>",
+    "table": true
+  },
+  {
+    "name": "owner-68",
+    "source": "`word`{% a %}",
+    "html": "<p><code>word</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-69",
+    "source": "[word](u){% a %}",
+    "html": "<p><a href=\"u\">word</a></p>",
+    "table": true
+  },
+  {
+    "name": "owner-70",
+    "source": "{% a %}\nnext",
+    "html": "<p>next</p>",
+    "table": true
+  },
+  {
+    "name": "owner-71",
+    "source": "word\n{% a %}\nnext",
+    "html": "<p>word\n\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-72",
+    "source": "> word{% a %}",
+    "html": "<blockquote><p>word</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-73",
+    "source": "> [word]{% a %}",
+    "html": "<blockquote><p><span>word</span></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-74",
+    "source": "> _word_{% a %}",
+    "html": "<blockquote><p><em>word</em></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-75",
+    "source": "> *word*{% a %}",
+    "html": "<blockquote><p><strong>word</strong></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-76",
+    "source": "> `word`{% a %}",
+    "html": "<blockquote><p><code>word</code></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-77",
+    "source": "> [word](u){% a %}",
+    "html": "<blockquote><p><a href=\"u\">word</a></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-78",
+    "source": "> {% a %}\n> next",
+    "html": "<blockquote><p>next</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-79",
+    "source": "> word\n> {% a %}\n> next",
+    "html": "<blockquote><p>word\n\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-80",
+    "source": "- word{% a %}",
+    "html": "<ul><li>word</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-81",
+    "source": "- [word]{% a %}",
+    "html": "<ul><li><span>word</span></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-82",
+    "source": "- _word_{% a %}",
+    "html": "<ul><li><em>word</em></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-83",
+    "source": "- *word*{% a %}",
+    "html": "<ul><li><strong>word</strong></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-84",
+    "source": "- `word`{% a %}",
+    "html": "<ul><li><code>word</code></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-85",
+    "source": "- [word](u){% a %}",
+    "html": "<ul><li><a href=\"u\">word</a></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-86",
+    "source": "- {% a %}\n  next",
+    "html": "<ul><li>next</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-87",
+    "source": "- word\n  {% a %}\n  next",
+    "html": "<ul><li>word\n\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-88",
+    "source": "> - word{% a %}",
+    "html": "<blockquote><ul><li>word</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-89",
+    "source": "> - [word]{% a %}",
+    "html": "<blockquote><ul><li><span>word</span></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-90",
+    "source": "> - _word_{% a %}",
+    "html": "<blockquote><ul><li><em>word</em></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-91",
+    "source": "> - *word*{% a %}",
+    "html": "<blockquote><ul><li><strong>word</strong></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-92",
+    "source": "> - `word`{% a %}",
+    "html": "<blockquote><ul><li><code>word</code></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-93",
+    "source": "> - [word](u){% a %}",
+    "html": "<blockquote><ul><li><a href=\"u\">word</a></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-94",
+    "source": "> - {% a %}\n>   next",
+    "html": "<blockquote><ul><li>next</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-95",
+    "source": "> - word\n>   {% a %}\n>   next",
+    "html": "<blockquote><ul><li>word\n\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-96",
+    "source": "word{}{}",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-97",
+    "source": "[word]{}{}",
+    "html": "<p><span>word</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-98",
+    "source": "_word_{}{}",
+    "html": "<p><em>word</em></p>",
+    "table": true
+  },
+  {
+    "name": "owner-99",
+    "source": "*word*{}{}",
+    "html": "<p><strong>word</strong></p>",
+    "table": true
+  },
+  {
+    "name": "owner-100",
+    "source": "`word`{}{}",
+    "html": "<p><code>word</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-101",
+    "source": "[word](u){}{}",
+    "html": "<p><a href=\"u\">word</a></p>",
+    "table": true
+  },
+  {
+    "name": "owner-102",
+    "source": "{}{}\nnext",
+    "html": "<p>\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-103",
+    "source": "word\n{}{}\nnext",
+    "html": "<p>word\n\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-104",
+    "source": "> word{}{}",
+    "html": "<blockquote><p>word</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-105",
+    "source": "> [word]{}{}",
+    "html": "<blockquote><p><span>word</span></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-106",
+    "source": "> _word_{}{}",
+    "html": "<blockquote><p><em>word</em></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-107",
+    "source": "> *word*{}{}",
+    "html": "<blockquote><p><strong>word</strong></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-108",
+    "source": "> `word`{}{}",
+    "html": "<blockquote><p><code>word</code></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-109",
+    "source": "> [word](u){}{}",
+    "html": "<blockquote><p><a href=\"u\">word</a></p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-110",
+    "source": "> {}{}\n> next",
+    "html": "<blockquote><p>\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-111",
+    "source": "> word\n> {}{}\n> next",
+    "html": "<blockquote><p>word\n\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-112",
+    "source": "- word{}{}",
+    "html": "<ul><li>word</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-113",
+    "source": "- [word]{}{}",
+    "html": "<ul><li><span>word</span></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-114",
+    "source": "- _word_{}{}",
+    "html": "<ul><li><em>word</em></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-115",
+    "source": "- *word*{}{}",
+    "html": "<ul><li><strong>word</strong></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-116",
+    "source": "- `word`{}{}",
+    "html": "<ul><li><code>word</code></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-117",
+    "source": "- [word](u){}{}",
+    "html": "<ul><li><a href=\"u\">word</a></li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-118",
+    "source": "- {}{}\n  next",
+    "html": "<ul><li>\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-119",
+    "source": "- word\n  {}{}\n  next",
+    "html": "<ul><li>word\n\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-120",
+    "source": "> - word{}{}",
+    "html": "<blockquote><ul><li>word</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-121",
+    "source": "> - [word]{}{}",
+    "html": "<blockquote><ul><li><span>word</span></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-122",
+    "source": "> - _word_{}{}",
+    "html": "<blockquote><ul><li><em>word</em></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-123",
+    "source": "> - *word*{}{}",
+    "html": "<blockquote><ul><li><strong>word</strong></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-124",
+    "source": "> - `word`{}{}",
+    "html": "<blockquote><ul><li><code>word</code></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-125",
+    "source": "> - [word](u){}{}",
+    "html": "<blockquote><ul><li><a href=\"u\">word</a></li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-126",
+    "source": "> - {}{}\n>   next",
+    "html": "<blockquote><ul><li>\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-127",
+    "source": "> - word\n>   {}{}\n>   next",
+    "html": "<blockquote><ul><li>word\n\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-128",
+    "source": "word{%}%}",
+    "html": "<p>word%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-129",
+    "source": "[word]{%}%}",
+    "html": "<p><span>word</span>%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-130",
+    "source": "_word_{%}%}",
+    "html": "<p><em>word</em>%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-131",
+    "source": "*word*{%}%}",
+    "html": "<p><strong>word</strong>%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-132",
+    "source": "`word`{%}%}",
+    "html": "<p><code>word</code>%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-133",
+    "source": "[word](u){%}%}",
+    "html": "<p><a href=\"u\">word</a>%}</p>",
+    "table": true
+  },
+  {
+    "name": "owner-134",
+    "source": "{%}%}\nnext",
+    "html": "<p>%}\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-135",
+    "source": "word\n{%}%}\nnext",
+    "html": "<p>word\n%}\nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-136",
+    "source": "> word{%}%}",
+    "html": "<blockquote><p>word%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-137",
+    "source": "> [word]{%}%}",
+    "html": "<blockquote><p><span>word</span>%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-138",
+    "source": "> _word_{%}%}",
+    "html": "<blockquote><p><em>word</em>%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-139",
+    "source": "> *word*{%}%}",
+    "html": "<blockquote><p><strong>word</strong>%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-140",
+    "source": "> `word`{%}%}",
+    "html": "<blockquote><p><code>word</code>%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-141",
+    "source": "> [word](u){%}%}",
+    "html": "<blockquote><p><a href=\"u\">word</a>%}</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-142",
+    "source": "> {%}%}\n> next",
+    "html": "<blockquote><p>%}\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-143",
+    "source": "> word\n> {%}%}\n> next",
+    "html": "<blockquote><p>word\n%}\nnext</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-144",
+    "source": "- word{%}%}",
+    "html": "<ul><li>word%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-145",
+    "source": "- [word]{%}%}",
+    "html": "<ul><li><span>word</span>%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-146",
+    "source": "- _word_{%}%}",
+    "html": "<ul><li><em>word</em>%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-147",
+    "source": "- *word*{%}%}",
+    "html": "<ul><li><strong>word</strong>%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-148",
+    "source": "- `word`{%}%}",
+    "html": "<ul><li><code>word</code>%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-149",
+    "source": "- [word](u){%}%}",
+    "html": "<ul><li><a href=\"u\">word</a>%}</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-150",
+    "source": "- {%}%}\n  next",
+    "html": "<ul><li>%}\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-151",
+    "source": "- word\n  {%}%}\n  next",
+    "html": "<ul><li>word\n%}\nnext</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-152",
+    "source": "> - word{%}%}",
+    "html": "<blockquote><ul><li>word%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-153",
+    "source": "> - [word]{%}%}",
+    "html": "<blockquote><ul><li><span>word</span>%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-154",
+    "source": "> - _word_{%}%}",
+    "html": "<blockquote><ul><li><em>word</em>%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-155",
+    "source": "> - *word*{%}%}",
+    "html": "<blockquote><ul><li><strong>word</strong>%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-156",
+    "source": "> - `word`{%}%}",
+    "html": "<blockquote><ul><li><code>word</code>%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-157",
+    "source": "> - [word](u){%}%}",
+    "html": "<blockquote><ul><li><a href=\"u\">word</a>%}</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-158",
+    "source": "> - {%}%}\n>   next",
+    "html": "<blockquote><ul><li>%}\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-159",
+    "source": "> - word\n>   {%}%}\n>   next",
+    "html": "<blockquote><ul><li>word\n%}\nnext</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-review-0",
+    "source": "{}x\n```\nc\n```",
+    "html": "<p>x\n<code>\nc\n</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-1",
+    "source": "{%c%}x\n```\nc\n```",
+    "html": "<p>x\n<code>\nc\n</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-2",
+    "source": "- item\n  more\n{}\n- b",
+    "html": "<ul><li>item\nmore</li></ul><ul><li>b</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-review-3",
+    "source": "text\ncivil. {}\nnext",
+    "html": "<p>text\ncivil. \nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-4",
+    "source": "text\n{.a}{.b}\nmore",
+    "html": "<p>text\n\nmore</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-5",
+    "source": "text\n{.a}\nmore",
+    "html": "<p>text\n\nmore</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-6",
+    "source": "\n{}\nword",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-7",
+    "source": "\nword{}",
+    "html": "<p>word</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-8",
+    "source": "w\\{x\\}{.d}",
+    "html": "<p>w{x<span class=\"d\">}</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-9",
+    "source": "a\n{}\n```\nx\n```",
+    "html": "<p>a\n\n<code>\nx\n</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-10",
+    "source": "a\n{%c%}\n```\nx\n```",
+    "html": "<p>a\n\n<code>\nx\n</code></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-11",
+    "source": "a\n{}\n[r]: u\n\n[r]: v\n\n[x][r]",
+    "html": "<p>a\n\n[r]: u</p><p><a href=\"v\">x</a></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-12",
+    "source": "{}{.c}\npara",
+    "html": "<p>\npara</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-13",
+    "source": "> a\n>\n> {}\n> b",
+    "html": "<blockquote><p>a</p><p>b</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-review-14",
+    "source": "- item\n{}\n- b",
+    "html": "<ul><li>item</li></ul><ul><li>b</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-review-15",
+    "source": "Hello. {}\nnext",
+    "html": "<p>Hello. \nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-16",
+    "source": "word. {}\nnext",
+    "html": "<p>word. \nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-17",
+    "source": "Mr. {}\nnext",
+    "html": "<p>Mr. \nnext</p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-18",
+    "source": "{}\n```\ncode\n```",
+    "html": "<pre><code>code\n</code></pre>",
+    "table": true
+  },
+  {
+    "name": "owner-review-19",
+    "source": "{%c%}\n```\ncode\n```",
+    "html": "<pre><code>code\n</code></pre>",
+    "table": true
+  },
+  {
+    "name": "owner-review-20",
+    "source": "{ }\n```\ncode\n```",
+    "html": "<pre><code>code\n</code></pre>",
+    "table": true
+  },
+  {
+    "name": "owner-review-21",
+    "source": "- item\n  {}\n  b",
+    "html": "<ul><li>item\n\nb</li></ul>",
+    "table": true
+  },
+  {
+    "name": "owner-review-22",
+    "source": "> - item\n> {}\n> - b",
+    "html": "<blockquote><ul><li>item</li></ul><ul><li>b</li></ul></blockquote>",
+    "table": true
+  },
+  {
+    "name": "owner-review-23",
+    "source": "word{a=b.c}{.d}",
+    "html": "<p><span class=\"d\">word{a=b.c}</span></p>",
+    "table": true
+  },
+  {
+    "name": "owner-review-24",
+    "source": "w{x}{.d}",
+    "html": "<p><span class=\"d\">w{x}</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-0",
+    "source": "{}{.c} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-1",
+    "source": "{.c}{} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-2",
+    "source": "{}{.c}x",
+    "html": "<p>x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-3",
+    "source": "{}{.c}\nx",
+    "html": "<p>\nx</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-4",
+    "source": "> {}{.c} x",
+    "html": "<blockquote><p> x</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-5",
+    "source": "- {}{.c} x",
+    "html": "<ul><li> x</li></ul>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-6",
+    "source": "word{}{.c} x",
+    "html": "<p><span class=\"c\">word</span> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-7",
+    "source": "[word]{}{.c} x",
+    "html": "<p><span class=\"c\">word</span> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-8",
+    "source": "{}{%c%}{.d} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-9",
+    "source": "\\[^x]{.c}",
+    "html": "<p><span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-10",
+    "source": "a\\[^x]{.c}",
+    "html": "<p>a<span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-11",
+    "source": "\\[^x]{}{.c}",
+    "html": "<p><span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-12",
+    "source": "\\[^x]{.c} next",
+    "html": "<p><span class=\"c\">[^x]</span> next</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-13",
+    "source": "\\[^x\\]{.c}",
+    "html": "<p>[^x<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-14",
+    "source": "w\\[^x\\]{.c}",
+    "html": "<p>w[^x<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-15",
+    "source": "[t]\\]{.c}",
+    "html": "<p>[t]<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-16",
+    "source": "[t]\\}{.c}",
+    "html": "<p>[t]<span class=\"c\">}</span></p>",
+    "table": true
   }
 ]

@@ -20,7 +20,7 @@ fn emphasis_uses_djot_closer_ownership() {
         ("*a {.c}*", "<p><strong>a </strong></p>"),
         ("[r]: /u_v\n\n[x][r]", "<p><a href=\"/u_v\">x</a></p>"),
         ("![alt_x](u.png)", "<img src=\"u.png\" alt=\"alt_x\">"),
-        ("a\n{.c}\nb", "<p>a\nb</p>"),
+        ("a\n{.c}\nb", "<p>a\n\nb</p>"),
         ("_emph_{.a}", "<p><em class=\"a\">emph</em></p>"),
     ] {
         assert_eq!(to_html(&djot_to_carve(source)).trim(), expected, "{source}");
