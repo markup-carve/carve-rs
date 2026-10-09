@@ -6548,7 +6548,7 @@ fn spell_crossref_target(text: &str) -> String {
     {
         crate::render_carve_error::record_unspellable(
             "heading_ref",
-            "an empty target or a target with a closer or whitespace has no Carve source spelling",
+            "an empty target or a target with a closer, whitespace or NUL has no Carve source spelling",
         );
     }
     text.to_owned()

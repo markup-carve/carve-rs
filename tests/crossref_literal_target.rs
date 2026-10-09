@@ -1,5 +1,5 @@
 use carve::ast::{BlockNode, InlineNode};
-use carve::{from_json, parse, render_carve, to_carve, to_html, RenderCarveError};
+use carve::{from_json, parse, render_carve, to_carve, to_html, to_json, RenderCarveError};
 
 #[test]
 fn a_crossref_target_keeps_its_literal_backslashes() {
@@ -40,6 +40,20 @@ fn an_ingested_target_without_a_spelling_is_refused() {
 fn literal_targets_in_table_and_link_hosts_read_back() {
     for source in ["| </#a\\> |\n", "| </#a\\|b> |\n", "[x </#a\\]>](u)\n"] {
         let once = to_carve(source);
+        assert_eq!(once, source);
+        let target = source
+            .split_once("</#")
+            .unwrap()
+            .1
+            .split_once('>')
+            .unwrap()
+            .0;
+        let tree = to_json(&parse(source));
+        assert!(tree.contains("\"type\":\"heading_ref\""));
+        assert!(tree.contains(&format!(
+            "\"target\":{}",
+            serde_json::to_string(target).unwrap()
+        )));
         assert_eq!(to_carve(&once), once);
         assert_eq!(to_html(&once), to_html(source));
     }
