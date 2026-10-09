@@ -309,7 +309,6 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         }
         BlockNode::CodeBlock(code) => {
             let content = resolve_nbsp(&strip_controls(&code.content));
-            let fence = safe_fence(&content, 3);
             let mut info = code
                 .lang
                 .as_deref()
@@ -345,13 +344,13 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             // understand, and carve-php was already emitting it (carve#352).
             if let Some(label) = &code.label {
                 if !label.is_empty() {
-                    let cleaned: String = label
-                        .chars()
-                        .filter(|c| !matches!(c, '[' | ']' | '`'))
-                        .collect();
+                    let cleaned: String =
+                        label.chars().filter(|c| !matches!(c, '[' | ']')).collect();
                     info.push_str(&format!(" [{cleaned}]"));
                 }
             }
+            let fence =
+                safe_fence_with_marker(&content, 3, if info.contains('`') { '~' } else { '`' });
             let ending = if !content.is_empty() && !content.ends_with('\n') {
                 "\n"
             } else {
@@ -2275,17 +2274,21 @@ fn escape_code_title(title: &str) -> String {
 }
 
 fn safe_fence(content: &str, min: usize) -> String {
+    safe_fence_with_marker(content, min, '`')
+}
+
+fn safe_fence_with_marker(content: &str, min: usize, marker: char) -> String {
     let mut longest = 0usize;
     let mut current = 0usize;
     for ch in content.chars() {
-        if ch == '`' {
+        if ch == marker {
             current += 1;
             longest = longest.max(current);
         } else {
             current = 0;
         }
     }
-    "`".repeat(min.max(longest + 1))
+    marker.to_string().repeat(min.max(longest + 1))
 }
 
 fn render_code(content: &str) -> String {
