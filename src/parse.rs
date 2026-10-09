@@ -22012,6 +22012,37 @@ fn last_backtick_run_starts(bytes: &[u8]) -> HashMap<usize, usize> {
     last
 }
 
+/// Locate structural brackets in a self-contained verbatim run.
+pub(crate) fn structural_bracket_offsets(source: &str) -> Option<Vec<usize>> {
+    if source
+        .lines()
+        .any(|line| line.trim_start_matches([' ', '\t']).starts_with("%%"))
+    {
+        return None;
+    }
+    let bytes = source.as_bytes();
+    let mut offsets = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'`' => {
+                i = skip_code_span(bytes, i)?;
+            }
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i).unwrap();
+            }
+            b'{' if matches!(bytes.get(i + 1), Some(b'#' | b'%')) => return None,
+            b'[' | b']' => {
+                offsets.push(i);
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    Some(offsets)
+}
+
 /// Precompute the matching `]` index for every `[` in `bytes`, giving the
 /// answer `read_bracketed` gives scanning from that `[` (CARVE-P3-001): backslash
 /// escapes skip two bytes, and a verbatim span or an editorial comment hides
