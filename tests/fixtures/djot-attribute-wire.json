@@ -3360,5 +3360,107 @@
     "source": "w{x}{.d}",
     "html": "<p><span class=\"d\">w{x}</span></p>",
     "table": true
+  },
+  {
+    "name": "adjacent-text-0",
+    "source": "{}{.c} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-1",
+    "source": "{.c}{} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-2",
+    "source": "{}{.c}x",
+    "html": "<p>x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-3",
+    "source": "{}{.c}\nx",
+    "html": "<p>\nx</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-4",
+    "source": "> {}{.c} x",
+    "html": "<blockquote><p> x</p></blockquote>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-5",
+    "source": "- {}{.c} x",
+    "html": "<ul><li> x</li></ul>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-6",
+    "source": "word{}{.c} x",
+    "html": "<p><span class=\"c\">word</span> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-7",
+    "source": "[word]{}{.c} x",
+    "html": "<p><span class=\"c\">word</span> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-8",
+    "source": "{}{%c%}{.d} x",
+    "html": "<p> x</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-9",
+    "source": "\\[^x]{.c}",
+    "html": "<p><span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-10",
+    "source": "a\\[^x]{.c}",
+    "html": "<p>a<span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-11",
+    "source": "\\[^x]{}{.c}",
+    "html": "<p><span class=\"c\">[^x]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-12",
+    "source": "\\[^x]{.c} next",
+    "html": "<p><span class=\"c\">[^x]</span> next</p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-13",
+    "source": "\\[^x\\]{.c}",
+    "html": "<p>[^x<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-14",
+    "source": "w\\[^x\\]{.c}",
+    "html": "<p>w[^x<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-15",
+    "source": "[t]\\]{.c}",
+    "html": "<p>[t]<span class=\"c\">]</span></p>",
+    "table": true
+  },
+  {
+    "name": "adjacent-text-16",
+    "source": "[t]\\}{.c}",
+    "html": "<p>[t]<span class=\"c\">}</span></p>",
+    "table": true
   }
 ]

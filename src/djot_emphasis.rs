@@ -132,11 +132,7 @@ fn process(
                         break;
                     }
                 }
-                if at == prefix_end
-                    && end != first_attribute_end
-                    && end <= line_end
-                    && source[end..line_end].trim().is_empty()
-                {
+                if at == prefix_end && end != first_attribute_end && end <= line_end {
                     wire = "{%%}".to_owned();
                 }
                 if wire == "{}"

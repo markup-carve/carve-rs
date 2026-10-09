@@ -619,6 +619,18 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
     let masked = String::from_utf8(masked).expect("footnote masks preserve UTF-8");
     let mut literal_braces = std::collections::HashMap::new();
     let mut escaped_brace_closes = HashSet::new();
+    for note in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
+        if is_escaped(source.as_bytes(), note.start())
+            && !is_escaped(source.as_bytes(), note.end() - 1)
+            && !note
+                .as_str()
+                .chars()
+                .any(|ch| ch.is_whitespace() || "{}*_~`\\".contains(ch))
+        {
+            literal_braces.insert(note.end() - 1, note.start() - 1);
+            escaped_brace_closes.insert(note.end() - 1);
+        }
+    }
     let mut brace_stack: Vec<(usize, bool, usize)> = Vec::new();
     let mut spaces = 0;
     let mut escaped = None;
@@ -629,8 +641,8 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         if let Some(begin) = escaped.take() {
             if ch == '{' && masked.as_bytes()[at] == b'{' {
                 brace_stack.push((begin, true, spaces));
-            } else if ch == '}' {
-                if brace_stack.last().is_some_and(|(_, literal, _)| *literal) {
+            } else if ch == '}' || ch == ']' {
+                if ch == '}' && brace_stack.last().is_some_and(|(_, literal, _)| *literal) {
                     brace_stack.pop();
                 }
                 literal_braces.insert(at, begin);
@@ -729,9 +741,21 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             output.push_str(&source[cursor..word]);
             output.push_str(&format!("{prefix}{}\0", spans.len()));
             let converted = rewrite_djot_body(&format!("x {}", &source[word..i]));
-            let body = &converted[2..];
+            let mut body = converted[2..].to_owned();
+            if source.as_bytes()[i - 1] == b']'
+                && escaped_brace_closes.contains(&(i - 1))
+                && literal_braces.get(&(i - 1)) != Some(&(i - 2))
+            {
+                body.pop();
+                body.push_str("\\]");
+            }
             spans.push(format!(
-                "[{}{body}]{attrs}",
+                "{}[{}{body}]{attrs}",
+                if word > 0 && source.as_bytes()[word - 1] == b']' {
+                    "{%%}"
+                } else {
+                    ""
+                },
                 if body.starts_with('^') { "\\" } else { "" }
             ));
             cursor = end;
