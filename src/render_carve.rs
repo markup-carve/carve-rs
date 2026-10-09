@@ -76,6 +76,7 @@ struct CarveContext {
     braced_spans: Vec<(char, Option<usize>)>,
     /// The emphasis kinds open around the node being written.
     open_kinds: Vec<char>,
+    attribute_bracket_depth: usize,
     attribute_markers: HashMap<char, usize>,
     /// The brackets of the inline run being written, as (text node address,
     /// bracket ordinal in that node), and whether a run has claimed them.
@@ -1043,6 +1044,7 @@ fn render_with_escapes_once(
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
+        attribute_bracket_depth: 0,
         attribute_markers: HashMap::new(),
         brackets: BracketScope::default(),
         paired_closer_carry: std::cell::Cell::new(false),
@@ -4193,7 +4195,9 @@ fn render_bracketed_content(
     };
     let outer = std::mem::replace(&mut ctx.brackets, unclaimed);
     let outer_spans = std::mem::take(&mut ctx.braced_spans);
+    ctx.attribute_bracket_depth += 1;
     let out = render_inlines(session, children, ctx);
+    ctx.attribute_bracket_depth -= 1;
     ctx.brackets = outer;
     ctx.braced_spans = outer_spans;
     out
@@ -4612,11 +4616,8 @@ fn render_forced_emphasis(delim: &str, content: &str) -> String {
 }
 
 fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char) -> String {
-    // `/` AROUND A CONTENT THAT OPENS AND CLOSES WITH `*` is the combined
-    // bold-italic spelling, which re-parses with the nesting the other way
-    // round (markup-carve/carve-rs#1660). The test is on the bytes, not the
-    // node shape: `{/{*x*} y {*z*}/}` writes the same hazard.
-    let reads_as_bold_italic = delim == "/" && content.starts_with('*') && content.ends_with('*');
+    // A leading `*` would form the combined bold-italic opener.
+    let reads_as_bold_italic = delim == "/" && content.starts_with('*');
     let needs_forced = is_word_boundary(prev_char)
         || is_word_boundary(next_char)
         || reads_as_bold_italic
@@ -4899,31 +4900,39 @@ fn refuse_attributes_on_sigil(attrs: &Option<Attrs>, node_type: &'static str) {
 }
 
 fn render_attrs(attrs: &Option<Attrs>) -> String {
-    render_attrs_with_markers(attrs, &[])
+    render_attrs_with_markers(attrs, &[], false)
 }
 
 fn render_inline_attrs(attrs: &Option<Attrs>, ctx: &mut CarveContext) -> String {
-    let rendered = render_attrs_with_markers(attrs, &ctx.open_kinds);
+    let rendered =
+        render_attrs_with_markers(attrs, &ctx.open_kinds, ctx.attribute_bracket_depth > 0);
     for &marker in &ctx.open_kinds {
-        if attrs.as_ref().is_some_and(|attrs| {
-            attrs.id.as_ref().is_some_and(|id| id.contains(marker))
-                || attrs.classes.iter().any(|class| class.contains(marker))
-                || attrs
-                    .key_values
-                    .iter()
-                    .any(|(key, value)| key.contains(marker) || value.contains(marker))
-        }) {
+        if (marker == '=' && rendered.contains("=\""))
+            || attrs.as_ref().is_some_and(|attrs| {
+                attrs.id.as_ref().is_some_and(|id| id.contains(marker))
+                    || attrs.classes.iter().any(|class| class.contains(marker))
+                    || attrs
+                        .key_values
+                        .iter()
+                        .any(|(key, value)| key.contains(marker) || value.contains(marker))
+            })
+        {
             *ctx.attribute_markers.entry(marker).or_default() += 1;
         }
     }
     rendered
 }
 
-fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char]) -> String {
+fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char], bracketed: bool) -> String {
     let conflicts = |value: &str| markers.iter().any(|&marker| value.contains(marker));
     let quote = |value: &str| {
-        if conflicts(value) {
-            quoted_attr_value(value)
+        if (!markers.is_empty() || bracketed)
+            && (conflicts(value) || value.contains(['{', '}', '[', ']', '`']))
+        {
+            format!(
+                "\"{}\"",
+                escape_quoted_run(value, &['"', '|', '{', '}', '[', ']', '`'])
+            )
         } else {
             quote_attr_value(value)
         }
@@ -4957,7 +4966,17 @@ fn render_attrs_with_markers(attrs: &Option<Attrs>, markers: &[char]) -> String 
             if crate::parse::is_css_identifier(cls) && !conflicts(cls) {
                 parts.push(format!(".{}", escape_attr_name_value(cls)));
             } else {
-                parts.push(format!("class={}", quoted_attr_value(cls)));
+                parts.push(format!(
+                    "class={}",
+                    if markers.is_empty() && !bracketed {
+                        quoted_attr_value(cls)
+                    } else {
+                        format!(
+                            "\"{}\"",
+                            escape_quoted_run(cls, &['"', '|', '{', '}', '[', ']', '`'])
+                        )
+                    }
+                ));
             }
         }
     };
