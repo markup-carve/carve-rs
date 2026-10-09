@@ -49,13 +49,22 @@ fn process(
     let code_mask = super::mask_code_and_destinations(source);
     let mut attributes = HashMap::new();
     let mut empty_block_attributes = HashSet::new();
+    let mut list_boundary_comments = HashMap::new();
     let mut line_start = 0;
     let mut line_end = 0;
+    let mut first_attribute_line = true;
     let mut previous_line = "";
     let mut prefix_end = 0;
     let mut list_attribute = false;
+    let mut previous_content = "";
+    let mut previous_item_width = 0;
+    let mut attribute_indent = 0;
+    let mut line_prefix = "";
+    let mut active_list_column = None;
+    let quote_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]?)*").unwrap();
+    let previous_item = cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let attribute_prefix =
-        cached_regex!(r"^[ \t>]*(?:(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+)?").unwrap();
+        cached_regex!(r"^[ \t>]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)?").unwrap();
     let mut read_native = super::NativeAttributeReader::new(source);
     let mut at = 0;
     while at < bytes.len() {
@@ -65,6 +74,7 @@ fn process(
         }
         if code_mask.as_bytes()[at] == b'{' && mask[at] != b' ' {
             if let Some((mut end, mut wire)) = read_native.read(at) {
+                let first_attribute_end = end;
                 while bytes.get(end) == Some(&b'{') {
                     let Some((next_end, next_wire)) = read_native.read(end) else {
                         break;
@@ -80,11 +90,12 @@ fn process(
                     }
                     end = next_end;
                 }
-                while line_end <= at {
-                    if line_end > 0 {
+                while first_attribute_line || line_end < at {
+                    if !first_attribute_line {
                         previous_line = &source[line_start..line_end];
                         line_start = line_end + 1;
                     }
+                    first_attribute_line = false;
                     line_end = source[line_start..]
                         .find('\n')
                         .map_or(source.len(), |offset| line_start + offset);
@@ -94,21 +105,56 @@ fn process(
                         .as_str();
                     prefix_end = line_start + prefix.len();
                     list_attribute = prefix.bytes().any(|byte| b"-*+.)".contains(&byte));
+                    line_prefix = prefix;
+                    previous_content =
+                        &previous_line[quote_prefix.find(previous_line).unwrap().end()..];
+                    previous_item_width = previous_item
+                        .find(previous_content)
+                        .map_or(0, |value| value.len());
+                    attribute_indent = prefix.len() - quote_prefix.find(prefix).unwrap().end();
+                    list_attribute = list_attribute
+                        && (line_start == 0
+                            || previous_content.trim().is_empty()
+                            || active_list_column.is_some());
+                    if let Some(column) = active_list_column {
+                        if !source[line_start..line_end].trim().is_empty()
+                            && attribute_indent < column
+                            && !list_attribute
+                        {
+                            previous_item_width = column;
+                            active_list_column = None;
+                        }
+                    }
+                    if list_attribute {
+                        active_list_column = Some(attribute_indent);
+                    }
                     if line_end == source.len() {
                         break;
                     }
                 }
+                if at == prefix_end
+                    && end != first_attribute_end
+                    && end <= line_end
+                    && source[end..line_end].trim().is_empty()
+                {
+                    wire = "{%%}".to_owned();
+                }
                 if wire == "{}"
+                    && end == first_attribute_end
                     && at == prefix_end
                     && end <= line_end
                     && source[end..line_end].trim().is_empty()
                     && (list_attribute
                         || line_start == 0
-                        || previous_line.trim().is_empty()
-                        || previous_line.trim().starts_with('{')
-                            && previous_line.trim().ends_with('}'))
+                        || previous_content.trim().is_empty()
+                        || previous_content.trim().starts_with('{')
+                            && previous_content.trim().ends_with('}')
+                        || attribute_indent < previous_item_width)
                 {
                     empty_block_attributes.insert(at);
+                    if attribute_indent < previous_item_width {
+                        list_boundary_comments.insert(at, format!("%%%\n{line_prefix}%%%"));
+                    }
                 }
                 for byte in &mut mask[at..end] {
                     if *byte != b'\n' {
@@ -426,6 +472,7 @@ fn process(
         mask: &mask,
         attributes: &attributes,
         empty_block_attributes: &empty_block_attributes,
+        list_boundary_comments: &list_boundary_comments,
         bracket_closes,
         pairs: &pairs,
         structural: &structural,
@@ -480,6 +527,7 @@ struct Renderer<'a> {
     mask: &'a [u8],
     attributes: &'a HashMap<usize, (usize, String)>,
     empty_block_attributes: &'a HashSet<usize>,
+    list_boundary_comments: &'a HashMap<usize, String>,
     bracket_closes: HashSet<usize>,
     pairs: &'a [Pair],
     structural: &'a HashSet<usize>,
@@ -505,6 +553,8 @@ impl Renderer<'_> {
                         && !self.literal_brackets.contains(&(i - 1))
                     {
                         "{}"
+                    } else if let Some(comment) = self.list_boundary_comments.get(&i) {
+                        comment
                     } else if self.empty_block_attributes.contains(&i) {
                         "%%"
                     } else {

@@ -85,7 +85,7 @@ pub fn djot_to_carve(djot: &str) -> String {
         cached_regex!(r"(?m)^[ \t]*(?:> ?)*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?\[([^\[\]\n]*)\]:[ \t]")
             .unwrap();
     let definition_boundary =
-        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\]]*\]:)").unwrap();
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[ \t.#A-Za-z}%]|\[[^\]]*\]:)").unwrap();
     let definitions: std::collections::HashSet<String> = definitions_regex
         .captures_iter(&folded)
         .filter(|caps| {
@@ -291,7 +291,7 @@ fn mask_djot_attribute_source(source: &str) -> String {
     let rows = djot_table_rows(source, &code_mask);
     let definition_pattern = cached_regex!(r"^\[[^\^\]\n][^\]\n]*\]:|^\[\]:").unwrap();
     let boundary_pattern =
-        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\^\]][^\]]*\]:|\[\]:)")
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[ \t.#A-Za-z}%]|\[[^\^\]][^\]]*\]:|\[\]:)")
             .unwrap();
     let continuation_pattern = cached_regex!(r"^\S+$").unwrap();
     let mut definition_indent = None;
@@ -610,7 +610,51 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
     }
     let paired = emphasis::paired_openers(source, &emphasis_mask(source));
     let mut read_native = NativeAttributeReader::new(source);
-    let masked = mask_code_and_destinations(source);
+    let mut masked = mask_code_and_destinations(source).into_bytes();
+    for note in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
+        if !is_escaped(source.as_bytes(), note.start()) {
+            masked[note.range()].fill(b' ');
+        }
+    }
+    let masked = String::from_utf8(masked).expect("footnote masks preserve UTF-8");
+    let mut literal_braces = std::collections::HashMap::new();
+    let mut escaped_brace_closes = HashSet::new();
+    let mut brace_stack: Vec<(usize, bool, usize)> = Vec::new();
+    let mut spaces = 0;
+    let mut escaped = None;
+    for (at, ch) in source.char_indices() {
+        if ch.is_whitespace() {
+            spaces += 1;
+        }
+        if let Some(begin) = escaped.take() {
+            if ch == '{' && masked.as_bytes()[at] == b'{' {
+                brace_stack.push((begin, true, spaces));
+            } else if ch == '}' {
+                if brace_stack.last().is_some_and(|(_, literal, _)| *literal) {
+                    brace_stack.pop();
+                }
+                literal_braces.insert(at, begin);
+                escaped_brace_closes.insert(at);
+            }
+            continue;
+        }
+        if ch == '\\' {
+            escaped = Some(at);
+            continue;
+        }
+        if masked.as_bytes()[at] != source.as_bytes()[at] {
+            continue;
+        }
+        if ch == '{' {
+            brace_stack.push((at, false, spaces));
+        } else if ch == '}' {
+            if let Some((begin, true, opening_spaces)) = brace_stack.pop() {
+                if spaces == opening_spaces {
+                    literal_braces.insert(at, begin);
+                }
+            }
+        }
+    }
     let bytes = source.as_bytes();
     let mut output = String::new();
     let mut cursor = 0;
@@ -642,16 +686,31 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             continue;
         }
         let mut word = i;
-        if i > 0 && masked.as_bytes()[i - 1] == bytes[i - 1] && !b"`*_~^]}>".contains(&bytes[i - 1])
+        if i > 0
+            && masked.as_bytes()[i - 1] == bytes[i - 1]
+            && (!b"`*_~^]}>".contains(&bytes[i - 1]) || literal_braces.contains_key(&(i - 1)))
         {
-            for (at, ch) in source[cursor..i].char_indices().rev() {
+            while word > cursor {
+                if let Some(&literal) = literal_braces
+                    .get(&(word - 1))
+                    .filter(|&&literal| literal >= cursor)
+                {
+                    let escaped = escaped_brace_closes.contains(&(word - 1));
+                    word = literal;
+                    if escaped {
+                        break;
+                    }
+                    continue;
+                }
+                let ch = source[..word].chars().next_back().unwrap();
+                let at = word - ch.len_utf8();
                 if ch.is_whitespace()
                     || "\"'{}[]`\0>|".contains(ch)
-                    || masked.as_bytes()[cursor + at] != bytes[cursor + at]
+                    || masked.as_bytes()[at] != bytes[at]
                 {
                     break;
                 }
-                word = cursor + at;
+                word = at;
             }
         }
         let paired_word = (word..i)
@@ -1224,7 +1283,13 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         let item = r#"(?:[.#][A-Za-z0-9_][A-Za-z0-9_-]*|[A-Za-z][A-Za-z0-9_-]*=(?:"(?:\\.|[^"\\\n])*"|[A-Za-z0-9_:-]+))"#;
         regex::Regex::new(&format!(r"\{{[ \t]*{item}(?:[ \t]+{item})*[ \t]*\}}")).unwrap()
     });
-    let masked = mask_djot_attributes(source);
+    let mut masked = mask_djot_attributes(source).into_bytes();
+    for note in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
+        if !is_escaped(source.as_bytes(), note.start()) {
+            masked[note.range()].fill(b' ');
+        }
+    }
+    let masked = String::from_utf8(masked).expect("footnote masks preserve UTF-8");
     let uri = cached_regex!(r"<[A-Za-z][A-Za-z0-9+.-]*:[^<>\s]*>").unwrap();
     let masked = uri.replace_all(&masked, |caps: &regex::Captures<'_>| {
         " ".repeat(caps[0].len())
@@ -1277,18 +1342,19 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
                 .unwrap_or("");
             let previous = quote_prefix.replace(previous, "");
             let previous = previous.trim();
-            if alone
-                && source_lines
+            let block = index == 0
+                || previous.is_empty()
+                || (previous.starts_with('{') && previous.ends_with('}'))
+                || block_end.is_match(previous);
+            if alone && block {
+                if source_lines
                     .get(index + 1)
                     .is_some_and(|line| !line.trim().is_empty())
-                && (index == 0
-                    || previous.is_empty()
-                    || (previous.starts_with('{') && previous.ends_with('}'))
-                    || block_end.is_match(previous))
-            {
-                continue;
+                {
+                    continue;
+                }
+                drop_line = true;
             }
-            drop_line |= alone;
             output.push_str(&line[cursor..at]);
             cursor = attrs.end();
             let end = cursor + line[cursor..].len()
@@ -1297,7 +1363,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
             let value = if at != first {
                 space.to_string()
             } else if space.is_empty() {
-                String::new()
+                "{%%}".to_owned()
             } else {
                 format!("!`{space}`")
             };
@@ -1330,7 +1396,7 @@ fn emphasis_mask(source: &str) -> String {
     )
     .unwrap();
     let reference_boundary =
-        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\]]*\]:)").unwrap();
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[ \t.#A-Za-z}%]|\[[^\]]*\]:)").unwrap();
     for value in refs.find_iter(source) {
         let text = value.as_str().trim_start_matches([' ', '\t', '>']);
         if text.starts_with("[^") {
@@ -1796,16 +1862,14 @@ fn mask_djot_fences(
 ) -> String {
     let mut mask = source.as_bytes().to_vec();
     let opener = cached_regex!(r"^([ \t]*)(?:(\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+))?(`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap();
-    let boundary =
-        cached_regex!(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} |\{[.#A-Za-z])").unwrap();
+    let boundary = cached_regex!(r"^[ \t]*(?:[-*+] |[0-9]+[.)] |:{1,2} |#{1,6} )").unwrap();
     let mut fence: Option<(u8, usize, usize, Option<usize>, usize)> = None;
     let mut previous_block = true;
     let mut fence_target = String::new();
     let mut fence_dedent = 0;
     let mut fence_normalize = false;
     let mut normalize_boundary = true;
-    let normalize_boundary_pattern =
-        cached_regex!(r"^[ \t]*(?:#{1,6} |:{3,}|\{[.#A-Za-z])").unwrap();
+    let normalize_boundary_pattern = cached_regex!(r"^[ \t]*(?:#{1,6} |:{3,})").unwrap();
     let mut offset = 0;
     let marker_pattern = cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+\S").unwrap();
     let thematic_pattern = cached_regex!(r"^(?:([*-])[ \t]*){3,}$").unwrap();
@@ -1976,12 +2040,22 @@ fn mask_djot_fences(
                 blank_out(&mut mask, offset + start, offset + line.len());
             }
         } else {
+            let attribute_start = content.len() - content.trim_start().len();
+            let line_attributes = if content.as_bytes().get(attribute_start) == Some(&b'{') {
+                read_djot_word_attributes(content, attribute_start)
+            } else {
+                None
+            };
+            let attribute_boundary = can_normalize
+                && line_attributes.is_some_and(|(end, _)| end == content.trim_end().len());
             normalize_boundary = thematic_pattern.is_match(content.trim())
                 || block_definition.is_match(content)
                 || content.trim().is_empty()
                 || empty_footnote.is_match(content)
-                || normalize_boundary_pattern.is_match(content);
-            previous_block = content.trim().is_empty() || boundary.is_match(content);
+                || normalize_boundary_pattern.is_match(content)
+                || attribute_boundary;
+            previous_block =
+                content.trim().is_empty() || boundary.is_match(content) || attribute_boundary;
         }
         offset += raw.len();
     }
@@ -3995,13 +4069,14 @@ fn fold_djot_references(source: &str) -> String {
     let mask = mask_djot_inline(source, false);
     let rows = djot_table_rows(source, &mask);
     let definition = cached_regex!(r"^\[([^\^\]\n][^\]\n]*|)\]:(?:[ \t]+(\S*)[ \t]*|)$").unwrap();
-    let boundary = cached_regex!(r"^(?:#{1,6} |:{3,}|\{|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)").unwrap();
+    let boundary = cached_regex!(r"^(?:#{1,6} |:{3,}|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)").unwrap();
     let marker = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
     let token = cached_regex!(r"^\S+$").unwrap();
     let thematic = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*][ \t]*){3,}$").unwrap();
     let mut removed = HashSet::new();
     let (mut offset, mut previous_depth, mut n) = (0, 0, 0);
     let mut previous = String::new();
+    let mut previous_attribute_block = false;
     while n < lines.len() {
         let line = lines[n].clone();
         let depth = quoted(&line).0;
@@ -4009,14 +4084,15 @@ fn fold_djot_references(source: &str) -> String {
         let content = &line[at..];
         let previous_line = n.checked_sub(1).map_or("", |n| lines[n].as_str());
         let previous_at = djot_content_start(previous_line);
+        let allowed = previous.is_empty()
+            || previous_attribute_block
+            || rows.get(n.wrapping_sub(1)) == Some(&true)
+            || depth != previous_depth
+            || thematic.is_match(previous_line)
+            || at < previous_at && marker.is_match(&previous_line[..previous_at])
+            || boundary.is_match(&previous)
+            || marker.is_match(&line[..at]);
         if let Some(caps) = definition.captures(content) {
-            let allowed = previous.is_empty()
-                || rows.get(n.wrapping_sub(1)) == Some(&true)
-                || depth != previous_depth
-                || thematic.is_match(previous_line)
-                || at < previous_at && marker.is_match(&previous_line[..previous_at])
-                || boundary.is_match(&previous)
-                || marker.is_match(&line[..at]);
             if mask.as_bytes().get(offset + at) == Some(&b'[') && !allowed {
                 lines[n] = line.replacen("]:", "]\\:", 1);
             }
@@ -4043,6 +4119,10 @@ fn fold_djot_references(source: &str) -> String {
                 }
             }
         }
+        previous_attribute_block = allowed
+            && content.starts_with('{')
+            && read_djot_word_attributes(content, 0)
+                .is_some_and(|(end, _)| end == content.trim_end().len());
         previous = content.trim().to_owned();
         previous_depth = depth;
         offset += line.len() + 1;
@@ -4552,7 +4632,7 @@ fn normalize_djot_autolinks(source: &str) -> String {
     let rows = djot_table_rows(source, &code_mask);
     let definition_pattern = cached_regex!(r"^\[[^\^\]\n][^\]\n]*\]:|^\[\]:").unwrap();
     let boundary_pattern =
-        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\^\]][^\]]*\]:|\[\]:)")
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[ \t.#A-Za-z}%]|\[[^\^\]][^\]]*\]:|\[\]:)")
             .unwrap();
     let continuation_pattern = cached_regex!(r"^\S+$").unwrap();
     let mut definition_indent = None;
