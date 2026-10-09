@@ -736,5 +736,17 @@
     "source": "x [{*a] y `b*}",
     "html": "<p>x [{*a] y <code>b*}</code></p>",
     "roundTrip": true
+  },
+  {
+    "name": "* nested unclosed code owns its brackets",
+    "source": "{*{+``[`+}`*}]",
+    "html": "<p><strong><ins><code>[`</code></ins><code></code></strong>]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ nested unclosed code owns its brackets",
+    "source": "{~{+``[`+}`~}]",
+    "html": "<p><s><ins><code>[`</code></ins><code></code></s>]</p>",
+    "roundTrip": true
   }
 ]

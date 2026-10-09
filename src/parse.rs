@@ -20567,7 +20567,8 @@ fn parse_critic_markup(
 /// (carve-rs#2212).
 // Brackets inside an unclosed verbatim run are content until its raw closer.
 fn braced_closer_shares_the_run(bounds: &InlineBounds<'_>, open: usize, close: usize) -> bool {
-    bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
+    bounds.bracket_run_at(open).is_none()
+        || bounds.bracket_run_at(close) == bounds.bracket_run_at(open)
         || bounds
             .braced_closers
             .borrow()
