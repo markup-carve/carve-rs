@@ -1,7 +1,7 @@
 use crate::markdown_import::MarkdownLossKind;
 use crate::{
-    bbcode_to_carve, djot_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter,
-    HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
+    bbcode_to_carve, html_to_carve, BbcodeImportError, HtmlImportAdapter, HtmlImportError,
+    HtmlImportMode, HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,7 +250,7 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
     let stripped = crate::djot_migrate::strip_footnote_definition_attributes(source);
-    let value = djot_to_carve(source);
+    let value = crate::djot_migrate::djot_to_carve_prepared(&stripped);
     let mut result = assessed(
         source,
         value,

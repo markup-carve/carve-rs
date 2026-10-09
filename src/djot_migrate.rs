@@ -43,14 +43,17 @@ use crate::ast::{BlockNode, FigureTarget};
 
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
-    let stripped_definitions = strip_footnote_definition_attributes(djot);
+    djot_to_carve_prepared(&strip_footnote_definition_attributes(djot))
+}
+
+pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttributeStrip) -> String {
     let normalized = &stripped_definitions.source;
     let (frontmatter, separator, body) = split_frontmatter(normalized);
     let literal_attributes = escape_invalid_djot_attributes(body);
     let attributes = normalize_djot_attribute_lines(&literal_attributes);
     let fence_closers = normalize_djot_fences(&attributes);
     let references = fold_djot_references(&fence_closers);
-    let footnotes = normalize_djot_footnotes(&references, Some(&stripped_definitions));
+    let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions));
     let links = normalize_djot_links(&footnotes);
     let autolinks = normalize_djot_autolinks(&links);
     let table_pipes = normalize_djot_table_pipes(&autolinks);
@@ -5964,6 +5967,7 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
     let mut heading = false;
     let mut table = false;
     let mut dedent: Option<(usize, usize, usize)> = None;
+    let mut note_parents = Vec::new();
     let mut metadata_note = false;
     let mut note_column = None;
     let mut reference_column = None;
@@ -6019,8 +6023,27 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
                 lines[n] = format!("{}{}", quotes, &line[quotes.len() + delta..]);
             }
         }
-        if metadata_note && note_column.is_some_and(|col| !content.is_empty() && column + 1 == col)
-        {
+        while note_column.is_some_and(|col| !content.is_empty() && column + 1 < col) {
+            if metadata_note
+                && list_column.is_some_and(|col| column >= col)
+                && n > 0
+                && lines[n - 1].bytes().all(|ch| ch == b' ' || ch == b'\t')
+            {
+                while reserved.contains(&serial) {
+                    serial += 1;
+                }
+                comments.insert(serial);
+                lines[n - 1] = format!(
+                    "{}\0DJOTNOTEATTR{serial}\0",
+                    " ".repeat(list_column.unwrap())
+                );
+                serial += 1;
+            }
+            note_column = note_parents.pop();
+            metadata_note = false;
+            boundary = true;
+        }
+        if note_column.is_some_and(|col| !content.is_empty() && column + 1 == col) {
             let raw = lines[n].clone();
             let quotes = quote_pattern.find(&raw).unwrap().as_str();
             lines[n] = format!("{} {}", quotes, &raw[quotes.len()..]);
@@ -6037,26 +6060,6 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
             list_column = None;
             boundary = true;
             heading = false;
-        }
-        if note_column.is_some_and(|col| !content.is_empty() && column < col) {
-            if metadata_note
-                && list_column.is_some_and(|col| column >= col)
-                && n > 0
-                && lines[n - 1].bytes().all(|ch| ch == b' ' || ch == b'\t')
-            {
-                while reserved.contains(&serial) {
-                    serial += 1;
-                }
-                comments.insert(serial);
-                lines[n - 1] = format!(
-                    "{}\0DJOTNOTEATTR{serial}\0",
-                    " ".repeat(list_column.unwrap())
-                );
-                serial += 1;
-            }
-            note_column = None;
-            metadata_note = false;
-            boundary = true;
         }
         let opens_item = marker && (boundary || !pending.is_empty() || list_column.is_some());
         let opens_quote = depth > quote_depth && (boundary || !pending.is_empty() || opens_item);
@@ -6118,11 +6121,9 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
             {
                 handled_note = true;
                 let quote_prefix = quote_pattern.find(prefix).unwrap().as_str();
-                let target_column = column.min(
-                    list_column
-                        .unwrap_or(0)
-                        .max(parent_note_column.unwrap_or(0)),
-                );
+                let target_column = list_column
+                    .unwrap_or(0)
+                    .max(parent_note_column.unwrap_or(0));
                 let note_prefix = format!("{}{}", quote_prefix, " ".repeat(target_column));
                 if column > target_column {
                     dedent = Some((column, column - target_column, depth));
@@ -6163,6 +6164,9 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
         }
         let note = block_pattern_1.is_match(content);
         if note && block_allowed && mask.as_bytes().get(offset + prefix.len()) == Some(&b'[') {
+            if let Some(parent) = note_column {
+                note_parents.push(parent);
+            }
             note_column = Some(column + 2);
             metadata_note = handled_note;
             heading = false;
