@@ -41,6 +41,18 @@ fn code_payload_and_loss_reports_agree_in_every_mode() {
                     })
                     .collect();
                 assert_eq!(serde_json::json!(codes), case["codes"], "{}", case["name"]);
+                if case.get("warnings").is_some() {
+                    assert_eq!(
+                        report
+                            .diagnostics
+                            .iter()
+                            .filter(|d| d.severity == carve::HtmlImportSeverity::Warning)
+                            .count(),
+                        case["warnings"].as_array().unwrap().len(),
+                        "{}",
+                        case["name"]
+                    );
+                }
             }
             assert!(
                 to_html(&source.value).contains("<p>after</p>"),

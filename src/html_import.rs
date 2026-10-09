@@ -5900,6 +5900,7 @@ impl<'a> Importer<'a> {
     ) -> Result<String, HtmlImportError> {
         let (language_wrapper, lang) = language;
         let context = if block { "pre" } else { "code" };
+        let description = if block { "a code block" } else { "a code span" };
         enum Frame {
             Node(Handle, String, usize),
             Boundary,
@@ -5930,7 +5931,7 @@ impl<'a> Importer<'a> {
             if matches!(child.data, NodeData::Comment { .. }) {
                 self.diag(
                     HtmlImportDiagnosticCode::ElementDropped,
-                    format!("Dropped a comment inside <{context}>: code holds only text"),
+                    format!("Dropped a comment inside <{context}>: {description} holds only text"),
                     HtmlImportSeverity::Warning,
                     &child_path,
                     &child,
@@ -5990,7 +5991,11 @@ impl<'a> Importer<'a> {
                                     matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
                                 }) == lang)
                                 || (name == "class"
-                                    && !value.is_empty()
+                                    && !value
+                                        .trim_matches(|c| {
+                                            matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
+                                        })
+                                        .is_empty()
                                     && value
                                         .split(|c| {
                                             matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}')
@@ -6005,16 +6010,19 @@ impl<'a> Importer<'a> {
                         }
                     }
                 }
+                let name = attr.name.prefix.as_ref().map_or_else(
+                    || attr.name.local.to_string(),
+                    |prefix| format!("{prefix}:{}", attr.name.local),
+                );
+                let unsafe_attribute = is_dangerous_attr_name(&name)
+                    || ((tag == "a" && name == "href" || tag == "img" && name == "src")
+                        && has_denied_url_scheme(&attr.value));
                 self.diag(
                     HtmlImportDiagnosticCode::AttributeDropped,
                     format!(
-                        "Dropped {} on <{tag}> inside <{context}>: code holds only text",
-                        attr.name.prefix.as_ref().map_or_else(
-                            || attr.name.local.to_string(),
-                            |prefix| format!("{prefix}:{}", attr.name.local)
-                        )
+                        "Dropped {name} on <{tag}> inside <{context}>: {description} holds only text"
                     ),
-                    HtmlImportSeverity::Info,
+                    if block && unsafe_attribute { HtmlImportSeverity::Warning } else { HtmlImportSeverity::Info },
                     &child_path,
                     &child,
                 );
@@ -6030,18 +6038,19 @@ impl<'a> Importer<'a> {
             }
             push_children(&mut pending, &child, &child_path, child_depth);
         }
-        if runs
-            .iter()
-            .filter(|run| {
-                run.chars()
-                    .any(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}'))
-            })
-            .count()
-            > 1
+        if !block
+            && runs
+                .iter()
+                .filter(|run| {
+                    run.chars()
+                        .any(|c| !matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000c}'))
+                })
+                .count()
+                > 1
         {
             self.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,
-                format!("Code text cannot hold the block boundary inside <{context}>"),
+                "A code span's value cannot hold the block boundary inside <code>".into(),
                 HtmlImportSeverity::Warning,
                 path,
                 h,

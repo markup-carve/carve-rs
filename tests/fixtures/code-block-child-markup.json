@@ -114,5 +114,65 @@
     "html": "<pre>\n a\n\n b\n</pre><p>after</p>",
     "content": " a\n\n b\n",
     "codes": []
+  },
+  {
+    "name": "pretty printed wrapper",
+    "html": "<pre>\n  <code>abc\n</code>\n</pre><p>after</p>",
+    "content": "  abc\n\n",
+    "codes": []
+  },
+  {
+    "name": "ASCII form feed language",
+    "html": "<pre><code data-lang=\"js\f\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": []
+  },
+  {
+    "name": "NBSP is not language whitespace",
+    "html": "<pre class=\"language-js\"><code data-lang=\"\u00a0js\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "unsafe code attribute",
+    "html": "<pre><code onclick=\"x\">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "unsafe wrapper sink",
+    "html": "<pre><span srcdoc=\"x\">abc</span></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "block children retain literal text",
+    "html": "<pre><code><div>a</div><div>b</div></code></pre><p>after</p>",
+    "content": "ab",
+    "codes": [
+      "element-unwrapped",
+      "element-unwrapped"
+    ]
+  },
+  {
+    "name": "whitespace class is not a language hint",
+    "html": "<pre class=\"language-js\"><code class=\" \">abc</code></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "attribute-dropped"
+    ]
   }
 ]
