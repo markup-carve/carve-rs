@@ -64,7 +64,7 @@ fn markdown_import_keeps_the_authored_ordered_delimiter() {
             imported.report.diagnostics
         );
         assert_eq!(
-            carve::render_html(&carve::markdown_to_ast(source)),
+            carve::render_html(&carve::markdown_to_ast(source)).unwrap(),
             carve::to_html(expected),
             "{source:?}"
         );
@@ -79,7 +79,7 @@ fn markdown_ast_retains_the_paren_delimiter() {
     };
     assert_eq!(list.delim, Some(')'));
     assert_eq!(
-        carve::render_html(&document),
+        carve::render_html(&document).unwrap(),
         "<ol start=\"10\" data-delim=\")\">\n  <li>foo</li>\n</ol>"
     );
 }
