@@ -4263,9 +4263,14 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
             let nested = node as *const InlineNode as usize;
             match node {
                 InlineNode::Code(code) if code.value.is_empty() => return false,
-                InlineNode::Text(text) => {
-                    pair(text as *const Text as usize, &text.value, host, open, scope)
-                }
+                InlineNode::Text(text) => pair(
+                    text as *const Text as usize,
+                    &text.value,
+                    host,
+                    open,
+                    scope,
+                    false,
+                ),
                 InlineNode::Abbreviation(abbr) => {
                     pair(
                         abbr as *const Abbreviation as usize,
@@ -4273,6 +4278,29 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                         host,
                         open,
                         scope,
+                        false,
+                    );
+                }
+                InlineNode::Link(link) if link.ref_label.is_some() && link.raw_ref.is_some() => {
+                    pair(
+                        link as *const Link as usize,
+                        link.raw_ref.as_deref().unwrap(),
+                        host,
+                        open,
+                        scope,
+                        true,
+                    );
+                }
+                InlineNode::Image(image)
+                    if image.ref_label.is_some() && image.raw_ref.is_some() =>
+                {
+                    pair(
+                        image as *const Image as usize,
+                        image.raw_ref.as_deref().unwrap(),
+                        host,
+                        open,
+                        scope,
+                        true,
                     );
                 }
                 // Written as `[content]{attrs}`: a bracketed run of its own.
@@ -4314,16 +4342,36 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
         }
         true
     }
-    fn pair(at: usize, value: &str, host: usize, seq: &mut Vec<Bracket>, scope: &mut BracketScope) {
+    fn pair(
+        at: usize,
+        value: &str,
+        host: usize,
+        seq: &mut Vec<Bracket>,
+        scope: &mut BracketScope,
+        verbatim: bool,
+    ) {
         scope.keyed.insert(at);
-        let reference = literal_reference_opener(value).map(|offset| {
-            value[..offset]
-                .chars()
-                .filter(|c| matches!(c, '[' | ']'))
-                .count()
-        });
-        let brackets = value.chars().filter(|c| matches!(c, '[' | ']'));
-        for (ordinal, ch) in brackets.enumerate() {
+        let reference = (!verbatim)
+            .then(|| literal_reference_opener(value))
+            .flatten()
+            .map(|offset| {
+                value[..offset]
+                    .chars()
+                    .filter(|c| matches!(c, '[' | ']'))
+                    .count()
+            });
+        let brackets = value.char_indices().filter(|(_, c)| matches!(c, '[' | ']'));
+        for (ordinal, (offset, ch)) in brackets.enumerate() {
+            if verbatim {
+                let slashes = value.as_bytes()[..offset]
+                    .iter()
+                    .rev()
+                    .take_while(|&&b| b == b'\\')
+                    .count();
+                if slashes % 2 == 1 {
+                    continue;
+                }
+            }
             let key = (at, ordinal);
             if reference == Some(ordinal) {
                 let same_host = scope.literal_hosts.remove(&host);
