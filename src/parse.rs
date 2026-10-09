@@ -13573,7 +13573,9 @@ fn collect_indented_block_mapped_with_columns(
                 cur.consume();
                 continue;
             }
-            if indent <= strip_cols && detect_list_marker_full(line).is_none() {
+            if indent < strip_cols
+                || (indent == strip_cols && detect_list_marker_full(line).is_none())
+            {
                 break;
             }
         }
