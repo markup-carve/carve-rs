@@ -15,7 +15,7 @@ fn class_on_star_bullet() {
 fn paren_delimited_ordered_marker() {
     assert_eq!(
         carve::to_html("1){#x} paren delim"),
-        "<ol>\n  <li id=\"x\">paren delim</li>\n</ol>"
+        "<ol data-delim=\")\">\n  <li id=\"x\">paren delim</li>\n</ol>"
     );
 }
 

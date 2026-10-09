@@ -38,7 +38,7 @@ fn mixes_with_explicit_decimal_dot_in_one_list() {
 fn delimiter_change_starts_a_sibling_list() {
     assert_eq!(
         html(". a\n1) b\n"),
-        "<ol>\n  <li>a</li>\n</ol>\n<ol>\n  <li>b</li>\n</ol>"
+        "<ol>\n  <li>a</li>\n</ol>\n<ol data-delim=\")\">\n  <li>b</li>\n</ol>"
     );
 }
 
