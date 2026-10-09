@@ -4397,7 +4397,16 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     let title = node
         .title
         .as_ref()
-        .map(|title| format!(" \"{}\"", escape_quoted(title)))
+        .map(|title| {
+            format!(
+                " \"{}\"",
+                if ctx.table_cell_depth > 0 {
+                    escape_quoted(title).replace('`', "\\`").replace('|', "\\|")
+                } else {
+                    escape_quoted(title)
+                }
+            )
+        })
         .unwrap_or_default();
     format!(
         "[{text}]({}{title}){}",

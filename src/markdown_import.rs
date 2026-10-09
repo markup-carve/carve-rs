@@ -156,7 +156,41 @@ fn markdown_to_ast_with_losses(
         }
     }
     let mut table_autolink = false;
-    for (mut event, range) in Parser::new_ext(&source, options).into_offset_iter() {
+    let mut parser = Parser::new_ext(&source, options).into_offset_iter();
+    while let Some((mut event, range)) = parser.next() {
+        let empty_title = match &event {
+            Event::Start(
+                Tag::Link {
+                    link_type,
+                    title,
+                    id,
+                    ..
+                }
+                | Tag::Image {
+                    link_type,
+                    title,
+                    id,
+                    ..
+                },
+            ) if title.is_empty() => {
+                if *link_type == LinkType::Inline {
+                    has_empty_inline_title(
+                        &source[range.clone()],
+                        builder
+                            .frames
+                            .iter()
+                            .filter(|frame| matches!(frame, Frame::BlockQuote(_)))
+                            .count(),
+                    )
+                } else {
+                    parser
+                        .reference_definitions()
+                        .get(id)
+                        .is_some_and(|definition| definition.title.is_some())
+                }
+            }
+            _ => false,
+        };
         let in_table = builder
             .frames
             .iter()
@@ -221,7 +255,7 @@ fn markdown_to_ast_with_losses(
                 builder.raw_html(indent);
             }
         }
-        builder.push(event, &source[range]);
+        builder.push(event, &source[range], empty_title);
         if builder.over_depth {
             break;
         }
@@ -649,7 +683,7 @@ impl Builder {
         }) == Some(true)
     }
 
-    fn push(&mut self, event: Event<'_>, source: &str) {
+    fn push(&mut self, event: Event<'_>, source: &str, empty_title: bool) {
         // Once a non-native HTML element opens, everything through its closing
         // tag is one verbatim raw-inline run. pulldown still tokenizes Markdown
         // inside that run, so reconstruct the few token shapes it can emit.
@@ -658,7 +692,7 @@ impl Builder {
         }
 
         match event {
-            Event::Start(tag) => self.start(tag),
+            Event::Start(tag) => self.start(tag, empty_title),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
             Event::Code(code) => self.inline(InlineNode::code(code.to_string(), None)),
@@ -865,7 +899,7 @@ impl Builder {
         }
     }
 
-    fn start(&mut self, tag: Tag<'_>) {
+    fn start(&mut self, tag: Tag<'_>, empty_title: bool) {
         if matches!(
             tag,
             Tag::Paragraph
@@ -937,14 +971,16 @@ impl Builder {
                 ..
             } => Frame::Link {
                 href: markdown_destination(&dest_url, link_type == LinkType::Email),
-                title: optional(&title),
+                title: (!title.is_empty() || (empty_title && !is_empty_destination(&dest_url)))
+                    .then(|| title.to_string()),
                 children: Vec::new(),
             },
             Tag::Image {
                 dest_url, title, ..
             } => Frame::Image {
                 src: markdown_destination(&dest_url, false),
-                title: optional(&title),
+                title: (!title.is_empty() || (empty_title && !is_empty_destination(&dest_url)))
+                    .then(|| title.to_string()),
                 alt: String::new(),
             },
             Tag::Table(alignments) => Frame::Table {
@@ -1524,8 +1560,51 @@ fn parse_frontmatter(content: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn optional(value: &str) -> Option<String> {
-    (!value.is_empty()).then(|| value.to_string())
+fn has_empty_inline_title(source: &str, quote_depth: usize) -> bool {
+    let Some(source) = source
+        .trim_end_matches([' ', '\t', '\r', '\n'])
+        .strip_suffix(')')
+    else {
+        return false;
+    };
+    let source = source.trim_end_matches([' ', '\t', '\r', '\n']);
+    let Some(prefix) = ["\"\"", "''", "()"]
+        .iter()
+        .find_map(|marker| source.strip_suffix(marker))
+    else {
+        return false;
+    };
+    let prefix = if quote_depth > 0 && prefix.contains('\n') {
+        Cow::Owned(
+            prefix
+                .split('\n')
+                .enumerate()
+                .map(|(index, mut line)| {
+                    if index > 0 {
+                        for _ in 0..quote_depth {
+                            let trimmed = line.trim_start_matches([' ', '\t']);
+                            if let Some(rest) = trimmed.strip_prefix('>') {
+                                line = rest.strip_prefix([' ', '\t']).unwrap_or(rest);
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    line
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    } else {
+        Cow::Borrowed(prefix)
+    };
+    prefix
+        .as_bytes()
+        .last()
+        .is_some_and(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+        && !prefix
+            .trim_end_matches([' ', '\t', '\r', '\n'])
+            .ends_with('(')
 }
 
 fn heading_level(level: HeadingLevel) -> u8 {
