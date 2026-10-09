@@ -53,3 +53,18 @@ fn smart_punctuation_heading_ids_stay_rendered_text_based() {
     assert!(html.contains("<section id=\"Don-t-repeat-yourself\">"));
     assert!(html.contains("<h1>Don’t repeat yourself</h1>"));
 }
+
+// markup-carve/carve#2822: a soft or hard line break counts as whitespace.
+#[test]
+fn a_quote_after_a_line_break_opens() {
+    for (src, expected) in [
+        ("a\n\"b\"\n", "<p>a\n“b”</p>"),
+        ("a\n'b'\n", "<p>a\n‘b’</p>"),
+        ("a\\\n\"b\"\n", "<p>a<br>\n“b”</p>"),
+        ("a\n\"\"\n", "<p>a\n““</p>"),
+        ("a\n'90s\n", "<p>a\n’90s</p>"),
+        ("> a\n> \"b\"\n", "<blockquote><p>a\n“b”</p></blockquote>"),
+    ] {
+        assert_eq!(carve::to_html(src).trim_end(), expected, "{src:?}");
+    }
+}
