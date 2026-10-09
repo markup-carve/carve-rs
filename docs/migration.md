@@ -110,7 +110,8 @@ is a thematic break, two `h2` headings and a paragraph, and the writer picks a
 break spelling that cannot gain a frontmatter closer from a later break.
 
 Every conversion to frontmatter is reported as `frontmatter-synthesized`,
-info/preserved, in the migration report.
+info/normalized at `line:1`, in the migration report. Confidence follows the
+opener: `inferred` for a bare `---`, `exact` for a typed one.
 
 Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages. Like Markdown,

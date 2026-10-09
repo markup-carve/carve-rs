@@ -34,11 +34,12 @@ reported, `literal-text-verified` records preserved/exact evidence. All other
 inputs retain the dropped/fallback `fidelity-unverified` warning.
 
 Markdown reports each leading `---` block it converts to frontmatter as
-`frontmatter-synthesized`, info/preserved: the content survives byte-exact and
-only the reading of the `---` run changed. It also reports each blank GFM
-table row it drops as `structure-unspellable`. This deliberately
-fails closed at the worst-case outcome: byte differences are not evidence of
-semantic fidelity.
+`frontmatter-synthesized`, info/normalized at `line:1`: the content survives
+byte-exact, and the reading of the `---` run was decided - an alternate block
+form resolved. Confidence follows the opener, `inferred` for a bare `---` and
+`exact` for a typed one. It also reports each blank GFM table row it drops as
+`structure-unspellable`. This deliberately fails closed at the worst-case
+outcome: byte differences are not evidence of semantic fidelity.
 
 Version 2 renames version 1's `Carried` value to `Preserved` and adds
 `Normalized`. Consumers should inspect `schema_version` before interpreting
