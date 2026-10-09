@@ -171,6 +171,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     }
     let mut events = Vec::new();
     let mut content_spans = Vec::new();
+    let mut container_spans = Vec::new();
     let mut lists = Vec::new();
     let mut link_depth = 0usize;
     let mut code_depth = 0usize;
@@ -189,9 +190,18 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut assessment = None;
         match &event {
             Event::Start(tag) => {
+                if matches!(tag, Tag::Item | Tag::BlockQuote(_)) {
+                    container_spans.push(range.clone());
+                }
                 if matches!(
                     tag,
-                    Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::Table(_)
+                    Tag::Paragraph
+                        | Tag::CodeBlock(_)
+                        | Tag::HtmlBlock
+                        | Tag::Table(_)
+                        | Tag::Heading { .. }
+                        | Tag::Link { .. }
+                        | Tag::Image { .. }
                 ) {
                     content_spans.push(range.clone());
                 }
@@ -420,6 +430,25 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             covered_lines[first..end].fill(true);
         }
     }
+    let mut container_depth_changes = vec![0_i32; line_starts.len() + 1];
+    for span in container_spans {
+        let first = line_starts
+            .partition_point(|start| *start <= span.start)
+            .saturating_sub(1);
+        let end = line_starts.partition_point(|start| *start < span.end);
+        if first < end {
+            container_depth_changes[first] += 1;
+            container_depth_changes[end] -= 1;
+        }
+    }
+    let mut container_depth = 0;
+    let container_lines: Vec<_> = container_depth_changes
+        .into_iter()
+        .map(|change| {
+            container_depth += change;
+            container_depth > 0
+        })
+        .collect();
     for (index, start) in line_starts
         .iter()
         .copied()
@@ -433,7 +462,9 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             .find('\n')
             .map_or(source.len(), |end| start + end + 1);
         let line = &source[start..end];
-        if line.trim_start().starts_with('[') && line.contains("]:") {
+        if container_lines[index] && line.contains("]:") {
+            complete = false;
+        } else if line.trim_start().starts_with('[') && line.contains("]:") {
             let definitions = Parser::new_ext(line, options);
             if definitions.reference_definitions().iter().next().is_none() {
                 complete = false;
@@ -617,6 +648,25 @@ mod tests {
                 .diagnostics
                 .iter()
                 .any(|row| row.code == "markdown-reference-definition"));
+        }
+        for source in [
+            "- [a](/u \"x\n  [t]: /v\n  \")\n",
+            "[a](/u \"x\n[t]: /v\n\")\n===\n",
+        ] {
+            let result = crate::migrate_markdown(source);
+            assert!(!result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "markdown-reference-definition"));
+        }
+        for source in ["[x]: /a\n\n- b\n\n  [x]: /b\n", "[x]: /a\n\n> [x]: /b\n"] {
+            let result = crate::migrate_markdown(source);
+            assert!(result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "fidelity-unverified"));
         }
         let duplicate = crate::migrate_markdown("[x]: /a\n\n- [x]: /b\n");
         assert!(duplicate
