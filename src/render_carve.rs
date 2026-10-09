@@ -4443,7 +4443,11 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
                 }
             } else if let Some(opener) = open.pop() {
                 pairs.push((opener, (key, host)));
-                if escapes_crossing_closer && opener.1 != host && !fixed.contains(&key) {
+                if escapes_crossing_closer
+                    && opener.1 != host
+                    && !fixed.contains(&key)
+                    && !fixed.contains(&opener.0)
+                {
                     open.push(opener);
                 }
             }
@@ -4477,7 +4481,10 @@ fn bracket_scope(nodes: &[InlineNode], bracketed: bool) -> BracketScope {
     }
     let (second, unclosed) = resolve(&seq, &scope.crossing_openers, true, &scope.fixed);
     for (opener, closer) in second {
-        if opener.1 == closer.1 {
+        if opener.1 == closer.1
+            || scope.fixed.contains(&opener.0)
+            || scope.fixed.contains(&closer.0)
+        {
             scope.paired_closers.insert(closer.0);
         } else {
             scope.crossing_closers.insert(closer.0);
