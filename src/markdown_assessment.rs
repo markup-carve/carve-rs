@@ -183,12 +183,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     });
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
+        if !matches!(event, Event::Start(_) | Event::End(_)) {
+            content_spans.push(range.clone());
+        }
         let mut assessment = None;
         match &event {
             Event::Start(tag) => {
                 if matches!(
                     tag,
-                    Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::Item | Tag::Table(_)
+                    Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::Table(_)
                 ) {
                     content_spans.push(range.clone());
                 }
@@ -615,6 +618,12 @@ mod tests {
                 .iter()
                 .any(|row| row.code == "markdown-reference-definition"));
         }
+        let duplicate = crate::migrate_markdown("[x]: /a\n\n- [x]: /b\n");
+        assert!(duplicate
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "fidelity-unverified"));
         let code = crate::migrate_markdown("```\n[ref]: https://example.org\n```\n");
         assert_eq!(code.report.diagnostics.len(), 1);
         assert_eq!(code.report.diagnostics[0].code, "markdown-fenced-code");
