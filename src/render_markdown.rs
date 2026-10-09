@@ -1332,7 +1332,7 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
                     "<em>",
                     "</em>",
                 );
-                out.push_str(&format!("{target}\n\n{}\n\n", &caption));
+                out.push_str(&format!("{target}\n\n{caption}\n\n"));
             }
             other => out.push_str(&render_block(other, ctx, depth)),
         }
