@@ -11022,7 +11022,6 @@ fn parse_list(
                 base_indent
             };
             let nested_lead_is_continuation = trim_ascii(innermost_content) == "+";
-            last_item_bare_continuation = nested_lead_is_continuation;
             if nested_lead_is_continuation {
                 stream.append(collect_indented_block_mapped_after_continuation(
                     cur,
@@ -11040,6 +11039,7 @@ fn parse_list(
                     content_col,
                 ));
             }
+            last_item_bare_continuation = nested_lead_is_continuation && cur.pos == before_block;
             // A blank line closes the sub-list's last paragraph, so the next
             // flush-left line starts a NEW top-level block instead of folding in
             // (carve-rs#490). The collected source keeps no trace of a trailing
@@ -11114,7 +11114,7 @@ fn parse_list(
                 // there is nothing of this item for it to fold into: `* * +`
                 // over a column-1 line folded it into the OUTER item, which is
                 // below that item's content column and reaches no container.
-                if nested_lead_is_continuation {
+                if last_item_bare_continuation {
                     break;
                 }
                 // A CLOSED FENCE OR RAW BLOCK ON THE NESTED ITEM'S LEAD
@@ -13573,7 +13573,7 @@ fn collect_indented_block_mapped_with_columns(
                 cur.consume();
                 continue;
             }
-            if indent <= strip_cols {
+            if indent <= strip_cols && detect_list_marker_full(line).is_none() {
                 break;
             }
         }
