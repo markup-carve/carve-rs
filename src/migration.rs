@@ -156,6 +156,9 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
     let assessment = crate::markdown_assessment::assess(source, &value);
     if assessment.complete
         && notices.is_empty()
+        && losses
+            .iter()
+            .all(|loss| loss.message == crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE)
         && losses.len()
             <= assessment
                 .diagnostics
@@ -163,13 +166,14 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
                 .filter(|row| row.code == "structure-unspellable")
                 .count()
     {
-        let literal = assessed(source, value.clone(), SourceFormat::Markdown, false);
+        let mut literal = assessed(source, value.clone(), SourceFormat::Markdown, false);
         if literal
             .report
             .diagnostics
             .first()
             .is_some_and(|row| row.code == "literal-text-verified")
         {
+            literal.report.diagnostics[0].path = Some("line:1".to_owned());
             return Ok(literal);
         }
         return Ok(MigrationResult {
@@ -187,13 +191,13 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
     result
         .report
         .diagnostics
-        .extend(losses.into_iter().map(|message| MigrationDiagnostic {
+        .extend(losses.into_iter().map(|loss| MigrationDiagnostic {
             code: "structure-unspellable".to_owned(),
-            message,
+            message: loss.message,
             severity: HtmlImportSeverity::Warning,
             fidelity: MigrationFidelity::Dropped,
             confidence: MigrationConfidence::Exact,
-            path: None,
+            path: loss.line.map(|line| format!("line:{line}")),
         }));
     // Reported, not a loss: the block's content survives byte-exact, and the
     // reader is told that a `---` run changed meaning (markup-carve/carve#2799).

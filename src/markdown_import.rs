@@ -25,6 +25,11 @@ use pulldown_cmark::{
 use crate::ast::*;
 use crate::render_carve;
 
+pub(crate) struct MarkdownImportLoss {
+    pub message: String,
+    pub line: Option<usize>,
+}
+
 fn markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
         return destination.to_string();
@@ -100,14 +105,19 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
-) -> Result<(String, Vec<String>, Vec<String>), crate::RenderCarveError> {
+) -> Result<(String, Vec<MarkdownImportLoss>, Vec<String>), crate::RenderCarveError> {
     let (mut document, mut losses, notices) = markdown_to_ast_with_losses(markdown)?;
     // ONLY ON THE WRITING PATH, as the HTML importer does it: the AST keeps the
     // nesting the source carried, and only a Carve SPELLING has to give it up
     // (carve-rs#2098).
-    losses.extend(crate::html_import::unwrap_same_kind_spans_for_writing(
-        &mut document,
-    ));
+    losses.extend(
+        crate::html_import::unwrap_same_kind_spans_for_writing(&mut document)
+            .into_iter()
+            .map(|message| MarkdownImportLoss {
+                message,
+                line: None,
+            }),
+    );
     render_carve(&document).map(|value| (value, losses, notices))
 }
 
@@ -175,7 +185,7 @@ fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
 
 fn markdown_to_ast_with_losses(
     markdown: &str,
-) -> Result<(Document, Vec<String>, Vec<String>), crate::RenderCarveError> {
+) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<String>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
     } else {
@@ -225,9 +235,16 @@ fn markdown_to_ast_with_losses(
             }
         }
     }
+    let mut line_starts = vec![0];
+    for (index, byte) in source.bytes().enumerate() {
+        if byte == b'\n' || (byte == b'\r' && source.as_bytes().get(index + 1) != Some(&b'\n')) {
+            line_starts.push(index + 1);
+        }
+    }
     let mut table_autolink = false;
     let mut parser = Parser::new_ext(&source, options).into_offset_iter();
     while let Some((mut event, range)) = parser.next() {
+        builder.current_line = line_starts.partition_point(|start| *start <= range.start);
         let empty_title = match &event {
             Event::Start(
                 Tag::Link {
@@ -295,9 +312,10 @@ fn markdown_to_ast_with_losses(
             // in the first place (carve-rs#1899). Either way the characters the
             // author wrote stay as the text they were written as.
             if ordered && extension_reaches {
-                builder
-                    .losses
-                    .push(crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE.to_owned());
+                builder.losses.push(MarkdownImportLoss {
+                    message: crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE.to_owned(),
+                    line: Some(builder.current_line),
+                });
             }
             builder.inline(InlineNode::text(&source[range.start..range.end]));
             if let Some(separator) = task_marker_separator(&source, range.end) {
@@ -748,7 +766,8 @@ struct Builder {
     footnote_reserved: BTreeSet<usize>,
     footnote_serial: usize,
     frontmatter: Option<Frontmatter>,
-    losses: Vec<String>,
+    losses: Vec<MarkdownImportLoss>,
+    current_line: usize,
 }
 
 impl Builder {
@@ -1367,10 +1386,10 @@ impl Builder {
                 {
                     let kind = if header { "header" } else { "body" };
                     let cell = if cells.len() == 1 { "cell" } else { "cells" };
-                    self.losses.push(format!(
+                    self.losses.push(MarkdownImportLoss { message: format!(
                         "Dropped a {kind} table row of {} blank {cell}; Carve spells no row whose every cell is blank",
                         cells.len()
-                    ));
+                    ), line: Some(self.current_line) });
                     return;
                 }
                 let row = TableRow {
@@ -1516,7 +1535,7 @@ impl Builder {
         }
     }
 
-    fn finish(mut self) -> (Document, Vec<String>) {
+    fn finish(mut self) -> (Document, Vec<MarkdownImportLoss>) {
         // Truncated input can leave frames open; closing them keeps the content
         // rather than discarding a half-built tree.
         while !self.frames.is_empty() {

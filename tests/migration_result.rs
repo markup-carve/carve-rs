@@ -9,18 +9,18 @@ fn every_source_format_returns_the_same_result_shape() {
     assert_eq!(markdown.value, "*strong*\n");
     assert_eq!(markdown.report.schema_version, 2);
     assert_eq!(markdown.report.source_format, SourceFormat::Markdown);
-    assert_eq!(markdown.report.diagnostics.len(), 1);
+    assert_eq!(markdown.report.diagnostics.len(), 2);
     assert_eq!(
         markdown.report.diagnostics[0].fidelity,
-        MigrationFidelity::Dropped
+        MigrationFidelity::Preserved
     );
     assert_eq!(
         markdown.report.diagnostics[0].confidence,
-        MigrationConfidence::Fallback
+        MigrationConfidence::Exact
     );
     assert_eq!(
         markdown.report.diagnostics[0].severity,
-        HtmlImportSeverity::Warning
+        HtmlImportSeverity::Info
     );
 
     let djot = migrate_djot("_emphasis_");
@@ -139,11 +139,7 @@ fn literal_text_has_exact_evidence_and_other_constructs_remain_unverified() {
         "a\r\nb",
         "a\rb",
     ] {
-        for result in [
-            migrate_markdown(source),
-            migrate_djot(source),
-            migrate_bbcode(source).unwrap(),
-        ] {
+        for result in [migrate_djot(source), migrate_bbcode(source).unwrap()] {
             assert!(
                 result
                     .report

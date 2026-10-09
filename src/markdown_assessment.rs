@@ -14,15 +14,11 @@ pub(crate) struct Assessment {
 
 fn diagnostic(
     construct: &str,
-    source: &str,
+    line_starts: &[usize],
     offset: usize,
     fidelity: MigrationFidelity,
 ) -> MigrationDiagnostic {
-    let line = source[..offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
+    let line = line_starts.partition_point(|start| *start <= offset);
     let code = match construct {
         "ordered-task" => "structure-unspellable".to_owned(),
         "raw-html" => "raw-preserved".to_owned(),
@@ -59,7 +55,11 @@ fn shape(html: &str) -> Vec<Shape> {
             NodeData::Text { contents } => vec![Shape::Text(contents.borrow().to_string())],
             NodeData::Comment { contents } => vec![Shape::Comment(contents.to_string())],
             NodeData::Element { name, attrs, .. } => {
-                let tag = name.local.to_string();
+                let tag = if name.local.as_ref() == "del" {
+                    "s".to_owned()
+                } else {
+                    name.local.to_string()
+                };
                 let mut children: Vec<_> = node.children.borrow().iter().flat_map(visit).collect();
                 let layout = |child: &Shape| matches!(child, Shape::Text(value) if value.trim_matches([' ', '\t', '\r', '\n']).is_empty());
                 if tag == "section" && children.iter().any(|child| matches!(child, Shape::Element(tag, _, _) if matches!(tag.as_str(), "h1"|"h2"|"h3"|"h4"|"h5"|"h6"))) {
@@ -123,7 +123,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         };
     }
     // Parser offsets refer to this normalized input; normalization never adds a line.
-    let source = source.replace("\r\n", "\n").replace('\r', "\n");
+    let mut source = source.replace("\r\n", "\n").replace('\r', "\n");
+    if !source.is_empty() && !source.ends_with('\n') {
+        source.push('\n');
+    }
+    let mut line_starts = vec![0];
+    line_starts.extend(source.bytes().enumerate().filter_map(|(index, byte)| (byte == b'\n').then_some(index + 1)));
     let mut options = Options::empty();
     options.insert(
         Options::ENABLE_TABLES
@@ -138,7 +143,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     for (_, definition) in parser.reference_definitions().iter() {
         diagnostics.push(diagnostic(
             "reference-definition",
-            &source,
+            &line_starts,
             definition.span.start,
             Normalized,
         ));
@@ -212,7 +217,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                             _ => ("link", Preserved),
                         })
                     }
-                    Tag::Image { .. } => Some(("image", Preserved)),
+                    Tag::Image { link_type, .. } => Some(match link_type {
+                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
+                            ("reference-link", Normalized)
+                        }
+                        _ => ("image", Preserved),
+                    }),
                     Tag::Table(_) => Some(("table", Preserved)),
                     Tag::TableHead | Tag::TableRow => Some(("table-row", Preserved)),
                     Tag::TableCell => Some(("table-cell", Preserved)),
@@ -238,6 +248,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             }
             Event::Text(_) if code_depth == 0 => {
                 let input = &source[range.clone()];
+                if range.start > 0
+                    && source[..range.start].bytes().rev().take_while(|byte| *byte == b'\\').count() % 2 == 1
+                    && input.starts_with(|character: char| character.is_ascii_punctuation())
+                {
+                    diagnostics.push(diagnostic("escape", &line_starts, range.start - 1, Normalized));
+                }
                 if link_depth == 0 && bare.is_match(input) {
                     complete = false;
                 }
@@ -248,7 +264,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         } else {
                             "escape"
                         },
-                        &source,
+                        &line_starts,
                         range.start + matched.start(),
                         Normalized,
                     ));
@@ -269,7 +285,23 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             Event::Html(html) | Event::InlineHtml(html) => {
                 if !value.contains(html.as_ref())
                     || html.to_lowercase().contains("<section")
-                    || html.to_lowercase().contains("<h1")
+                    || [
+                        "<h1",
+                        "<h2",
+                        "<h3",
+                        "<h4",
+                        "<h5",
+                        "<h6",
+                        "</h1",
+                        "</h2",
+                        "</h3",
+                        "</h4",
+                        "</h5",
+                        "</h6",
+                        "</section",
+                    ]
+                    .iter()
+                    .any(|tag| html.to_lowercase().contains(tag))
                     || html.to_lowercase().contains("<input")
                 {
                     complete = false;
@@ -280,7 +312,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 if lists.last() == Some(&true)
                     && crate::markdown_import::tasklist_extension_reaches(&source, &range)
                 {
-                    diagnostics.push(diagnostic("ordered-task", &source, range.start, Dropped));
+                    diagnostics.push(diagnostic("ordered-task", &line_starts, range.start, Dropped));
                     events.push(Event::Text(if *checked {
                         "[x] ".into()
                     } else {
@@ -288,7 +320,10 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     }));
                     continue;
                 }
-                assessment = Some(("bullet-task", Preserved));
+                diagnostics.push(diagnostic("bullet-task", &line_starts, range.start, Preserved));
+                events.push(event);
+                events.push(Event::Text(" ".into()));
+                continue;
             }
             Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {
                 complete = false;
@@ -296,13 +331,22 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             _ => {}
         }
         if let Some((construct, fidelity)) = assessment {
-            diagnostics.push(diagnostic(construct, &source, range.start, fidelity));
+            diagnostics.push(diagnostic(construct, &line_starts, range.start, fidelity));
         }
         events.push(event);
     }
     if complete {
         let mut expected = String::new();
         pulldown_cmark::html::push_html(&mut expected, events.into_iter());
+        expected = expected
+            .replace(
+                "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",
+                "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>",
+            )
+            .replace(
+                "<input disabled=\"\" type=\"checkbox\"/>\n",
+                "<input disabled=\"\" type=\"checkbox\"/>",
+            );
         let actual = crate::to_html_with_options(
             value,
             &crate::Options {
@@ -322,5 +366,105 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     Assessment {
         diagnostics: if complete { diagnostics } else { Vec::new() },
         complete,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_constructs_have_exact_source_locations() {
+        for (source, code) in [
+            ("# heading", "markdown-atx-heading"),
+            ("heading\n=======", "markdown-setext-heading"),
+            ("**strong**", "markdown-strong"),
+            ("~~gone~~", "markdown-strikethrough"),
+            ("    code", "markdown-indented-code"),
+            ("[label](https://example.org)", "markdown-link"),
+            ("<https://example.org>", "markdown-autolink"),
+            ("x &amp; y", "markdown-entity"),
+            ("x\\!", "markdown-escape"),
+            ("a  \nb", "markdown-hard-break"),
+            ("- [x] done\n", "markdown-bullet-task"),
+            ("| A | B |\n| --- | --- |\n| x | y |", "markdown-table"),
+        ] {
+            let result = crate::migrate_markdown(source);
+            let row = result
+                .report
+                .diagnostics
+                .iter()
+                .find(|row| row.code == code)
+                .expect(source);
+            assert_eq!(row.path.as_deref(), Some("line:1"), "{source}");
+            assert_eq!(row.confidence, MigrationConfidence::Exact);
+            assert!(
+                !result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn code_markers_are_content_and_crlf_locations_are_original() {
+        let result = crate::migrate_markdown("```\r\n1. [x] **code**\r\n```\r\n\r\n**text**");
+        let rows: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|row| (row.code.as_str(), row.path.as_deref()))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("markdown-fenced-code", Some("line:1")),
+                ("markdown-paragraph", Some("line:5")),
+                ("markdown-strong", Some("line:5"))
+            ]
+        );
+    }
+
+    #[test]
+    fn ordered_task_losses_keep_source_lines() {
+        let result = crate::migrate_markdown("```\ncode\n```\n\n1. [x] done\n2. [ ] next\n");
+        let losses: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.fidelity == MigrationFidelity::Dropped)
+            .map(|row| (row.code.as_str(), row.path.as_deref()))
+            .collect();
+        assert_eq!(
+            losses,
+            vec![
+                ("structure-unspellable", Some("line:5")),
+                ("structure-unspellable", Some("line:6"))
+            ]
+        );
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "fidelity-unverified"));
+    }
+
+    #[test]
+    fn unsupported_input_and_changed_output_fail_closed() {
+        for source in ["https://example.org", "[^note]\n\n[^note]: note", "\0"] {
+            assert!(
+                crate::migrate_markdown(source)
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source:?}"
+            );
+        }
+        assert!(!assess("**strong**", "wrong").complete);
+        assert!(!assess("a  b", "a b").complete);
     }
 }
