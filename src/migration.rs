@@ -119,10 +119,14 @@ fn assessed(
     }
     let diagnostics = vec![MigrationDiagnostic {
         code: "fidelity-unverified".to_owned(),
-        message: format!(
+        message: if source_format == SourceFormat::Markdown {
+            "Markdown construct assessment is incomplete.".to_owned()
+        } else {
+            format!(
             "Fidelity was not reported by the {} importer; dropped is a conservative worst-case release-gate classification",
             source_format.as_str()
-        ),
+        )
+        },
         severity: HtmlImportSeverity::Warning,
         fidelity: MigrationFidelity::Dropped,
         confidence: MigrationConfidence::Fallback,
@@ -153,17 +157,59 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 /// Migrate Markdown while preserving a typed canonical-writer failure.
 pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::RenderCarveError> {
     let (value, losses, notices) = crate::markdown_import::markdown_to_carve_with_losses(source)?;
+    let assessment = crate::markdown_assessment::assess(source, &value);
+    if assessment.complete
+        && notices.is_empty()
+        && losses
+            .iter()
+            .all(|loss| loss.message == crate::html_import::ORDERED_TASK_ITEM_UNSPELLABLE)
+        && losses.len()
+            <= assessment
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "structure-unspellable")
+                .count()
+    {
+        let mut literal = assessed(source, value.clone(), SourceFormat::Markdown, false);
+        if literal
+            .report
+            .diagnostics
+            .first()
+            .is_some_and(|row| row.code == "literal-text-verified")
+        {
+            literal.report.diagnostics[0].path = Some("line:1".to_owned());
+            return Ok(literal);
+        }
+        return Ok(MigrationResult {
+            value,
+            report: MigrationReport {
+                schema_version: 2,
+                source_format: SourceFormat::Markdown,
+                mode: None,
+                adapter: None,
+                diagnostics: assessment.diagnostics,
+            },
+        });
+    }
     let mut result = assessed(source, value, SourceFormat::Markdown, !losses.is_empty());
+    if result
+        .report
+        .diagnostics
+        .first()
+        .is_some_and(|row| row.code == "literal-text-verified")
+    {
+        result.report.diagnostics[0].path = Some("line:1".to_owned());
+    }
     result
         .report
         .diagnostics
-        .extend(losses.into_iter().map(|message| MigrationDiagnostic {
+        .extend(losses.into_iter().map(|loss| MigrationDiagnostic {
             code: "structure-unspellable".to_owned(),
-            message,
+            message: loss.message,
             severity: HtmlImportSeverity::Warning,
             fidelity: MigrationFidelity::Dropped,
             confidence: MigrationConfidence::Exact,
-            path: None,
+            path: loss.line.map(|line| format!("line:{line}")),
         }));
     // Reported, not a loss: the block's content survives byte-exact, and the
     // reader is told that a `---` run changed meaning (markup-carve/carve#2799).

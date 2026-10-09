@@ -137,7 +137,7 @@ fn non_html_reports_fail_closed_when_fidelity_is_unverified() {
 #[test]
 fn literal_text_evidence_controls_the_cli_loss_gate() {
     for format in ["markdown", "djot", "bbcode"] {
-        for (source, expected) in [("hello", 0), ("hello!", 1)] {
+        for (source, expected) in [("hello", 0), ("https://example.org", 1)] {
             assert_eq!(
                 exit_code(&["migrate", "--from", format, "--check-loss"], source),
                 expected
