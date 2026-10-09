@@ -2338,7 +2338,10 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                     .unwrap_or(&raw.content);
                 format!("{}\n", protect_verbatim(session, lines))
             };
-            format!("{fence}={}\n{payload}{fence}", escape_format(&raw.format))
+            with_block_attrs(
+                &raw.attrs,
+                &format!("{fence}={}\n{payload}{fence}", escape_format(&raw.format)),
+            )
         }
         BlockNode::AbbreviationDef(abbr) => {
             format!(

@@ -7830,6 +7830,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             content.push('\n');
         }
         BlockNode::RawBlock(RawBlock {
+            attrs: None,
             format,
             content,
             pos,
@@ -18821,7 +18822,7 @@ pub(crate) fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
 }
 
 /// Add a `data-source-line` attribute to a block node, preserving any existing
-/// attributes. No-op for blocks that carry no attributes (raw block, comment,
+/// attributes. No-op for blocks that carry no attributes (comment,
 /// abbreviation definition).
 fn stamp_source_line(node: &mut BlockNode, line: usize) {
     let slot: Option<&mut Option<Attrs>> = match node {
@@ -18832,6 +18833,7 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::Paragraph(n) => Some(&mut n.attrs),
         BlockNode::ThematicBreak(n) => Some(&mut n.attrs),
         BlockNode::CodeBlock(n) => Some(&mut n.attrs),
+        BlockNode::RawBlock(n) => Some(&mut n.attrs),
         BlockNode::List(n) => Some(&mut n.attrs),
         BlockNode::BlockQuote(n) => Some(&mut n.attrs),
         BlockNode::Table(n) => Some(&mut n.attrs),
@@ -18851,7 +18853,6 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         // reference definition above.
         BlockNode::AbbreviationDef(_)
         | BlockNode::CitationDefinition(_)
-        | BlockNode::RawBlock(_)
         | BlockNode::Comment(_) => None,
     };
     let Some(opt) = slot else {
@@ -18920,6 +18921,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::Paragraph(n) => n.attrs = Some(attrs),
         BlockNode::ThematicBreak(n) => n.attrs = Some(attrs),
         BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
+        BlockNode::RawBlock(n) => n.attrs = Some(attrs),
         BlockNode::List(n) => {
             // §17 L7. The axis is TOTAL for a list, so the spelled fact lands in
             // the field that already states it and nothing else is published.

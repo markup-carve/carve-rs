@@ -142,6 +142,7 @@ fn transform_blocks(
                     body,
                 );
                 *block = BlockNode::RawBlock(RawBlock {
+                    attrs: None,
                     format: "html".into(),
                     content: html,
                     // Synthesized by an extension: no source span to report (PART 12 §4).

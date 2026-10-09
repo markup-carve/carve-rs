@@ -1198,6 +1198,7 @@ impl Builder {
             })),
             Frame::Heading(level, children) if children.is_empty() => {
                 self.block(BlockNode::RawBlock(RawBlock {
+                    attrs: None,
                     format: "html".to_string(),
                     content: format!("<h{level}></h{level}>"),
                     pos: None,
@@ -1283,6 +1284,7 @@ impl Builder {
                     self.raw_inline(content);
                 } else {
                     self.block(BlockNode::RawBlock(RawBlock {
+                        attrs: None,
                         format: "html".to_string(),
                         content,
                         pos: None,

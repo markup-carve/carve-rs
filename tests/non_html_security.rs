@@ -256,6 +256,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
                 pos: None,
             }),
             carve::BlockNode::RawBlock(carve::RawBlock {
+                attrs: None,
                 format: "html".to_string(),
                 content: format!("<b>{c}</b>"),
                 pos: None,
@@ -413,6 +414,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
         footnote_def_pos: Default::default(),
         children: vec![
             carve::BlockNode::RawBlock(carve::RawBlock {
+                attrs: None,
                 format: format!("fmt{c}"),
                 content: format!("raw{c}"),
                 pos: None,

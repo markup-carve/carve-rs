@@ -395,11 +395,15 @@ impl Renderer {
                 }
                 (self.name("link_reference_definition")?, a, Vec::new())
             }
-            BlockNode::RawBlock(n) => (
-                self.name("raw_block")?,
-                Map::from_iter([("format".into(), Json::String(n.format.clone()))]),
-                self.text_content(&n.content, &[]),
-            ),
+            BlockNode::RawBlock(n) => {
+                let mut a = attrs(n.attrs.as_ref());
+                a.insert("format".into(), Json::String(n.format.clone()));
+                (
+                    self.name("raw_block")?,
+                    a,
+                    self.text_content(&n.content, &[]),
+                )
+            }
             BlockNode::Comment(n) => (
                 self.nth_name("comment", 0)?,
                 Map::from_iter([
