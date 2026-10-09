@@ -1,0 +1,529 @@
+[
+  {
+    "name": "table absent",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": []
+  },
+  {
+    "name": "table empty",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "shortCaption": []
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "table text",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "shortCaption": [
+            {
+              "type": "text",
+              "value": "short"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "table unrendered children",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "cell"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "shortCaption": [
+            {
+              "type": "small_caps",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "small"
+                }
+              ]
+            },
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "figure short caption",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "figure",
+          "target": {
+            "type": "image",
+            "src": "a.png",
+            "alt": "alt"
+          },
+          "caption": [
+            {
+              "type": "text",
+              "value": "caption"
+            }
+          ],
+          "shortCaption": [
+            {
+              "type": "text",
+              "value": "short"
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "figure",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "nested table caption",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "table",
+                      "rows": [
+                        {
+                          "type": "table_row",
+                          "cells": [
+                            {
+                              "type": "table_cell",
+                              "header": false,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "value": "inside"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "shortCaption": [
+                        {
+                          "type": "text",
+                          "value": "short"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "nested block cell",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "table",
+                      "rows": [
+                        {
+                          "type": "table_row",
+                          "cells": [
+                            {
+                              "type": "table_cell",
+                              "header": false,
+                              "blocks": [
+                                {
+                                  "type": "paragraph",
+                                  "children": [
+                                    {
+                                      "type": "text",
+                                      "value": "inside"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "shortCaption": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      }
+    ]
+  },
+  {
+    "name": "ordered mixed losses",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "small_caps",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "first"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "table",
+                      "rows": [
+                        {
+                          "type": "table_row",
+                          "cells": [
+                            {
+                              "type": "table_cell",
+                              "header": false,
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "value": "inside"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "shortCaption": [
+                        {
+                          "type": "text",
+                          "value": "short"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "structure-unspellable",
+        "node": "small_caps"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "empty nested metadata",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "a"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "table",
+                      "rows": [],
+                      "shortCaption": []
+                    },
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "b"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  },
+  {
+    "name": "directive crosses metadata",
+    "ast": {
+      "type": "document",
+      "srcByteLength": 0,
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "blocks": [
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "{{include"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "table",
+                      "rows": [],
+                      "shortCaption": []
+                    },
+                    {
+                      "type": "paragraph",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "path}}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "diagnostics": [
+      {
+        "code": "field-unspellable",
+        "node": "table_cell",
+        "field": "blocks"
+      },
+      {
+        "code": "field-unspellable",
+        "node": "table",
+        "field": "shortCaption"
+      }
+    ]
+  }
+]
