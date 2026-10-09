@@ -117,7 +117,7 @@ pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> 
             previous_blank = line.trim().is_empty()
                 || block_start.is_match(&line)
                 || line.trim_start().starts_with('{');
-            if line.trim_start().starts_with(['`', '~'])
+            if block_start.is_match(&line) && line.trim_start().starts_with(['`', '~'])
                 || line.trim_start().starts_with('#')
                 || was_boundary && line.trim_start().starts_with(":::")
             {
