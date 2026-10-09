@@ -685,7 +685,7 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
             brace_stack.push((at, false, spaces));
         } else if ch == '}' {
             if let Some((begin, true, opening_spaces)) = brace_stack.pop() {
-                if spaces == opening_spaces {
+                if spaces == opening_spaces && !escaped_brace_closes.contains(&at) {
                     literal_braces.insert(at, begin);
                 }
             }

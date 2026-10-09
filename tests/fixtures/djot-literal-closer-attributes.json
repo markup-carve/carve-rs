@@ -503,5 +503,45 @@
     "name": "review-5",
     "source": "*a {_b* c_}{.c}",
     "html": "<p><strong>a {_b</strong><span class=\"c\">c_}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-0",
+    "source": "\\{a\\=}{.c}",
+    "html": "<p>{a<span class=\"c\">=}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-1",
+    "source": "\\{a\\+}{.c}",
+    "html": "<p>{a<span class=\"c\">+}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-2",
+    "source": "\\{a\\-}{.c}",
+    "html": "<p>{a<span class=\"c\">-}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-3",
+    "source": "\\{a\\~}{.c}",
+    "html": "<p>{a<span class=\"c\">~}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-4",
+    "source": "\\{a\\^}{.c}",
+    "html": "<p>{a<span class=\"c\">^}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-5",
+    "source": "\\{a\\*}{.c}",
+    "html": "<p>{a<span class=\"c\">*}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-6",
+    "source": "\\{a\\_}{.c}",
+    "html": "<p>{a<span class=\"c\">_}</span></p>"
+  },
+  {
+    "name": "escaped-atom-review-7",
+    "source": "a{.x -}b{.c}",
+    "html": "<p>a{.x <span class=\"c\">-}b</span></p>"
   }
 ]
