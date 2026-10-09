@@ -1,0 +1,608 @@
+[
+  {
+    "name": "a strong pair",
+    "source": "{*a\\*}\n",
+    "html": "<p>{*a*}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an emphasis pair",
+    "source": "{/a\\/}\n",
+    "html": "<p>{/a/}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an underline pair",
+    "source": "{_a\\_}\n",
+    "html": "<p>{_a_}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a strike pair",
+    "source": "{~a\\~}\n",
+    "html": "<p>{~a~}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a highlight pair",
+    "source": "{=a\\=}\n",
+    "html": "<p>{=a=}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a superscript pair",
+    "source": "{^a\\^}\n",
+    "html": "<p>{^a^}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a subscript pair",
+    "source": "{,a\\,}\n",
+    "html": "<p>{,a,}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an insertion pair",
+    "source": "{+a\\+}\n",
+    "html": "<p>{+a+}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a deletion pair",
+    "source": "{-a\\-}\n",
+    "html": "<p>{-a-}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "text on both sides",
+    "source": "x {*a\\*} y\n",
+    "html": "<p>x {*a*} y</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "two escaped closers",
+    "source": "{*a\\*b\\*}\n",
+    "html": "<p>{*a*b*}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an escaped closer inside a nested kind",
+    "source": "{*a{/b\\/}c*}\n",
+    "html": "<p><strong>a{/b/}c</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a real closer after the escaped one",
+    "source": "{*a\\*}b*}\n",
+    "html": "<p><strong>a*}b</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a pair with no escape",
+    "source": "{*a*}\n",
+    "html": "<p><strong>a</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an escape before an ordinary character",
+    "source": "{*a\\b*}\n",
+    "html": "<p><strong>a\\b</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an escaped backslash before the closer",
+    "source": "{*a\\\\*}\n",
+    "html": "<p><strong>a\\</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an escaped opener",
+    "source": "{\\*a\\*}\n",
+    "html": "<p>{*a*}</p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an escaped backtick opening no span",
+    "source": "{*a\\`b*}\n",
+    "html": "<p><strong>a`b</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a code span holding the closer",
+    "source": "{*a`*}`b*}\n",
+    "html": "<p><strong>a<code>*}</code>b</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an unclosed run ending at the pair closer",
+    "source": "{~` ~}\n",
+    "html": "<p><s><code></code></s></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "an unclosed run before an escaped closer",
+    "source": "{*a`b\\*}\n",
+    "html": "<p><strong>a<code>b\\</code></strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "a bare pair with an escaped delimiter",
+    "source": "*a\\* b*\n",
+    "html": "<p><strong>a* b</strong></p>",
+    "roundTrip": false
+  },
+  {
+    "name": "bracket host 1",
+    "source": "{,a [{,b,}]{} c,}",
+    "html": "<p><sub>a <span><sub>b</sub></span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 2",
+    "source": "{,a [b,}]{} c,}",
+    "html": "<p><sub>a <span>b,}</span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 3",
+    "source": "{,a [b,}] c,}",
+    "html": "<p><sub>a [b,}] c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 4",
+    "source": "{,a [b](x,}) c,}",
+    "html": "<p><sub>a <a href=\"x,}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 5",
+    "source": "{,a [b](x) c,}",
+    "html": "<p><sub>a <a href=\"x\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 6",
+    "source": "{,a <https://x/,}> c,}",
+    "html": "<p><sub>a &lt;https://x/</sub>&gt; c,}</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 7",
+    "source": "{,a `x,}` c,}",
+    "html": "<p><sub>a <code>x,}</code> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 8",
+    "source": "{,a [{-b ,} c-}]{} d,}",
+    "html": "<p><sub>a <span><del>b ,} c</del></span> d</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 9",
+    "source": "[{,a]b,}",
+    "html": "<p>[{,a]b,}</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 10",
+    "source": "{,a [b{,c,}](u) d,}",
+    "html": "<p><sub>a <a href=\"u\">b<sub>c</sub></a> d</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 11",
+    "source": "{*a [{*b*}]{} c*}",
+    "html": "<p><strong>a <span><strong>b</strong></span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "bracket host 12",
+    "source": "{^a [{^b^}]{} c^}",
+    "html": "<p><sup>a <span><sup>b</sup></span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "opaque closer 14",
+    "source": "{,a [b](x \",}\") c,}",
+    "html": "<p><sub>a <a href=\"x\" title=\",}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "opaque closer 15",
+    "source": "{,a\\,} b,}",
+    "html": "<p><sub>a,} b</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "opaque closer 16",
+    "source": "{^a\\^} b^}",
+    "html": "<p><sup>a^} b</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "opaque closer 17",
+    "source": "{*a\\*} b*}",
+    "html": "<p><strong>a*} b</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ span host",
+    "source": "{/a [{/b/}]{} c/}",
+    "html": "<p><em>a <span><em>b</em></span> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ link host",
+    "source": "{/a [{/b/}](u) c/}",
+    "html": "<p><em>a <a href=\"u\"><em>b</em></a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ URL host",
+    "source": "{/a [b](x/}) c/}",
+    "html": "<p><em>a <a href=\"x/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ title host",
+    "source": "{/a [b](x \"/}\") c/}",
+    "html": "<p><em>a <a href=\"x\" title=\"/}\">b</a> c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ literal bracket host",
+    "source": "{/a [b/}] c/}",
+    "html": "<p><em>a [b/}] c</em></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "/ closer in bracket",
+    "source": "{/a [b/}]",
+    "html": "<p>{/a [b/}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* span host",
+    "source": "{*a [{*b*}]{} c*}",
+    "html": "<p><strong>a <span><strong>b</strong></span> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* link host",
+    "source": "{*a [{*b*}](u) c*}",
+    "html": "<p><strong>a <a href=\"u\"><strong>b</strong></a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* URL host",
+    "source": "{*a [b](x*}) c*}",
+    "html": "<p><strong>a <a href=\"x*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* title host",
+    "source": "{*a [b](x \"*}\") c*}",
+    "html": "<p><strong>a <a href=\"x\" title=\"*}\">b</a> c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* literal bracket host",
+    "source": "{*a [b*}] c*}",
+    "html": "<p><strong>a [b*}] c</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "* closer in bracket",
+    "source": "{*a [b*}]",
+    "html": "<p>{*a [b*}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ span host",
+    "source": "{_a [{_b_}]{} c_}",
+    "html": "<p><u>a <span><u>b</u></span> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ link host",
+    "source": "{_a [{_b_}](u) c_}",
+    "html": "<p><u>a <a href=\"u\"><u>b</u></a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ URL host",
+    "source": "{_a [b](x_}) c_}",
+    "html": "<p><u>a <a href=\"x_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ title host",
+    "source": "{_a [b](x \"_}\") c_}",
+    "html": "<p><u>a <a href=\"x\" title=\"_}\">b</a> c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ literal bracket host",
+    "source": "{_a [b_}] c_}",
+    "html": "<p><u>a [b_}] c</u></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "_ closer in bracket",
+    "source": "{_a [b_}]",
+    "html": "<p>{_a [b_}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ span host",
+    "source": "{^a [{^b^}]{} c^}",
+    "html": "<p><sup>a <span><sup>b</sup></span> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ link host",
+    "source": "{^a [{^b^}](u) c^}",
+    "html": "<p><sup>a <a href=\"u\"><sup>b</sup></a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ URL host",
+    "source": "{^a [b](x^}) c^}",
+    "html": "<p><sup>a <a href=\"x^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ title host",
+    "source": "{^a [b](x \"^}\") c^}",
+    "html": "<p><sup>a <a href=\"x\" title=\"^}\">b</a> c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ literal bracket host",
+    "source": "{^a [b^}] c^}",
+    "html": "<p><sup>a [b^}] c</sup></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "^ closer in bracket",
+    "source": "{^a [b^}]",
+    "html": "<p>{^a [b^}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", span host",
+    "source": "{,a [{,b,}]{} c,}",
+    "html": "<p><sub>a <span><sub>b</sub></span> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", link host",
+    "source": "{,a [{,b,}](u) c,}",
+    "html": "<p><sub>a <a href=\"u\"><sub>b</sub></a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", URL host",
+    "source": "{,a [b](x,}) c,}",
+    "html": "<p><sub>a <a href=\"x,}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", title host",
+    "source": "{,a [b](x \",}\") c,}",
+    "html": "<p><sub>a <a href=\"x\" title=\",}\">b</a> c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", literal bracket host",
+    "source": "{,a [b,}] c,}",
+    "html": "<p><sub>a [b,}] c</sub></p>",
+    "roundTrip": true
+  },
+  {
+    "name": ", closer in bracket",
+    "source": "{,a [b,}]",
+    "html": "<p>{,a [b,}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ span host",
+    "source": "{~a [{~b~}]{} c~}",
+    "html": "<p><s>a <span><s>b</s></span> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ link host",
+    "source": "{~a [{~b~}](u) c~}",
+    "html": "<p><s>a <a href=\"u\"><s>b</s></a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ URL host",
+    "source": "{~a [b](x~}) c~}",
+    "html": "<p><s>a <a href=\"x~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ title host",
+    "source": "{~a [b](x \"~}\") c~}",
+    "html": "<p><s>a <a href=\"x\" title=\"~}\">b</a> c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ literal bracket host",
+    "source": "{~a [b~}] c~}",
+    "html": "<p><s>a [b~}] c</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "~ closer in bracket",
+    "source": "{~a [b~}]",
+    "html": "<p>{~a [b~}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= span host",
+    "source": "{=a [{=b=}]{} c=}",
+    "html": "<p><mark>a <span><mark>b</mark></span> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= link host",
+    "source": "{=a [{=b=}](u) c=}",
+    "html": "<p><mark>a <a href=\"u\"><mark>b</mark></a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= URL host",
+    "source": "{=a [b](x=}) c=}",
+    "html": "<p><mark>a <a href=\"x=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= title host",
+    "source": "{=a [b](x \"=}\") c=}",
+    "html": "<p><mark>a <a href=\"x\" title=\"=}\">b</a> c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= literal bracket host",
+    "source": "{=a [b=}] c=}",
+    "html": "<p><mark>a [b=}] c</mark></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "= closer in bracket",
+    "source": "{=a [b=}]",
+    "html": "<p>{=a [b=}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ span host",
+    "source": "{+a [{+b+}]{} c+}",
+    "html": "<p><ins>a <span><ins>b</ins></span> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ link host",
+    "source": "{+a [{+b+}](u) c+}",
+    "html": "<p><ins>a <a href=\"u\"><ins>b</ins></a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ URL host",
+    "source": "{+a [b](x+}) c+}",
+    "html": "<p><ins>a <a href=\"x+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ title host",
+    "source": "{+a [b](x \"+}\") c+}",
+    "html": "<p><ins>a <a href=\"x\" title=\"+}\">b</a> c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ literal bracket host",
+    "source": "{+a [b+}] c+}",
+    "html": "<p><ins>a [b+}] c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "+ closer in bracket",
+    "source": "{+a [b+}]",
+    "html": "<p>{+a [b+}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- span host",
+    "source": "{-a [{-b-}]{} c-}",
+    "html": "<p><del>a <span><del>b</del></span> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- link host",
+    "source": "{-a [{-b-}](u) c-}",
+    "html": "<p><del>a <a href=\"u\"><del>b</del></a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- URL host",
+    "source": "{-a [b](x-}) c-}",
+    "html": "<p><del>a <a href=\"x-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- title host",
+    "source": "{-a [b](x \"-}\") c-}",
+    "html": "<p><del>a <a href=\"x\" title=\"-}\">b</a> c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- literal bracket host",
+    "source": "{-a [b-}] c-}",
+    "html": "<p><del>a [b-}] c</del></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "- closer in bracket",
+    "source": "{-a [b-}]",
+    "html": "<p>{-a [b-}]</p>",
+    "roundTrip": true
+  },
+  {
+    "name": "nested bracket scope",
+    "source": "{*a {,b [c,}] *} d,} e*}",
+    "html": "<p><strong>a <sub>b [c,}] *} d</sub> e</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "nested link scope",
+    "source": "{*a {,b [c](u,}) *} d,} e*}",
+    "html": "<p><strong>a <sub>b <a href=\"u,}\">c</a> *} d</sub> e</strong></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution label closer",
+    "source": "{~a [x~}y] b~>c~}",
+    "html": "<p><del>a [x~}y] b</del><ins>c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution URL closer",
+    "source": "{~a [x](u~}) b~>c~}",
+    "html": "<p><del>a <a href=\"u~}\">x</a> b</del><ins>c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution link label closer",
+    "source": "{~a [x~}y](u) b~>c~}",
+    "html": "<p><del>a <a href=\"u\">x~}y</a> b</del><ins>c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution label arrow",
+    "source": "{~a [x~>y] b~}",
+    "html": "<p><s>a [x~&gt;y] b</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution URL arrow",
+    "source": "{~a [x](u~>y) b~}",
+    "html": "<p><s>a <a href=\"u~&gt;y\">x</a> b</s></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution before label arrow",
+    "source": "{~a [x~>y] b~>c~}",
+    "html": "<p><del>a [x~&gt;y] b</del><ins>c</ins></p>",
+    "roundTrip": true
+  },
+  {
+    "name": "substitution after label arrow",
+    "source": "{~a~>b [x~>y] c~}",
+    "html": "<p><del>a</del><ins>b [x~&gt;y] c</ins></p>",
+    "roundTrip": true
+  }
+]

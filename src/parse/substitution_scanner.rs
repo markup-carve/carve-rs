@@ -1,5 +1,6 @@
 use super::braced_closers::CodeSpanIndex;
 use super::{find_seq, skip_code_span};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub(super) struct SubstitutionScanner {
@@ -15,6 +16,7 @@ impl SubstitutionScanner {
         from: usize,
         to: usize,
         code_ends: &mut Option<CodeSpanIndex>,
+        hosts: &HashMap<usize, usize>,
     ) -> Option<usize> {
         let last = *self
             .last_arrow
@@ -24,25 +26,29 @@ impl SubstitutionScanner {
         }
         match self.first {
             None => {
-                let result = scan(bytes, from, to);
+                let result = scan(bytes, from, to, hosts);
                 self.first = Some((from, to, result));
                 result
             }
             Some((old_from, old_to, result)) if old_from == from && old_to == to => result,
             _ => self
                 .index
-                .get_or_insert_with(|| Box::new(ArrowIndex::new(bytes, code_ends)))
+                .get_or_insert_with(|| Box::new(ArrowIndex::new(bytes, code_ends, hosts)))
                 .find(bytes, from, to),
         }
     }
 }
 
-fn scan(bytes: &[u8], from: usize, to: usize) -> Option<usize> {
+fn scan(bytes: &[u8], from: usize, to: usize, hosts: &HashMap<usize, usize>) -> Option<usize> {
     let last_percent = bytes.windows(2).rposition(|pair| pair == b"%}");
     let last_editorial = bytes.windows(2).rposition(|pair| pair == b"#}");
     let mut disabled = 0;
     let mut at = from;
     while at + 1 < to {
+        if let Some(&end) = hosts.get(&at) {
+            at = end;
+            continue;
+        }
         match bytes[at] {
             b'\\' => at += 2,
             b'`' => at = skip_code_span(bytes, at)?,
@@ -83,7 +89,11 @@ struct ArrowIndex {
 }
 
 impl ArrowIndex {
-    fn new(bytes: &[u8], code_ends: &mut Option<CodeSpanIndex>) -> Self {
+    fn new(
+        bytes: &[u8],
+        code_ends: &mut Option<CodeSpanIndex>,
+        hosts: &HashMap<usize, usize>,
+    ) -> Self {
         let n = bytes.len();
         if bytes.contains(&b'`') {
             code_ends.get_or_insert_with(|| CodeSpanIndex::new(bytes));
@@ -104,6 +114,8 @@ impl ArrowIndex {
             next_events[at] = if event > 0 && points[event - 1] == at {
                 event -= 1;
                 event
+            } else if let Some(&end) = hosts.get(&at) {
+                next_events[end]
             } else if bytes[at] == b'\\' {
                 next_events[at + 2]
             } else if bytes[at] == b'`' {
@@ -300,8 +312,8 @@ mod tests {
             for from in 0..bytes.len() {
                 for to in from..=bytes.len() {
                     assert_eq!(
-                        scanner.find(bytes, from, to, &mut code_ends),
-                        scan(bytes, from, to),
+                        scanner.find(bytes, from, to, &mut code_ends, &HashMap::new()),
+                        scan(bytes, from, to, &HashMap::new()),
                         "{source}: {from}..{to}"
                     );
                 }
