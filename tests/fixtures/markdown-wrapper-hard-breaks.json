@@ -83,5 +83,25 @@
     "source": "{*\n{/a/}\\\n*}\n",
     "markdown": "<strong>*a*\\\n</strong>\n",
     "html": "<p><strong><em>a</em><br />\n</strong></p>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ {*    p*}\n:::\n",
+    "markdown": "![a](x.png)\n\n***p***\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em><strong>p</strong></em></p>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ p\n:::\n^ {*    g*}\n",
+    "markdown": "![a](x.png)\n\n*p*\n\n****g****\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p</em></p>\n<p><strong><strong>g</strong></strong></p>\n"
+  },
+  {
+    "source": "before\n\n:: {*    p*}\n: d\n",
+    "markdown": "before\n\n****p****\n\nd\n",
+    "html": "<p>before</p>\n<p><strong><strong>p</strong></strong></p>\n<p>d</p>\n"
+  },
+  {
+    "source": "before\n\n::: note \"    title\"\nbody\n:::\n",
+    "markdown": "before\n\n**title**\n\nbody\n",
+    "html": "<p>before</p>\n<p><strong>title</strong></p>\n<p>body</p>\n"
   }
 ]
