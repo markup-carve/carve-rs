@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 /// counts its own inputs and then asserts a FLOOR on that count cannot notice a
 /// truncated checkout: `> 400` accepts 401 of 892, less than half the corpus,
 /// and every document it never read passes by not existing. Counting the
-/// `::: compare` blocks in the spec's own examples gives a second, unrelated
+/// declared fence pairs in the spec's own examples gives a second, unrelated
 /// route to the same number, so the two disagreeing is the signal.
 ///
 /// carve-js and carve-php took the same route in markup-carve/carve-js#969 and
@@ -23,35 +23,64 @@ use std::path::{Path, PathBuf};
 /// generated output as of markup-carve/carve#1194 and is no longer committed,
 /// so counting the generated copies would make this guard depend on whether a
 /// docs build had run in the checkout.
-pub fn expected_corpus_size() -> usize {
-    let examples = spec_root().join("resources/examples");
-    let mut count = 0usize;
-    let mut files = 0usize;
-    for entry in std::fs::read_dir(&examples)
-        .unwrap_or_else(|e| panic!("spec examples unreadable at {}: {e}", examples.display()))
-    {
-        let path = entry.expect("read spec example entry").path();
-        if !path.extension().is_some_and(|e| e == "md") {
+pub fn count_declared_pairs(source: &str) -> Result<usize, &'static str> {
+    let mut marker: Option<&str> = None;
+    let mut fence: Option<&str> = None;
+    let (mut carve, mut html, mut total) = (0, 0, 0);
+    for line in source.lines() {
+        if let Some(run) = fence {
+            if line.starts_with(run) && line[run.len()..].trim().is_empty() {
+                fence = None;
+            }
             continue;
         }
-        files += 1;
-        let text = std::fs::read_to_string(&path).expect("spec example readable");
-        for line in text.lines() {
-            if is_compare_opener(line.trim()) {
-                count += 1;
+        let ticks = line.bytes().take_while(|b| *b == b'`').count();
+        if ticks >= 3 {
+            fence = Some(&line[..ticks]);
+            if marker.is_some() {
+                match line[ticks..].trim() {
+                    "carve" => carve += 1,
+                    "html" => html += 1,
+                    _ => {}
+                }
             }
+            continue;
+        }
+        let trimmed = line.trim();
+        if let Some(run) = marker {
+            if trimmed == run {
+                if carve == 0 || carve != html {
+                    return Err("unpaired or empty compare block");
+                }
+                total += carve;
+                marker = None;
+            }
+            continue;
+        }
+        if is_compare_opener(trimmed) {
+            let colons = trimmed.bytes().take_while(|b| *b == b':').count();
+            marker = Some(&trimmed[..colons]);
+            carve = 0;
+            html = 0;
         }
     }
-    assert!(
-        files > 0,
-        "no spec examples found at {}",
-        examples.display()
-    );
-    assert!(
-        count > 0,
-        "no `::: compare` blocks found in {}",
-        examples.display()
-    );
+    if marker.is_some() || fence.is_some() {
+        return Err("unclosed compare block or fence");
+    }
+    Ok(total)
+}
+
+pub fn expected_corpus_size() -> usize {
+    let examples = spec_root().join("resources/examples");
+    let mut count = 0;
+    for page in ["core.md", "extensions.md", "edge-cases.md"] {
+        let path = examples.join(page);
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+        count += count_declared_pairs(&source)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    }
+    assert!(count > 0, "no comparison pairs found in spec examples");
     count
 }
 

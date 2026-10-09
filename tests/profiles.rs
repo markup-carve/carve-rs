@@ -625,7 +625,7 @@ fn golden_parity_with_carve_php() {
         Golden {
             preset: Profile::article,
             src: "``` =html\n<b>x</b>\n```",
-            out: "<p>&lt;b&gt;x&lt;/b&gt;</p>",
+            out: "<pre><code class=\"language-html\">&lt;b&gt;x&lt;/b&gt;\n</code></pre>",
         },
         // comment: headings/images/tables -> to_text, links get nofollow ugc.
         Golden {
@@ -661,7 +661,7 @@ fn golden_parity_with_carve_php() {
         Golden {
             preset: Profile::comment,
             src: "``` =html\n<b>x</b>\n```",
-            out: "<p>&lt;b&gt;x&lt;/b&gt;</p>",
+            out: "<pre><code class=\"language-html\">&lt;b&gt;x&lt;/b&gt;\n</code></pre>",
         },
         Golden {
             preset: Profile::comment,
@@ -835,4 +835,42 @@ fn frontmatter_metadata_never_reaches_rendered_html_either_way() {
     assert!(!allowed.contains("title"), "{allowed}");
     assert!(!denied.contains("Secret"), "{denied}");
     assert!(!denied.contains("title"), "{denied}");
+}
+
+#[test]
+fn a_denied_raw_block_keeps_code_payload_attributes_and_policy_fallback() {
+    for payload in ["", "\n", "<b>x</b>\n", "<b>x</b>\n\n"] {
+        let raw = format!("{{.kept data-x=payload}}\n``` =html\n{payload}```\n");
+        let code = format!("{{.kept data-x=payload}}\n``` html\n{payload}```\n");
+        assert_eq!(
+            html(&raw, Profile::article()),
+            html(&code, Profile::article())
+        );
+    }
+    assert_eq!(
+        html(
+            "``` =html\n<b>x</b>\n```\n",
+            Profile::default().deny_block(&["raw_block", "code_block"])
+        ),
+        "<p>&lt;b&gt;x&lt;/b&gt;</p>"
+    );
+}
+
+#[test]
+fn a_denied_raw_block_keeps_its_source_position() {
+    use carve::ast::BlockNode;
+    let doc = carve::parse_with_options(
+        "``` =html\n<b>x</b>\n```\n",
+        &Options::new().with_positions(true),
+    );
+    let BlockNode::RawBlock(raw) = &doc.children[0] else {
+        panic!("expected raw block")
+    };
+    let pos = raw.pos.clone();
+    assert!(pos.is_some());
+    let filtered = apply_profile(doc, &Profile::article(), None).unwrap();
+    let BlockNode::CodeBlock(code) = &filtered.doc.children[0] else {
+        panic!("expected code block")
+    };
+    assert_eq!(code.pos, pos);
 }

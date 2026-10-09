@@ -759,6 +759,22 @@ impl ProfileFilter<'_> {
         ) {
             return Ok(None);
         }
+        if let BlockNode::RawBlock(raw) = node {
+            if self.profile.is_type_allowed_on("code_block", true) {
+                let mut content = raw.content.clone();
+                if crate::ast::fenced_payload_needs_ending(&content) {
+                    content.push('\n');
+                }
+                return Ok(Some(BlockNode::CodeBlock(CodeBlock {
+                    attrs: raw.attrs.clone(),
+                    lang: Some(raw.format.clone()),
+                    title: None,
+                    label: None,
+                    content,
+                    pos: raw.pos.clone(),
+                })));
+            }
+        }
         let mut text = extract_block_text(node, self.smart);
         if text.is_empty() {
             self.record(canonical, "to_text_yielded_nothing")?;

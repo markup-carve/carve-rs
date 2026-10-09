@@ -1408,17 +1408,58 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
     }
 }
 
-/// Whether two adjacent sibling lists would read back as ONE list.
-///
-/// PART 9 §11 N1's axes: the kind, the plain-vs-task classification, and the
-/// marker character the author chose -- the ordered delimiter and dialect, or
-/// the bullet. Where any of them differs the lists separate on their own and
-/// the writer owes them nothing, which is what carve#286 established.
+/// Keep a hard boundary when list markers overlap or sibling lookahead would
+/// change the first marker's dialect (PART 9 section 11 N1/N3).
 fn lists_would_merge(a: &List, b: &List) -> bool {
     if a.ordered != b.ordered || is_task_list(a) != is_task_list(b) {
         return false;
     }
     if a.ordered {
+        if !b.items.is_empty() {
+            let alpha_roman = matches!(
+                (a.ol_type, b.ol_type),
+                (
+                    Some(OrderedListType::LowerAlpha),
+                    Some(OrderedListType::LowerRoman)
+                ) | (
+                    Some(OrderedListType::UpperAlpha),
+                    Some(OrderedListType::UpperRoman)
+                )
+            );
+            let roman_alpha = matches!(
+                (a.ol_type, b.ol_type),
+                (
+                    Some(OrderedListType::LowerRoman),
+                    Some(OrderedListType::LowerAlpha)
+                ) | (
+                    Some(OrderedListType::UpperRoman),
+                    Some(OrderedListType::UpperAlpha)
+                )
+            );
+            let next_start = b.start.unwrap_or(1);
+            if alpha_roman && matches!(next_start, 1 | 5 | 10 | 50 | 100 | 500 | 1000) {
+                return true;
+            }
+            if roman_alpha && matches!(next_start, 3 | 4 | 9 | 12 | 13 | 22 | 24) {
+                return true;
+            }
+            let roman_value = match a.start.unwrap_or(1) {
+                3 => Some(100),
+                4 => Some(500),
+                12 => Some(50),
+                13 => Some(1000),
+                22 => Some(5),
+                24 => Some(10),
+                _ => None,
+            };
+            if a.items.len() == 1 && alpha_roman && roman_value.is_some_and(|v| next_start == v + 1)
+            {
+                return true;
+            }
+            if a.items.len() == 1 && roman_alpha && a.start.unwrap_or(1) == 1 && next_start == 10 {
+                return true;
+            }
+        }
         return a.delim.unwrap_or('.') == b.delim.unwrap_or('.') && a.ol_type == b.ol_type;
     }
     a.bullet_char.unwrap_or('-') == b.bullet_char.unwrap_or('-')

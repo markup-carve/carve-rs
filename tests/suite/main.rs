@@ -1710,3 +1710,6 @@ mod image_alt_escapes;
 
 #[path = "../an_ordered_list_names_its_delimiter_in_html.rs"]
 mod an_ordered_list_names_its_delimiter_in_html;
+
+#[path = "../ordered_dialect_boundaries.rs"]
+mod ordered_dialect_boundaries;
