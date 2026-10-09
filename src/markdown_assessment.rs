@@ -124,7 +124,7 @@ fn is_atx_heading(source: &str) -> bool {
         && line
             .as_bytes()
             .get(hashes)
-            .is_none_or(|byte| matches!(byte, b' ' | b'\t'))
+            .map_or(true, |byte| matches!(byte, b' ' | b'\t'))
 }
 
 /// Assess the native parser's occurrences and verify the document the writer produced.
@@ -186,7 +186,10 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut assessment = None;
         match &event {
             Event::Start(tag) => {
-                if matches!(tag, Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock) {
+                if matches!(
+                    tag,
+                    Tag::Paragraph | Tag::CodeBlock(_) | Tag::HtmlBlock | Tag::Item | Tag::Table(_)
+                ) {
                     content_spans.push(range.clone());
                 }
                 assessment = match tag {
@@ -604,6 +607,14 @@ mod tests {
             .diagnostics
             .iter()
             .any(|row| row.code == "fidelity-unverified"));
+        for source in ["- a\n  [x]: /u\n", "| a |\n| --- |\n[x]: /u\n"] {
+            let result = crate::migrate_markdown(source);
+            assert!(!result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "markdown-reference-definition"));
+        }
         let code = crate::migrate_markdown("```\n[ref]: https://example.org\n```\n");
         assert_eq!(code.report.diagnostics.len(), 1);
         assert_eq!(code.report.diagnostics[0].code, "markdown-fenced-code");
