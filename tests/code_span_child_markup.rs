@@ -41,3 +41,113 @@ fn a_code_span_line_break_in_a_pipe_cell_is_reported() {
     assert!(to_html(&result.value).contains("<td><code>x y</code></td>"));
     assert_eq!(to_carve(&result.value), result.value);
 }
+
+#[test]
+fn every_mode_reports_discarded_children_without_preservation_claims() {
+    use carve::{html_to_ast, HtmlImportMode};
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let opts = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        let html = "<p><code><span><strong class=\"k\">word</strong></span></code></p>";
+        let ast = html_to_ast(html, &opts).unwrap();
+        let source = html_to_carve(html, &opts).unwrap();
+        for report in [&ast.report, &source.report] {
+            let rows: Vec<_> = report
+                .diagnostics
+                .iter()
+                .map(|d| (d.code, d.path.as_deref()))
+                .collect();
+            assert_eq!(
+                rows,
+                vec![
+                    (
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        Some("/p[1]/code[1]/span[1]/strong[1]")
+                    ),
+                    (
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        Some("/p[1]/code[1]/span[1]/strong[1]")
+                    ),
+                ]
+            );
+        }
+        for tag in ["q", "math", "ruby", "summary", "code", "unknown"] {
+            let result =
+                html_to_carve(&format!("<code><{tag}>word</{tag}></code>"), &opts).unwrap();
+            assert_eq!(result.value, "`word`\n");
+            assert_eq!(
+                result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.code)
+                    .collect::<Vec<_>>(),
+                vec![HtmlImportDiagnosticCode::ElementUnwrapped]
+            );
+        }
+        for tag in ["br", "input", "img"] {
+            let result = html_to_carve(&format!("<code><{tag}>word</code>"), &opts).unwrap();
+            assert_eq!(result.value, "`word`\n");
+            assert_eq!(
+                result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.code)
+                    .collect::<Vec<_>>(),
+                vec![HtmlImportDiagnosticCode::ElementDropped]
+            );
+        }
+        let result = html_to_carve("<code>a<script>b</script><!--c-->d</code>", &opts).unwrap();
+        assert_eq!(result.value, "`ad`\n");
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .map(|d| (d.code, d.path.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    Some("/code[1]/script[2]")
+                ),
+                (
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    Some("/code[1]/comment()[3]")
+                ),
+            ]
+        );
+        let result = html_to_carve("<code><b><div>a</div>b</b></code>", &opts).unwrap();
+        assert_eq!(result.value, "`ab`\n");
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|d| d.code == HtmlImportDiagnosticCode::StructureUnspellable)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn discarded_active_descendants_are_charged_to_the_budget() {
+    use carve::html_to_ast;
+    let html = "<p><code><script>x</script></code></p>";
+    for max_nodes in [3, 4] {
+        let opts = HtmlImportOptions {
+            max_nodes,
+            ..Default::default()
+        };
+        assert_eq!(html_to_ast(html, &opts).is_ok(), max_nodes == 4);
+        assert_eq!(html_to_carve(html, &opts).is_ok(), max_nodes == 4);
+    }
+}
