@@ -486,9 +486,9 @@ impl Seeder {
             }
             BlockNode::BlockImage(i) => self.reserve_attrs(&i.attrs),
             BlockNode::ThematicBreak(t) => self.reserve_attrs(&t.attrs),
+            BlockNode::RawBlock(r) => self.reserve_attrs(&r.attrs),
             BlockNode::LinkReferenceDefinition(_)
             | BlockNode::AbbreviationDef(_)
-            | BlockNode::RawBlock(_)
             | BlockNode::Comment(_) => {}
         }
     }

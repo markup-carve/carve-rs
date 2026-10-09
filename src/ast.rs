@@ -1071,6 +1071,7 @@ pub struct CitationDefinition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBlock {
+    pub attrs: Option<Attrs>,
     pub format: String,
     pub content: String,
     /// Span in the original source, when the parser could determine it.

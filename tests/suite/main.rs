@@ -404,6 +404,8 @@ mod a_quoted_marker_line_keeps_the_definitions_text;
 mod a_quoted_slot_escapes_only_the_backslash_the_reader_resolves;
 #[path = "../a_quoted_title_holds_its_backslash.rs"]
 mod a_quoted_title_holds_its_backslash;
+#[path = "../a_raw_block_keeps_its_attributes.rs"]
+mod a_raw_block_keeps_its_attributes;
 #[path = "../a_raw_bracketed_run_is_written_as_authored.rs"]
 mod a_raw_bracketed_run_is_written_as_authored;
 #[path = "../a_raw_kept_element_reports_its_descendants_attributes.rs"]

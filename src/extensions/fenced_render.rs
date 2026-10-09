@@ -322,6 +322,7 @@ pub(crate) fn transform_blocks(
         match block {
             BlockNode::CodeBlock(code) if claims(code, opts) => {
                 *block = BlockNode::RawBlock(RawBlock {
+                    attrs: None,
                     format: "html".into(),
                     content: rendered_html(code, opts, mode),
                     // Synthesized by an extension: no source span to report (PART 12 §4).
@@ -360,6 +361,7 @@ pub(crate) fn transform_blocks(
                 match &mut *f.target {
                     FigureTarget::CodeBlock(code) if claims(code, opts) => {
                         f.rendered_target = Some(Box::new(RawBlock {
+                            attrs: None,
                             format: "html".into(),
                             content: rendered_html(code, opts, mode),
                             // Synthesized by an extension: no source span to

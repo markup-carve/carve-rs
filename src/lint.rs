@@ -1152,8 +1152,8 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
         BlockNode::LinkReferenceDefinition(n) => {
             report("link_reference_definition", &n.attrs, n.pos.clone(), visit)
         }
-        // Verbatim: no `attrs` field, and its content is not markup.
-        BlockNode::RawBlock(_) => {}
+        // The payload is not markup; only the attribute line is checked.
+        BlockNode::RawBlock(n) => report("raw_block", &n.attrs, n.pos.clone(), visit),
         BlockNode::Comment(_) => {}
         BlockNode::BlockExtension(n) => {
             report("block_extension", &n.attrs, n.pos.clone(), visit);

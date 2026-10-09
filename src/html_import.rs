@@ -3268,6 +3268,7 @@ impl<'a> Importer<'a> {
                     self.displaced_figure_attrs.truncate(displaced);
                     self.keep_raw(h, path, &tag);
                     return Ok(vec![BlockNode::RawBlock(RawBlock {
+                        attrs: None,
                         format: "html".into(),
                         content: Self::html(h),
                         pos: None,
@@ -3365,6 +3366,7 @@ impl<'a> Importer<'a> {
         {
             self.keep_raw(h, path, &tag);
             return Ok(vec![BlockNode::RawBlock(RawBlock {
+                attrs: None,
                 format: "html".into(),
                 content: Self::html(h),
                 pos: None,
@@ -3989,6 +3991,7 @@ impl<'a> Importer<'a> {
         {
             self.keep_raw(h, path, "dl");
             return Ok(vec![BlockNode::RawBlock(RawBlock {
+                attrs: None,
                 format: "html".into(),
                 content: Self::html(h),
                 pos: None,

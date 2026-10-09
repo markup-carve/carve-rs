@@ -1943,6 +1943,7 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             let mut w = typed(out, "raw_block");
             w.field("format", |out| write_string(out, &n.format));
             w.field("content", |out| write_string(out, &n.content));
+            write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
@@ -3071,6 +3072,7 @@ fn decode_block_abbreviation_def(obj: &Map<String, Json>) -> Result<BlockNode, A
 
 fn decode_block_raw_block(obj: &Map<String, Json>) -> Result<BlockNode, AstJsonError> {
     Ok(BlockNode::RawBlock(RawBlock {
+        attrs: optional_attrs(obj)?,
         format: required_string(obj, "raw_block", "format")?.to_string(),
         content: required_string(obj, "raw_block", "content")?.to_string(),
         pos: optional_pos(obj, "raw_block")?,

@@ -1279,11 +1279,11 @@ fn selectable_block_attrs(block: &BlockNode) -> Option<&Attrs> {
         BlockNode::ExtensionCarrier(b) => b.attrs.as_ref(),
         BlockNode::BlockImage(b) => b.attrs.as_ref(),
         BlockNode::ThematicBreak(b) => b.attrs.as_ref(),
+        BlockNode::RawBlock(b) => b.attrs.as_ref(),
         BlockNode::Heading(_)
         | BlockNode::AbbreviationDef(_)
         | BlockNode::LinkReferenceDefinition(_)
         | BlockNode::CitationDefinition(_)
-        | BlockNode::RawBlock(_)
         | BlockNode::Comment(_) => None,
     }
 }
@@ -1674,9 +1674,9 @@ fn for_each_id_site(
             }
             BlockNode::BlockImage(i) => f(&mut i.attrs, None),
             BlockNode::ThematicBreak(t) => f(&mut t.attrs, None),
+            BlockNode::RawBlock(r) => f(&mut r.attrs, None),
             BlockNode::LinkReferenceDefinition(_)
             | BlockNode::AbbreviationDef(_)
-            | BlockNode::RawBlock(_)
             | BlockNode::Comment(_) => {}
         }
     }

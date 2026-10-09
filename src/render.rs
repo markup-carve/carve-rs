@@ -1854,7 +1854,7 @@ fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
         content.push('\n');
     }
     let code = CodeBlock {
-        attrs: None,
+        attrs: r.attrs.clone(),
         lang: Some(r.format.clone()),
         title: None,
         label: None,
@@ -4953,6 +4953,7 @@ mod escaped_raw_block {
     #[test]
     fn the_class_is_the_recorded_format_verbatim() {
         let raw = RawBlock {
+            attrs: None,
             format: "latex".to_string(),
             content: "\\emph{x}".to_string(),
             pos: None,
