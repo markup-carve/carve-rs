@@ -157,8 +157,12 @@ pub fn djot_to_carve(djot: &str) -> String {
             format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
         })
         .into_owned();
-    let (held, prefix, mut spans) = protect_attributed_strong(&folded);
-    let words = protect_attributed_words(&held, &prefix, &mut spans);
+    let mut prefix = "\0DJOTSTRONG".to_string();
+    while folded.contains(&prefix) {
+        prefix.push('\0');
+    }
+    let mut spans = Vec::new();
+    let words = protect_attributed_words(&folded, &prefix, &mut spans);
     let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
     while words.contains(&empty_term) {
         empty_term.push('\0');
@@ -525,6 +529,10 @@ impl<'a> NativeAttributeReader<'a> {
 }
 
 fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
+    if !source.contains('{') {
+        return source.to_owned();
+    }
+    let paired = emphasis::paired_openers(source, &emphasis_mask(source));
     let mut read_native = NativeAttributeReader::new(source);
     let masked = mask_code_and_destinations(source);
     let bytes = source.as_bytes();
@@ -532,7 +540,6 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
     let mut cursor = 0;
     let mut i = 0;
     let last_close = source.rfind('}');
-    let last_delimiters = b"_*~^".map(|ch| source.rfind(ch as char));
     while last_close.is_some_and(|end| i <= end) {
         if bytes[i] != b'{' || masked.as_bytes()[i] != b'{' || is_escaped(bytes, i) {
             i += 1;
@@ -562,19 +569,11 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
                 word = cursor + at;
             }
         }
-        if let Some(closer) = bytes.get(end).filter(|ch| b"_*~^".contains(ch)) {
-            if let Some(at) = (word..i)
-                .rev()
-                .find(|at| bytes[*at] == *closer && !is_escaped(bytes, *at))
-            {
-                word = at + 1;
-            }
-        } else if word < i
-            && b"_*~^".contains(&bytes[word])
-            && last_delimiters[b"_*~^".iter().position(|ch| *ch == bytes[word]).unwrap()]
-                .is_some_and(|at| at >= end)
-        {
-            word += 1;
+        let paired_word = (word..i)
+            .rev()
+            .find(|at| paired.get(at).is_some_and(|close| *close > end));
+        if let Some(at) = paired_word {
+            word = at + 1;
         }
         if word > 0
             && bytes[word - 1] == b'{'
@@ -654,70 +653,6 @@ fn fold_heading_continuations(source: &str) -> String {
         result.push(folded);
     }
     result.join("\n")
-}
-
-fn protect_attributed_strong(source: &str) -> (String, String, Vec<String>) {
-    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern = PATTERN.get_or_init(|| regex::Regex::new(r#"\*([^*\n{}]+)(\{(?:\s*(?:[.#][^\s{}"=]+|[\w:-]+=(?:"(?:\\.|[^"\\])*"|[^\s{}"]+)))+\s*\})([^*\n{}]*)\*"#).unwrap());
-    let mut read_native = NativeAttributeReader::new(source);
-    let masked = mask_code_and_destinations(source);
-    let mut prefix = "\0DJOTSTRONG".to_string();
-    while source.contains(&prefix) {
-        prefix.push('\0');
-    }
-    let mut attribute_token = "\0DJOTATTR\0".to_string();
-    while source.contains(&attribute_token) {
-        attribute_token.push('\0');
-    }
-    let mut spans = Vec::new();
-    let held = pattern
-        .replace_all(source, |caps: &regex::Captures<'_>| {
-            let whole = caps.get(0).unwrap();
-            let start = whole.start();
-            let end = whole.end();
-            if masked.as_bytes().get(start) != Some(&b'*')
-                || masked.as_bytes().get(end - 1) != Some(&b'*')
-                || caps[3].ends_with('\\')
-                || (start > 0 && matches!(source.as_bytes()[start - 1], b'\\' | b'*'))
-                || source.as_bytes().get(end) == Some(&b'*')
-                || source[start + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_whitespace)
-                || source[..end - 1]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_whitespace)
-            {
-                return whole.as_str().to_string();
-            }
-            let Some((_, attributes)) = read_native.read(start + 1 + caps[1].len()) else {
-                return whole.as_str().to_string();
-            };
-            let before = &caps[1];
-            let word_start = before
-                .rfind(|c: char| c.is_whitespace() || "*{}[]`_~^".contains(c))
-                .map_or(0, |i| i + before[i..].chars().next().unwrap().len_utf8());
-            if word_start == before.len()
-                || masked.as_bytes()[start + 1 + word_start]
-                    != source.as_bytes()[start + 1 + word_start]
-            {
-                return whole.as_str().to_string();
-            }
-            let body = rewrite_djot_body(&format!(
-                "{}[{}]{}{}",
-                &before[..word_start],
-                &before[word_start..],
-                attribute_token,
-                &caps[3]
-            ));
-            let span = format!("{{*{}*}}", body.replace(&attribute_token, &attributes));
-            let key = format!("{prefix}{}\0", spans.len());
-            spans.push(span);
-            key
-        })
-        .into_owned();
-    (held, prefix, spans)
 }
 
 /// Site generators conventionally remove a leading YAML envelope before Djot

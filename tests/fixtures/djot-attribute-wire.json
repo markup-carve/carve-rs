@@ -1380,233 +1380,358 @@
     "html": "<p><span id=\"xy\">w</span></p>"
   },
   {
-    "name": "table-276",
+    "name": "ownership-276",
+    "source": "_a{.c} b _x",
+    "html": "<p><span class=\"c\">_a</span> b _x</p>"
+  },
+  {
+    "name": "ownership-277",
+    "source": "_a{.c} b `_`",
+    "html": "<p><span class=\"c\">_a</span> b <code>_</code></p>"
+  },
+  {
+    "name": "ownership-278",
+    "source": "_a{.c} b [l](u_v)",
+    "html": "<p><span class=\"c\">_a</span> b <a href=\"u_v\">l</a></p>"
+  },
+  {
+    "name": "ownership-279",
+    "source": "_a{.c} b\\_",
+    "html": "<p><span class=\"c\">_a</span> b_</p>"
+  },
+  {
+    "name": "ownership-280",
+    "source": "_a{.c} b\n\n_x_",
+    "html": "<p><span class=\"c\">_a</span> b</p>\n<p><em>x</em></p>"
+  },
+  {
+    "name": "ownership-281",
+    "source": "*a{.c} b\n\n*x*",
+    "html": "<p><span class=\"c\">*a</span> b</p>\n<p><strong>x</strong></p>"
+  },
+  {
+    "name": "ownership-282",
+    "source": "x_a{.c} b_",
+    "html": "<p>x<em><span class=\"c\">a</span> b</em></p>"
+  },
+  {
+    "name": "ownership-283",
+    "source": "{_a{.c} b_}",
+    "html": "<p><em><span class=\"c\">a</span> b</em></p>"
+  },
+  {
+    "name": "ownership-284",
+    "source": "_a{.c} b [x_](u)",
+    "html": "<p><em><span class=\"c\">a</span> b [x</em>](u)</p>"
+  },
+  {
+    "name": "ownership-285",
+    "source": "_a{.c} b _x_",
+    "html": "<p><span class=\"c\">_a</span> b <em>x</em></p>"
+  },
+  {
+    "name": "ownership-286",
+    "source": "*a{.c} b [x*](u)",
+    "html": "<p><strong><span class=\"c\">a</span> b [x</strong>](u)</p>"
+  },
+  {
+    "name": "other-ownership-287",
+    "source": "~a{.c} b ~x",
+    "html": "<p><span class=\"c\">~a</span> b ~x</p>"
+  },
+  {
+    "name": "other-ownership-288",
+    "source": "~a{.c} b `~`",
+    "html": "<p><span class=\"c\">~a</span> b <code>~</code></p>"
+  },
+  {
+    "name": "other-ownership-289",
+    "source": "~a{.c} b [l](u~v)",
+    "html": "<p><span class=\"c\">~a</span> b <a href=\"u~v\">l</a></p>"
+  },
+  {
+    "name": "other-ownership-290",
+    "source": "~a{.c} b\\~",
+    "html": "<p><span class=\"c\">~a</span> b~</p>"
+  },
+  {
+    "name": "other-ownership-291",
+    "source": "~a{.c} b\n\n~x~",
+    "html": "<p><span class=\"c\">~a</span> b</p>\n<p><sub>x</sub></p>"
+  },
+  {
+    "name": "other-ownership-292",
+    "source": "x~a{.c} b~",
+    "html": "<p>x<sub><span class=\"c\">a</span> b</sub></p>"
+  },
+  {
+    "name": "other-ownership-293",
+    "source": "{~a{.c} b~}",
+    "html": "<p><sub><span class=\"c\">a</span> b</sub></p>"
+  },
+  {
+    "name": "other-ownership-294",
+    "source": "^a{.c} b ^x",
+    "html": "<p><span class=\"c\">^a</span> b ^x</p>"
+  },
+  {
+    "name": "other-ownership-295",
+    "source": "^a{.c} b `^`",
+    "html": "<p><span class=\"c\">^a</span> b <code>^</code></p>"
+  },
+  {
+    "name": "other-ownership-296",
+    "source": "^a{.c} b [l](u^v)",
+    "html": "<p><span class=\"c\">^a</span> b <a href=\"u^v\">l</a></p>"
+  },
+  {
+    "name": "other-ownership-297",
+    "source": "^a{.c} b\\^",
+    "html": "<p><span class=\"c\">^a</span> b^</p>"
+  },
+  {
+    "name": "other-ownership-298",
+    "source": "^a{.c} b\n\n^x^",
+    "html": "<p><span class=\"c\">^a</span> b</p>\n<p><sup>x</sup></p>"
+  },
+  {
+    "name": "other-ownership-299",
+    "source": "x^a{.c} b^",
+    "html": "<p>x<sup><span class=\"c\">a</span> b</sup></p>"
+  },
+  {
+    "name": "other-ownership-300",
+    "source": "{^a{.c} b^}",
+    "html": "<p><sup><span class=\"c\">a</span> b</sup></p>"
+  },
+  {
+    "name": "table-301",
     "source": "| [w]{title=\"x\\|y\"} | z |\n|---|---|",
     "html": "<table><tr><th><span title=\"x|y\">w</span></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-277",
+    "name": "table-302",
     "source": "| [w]{title=\"x\\@y\"} | z |\n|---|---|",
     "html": "<table><tr><th><span title=\"x\\@y\">w</span></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-278",
+    "name": "table-303",
     "source": "| [w]{#über} | z |\n|---|---|",
     "html": "<table><tr><th><span id=\"über\">w</span></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-279",
+    "name": "table-304",
     "source": "| _w_{title=\"x\\|y\"} | z |\n|---|---|",
     "html": "<table><tr><th><em title=\"x|y\">w</em></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-280",
+    "name": "table-305",
     "source": "| _w_{title=\"x\\@y\"} | z |\n|---|---|",
     "html": "<table><tr><th><em title=\"x\\@y\">w</em></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-281",
+    "name": "table-306",
     "source": "| _w_{#über} | z |\n|---|---|",
     "html": "<table><tr><th><em id=\"über\">w</em></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-282",
+    "name": "table-307",
     "source": "| [w](u){title=\"x\\|y\"} | z |\n|---|---|",
     "html": "<table><tr><th><a href=\"u\" title=\"x|y\">w</a></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-283",
+    "name": "table-308",
     "source": "| [w](u){title=\"x\\@y\"} | z |\n|---|---|",
     "html": "<table><tr><th><a href=\"u\" title=\"x\\@y\">w</a></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-284",
+    "name": "table-309",
     "source": "| [w](u){#über} | z |\n|---|---|",
     "html": "<table><tr><th><a href=\"u\" id=\"über\">w</a></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-285",
+    "name": "table-310",
     "source": "| `w`{title=\"x\\|y\"} | z |\n|---|---|",
     "html": "<table><tr><th><code title=\"x|y\">w</code></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-286",
+    "name": "table-311",
     "source": "| `w`{title=\"x\\@y\"} | z |\n|---|---|",
     "html": "<table><tr><th><code title=\"x\\@y\">w</code></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-287",
+    "name": "table-312",
     "source": "| `w`{#über} | z |\n|---|---|",
     "html": "<table><tr><th><code id=\"über\">w</code></th><th>z</th></tr></table>",
     "table": true
   },
   {
-    "name": "table-288",
+    "name": "table-313",
     "source": "> | [w]{title=\"x\\|y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><span title=\"x|y\">w</span></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-289",
+    "name": "table-314",
     "source": "> | [w]{title=\"x\\@y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><span title=\"x\\@y\">w</span></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-290",
+    "name": "table-315",
     "source": "> | [w]{#über} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><span id=\"über\">w</span></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-291",
+    "name": "table-316",
     "source": "> | _w_{title=\"x\\|y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><em title=\"x|y\">w</em></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-292",
+    "name": "table-317",
     "source": "> | _w_{title=\"x\\@y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><em title=\"x\\@y\">w</em></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-293",
+    "name": "table-318",
     "source": "> | _w_{#über} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><em id=\"über\">w</em></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-294",
+    "name": "table-319",
     "source": "> | [w](u){title=\"x\\|y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><a href=\"u\" title=\"x|y\">w</a></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-295",
+    "name": "table-320",
     "source": "> | [w](u){title=\"x\\@y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><a href=\"u\" title=\"x\\@y\">w</a></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-296",
+    "name": "table-321",
     "source": "> | [w](u){#über} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><a href=\"u\" id=\"über\">w</a></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-297",
+    "name": "table-322",
     "source": "> | `w`{title=\"x\\|y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><code title=\"x|y\">w</code></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-298",
+    "name": "table-323",
     "source": "> | `w`{title=\"x\\@y\"} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><code title=\"x\\@y\">w</code></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-299",
+    "name": "table-324",
     "source": "> | `w`{#über} | z |\n> |---|---|",
     "html": "<blockquote><table><tr><th><code id=\"über\">w</code></th><th>z</th></tr></table></blockquote>",
     "table": true
   },
   {
-    "name": "table-300",
+    "name": "table-325",
     "source": "> - | [w]{title=\"x\\|y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><span title=\"x|y\">w</span></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-301",
+    "name": "table-326",
     "source": "> - | [w]{title=\"x\\@y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><span title=\"x\\@y\">w</span></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-302",
+    "name": "table-327",
     "source": "> - | [w]{#über} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><span id=\"über\">w</span></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-303",
+    "name": "table-328",
     "source": "> - | _w_{title=\"x\\|y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><em title=\"x|y\">w</em></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-304",
+    "name": "table-329",
     "source": "> - | _w_{title=\"x\\@y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><em title=\"x\\@y\">w</em></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-305",
+    "name": "table-330",
     "source": "> - | _w_{#über} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><em id=\"über\">w</em></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-306",
+    "name": "table-331",
     "source": "> - | [w](u){title=\"x\\|y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><a href=\"u\" title=\"x|y\">w</a></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-307",
+    "name": "table-332",
     "source": "> - | [w](u){title=\"x\\@y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><a href=\"u\" title=\"x\\@y\">w</a></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-308",
+    "name": "table-333",
     "source": "> - | [w](u){#über} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><a href=\"u\" id=\"über\">w</a></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-309",
+    "name": "table-334",
     "source": "> - | `w`{title=\"x\\|y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><code title=\"x|y\">w</code></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-310",
+    "name": "table-335",
     "source": "> - | `w`{title=\"x\\@y\"} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><code title=\"x\\@y\">w</code></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "table-311",
+    "name": "table-336",
     "source": "> - | `w`{#über} | z |\n>   |---|---|",
     "html": "<blockquote><ul><li><table><tr><th><code id=\"über\">w</code></th><th>z</th></tr></table></li></ul></blockquote>",
     "table": true
   },
   {
-    "name": "raw-table-pipe-312",
+    "name": "raw-table-pipe-337",
     "source": "| [w]{title=\"x|y\"} | z |\n|---|---|",
     "cells": 3
   },
   {
-    "name": "raw-table-pipe-313",
+    "name": "raw-table-pipe-338",
     "source": "> | [w]{title=\"x|y\"} | z |\n> |---|---|",
     "cells": 3
   },
   {
-    "name": "raw-table-pipe-314",
+    "name": "raw-table-pipe-339",
     "source": "> - | [w]{title=\"x|y\"} | z |\n>   |---|---|",
     "cells": 3
   }
