@@ -285,9 +285,52 @@ fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
     Some(line)
 }
 
+fn mask_djot_attribute_source(source: &str) -> String {
+    let code_mask = mask_djot_inline(source, false);
+    let mut mask = mask_code_and_destinations(source).into_bytes();
+    let rows = djot_table_rows(source, &code_mask);
+    let definition_pattern = cached_regex!(r"^\[[^\^\]\n][^\]\n]*\]:|^\[\]:").unwrap();
+    let boundary_pattern =
+        cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{[.#A-Za-z]|\[[^\^\]][^\]]*\]:|\[\]:)")
+            .unwrap();
+    let continuation_pattern = cached_regex!(r"^\S+$").unwrap();
+    let mut definition_indent = None;
+    let mut definition_offset = 0;
+    let mut previous_content = "";
+    for (definition_line, line) in source.split('\n').enumerate() {
+        let at = djot_content_start(line);
+        let content = &line[at..];
+        let boundary = previous_content.is_empty()
+            || rows.get(definition_line.wrapping_sub(1)) == Some(&true)
+            || boundary_pattern.is_match(previous_content);
+        let definition = code_mask.as_bytes().get(definition_offset + at) == Some(&b'[')
+            && definition_pattern.is_match(content)
+            && boundary;
+        let continuation = definition_indent.is_some_and(|indent| at > indent)
+            && continuation_pattern.is_match(content);
+        if definition || continuation {
+            blank_out(&mut mask, definition_offset, definition_offset + line.len());
+            if definition {
+                definition_indent = Some(at);
+            }
+        } else {
+            definition_indent = None;
+        }
+        previous_content = content.trim();
+        definition_offset += line.len() + 1;
+    }
+
+    let autolink = cached_regex!(r"<[^<>\s]+>").unwrap();
+    for value in autolink.find_iter(source) {
+        if value.as_str().contains(':') || value.as_str().contains('@') {
+            blank_out(&mut mask, value.start(), value.end());
+        }
+    }
+    String::from_utf8(mask).expect("attribute masks preserve UTF-8")
+}
+
 fn escape_invalid_djot_attributes(source: &str) -> String {
-    let mask = mask_code_and_destinations(source);
-    let prefix = cached_regex!(r"^\{[A-Za-z][A-Za-z0-9_-]*(?:=|})").unwrap();
+    let mask = mask_djot_attribute_source(source);
     let mut output = String::new();
     let mut cursor = 0;
     let mut at = 0;
@@ -301,7 +344,11 @@ fn escape_invalid_djot_attributes(source: &str) -> String {
                 at = end;
                 continue;
             }
-            if prefix.is_match(&source[at..]) {
+            if source
+                .as_bytes()
+                .get(at + 1)
+                .is_some_and(|byte| byte.is_ascii_alphabetic() || b".#% \t".contains(byte))
+            {
                 output.push_str(&source[cursor..at]);
                 output.push_str("\\{");
                 cursor = at + 1;
@@ -377,7 +424,7 @@ fn read_djot_attributes(
                     }
                 }
             }
-            return (!parts.is_empty()).then(|| (i + 1, format!("{{{}}}", parts.join(" "))));
+            return Some((i + 1, format!("{{{}}}", parts.join(" "))));
         }
         if bytes.get(i) == Some(&b'%') {
             let mut end = i + 1;
@@ -583,7 +630,16 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
                 break;
             };
             end = next_end;
-            attrs.push_str(&next_attrs);
+            if attrs == "{}" {
+                attrs.clear();
+            }
+            if next_attrs != "{}" {
+                attrs.push_str(&next_attrs);
+            }
+        }
+        if attrs.is_empty() || attrs == "{}" {
+            i = end;
+            continue;
         }
         let mut word = i;
         if i > 0 && masked.as_bytes()[i - 1] == bytes[i - 1] && !b"`*_~^]}>".contains(&bytes[i - 1])
@@ -3880,7 +3936,7 @@ fn normalize_djot_attribute_lines(source: &str) -> String {
     if !source.contains('{') {
         return source.to_owned();
     }
-    let mask = mask_djot_forms(source, true, false, None, &[]);
+    let mask = mask_djot_attribute_source(source);
     let mut closes = std::collections::HashMap::new();
     let mut close = None;
     for (at, byte) in source.bytes().enumerate().rev() {
@@ -4674,7 +4730,7 @@ fn normalize_djot_autolinks(source: &str) -> String {
         let body = capture[1].to_owned();
         if !valid_angle.is_match(&body)
             || (!image
-                && !body.contains(['[', ']', '`', '|', '\\'])
+                && !body.contains(['[', ']', '{', '}', '`', '|', '\\'])
                 && !(email.is_match(&body) && body.contains(':')))
         {
             continue;

@@ -48,6 +48,14 @@ fn process(
     let mut mask = mask.as_bytes().to_vec();
     let code_mask = super::mask_code_and_destinations(source);
     let mut attributes = HashMap::new();
+    let mut empty_block_attributes = HashSet::new();
+    let mut line_start = 0;
+    let mut line_end = 0;
+    let mut previous_line = "";
+    let mut prefix_end = 0;
+    let mut list_attribute = false;
+    let attribute_prefix =
+        cached_regex!(r"^[ \t>]*(?:(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+)?").unwrap();
     let mut read_native = super::NativeAttributeReader::new(source);
     let mut at = 0;
     while at < bytes.len() {
@@ -56,7 +64,52 @@ fn process(
             continue;
         }
         if code_mask.as_bytes()[at] == b'{' && mask[at] != b' ' {
-            if let Some((end, wire)) = read_native.read(at) {
+            if let Some((mut end, mut wire)) = read_native.read(at) {
+                while bytes.get(end) == Some(&b'{') {
+                    let Some((next_end, next_wire)) = read_native.read(end) else {
+                        break;
+                    };
+                    if wire == "{}" {
+                        wire.clear();
+                    }
+                    if next_wire != "{}" {
+                        wire.push_str(&next_wire);
+                    }
+                    if wire.is_empty() {
+                        wire.push_str("{}");
+                    }
+                    end = next_end;
+                }
+                while line_end <= at {
+                    if line_end > 0 {
+                        previous_line = &source[line_start..line_end];
+                        line_start = line_end + 1;
+                    }
+                    line_end = source[line_start..]
+                        .find('\n')
+                        .map_or(source.len(), |offset| line_start + offset);
+                    let prefix = attribute_prefix
+                        .find(&source[line_start..line_end])
+                        .unwrap()
+                        .as_str();
+                    prefix_end = line_start + prefix.len();
+                    list_attribute = prefix.bytes().any(|byte| b"-*+.)".contains(&byte));
+                    if line_end == source.len() {
+                        break;
+                    }
+                }
+                if wire == "{}"
+                    && at == prefix_end
+                    && end <= line_end
+                    && source[end..line_end].trim().is_empty()
+                    && (list_attribute
+                        || line_start == 0
+                        || previous_line.trim().is_empty()
+                        || previous_line.trim().starts_with('{')
+                            && previous_line.trim().ends_with('}'))
+                {
+                    empty_block_attributes.insert(at);
+                }
                 for byte in &mut mask[at..end] {
                     if *byte != b'\n' {
                         *byte = b' ';
@@ -331,6 +384,7 @@ fn process(
         }
     }
     let mut literal_brackets = HashSet::new();
+    let bracket_closes = bracket_pairs.iter().map(|(_, close)| *close).collect();
     for (start, end) in bracket_pairs {
         if contexts.get(&start) != contexts.get(&end) {
             literal_brackets.insert(start);
@@ -371,6 +425,8 @@ fn process(
         source,
         mask: &mask,
         attributes: &attributes,
+        empty_block_attributes: &empty_block_attributes,
+        bracket_closes,
         pairs: &pairs,
         structural: &structural,
         literal_brackets: &literal_brackets,
@@ -423,6 +479,8 @@ struct Renderer<'a> {
     source: &'a str,
     mask: &'a [u8],
     attributes: &'a HashMap<usize, (usize, String)>,
+    empty_block_attributes: &'a HashSet<usize>,
+    bracket_closes: HashSet<usize>,
     pairs: &'a [Pair],
     structural: &'a HashSet<usize>,
     literal_brackets: &'a HashSet<usize>,
@@ -441,7 +499,21 @@ impl Renderer<'_> {
                 .get(&i)
                 .filter(|(attribute_end, _)| *attribute_end <= end)
             {
-                out.extend_from_slice(self.protect(wire).as_bytes());
+                let written = if wire == "{}" {
+                    if i > 0
+                        && self.bracket_closes.contains(&(i - 1))
+                        && !self.literal_brackets.contains(&(i - 1))
+                    {
+                        "{}"
+                    } else if self.empty_block_attributes.contains(&i) {
+                        "%%"
+                    } else {
+                        "{%%}"
+                    }
+                } else {
+                    wire
+                };
+                out.extend_from_slice(self.protect(written).as_bytes());
                 i = *attribute_end;
                 continue;
             }
