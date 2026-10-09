@@ -2064,13 +2064,16 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             )
         }
         InlineNode::CriticDelete(delete) => {
+            // PART 11 section 8c: the class is what tells a deletion from the
+            // bare `<del>` a `strike` falls back to, which otherwise reads back
+            // as a strike (markup-carve/carve#2845).
             format!(
-                "<del>{}</del>",
+                "<del class=\"critic-delete\">{}</del>",
                 render_inlines(&delete.children, ctx, depth + 1)
             )
         }
         InlineNode::CriticSubstitute(sub) => format!(
-            "<del>{}</del><ins>{}</ins>",
+            "<del class=\"critic-delete\">{}</del><ins>{}</ins>",
             render_inlines(&sub.old, ctx, depth + 1),
             render_inlines(&sub.new, ctx, depth + 1)
         ),

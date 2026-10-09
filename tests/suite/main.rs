@@ -337,6 +337,8 @@ mod a_lone_image_at_an_items_content_column_keeps_the_items_looseness;
 mod a_lone_image_is_a_block_not_a_synthesized_paragraph;
 #[path = "../a_lone_pipe_line_does_not_panic.rs"]
 mod a_lone_pipe_line_does_not_panic;
+#[path = "../a_markdown_deletion_is_not_a_strike.rs"]
+mod a_markdown_deletion_is_not_a_strike;
 #[path = "../a_markdown_line_keeps_a_trailing_form_feed.rs"]
 mod a_markdown_line_keeps_a_trailing_form_feed;
 #[path = "../a_markdown_link_with_an_empty_destination_is_its_text.rs"]
