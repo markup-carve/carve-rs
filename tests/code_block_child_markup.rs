@@ -88,3 +88,33 @@ fn nested_code_markup_is_counted_toward_import_limits() {
     )
     .is_err());
 }
+
+#[test]
+fn large_highlighted_code_reports_truncated_losses() {
+    let input = format!(
+        "<pre><code>{}</code></pre>",
+        "<span class=\"token\">x</span>".repeat(600)
+    );
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let opts = HtmlImportOptions {
+            mode,
+            ..Default::default()
+        };
+        let ast = html_to_ast(&input, &opts).unwrap();
+        let BlockNode::CodeBlock(code) = &ast.value.children[0] else {
+            panic!("not a code block");
+        };
+        assert_eq!(code.content, "x".repeat(600));
+        let source = html_to_carve(&input, &opts).unwrap();
+        for report in [&ast.report, &source.report] {
+            assert_eq!(report.diagnostics.len(), 1000);
+            let last = report.diagnostics.last().unwrap();
+            assert_eq!(last.code, HtmlImportDiagnosticCode::DiagnosticsTruncated);
+            assert_eq!(last.severity, carve::HtmlImportSeverity::Error);
+        }
+    }
+}

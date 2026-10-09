@@ -174,5 +174,27 @@
     "codes": [
       "attribute-dropped"
     ]
+  },
+  {
+    "name": "denied descendant URL",
+    "html": "<pre><a href=\"javascript:x\">abc</a></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": [
+      "attribute-dropped"
+    ]
+  },
+  {
+    "name": "safe descendant URL",
+    "html": "<pre><a href=\"/u\">abc</a></pre><p>after</p>",
+    "content": "abc",
+    "codes": [
+      "element-unwrapped",
+      "attribute-dropped"
+    ],
+    "warnings": []
   }
 ]
