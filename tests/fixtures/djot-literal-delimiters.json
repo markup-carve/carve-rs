@@ -1,0 +1,397 @@
+[
+  {
+    "name": "brace-~-0-end",
+    "source": "{~a~}",
+    "html": "<p><sub>a</sub></p>"
+  },
+  {
+    "name": "brace-~-0-continued",
+    "source": "{~a~}b~",
+    "html": "<p><sub>a</sub>b~</p>"
+  },
+  {
+    "name": "brace-~-1-end",
+    "source": "\\{~a~}",
+    "html": "<p>{~a~}</p>"
+  },
+  {
+    "name": "brace-~-1-continued",
+    "source": "\\{~a~}b~",
+    "html": "<p>{<sub>a~}b</sub></p>"
+  },
+  {
+    "name": "brace-~-2-end",
+    "source": "\\\\{~a~}",
+    "html": "<p>\\<sub>a</sub></p>"
+  },
+  {
+    "name": "brace-~-2-continued",
+    "source": "\\\\{~a~}b~",
+    "html": "<p>\\<sub>a</sub>b~</p>"
+  },
+  {
+    "name": "brace-~-3-end",
+    "source": "\\\\\\{~a~}",
+    "html": "<p>\\{~a~}</p>"
+  },
+  {
+    "name": "brace-~-3-continued",
+    "source": "\\\\\\{~a~}b~",
+    "html": "<p>\\{<sub>a~}b</sub></p>"
+  },
+  {
+    "name": "brace-~-4-end",
+    "source": "\\\\\\\\{~a~}",
+    "html": "<p>\\\\<sub>a</sub></p>"
+  },
+  {
+    "name": "brace-~-4-continued",
+    "source": "\\\\\\\\{~a~}b~",
+    "html": "<p>\\\\<sub>a</sub>b~</p>"
+  },
+  {
+    "name": "brace-~-5-end",
+    "source": "\\\\\\\\\\{~a~}",
+    "html": "<p>\\\\{~a~}</p>"
+  },
+  {
+    "name": "brace-~-5-continued",
+    "source": "\\\\\\\\\\{~a~}b~",
+    "html": "<p>\\\\{<sub>a~}b</sub></p>"
+  },
+  {
+    "name": "brace-*-0-end",
+    "source": "{*a*}",
+    "html": "<p><strong>a</strong></p>"
+  },
+  {
+    "name": "brace-*-0-continued",
+    "source": "{*a*}b*",
+    "html": "<p><strong>a</strong>b*</p>"
+  },
+  {
+    "name": "brace-*-1-end",
+    "source": "\\{*a*}",
+    "html": "<p>{*a*}</p>"
+  },
+  {
+    "name": "brace-*-1-continued",
+    "source": "\\{*a*}b*",
+    "html": "<p>{<strong>a*}b</strong></p>"
+  },
+  {
+    "name": "brace-*-2-end",
+    "source": "\\\\{*a*}",
+    "html": "<p>\\<strong>a</strong></p>"
+  },
+  {
+    "name": "brace-*-2-continued",
+    "source": "\\\\{*a*}b*",
+    "html": "<p>\\<strong>a</strong>b*</p>"
+  },
+  {
+    "name": "brace-*-3-end",
+    "source": "\\\\\\{*a*}",
+    "html": "<p>\\{*a*}</p>"
+  },
+  {
+    "name": "brace-*-3-continued",
+    "source": "\\\\\\{*a*}b*",
+    "html": "<p>\\{<strong>a*}b</strong></p>"
+  },
+  {
+    "name": "brace-*-4-end",
+    "source": "\\\\\\\\{*a*}",
+    "html": "<p>\\\\<strong>a</strong></p>"
+  },
+  {
+    "name": "brace-*-4-continued",
+    "source": "\\\\\\\\{*a*}b*",
+    "html": "<p>\\\\<strong>a</strong>b*</p>"
+  },
+  {
+    "name": "brace-*-5-end",
+    "source": "\\\\\\\\\\{*a*}",
+    "html": "<p>\\\\{*a*}</p>"
+  },
+  {
+    "name": "brace-*-5-continued",
+    "source": "\\\\\\\\\\{*a*}b*",
+    "html": "<p>\\\\{<strong>a*}b</strong></p>"
+  },
+  {
+    "name": "brace-_-0-end",
+    "source": "{_a_}",
+    "html": "<p><em>a</em></p>"
+  },
+  {
+    "name": "brace-_-0-continued",
+    "source": "{_a_}b_",
+    "html": "<p><em>a</em>b_</p>"
+  },
+  {
+    "name": "brace-_-1-end",
+    "source": "\\{_a_}",
+    "html": "<p>{_a_}</p>"
+  },
+  {
+    "name": "brace-_-1-continued",
+    "source": "\\{_a_}b_",
+    "html": "<p>{<em>a_}b</em></p>"
+  },
+  {
+    "name": "brace-_-2-end",
+    "source": "\\\\{_a_}",
+    "html": "<p>\\<em>a</em></p>"
+  },
+  {
+    "name": "brace-_-2-continued",
+    "source": "\\\\{_a_}b_",
+    "html": "<p>\\<em>a</em>b_</p>"
+  },
+  {
+    "name": "brace-_-3-end",
+    "source": "\\\\\\{_a_}",
+    "html": "<p>\\{_a_}</p>"
+  },
+  {
+    "name": "brace-_-3-continued",
+    "source": "\\\\\\{_a_}b_",
+    "html": "<p>\\{<em>a_}b</em></p>"
+  },
+  {
+    "name": "brace-_-4-end",
+    "source": "\\\\\\\\{_a_}",
+    "html": "<p>\\\\<em>a</em></p>"
+  },
+  {
+    "name": "brace-_-4-continued",
+    "source": "\\\\\\\\{_a_}b_",
+    "html": "<p>\\\\<em>a</em>b_</p>"
+  },
+  {
+    "name": "brace-_-5-end",
+    "source": "\\\\\\\\\\{_a_}",
+    "html": "<p>\\\\{_a_}</p>"
+  },
+  {
+    "name": "brace-_-5-continued",
+    "source": "\\\\\\\\\\{_a_}b_",
+    "html": "<p>\\\\{<em>a_}b</em></p>"
+  },
+  {
+    "name": "brace-^-0-end",
+    "source": "{^a^}",
+    "html": "<p><sup>a</sup></p>"
+  },
+  {
+    "name": "brace-^-0-continued",
+    "source": "{^a^}b^",
+    "html": "<p><sup>a</sup>b^</p>"
+  },
+  {
+    "name": "brace-^-1-end",
+    "source": "\\{^a^}",
+    "html": "<p>{^a^}</p>"
+  },
+  {
+    "name": "brace-^-1-continued",
+    "source": "\\{^a^}b^",
+    "html": "<p>{<sup>a^}b</sup></p>"
+  },
+  {
+    "name": "brace-^-2-end",
+    "source": "\\\\{^a^}",
+    "html": "<p>\\<sup>a</sup></p>"
+  },
+  {
+    "name": "brace-^-2-continued",
+    "source": "\\\\{^a^}b^",
+    "html": "<p>\\<sup>a</sup>b^</p>"
+  },
+  {
+    "name": "brace-^-3-end",
+    "source": "\\\\\\{^a^}",
+    "html": "<p>\\{^a^}</p>"
+  },
+  {
+    "name": "brace-^-3-continued",
+    "source": "\\\\\\{^a^}b^",
+    "html": "<p>\\{<sup>a^}b</sup></p>"
+  },
+  {
+    "name": "brace-^-4-end",
+    "source": "\\\\\\\\{^a^}",
+    "html": "<p>\\\\<sup>a</sup></p>"
+  },
+  {
+    "name": "brace-^-4-continued",
+    "source": "\\\\\\\\{^a^}b^",
+    "html": "<p>\\\\<sup>a</sup>b^</p>"
+  },
+  {
+    "name": "brace-^-5-end",
+    "source": "\\\\\\\\\\{^a^}",
+    "html": "<p>\\\\{^a^}</p>"
+  },
+  {
+    "name": "brace-^-5-continued",
+    "source": "\\\\\\\\\\{^a^}b^",
+    "html": "<p>\\\\{<sup>a^}b</sup></p>"
+  },
+  {
+    "name": "brace-=-0-end",
+    "source": "{=a=}",
+    "html": "<p><mark>a</mark></p>"
+  },
+  {
+    "name": "brace-=-0-continued",
+    "source": "{=a=}b=",
+    "html": "<p><mark>a</mark>b=</p>"
+  },
+  {
+    "name": "brace-=-1-end",
+    "source": "\\{=a=}",
+    "html": "<p>{=a=}</p>"
+  },
+  {
+    "name": "brace-=-2-end",
+    "source": "\\\\{=a=}",
+    "html": "<p>\\<mark>a</mark></p>"
+  },
+  {
+    "name": "brace-=-2-continued",
+    "source": "\\\\{=a=}b=",
+    "html": "<p>\\<mark>a</mark>b=</p>"
+  },
+  {
+    "name": "brace-=-3-end",
+    "source": "\\\\\\{=a=}",
+    "html": "<p>\\{=a=}</p>"
+  },
+  {
+    "name": "brace-=-4-end",
+    "source": "\\\\\\\\{=a=}",
+    "html": "<p>\\\\<mark>a</mark></p>"
+  },
+  {
+    "name": "brace-=-4-continued",
+    "source": "\\\\\\\\{=a=}b=",
+    "html": "<p>\\\\<mark>a</mark>b=</p>"
+  },
+  {
+    "name": "brace-=-5-end",
+    "source": "\\\\\\\\\\{=a=}",
+    "html": "<p>\\\\{=a=}</p>"
+  },
+  {
+    "name": "bare-~-end",
+    "source": "~a~}",
+    "html": "<p>~a~}</p>"
+  },
+  {
+    "name": "bare-~-continued",
+    "source": "~a~}b~",
+    "html": "<p><sub>a~}b</sub></p>"
+  },
+  {
+    "name": "bare-*-end",
+    "source": "*a*}",
+    "html": "<p>*a*}</p>"
+  },
+  {
+    "name": "bare-*-continued",
+    "source": "*a*}b*",
+    "html": "<p><strong>a*}b</strong></p>"
+  },
+  {
+    "name": "bare-_-end",
+    "source": "_a_}",
+    "html": "<p>_a_}</p>"
+  },
+  {
+    "name": "bare-_-continued",
+    "source": "_a_}b_",
+    "html": "<p><em>a_}b</em></p>"
+  },
+  {
+    "name": "bare-^-end",
+    "source": "^a^}",
+    "html": "<p>^a^}</p>"
+  },
+  {
+    "name": "bare-^-continued",
+    "source": "^a^}b^",
+    "html": "<p><sup>a^}b</sup></p>"
+  },
+  {
+    "name": "highlight-closer-slashes-0",
+    "source": "{=a=}b=}",
+    "html": "<p><mark>a</mark>b=}</p>"
+  },
+  {
+    "name": "highlight-closer-slashes-1",
+    "source": "{=a\\=}b=}",
+    "html": "<p><mark>a=}b</mark></p>"
+  },
+  {
+    "name": "highlight-closer-slashes-2",
+    "source": "{=a\\\\=}b=}",
+    "html": "<p><mark>a\\</mark>b=}</p>"
+  },
+  {
+    "name": "highlight-closer-slashes-3",
+    "source": "{=a\\\\\\=}b=}",
+    "html": "<p><mark>a\\=}b</mark></p>"
+  },
+  {
+    "name": "highlight-closer-slashes-4",
+    "source": "{=a\\\\\\\\=}b=}",
+    "html": "<p><mark>a\\\\</mark>b=}</p>"
+  },
+  {
+    "name": "highlight-closer-slashes-5",
+    "source": "{=a\\\\\\\\\\=}b=}",
+    "html": "<p><mark>a\\\\=}b</mark></p>"
+  },
+  {
+    "name": "highlight-closer-slashes-6",
+    "source": "{=a\\\\\\\\\\\\=}b=}",
+    "html": "<p><mark>a\\\\\\</mark>b=}</p>"
+  },
+  {
+    "name": "control-72",
+    "source": "`\\{~a~}`",
+    "html": "<p><code>\\{~a~}</code></p>"
+  },
+  {
+    "name": "control-73",
+    "source": "```\n\\{~a~}\n```",
+    "html": "<pre><code>\\{~a~}\n</code></pre>"
+  },
+  {
+    "name": "control-74",
+    "source": "[a](u\\{~a~})",
+    "html": "<p><a href=\"u{~a~}\">a</a></p>"
+  },
+  {
+    "name": "control-75",
+    "source": "| \\{~a~} | {=a\\\\=}b=} |",
+    "html": "<table><tr><td>{~a~}</td><td><mark>a\\</mark>b=}</td></tr></table>"
+  },
+  {
+    "name": "control-76",
+    "source": "{=a `code` =}b=}",
+    "html": "<p><mark>a <code>code</code></mark>b=}</p>"
+  },
+  {
+    "name": "control-77",
+    "source": "{=a\\\\=} _b_",
+    "html": "<p><mark>a\\</mark><em>b</em></p>"
+  },
+  {
+    "name": "control-78",
+    "source": "=x=",
+    "html": "<p>=x=</p>"
+  }
+]

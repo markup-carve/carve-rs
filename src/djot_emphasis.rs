@@ -165,6 +165,7 @@ fn process(
         at += 1;
     }
     let mut valid_braces = HashSet::new();
+    let mut valid_brace_closers = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
     let mut last_escaped = None;
@@ -199,6 +200,7 @@ fn process(
                 {
                     if at > start + 2 {
                         valid_braces.insert(start);
+                        valid_brace_closers.insert(at - 1);
                     }
                 }
             }
@@ -332,7 +334,10 @@ fn process(
                 continue;
             }
         }
-        let forced_open = i > 0 && bytes[i - 1] == b'{' && mask[i - 1] == b'{';
+        let forced_open = i > 0
+            && bytes[i - 1] == b'{'
+            && mask[i - 1] == b'{'
+            && !super::is_escaped(bytes, i - 1);
         let forced_close = bytes.get(i + 1) == Some(&b'}');
         let can_open = forced_open
             || (!forced_close
@@ -473,6 +478,8 @@ fn process(
         pairs: &pairs,
         structural: &structural,
         literal_brackets: &literal_brackets,
+        valid_braces: &valid_braces,
+        valid_brace_closers: &valid_brace_closers,
         literal_prefix,
         literals: RefCell::new(Vec::new()),
         rendered: RefCell::new(HashMap::new()),
@@ -528,6 +535,8 @@ struct Renderer<'a> {
     pairs: &'a [Pair],
     structural: &'a HashSet<usize>,
     literal_brackets: &'a HashSet<usize>,
+    valid_braces: &'a HashSet<usize>,
+    valid_brace_closers: &'a HashSet<usize>,
     literal_prefix: String,
     literals: RefCell<Vec<String>>,
     rendered: RefCell<HashMap<usize, String>>,
@@ -573,8 +582,19 @@ impl Renderer<'_> {
                 }
                 continue;
             }
+            if ch == b'='
+                && (self.valid_brace_closers.contains(&i)
+                    || i > 0 && self.valid_braces.contains(&(i - 1)))
+            {
+                out.extend_from_slice(self.protect("=").as_bytes());
+                i += 1;
+                continue;
+            }
             if self.mask[i] == ch
-                && ((b"_*".contains(&ch) && !self.structural.contains(&i))
+                && ((b"~^".contains(&ch)
+                    && bytes.get(i + 1) == Some(&b'}')
+                    && !self.valid_brace_closers.contains(&i))
+                    || (b"_*".contains(&ch) && !self.structural.contains(&i))
                     || self.literal_brackets.contains(&i))
             {
                 out.extend_from_slice(self.protect(&format!("\\{}", char::from(ch))).as_bytes());

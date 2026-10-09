@@ -1802,7 +1802,8 @@ fn find_closer(masked: &str, from: usize, rule: &Rule, source: &str) -> Result<u
                 continue;
             }
             if matches!(rule.delimiter, "~" | "^") && bytes.get(j + width) == Some(&b'}') {
-                return Err(j + width);
+                j += width;
+                continue;
             }
 
             // A closer is not one when whitespace precedes it, and an empty
@@ -2679,7 +2680,7 @@ fn escape_plain_carve_syntax_masked(
             let before_ok = i == 0
                 || !(mask[i - 1].is_ascii_alphanumeric()
                     || mask[i - 1] == delim
-                    || (brace_protects && mask[i - 1] == b'{'));
+                    || (brace_protects && mask[i - 1] == b'{' && !is_escaped(mask, i - 1)));
             let after = mask.get(i + 1).copied().unwrap_or(b' ');
             if !before_ok || after.is_ascii_whitespace() || after == delim {
                 i += 1;
