@@ -121,11 +121,9 @@ fn a_form_feed_closes_nothing() {
             parse(&source).frontmatter_raw.is_none(),
             "{label}: closed the block"
         );
-        assert!(
-            markdown_to_carve(&source)
-                .lines()
-                .next()
-                .is_none_or(|line| line != "---yaml"),
+        assert_ne!(
+            markdown_to_carve(&source).lines().next(),
+            Some("---yaml"),
             "{label}: the importer closed the block"
         );
     }
