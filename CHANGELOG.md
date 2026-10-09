@@ -11,6 +11,8 @@ which the published crate does not carry.
 
 ## [Unreleased]
 
+- Formatting pairs label brackets with verbatim reference source, keeping enclosing links and spans intact.
+
 ### Fixed
 
 - Markdown export uses a safe tilde fence for headers and labels containing backticks (carve-rs#2419).
