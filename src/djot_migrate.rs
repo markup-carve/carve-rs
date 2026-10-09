@@ -229,7 +229,7 @@ fn strip_image_alt_attributes(label: &str) -> String {
 
 fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, usize) {
     let mut prefix = &source[source[..start].rfind('\n').map_or(0, |p| p + 1)..start];
-    let quote = cached_regex!(r"^[ \t]*>[ ]?").unwrap();
+    let quote = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut depth = 0;
     while let Some(m) = quote.find(prefix) {
         prefix = &prefix[m.len()..];
@@ -247,7 +247,7 @@ fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, 
     )
 }
 fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
-    let quote = cached_regex!(r"^[ \t]*>[ ]?").unwrap();
+    let quote = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     for _ in 0..depth {
         line = &line[quote.find(line)?.len()..];
     }
@@ -387,7 +387,9 @@ fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, Strin
                     for raw in lines {
                         folded.push(' ');
                         folded.push_str(
-                            djot_attribute_line(raw, depth)?.trim_start_matches([' ', '\t']),
+                            djot_attribute_line(raw, depth)
+                                .unwrap_or(raw)
+                                .trim_start_matches([' ', '\t']),
                         );
                     }
                     folded
