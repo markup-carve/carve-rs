@@ -9561,12 +9561,18 @@ fn resolve_ordered_first(
     // Find the next sibling ordered marker at the same indent, skipping the
     // first item's own body (blank lines and lines indented past the base).
     let mut sibling = None;
+    let mut blank_run = 0;
     for l in cur.lines.range(cur.pos + 1..cur.lines.len()) {
         if is_blank_line(l) {
+            blank_run += 1;
             continue;
         }
         if indent_columns(l) > base_indent {
+            blank_run = 0;
             continue; // part of the first item's body
+        }
+        if blank_run >= 3 {
+            break;
         }
         sibling = detect_list_marker_full(l).filter(|m| m.ordered && m.indent == base_indent);
         break;
@@ -9583,6 +9589,9 @@ fn resolve_ordered_first(
         OrderedListType::LowerAlpha
     };
     if let Some(sib) = sibling {
+        if sib.marker.chars().all(|c| c.is_ascii_uppercase()) != upper {
+            return (first.start, first.ol_type);
+        }
         let first_roman = roman_to_int(first.marker);
         let sib_roman = roman_to_int(sib.marker).filter(|_| !sib.marker.is_empty());
         if let (Some(fr), Some(sr)) = (first_roman, sib_roman) {

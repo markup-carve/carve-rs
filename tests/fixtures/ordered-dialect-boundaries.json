@@ -1,0 +1,104 @@
+[
+  {
+    "name": "v before vi",
+    "source": "v. x\n\n\n\nvi. y\n",
+    "html": "<ol type=\"a\" start=\"22\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"6\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"22\"><li>x</li></ol><ol type=\"i\" start=\"6\"><li>y</li></ol>"
+  },
+  {
+    "name": "c before ci",
+    "source": "c. x\n\n\n\nci. y\n",
+    "html": "<ol type=\"a\" start=\"3\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"101\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"3\"><li>x</li></ol><ol type=\"i\" start=\"101\"><li>y</li></ol>"
+  },
+  {
+    "name": "d before di",
+    "source": "d. x\n\n\n\ndi. y\n",
+    "html": "<ol type=\"a\" start=\"4\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"501\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"4\"><li>x</li></ol><ol type=\"i\" start=\"501\"><li>y</li></ol>"
+  },
+  {
+    "name": "l before li",
+    "source": "l. x\n\n\n\nli. y\n",
+    "html": "<ol type=\"a\" start=\"12\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"51\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"12\"><li>x</li></ol><ol type=\"i\" start=\"51\"><li>y</li></ol>"
+  },
+  {
+    "name": "m before mi",
+    "source": "m. x\n\n\n\nmi. y\n",
+    "html": "<ol type=\"a\" start=\"13\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"1001\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"13\"><li>x</li></ol><ol type=\"i\" start=\"1001\"><li>y</li></ol>"
+  },
+  {
+    "name": "x before xi",
+    "source": "x. x\n\n\n\nxi. y\n",
+    "html": "<ol type=\"a\" start=\"24\">\n  <li>x</li>\n</ol>\n<ol type=\"i\" start=\"11\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"24\"><li>x</li></ol><ol type=\"i\" start=\"11\"><li>y</li></ol>"
+  },
+  {
+    "name": "i before j",
+    "source": "i. x\n\n\n\nj. y\n",
+    "html": "<ol type=\"i\">\n  <li>x</li>\n</ol>\n<ol type=\"a\" start=\"10\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"i\" start=\"1\"><li>x</li></ol><ol type=\"a\" start=\"10\"><li>y</li></ol>"
+  },
+  {
+    "name": "V before VI",
+    "source": "V. x\n\n\n\nVI. y\n",
+    "html": "<ol type=\"A\" start=\"22\">\n  <li>x</li>\n</ol>\n<ol type=\"I\" start=\"6\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"A\" start=\"22\"><li>x</li></ol><ol type=\"I\" start=\"6\"><li>y</li></ol>"
+  },
+  {
+    "name": "I before J",
+    "source": "I. x\n\n\n\nJ. y\n",
+    "html": "<ol type=\"I\">\n  <li>x</li>\n</ol>\n<ol type=\"A\" start=\"10\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"I\" start=\"1\"><li>x</li></ol><ol type=\"A\" start=\"10\"><li>y</li></ol>"
+  },
+  {
+    "name": "case changes the dialect",
+    "source": "c. x\n\nCI. y\n",
+    "html": "<ol type=\"a\" start=\"3\">\n  <li>x</li>\n</ol>\n<ol type=\"I\" start=\"101\">\n  <li>y</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\" start=\"3\"><li>x</li></ol><ol type=\"I\" start=\"101\"><li>y</li></ol>"
+  },
+  {
+    "name": "alpha then roman",
+    "source": "a. first 1\nb. first 2\n\n\n\ni. second 1\nii. second 2\n",
+    "html": "<ol type=\"a\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"i\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\"><li>first 1</li><li>first 2</li></ol><ol type=\"i\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "roman then alpha",
+    "source": "i. first 1\nii. first 2\n\n\n\nc. second 1\nd. second 2\n",
+    "html": "<ol type=\"i\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"a\" start=\"3\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"i\"><li>first 1</li><li>first 2</li></ol><ol type=\"a\" start=\"3\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "one roman then alpha",
+    "source": "i. first 1\n\n\n\nc. second 1\nd. second 2\n",
+    "html": "<ol type=\"i\">\n  <li>first 1</li>\n</ol>\n<ol type=\"a\" start=\"3\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"i\"><li>first 1</li></ol><ol type=\"a\" start=\"3\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "uppercase alpha then roman",
+    "source": "A. first 1\nB. first 2\n\n\n\nI. second 1\nII. second 2\n",
+    "html": "<ol type=\"A\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"I\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"A\"><li>first 1</li><li>first 2</li></ol><ol type=\"I\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "alpha then roman v",
+    "source": "a. first 1\nb. first 2\n\n\n\nv. second 1\nvi. second 2\n",
+    "html": "<ol type=\"a\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"i\" start=\"5\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\"><li>first 1</li><li>first 2</li></ol><ol type=\"i\" start=\"5\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "roman then alpha i",
+    "source": "i. first 1\nii. first 2\n\n\n\ni. second 1\nj. second 2\n",
+    "html": "<ol type=\"i\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"a\" start=\"9\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"i\"><li>first 1</li><li>first 2</li></ol><ol type=\"a\" start=\"9\"><li>second 1</li><li>second 2</li></ol>"
+  },
+  {
+    "name": "distinct nonoverlapping markers",
+    "source": "a. first 1\nb. first 2\n\niii. second 1\niv. second 2\n",
+    "html": "<ol type=\"a\">\n  <li>first 1</li>\n  <li>first 2</li>\n</ol>\n<ol type=\"i\" start=\"3\">\n  <li>second 1</li>\n  <li>second 2</li>\n</ol>",
+    "inputHtml": "<ol type=\"a\"><li>first 1</li><li>first 2</li></ol><ol type=\"i\" start=\"3\"><li>second 1</li><li>second 2</li></ol>"
+  }
+]
