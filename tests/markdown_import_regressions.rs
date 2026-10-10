@@ -284,7 +284,7 @@ fn boundary_loss_lines_include_typed_frontmatter() {
 }
 
 #[test]
-fn nested_image_and_raw_html_content_do_not_claim_retained_link_titles() {
+fn nested_image_content_does_not_claim_retained_link_titles() {
     for source in [
         "![a [b](<> \"t\") c](x.png)",
         "![a ![b](<> \"t\") c](x.png)",
@@ -300,7 +300,11 @@ fn nested_image_and_raw_html_content_do_not_claim_retained_link_titles() {
             "{source}"
         );
     }
-    assert!(!migrate_markdown("<span>[x](<> \"t\")</span>")
+}
+
+#[test]
+fn empty_destination_inside_raw_html_wrappers_names_its_loss() {
+    assert!(migrate_markdown("<span>[x](<> \"t\")</span>")
         .report
         .diagnostics
         .iter()

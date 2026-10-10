@@ -131,11 +131,6 @@ fn is_empty_destination(destination: &str) -> bool {
 /// Convert Markdown to Carve. Use [`try_markdown_to_carve`] to handle a writer
 /// refusal without a panic.
 ///
-/// # Panics
-///
-/// Panics if the canonical writer cannot represent the imported document.
-/// Convert Markdown source to Carve source.
-///
 /// GFM tables, strikethrough and task lists are enabled: they are what real
 /// Markdown documents carry, and Carve has a spelling for each.
 ///
@@ -146,6 +141,10 @@ fn is_empty_destination(destination: &str) -> bool {
 /// `---` fence is a thematic break and the key line beneath it a setext
 /// heading, so `title: T` became an `<h2>`. Both were caught by the
 /// differential against carve-js, not by reasoning.
+///
+/// # Panics
+///
+/// Panics if the canonical writer cannot represent the imported document.
 pub fn markdown_to_carve(markdown: &str) -> String {
     try_markdown_to_carve(markdown).expect("the Markdown import cannot be written as Carve")
 }
@@ -342,7 +341,7 @@ fn markdown_to_ast_with_losses(
             Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
                 if is_empty_destination(dest_url)
                     && !builder.frames.iter().any(|frame| {
-                        matches!(frame, Frame::Image { .. } | Frame::RawInline { .. })
+                        matches!(frame, Frame::Image { .. })
                     }) =>
             {
                 let image = matches!(&event, Event::Start(Tag::Image { .. }));
