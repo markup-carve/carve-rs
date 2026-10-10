@@ -340,9 +340,10 @@ fn markdown_to_ast_with_losses(
         match &event {
             Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
                 if is_empty_destination(dest_url)
-                    && !builder.frames.iter().any(|frame| {
-                        matches!(frame, Frame::Image { .. })
-                    }) =>
+                    && !builder
+                        .frames
+                        .iter()
+                        .any(|frame| matches!(frame, Frame::Image { .. })) =>
             {
                 let image = matches!(&event, Event::Start(Tag::Image { .. }));
                 builder.losses.push(MarkdownImportLoss {
