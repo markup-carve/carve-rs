@@ -5,10 +5,10 @@
 //! THE MARKER-LINE HALF OF THIS FILE MOVED. markup-carve/carve#1280 ruled PART 1
 //! S4 uniform - lazy continuation extends an OPEN PARAGRAPH and nothing else -
 //! and a heading written as a marker's content leaves none, so `- # H` / `tail`
-//! ends the item at any depth. What survives here is the CONTENT-COLUMN half,
-//! which the clause leaves deliberately open because corpus
-//! 75-list-nesting-and-looseness-4 pins the folding answer for it. A DEFINITION
-//! BODY'S marker line answers the same way as a list item's since
+//! ends the item at any depth. The CONTENT-COLUMN half answers the same way
+//! since markup-carve/carve#2884: a below-column line continues a paragraph only
+//! where one is open at the DEEPEST frame, and no surviving frame adopts it. A
+//! DEFINITION BODY'S marker line answers the same way as a list item's since
 //! carve-rs#1049, and the row below is what that changed here.
 
 #[test]
@@ -32,10 +32,58 @@ fn nested_marker_line_heading_ends_the_item_like_an_unnested_one() {
 }
 
 #[test]
-fn deeply_nested_indented_heading_closes_the_inner_item() {
-    // Corpus 75-list-nesting-and-looseness-4: the outer item remains available.
+fn deeply_nested_indented_heading_closes_the_inner_item_and_the_list() {
+    // Corpus 75-list-nesting-and-looseness-4. The outer item does NOT remain
+    // available: a column-0 line is below its content column too, so it is not
+    // that item's content and no owner is selected for it
+    // (markup-carve/carve#2884). An arm named `nested_ends_with_heading` folded
+    // it into the outer item until that ruling.
     assert_eq!(
         carve::to_html("- a\n  - b\n    # N\nlazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
+    );
+}
+
+#[test]
+fn three_levels_of_nesting_answer_the_same_way() {
+    assert_eq!(
+        carve::to_html("- a\n  - b\n    - c\n      # N\nlazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\n            <h1 id=\"N\">N</h1>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
+    );
+}
+
+#[test]
+fn a_thematic_break_in_a_nested_item_closes_the_list_too() {
+    // The rule is "is a paragraph open", not "is it a heading". An enumeration
+    // of block kinds is how the three engines drifted apart in the first place.
+    assert_eq!(
+        carve::to_html("- a\n  - b\n    ---\nlazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <hr>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
+    );
+}
+
+#[test]
+fn a_nested_item_s_own_open_paragraph_still_takes_the_line() {
+    // The control that must not move: a paragraph IS open at the deepest frame,
+    // so this is genuine lazy continuation.
+    assert_eq!(
+        carve::to_html("- a\n  - b\n    text\nlazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\ntext\nlazy</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_nested_list_whose_leaf_holds_a_paragraph_still_takes_the_line() {
+    assert_eq!(
+        carve::to_html("- a\n  - b\n    - c\nlazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <ul>\n          <li>c\nlazy</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_line_at_the_content_column_still_continues_the_outer_item() {
+    assert_eq!(
+        carve::to_html("- a\n  - b\n    # N\n  lazy\n"),
         "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n    lazy\n  </li>\n</ul>"
     );
 }

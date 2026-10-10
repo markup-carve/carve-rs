@@ -11299,7 +11299,6 @@ fn parse_list(
                             return body_ends_with_open_paragraph(src, options);
                         }
                         body_ends_with_open_paragraph(src, options)
-                            || nested_ends_with_heading(src, options)
                     },
                     |cur| collect_indented_block_mapped(cur, base_indent, content_col),
                 );
@@ -12176,26 +12175,6 @@ fn block_ends_in_a_closed_verbatim_block(block: Option<&BlockNode>) -> bool {
     }
 }
 
-fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
-    block_ends_with_heading(probe_blocks(nested, options).last())
-}
-
-fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
-    match block {
-        Some(BlockNode::List(l)) => {
-            let trailing = l.items.last().and_then(|it| it.children.last());
-            matches!(trailing, Some(BlockNode::Heading(_))) || block_ends_with_heading(trailing)
-        }
-        Some(BlockNode::DefinitionList(dl)) => block_ends_with_heading(
-            dl.items
-                .last()
-                .and_then(|item| item.definitions.last())
-                .and_then(|d| d.children.last()),
-        ),
-        _ => false,
-    }
-}
-
 /// S4's lazy question for a body collected at a list item's CONTENT COLUMN:
 /// does a following flush-left line fold into it?
 ///
@@ -12207,8 +12186,11 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// re-parse while this collector has already claimed it, and the line lands in
 /// the OUTER item, which is a third answer no engine produces.
 ///
-/// A heading at the sub-item's CONTENT COLUMN is a bounded block too. It leaves
-/// no paragraph open, so the line ends the inner item (carve#1377).
+/// A heading at the sub-item's CONTENT COLUMN leaves no paragraph open, and so
+/// the line ends the inner item AND the list: a below-column line continues a
+/// paragraph only where one is open at the deepest frame, and no surviving
+/// frame adopts it (CARVE-P0-009, markup-carve/carve#2884). An arm that folded
+/// such a line into the OUTER item used to live here.
 /// Does the body collected so far end INSIDE a quote's lazy continuation?
 ///
 /// A QUOTE IS REACHED BY ITS MARKER, AND A COLUMN NEVER REACHES INTO ONE
@@ -12249,7 +12231,6 @@ fn collected_body_takes_the_lazy_line(
         return body_ends_with_open_paragraph(&content, options);
     }
     nested_ends_with_open_paragraph(src, trailing_below_column, trailing_below_column, options)
-        || nested_ends_with_heading(src, options)
 }
 
 /// Whether the last consumed content belongs below this container's column.
