@@ -15,6 +15,8 @@ which the published crate does not carry.
 
 - Document `source_len` and JSON `srcByteLength` count the original UTF-8 input before BOM, NUL and line-ending normalization. Source-length limits and authored provenance use that same input length.
 
+- List-item code fences keep blank and indented payload after a continuation marker that attaches nothing (carve-rs#2431).
+
 - HTML code-block import keeps sibling text, omits active payloads and reports discarded child markup, comments and attributes (carve-rs#2423).
 
 - Markdown export uses a safe tilde fence for headers and labels containing backticks (carve-rs#2419).
