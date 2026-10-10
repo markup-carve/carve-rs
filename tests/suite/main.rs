@@ -1789,3 +1789,6 @@ mod djot_destination_boundaries;
 
 #[path = "../djot_placeholder_prefixes.rs"]
 mod djot_placeholder_prefixes;
+
+#[path = "../djot_bare_crossing.rs"]
+mod djot_bare_crossing;

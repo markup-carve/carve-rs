@@ -51,16 +51,21 @@ fn user_markers_formed_by_orphan_removal_are_preserved() {
 
 #[test]
 fn empty_term_user_marker_stays_in_image_alt_text() {
-    let token = "\0DJOTEMPTYTERM\00\0";
+    let token = "\0DJOTEMPTYTERM\x000\0";
     assert!(carve::djot_to_carve(&format!("![{token}](x)")).contains(token));
 }
 
 #[test]
 fn user_markers_survive_flattened_emphasis() {
-    for base in ["DJOTSTRONG0", "DJOTALT\00", "DJOTLITERAL\00", "DJOTUSERNUL"] {
-        let source = format!("{{*a \0{{*{base}\00\0*}} b*}} w{{.c}}");
+    for base in [
+        "DJOTSTRONG0",
+        "DJOTALT\x000",
+        "DJOTLITERAL\x000",
+        "DJOTUSERNUL",
+    ] {
+        let source = format!("{{*a \0{{*{base}\x000\0*}} b*}} w{{.c}}");
         let converted = carve::djot_to_carve(&source);
-        assert!(converted.contains(&format!("\0{base}\00\0")));
+        assert!(converted.contains(&format!("\0{base}\x000\0")));
         assert_eq!(carve::to_html(&converted).matches("class=\"c\"").count(), 1);
     }
 }
@@ -107,9 +112,9 @@ fn escaped_nul_stays_inside_its_attributed_word() {
 fn single_index_user_markers_survive_syntax_removal() {
     for base in [
         "DJOTINVALIDATTR0",
-        "DJOTINVALIDATTR\00",
+        "DJOTINVALIDATTR\x000",
         "DJOTNOTEATTR0",
-        "DJOTNOTEATTR\00",
+        "DJOTNOTEATTR\x000",
     ] {
         let token = format!("\0{base}\0");
         for source in [

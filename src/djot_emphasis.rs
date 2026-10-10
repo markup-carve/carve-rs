@@ -14,10 +14,12 @@ struct Pair {
 }
 
 fn kind_bit(kind: u8) -> u8 {
-    if kind == b'_' {
-        1
-    } else {
-        2
+    match kind {
+        b'_' => 1,
+        b'*' => 2,
+        b'~' => 4,
+        b'^' => 8,
+        _ => unreachable!(),
     }
 }
 fn clear(openers: &mut [Vec<(usize, usize, bool)>; 8], from: usize) {
@@ -182,6 +184,7 @@ fn process(
     }
     let mut valid_braces = HashSet::new();
     let mut valid_brace_closers = HashSet::new();
+    let mut brace_ends = HashMap::new();
     let mut literal_dashes = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
@@ -218,6 +221,7 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
+                        brace_ends.insert(start, at - 1);
                         if let Some(paired) = paired
                             .as_deref_mut()
                             .filter(|_| b"+-=".contains(&bytes[start + 1]))
@@ -318,6 +322,14 @@ fn process(
             i += 1;
             continue;
         }
+        if ch == b'\\' && i <= structural_end && bytes[i..].starts_with(b"\\~~~") {
+            i += 1;
+            while bytes.get(i) == Some(&b'~') {
+                structural.insert(i);
+                i += 1;
+            }
+            continue;
+        }
         if ch == b'\\' && bytes.get(i + 1) != Some(&b'\n') {
             i += 2;
             continue;
@@ -358,8 +370,15 @@ fn process(
             i += 1;
             continue;
         }
-        if ch != b'_' && ch != b'*' && !(paired.is_some() && b"~^".contains(&ch)) {
+        if ch != b'_' && ch != b'*' && !b"~^".contains(&ch) {
             i += 1;
+            continue;
+        }
+        if ch == b'~' && i <= structural_end && bytes[i..].starts_with(b"~~~") {
+            while bytes.get(i) == Some(&b'~') {
+                structural.insert(i);
+                i += 1;
+            }
             continue;
         }
         if ch == b'*' && i <= structural_end {
@@ -401,11 +420,17 @@ fn process(
         if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
             can_close
                 && opener.1 < i
-                && braces
-                    .last()
-                    .map_or(true, |at| opener.0 > *at || (opener.2 && opener.0 == *at))
+                && (!opener.2 || braces.last().map_or(true, |at| opener.0 >= *at))
         }) {
             clear(&mut openers, start);
+            while braces.last().is_some_and(|at| *at > start) {
+                let at = braces.pop().unwrap();
+                valid_braces.remove(&at);
+                valid_brace_closers.remove(&brace_ends[&at]);
+                if let Some(paired) = paired.as_deref_mut() {
+                    paired.remove(&(at + 1));
+                }
+            }
             pairs.push(Pair {
                 start,
                 open_end: end,
@@ -631,18 +656,20 @@ impl Renderer<'_> {
                 }
                 continue;
             }
-            if ch == b'='
-                && (self.valid_brace_closers.contains(&i)
-                    || i > 0 && self.valid_braces.contains(&(i - 1)))
+            if ch == b'~' && self.structural.contains(&i)
+                || ch == b'='
+                    && (self.valid_brace_closers.contains(&i)
+                        || i > 0 && self.valid_braces.contains(&(i - 1)))
             {
-                out.extend_from_slice(self.protect("=").as_bytes());
+                out.extend_from_slice(
+                    self.protect(if ch == b'~' { "\\~" } else { "=" })
+                        .as_bytes(),
+                );
                 i += 1;
                 continue;
             }
             if self.mask[i] == ch
-                && ((b"~^".contains(&ch)
-                    && bytes.get(i + 1) == Some(&b'}')
-                    && !self.valid_brace_closers.contains(&i))
+                && (b"~^".contains(&ch)
                     || (b"_*".contains(&ch) && !self.structural.contains(&i))
                     || self.literal_brackets.contains(&i))
             {
@@ -686,10 +713,16 @@ impl Renderer<'_> {
             &pair.children,
             if scope { bit } else { outer | bit },
         );
-        let delimiter = if pair.kind == b'_' { '/' } else { '*' };
+        let delimiter = match pair.kind {
+            b'_' => '/',
+            b'~' => ',',
+            b'^' => '^',
+            _ => '*',
+        };
         let bytes = self.source.as_bytes();
         let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-        let forced = pair.forced
+        let forced = b"~^".contains(&pair.kind)
+            || pair.forced
             || scope
             || content.starts_with('\0')
             || content.ends_with('\0')

@@ -3266,7 +3266,7 @@ mod tests {
     fn an_unclosed_footnote_token_does_not_mask_later_lines() {
         assert_eq!(
             djot_to_carve("Unclosed [^ then _one_.\n\nLater _two_."),
-            "Unclosed [^ then /one/.\n\nLater /two/."
+            "Unclosed [\\^ then /one/.\n\nLater /two/."
         );
     }
 
@@ -3319,7 +3319,7 @@ mod tests {
     #[test]
     fn the_markdown_habits_collapse_to_one_delimiter() {
         assert_eq!(djot_to_carve("**strong**"), "*strong*");
-        assert_eq!(djot_to_carve("~~gone~~"), "~gone~");
+        assert_eq!(djot_to_carve("~~gone~~"), "{,gone,}");
     }
 
     #[test]
