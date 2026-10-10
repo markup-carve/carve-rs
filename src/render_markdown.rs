@@ -1623,7 +1623,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
             parts[i] = if preceding_content {
                 "<br>"
             } else {
-                "<br><!-- -->"
+                "<br><!---->"
             }
             .to_owned();
             break;
@@ -2444,7 +2444,7 @@ fn render_code(content: &str) -> String {
         for character in content.chars() {
             if character == '\n' {
                 escaped.push_str("<!---->&#10;<!---->");
-            } else if character == '\t' || character.is_ascii_punctuation() {
+            } else if matches!(character, ' ' | '\t') || character.is_ascii_punctuation() {
                 write!(&mut escaped, "&#{};", u32::from(character)).expect("writing to a String");
                 if character == '@' {
                     escaped.push_str("<!---->");
@@ -3478,11 +3478,11 @@ fn next_heading_id(
 // core, including `CitationGroup` -> `raw`, so a citation heading's id is
 // consistent here too.
 fn plain_inlines(nodes: &[InlineNode]) -> String {
-    plain_inlines_with(nodes, ' ')
+    plain_inlines_with(nodes, ' ', " ")
 }
 
 /// `plain_inlines`, spelling the staged no-break space as `nbsp`.
-fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
+fn plain_inlines_with(nodes: &[InlineNode], nbsp: char, hard_break_text: &str) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
@@ -3499,11 +3499,13 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             // ways has to be one id.
             InlineNode::EscapedText(escaped) => out.push_str(&escaped.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
-            InlineNode::Emphasis(emphasis) => {
-                out.push_str(&plain_inlines_with(&emphasis.children, nbsp))
-            }
+            InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines_with(
+                &emphasis.children,
+                nbsp,
+                hard_break_text,
+            )),
             InlineNode::Span(span) if !span.injected => {
-                out.push_str(&plain_inlines_with(&span.children, nbsp))
+                out.push_str(&plain_inlines_with(&span.children, nbsp, hard_break_text))
             }
             InlineNode::Code(code) => out.push_str(&code.value),
             // An inline literal renders as visible prose (§27), so it feeds a
@@ -3520,13 +3522,19 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             // would slug `# A </#a>` as `A-A` and every id derived here would
             // disagree with the one the core assigned before resolution.
             InlineNode::Link(link) if link.from_crossref => {}
-            InlineNode::Link(link) => out.push_str(&plain_inlines_with(&link.children, nbsp)),
-            InlineNode::Ruby(r) => out.push_str(&plain_inlines_with(&r.flattened(), nbsp)),
+            InlineNode::Link(link) => {
+                out.push_str(&plain_inlines_with(&link.children, nbsp, hard_break_text))
+            }
+            InlineNode::Ruby(r) => {
+                out.push_str(&plain_inlines_with(&r.flattened(), nbsp, hard_break_text))
+            }
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::AutoLink(autolink) => out.push_str(&autolink.text),
-            InlineNode::Extension(extension) => {
-                out.push_str(&plain_inlines_with(&extension.children, nbsp))
-            }
+            InlineNode::Extension(extension) => out.push_str(&plain_inlines_with(
+                &extension.children,
+                nbsp,
+                hard_break_text,
+            )),
             InlineNode::CitationGroup(group) => out.push_str(&group.raw),
             InlineNode::Abbreviation(abbr) => out.push_str(&abbr.abbr),
             InlineNode::Mention(mention) => out.push_str(&mention.user),
@@ -3536,7 +3544,8 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
                     out.push_str(&number.to_string());
                 }
             }
-            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
+            InlineNode::SoftBreak(_) => out.push(' '),
+            InlineNode::HardBreak(_) => out.push_str(hard_break_text),
             _ => {}
         }
     }
@@ -3580,7 +3589,7 @@ impl GfmSlugger {
 /// space included as itself.
 fn gfm_heading_text(nodes: &[InlineNode]) -> String {
     use unicode_normalization::UnicodeNormalization;
-    let text = plain_inlines_with(nodes, '\u{00a0}');
+    let text = plain_inlines_with(nodes, '\u{00a0}', "");
     text.trim_matches(|c: char| c.is_ascii_whitespace())
         .nfc()
         .collect()
