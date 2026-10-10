@@ -132,6 +132,8 @@ references and external fragment links need manual review. See the
 
 ### Fixes
 
+- Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
+
 - The upgrade guide distinguishes newly exact lookups from labels that already
   matched case exactly, and explains migration limits. Tests keep case-distinct
   numbered captions and equations separate (#2346).
