@@ -22500,6 +22500,9 @@ fn match_emphasis(
         if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
             let opener_run = bounds.bracket_run_at(i);
             if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
+                if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+                    return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 2]).ok()?.to_owned()), close + 2 - i));
+                }
                 let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                 OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                 return Some((
@@ -22578,6 +22581,9 @@ fn match_emphasis(
         }
     }
     let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
+    if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 1]).ok()?.to_owned()), close + 1 - i));
+    }
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
     Some((
@@ -24669,11 +24675,6 @@ fn parse_forced_emphasis(
         b'=' => EmphasisKind::Highlight,
         _ => return None,
     };
-    // E3 puts the forced form on the same stack as the bare one, so a forced
-    // opener of an open kind is content (markup-carve/carve#2078).
-    if OpenKinds::is_open(delim) {
-        return None;
-    }
     // The span closes on a `delim}` pair; with no such pair ahead the scan could
     // only walk to end-of-text and fail, so bail in O(1) (keeps `{/`×n linear).
     if !bounds.has_delim_brace_from(delim, i) {
@@ -24690,6 +24691,9 @@ fn parse_forced_emphasis(
     // carve-rs#2173). The bare and the combined forms read the same rule.
     if !braced_closer_shares_the_run(bounds, i, j) {
         return None;
+    }
+    if NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
+        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..j + 2]).ok()?.to_string()), j + 2 - i));
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
     // A braced inline starts its own scope (ruling markup-carve/carve#2091).
@@ -25174,7 +25178,7 @@ fn braced_inline_end(
 fn braced_inline_scan(
     bytes: &[u8],
     open: usize,
-    scanning: u8,
+    _scanning: u8,
     bounds: &InlineBounds<'_>,
 ) -> Option<usize> {
     let delim = bytes.get(open + 1).copied()?;
@@ -25184,11 +25188,6 @@ fn braced_inline_scan(
         if let Some((pair, _)) = substitution_at(bytes, open, bounds) {
             return Some(pair + 1);
         }
-    }
-    // A forced opener of an open kind is no span, so it hides nothing; the kind
-    // this scan closes counts as open across its own content.
-    if OpenKinds::bit(delim) != 0 && (delim == scanning || OpenKinds::is_open(delim)) {
-        return None;
     }
     let pair: [u8; 2] = match delim {
         b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-' | b'#' => [delim, b'}'],
@@ -25202,7 +25201,7 @@ fn braced_inline_scan(
     } else {
         bounds.braced_closers(bytes).close(bytes, open, delim)?
     };
-    if close == content {
+    if close == content && OpenKinds::bit(delim) == 0 {
         return None;
     }
     Some(close + 1)

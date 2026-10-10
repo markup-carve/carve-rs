@@ -13,6 +13,9 @@ mod empty_nested_fence_separators;
 #[path = "../braced_span_host_boundaries.rs"]
 mod braced_span_host_boundaries;
 
+#[path = "../nested_braced_emphasis.rs"]
+mod nested_braced_emphasis;
+
 #[path = "../the_markdown_target_carries_attributes_on_an_unspellable_inline.rs"]
 mod the_markdown_target_carries_attributes_on_an_unspellable_inline;
 
