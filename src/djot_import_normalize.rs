@@ -475,11 +475,21 @@ pub(super) fn table_edges(source: &str) -> String {
     let mask = mask_code_and_destinations(source);
     let rows = djot_table_rows(source, &mask);
     let mut escaped = false;
+    let mut offset = 0;
+    let masked: Vec<_> = source
+        .split('\n')
+        .map(|line| {
+            // A line the mask hides is code, so its pipes are payload, not table edges.
+            let hidden = mask.as_bytes().get(offset) != Some(&b'|');
+            offset += line.len() + 1;
+            hidden
+        })
+        .collect();
     let mut lines: Vec<_> = source
         .split('\n')
         .enumerate()
         .map(|(n, line)| {
-            if !rows[n] && line.starts_with("|`") && line.trim_end().ends_with('|') {
+            if !rows[n] && !masked[n] && line.starts_with("|`") && line.trim_end().ends_with('|') {
                 escaped = true;
                 format!("\\{line}")
             } else {
