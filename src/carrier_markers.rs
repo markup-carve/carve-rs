@@ -236,37 +236,6 @@ fn carrier_set_balances(payloads: &[String]) -> bool {
     !prelude && open.is_empty()
 }
 
-/// A Markdown fenced-code opener at an indent a fence is read at, as
-/// (fence run, info string).
-fn markdown_fence_opener(line: &str) -> Option<(&str, &str)> {
-    let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
-    if indent > 3 {
-        return None;
-    }
-    let rest = &line[indent..];
-    let ch = rest.chars().next().filter(|c| *c == '`' || *c == '~')?;
-    let run = rest.len() - rest.trim_start_matches(ch).len();
-    if run < 3 {
-        return None;
-    }
-    let info = &rest[run..];
-    // A backtick fence's info string cannot hold a backtick (CommonMark).
-    if ch == '`' && info.contains('`') {
-        return None;
-    }
-
-    Some((&rest[..run], info))
-}
-
-/// Whether a line closes an open fence of `fence`.
-fn markdown_fence_closes(line: &str, fence: &str) -> bool {
-    markdown_fence_opener(line).is_some_and(|(run, info)| {
-        run.as_bytes()[0] == fence.as_bytes()[0]
-            && run.len() >= fence.len()
-            && info.trim().is_empty()
-    })
-}
-
 /// Every carrier marker lifted out of a Markdown source, leaving a placeholder.
 pub(crate) struct CarrierLift {
     pub(crate) source: String,
@@ -279,6 +248,15 @@ pub(crate) struct CarrierLift {
 }
 
 /// Lift every carrier marker line out of the source, leaving a placeholder.
+///
+/// WHICH LINES ARE MARKERS COMES FROM A PARSE, NOT FROM A LINE SCAN. A flat
+/// scan cannot tell a marker-shaped line standing at a list item's content
+/// column from verbatim text in a code block inside that item, so it either
+/// corrupts the verbatim run or refuses the nesting a document most often has.
+/// `pulldown_cmark` has already made that call: a marker that is block content
+/// arrives as an HTML block whatever host prefix its line carries, and one
+/// inside a fenced or indented code block arrives as code text at any indent
+/// (markup-carve/carve#2850).
 ///
 /// A set that does not balance is NEVER reconstructed: the source comes back
 /// untouched, the markers import as the raw HTML they are, and the caller
@@ -299,32 +277,11 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
         markdown.to_owned()
     };
     let lines: Vec<&str> = normalized.split('\n').collect();
-    // A MARKER INSIDE A FENCED CODE BLOCK IS NOT A MARKER. A code block's
-    // payload is verbatim content, so a page documenting the mode holds
-    // marker-shaped lines that record no container; lifting one rewrote the
-    // sample inside the fence. An indented code block needs no guard: a marker
-    // is only read at column 0.
-    let mut payloads: Vec<(usize, String)> = Vec::new();
-    let mut fence: Option<&str> = None;
-    for (at, line) in lines.iter().enumerate() {
-        if let Some(open) = fence {
-            if markdown_fence_closes(line, open) {
-                fence = None;
-            }
-            continue;
-        }
-        if let Some((run, _)) = markdown_fence_opener(line) {
-            fence = Some(run);
-            continue;
-        }
-        if let Some(payload) = carrier_payload(line) {
-            payloads.push((at, payload));
-        }
-    }
+    let payloads = parsed_carrier_markers(&normalized, &lines);
     if payloads.is_empty() {
         return none(markdown, false);
     }
-    let only: Vec<String> = payloads.iter().map(|(_, p)| p.clone()).collect();
+    let only: Vec<String> = payloads.iter().map(|found| found.payload.clone()).collect();
     if !carrier_set_balances(&only) {
         return none(markdown, true);
     }
@@ -337,28 +294,34 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
     let mut out: Vec<String> = Vec::new();
     let mut drop_bold = 0usize;
     let mut skip_blank = false;
+    let mut host = String::new();
     let mut next = 0;
     for (at, line) in lines.iter().enumerate() {
-        if next < payloads.len() && payloads[next].0 == at {
-            let payload = payloads[next].1.clone();
+        if next < payloads.len() && payloads[next].line == at {
+            let found = &payloads[next];
             next += 1;
-            out.push(format!("{token}{}Z", slots.len()));
-            let closer = carrier_is_closer(&payload);
+            // The placeholder keeps the host prefix the marker line carried, so
+            // a marker inside a list item or a block quote stays in that host
+            // when the lifted source is parsed.
+            out.push(format!("{}{token}{}Z", found.host, slots.len()));
+            let closer = carrier_is_closer(&found.payload);
             drop_bold = if closer {
                 0
             } else {
-                carrier_fallback_lines(&payload)
+                carrier_fallback_lines(&found.payload)
             };
             skip_blank = false;
-            slots.push((payload, closer));
+            host = found.host.clone();
+            slots.push((found.payload.clone(), closer));
             continue;
         }
-        if drop_bold > 0 && line.len() > 4 && line.starts_with("**") && line.ends_with("**") {
+        let body = strip_host_prefix(line, &host);
+        if drop_bold > 0 && body.len() > 4 && body.starts_with("**") && body.ends_with("**") {
             drop_bold -= 1;
             skip_blank = true;
             continue;
         }
-        if skip_blank && line.is_empty() {
+        if skip_blank && body.is_empty() {
             skip_blank = false;
             continue;
         }
@@ -374,26 +337,130 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
     }
 }
 
+/// A carrier marker the parse reported as block content.
+struct FoundMarker {
+    /// Index of the line the marker stands on.
+    line: usize,
+    /// The host prefix that line carries before the marker, `> ` and list
+    /// indentation included.
+    host: String,
+    payload: String,
+}
+
+/// Every carrier marker a parse of `markdown` reports as an HTML BLOCK.
+///
+/// Reading only HTML blocks is what makes the verbatim cases free: a marker in
+/// a code block arrives as code text instead, so it is never a candidate.
+fn parsed_carrier_markers(markdown: &str, lines: &[&str]) -> Vec<FoundMarker> {
+    use pulldown_cmark::{Event, Options, Parser};
+    let mut line_starts = Vec::with_capacity(lines.len());
+    let mut offset = 0;
+    for line in lines {
+        line_starts.push(offset);
+        offset += line.len() + 1;
+    }
+    // The options the import itself parses with, minus the metadata gate: a
+    // frontmatter block holds no HTML block either way.
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    let mut found = Vec::new();
+    let take = |at: usize, text: &str| {
+        let line = line_starts.partition_point(|start| *start <= at) - 1;
+        let host = &lines[line][..at - line_starts[line]];
+        carrier_payload(text).map(|payload| FoundMarker {
+            line,
+            host: host.to_owned(),
+            payload,
+        })
+    };
+    for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
+        match event {
+            Event::Html(html) => {
+                // An HTML block can span several lines; a marker is one line of
+                // its own, so each line of the block is tested on its merits.
+                let mut at = range.start;
+                for text in html.split_inclusive('\n') {
+                    found.extend(take(at, text.trim_end_matches('\n')));
+                    at += text.len();
+                }
+            }
+            // A MARKER A BLOCK PREFIX PUSHED OFF COLUMN ZERO arrives as an
+            // inline span: a task item's `[ ] ` is inline content, so an HTML
+            // block cannot begin after it, and the comment is read mid-line.
+            // Requiring the span to BE the whole line, host prefix aside, is
+            // what keeps a marker-shaped span inside running text out of this.
+            Event::InlineHtml(html) => {
+                let line = line_starts.partition_point(|start| *start <= range.start) - 1;
+                let column = range.start - line_starts[line];
+                if lines[line].len() == column + html.len() {
+                    found.extend(take(range.start, &html));
+                }
+            }
+            _ => {}
+        }
+    }
+    found.sort_by_key(|marker| marker.line);
+
+    found
+}
+
+/// A line with its host prefix removed, for the fallback lines travelling under
+/// an opener. The recorded prefix is tried first; a block quote writes its blank
+/// lines as a bare `>`, which that prefix does not cover.
+fn strip_host_prefix<'a>(line: &'a str, host: &str) -> &'a str {
+    if !host.is_empty() {
+        if let Some(rest) = line.strip_prefix(host) {
+            return rest;
+        }
+        return line.trim_start_matches([' ', '\t', '>']);
+    }
+
+    line
+}
+
 /// Write every lifted payload back as the Carve line it is.
 pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String {
     if lift.slots.is_empty() {
         return carve.to_owned();
     }
-    // Each line as its text plus which kind of marker, if any, produced it:
-    // `Some(false)` for an opener or the attribute line travelling with it,
-    // `Some(true)` for a bare closer.
-    let items: Vec<(String, Option<bool>)> = carve
+    let items: Vec<RestoredLine> = carve
         .split('\n')
         .map(|line| {
-            let slot = line
-                .trim()
-                .strip_prefix(&lift.token)
+            // The host prefix comes off the CARVE line rather than off the
+            // Markdown the placeholder was lifted from: the two hosts nest the
+            // same way but spell their prefixes differently, and it is the
+            // Carve line the marker has to stand on. The prefix is taken as
+            // WHATEVER STANDS BEFORE THE TOKEN rather than as a character
+            // class, because a container opening a list item puts the marker
+            // behind that item's `-` and leaving the token in the output would
+            // be corruption rather than a missed restore.
+            let found = line.find(&lift.token);
+            let (lead, body) = line.split_at(found.unwrap_or(0));
+            let slot = found
+                .map(|_| body.trim_end())
+                .and_then(|body| body.strip_prefix(&lift.token))
                 .and_then(|rest| rest.strip_suffix('Z'))
                 .and_then(|index| index.parse::<usize>().ok())
                 .and_then(|index| lift.slots.get(index));
             match slot {
-                Some((payload, closer)) => (payload.clone(), Some(*closer)),
-                None => (line.to_owned(), None),
+                Some((payload, closer)) => RestoredLine {
+                    lead: lead.to_owned(),
+                    text: payload.clone(),
+                    kind: Some(*closer),
+                },
+                // A line that is not a marker keeps its own spelling, and
+                // only its host prefix is needed, for the blank test below.
+                None => {
+                    let lead = line.len() - line.trim_start_matches([' ', '\t', '>']).len();
+                    RestoredLine {
+                        lead: line[..lead].to_owned(),
+                        text: line[lead..].to_owned(),
+                        kind: None,
+                    }
+                }
             }
         })
         .collect();
@@ -401,19 +468,75 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
     separate_carrier_lines(&items).join("\n")
 }
 
+/// A line of the written Carve on the way back: its host prefix, the rest, and
+/// which kind of marker produced it, if any. `Some(false)` is an opener or the
+/// attribute line travelling with it, `Some(true)` a bare closer.
+struct RestoredLine {
+    lead: String,
+    text: String,
+    kind: Option<bool>,
+}
+
+impl RestoredLine {
+    /// A line carrying nothing but its host prefix.
+    fn blank(&self) -> bool {
+        self.kind.is_none() && self.text.is_empty()
+    }
+
+    fn spelled(&self) -> String {
+        format!("{}{}", self.lead, self.text)
+    }
+}
+
+/// A host prefix with any list marker in it blanked out, so a closer can stand
+/// at its opener's content column without repeating that item's marker.
+fn blanked_lead(lead: &str) -> String {
+    lead.chars()
+        .map(|ch| if ch == '>' || ch == '\t' { ch } else { ' ' })
+        .collect()
+}
+
 /// Give every restored marker line the blank lines the canonical writer puts
 /// around it: a container's opener and closer hug its body, and what follows a
 /// closer is a block of its own.
-fn separate_carrier_lines(items: &[(String, Option<bool>)]) -> Vec<String> {
+fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<String> {
+    // A CLOSER STANDS AT ITS OPENER'S COLUMN. Where a container opens a list
+    // item and its body begins with a list, the closer's placeholder is a lazy
+    // continuation of that inner item's paragraph, so the written Carve puts it
+    // at the inner content column; the container would then close in the wrong
+    // host. The opener's own prefix is the answer, with any list marker in it
+    // blanked out, because a closer cannot repeat an item's marker.
+    let mut open: Vec<String> = Vec::new();
+    let leads: Vec<String> = items
+        .iter()
+        .map(|item| match item.kind {
+            Some(false) if carrier_fence_width(&item.text) > 0 => {
+                open.push(blanked_lead(&item.lead));
+                item.lead.clone()
+            }
+            Some(true) => open.pop().unwrap_or_else(|| item.lead.clone()),
+            _ => item.lead.clone(),
+        })
+        .collect();
+    let items: Vec<RestoredLine> = items
+        .iter()
+        .zip(leads)
+        .map(|(item, lead)| RestoredLine {
+            lead,
+            text: item.text.clone(),
+            kind: item.kind,
+        })
+        .collect();
+    let items = &items[..];
     let mut hugged = vec![false; items.len()];
     let mut at = 0;
     while at < items.len() {
-        if items[at].1.is_some() || !items[at].0.is_empty() {
+        if !items[at].blank() {
             at += 1;
             continue;
         }
         let mut end = at;
-        while end < items.len() && items[end].1.is_none() && items[end].0.is_empty() {
+        while end < items.len() && items[end].blank() {
             end += 1;
         }
         let mut before = at;
@@ -422,14 +545,24 @@ fn separate_carrier_lines(items: &[(String, Option<bool>)]) -> Vec<String> {
                 break None;
             }
             before -= 1;
-            if items[before].1.is_some() || !items[before].0.is_empty() {
-                break items[before].1;
+            if !items[before].blank() {
+                break Some(&items[before]);
             }
         };
-        let below = items.get(end).and_then(|item| item.1);
+        let below = items.get(end).filter(|item| item.kind.is_some());
         // A blank above a closer and one below an opener are both INSIDE the
-        // container, where the canonical writer puts none.
-        if below == Some(true) || above == Some(false) {
+        // container, where the canonical writer puts none. The blank has to
+        // share the marker's HOST to be inside it: a `>` line next to a marker
+        // standing at column 0 belongs to a block quote of its own.
+        let inside = below
+            .filter(|item| item.kind == Some(true))
+            .or_else(|| above.filter(|item| item.kind == Some(false)))
+            .filter(|marker| {
+                items[at..end]
+                    .iter()
+                    .all(|blank| blank.lead.trim_end() == marker.lead.trim_end())
+            });
+        if inside.is_some() {
             for slot in hugged.iter_mut().take(end).skip(at) {
                 *slot = true;
             }
@@ -438,16 +571,23 @@ fn separate_carrier_lines(items: &[(String, Option<bool>)]) -> Vec<String> {
     }
 
     let mut out: Vec<String> = Vec::new();
-    let mut last: Option<Option<bool>> = None;
-    for (index, (text, kind)) in items.iter().enumerate() {
+    let mut last: Option<&RestoredLine> = None;
+    for (index, item) in items.iter().enumerate() {
         if hugged[index] {
             continue;
         }
-        if last == Some(Some(true)) && *kind != Some(true) && !text.is_empty() {
-            out.push(String::new());
+        // A closer and what follows it are two blocks, so they take a blank
+        // line between them - but only where they are SIBLINGS. A list item
+        // opening after a closer is a block of the host above, and a blank
+        // there would turn a tight list loose.
+        if last.is_some_and(|prior| prior.kind == Some(true) && item.lead.len() >= prior.lead.len())
+            && item.kind != Some(true)
+            && !item.text.is_empty()
+        {
+            out.push(item.lead.trim_end().to_owned());
         }
-        out.push(text.clone());
-        last = Some(*kind);
+        out.push(item.spelled());
+        last = Some(item);
     }
 
     out

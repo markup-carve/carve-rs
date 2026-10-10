@@ -224,34 +224,223 @@ fn a_container_this_target_spells_takes_no_marker() {
     }
 }
 
-/// A host that prefixes its lines takes no marker yet: the comment would sit at
-/// the host's content column or behind its `>`, where the import does not read
-/// it, so it would be written and never read back. The container degrades there
-/// exactly as it does with the mode off (markup-carve/carve#2850).
+/// A HOST THAT PREFIXES ITS LINES CARRIES. The marker stands at the host's
+/// content column or behind its `>`, and the import finds it there because
+/// WHICH LINES ARE MARKERS NOW COMES FROM A PARSE: `pulldown_cmark` reports a
+/// marker that is block content as an HTML block whatever prefix its line
+/// carries, and one inside a code construct as code text
+/// (markup-carve/carve#2850).
+///
+/// Every shape here is byte-exact and HTML-equal to its source. The two-level
+/// and quote-in-item sources are spelled TIGHT on purpose: a blank line between
+/// an outer item and its nested list is lost by this target whether a container
+/// is involved or not, so a loose spelling would measure that instead of this.
+fn prefixed_hosts() -> Vec<(&'static str, &'static str, &'static str)> {
+    vec![
+        (
+            "a container in a list item",
+            "- Item.\n\n  ::: note\n  Body.\n  :::\n",
+            "- Item.\n\n  <!-- carve: ::: note -->\n  Body.\n\n  <!-- carve: ::: -->\n",
+        ),
+        (
+            "a container two list levels in",
+            "- Outer.\n  - Inner.\n\n    ::: note\n    Body.\n    :::\n",
+            "- Outer.\n  - Inner.\n\n    <!-- carve: ::: note -->\n    Body.\n\n    <!-- carve: ::: -->\n",
+        ),
+        (
+            "a container in a block quote",
+            "> ::: note\n> Body.\n> :::\n",
+            "> <!-- carve: ::: note -->\n> Body.\n>\n> <!-- carve: ::: -->\n",
+        ),
+        (
+            "a container in a block quote in a list item",
+            "- Item.\n  > ::: note\n  > Body.\n  > :::\n",
+            "- Item.\n  > <!-- carve: ::: note -->\n  > Body.\n  >\n  > <!-- carve: ::: -->\n",
+        ),
+        (
+            // THE OPENER SHARES THE ITEM'S MARKER LINE here, so the placeholder
+            // the import lifts the marker to stands behind a `-`. Leaving the
+            // token in the output would be corruption rather than a missed
+            // restore, which is why the prefix is read as whatever precedes the
+            // token and not as a character class.
+            "a container opening a list item",
+            "- ::: note\n  Body.\n  :::\n",
+            "- <!-- carve: ::: note -->\n  Body.\n\n  <!-- carve: ::: -->\n",
+        ),
+        (
+            // AND ITS BODY BEGINS WITH A LIST, so the closer's placeholder is a
+            // lazy continuation of that inner item's paragraph and the written
+            // Carve puts it at the inner content column. A closer stands at its
+            // OPENER's column, which is what brings it back.
+            "a container opening a list item, holding a list",
+            "- ::: note\n  - one\n  - two\n  :::\n",
+            "- <!-- carve: ::: note -->\n  - one\n  - two\n  <!-- carve: ::: -->\n",
+        ),
+        (
+            "an empty container opening a list item",
+            "- ::: note\n  :::\n",
+            "- <!-- carve: ::: note -->\n  <!-- carve: ::: -->\n",
+        ),
+        (
+            // TWO ITEMS OPEN ON ONE LINE here. The parse takes every container
+            // prefix off on its own, which is the whole reason the reading
+            // moved there: a line scan would have had to count them by hand.
+            "a container opening two list items at once",
+            "- - ::: note\n    Body.\n    :::\n",
+            "- - <!-- carve: ::: note -->\n    Body.\n\n    <!-- carve: ::: -->\n",
+        ),
+        (
+            // A SIBLING ITEM AFTER THE CLOSER MUST NOT GO LOOSE. A closer and
+            // what follows take a blank line between them where they are
+            // siblings; the item below belongs to the host above the container,
+            // and a blank there would wrap `next` in a `<p>`.
+            "a container opening a list item, with a sibling item after it",
+            "- ::: note\n  - one\n  - two\n  :::\n- next\n",
+            "- <!-- carve: ::: note -->\n  - one\n  - two\n  <!-- carve: ::: -->\n- next\n",
+        ),
+    ]
+}
+
+/// A CONTAINER OPENING A TASK ITEM comes back too, and it is the one host whose
+/// marker is not an HTML BLOCK: a task marker's `[ ] ` is inline content, so an
+/// HTML block cannot begin after it and the parse reports the opener as an
+/// inline span. It is admitted because it IS the whole line, host prefix aside,
+/// which is what keeps a marker-shaped span inside running text out.
+///
+/// NOT byte-exact, and not because of the carrier mode: this target's import
+/// drops the checkbox off a task item with a LOOSE body whether a container is
+/// involved or not - `- [ ] XYZ\n  Body.\n\n  TAIL\n` comes back as `- XYZ`
+/// on an unchanged build. So the container is what is asserted here.
 #[test]
-fn a_container_in_a_prefixed_host_takes_no_marker() {
-    for source in [
-        "- item\n\n  ::: note\n  Body.\n  :::\n",
-        "> ::: note\n> Body.\n> :::\n",
-    ] {
-        let on = markdown(source, true);
+fn a_container_opening_a_task_item_comes_back() {
+    let source = "- [ ] ::: note\n  Body.\n  :::\n";
+    let carrier = markdown(source, true);
+    assert_eq!(
+        carrier,
+        "- [ ] <!-- carve: ::: note -->\n  Body.\n\n  <!-- carve: ::: -->\n"
+    );
+    let result = carve::migrate_markdown(&carrier);
+    assert_eq!(result.value, "- ::: note\n  Body.\n  :::\n");
+    assert!(
+        !result.value.contains("=html") && !result.value.contains("<!-- carve:"),
+        "the container did not come back: {:?}",
+        result.value
+    );
+    assert!(
+        !result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code == "carrier-markers-damaged"),
+        "a sound set in a task item was called damaged: {:?}",
+        result.report.diagnostics
+    );
+}
+
+#[test]
+fn a_container_in_a_prefixed_host_takes_a_marker_at_its_hosts_column() {
+    let mut wrong = Vec::new();
+    for (name, carve, carrier) in prefixed_hosts() {
+        let got = markdown(carve, true);
+        if got != carrier {
+            wrong.push(format!("{name}\n  want {carrier:?}\n   got {got:?}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of the prefixed hosts wrote the wrong bytes:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+#[test]
+fn a_container_in_a_prefixed_host_comes_back() {
+    let mut wrong = Vec::new();
+    for (name, carve, carrier) in prefixed_hosts() {
+        let got = carve::markdown_to_carve(carrier);
+        if got != carve {
+            wrong.push(format!("{name}\n  want {carve:?}\n   got {got:?}"));
+        }
         assert!(
-            !on.contains("<!-- carve:"),
-            "{source:?} took a marker: {on:?}"
-        );
-        assert_eq!(on, markdown(source, false), "{source:?}");
-        // And no marker written means no damage claimed on the way back.
-        let report = carve::migrate_markdown(&on);
-        assert!(
-            !report
-                .report
-                .diagnostics
-                .iter()
-                .any(|row| row.code == "carrier-markers-damaged"),
-            "{source:?} claimed damage: {:?}",
-            report.report.diagnostics
+            !got.contains("CARVECARRIER"),
+            "{name}: the placeholder reached the output: {got:?}"
         );
     }
+    assert!(
+        wrong.is_empty(),
+        "{} of the prefixed hosts did not come back:\n{}",
+        wrong.len(),
+        wrong.join("\n")
+    );
+}
+
+/// The bytes are the point, but so is the MEANING: a round trip that returns
+/// the same text under a different element passes a byte comparison.
+#[test]
+fn a_prefixed_hosts_round_trip_renders_the_same_html() {
+    let html = |source: &str| carve::to_html(source);
+    for (name, carve, carrier) in prefixed_hosts() {
+        assert_eq!(
+            html(carve),
+            html(&carve::markdown_to_carve(carrier)),
+            "{name}"
+        );
+    }
+}
+
+/// And a damaged set inside a prefixed host is still never guessed at.
+#[test]
+fn a_damaged_set_inside_a_prefixed_host_reports_and_reconstructs_nothing() {
+    for source in [
+        "- Item.\n\n  Body.\n\n  <!-- carve: ::: -->\n",
+        "- Item.\n\n  <!-- carve: ::: -->\n  Body.\n\n  <!-- carve: ::: note -->\n",
+        "> <!-- carve: ::: note -->\n> <!-- carve: ::: wrapper -->\n> Body.\n>\n> <!-- carve: ::: -->\n",
+    ] {
+        let result = carve::migrate_markdown(source);
+        let damaged: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "carrier-markers-damaged")
+            .collect();
+        assert_eq!(
+            damaged.len(),
+            1,
+            "{source:?} owes exactly one diagnostic: {:?}",
+            result.report.diagnostics
+        );
+        assert_eq!(damaged[0].fidelity.as_str(), "degraded", "{source:?}");
+        assert_eq!(damaged[0].confidence.as_str(), "fallback", "{source:?}");
+        assert!(
+            !result
+                .value
+                .lines()
+                .any(|line| line.trim_start_matches([' ', '>']).starts_with(":::")),
+            "{source:?} reconstructed a container: {:?}",
+            result.value
+        );
+        assert!(
+            result.value.contains("```=html"),
+            "{source:?} lost the markers instead of keeping them as raw HTML: {:?}",
+            result.value
+        );
+    }
+}
+
+/// A TABLE CELL STILL CARRIES NOTHING, and needs no guard to: this target
+/// flattens a cell to one line and the container's body with it, so there is no
+/// line for a marker to stand on (markup-carve/carve#2856).
+#[test]
+fn a_container_in_a_table_cell_takes_no_marker_either_way() {
+    let source = concat!(
+        "{header-rows=1}\n::: list-table\n- - A\n  - B\n",
+        "- - cell one\n  - ::: note\n    Body.\n    :::\n:::\n",
+    );
+    let on = markdown(source, true);
+    assert!(!on.contains("<!-- carve:"), "{on:?}");
+    assert_eq!(on, markdown(source, false));
+    assert!(on.contains("| cell one | Body. |"), "{on:?}");
 }
 
 /// A MARKER INSIDE A FENCED CODE BLOCK IS NOT A MARKER. A code block's payload
@@ -272,6 +461,51 @@ fn a_marker_shaped_line_inside_a_fenced_code_block_is_left_alone() {
         "a fenced sample was read as a damaged set: {:?}",
         result.report.diagnostics
     );
+}
+
+/// AND A VERBATIM RUN AT A PREFIXED COLUMN IS STILL VERBATIM. Reading a marker
+/// through a host prefix is what made these reachable: a flat scan cannot tell
+/// a marker at a list item's content column from code text in that item, and
+/// four of these five sit at a column such a scan would have admitted. The
+/// parse answers all five without a guard of its own.
+#[test]
+fn a_marker_shaped_line_in_a_verbatim_run_is_left_alone_at_any_column() {
+    for source in [
+        // An indented code block at top level.
+        "Text.\n\n    <!-- carve: ::: note -->\n    Body.\n    <!-- carve: ::: -->\n",
+        // A fence at a list item's content column.
+        "- Item.\n\n  ```md\n  <!-- carve: ::: note -->\n  Body.\n  <!-- carve: ::: -->\n  ```\n",
+        // An indented code block inside a list item.
+        "- Item.\n\n      <!-- carve: ::: note -->\n      Body.\n      <!-- carve: ::: -->\n",
+        // A fence indented past three columns, which is code text, not a fence.
+        "Text.\n\n     ```md\n     <!-- carve: ::: note -->\n     ```\n",
+        // An inline code span, which is not a line of its own at all.
+        "Text with `<!-- carve: ::: note -->` in it.\n",
+    ] {
+        let result = carve::migrate_markdown(source);
+        assert!(
+            !result
+                .value
+                .lines()
+                .any(|line| line.trim_start_matches([' ', '>']).starts_with(":::")),
+            "{source:?} fabricated a container: {:?}",
+            result.value
+        );
+        assert!(
+            result.value.contains("<!-- carve: ::: note -->"),
+            "{source:?} lost the verbatim marker text: {:?}",
+            result.value
+        );
+        assert!(
+            !result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "carrier-markers-damaged"),
+            "{source:?} was read as a damaged set: {:?}",
+            result.report.diagnostics
+        );
+    }
 }
 
 /// A DAMAGED SET IS NEVER GUESSED: a marker deleted, two reordered or a set left
