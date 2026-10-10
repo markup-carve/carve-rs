@@ -1648,8 +1648,12 @@ mod layout_html_tests {
         );
         // Spec b738ffe7 adds underscore rules and dash rules after a paragraph.
         // The scanner is unchanged; exact shadow parity is checked above.
+        // Spec 95ddd0ac adds the six 551 bracket-scan documents (carve#2862);
+        // three of them are plain link paragraphs this path takes, so 60 to 63
+        // is six NEW documents, not a widening. The scanner is unchanged and
+        // the per-document assertion above proves each byte-identical.
         assert_eq!(
-            accepted, 60,
+            accepted, 63,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

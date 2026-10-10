@@ -3114,13 +3114,15 @@ fn escape_plain_carve_syntax_masked(
     let mask = masked.as_bytes();
     let mut at: Vec<usize> = Vec::new();
 
-    // `%%` opens a comment at the start of a line or after whitespace. `%%%` is
-    // not a comment opener, so it is left alone.
+    // `%%` opens a comment at the start of a line or after whitespace, and a
+    // longer run opens on its FIRST two: a third sign neither closes the
+    // comment nor cancels it, so `a %%%c b` loses everything after the run.
+    // One escape on the first sign makes the whole run literal, because the
+    // rest then sit inside a word (carve-rs#2451).
     let mut i = 0;
     while i + 1 < mask.len() {
         if mask[i] == b'%'
             && mask[i + 1] == b'%'
-            && mask.get(i + 2) != Some(&b'%')
             && !is_escaped(mask, i)
             && (i == 0 || matches!(mask[i - 1], b' ' | b'\t' | b'\n'))
         {
@@ -3727,8 +3729,27 @@ mod tests {
         assert_eq!(djot_to_carve("a `_x_` b\n"), "a `_x_` b\n");
         assert_eq!(djot_to_carve("ftp://x/ y\n"), "ftp://x/ y\n");
         assert_eq!(djot_to_carve("a/b/c\n"), "a/b/c\n");
-        assert_eq!(djot_to_carve("%%% not\n"), "%%% not\n");
         assert_eq!(djot_to_carve("```\n/code/\n```\n"), "```\n/code/\n```\n");
+    }
+
+    /// A run longer than two is NOT exempt: the comment opens on the first two
+    /// signs and the rest of the line disappears, so the first sign takes the
+    /// one escape that makes the whole run literal (carve-rs#2451). Every
+    /// spelling here, at both run lengths and on a line that is not the first.
+    #[test]
+    fn a_percent_run_longer_than_two_takes_one_escape_on_its_first_sign() {
+        assert_eq!(djot_to_carve("a %%%c b\n"), "a \\%%%c b\n");
+        assert_eq!(djot_to_carve("a %%%%c b\n"), "a \\%%%%c b\n");
+        assert_eq!(djot_to_carve("%%%c b\n"), "\\%%%c b\n");
+        assert_eq!(djot_to_carve("x\n%%%c y\n"), "x\n\\%%%c y\n");
+        // BOUND: already escaped in the source, and never a second escape.
+        assert_eq!(djot_to_carve("a \\%% c\n"), "a \\%% c\n");
+        // BOUND: a lone sign and an intraword pair are not openers.
+        assert_eq!(djot_to_carve("a % c\n"), "a % c\n");
+        assert_eq!(djot_to_carve("100%%x\n"), "100%%x\n");
+        // CONTROL: the two-sign case already escaped and does not move.
+        assert_eq!(djot_to_carve("a %% c\n"), "a \\%% c\n");
+        assert_eq!(djot_to_carve("a\n%% c\n"), "a\n\\%% c\n");
     }
 }
 

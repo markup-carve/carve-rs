@@ -1599,7 +1599,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // kind appears. Strict holds at 1723 and reported-lossy rises to 509.
     // Spec b738ffe adds corpus 550, 550-2, 550-3 and 550-4. All four
     // round-trip without reported loss; no existing document changes bucket.
-    const STRICT: usize = 1727;
+    // Spec 95ddd0ac adds the six 551 bracket-scan documents (carve#2862). All
+    // six round-trip strictly and nothing leaves the strict set, so the whole
+    // delta is six documents ARRIVING; reported-lossy is unmoved at 509.
+    const STRICT: usize = 1733;
     const LOSSY: usize = 509;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
