@@ -208,3 +208,105 @@ fn same_kind_nesting_in_one_label_still_reports_flattening() {
             .any(|diagnostic| diagnostic.code == "structure-unspellable"));
     }
 }
+
+#[test]
+fn markdown_boundary_losses_name_the_source_line_without_changing_output() {
+    for (source, line) in [
+        ("``` f&ouml;&ouml;\nfoo\n```\n", 1),
+        ("````;\n````\n", 1),
+        ("[foo]: <>\n\n[foo]\n", 3),
+        ("[link]()\n", 1),
+        ("[link](<>)\n", 1),
+        ("[]()\n", 1),
+        ("[foo]()\n\n[foo]: /url1\n", 1),
+        ("before\n\n> ```föö\n> x\n> ```\n", 3),
+        ("before\n\n- ```föö\n  x\n  ```\n", 3),
+        ("before\n\n![alt](<> \"title\")\n", 3),
+        ("before\n\nfirst\n[link]()\n", 4),
+    ] {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value, markdown_to_carve(source));
+        let losses: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "structure-unspellable")
+            .collect();
+        assert_eq!(losses.len(), 1, "{source}");
+        assert_eq!(losses[0].fidelity, MigrationFidelity::Dropped);
+        assert_eq!(losses[0].confidence, MigrationConfidence::Exact);
+        assert_eq!(
+            losses[0].path.as_deref(),
+            Some(format!("line:{line}").as_str()),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn valid_markdown_constructs_do_not_report_boundary_losses() {
+    for source in [
+        "[link](url)",
+        "![alt](image.png)",
+        "`[link]()`",
+        "\\[link]()",
+        "```c++ metadata\nx\n```",
+        "```&#99;\nx\n```",
+        "```\nx\n```",
+    ] {
+        assert!(
+            !migrate_markdown(source)
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "structure-unspellable"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn boundary_loss_lines_include_typed_frontmatter() {
+    for source in [
+        "---toml\na = 1\nb = 2\n---\n\n[link]()\n",
+        "---toml\r\na = 1\r\nb = 2\r\n---\r\n\r\n[link]()\r\n",
+        "---toml\ra = 1\rb = 2\r---\r\r[link]()\r",
+    ] {
+        let result = migrate_markdown(source);
+        let loss = result
+            .report
+            .diagnostics
+            .iter()
+            .find(|row| row.code == "structure-unspellable")
+            .unwrap();
+        assert_eq!(loss.path.as_deref(), Some("line:6"));
+    }
+}
+
+#[test]
+fn nested_image_content_does_not_claim_retained_link_titles() {
+    for source in [
+        "![a [b](<> \"t\") c](x.png)",
+        "![a ![b](<> \"t\") c](x.png)",
+    ] {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value.trim(), "![a b c](x.png)");
+        assert!(
+            !result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "structure-unspellable"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn empty_destination_inside_raw_html_wrappers_names_its_loss() {
+    assert!(migrate_markdown("<span>[x](<> \"t\")</span>")
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == "structure-unspellable"));
+}
