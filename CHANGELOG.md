@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
+
 - Markdown export preserves terminal hard breaks and hard breaks in headings with inline HTML. A break-only paragraph stays a paragraph in GFM readers.
 
 - Markdown code spans preserve significant edge spaces. Empty spans and payloads containing tabs or newlines use an inline HTML fallback that preserves the code text.
@@ -132,7 +134,6 @@ references and external fragment links need manual review. See the
 
 ### Fixes
 
-- Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
 
 - The upgrade guide distinguishes newly exact lookups from labels that already
   matched case exactly, and explains migration limits. Tests keep case-distinct
