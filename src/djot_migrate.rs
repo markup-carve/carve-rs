@@ -109,7 +109,17 @@ fn convert_djot_document(stripped_definitions: &DjotFootnoteAttributeStrip) -> S
     let folded_references = fold_djot_references(&fence_closers);
     let inline = normalize::inline(&folded_references);
     let references = normalize::references(&inline);
-    let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions), &inherited);
+    // Carve has no empty footnote body: `[^b]:` alone is a paragraph, not a
+    // definition, so an empty Djot body needs a body that renders nothing - a
+    // comment. It travels as a NUL token so the text escaper cannot reach it and
+    // turn the comment into a literal `%%%%` the reader was never shown.
+    let empty_note = djot_placeholder_prefix(&references, "\0DJOTEMPTYNOTE\0");
+    let footnotes = normalize_djot_footnotes(
+        &references,
+        Some(stripped_definitions),
+        &inherited,
+        &empty_note,
+    );
     let links = normalize_djot_links(&footnotes, &inherited);
     let autolinks = normalize_djot_autolinks(&links);
     let table_pipes = escape_djot_non_table_rows(&normalize_djot_table_pipes(&autolinks));
@@ -248,6 +258,7 @@ fn convert_djot_document(stripped_definitions: &DjotFootnoteAttributeStrip) -> S
                 )
                 .into_owned()
         });
+    let converted = converted.replace(&empty_note, "%%%%");
     let converted = cached_regex!(r"\x00DJOTINVALIDATTR\x00[0-9]+\x00")
         .unwrap()
         .replace_all(&converted, |caps: &regex::Captures<'_>| {
@@ -5438,6 +5449,7 @@ fn normalize_djot_footnotes(
     source: &str,
     boundaries: Option<&DjotFootnoteAttributeStrip>,
     inherited: &HashSet<String>,
+    empty_note: &str,
 ) -> String {
     if !source.contains("[^") {
         return source.to_owned();
@@ -5841,7 +5853,8 @@ fn normalize_djot_footnotes(
                     }
                     i = end + 1;
                     if definition.is_some() && empty_definitions.contains(&at) {
-                        output.extend_from_slice(b": %%%%");
+                        output.extend_from_slice(b": ");
+                        output.extend_from_slice(empty_note.as_bytes());
                         i += 1;
                     }
                     if definition.is_none()
@@ -5862,7 +5875,7 @@ fn normalize_djot_footnotes(
     for key in used {
         if !defined.contains(&key) {
             let alias = djot_note_alias(&key, &mut labels, &mut serial, &reserved);
-            stubs.push_str(&format!("[^{alias}]: %%%%\n\n"));
+            stubs.push_str(&format!("[^{alias}]: {empty_note}\n\n"));
         }
     }
     stubs.push_str(&String::from_utf8(output).expect("footnote replacements preserve UTF-8"));

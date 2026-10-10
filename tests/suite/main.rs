@@ -1818,3 +1818,6 @@ mod djot_unclosed_code;
 mod markdown_html_code_payloads;
 #[path = "../smart_quote_rules.rs"]
 mod smart_quote_rules;
+
+#[path = "../a_djot_table_caption_and_an_empty_note_body_survive_import.rs"]
+mod a_djot_table_caption_and_an_empty_note_body_survive_import;
