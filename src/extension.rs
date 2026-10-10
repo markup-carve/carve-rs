@@ -192,6 +192,22 @@ pub enum SmartTypographyMode {
     Glyph,
     /// Render the author's source run, so `...` stays three periods.
     Source,
+    /// Render quote source runs while keeping other resolved glyphs.
+    QuotesSource,
+}
+
+impl SmartTypographyMode {
+    pub(crate) fn uses_source(self, kind: &str) -> bool {
+        self == Self::Source
+            || (self == Self::QuotesSource
+                && matches!(
+                    kind,
+                    "left_double_quote"
+                        | "right_double_quote"
+                        | "left_single_quote"
+                        | "right_single_quote"
+                ))
+    }
 }
 
 /// Record an engine-written attribute at the END of the author's order.

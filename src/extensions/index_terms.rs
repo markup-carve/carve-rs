@@ -450,7 +450,7 @@ fn render_index_list(
         // (WCAG 2.5.3).
         let term = display
             .get(slug)
-            .map(|nodes| inline_text(nodes, SmartTypographyMode::Glyph))
+            .map(|nodes| inline_text(nodes, ctx.options.smart_typography))
             .unwrap_or_default();
         for m in 1..=n {
             let name = if n == 1 {
@@ -515,7 +515,7 @@ fn inline_text(nodes: &[InlineNode], smart: SmartTypographyMode) -> String {
             // never there.
             InlineNode::Text(s) => out.push_str(&s.value),
             InlineNode::SmartPunctuation(s) => {
-                if smart == SmartTypographyMode::Source {
+                if smart.uses_source(&s.kind) {
                     out.push_str(&s.value);
                 } else {
                     out.push_str(smart_punctuation_glyph(s));

@@ -434,7 +434,7 @@ impl Tabs {
             let Some(tab) = as_tab(block) else { continue };
 
             items.push(TabItem {
-                label: self.tab_label(&tab),
+                label: self.tab_label(&tab, ctx),
                 content: self.tab_content(&tab, ctx),
                 selected: tab
                     .attrs
@@ -453,14 +453,14 @@ impl Tabs {
 
     /// The opener `[label]`, then a `label=` attribute, then the first
     /// heading's text, then `Tab N`.
-    fn tab_label(&self, tab: &TabRef<'_>) -> String {
+    fn tab_label(&self, tab: &TabRef<'_>, ctx: &RenderContext<'_>) -> String {
         if let Some(label) = explicit_label(tab) {
             return label;
         }
 
         for child in tab.children {
             if let BlockNode::Heading(heading) = child {
-                return inline_text(&heading.children);
+                return inline_text(&heading.children, ctx.options.smart_typography);
             }
         }
 
@@ -635,18 +635,27 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
     }
 }
 
-fn inline_text(nodes: &[InlineNode]) -> String {
+fn inline_text(nodes: &[InlineNode], smart: crate::SmartTypographyMode) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
+            InlineNode::SmartPunctuation(node) => {
+                out.push_str(if smart.uses_source(&node.kind) {
+                    &node.value
+                } else {
+                    crate::ast::smart_punctuation_glyph(node)
+                });
+            }
             InlineNode::Text(text) => out.push_str(&text.value),
             InlineNode::Code(code) => out.push_str(&code.value),
             InlineNode::LiteralInline(literal) => out.push_str(&literal.content),
-            InlineNode::Emphasis(emphasis) => out.push_str(&inline_text(&emphasis.children)),
-            InlineNode::Link(link) => out.push_str(&inline_text(&link.children)),
-            InlineNode::Span(span) => out.push_str(&inline_text(&span.children)),
-            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened())),
-            InlineNode::Extension(extension) => out.push_str(&inline_text(&extension.children)),
+            InlineNode::Emphasis(emphasis) => out.push_str(&inline_text(&emphasis.children, smart)),
+            InlineNode::Link(link) => out.push_str(&inline_text(&link.children, smart)),
+            InlineNode::Span(span) => out.push_str(&inline_text(&span.children, smart)),
+            InlineNode::Ruby(r) => out.push_str(&inline_text(&r.flattened(), smart)),
+            InlineNode::Extension(extension) => {
+                out.push_str(&inline_text(&extension.children, smart))
+            }
             _ => {}
         }
     }

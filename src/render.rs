@@ -1716,7 +1716,6 @@ fn plain_inlines_typography_at(
         return String::new();
     }
     let mut out = String::new();
-    let source = smart == crate::extension::SmartTypographyMode::Source;
     for node in nodes {
         match node {
             InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
@@ -1728,7 +1727,7 @@ fn plain_inlines_typography_at(
             // anchor no cross-reference could resolve.
             InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => {
-                if source {
+                if smart.uses_source(&s.kind) {
                     out.push_str(&s.value);
                 } else {
                     out.push_str(smart_punctuation_glyph(s));
@@ -1954,10 +1953,12 @@ fn render_list_item(
     out.push('>');
     let task_name = if item.checked.is_some() {
         match item.children.first() {
-            Some(BlockNode::Paragraph(p)) => plain_inlines(&p.children)
-                .split_ascii_whitespace()
-                .collect::<Vec<_>>()
-                .join(" "),
+            Some(BlockNode::Paragraph(p)) => {
+                plain_inlines_typography(&p.children, options.smart_typography)
+                    .split_ascii_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
             _ => String::new(),
         }
     } else {
@@ -3571,8 +3572,7 @@ fn render_inline_after(
             // `plain_inlines`, which keeps reading the glyph and normalizes it
             // back to ASCII, so `# Don't repeat yourself` gives the same id in
             // both modes.
-            let text = if options.smart_typography == crate::extension::SmartTypographyMode::Source
-            {
+            let text = if options.smart_typography.uses_source(&s.kind) {
                 s.value.as_str()
             } else {
                 smart_punctuation_glyph(s)
