@@ -506,39 +506,72 @@ fn misnested_code_keeps_entity_newlines_until_its_html_close() {
         ("&#13;&#10;", " z\nw"),
         ("&#13;<!---->&#10;", " z\n\nw"),
     ] {
-        let markdown = format!("*x <code>y* z{entity}w</code> tail&#10;end");
-        let migration = carve::try_migrate_markdown(&markdown).unwrap();
-        let ast = carve::try_markdown_to_ast(&markdown).unwrap();
-        for html in [
-            carve::to_html(&migration.value),
-            carve::render_html(&ast).unwrap(),
+        for template in [
+            "*x <code>y* zENTITYw</code> tail&#10;end",
+            "[x <code>y](u) zENTITYw</code> tail&#10;end",
+            "# *x <code>y* zENTITYw</code> tail&#10;end",
+            "| *x <code>y* zENTITYw</code> tail&#10;end |\n| --- |",
+            "- *x <code>y* zENTITYw</code> tail&#10;end",
         ] {
-            let dom =
-                html5ever::parse_document(RcDom::default(), Default::default()).one(html.clone());
-            let mut records = Vec::new();
-            code_records(&dom.document, &[], &mut records);
-            assert_eq!(
-                records
-                    .iter()
-                    .map(|record| record["value"].as_str().unwrap())
-                    .collect::<Vec<_>>(),
-                vec!["y", expected],
-                "{markdown}"
+            let markdown = template.replace("ENTITY", entity);
+            let migration = carve::try_migrate_markdown(&markdown).unwrap();
+            let ast = carve::try_markdown_to_ast(&markdown).unwrap();
+            for html in [
+                carve::to_html(&migration.value),
+                carve::render_html(&ast).unwrap(),
+            ] {
+                let dom = html5ever::parse_document(RcDom::default(), Default::default())
+                    .one(html.clone());
+                let mut records = Vec::new();
+                code_records(&dom.document, &[], &mut records);
+                assert_eq!(
+                    records
+                        .iter()
+                        .map(|record| record["value"].as_str().unwrap())
+                        .collect::<Vec<_>>(),
+                    vec!["y", expected],
+                    "{markdown}"
+                );
+                assert!(
+                    html.contains(" tail end"),
+                    "prose outside code changed: {markdown}"
+                );
+            }
+            let rows: Vec<_> = migration
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "raw-code-fallback")
+                .collect();
+            assert_eq!(rows.len(), 1, "{markdown}");
+            assert_eq!(rows[0].path.as_deref(), Some("line:1"));
+            assert_eq!(rows[0].fidelity.as_str(), "degraded");
+            assert_eq!(rows[0].confidence.as_str(), "exact");
+        }
+    }
+}
+
+#[test]
+fn unclosed_code_does_not_change_later_tight_item_text() {
+    for markdown in [
+        "- *x <code>y*
+- a&#10;b
+- c&#13;<!---->&#10;d",
+        "- *x <code>y*
+  - a&#10;b
+  - c&#13;<!---->&#10;d",
+    ] {
+        let source = carve::try_markdown_to_carve(markdown).unwrap();
+        let ast = carve::try_markdown_to_ast(markdown).unwrap();
+        for html in [carve::to_html(&source), carve::render_html(&ast).unwrap()] {
+            assert!(
+                html.contains("a b"),
+                "later item changed: {markdown}: {html}"
             );
             assert!(
-                html.contains(" tail end"),
-                "prose outside code changed: {markdown}"
+                html.contains("c <!----> d"),
+                "later comment changed: {markdown}: {html}"
             );
         }
-        let rows: Vec<_> = migration
-            .report
-            .diagnostics
-            .iter()
-            .filter(|row| row.code == "raw-code-fallback")
-            .collect();
-        assert_eq!(rows.len(), 1, "{markdown}");
-        assert_eq!(rows[0].path.as_deref(), Some("line:1"));
-        assert_eq!(rows[0].fidelity.as_str(), "degraded");
-        assert_eq!(rows[0].confidence.as_str(), "exact");
     }
 }

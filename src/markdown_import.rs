@@ -1689,6 +1689,13 @@ impl Builder {
                 | Tag::MetadataBlock(_)
         ) {
             self.close_unclosed_html();
+            if let Some(Frame::ListItem {
+                pending, children, ..
+            }) = self.frames.last_mut()
+            {
+                flush_inline_run(pending, children);
+            }
+            self.html_code_depth = 0;
         }
         if matches!(tag, Tag::Paragraph) {
             if let Some(Frame::ListItem { loose, .. }) = self.frames.last_mut() {
@@ -1911,6 +1918,7 @@ impl Builder {
                 loose,
                 mut pending,
             } => {
+                self.html_code_depth = 0;
                 flush_inline_run(&mut pending, &mut children);
                 let item = ListItem {
                     attrs: None,
@@ -2268,6 +2276,9 @@ impl Builder {
             Some(Frame::ListItem {
                 children, pending, ..
             }) => {
+                if !pending.is_empty() {
+                    self.html_code_depth = 0;
+                }
                 flush_inline_run(pending, children);
                 children.push(node);
             }
@@ -2395,6 +2406,7 @@ fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>
     if pending.is_empty() {
         return;
     }
+    preserve_code_text_at_depth(pending, 0);
     children.push(BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: std::mem::take(pending),
