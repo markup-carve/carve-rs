@@ -29,13 +29,28 @@ fn clear(openers: &mut [Vec<(usize, usize, bool)>; 8], from: usize) {
 }
 
 pub(super) fn convert(source: &str, mask: &str, convert_plain: impl Fn(&str) -> String) -> String {
-    process(source, mask, convert_plain, None)
+    process(source, mask, convert_plain, None, &mut Vec::new())
 }
 
 pub(super) fn paired_openers(source: &str, mask: &str) -> HashMap<usize, usize> {
     let mut paired = HashMap::new();
-    process(source, mask, str::to_string, Some(&mut paired));
+    process(
+        source,
+        mask,
+        str::to_string,
+        Some(&mut paired),
+        &mut Vec::new(),
+    );
     paired
+}
+
+pub(super) fn convert_with_losses(
+    source: &str,
+    mask: &str,
+    convert_plain: impl Fn(&str) -> String,
+    losses: &mut Vec<usize>,
+) -> String {
+    process(source, mask, convert_plain, None, losses)
 }
 
 fn process(
@@ -43,6 +58,7 @@ fn process(
     mask: &str,
     convert_plain: impl Fn(&str) -> String,
     paired: Option<&mut HashMap<usize, usize>>,
+    losses: &mut Vec<usize>,
 ) -> String {
     let bytes = source.as_bytes();
     let mut mask = mask.as_bytes().to_vec();
@@ -166,6 +182,7 @@ fn process(
     }
     let mut valid_braces = HashSet::new();
     let mut valid_brace_closers = HashSet::new();
+    let mut literal_dashes = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
     let mut last_escaped = None;
@@ -201,6 +218,17 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
+                    }
+                } else if bytes[at - 1] == b'-' {
+                    let mut first = at - 1;
+                    while first > 0 && bytes[first - 1] == b'-' {
+                        first -= 1;
+                    }
+                    if at - first == 2 && mask[first] == b'-' && mask[first + 1] == b'-' {
+                        literal_dashes.insert(first);
+                        literal_dashes.insert(first + 1);
+                    } else if at - first > 2 {
+                        literal_dashes.insert(at - 1);
                     }
                 }
             }
@@ -432,7 +460,7 @@ fn process(
     }
     let mut literal_brackets = HashSet::new();
     let bracket_closes = bracket_pairs.iter().map(|(_, close)| *close).collect();
-    for (start, end) in bracket_pairs {
+    for &(start, end) in &bracket_pairs {
         if contexts.get(&start) != contexts.get(&end) {
             literal_brackets.insert(start);
             literal_brackets.insert(end);
@@ -480,6 +508,7 @@ fn process(
         literal_brackets: &literal_brackets,
         valid_braces: &valid_braces,
         valid_brace_closers: &valid_brace_closers,
+        literal_dashes: &literal_dashes,
         literal_prefix,
         literals: RefCell::new(Vec::new()),
         rendered: RefCell::new(HashMap::new()),
@@ -494,6 +523,9 @@ fn process(
         }
         work.push((index, outer, true));
         let bit = kind_bit(pair.kind);
+        if outer & bit != 0 {
+            losses.push(pair.start);
+        }
         let scope = pair
             .children
             .iter()
@@ -537,6 +569,7 @@ struct Renderer<'a> {
     literal_brackets: &'a HashSet<usize>,
     valid_braces: &'a HashSet<usize>,
     valid_brace_closers: &'a HashSet<usize>,
+    literal_dashes: &'a HashSet<usize>,
     literal_prefix: String,
     literals: RefCell<Vec<String>>,
     rendered: RefCell<HashMap<usize, String>>,
@@ -600,6 +633,9 @@ impl Renderer<'_> {
                 out.extend_from_slice(self.protect(&format!("\\{}", char::from(ch))).as_bytes());
                 i += 1;
                 continue;
+            }
+            if self.literal_dashes.contains(&i) {
+                out.push(b'\\');
             }
             out.push(ch);
             i += 1;

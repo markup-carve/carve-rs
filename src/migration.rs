@@ -250,13 +250,14 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
     let stripped = crate::djot_migrate::strip_footnote_definition_attributes(source);
-    let value = crate::djot_migrate::djot_to_carve_prepared(&stripped);
+    let (value, losses) = crate::djot_migrate::djot_to_carve_with_losses(source);
     let mut result = assessed(
         source,
         value,
         SourceFormat::Djot,
-        !stripped.losses.is_empty(),
+        !stripped.losses.is_empty() || !losses.is_empty(),
     );
+    result.report.diagnostics.extend(losses);
     for line in stripped.losses {
         result.report.diagnostics.push(MigrationDiagnostic {
             code: "djot-footnote-definition-attributes-dropped".into(),
