@@ -13544,6 +13544,19 @@ fn collect_indented_block_mapped_with_columns(
             cur.consume();
             continue;
         }
+        // A marker that attaches no block leaves the open fence unchanged.
+        // Its following blank or indented lines remain fence payload (SS17 L3).
+        if fence.is_some()
+            && indent == parent_indent
+            && trim_ascii(line) == "+"
+            && cur.lines.line(cur.pos + 1).is_some_and(|next| {
+                is_blank_line(next)
+                    || !attaches_flush_left(cur.source_col(cur.pos + 1), Some(&next))
+            })
+        {
+            cur.consume();
+            continue;
+        }
         // §17 L3 (markup-carve/carve#1436). A marker-line lead ending in a bare
         // `+` reaches for ONE block at column 0 and for nothing else, so while
         // this item has collected nothing the usual column arithmetic is not the

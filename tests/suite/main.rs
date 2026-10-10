@@ -1766,3 +1766,6 @@ mod table_cell_break_conversion_reports;
 mod nested_empty_list_tail;
 #[path = "../short_caption_conversion_reports.rs"]
 mod short_caption_conversion_reports;
+
+#[path = "../unused_continuation_fence_payload.rs"]
+mod unused_continuation_fence_payload;
