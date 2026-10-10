@@ -99,10 +99,11 @@ fn an_opener_below_a_nested_list_keeps_the_item_tight() {
 #[test]
 fn a_tail_that_cannot_take_lazy_text_keeps_its_paragraph_glued() {
     // A heading inside the nested item ends its paragraph, so the line below is
-    // not lazy continuation and the item stays tight.
+    // not lazy continuation - and no enclosing frame adopts it, so it is written
+    // as a block of its own (markup-carve/carve#2884).
     assert_eq!(
         carve::to_markdown("- a\n  - b\n    # N\nlazy\n"),
-        "- a\n  - b\n    # N\n  lazy\n"
+        "- a\n  - b\n    # N\n\nlazy\n"
     );
     // An empty nested item has no paragraph to continue.
     assert_eq!(carve::to_markdown("* * +\n  x\n"), "* *\n  x\n");

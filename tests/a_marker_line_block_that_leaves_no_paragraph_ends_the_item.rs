@@ -196,9 +196,11 @@ fn a_heading_at_the_content_column_leaves_no_paragraph_open() {
         html("- a\n  # H\ntail\n"),
         "<ul>\n  <li>a\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>tail</p>"
     );
+    // And no enclosing frame adopts the line: a column-0 line is below the OUTER
+    // item's content column too (markup-carve/carve#2884).
     assert_eq!(
         html("- a\n  - b\n    # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n    lazy\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 
