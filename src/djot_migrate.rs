@@ -2590,27 +2590,25 @@ fn mask_djot_opaque_with_comments(
             at += 1;
             continue;
         }
-        if bytes[at] == b']' && brackets.pop().is_some() {
-            if bytes.get(at + 1) == Some(&b':') {
-                let line_start = source[..at].rfind('\n').map_or(0, |n| n + 1);
-                let definition = definition_prefix.is_match(&source[line_start..at]);
-                let previous = source[..line_start]
-                    .strip_suffix('\n')
-                    .unwrap_or("")
-                    .rsplit('\n')
-                    .next()
-                    .unwrap_or("")
-                    .trim();
-                let boundary =
-                    line_start == 0 || previous.is_empty() || reference_boundary.is_match(previous);
-                if definition && boundary {
-                    let end = source[at..].find('\n').map_or(bytes.len(), |n| at + n);
-                    if options.destinations {
-                        blank_out(&mut mask, at + 2, end);
-                    }
-                    at = end;
-                    continue;
+        if bytes[at] == b']' && brackets.pop().is_some() && bytes.get(at + 1) == Some(&b':') {
+            let line_start = source[..at].rfind('\n').map_or(0, |n| n + 1);
+            let definition = definition_prefix.is_match(&source[line_start..at]);
+            let previous = source[..line_start]
+                .strip_suffix('\n')
+                .unwrap_or("")
+                .rsplit('\n')
+                .next()
+                .unwrap_or("")
+                .trim();
+            let boundary =
+                line_start == 0 || previous.is_empty() || reference_boundary.is_match(previous);
+            if definition && boundary {
+                let end = source[at..].find('\n').map_or(bytes.len(), |n| at + n);
+                if options.destinations {
+                    blank_out(&mut mask, at + 2, end);
                 }
+                at = end;
+                continue;
             }
         }
         if bytes[at] != b'`' {
@@ -4430,6 +4428,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     let escaped_char = cached_regex!(r"\\(?:\r?\n|[^\r\n])").unwrap();
     let escaped_pipe = cached_regex!(r"\\+\|").unwrap();
     let alt_end = cached_regex!(r" DJOTEND\n?$").unwrap();
+    let rejected_attribute = cached_regex!(r"\A\x00DJOTINVALIDATTR\x00[0-9]+\x00").unwrap();
     while i < source.len() {
         if boundaries.contains(&i) {
             if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
@@ -4560,8 +4559,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             }
             let rejected = bytes.get(i + 1) == Some(&b'\\')
                 && bytes.get(i + 2) == Some(&b'{')
-                && cached_regex!(r"\A\x00DJOTINVALIDATTR\x00[0-9]+\x00")
-                    .unwrap()
+                && rejected_attribute
                     .find(&source[i + 3..])
                     .is_some_and(|marker| inherited.contains(marker.as_str()));
             if bytes.get(i + 1) == Some(&b'{') || rejected {
