@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Keep adjacent verbatim spans separate when a payload ends in a backslash, including empty siblings and transparent wrappers. Normalize CR and CRLF before spelling blank verbatim lines in line blocks.
+
 - Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
 
 - Markdown export preserves terminal hard breaks and hard breaks in headings with inline HTML. A break-only paragraph stays a paragraph in GFM readers.
