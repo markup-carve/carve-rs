@@ -1602,6 +1602,34 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|[0-9]+[.)]|#{1,6}|:{1,2}|\[\^[^\]]+\]:)[ \t]+(?:\[[ xX-]\][ \t]+)?$")
     .unwrap();
     let source_lines: Vec<&str> = source.split('\n').collect();
+    let mut dangling = vec![false; source_lines.len()];
+    let mut follows_blank = true;
+    let mut next_depth = None;
+    for index in (0..source_lines.len()).rev() {
+        let line = source_lines[index];
+        let first = quote_prefix.find(line).unwrap().end();
+        let depth = line[..first].bytes().filter(|&byte| byte == b'>').count();
+        if line[first..].trim().is_empty() {
+            follows_blank = true;
+            next_depth = (depth != 0).then_some(depth);
+            continue;
+        }
+        let visible = masked_lines[index].as_bytes().get(first);
+        let attribute = matches!(visible, Some(b'{' | 0))
+            && pattern.find(line).is_some_and(|attrs| {
+                attrs.start() == first && attrs.end() == line.trim_end().len()
+            });
+        if attribute {
+            if next_depth.is_some_and(|next| next != depth) {
+                follows_blank = false;
+            }
+            dangling[index] = follows_blank;
+            next_depth = Some(depth);
+        } else {
+            follows_blank = false;
+            next_depth = None;
+        }
+    }
     let mut lines = Vec::new();
     for (index, line) in source.split('\n').enumerate() {
         let mask = masked_lines[index].as_bytes();
@@ -1614,7 +1642,11 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         let marker_only = marker.is_match(&stripped_line);
         for attrs in pattern.find_iter(line) {
             let at = attrs.start();
-            if at < cursor || mask[at] != b'{' || is_escaped(bytes, at) {
+            if at < cursor
+                || (mask[at] != b'{'
+                    && !(dangling[index] && at == first && attrs.end() == line.trim_end().len()))
+                || is_escaped(bytes, at)
+            {
                 continue;
             }
             if at > 0
@@ -1639,10 +1671,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
                 || (previous.starts_with('{') && previous.ends_with('}'))
                 || block_end.is_match(previous);
             if alone && block {
-                if source_lines
-                    .get(index + 1)
-                    .is_some_and(|line| !line.trim().is_empty())
-                {
+                if !dangling[index] {
                     continue;
                 }
                 drop_line = true;
@@ -1666,6 +1695,8 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
         output.push_str(&line[cursor..]);
         if !drop_line {
             lines.push(output);
+        } else if line[..first].contains('>') {
+            lines.push(line[..first].trim_end().to_owned());
         }
     }
     (lines.join("\n"), spans)
@@ -6551,7 +6582,10 @@ fn escape_djot_non_table_rows(source: &str) -> String {
             && line.as_bytes().get(start) == Some(&b'|')
             && line.trim_end().ends_with('|')
             && mask.as_bytes().get(offset + start) == Some(&b'|')
-            && mask.as_bytes().get(offset + line.trim_end().len().saturating_sub(1)) != Some(&b'|')
+            && mask
+                .as_bytes()
+                .get(offset + line.trim_end().len().saturating_sub(1))
+                != Some(&b'|')
         {
             out.push_str(&line[..start]);
             out.push('\\');

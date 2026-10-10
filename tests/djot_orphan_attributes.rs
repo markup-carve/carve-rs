@@ -20,3 +20,35 @@ fn djot_attribute_ownership_survives_import() {
         );
     }
 }
+
+#[test]
+fn pending_attribute_runs_keep_their_containers() {
+    let between_tags = regex::Regex::new(r">\s+<").unwrap();
+    for (source, expected) in [
+        (
+            "> {.a}\n> {.b}\n>\n> para",
+            "<blockquote><p>para</p></blockquote>",
+        ),
+        (
+            "> {.a}\n> {.b}\n\npara",
+            "<blockquote></blockquote><p>para</p>",
+        ),
+        ("{.a}\n> {.b}\n\n", "<blockquote class=\"a\"></blockquote>"),
+        (
+            "{.a}\n> {.b}\n>\n> para",
+            "<blockquote class=\"a\"><p>para</p></blockquote>",
+        ),
+        (
+            "```\n{.a}\n{.b}\n\npara\n```",
+            "<pre><code>{.a}\n{.b}\n\npara\n</code></pre>",
+        ),
+    ] {
+        let converted = carve::djot_to_carve(source);
+        let html = carve::to_html(&converted);
+        assert_eq!(
+            between_tags.replace_all(html.trim(), "><"),
+            expected,
+            "{source}: {converted}"
+        );
+    }
+}
