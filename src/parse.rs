@@ -730,7 +730,7 @@ fn parse_with_options_mode_and_index(
         footnote_defs,
         footnote_def_pos,
         children,
-        source_len: source.len(),
+        source_len: original.len(),
         // Measured here, so nothing about the parse path needs a second number.
         ingest_payload_len: 0,
     };

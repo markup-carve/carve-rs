@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Document `source_len` and JSON `srcByteLength` count the original UTF-8 input before BOM, NUL and line-ending normalization. Source-length limits and authored provenance use that same input length.
+
 - HTML code-block import keeps sibling text, omits active payloads and reports discarded child markup, comments and attributes (carve-rs#2423).
 
 - Markdown export uses a safe tilde fence for headers and labels containing backticks (carve-rs#2419).

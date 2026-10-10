@@ -152,7 +152,7 @@ pub struct Document {
     /// cannot say - keyed by the same label.
     pub footnote_def_pos: BTreeMap<String, Pos>,
     pub children: Vec<BlockNode>,
-    /// Byte length of the (normalized) source this document was parsed from.
+    /// UTF-8 byte length of the input before source normalization.
     ///
     /// What the DOCUMENT says about itself. On the parse path this crate
     /// measured it; on the ingest path it is `srcByteLength`, read off the wire
