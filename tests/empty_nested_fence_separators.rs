@@ -36,6 +36,25 @@ fn payloads(doc: &Document, original: bool) -> Vec<String> {
     result
 }
 
+fn raw_payloads(blocks: &[BlockNode]) -> Vec<serde_json::Value> {
+    let mut result = Vec::new();
+    for node in blocks {
+        match node {
+            BlockNode::RawBlock(raw) => {
+                result.push(serde_json::json!({"format":raw.format,"value":raw.content}))
+            }
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    result.extend(raw_payloads(&item.children));
+                }
+            }
+            BlockNode::BlockQuote(quote) => result.extend(raw_payloads(&quote.children)),
+            _ => {}
+        }
+    }
+    result
+}
+
 fn html_code_values(html: &str) -> Vec<String> {
     let mut result = Vec::new();
     let mut remaining = html;
@@ -122,7 +141,17 @@ fn parent_separators_stay_outside_empty_nested_fences() {
             expected,
             "{source:?}"
         );
+        assert_eq!(
+            serde_json::json!(raw_payloads(&doc.children)),
+            control["raw"],
+            "{source:?}"
+        );
         let written = carve::render_carve(&doc).unwrap();
+        assert_eq!(
+            raw_payloads(&carve::parse(&written).children),
+            raw_payloads(&doc.children),
+            "{source:?}"
+        );
         assert_eq!(
             payloads(&carve::parse(&written), false),
             expected,
