@@ -13544,17 +13544,6 @@ fn collect_indented_block_mapped_with_columns(
             cur.consume();
             continue;
         }
-        // §17 L3 (markup-carve/carve#1436). A marker-line lead ending in a bare
-        // `+` reaches for ONE block at column 0 and for nothing else, so while
-        // this item has collected nothing the usual column arithmetic is not the
-        // question being asked:
-        //
-        //   - a COLUMN-0 line is normally a dedent that ends the item. Here it
-        //     is the block the marker named, so it is taken.
-        //   - any OTHER column is normally the item's own content. Here it was
-        //     never the marker's, so it falls through to the rules its own
-        //     column names - which for a column below the item's content column
-        //     is no container at all.
         // A marker that attaches no block leaves the open fence unchanged.
         // Its following blank or indented lines remain fence payload (SS17 L3).
         if fence.is_some()
@@ -13568,6 +13557,17 @@ fn collect_indented_block_mapped_with_columns(
             cur.consume();
             continue;
         }
+        // §17 L3 (markup-carve/carve#1436). A marker-line lead ending in a bare
+        // `+` reaches for ONE block at column 0 and for nothing else, so while
+        // this item has collected nothing the usual column arithmetic is not the
+        // question being asked:
+        //
+        //   - a COLUMN-0 line is normally a dedent that ends the item. Here it
+        //     is the block the marker named, so it is taken.
+        //   - any OTHER column is normally the item's own content. Here it was
+        //     never the marker's, so it falls through to the rules its own
+        //     column names - which for a column below the item's content column
+        //     is no container at all.
         if lead_is_continuation && lines.is_empty() {
             if indent == 0 && detect_list_marker_full(line).is_some() {
                 break;

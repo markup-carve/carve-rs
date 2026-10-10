@@ -27,7 +27,7 @@
   {
     "name": "container-293",
     "source": "- ```\n+\n\ntail\n",
-    "html": "<ul>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ul>\n<p>tail</p>"
+    "html": "<ul>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "name": "container-299",
@@ -287,7 +287,7 @@
   {
     "name": "container-629",
     "source": "1. ```\n+\n\ntail\n",
-    "html": "<ol>\n  <li>\n    <pre><code></code></pre>\n  </li>\n</ol>\n<p>tail</p>"
+    "html": "<ol>\n  <li>\n    <pre><code>\n</code></pre>\n  </li>\n</ol>\n<p>tail</p>"
   },
   {
     "name": "container-635",
