@@ -1299,6 +1299,9 @@ fn code_source_boundaries_preserve_payloads() {
             .children
             .retain(|node| !matches!(node, carve::InlineNode::Comment(_)));
         let expected = carve::render_html(&document).unwrap();
+        let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
+            panic!("paragraph")
+        };
         let first = paragraph.children.remove(0);
         paragraph.children.insert(
             0,
