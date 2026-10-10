@@ -1759,7 +1759,7 @@ mod markdown_wrapper_hard_breaks;
 #[path = "../table_cell_break_conversion_reports.rs"]
 mod table_cell_break_conversion_reports;
 
-#[path = "../short_caption_conversion_reports.rs"]
-mod short_caption_conversion_reports;
 #[path = "../nested_empty_list_tail.rs"]
 mod nested_empty_list_tail;
+#[path = "../short_caption_conversion_reports.rs"]
+mod short_caption_conversion_reports;
