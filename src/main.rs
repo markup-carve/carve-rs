@@ -226,6 +226,11 @@ fn main() -> ExitCode {
                 };
                 options = options.with_profile_base_host(value);
             }
+            "--carry-markers" => {
+                // PART 11 §10s. Markdown output only, and refused on any other
+                // target rather than silently ignored.
+                options.carry_markers = true;
+            }
             "--html" => format = OutputFormat::Html,
             "--markdown" | "--md" => format = OutputFormat::Markdown,
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
@@ -402,6 +407,10 @@ fn main() -> ExitCode {
     }
     if citation_mode_set && !extension_keys.iter().any(|key| key == "citations") {
         eprintln!("carve: --citation-mode requires --extension citations");
+        return ExitCode::FAILURE;
+    }
+    if options.carry_markers && format != OutputFormat::Markdown {
+        eprintln!("carve: --carry-markers requires --markdown");
         return ExitCode::FAILURE;
     }
 
@@ -1686,6 +1695,7 @@ fn print_usage() {
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
          --markdown, --md            Markdown\n  \
+         --carry-markers             carry an element-less container in a comment\n  \
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n  \
          --carve                     canonical Carve source\n\n\

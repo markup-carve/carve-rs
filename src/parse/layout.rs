@@ -1600,6 +1600,7 @@ mod layout_html_tests {
         paths.sort();
 
         let mut accepted = 0;
+        let mut new_cases = Vec::new();
         for path in paths {
             let source = fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
@@ -1607,6 +1608,14 @@ mod layout_html_tests {
                 continue;
             };
             accepted += 1;
+            if path
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("550-")
+            {
+                new_cases.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            }
             assert_eq!(
                 output.html,
                 authoritative(&source),
@@ -1631,7 +1640,16 @@ mod layout_html_tests {
         // Plain-space trimming adds corpus 104 and both corpus 268 documents.
         // Spec 26ffb7d3 adds the all-dot list 549-...-2; its exact shadow parity is checked above.
         assert_eq!(
-            accepted, 58,
+            new_cases,
+            vec![
+                "550-a-dash-run-opens-frontmatter-only-at-the-start-and-only-a-dash-run-3.crv",
+                "550-a-dash-run-opens-frontmatter-only-at-the-start-and-only-a-dash-run-4.crv",
+            ]
+        );
+        // Spec b738ffe7 adds underscore rules and dash rules after a paragraph.
+        // The scanner is unchanged; exact shadow parity is checked above.
+        assert_eq!(
+            accepted, 60,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

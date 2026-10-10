@@ -425,6 +425,9 @@ mod a_raw_bracketed_run_is_written_as_authored;
 mod a_raw_kept_element_reports_its_descendants_attributes;
 #[path = "../a_raw_span_ending_a_line_in_whitespace_is_degraded.rs"]
 mod a_raw_span_ending_a_line_in_whitespace_is_degraded;
+
+#[path = "../a_raw_span_ends_at_the_tag_it_recognized.rs"]
+mod a_raw_span_ends_at_the_tag_it_recognized;
 #[path = "../a_reference_inside_an_inline_note_resolves.rs"]
 mod a_reference_inside_an_inline_note_resolves;
 #[path = "../a_referenced_abbreviation_definition_splits_by_target.rs"]
@@ -1679,6 +1682,9 @@ mod djot_word_attributes;
 
 #[path = "../a_djot_attribute_word_keeps_every_escaped_character.rs"]
 mod a_djot_attribute_word_keeps_every_escaped_character;
+
+#[path = "../an_element_less_container_is_carried_in_a_comment.rs"]
+mod an_element_less_container_is_carried_in_a_comment;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
 
@@ -1795,3 +1801,6 @@ mod djot_bare_crossing;
 
 #[path = "../djot_table_cell_boundaries.rs"]
 mod djot_table_cell_boundaries;
+
+#[path = "../markdown_terminal_hard_break.rs"]
+mod markdown_terminal_hard_break;

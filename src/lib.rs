@@ -24,6 +24,7 @@ pub mod ast_merge;
 pub mod ast_patch;
 pub mod ast_sidecars;
 pub mod bbcode_migrate;
+mod carrier_markers;
 mod citations;
 pub mod conversion_diagnostics;
 pub mod djot_migrate;
