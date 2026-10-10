@@ -54,6 +54,17 @@ pub(crate) const CARRIER_MARKERS_DAMAGED: &str =
     "A carrier marker set does not record a container: the markers imported as \
      the raw HTML they are and no container was reconstructed";
 
+/// Whitespace a decoded character reference put at the head of a block, which
+/// Carve has no spelling for there.
+///
+/// Dropped rather than substituted, which markup-carve/carve#2595 settled: `\ `
+/// reads back as U+00A0, and a non-breaking space is not the tab or space the
+/// author wrote. A deliberate drop is still a loss, and `--report` names what
+/// left (carve-rs#2446).
+pub(crate) const LEADING_WHITESPACE_UNSPELLABLE: &str =
+    "Dropped whitespace a decoded reference put at the start of a line; \
+     Carve spells no leading whitespace on a paragraph";
+
 pub(crate) const RAW_SPAN_WHITESPACE_TRIMMED: &str =
     "A raw span ends a content line in whitespace, which Carve drops; \
      the whitespace did not reach the converted source";
@@ -182,9 +193,53 @@ pub(crate) fn markdown_to_carve_with_losses(
                 kind: MarkdownLossKind::Unspellable,
             }),
     );
+    losses.extend(
+        drop_leading_decoded_whitespace(&mut document)
+            .into_iter()
+            .map(|message| MarkdownImportLoss {
+                message,
+                line: None,
+                kind: MarkdownLossKind::Unspellable,
+            }),
+    );
     render_carve(&document)
         .map(|value| crate::carrier_markers::restore_carrier_markers(&value, &lift))
         .map(|value| (value, losses, notices))
+}
+
+/// Drop whitespace a decoded character reference left at the head of an inline
+/// run, and report every occurrence.
+///
+/// ONLY ON THE WRITING PATH, as the same-kind span unwrap is: the AST keeps
+/// what the source carried, and only a Carve SPELLING has to give it up. The
+/// writer already dropped it from a paragraph; it carried it into a quote and a
+/// table cell, where the reader drops it instead, so the character reached the
+/// document either way as nothing while the written source did not read back as
+/// what was written. Stripping it here is one rule for all of them, and it is
+/// what makes the row the report carries true everywhere.
+///
+/// `&nbsp;` is the control: U+00A0 is neither a space nor a tab, it IS
+/// spellable at a line's head, it survives, and no row is owed for it.
+fn drop_leading_decoded_whitespace(document: &mut Document) -> Vec<String> {
+    let mut messages = Vec::new();
+    let mut strip = |nodes: &mut Vec<InlineNode>, _: bool| {
+        let Some(InlineNode::Text(text)) = nodes.first_mut() else {
+            return;
+        };
+        let kept = text.value.trim_start_matches([' ', '\t']);
+        if kept.len() == text.value.len() {
+            return;
+        }
+        text.value = kept.to_owned();
+        messages.push(LEADING_WHITESPACE_UNSPELLABLE.to_owned());
+        nodes.retain(|node| !matches!(node, InlineNode::Text(t) if t.value.is_empty()));
+    };
+    for blocks in document.footnote_defs.values_mut() {
+        crate::html_import::for_each_inline_run(blocks, &mut strip);
+    }
+    crate::html_import::for_each_inline_run(&mut document.children, &mut strip);
+
+    messages
 }
 
 /// Convert Markdown source to a Carve [`Document`].
