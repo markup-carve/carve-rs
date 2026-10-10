@@ -387,6 +387,10 @@ fn preserve_html_code_for_writing(
 }
 
 fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
+    preserve_code_text_at_depth(nodes, 1);
+}
+
+fn preserve_code_text_at_depth(nodes: &mut Vec<InlineNode>, code_depth: usize) {
     use crate::include_walk::{visit_inline_children, SubtreeVisitor};
     struct Preserve {
         code_depth: usize,
@@ -457,7 +461,7 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
             *nodes = coalesced;
         }
     }
-    Preserve { code_depth: 1 }.inlines(nodes);
+    Preserve { code_depth }.inlines(nodes);
 }
 
 fn code_html(value: &str) -> String {
@@ -1313,6 +1317,8 @@ struct Builder {
     frontmatter: Option<Frontmatter>,
     losses: Vec<MarkdownImportLoss>,
     current_line: usize,
+    /// HTML code tags still open in the current inline run.
+    html_code_depth: usize,
     track_code_lines: bool,
     code_lines: BTreeMap<Option<String>, Vec<Option<usize>>>,
 }
@@ -1428,22 +1434,42 @@ impl Builder {
             return;
         }
 
-        if value == "<!---->" {
-            if let Some(Frame::HtmlCode { children, .. }) = self.frames.last_mut() {
-                if let Some(InlineNode::Text(text)) = children.last_mut() {
-                    if text.value.ends_with('\r') {
-                        text.value.pop();
-                        text.value.push('\n');
-                    }
+        if value == "<!---->" && self.html_code_depth > 0 {
+            let children = match self.frames.last_mut() {
+                Some(Frame::Paragraph(children))
+                | Some(Frame::Heading(_, children))
+                | Some(Frame::Emphasis(_, children))
+                | Some(Frame::HtmlEmphasis { children, .. })
+                | Some(Frame::HtmlCode { children, .. })
+                | Some(Frame::HtmlInsert { children, .. })
+                | Some(Frame::HtmlDelete { children, .. })
+                | Some(Frame::Link { children, .. })
+                | Some(Frame::TableCell(children))
+                | Some(Frame::ListItem {
+                    pending: children, ..
+                }) => Some(children),
+                _ => None,
+            };
+            if let Some(InlineNode::Text(text)) = children.and_then(|nodes| nodes.last_mut()) {
+                if text.value.ends_with('\r') {
+                    text.value.pop();
+                    text.value.push('\n');
                 }
-                return;
             }
+            return;
         }
         let Some(tag) = html_tag(value) else {
             self.raw_inline(value.to_string());
             return;
         };
 
+        if tag.name.eq_ignore_ascii_case("code") {
+            if tag.closing {
+                self.html_code_depth = self.html_code_depth.saturating_sub(1);
+            } else if !tag.self_closing {
+                self.html_code_depth += 1;
+            }
+        }
         if tag.closing {
             if tag.name.eq_ignore_ascii_case("code") {
                 if let Some(Frame::HtmlCode {
@@ -1621,10 +1647,7 @@ impl Builder {
     /// Text lands in whatever is open: a code block collects it verbatim, an
     /// image's alt is a plain string on the node, everything else takes a node.
     fn text(&mut self, value: &str) {
-        let inside_html_code = self
-            .frames
-            .iter()
-            .any(|frame| matches!(frame, Frame::HtmlCode { .. }));
+        let inside_html_code = self.html_code_depth > 0;
         match self.frames.last_mut() {
             Some(Frame::CodeBlock { content, .. }) | Some(Frame::Metadata(content)) => {
                 content.push_str(value)
@@ -1666,6 +1689,13 @@ impl Builder {
                 | Tag::MetadataBlock(_)
         ) {
             self.close_unclosed_html();
+            if let Some(Frame::ListItem {
+                pending, children, ..
+            }) = self.frames.last_mut()
+            {
+                flush_inline_run(pending, children);
+            }
+            self.html_code_depth = 0;
         }
         if matches!(tag, Tag::Paragraph) {
             if let Some(Frame::ListItem { loose, .. }) = self.frames.last_mut() {
@@ -1820,9 +1850,18 @@ impl Builder {
     }
 
     fn close(&mut self) {
-        let Some(frame) = self.pop_frame() else {
+        let Some(mut frame) = self.pop_frame() else {
             return;
         };
+        match &mut frame {
+            Frame::Paragraph(children)
+            | Frame::Heading(_, children)
+            | Frame::TableCell(children) => {
+                preserve_code_text_at_depth(children, 0);
+                self.html_code_depth = 0;
+            }
+            _ => {}
+        }
 
         match frame {
             Frame::Paragraph(children) => self.block(BlockNode::Paragraph(Paragraph {
@@ -1879,6 +1918,7 @@ impl Builder {
                 loose,
                 mut pending,
             } => {
+                self.html_code_depth = 0;
                 flush_inline_run(&mut pending, &mut children);
                 let item = ListItem {
                     attrs: None,
@@ -2236,6 +2276,9 @@ impl Builder {
             Some(Frame::ListItem {
                 children, pending, ..
             }) => {
+                if !pending.is_empty() {
+                    self.html_code_depth = 0;
+                }
                 flush_inline_run(pending, children);
                 children.push(node);
             }
@@ -2363,6 +2406,7 @@ fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>
     if pending.is_empty() {
         return;
     }
+    preserve_code_text_at_depth(pending, 0);
     children.push(BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: std::mem::take(pending),
