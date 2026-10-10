@@ -276,3 +276,44 @@ fn a_table_fallback_does_not_degrade_an_empty_heading_code() {
         result.value
     );
 }
+
+#[test]
+fn an_empty_code_in_a_link_does_not_degrade_other_code() {
+    for markdown in [
+        "`keep`\n\n[a<code></code>](u)\n",
+        "`keep`\n\n[<code></code>](u)\n",
+    ] {
+        let result = carve::try_migrate_markdown(markdown).unwrap();
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "raw-code-fallback")
+                .count(),
+            1,
+            "{:?}",
+            result.report.diagnostics
+        );
+        let document = carve::parse(&result.value);
+        let carve::BlockNode::Paragraph(paragraph) = &document.children[0] else {
+            panic!("paragraph")
+        };
+        assert!(
+            matches!(&paragraph.children[..], [carve::InlineNode::Code(code)] if code.value == "keep"),
+            "{}",
+            result.value
+        );
+    }
+}
+
+#[test]
+fn text_after_a_misnested_code_close_survives_raw_html_stripping() {
+    let source = carve::try_markdown_to_carve("<code>*a</code> b*").unwrap();
+    let options = carve::Options {
+        allow_raw_html: false,
+        ..Default::default()
+    };
+    let html = carve::render_html_with_options(&carve::parse(&source), &options).unwrap();
+    assert!(html.contains(" b"), "{source}\n{html}");
+}

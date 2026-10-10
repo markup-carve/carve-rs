@@ -259,17 +259,29 @@ fn preserve_html_code_for_writing(
         paragraph: bool,
         heading: bool,
         inline_depth: usize,
+        label_depth: usize,
         force_all: bool,
     }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
             for block in blocks {
-                let saved = (self.paragraph, self.heading, self.inline_depth);
+                let saved = (
+                    self.paragraph,
+                    self.heading,
+                    self.inline_depth,
+                    self.label_depth,
+                );
                 self.paragraph = matches!(block, BlockNode::Paragraph(_));
                 self.heading = matches!(block, BlockNode::Heading(_));
                 self.inline_depth = 0;
+                self.label_depth = 0;
                 visit_block_children(block, self);
-                (self.paragraph, self.heading, self.inline_depth) = saved;
+                (
+                    self.paragraph,
+                    self.heading,
+                    self.inline_depth,
+                    self.label_depth,
+                ) = saved;
             }
         }
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
@@ -283,7 +295,10 @@ fn preserve_html_code_for_writing(
                             || code.value.is_empty()
                             || code.value.contains(['\n', '\r']))
                     {
-                        if (self.paragraph || self.heading) && !self.force_all {
+                        if (self.paragraph || self.heading)
+                            && self.label_depth == 0
+                            && !self.force_all
+                        {
                             let mut probe =
                                 crate::parse::parse(if self.heading { "# x\n" } else { "x\n" });
                             let children = match &mut probe.children[0] {
@@ -308,7 +323,7 @@ fn preserve_html_code_for_writing(
                             }
                         }
                         let body = code_html(&code.value);
-                        self.losses.push(MarkdownImportLoss { message: "Preserved an HTML code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
+                        self.losses.push(MarkdownImportLoss { message: "Preserved a code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
                         *node = InlineNode::RawInline(RawInline {
                             format: "html".into(),
                             content: body,
@@ -317,7 +332,16 @@ fn preserve_html_code_for_writing(
                         });
                     }
                 }
+                let labelled = matches!(
+                    node,
+                    InlineNode::Link(_)
+                        | InlineNode::Span(_)
+                        | InlineNode::Extension(_)
+                        | InlineNode::Footnote(_)
+                );
+                self.label_depth += usize::from(labelled);
                 visit_inline_children(node, self);
+                self.label_depth -= usize::from(labelled);
             }
             self.inline_depth -= 1;
         }
@@ -327,6 +351,7 @@ fn preserve_html_code_for_writing(
         paragraph: false,
         heading: false,
         inline_depth: 0,
+        label_depth: 0,
         force_all,
     };
     preserve.blocks(&mut document.children);
@@ -338,7 +363,9 @@ fn preserve_html_code_for_writing(
 
 fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
     use crate::include_walk::{visit_inline_children, SubtreeVisitor};
-    struct Preserve;
+    struct Preserve {
+        code_depth: usize,
+    }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, _: &mut Vec<BlockNode>) {}
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
@@ -365,9 +392,23 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
             *nodes = coalesced;
 
             for node in nodes {
+                if let InlineNode::RawInline(raw) = node {
+                    if raw.format == "html" {
+                        if let Some(tag) = html_tag(&raw.content) {
+                            if tag.name.eq_ignore_ascii_case("code") {
+                                if tag.closing {
+                                    self.code_depth = self.code_depth.saturating_sub(1);
+                                } else if !tag.self_closing {
+                                    self.code_depth += 1;
+                                }
+                            }
+                        }
+                    }
+                }
                 let value = match node {
-                    InlineNode::Text(text) if !text.value.is_empty() => Some(text.value.clone()),
-                    InlineNode::SoftBreak(_) => Some("\n".into()),
+                    InlineNode::Text(text) if self.code_depth > 0 && !text.value.is_empty() => {
+                        Some(text.value.clone())
+                    }
                     _ => None,
                 };
                 if let Some(value) = value {
@@ -389,7 +430,7 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
             }
         }
     }
-    Preserve.inlines(nodes);
+    Preserve { code_depth: 1 }.inlines(nodes);
 }
 
 fn code_html(value: &str) -> String {
@@ -1805,7 +1846,7 @@ impl Builder {
                 mut children,
                 ..
             } => {
-                self.losses.push(MarkdownImportLoss { message: "Preserved unclosed HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
+                self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
                 self.raw_inline(open);
                 preserve_code_text(&mut children);
                 for child in children {
@@ -2028,7 +2069,10 @@ impl Builder {
                     _ => false,
                 });
                 if plain && native {
-                    self.inline(InlineNode::code(content, None));
+                    self.inline(InlineNode::code(
+                        content.replace("\r\n", "\n").replace('\r', "\n"),
+                        None,
+                    ));
                 } else {
                     self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
                     self.raw_inline(open);

@@ -42,7 +42,7 @@ form resolved. Confidence follows the opener, `inferred` for a bare `---` and
 outcome: byte differences are not evidence of semantic fidelity.
 
 Markdown reports `raw-code-fallback` with warning severity, degraded fidelity
-and exact confidence when an HTML code payload needs raw HTML to preserve its
+and exact confidence when a code payload needs raw HTML to preserve its
 content or structure in Carve source. The HTML output keeps the code payload;
 targets and profiles that escape or omit raw HTML change its structure and
 content. This loss applies to code emitted as raw HTML; native Code output does not
