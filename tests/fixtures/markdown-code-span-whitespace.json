@@ -1,0 +1,902 @@
+[
+  {
+    "template": "`seed`",
+    "value": "",
+    "markdown": "<code></code>\n",
+    "code": ""
+  },
+  {
+    "template": "`seed`",
+    "value": "a",
+    "markdown": "`a`\n",
+    "code": "a"
+  },
+  {
+    "template": "`seed`",
+    "value": " a",
+    "markdown": "` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "`seed`",
+    "value": "a ",
+    "markdown": "`a `\n",
+    "code": "a "
+  },
+  {
+    "template": "`seed`",
+    "value": " a ",
+    "markdown": "`  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "`seed`",
+    "value": "  a  ",
+    "markdown": "`   a   `\n",
+    "code": "  a  "
+  },
+  {
+    "template": "`seed`",
+    "value": " ",
+    "markdown": "` `\n",
+    "code": " "
+  },
+  {
+    "template": "`seed`",
+    "value": "  ",
+    "markdown": "`  `\n",
+    "code": "  "
+  },
+  {
+    "template": "`seed`",
+    "value": "\n",
+    "markdown": "` `\n",
+    "code": " "
+  },
+  {
+    "template": "`seed`",
+    "value": "\na",
+    "markdown": "` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\n",
+    "markdown": "`a `\n",
+    "code": "a "
+  },
+  {
+    "template": "`seed`",
+    "value": "\na\n",
+    "markdown": "`  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "`seed`",
+    "value": "a\nb",
+    "markdown": "`a b`\n",
+    "code": "a b"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\n\nb",
+    "markdown": "`a  b`\n",
+    "code": "a  b"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\n\n\nb",
+    "markdown": "`a   b`\n",
+    "code": "a   b"
+  },
+  {
+    "template": "`seed`",
+    "value": "`",
+    "markdown": "`` ` ``\n",
+    "code": "`"
+  },
+  {
+    "template": "`seed`",
+    "value": "`a",
+    "markdown": "`` `a ``\n",
+    "code": "`a"
+  },
+  {
+    "template": "`seed`",
+    "value": "a`",
+    "markdown": "`` a` ``\n",
+    "code": "a`"
+  },
+  {
+    "template": "`seed`",
+    "value": "`a`",
+    "markdown": "`` `a` ``\n",
+    "code": "`a`"
+  },
+  {
+    "template": "`seed`",
+    "value": "\nx\n```",
+    "markdown": "````  x ``` ````\n",
+    "code": " x ```"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\tb",
+    "markdown": "`a\tb`\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "`seed`",
+    "value": "\t a \t",
+    "markdown": "`\t a \t`\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\\b",
+    "markdown": "`a\\b`\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "`seed`",
+    "value": "&<>",
+    "markdown": "`&<>`\n",
+    "code": "&<>"
+  },
+  {
+    "template": "`seed`",
+    "value": "Ω",
+    "markdown": "`Ω`\n",
+    "code": "Ω"
+  },
+  {
+    "template": "- `seed`",
+    "value": "",
+    "markdown": "- <code></code>\n",
+    "code": ""
+  },
+  {
+    "template": "- `seed`",
+    "value": "a",
+    "markdown": "- `a`\n",
+    "code": "a"
+  },
+  {
+    "template": "- `seed`",
+    "value": " a",
+    "markdown": "- ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a ",
+    "markdown": "- `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "- `seed`",
+    "value": " a ",
+    "markdown": "- `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "- `seed`",
+    "value": "  a  ",
+    "markdown": "- `   a   `\n",
+    "code": "  a  "
+  },
+  {
+    "template": "- `seed`",
+    "value": " ",
+    "markdown": "- ` `\n",
+    "code": " "
+  },
+  {
+    "template": "- `seed`",
+    "value": "  ",
+    "markdown": "- `  `\n",
+    "code": "  "
+  },
+  {
+    "template": "- `seed`",
+    "value": "\n",
+    "markdown": "- ` `\n",
+    "code": " "
+  },
+  {
+    "template": "- `seed`",
+    "value": "\na",
+    "markdown": "- ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\n",
+    "markdown": "- `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "- `seed`",
+    "value": "\na\n",
+    "markdown": "- `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\nb",
+    "markdown": "- `a b`\n",
+    "code": "a b"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\n\nb",
+    "markdown": "- `a  b`\n",
+    "code": "a  b"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\n\n\nb",
+    "markdown": "- `a   b`\n",
+    "code": "a   b"
+  },
+  {
+    "template": "- `seed`",
+    "value": "`",
+    "markdown": "- `` ` ``\n",
+    "code": "`"
+  },
+  {
+    "template": "- `seed`",
+    "value": "`a",
+    "markdown": "- `` `a ``\n",
+    "code": "`a"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a`",
+    "markdown": "- `` a` ``\n",
+    "code": "a`"
+  },
+  {
+    "template": "- `seed`",
+    "value": "`a`",
+    "markdown": "- `` `a` ``\n",
+    "code": "`a`"
+  },
+  {
+    "template": "- `seed`",
+    "value": "\nx\n```",
+    "markdown": "- ````  x ``` ````\n",
+    "code": " x ```"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\tb",
+    "markdown": "- `a\tb`\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "- `seed`",
+    "value": "\t a \t",
+    "markdown": "- `\t a \t`\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\\b",
+    "markdown": "- `a\\b`\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "- `seed`",
+    "value": "&<>",
+    "markdown": "- `&<>`\n",
+    "code": "&<>"
+  },
+  {
+    "template": "- `seed`",
+    "value": "Ω",
+    "markdown": "- `Ω`\n",
+    "code": "Ω"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "",
+    "markdown": "- - <code></code>\n",
+    "code": ""
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a",
+    "markdown": "- - `a`\n",
+    "code": "a"
+  },
+  {
+    "template": "- - `seed`",
+    "value": " a",
+    "markdown": "- - ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a ",
+    "markdown": "- - `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "- - `seed`",
+    "value": " a ",
+    "markdown": "- - `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "  a  ",
+    "markdown": "- - `   a   `\n",
+    "code": "  a  "
+  },
+  {
+    "template": "- - `seed`",
+    "value": " ",
+    "markdown": "- - ` `\n",
+    "code": " "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "  ",
+    "markdown": "- - `  `\n",
+    "code": "  "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\n",
+    "markdown": "- - ` `\n",
+    "code": " "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\na",
+    "markdown": "- - ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\n",
+    "markdown": "- - `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\na\n",
+    "markdown": "- - `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\nb",
+    "markdown": "- - `a b`\n",
+    "code": "a b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\n\nb",
+    "markdown": "- - `a  b`\n",
+    "code": "a  b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\n\n\nb",
+    "markdown": "- - `a   b`\n",
+    "code": "a   b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "`",
+    "markdown": "- - `` ` ``\n",
+    "code": "`"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "`a",
+    "markdown": "- - `` `a ``\n",
+    "code": "`a"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a`",
+    "markdown": "- - `` a` ``\n",
+    "code": "a`"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "`a`",
+    "markdown": "- - `` `a` ``\n",
+    "code": "`a`"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\nx\n```",
+    "markdown": "- - ````  x ``` ````\n",
+    "code": " x ```"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\tb",
+    "markdown": "- - `a\tb`\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\t a \t",
+    "markdown": "- - `\t a \t`\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\\b",
+    "markdown": "- - `a\\b`\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "&<>",
+    "markdown": "- - `&<>`\n",
+    "code": "&<>"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "Ω",
+    "markdown": "- - `Ω`\n",
+    "code": "Ω"
+  },
+  {
+    "template": "> `seed`",
+    "value": "",
+    "markdown": "> <code></code>\n",
+    "code": ""
+  },
+  {
+    "template": "> `seed`",
+    "value": "a",
+    "markdown": "> `a`\n",
+    "code": "a"
+  },
+  {
+    "template": "> `seed`",
+    "value": " a",
+    "markdown": "> ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a ",
+    "markdown": "> `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "> `seed`",
+    "value": " a ",
+    "markdown": "> `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "> `seed`",
+    "value": "  a  ",
+    "markdown": "> `   a   `\n",
+    "code": "  a  "
+  },
+  {
+    "template": "> `seed`",
+    "value": " ",
+    "markdown": "> ` `\n",
+    "code": " "
+  },
+  {
+    "template": "> `seed`",
+    "value": "  ",
+    "markdown": "> `  `\n",
+    "code": "  "
+  },
+  {
+    "template": "> `seed`",
+    "value": "\n",
+    "markdown": "> ` `\n",
+    "code": " "
+  },
+  {
+    "template": "> `seed`",
+    "value": "\na",
+    "markdown": "> ` a`\n",
+    "code": " a"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\n",
+    "markdown": "> `a `\n",
+    "code": "a "
+  },
+  {
+    "template": "> `seed`",
+    "value": "\na\n",
+    "markdown": "> `  a  `\n",
+    "code": " a "
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\nb",
+    "markdown": "> `a b`\n",
+    "code": "a b"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\n\nb",
+    "markdown": "> `a  b`\n",
+    "code": "a  b"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\n\n\nb",
+    "markdown": "> `a   b`\n",
+    "code": "a   b"
+  },
+  {
+    "template": "> `seed`",
+    "value": "`",
+    "markdown": "> `` ` ``\n",
+    "code": "`"
+  },
+  {
+    "template": "> `seed`",
+    "value": "`a",
+    "markdown": "> `` `a ``\n",
+    "code": "`a"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a`",
+    "markdown": "> `` a` ``\n",
+    "code": "a`"
+  },
+  {
+    "template": "> `seed`",
+    "value": "`a`",
+    "markdown": "> `` `a` ``\n",
+    "code": "`a`"
+  },
+  {
+    "template": "> `seed`",
+    "value": "\nx\n```",
+    "markdown": "> ````  x ``` ````\n",
+    "code": " x ```"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\tb",
+    "markdown": "> `a\tb`\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "> `seed`",
+    "value": "\t a \t",
+    "markdown": "> `\t a \t`\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\\b",
+    "markdown": "> `a\\b`\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "> `seed`",
+    "value": "&<>",
+    "markdown": "> `&<>`\n",
+    "code": "&<>"
+  },
+  {
+    "template": "> `seed`",
+    "value": "Ω",
+    "markdown": "> `Ω`\n",
+    "code": "Ω"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "",
+    "markdown": "**<code></code>**\n",
+    "code": ""
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a",
+    "markdown": "**`a`**\n",
+    "code": "a"
+  },
+  {
+    "template": "*`seed`*",
+    "value": " a",
+    "markdown": "**` a`**\n",
+    "code": " a"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a ",
+    "markdown": "**`a `**\n",
+    "code": "a "
+  },
+  {
+    "template": "*`seed`*",
+    "value": " a ",
+    "markdown": "**`  a  `**\n",
+    "code": " a "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "  a  ",
+    "markdown": "**`   a   `**\n",
+    "code": "  a  "
+  },
+  {
+    "template": "*`seed`*",
+    "value": " ",
+    "markdown": "**` `**\n",
+    "code": " "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "  ",
+    "markdown": "**`  `**\n",
+    "code": "  "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\n",
+    "markdown": "**` `**\n",
+    "code": " "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\na",
+    "markdown": "**` a`**\n",
+    "code": " a"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\n",
+    "markdown": "**`a `**\n",
+    "code": "a "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\na\n",
+    "markdown": "**`  a  `**\n",
+    "code": " a "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\nb",
+    "markdown": "**`a b`**\n",
+    "code": "a b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\n\nb",
+    "markdown": "**`a  b`**\n",
+    "code": "a  b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\n\n\nb",
+    "markdown": "**`a   b`**\n",
+    "code": "a   b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "`",
+    "markdown": "**`` ` ``**\n",
+    "code": "`"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "`a",
+    "markdown": "**`` `a ``**\n",
+    "code": "`a"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a`",
+    "markdown": "**`` a` ``**\n",
+    "code": "a`"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "`a`",
+    "markdown": "**`` `a` ``**\n",
+    "code": "`a`"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\nx\n```",
+    "markdown": "**````  x ``` ````**\n",
+    "code": " x ```"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\tb",
+    "markdown": "**`a\tb`**\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\t a \t",
+    "markdown": "**`\t a \t`**\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\\b",
+    "markdown": "**`a\\b`**\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "&<>",
+    "markdown": "**`&<>`**\n",
+    "code": "&<>"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "Ω",
+    "markdown": "**`Ω`**\n",
+    "code": "Ω"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "",
+    "markdown": "|  |\n| --- |\n| <code></code> |\n",
+    "code": ""
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a",
+    "markdown": "|  |\n| --- |\n| `a` |\n",
+    "code": "a"
+  },
+  {
+    "template": "| `seed` |",
+    "value": " a",
+    "markdown": "|  |\n| --- |\n| ` a` |\n",
+    "code": " a"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a ",
+    "markdown": "|  |\n| --- |\n| `a ` |\n",
+    "code": "a "
+  },
+  {
+    "template": "| `seed` |",
+    "value": " a ",
+    "markdown": "|  |\n| --- |\n| `  a  ` |\n",
+    "code": " a "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "  a  ",
+    "markdown": "|  |\n| --- |\n| `   a   ` |\n",
+    "code": "  a  "
+  },
+  {
+    "template": "| `seed` |",
+    "value": " ",
+    "markdown": "|  |\n| --- |\n| ` ` |\n",
+    "code": " "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "  ",
+    "markdown": "|  |\n| --- |\n| `  ` |\n",
+    "code": "  "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\n",
+    "markdown": "|  |\n| --- |\n| ` ` |\n",
+    "code": " "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\na",
+    "markdown": "|  |\n| --- |\n| ` a` |\n",
+    "code": " a"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\n",
+    "markdown": "|  |\n| --- |\n| `a ` |\n",
+    "code": "a "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\na\n",
+    "markdown": "|  |\n| --- |\n| `  a  ` |\n",
+    "code": " a "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\nb",
+    "markdown": "|  |\n| --- |\n| `a b` |\n",
+    "code": "a b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\n\nb",
+    "markdown": "|  |\n| --- |\n| `a  b` |\n",
+    "code": "a  b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\n\n\nb",
+    "markdown": "|  |\n| --- |\n| `a   b` |\n",
+    "code": "a   b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "`",
+    "markdown": "|  |\n| --- |\n| `` ` `` |\n",
+    "code": "`"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "`a",
+    "markdown": "|  |\n| --- |\n| `` `a `` |\n",
+    "code": "`a"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a`",
+    "markdown": "|  |\n| --- |\n| `` a` `` |\n",
+    "code": "a`"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "`a`",
+    "markdown": "|  |\n| --- |\n| `` `a` `` |\n",
+    "code": "`a`"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\nx\n```",
+    "markdown": "|  |\n| --- |\n| ````  x ``` ```` |\n",
+    "code": " x ```"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\tb",
+    "markdown": "|  |\n| --- |\n| `a\tb` |\n",
+    "code": "a\tb"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\t a \t",
+    "markdown": "|  |\n| --- |\n| `\t a \t` |\n",
+    "code": "\t a \t"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\\b",
+    "markdown": "|  |\n| --- |\n| `a\\b` |\n",
+    "code": "a\\b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "&<>",
+    "markdown": "|  |\n| --- |\n| `&<>` |\n",
+    "code": "&<>"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "Ω",
+    "markdown": "|  |\n| --- |\n| `Ω` |\n",
+    "code": "Ω"
+  }
+]
