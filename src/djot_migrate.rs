@@ -677,6 +677,34 @@ impl<'a> NativeAttributeReader<'a> {
     }
 }
 
+/// Whether the character starting at `at` is escaped, which makes it part of
+/// the attribute's word: the boundary is whitespace in the source, not
+/// punctuation and not an escape (markup-carve/carve#2848).
+///
+/// Escaped LITERAL whitespace still ends the run, so `a\ b{.c}` attributes `b`
+/// alone.
+fn escaped_word_character(source: &str, at: usize, cursor: usize) -> bool {
+    let bytes = source.as_bytes();
+    if at <= cursor || !source.is_char_boundary(at) || bytes[at - 1] != b'\\' {
+        return false;
+    }
+    match source[at..].chars().next() {
+        Some(ch) if !ch.is_whitespace() => {}
+        _ => return false,
+    }
+    let mut slashes = 0usize;
+    let mut s = at - 1;
+    while bytes[s] == b'\\' {
+        slashes += 1;
+        if s == cursor {
+            break;
+        }
+        s -= 1;
+    }
+
+    slashes % 2 == 1
+}
+
 fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>) -> String {
     if !source.contains('{') {
         return source.to_owned();
@@ -773,22 +801,24 @@ fn protect_attributed_words(source: &str, prefix: &str, spans: &mut Vec<String>)
         let mut word = i;
         if i > 0
             && masked.as_bytes()[i - 1] == bytes[i - 1]
-            && (!b"`*_~^]}>".contains(&bytes[i - 1]) || literal_braces.contains_key(&(i - 1)))
+            && (!b"`*_~^]}>".contains(&bytes[i - 1])
+                || literal_braces.contains_key(&(i - 1))
+                || escaped_word_character(source, i - 1, cursor))
         {
             while word > cursor {
                 if let Some(&literal) = literal_braces
                     .get(&(word - 1))
                     .filter(|&&literal| literal >= cursor)
                 {
-                    let escaped = escaped_brace_closes.contains(&(word - 1));
                     word = literal;
-                    if escaped {
-                        break;
-                    }
                     continue;
                 }
                 let ch = source[..word].chars().next_back().unwrap();
                 let at = word - ch.len_utf8();
+                if escaped_word_character(source, at, cursor) {
+                    word = at - 1;
+                    continue;
+                }
                 if ch.is_whitespace()
                     || "\"'{}[]`\0>|".contains(ch)
                     || masked.as_bytes()[at] != bytes[at]
