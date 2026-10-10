@@ -210,6 +210,7 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
                     MarkdownLossKind::Unspellable => "structure-unspellable",
                     MarkdownLossKind::RawSpanWhitespaceTrimmed => "raw-span-whitespace-trimmed",
                     MarkdownLossKind::CarrierMarkersDamaged => "carrier-markers-damaged",
+                    MarkdownLossKind::RawCodeFallback => "raw-code-fallback",
                 }
                 .to_owned(),
                 message: loss.message,
@@ -219,7 +220,8 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
                 fidelity: match loss.kind {
                     MarkdownLossKind::Unspellable => MigrationFidelity::Dropped,
                     MarkdownLossKind::RawSpanWhitespaceTrimmed
-                    | MarkdownLossKind::CarrierMarkersDamaged => MigrationFidelity::Degraded,
+                    | MarkdownLossKind::CarrierMarkersDamaged
+                    | MarkdownLossKind::RawCodeFallback => MigrationFidelity::Degraded,
                 },
                 // A damaged set is a FALLBACK reading: the markers came through
                 // as the raw HTML they are and no container was guessed.

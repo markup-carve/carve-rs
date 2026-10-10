@@ -32,6 +32,27 @@ impl std::fmt::Display for AstDepthError {
 impl std::error::Error for AstDepthError {}
 
 impl Document {
+    pub(crate) fn markdown_code_values(&self) -> Vec<String> {
+        let mut pending = Vec::new();
+        blocks(&mut pending, &self.children, 1);
+        for body in self.footnote_defs.values() {
+            blocks(&mut pending, body, 1);
+        }
+        let mut values = Vec::new();
+        while let Some(work) = pending.pop() {
+            match work {
+                Work::Block(node, _) => block_children(&mut pending, node, 0),
+                Work::Inline(node, _) => {
+                    if let InlineNode::Code(code) = node {
+                        values.push(code.value.replace("\r\n", "\n").replace('\r', "\n"));
+                    }
+                    inline_children(&mut pending, node, 0);
+                }
+            }
+        }
+        values
+    }
+
     /// Clone after an iterative depth check, preserving all document metadata.
     ///
     /// Trees exceeding [`MAX_CHECKED_AST_DEPTH`] return an error before the

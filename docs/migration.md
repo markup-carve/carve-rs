@@ -73,6 +73,9 @@ report; `markdown_to_ast` and `markdown_to_carve` do not return diagnostics. An
 ordered task item keeps its marker as text, as in `1. [x] done`, because Carve
 spells a checkbox only behind a bullet. The report adds a
 `structure-unspellable` warning beside `fidelity-unverified` for that lost box.
+A code payload that requires raw HTML takes a `raw-code-fallback` warning.
+HTML keeps its code content; targets and profiles that escape or omit raw HTML
+change its content and structure. The report records the opening source line when available.
 A raw span whose content would end a content line in whitespace takes a
 `raw-span-whitespace-trimmed` warning, degraded/exact, at the source line:
 CARVE-P2-025 drops the run and a verbatim run crossing a line break is no

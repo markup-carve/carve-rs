@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Markdown import preserves HTML code payloads, nested markup and native code where source readback succeeds. Raw HTML fallbacks report their effect on other targets and profiles.
+
 - Keep adjacent verbatim spans separate when a payload ends in a backslash, including empty siblings and transparent wrappers. Normalize CR and CRLF before spelling blank verbatim lines in line blocks.
 
 - Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
