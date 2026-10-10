@@ -257,17 +257,19 @@ fn preserve_html_code_for_writing(
     struct Preserve {
         losses: Vec<MarkdownImportLoss>,
         paragraph: bool,
+        heading: bool,
         inline_depth: usize,
         force_all: bool,
     }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
             for block in blocks {
-                let saved = (self.paragraph, self.inline_depth);
+                let saved = (self.paragraph, self.heading, self.inline_depth);
                 self.paragraph = matches!(block, BlockNode::Paragraph(_));
+                self.heading = matches!(block, BlockNode::Heading(_));
                 self.inline_depth = 0;
                 visit_block_children(block, self);
-                (self.paragraph, self.inline_depth) = saved;
+                (self.paragraph, self.heading, self.inline_depth) = saved;
             }
         }
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
@@ -277,19 +279,24 @@ fn preserve_html_code_for_writing(
             for (index, node) in nodes.iter_mut().enumerate() {
                 if let InlineNode::Code(code) = node {
                     if code.attrs.is_none()
-                        && (code.value.is_empty() || code.value.contains(['\n', '\r']))
+                        && (self.force_all
+                            || code.value.is_empty()
+                            || code.value.contains(['\n', '\r']))
                     {
-                        if self.paragraph && !self.force_all {
-                            let mut probe = crate::parse::parse("x\n");
-                            let BlockNode::Paragraph(paragraph) = &mut probe.children[0] else {
-                                unreachable!()
+                        if (self.paragraph || self.heading) && !self.force_all {
+                            let mut probe =
+                                crate::parse::parse(if self.heading { "# x\n" } else { "x\n" });
+                            let children = match &mut probe.children[0] {
+                                BlockNode::Paragraph(paragraph) => &mut paragraph.children,
+                                BlockNode::Heading(heading) => &mut heading.children,
+                                _ => unreachable!(),
                             };
-                            paragraph.children = vec![InlineNode::Code(code.clone())];
+                            *children = vec![InlineNode::Code(code.clone())];
                             if !standalone {
                                 if index + 1 == length {
-                                    paragraph.children.insert(0, InlineNode::text("x "));
+                                    children.insert(0, InlineNode::text("x "));
                                 } else {
-                                    paragraph.children.push(InlineNode::text(" x"));
+                                    children.push(InlineNode::text(" x"));
                                 }
                             }
                             if let Ok(source) = render_carve(&probe) {
@@ -318,6 +325,7 @@ fn preserve_html_code_for_writing(
     let mut preserve = Preserve {
         losses: Vec::new(),
         paragraph: false,
+        heading: false,
         inline_depth: 0,
         force_all,
     };

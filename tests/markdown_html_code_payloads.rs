@@ -12,7 +12,11 @@ fn text(node: &Handle) -> String {
 fn code_records(node: &Handle, ancestors: &[String], records: &mut Vec<Value>) {
     let mut next = ancestors.to_vec();
     if let NodeData::Element { name, .. } = &node.data {
-        let tag = name.local.to_string();
+        let tag = if name.local.as_ref() == "s" {
+            "del".to_string()
+        } else {
+            name.local.to_string()
+        };
         if !matches!(tag.as_str(), "html" | "head" | "body" | "section") {
             next.push(tag.clone());
         }
@@ -22,7 +26,11 @@ fn code_records(node: &Handle, ancestors: &[String], records: &mut Vec<Value>) {
                 .borrow()
                 .iter()
                 .filter_map(|child| match &child.data {
-                    NodeData::Element { name, .. } => Some(name.local.to_string()),
+                    NodeData::Element { name, .. } => Some(if name.local.as_ref() == "s" {
+                        "del".to_string()
+                    } else {
+                        name.local.to_string()
+                    }),
                     _ => None,
                 })
                 .collect();
@@ -237,6 +245,33 @@ fn a_table_fallback_does_not_degrade_a_trailing_empty_code() {
     };
     assert!(
         matches!(paragraph.children.last(), Some(carve::InlineNode::Code(code)) if code.value.is_empty()),
+        "{}",
+        result.value
+    );
+}
+
+#[test]
+fn a_table_fallback_does_not_degrade_an_empty_heading_code() {
+    let result =
+        carve::try_migrate_markdown("# <code></code>\n\n| h |\n|---|\n| <code>x&#10;y</code> |\n")
+            .unwrap();
+    assert_eq!(
+        result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "raw-code-fallback")
+            .count(),
+        1,
+        "{:?}",
+        result.report.diagnostics
+    );
+    let document = carve::parse(&result.value);
+    let carve::BlockNode::Heading(heading) = &document.children[0] else {
+        panic!("heading")
+    };
+    assert!(
+        matches!(heading.children.last(), Some(carve::InlineNode::Code(code)) if code.value.is_empty()),
         "{}",
         result.value
     );
