@@ -122,6 +122,18 @@ fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
 /// `---` fence is a thematic break and the key line beneath it a setext
 /// heading, so `title: T` became an `<h2>`. Both were caught by the
 /// differential against carve-js, not by reasoning.
+fn fence_language(info: &str) -> Option<&str> {
+    info.trim_matches([' ', '\t'])
+        .split([' ', '\t'])
+        .next()
+        .filter(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
+        })
+}
+
 fn is_empty_destination(destination: &str) -> bool {
     destination
         .trim_matches(|c: char| c.is_ascii_whitespace())
@@ -255,6 +267,15 @@ fn markdown_to_ast_with_losses(
     // The block is claimed here instead; the bare form stays on pulldown's own
     // metadata-block path, which is the one every other test covers.
     let claimed = leading.as_ref().filter(|block| block.typed);
+    let claimed_lines = claimed.map_or(0, |block| {
+        without_nuls
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .chars()
+            .filter(|ch| *ch == '\n')
+            .count()
+            - block.body.chars().filter(|ch| *ch == '\n').count()
+    });
     let without_nuls = match claimed {
         Some(block) => Cow::Owned(block.body.clone()),
         None => without_nuls,
@@ -302,7 +323,8 @@ fn markdown_to_ast_with_losses(
     let mut text_end = None;
     let mut parser = Parser::new_ext(&source, options).into_offset_iter();
     while let Some((mut event, range)) = parser.next() {
-        builder.current_line = line_starts.partition_point(|start| *start <= range.start);
+        builder.current_line =
+            claimed_lines + line_starts.partition_point(|start| *start <= range.start);
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
             // An event starting inside the run already carries those characters.
@@ -318,7 +340,10 @@ fn markdown_to_ast_with_losses(
         }
         match &event {
             Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
-                if is_empty_destination(dest_url) =>
+                if is_empty_destination(dest_url)
+                    && !builder.frames.iter().any(|frame| {
+                        matches!(frame, Frame::Image { .. } | Frame::RawInline { .. })
+                    }) =>
             {
                 let image = matches!(&event, Event::Start(Tag::Image { .. }));
                 builder.losses.push(MarkdownImportLoss {
@@ -337,11 +362,7 @@ fn markdown_to_ast_with_losses(
                     .split([' ', '\t'])
                     .next()
                     .unwrap_or("");
-                if !word.is_empty()
-                    && !word
-                        .bytes()
-                        .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
-                {
+                if !word.is_empty() && fence_language(info).is_none() {
                     builder.losses.push(MarkdownImportLoss {
                         message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
                         line: Some(builder.current_line),
@@ -1252,17 +1273,7 @@ impl Builder {
                     // Only the first word of the info string is the language;
                     // the rest is the author's metadata, which Carve's fence
                     // has no slot for.
-                    CodeBlockKind::Fenced(info) => info
-                        .trim_matches([' ', '\t'])
-                        .split([' ', '\t'])
-                        .next()
-                        .filter(|word| {
-                            !word.is_empty()
-                                && word
-                                    .bytes()
-                                    .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
-                        })
-                        .map(str::to_string),
+                    CodeBlockKind::Fenced(info) => fence_language(&info).map(str::to_string),
                     CodeBlockKind::Indented => None,
                 },
                 content: String::new(),

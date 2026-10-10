@@ -264,3 +264,35 @@ fn valid_markdown_constructs_do_not_report_boundary_losses() {
         );
     }
 }
+
+#[test]
+fn boundary_loss_lines_include_typed_frontmatter() {
+    for source in [
+        "---toml\na = 1\nb = 2\n---\n\n[link]()\n",
+        "---toml\r\na = 1\r\nb = 2\r\n---\r\n\r\n[link]()\r\n",
+        "---toml\ra = 1\rb = 2\r---\r\r[link]()\r",
+    ] {
+        let result = migrate_markdown(source);
+        let loss = result
+            .report
+            .diagnostics
+            .iter()
+            .find(|row| row.code == "structure-unspellable")
+            .unwrap();
+        assert_eq!(loss.path.as_deref(), Some("line:6"));
+    }
+}
+
+#[test]
+fn nested_image_and_raw_html_content_do_not_claim_retained_link_titles() {
+    for source in ["![a [b](<> \"t\") c](x.png)", "<span>[x](<> \"t\")</span>"] {
+        assert!(
+            !migrate_markdown(source)
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "structure-unspellable"),
+            "{source}"
+        );
+    }
+}
