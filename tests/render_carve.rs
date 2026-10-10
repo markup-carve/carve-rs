@@ -1257,3 +1257,49 @@ mod include_directives_survive_formatting {
         }
     }
 }
+
+#[test]
+fn code_source_boundaries_preserve_payloads_or_refuse() {
+    for value in ["a\\", "a\\\\\\"] {
+        let mut document = carve::parse("`Q`{%  %}`b`\n");
+        let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
+            panic!("paragraph")
+        };
+        let carve::InlineNode::Code(code) = &mut paragraph.children[0] else {
+            panic!("code")
+        };
+        code.value = value.into();
+        let written = carve::render_carve(&document).unwrap();
+        assert_eq!(
+            carve::render_html(&carve::parse(&written)).unwrap(),
+            carve::render_html(&document).unwrap()
+        );
+    }
+    for value in ["a\n\nb", "a\r\rb", "\n\nb", "a\n\n"] {
+        let mut document = carve::parse("`Q`\n");
+        let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
+            panic!("paragraph")
+        };
+        let carve::InlineNode::Code(code) = &mut paragraph.children[0] else {
+            panic!("code")
+        };
+        code.value = value.into();
+        assert!(matches!(
+            carve::render_carve(&document),
+            Err(carve::RenderCarveError::SourceUnspellable(_))
+        ));
+        let mut verse = carve::parse("::: |\n`Q`\n:::\n");
+        let carve::BlockNode::LineBlock(block) = &mut verse.children[0] else {
+            panic!("line block")
+        };
+        block.children = document.children.clone();
+        let written = carve::render_carve(&verse).unwrap();
+        assert_eq!(
+            carve::render_html(&carve::parse(&written)).unwrap(),
+            carve::render_html(&verse)
+                .unwrap()
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+        );
+    }
+}

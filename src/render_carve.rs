@@ -3604,7 +3604,13 @@ fn render_nodes_with_verbatim(
         // comment keeps them apart (PART 11 §10k N3, ruling
         // markup-carve/carve-js#1818). Padded as the comment writer pads one.
         let run = ['`', EMPTY_CODE_MARK];
-        if out.ends_with(run) && rendered.starts_with(run) && !ends_in_an_escape(&out) {
+        if out.ends_with(run)
+            && rendered.starts_with(run)
+            && (matches!(
+                nodes.get(idx.wrapping_sub(1)),
+                Some(InlineNode::Code(_) | InlineNode::LiteralInline(_))
+            ) || !ends_in_an_escape(&out))
+        {
             out.push_str("{%  %}");
         }
         out.push_str(&rendered);
@@ -4816,6 +4822,12 @@ fn code_span_fence(content: &str) -> String {
 fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) -> String {
     if ctx.line_block_depth > 0 {
         return written.to_owned();
+    }
+    if written.contains("\n\n") {
+        crate::render_carve_error::record_unspellable(
+            "code",
+            "a blank line ends the code span paragraph",
+        );
     }
     static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let marker =
