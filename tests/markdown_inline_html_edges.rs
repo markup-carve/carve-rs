@@ -3,9 +3,9 @@
 //!
 //! Only a BARE, properly paired native tag converts to a Carve construct. An
 //! attributed tag, an unpaired or self-closing tag, and any non-native tag are
-//! kept verbatim as an inline raw span, so nothing is dropped and an unclosed
-//! tag never swallows the text after it. Every expectation matches carve-js
-//! `markdownToCarve`.
+//! kept verbatim as an inline raw span bounded by its own `>`, so nothing is
+//! dropped and no tag swallows the text after it. Every expectation matches
+//! carve-js `markdownToCarve`.
 
 fn carve(markdown: &str) -> String {
     carve::markdown_to_carve(markdown)
@@ -13,15 +13,15 @@ fn carve(markdown: &str) -> String {
 
 #[test]
 fn an_attributed_native_tag_is_kept_raw_not_converted() {
-    // The class would be lost if `<b>` were converted to `*...*`; keeping the
-    // run raw preserves it, the way carve-js does.
+    // The class would be lost if `<b>` were converted to `*...*`; a raw span
+    // holding the start tag preserves it, the way carve-js does.
     assert_eq!(
         carve("a <b class=\"x\">y</b> c\n"),
-        "a `<b class=\"x\">y</b>`{=html} c\n",
+        "a `<b class=\"x\">`{=html}y`</b>`{=html} c\n",
     );
     assert_eq!(
         carve("a <span data-x=\"1\">y</span> c\n"),
-        "a `<span data-x=\"1\">y</span>`{=html} c\n",
+        "a `<span data-x=\"1\">`{=html}y`</span>`{=html} c\n",
     );
 }
 

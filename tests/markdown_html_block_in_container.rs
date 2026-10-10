@@ -310,7 +310,7 @@ fn an_opener_after_prose_is_its_own_block() {
 fn an_inline_span_in_a_quote_stays_inline() {
     assert_eq!(
         carve("> a <span>b</span> c\n"),
-        "> a `<span>b</span>`{=html} c\n"
+        "> a `<span>`{=html}b`</span>`{=html} c\n"
     );
 }
 
@@ -345,7 +345,7 @@ fn an_inline_span_in_a_list_item_stays_inline() {
 fn an_inline_span_at_top_level_stays_inline() {
     assert_eq!(
         carve("a <span>b</span> c\n"),
-        "a `<span>b</span>`{=html} c\n"
+        "a `<span>`{=html}b`</span>`{=html} c\n"
     );
 }
 
@@ -355,7 +355,7 @@ fn an_inline_span_at_top_level_stays_inline() {
 fn an_inline_span_in_a_table_cell_stays_inline() {
     assert_eq!(
         carve("| h |\n|---|\n| a <span>b</span> c |\n"),
-        "|= h |\n| a `<span>b</span>`{=html} c |\n",
+        "|= h |\n| a `<span>`{=html}b`</span>`{=html} c |\n",
     );
 }
 
