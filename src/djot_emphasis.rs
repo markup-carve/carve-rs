@@ -20,6 +20,7 @@ fn kind_bit(kind: u8) -> u8 {
         b'*' => 2,
         b'~' => 4,
         b'^' => 8,
+        b'=' => 16,
         _ => unreachable!(),
     }
 }
@@ -505,6 +506,23 @@ fn process(
         }
         return String::new();
     }
+    for &start in &valid_braces {
+        if bytes[start + 1] != b'=' {
+            continue;
+        }
+        let close = brace_ends[&start];
+        pairs.push(Pair {
+            start,
+            open_end: start + 2,
+            close,
+            end: close + 2,
+            kind: b'=',
+            forced: true,
+            children: Vec::new(),
+            kinds: kind_bit(b'='),
+            host_depth: 0,
+        });
+    }
     pairs.sort_by_key(|pair| (pair.start, std::cmp::Reverse(pair.end)));
     let mut roots = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
@@ -584,29 +602,99 @@ fn process(
         at += 1;
     }
     let mut host_changes: HashMap<usize, isize> = HashMap::new();
+    for &start in &valid_braces {
+        if starts.contains_key(&start) {
+            continue;
+        }
+        let end = brace_ends[&start];
+        *host_changes.entry(start + 2).or_default() += 1;
+        *host_changes.entry(end).or_default() -= 1;
+    }
     for &(start, end) in &bracket_pairs {
-        if literal_brackets.contains(&start) || literal_brackets.contains(&end) { continue; }
-        if !bytes.get(end + 1).is_some_and(|ch| b"([{ ".contains(ch) && *ch != b' ')
-            && start.checked_sub(1).and_then(|at| bytes.get(at)) != Some(&b'^') { continue; }
+        if literal_brackets.contains(&start) || literal_brackets.contains(&end) {
+            continue;
+        }
+        if !bytes
+            .get(end + 1)
+            .is_some_and(|ch| b"([{ ".contains(ch) && *ch != b' ')
+            && start.checked_sub(1).and_then(|at| bytes.get(at)) != Some(&b'^')
+        {
+            continue;
+        }
         *host_changes.entry(start + 1).or_default() += 1;
         *host_changes.entry(end).or_default() -= 1;
     }
     let mut host_depth = 0isize;
     let mut quote_depth = 0usize;
+    let mut quote_paragraph_open = false;
+    let mut div_fences: Vec<(usize, usize)> = Vec::new();
+    let mut div_depth = 0usize;
     for at in 0..bytes.len() {
         if at == 0 || bytes[at - 1] == b'\n' {
-            quote_depth = 0;
+            let end = source[at..]
+                .find('\n')
+                .map_or(bytes.len(), |offset| at + offset);
+            let mut physical_depth = 0;
+            let mut pending_lists = 0;
             let mut cursor = at;
             loop {
-                while bytes.get(cursor).is_some_and(|ch| matches!(ch, b' ' | b'\t')) { cursor += 1; }
-                if bytes.get(cursor) != Some(&b'>') { break; }
-                quote_depth += 1;
-                cursor += 1;
+                while cursor < end && matches!(bytes[cursor], b' ' | b'\t') {
+                    cursor += 1;
+                }
+                if bytes.get(cursor) == Some(&b'>') {
+                    physical_depth += 1 + pending_lists;
+                    pending_lists = 0;
+                    cursor += 1;
+                } else if let Some(item) = item_prefix.find(&source[cursor..end]) {
+                    pending_lists += 1;
+                    cursor += item.end();
+                    if bytes.get(cursor) == Some(&b'[')
+                        && bytes
+                            .get(cursor + 1)
+                            .is_some_and(|byte| b" xX-".contains(byte))
+                        && bytes.get(cursor + 2) == Some(&b']')
+                        && bytes
+                            .get(cursor + 3)
+                            .is_some_and(|byte| b" \t".contains(byte))
+                    {
+                        cursor += 3;
+                    }
+                } else {
+                    break;
+                }
+            }
+            let content = &source[cursor..end];
+            let colon_width = content.bytes().take_while(|byte| *byte == b':').count();
+            if colon_width >= 3 && mask.get(cursor) == Some(&b':') {
+                let tail = content[colon_width..].trim();
+                if tail.is_empty() {
+                    if div_fences
+                        .last()
+                        .is_some_and(|(width, _)| colon_width >= *width)
+                    {
+                        let (_, depth) = div_fences.pop().unwrap();
+                        div_depth -= depth;
+                    }
+                } else {
+                    let depth = 1 + pending_lists;
+                    div_fences.push((colon_width, depth));
+                    div_depth += depth;
+                }
+            }
+            let paragraph = !content.trim().is_empty()
+                && !block_start.is_match(content)
+                && !marker.is_match(content);
+            if physical_depth > 0 {
+                quote_depth = physical_depth;
+                quote_paragraph_open = paragraph;
+            } else if !quote_paragraph_open || !paragraph {
+                quote_depth = 0;
+                quote_paragraph_open = false;
             }
         }
         host_depth += host_changes.get(&at).copied().unwrap_or(0);
         if let Some(&index) = starts.get(&at) {
-            pairs[index].host_depth = host_depth.max(0) as usize + quote_depth;
+            pairs[index].host_depth = host_depth.max(0) as usize + quote_depth + div_depth;
         }
     }
     let renderer = Renderer {
@@ -626,7 +714,11 @@ fn process(
         literals: RefCell::new(Vec::new()),
         rendered: RefCell::new(HashMap::new()),
     };
-    let mut work: Vec<_> = roots.iter().rev().map(|index| (*index, 0, 0, false)).collect();
+    let mut work: Vec<_> = roots
+        .iter()
+        .rev()
+        .map(|index| (*index, 0, 0, false))
+        .collect();
     while let Some((index, outer, depth, ready)) = work.pop() {
         let pair = &pairs[index];
         if ready {
@@ -766,20 +858,17 @@ impl Renderer<'_> {
         if depth + pair.host_depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             return self.body(pair.open_end, pair.close, &pair.children, outer);
         }
-        let scope = outer & bit != 0 || pair
-            .children
-            .iter()
-            .any(|child| self.pairs[*child].kinds & bit != 0);
-        let content = self.body(
-            pair.open_end,
-            pair.close,
-            &pair.children,
-            outer | bit,
-        );
+        let scope = outer & bit != 0
+            || pair
+                .children
+                .iter()
+                .any(|child| self.pairs[*child].kinds & bit != 0);
+        let content = self.body(pair.open_end, pair.close, &pair.children, outer | bit);
         let delimiter = match pair.kind {
             b'_' => '/',
             b'~' => ',',
             b'^' => '^',
+            b'=' => '=',
             _ => '*',
         };
         let bytes = self.source.as_bytes();
