@@ -485,10 +485,7 @@ fn process(
             literal_brackets.insert(end);
         }
     }
-    let mut literal_prefix = "\0DJOTLITERAL\0".to_string();
-    while source.contains(&literal_prefix) {
-        literal_prefix.push('\0');
-    }
+    let literal_prefix = super::djot_placeholder_prefix(source, "\0DJOTLITERAL\0");
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'\\' {

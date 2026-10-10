@@ -190,31 +190,31 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
     let mut spans = Vec::new();
     let words = protect_attributed_words(&folded, &prefix, &mut spans, &inherited);
     let empty_term = djot_placeholder_prefix(&words, "\0DJOTEMPTYTERM\0");
-    let converted = rewrite_djot_body(&convert_definition_lists(&words, &empty_term))
+    let restore = regex::Regex::new(&format!(
+        r"(?:{}([0-9]+)|{}([0-9]+))\x00",
+        regex::escape(&prefix),
+        regex::escape(&alt_prefix),
+    ))
+    .unwrap();
+    let converted =
+        rewrite_djot_body_with(&convert_definition_lists(&words, &empty_term), |chunk| {
+            restore
+                .replace_all(chunk, |caps: &regex::Captures<'_>| {
+                    let (index, values) = if let Some(index) = caps.get(1) {
+                        (index.as_str(), &spans)
+                    } else {
+                        (caps.get(2).unwrap().as_str(), &alts)
+                    };
+                    index
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|index| values.get(index))
+                        .cloned()
+                        .unwrap_or_else(|| caps[0].to_string())
+                })
+                .into_owned()
+        })
         .replace(&empty_term, "%%");
-    let converted = if spans.is_empty() {
-        converted
-    } else {
-        let restore =
-            regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&prefix))).unwrap();
-        restore
-            .replace_all(&converted, |caps: &regex::Captures<'_>| {
-                spans[caps[1].parse::<usize>().unwrap()].clone()
-            })
-            .into_owned()
-    };
-
-    let converted = if alts.is_empty() {
-        converted
-    } else {
-        let alt_restore =
-            regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&alt_prefix))).unwrap();
-        alt_restore
-            .replace_all(&converted, |caps: &regex::Captures<'_>| {
-                alts[caps[1].parse::<usize>().unwrap()].clone()
-            })
-            .into_owned()
-    };
     let converted = cached_regex!(r"\x00DJOTINVALIDATTR[0-9]+\x00")
         .unwrap()
         .replace_all(&converted, |caps: &regex::Captures<'_>| {
@@ -1525,17 +1525,28 @@ struct OrphanAttributeSpans {
 }
 
 impl OrphanAttributeSpans {
-    fn restore(&self, source: &str) -> String {
+    fn restore_with(&self, source: &str, mut transform: impl FnMut(&str) -> String) -> String {
         if self.values.is_empty() {
-            return source.to_string();
+            return transform(source);
         }
         let pattern =
             regex::Regex::new(&format!(r"{}([0-9]+)\x00", regex::escape(&self.prefix))).unwrap();
-        pattern
-            .replace_all(source, |caps: &regex::Captures<'_>| {
-                self.values[caps[1].parse::<usize>().unwrap()].clone()
-            })
-            .into_owned()
+        let mut result = String::with_capacity(source.len());
+        let mut end = 0;
+        for caps in pattern.captures_iter(source) {
+            let token = caps.get(0).unwrap();
+            result.push_str(&transform(&source[end..token.start()]));
+            result.push_str(
+                caps[1]
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| self.values.get(index))
+                    .map_or(token.as_str(), String::as_str),
+            );
+            end = token.end();
+        }
+        result.push_str(&transform(&source[end..]));
+        result
     }
 }
 
@@ -1713,6 +1724,10 @@ fn emphasis_mask(source: &str) -> String {
 }
 
 fn rewrite_djot_body(djot: &str) -> String {
+    rewrite_djot_body_with(djot, str::to_string)
+}
+
+fn rewrite_djot_body_with(djot: &str, transform: impl FnMut(&str) -> String) -> String {
     let source = convert_djot_block_markers(&djot.replace("\r\n", "\n").replace('\r', "\n"));
     // Before anything else, and deliberately as a same-length rewrite: `+` and
     // `-` are one byte each, so every offset the mask and the rules below
@@ -1724,7 +1739,10 @@ fn rewrite_djot_body(djot: &str) -> String {
     let source = collapse_false_list_boundaries(&source);
     let (source, orphan_spans) = consume_orphan_djot_attributes(&source);
     let mask = emphasis_mask(&source);
-    orphan_spans.restore(&emphasis::convert(&source, &mask, rewrite_djot_inline))
+    orphan_spans.restore_with(
+        &emphasis::convert(&source, &mask, rewrite_djot_inline),
+        transform,
+    )
 }
 
 fn rewrite_djot_inline(source: &str) -> String {
