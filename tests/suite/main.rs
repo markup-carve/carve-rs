@@ -1783,3 +1783,6 @@ mod djot_literal_closer_attributes;
 
 #[path = "../djot_escaped_brace_atoms.rs"]
 mod djot_escaped_brace_atoms;
+
+#[path = "../djot_destination_boundaries.rs"]
+mod djot_destination_boundaries;
