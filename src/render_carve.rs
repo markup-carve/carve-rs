@@ -31,6 +31,7 @@ enum DefinitionAtLine {
 struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
+    emphasis_depth_peak: usize,
     list_depth: usize,
     /// Depth of line-block nesting, so the inline writer drops the explicit
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
@@ -1051,6 +1052,7 @@ fn render_with_escapes_once(
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
+        emphasis_depth_peak: 0,
         list_depth: 0,
         line_block_depth: 0,
         rendered_verbatim_tail: false,
@@ -3274,10 +3276,14 @@ fn render_inlines_with_caption(
             return text.value.clone();
         }
     }
-    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH
-        && nodes.iter().any(|node| matches!(node, InlineNode::Emphasis(_))) {
+    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH - 1
+        && nodes
+            .iter()
+            .any(|node| matches!(node, InlineNode::Emphasis(_)))
+    {
         crate::render_carve_error::record_unspellable(
-            "inline", "inline content exceeds the native parser nesting limit",
+            "inline",
+            "inline content exceeds the native parser nesting limit",
         );
         return String::new();
     }
@@ -3569,14 +3575,20 @@ fn render_nodes_with_verbatim(
             )
         };
         if let InlineNode::CriticComment(comment) = node {
-            if comment.text.contains('}') && idx > 0 && crate::parse::inline_is_attributable(&nodes[idx - 1]) {
+            if comment.text.contains('}')
+                && idx > 0
+                && crate::parse::inline_is_attributable(&nodes[idx - 1])
+            {
                 let probe = crate::parse(&("/x/".to_owned() + &rendered));
                 let keeps_comment = probe.children.first().is_some_and(|block| match block {
                     BlockNode::Paragraph(paragraph) => paragraph.children.iter().any(|child| matches!(child, InlineNode::CriticComment(found) if found.text == comment.text)),
                     _ => false,
                 });
                 if !keeps_comment {
-                    crate::render_carve_error::record_unspellable("critic_comment", "a glued editorial comment would attach attributes to the preceding node");
+                    crate::render_carve_error::record_unspellable(
+                        "critic_comment",
+                        "a glued editorial comment would attach attributes to the preceding node",
+                    );
                 }
             }
         }
@@ -3837,9 +3849,19 @@ fn render_inline_body(
             let before_attributes = ctx.attribute_markers.clone();
             let before_emphasis = ctx.emphasis_counts;
             let repeated_ancestor = [
-                kinds.first().map(|marker| ctx.open_kinds.contains(marker)).unwrap_or(false),
-                kinds.get(1).map(|marker| ctx.open_kinds.contains(marker)).unwrap_or(false),
+                kinds
+                    .first()
+                    .map(|marker| ctx.open_kinds.contains(marker))
+                    .unwrap_or(false),
+                kinds
+                    .get(1)
+                    .map(|marker| ctx.open_kinds.contains(marker))
+                    .unwrap_or(false),
             ];
+            let preceding_peak = std::mem::replace(
+                &mut ctx.emphasis_depth_peak,
+                ctx.inline_depth + ctx.block_depth,
+            );
             ctx.open_kinds.extend_from_slice(kinds);
             let content = if writes_own_brackets(emphasis) {
                 render_bracketed_content(session, &emphasis.children, ctx)
@@ -3847,19 +3869,36 @@ fn render_inline_body(
                 render_inlines(session, &emphasis.children, ctx)
             };
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
+            let content_peak = ctx.emphasis_depth_peak;
+            ctx.emphasis_depth_peak = preceding_peak.max(content_peak);
             let attributes_conflict = kinds.iter().any(|marker| {
                 ctx.attribute_markers.get(marker).copied().unwrap_or(0)
                     > before_attributes.get(marker).copied().unwrap_or(0)
             });
             let repeated = |marker: char| {
                 let index = "/*_~^,=".find(marker).unwrap();
-                kinds.iter().position(|kind| *kind == marker)
-                    .map(|slot| repeated_ancestor[slot]).unwrap_or(false)
+                kinds
+                    .iter()
+                    .position(|kind| *kind == marker)
+                    .map(|slot| repeated_ancestor[slot])
+                    .unwrap_or(false)
                     || ctx.emphasis_counts[index] > before_emphasis[index]
             };
             let repeated_bold_italic = emphasis.kind == EmphasisKind::BoldItalic
-                && !content.is_empty() && (repeated('/') || repeated('*'));
+                && !content.is_empty()
+                && (repeated('/') || repeated('*'));
             if attributes_conflict || repeated_bold_italic {
+                if emphasis.kind == EmphasisKind::BoldItalic {
+                    let split_peak = content_peak + 1;
+                    ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);
+                    if split_peak >= crate::parse::MAX_NESTING_DEPTH - 1 {
+                        crate::render_carve_error::record_unspellable(
+                            "inline",
+                            "inline content exceeds the native parser nesting limit",
+                        );
+                        return String::new();
+                    }
+                }
                 let body = if emphasis.kind == EmphasisKind::BoldItalic {
                     let conflicts = |marker: char| {
                         ctx.attribute_markers.get(&marker).copied().unwrap_or(0)
@@ -5964,7 +6003,11 @@ fn note_braced_span(
         if repeated {
             if let Some(delim) = bare_delimiter(emphasis.kind) {
                 if rendered.starts_with(delim) {
-                    let attrs = render_attrs_with_markers(&emphasis.attrs, &ctx.open_kinds, ctx.attribute_bracket_depth > 0);
+                    let attrs = render_attrs_with_markers(
+                        &emphasis.attrs,
+                        &ctx.open_kinds,
+                        ctx.attribute_bracket_depth > 0,
+                    );
                     let body = &rendered[..rendered.len() - attrs.len()];
                     *rendered = format!("{{{body}}}{attrs}");
                 }
@@ -5985,7 +6028,9 @@ fn note_braced_span(
                 "emphasis",
                 "a span inside a span of the same kind has no Carve source spelling",
             );
-            crate::render_carve_error::record_nested_same_kind(nested.into_iter().flatten().collect());
+            crate::render_carve_error::record_nested_same_kind(
+                nested.into_iter().flatten().collect(),
+            );
         }
     }
     if rendered.starts_with('{') {

@@ -1606,13 +1606,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // link documents round-trip strictly; the other 29 report existing losses
     // from smart punctuation and escaped text. Strict rises by three and
     // reported-lossy by 29, with no new loss cause.
-    // Spec 57b66227 adds four 06-task-lists documents and fourteen 553
-    // paragraph documents. All four task-list documents and nine paragraph
-    // documents round-trip strictly. Paragraph rows 8, 9, 10, 13 and 14 report
-    // soft_break degradation. No existing corpus source changed, so strict
-    // rises by thirteen and reported-lossy by five, with no new loss cause.
-    const STRICT: usize = 1749;
-    const LOSSY: usize = 543;
+    // Spec 57b66227 adds four task-list and fourteen paragraph documents.
+    // Thirteen round-trip strictly; five report soft-break degradation.
+    // Nested emphasis moves corpus 471, 471-2 and 471-4 from strict to
+    // reported lossy because repeated marks share one ProseMirror slot.
+    const STRICT: usize = 1746;
+    const LOSSY: usize = 546;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

@@ -412,6 +412,7 @@ const IMPLEMENTED: &[&str] = &[
     "table-cell-padding-must-be-a-space",
     "the-flush-left-line-after-a-container-a-quoted-line-opened",
     "a-below-column-marker-after-a-comment-where-no-paragraph-is-open",
+    "a-below-column-line-continues-a-paragraph-only-where-one-is-open",
     "a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text",
     // carve#950: a fenced body is not a paragraph, so a line below the item's
     // content column closes the item instead of folding into it (carve-rs#770).
