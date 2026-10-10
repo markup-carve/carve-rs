@@ -4345,6 +4345,43 @@ fn djot_destination_ranges(source: &str, mask: &str) -> HashMap<usize, usize> {
     ranges
 }
 
+fn djot_destination_lines(source: &str, depth: usize) -> String {
+    if !source.contains('\n') {
+        return source.to_owned();
+    }
+    let folds = cached_regex!(r"\n([ \t]*[^\n]*)").unwrap();
+    let escaped_char = cached_regex!(r"\\(?:\r?\n|[^\r\n])").unwrap();
+    let raw_destination = escaped_char
+        .replace_all(source, |c: &regex::Captures<'_>| {
+            if c[0].ends_with('\n') {
+                "\n".to_owned()
+            } else {
+                c[0].to_owned()
+            }
+        })
+        .into_owned();
+    folds
+        .replace_all(&raw_destination, |c: &regex::Captures<'_>| {
+            let mut rest = c[1].trim_start_matches([' ', '\t']);
+            for _ in 0..depth {
+                if !rest.starts_with('>')
+                    || rest
+                        .as_bytes()
+                        .get(1)
+                        .is_some_and(|b| !matches!(b, b' ' | b'\t'))
+                {
+                    break;
+                }
+                let Some(tail) = rest.strip_prefix('>') else {
+                    break;
+                };
+                rest = tail.trim_start_matches([' ', '\t']);
+            }
+            rest.to_owned()
+        })
+        .into_owned()
+}
+
 fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     use std::collections::HashMap;
     if !source.contains("](") {
@@ -4453,9 +4490,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     let mut destination_owner: Option<usize> = None;
     let mut i = 0;
     let blank = cached_regex!(r"^\n[ \t]*(?:>[ \t]*)*\n").unwrap();
-    let folds = cached_regex!(r"\n([ \t]*[^\n]*)").unwrap();
     let note_newline = cached_regex!(r"\n[ \t]*").unwrap();
-    let escaped_char = cached_regex!(r"\\(?:\r?\n|[^\r\n])").unwrap();
     let escaped_pipe = cached_regex!(r"\\+\|").unwrap();
     let alt_end = cached_regex!(r" DJOTEND\n?$").unwrap();
     let rejected_attribute = cached_regex!(r"\A\x00DJOTINVALIDATTR\x00[0-9]+\x00").unwrap();
@@ -4674,35 +4709,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
                 at += ch.len_utf8();
             }
         }
-        let raw_destination = escaped_char
-            .replace_all(&raw_destination, |c: &regex::Captures<'_>| {
-                if c[0].ends_with('\n') {
-                    "\n".to_owned()
-                } else {
-                    c[0].to_owned()
-                }
-            })
-            .into_owned();
-        let mut destination = folds
-            .replace_all(&raw_destination, |c: &regex::Captures<'_>| {
-                let mut rest = c[1].trim_start_matches([' ', '\t']);
-                for _ in 0..owner.depth {
-                    if !rest.starts_with('>')
-                        || rest
-                            .as_bytes()
-                            .get(1)
-                            .is_some_and(|b| !matches!(b, b' ' | b'\t'))
-                    {
-                        break;
-                    }
-                    let Some(tail) = rest.strip_prefix('>') else {
-                        break;
-                    };
-                    rest = tail.trim_start_matches([' ', '\t']);
-                }
-                rest.to_owned()
-            })
-            .into_owned();
+        let mut destination = djot_destination_lines(&raw_destination, owner.depth);
         if rows.get(line) == Some(&true) {
             destination = escaped_pipe
                 .replace_all(&destination, |c: &regex::Captures<'_>| {

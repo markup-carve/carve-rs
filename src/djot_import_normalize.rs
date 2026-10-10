@@ -711,7 +711,7 @@ fn reference_uses<'a>(source: &'a str, mask: &str) -> Vec<ReferenceUse<'a>> {
     let mut uses = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'\\' && !is_escaped(bytes, i) {
+        if bytes[i] == b'\\' {
             i += 2;
             continue;
         }
@@ -727,9 +727,12 @@ fn reference_uses<'a>(source: &'a str, mask: &str) -> Vec<ReferenceUse<'a>> {
         }
         if bytes[i] == b']' {
             if let Some(start) = stack.pop() {
-                if bytes.get(i + 1) == Some(&b'[') {
+                if bytes.get(start + 1) != Some(&b'^') && bytes.get(i + 1) == Some(&b'[') {
                     let mut end = i + 2;
-                    while end < bytes.len() && bytes[end] != b']' && bytes[end] != b'[' {
+                    while end < bytes.len()
+                        && mask.as_bytes()[end] != b']'
+                        && mask.as_bytes()[end] != b'['
+                    {
                         if bytes[end] == b'\n' && blank_line_follows(bytes, end) {
                             break;
                         }
@@ -738,7 +741,7 @@ fn reference_uses<'a>(source: &'a str, mask: &str) -> Vec<ReferenceUse<'a>> {
                         }
                         end += 1;
                     }
-                    if bytes.get(end) == Some(&b']') {
+                    if mask.as_bytes().get(end) == Some(&b']') {
                         uses.push(ReferenceUse {
                             start,
                             end: end + 1,
@@ -779,6 +782,9 @@ pub(super) fn references(source: &str) -> String {
         if !attr_text.is_empty() {
             removed.push((previous_start, c.get(0).unwrap().end()));
         }
+    }
+    if definitions.is_empty() {
+        return source.to_owned();
     }
     let uses = reference_uses(source, &mask);
     let inline_keys: HashSet<_> = uses
@@ -1067,8 +1073,12 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         }
         let image =
             at > 0 && source.as_bytes()[at - 1] == b'!' && !is_escaped(source.as_bytes(), at - 1);
-        let key = reference_label(reference.text, reference.label);
-        match definitions.get(&key) {
+        let destination = if definitions.is_empty() {
+            None
+        } else {
+            definitions.get(&reference_label(reference.text, reference.label))
+        };
+        match destination {
             Some(destination) if destination.is_empty() => findings.push((
                 at,
                 if image {
@@ -1105,13 +1115,34 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         djot_destination_ranges(source, &destination_mask)
     });
     let reference_starts: HashSet<_> = references.iter().map(|reference| reference.start).collect();
+    let quote_prefix = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
+    let mut line_offsets = Vec::new();
+    let mut quote_depths = Vec::new();
+    let mut layout_offset = 0;
+    for line in source.split('\n') {
+        line_offsets.push(layout_offset);
+        layout_offset += line.len() + 1;
+        quote_depths.push(
+            quote_prefix
+                .find(line)
+                .unwrap()
+                .as_str()
+                .bytes()
+                .filter(|&byte| byte == b'>')
+                .count(),
+        );
+    }
+    let mut source_line = 0;
     let boundaries = djot_inline_boundaries(source, &mask);
     let mut boundary = 0;
     // Track label brackets separately from destination parentheses.
-    let mut brackets: Vec<(usize, bool)> = Vec::new();
+    let mut brackets: Vec<(usize, bool, usize)> = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
+        while line_offsets.get(source_line + 1).is_some_and(|at| *at <= i) {
+            source_line += 1;
+        }
         while boundaries.get(boundary).is_some_and(|at| *at <= i) {
             brackets.clear();
             boundary += 1;
@@ -1125,16 +1156,18 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             continue;
         }
         if bytes[i] == b'[' {
-            brackets.push((i, false));
+            brackets.push((i, false, quote_depths[source_line]));
         }
         if bytes[i] == b']' {
-            if let Some((start, nested)) = brackets.pop() {
+            if let Some((start, nested, depth)) = brackets.pop() {
                 let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
                 let valid_form =
                     destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
                 let is_link = !image && bytes.get(start + 1) != Some(&b'^') && valid_form;
                 if bytes.get(start + 1) != Some(&b'^')
-                    && destinations.get(&(i + 1)) == Some(&(i + 3))
+                    && destinations.get(&(i + 1)).is_some_and(|&end| {
+                        djot_destination_lines(&source[i + 2..end - 1], depth).is_empty()
+                    })
                 {
                     findings.push((
                         start,
@@ -1821,6 +1854,52 @@ mod tests {
             .iter()
             .any(|diagnostic| diagnostic.message.contains("nested inside another link")));
     }
+    #[test]
+    fn empty_destinations_fold_container_prefixes() {
+        for source in ["> [a](\n> )", "- [a](\n  )", "[a](\n  )"] {
+            let report = migrate_djot(source);
+            assert!(report
+                .report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains("empty destination")));
+        }
+        for source in ["[a][b][c]\n\n[b]: /u", "[a][b]()\n\n[b]: /u"] {
+            let report = migrate_djot(source);
+            assert!(!report
+                .report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "structure-unspellable"));
+        }
+    }
+
+    #[test]
+    fn unfinished_code_reference_label_is_literal() {
+        let report = migrate_djot("[a][b `c] [x][y]` z");
+        assert!(!report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "structure-unspellable"));
+    }
+
+    #[test]
+    fn adjacent_live_reference_after_footnote_is_reported() {
+        let report = migrate_djot("text[^1][see][ref]");
+        assert!(report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("unresolved Djot reference")));
+        let report = migrate_djot("[a](\n)");
+        assert!(report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("empty destination")));
+    }
+
     #[test]
     fn missing_image_destinations_have_exact_losses() {
         for source in ["![a]()", "![a][missing]", "![a][]\n\n[a]:"] {
