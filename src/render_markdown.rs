@@ -168,7 +168,6 @@ fn render_markdown_once(
         previous_list: None,
         carry_markers,
         carrier_depth: 0,
-        in_block_quote: false,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -256,8 +255,6 @@ struct MarkdownContext {
     /// How many carried containers enclose the block being written, which is
     /// what decides the colon-fence width a marker payload carries.
     carrier_depth: usize,
-    /// Inside a block quote, whose every line this target prefixes with `> `.
-    in_block_quote: bool,
 }
 
 /// The marker payloads a container takes, or `None` when the mode is off or the
@@ -266,16 +263,6 @@ fn carrier_markers(node: &BlockNode, ctx: &MarkdownContext) -> Option<CarrierMar
     if !ctx.carry_markers {
         return None;
     }
-    // A HOST THAT PREFIXES ITS LINES TAKES NO MARKER YET. Inside a list item or
-    // a block quote the comment is written at the host's content column or
-    // behind its `>`, and the import reads a marker only at column 0 - so it
-    // would be emitted and never read back, which is worse than degrading
-    // honestly (markup-carve/carve#2850). A table cell never reaches these
-    // block arms at all.
-    if ctx.list_depth > 0 || ctx.in_block_quote {
-        return None;
-    }
-
     spell_carrier_markers(node, ctx.carrier_depth)
 }
 
@@ -444,10 +431,7 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         }
         BlockNode::BlockQuote(quote) => {
             let outer = ctx.previous_list.take();
-            let quoted_host = ctx.in_block_quote;
-            ctx.in_block_quote = true;
             let lines = render_blocks(&quote.children, ctx, depth + 1);
-            ctx.in_block_quote = quoted_host;
             ctx.previous_list = outer;
             let body = trim_block_output(&lines).to_string();
             let quoted = body
