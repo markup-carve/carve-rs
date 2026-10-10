@@ -830,13 +830,6 @@ enum Frame {
         open: String,
         children: Vec<InlineNode>,
     },
-    /// An inline HTML run with no native Carve node. `tag` is the outer tag
-    /// whose closing fragment completes the run; standalone fragments have
-    /// already been emitted and never need a frame.
-    RawInline {
-        tag: String,
-        content: String,
-    },
     Emphasis(EmphasisKind, Vec<InlineNode>),
     Link {
         href: String,
@@ -891,7 +884,6 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
         | Frame::CodeBlock { .. }
         | Frame::RawHtml(_)
         | Frame::HtmlCode { .. }
-        | Frame::RawInline { .. }
         | Frame::Image { .. }
         | Frame::TableRow { .. }
         | Frame::TableCell(_)
@@ -955,13 +947,6 @@ impl Builder {
     }
 
     fn push(&mut self, event: Event<'_>, source: &str, empty_title: bool) {
-        // Once a non-native HTML element opens, everything through its closing
-        // tag is one verbatim raw-inline run. pulldown still tokenizes Markdown
-        // inside that run, so reconstruct the few token shapes it can emit.
-        if self.append_to_raw_inline(&event) {
-            return;
-        }
-
         match event {
             Event::Start(tag) => self.start(tag, source, empty_title),
             Event::End(tag) => self.end(tag),
@@ -1016,38 +1001,6 @@ impl Builder {
         }
     }
 
-    fn append_to_raw_inline(&mut self, event: &Event<'_>) -> bool {
-        let Some(Frame::RawInline { tag, content }) = self.frames.last_mut() else {
-            return false;
-        };
-
-        if matches!(event, Event::End(end) if is_block_end(end)) || matches!(event, Event::Rule) {
-            self.close();
-            return false;
-        }
-
-        match event {
-            Event::InlineHtml(html) | Event::Html(html) => {
-                content.push_str(html);
-                if html_tag(html)
-                    .is_some_and(|parsed| parsed.closing && parsed.name.eq_ignore_ascii_case(tag))
-                {
-                    self.close();
-                }
-            }
-            Event::Text(text) => content.push_str(text),
-            Event::Code(code) => {
-                content.push('`');
-                content.push_str(code);
-                content.push('`');
-            }
-            Event::SoftBreak => content.push('\n'),
-            Event::HardBreak => content.push_str("  \n"),
-            _ => {}
-        }
-        true
-    }
-
     fn inline_html(&mut self, value: &str) {
         let Some(tag) = html_tag(value) else {
             self.raw_inline(value.to_string());
@@ -1088,13 +1041,11 @@ impl Builder {
             return;
         }
         // Only a BARE native tag converts to a Carve construct. An attributed
-        // tag (`<b class="x">`) opens a raw-inline run instead, so its
-        // attributes survive verbatim rather than being dropped.
+        // tag (`<b class="x">`) becomes a raw-inline span holding the start tag
+        // and nothing else, so its attributes survive verbatim while the text
+        // after its `>` stays in the document (markup-carve/carve-rs#2409).
         if !tag.bare {
-            self.push_frame(Frame::RawInline {
-                tag: name,
-                content: value.to_string(),
-            });
+            self.raw_inline(value.to_string());
             return;
         }
         let frame = match name.as_str() {
@@ -1136,10 +1087,10 @@ impl Builder {
                 tag: name,
                 content: String::new(),
             },
-            _ => Frame::RawInline {
-                tag: name,
-                content: value.to_string(),
-            },
+            _ => {
+                self.raw_inline(value.to_string());
+                return;
+            }
         };
         self.push_frame(frame);
     }
@@ -1381,7 +1332,6 @@ impl Builder {
                     | Frame::HtmlCode { .. }
                     | Frame::HtmlInsert { .. }
                     | Frame::HtmlDelete { .. }
-                    | Frame::RawInline { .. }
             )
         ) {
             self.close();
@@ -1520,7 +1470,6 @@ impl Builder {
                     self.inline(child);
                 }
             }
-            Frame::RawInline { content, .. } => self.raw_inline(content),
             // Markdown emphasis IS Carve emphasis; only the spelling differs,
             // and the spelling belongs to the writer.
             Frame::Emphasis(kind, children) => self.inline(InlineNode::Emphasis(Emphasis {
@@ -1865,28 +1814,6 @@ impl Builder {
         };
         (document, self.losses)
     }
-}
-
-fn is_block_end(end: &TagEnd) -> bool {
-    matches!(
-        end,
-        TagEnd::Paragraph
-            | TagEnd::Heading(_)
-            | TagEnd::BlockQuote(_)
-            | TagEnd::CodeBlock
-            | TagEnd::HtmlBlock
-            | TagEnd::List(_)
-            | TagEnd::Item
-            | TagEnd::FootnoteDefinition
-            | TagEnd::DefinitionList
-            | TagEnd::DefinitionListTitle
-            | TagEnd::DefinitionListDefinition
-            | TagEnd::Table
-            | TagEnd::TableHead
-            | TagEnd::TableRow
-            | TagEnd::TableCell
-            | TagEnd::MetadataBlock(_)
-    )
 }
 
 /// Read the flat `key: value` pairs a Carve document exposes alongside the raw
@@ -2398,7 +2325,7 @@ mod tests {
         assert_eq!(markdown_to_carve("a <b>c</b> d"), "a *c* d\n");
         assert_eq!(
             markdown_to_carve("a <span>c</span> d"),
-            "a `<span>c</span>`{=html} d\n"
+            "a `<span>`{=html}c`</span>`{=html} d\n"
         );
         assert_eq!(markdown_to_carve("use <code>x=1</code>"), "use `x=1`\n");
         assert_eq!(
