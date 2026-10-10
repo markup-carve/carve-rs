@@ -433,7 +433,7 @@ fn write_marks(
                 // The parent's own delimiters are not text: a child at its edge
                 // has no neighbor there, which is how the writer spells `/_x_/`.
                 let inner = write_marks(slots, mark.slot, None, None);
-                let body = inner.text;
+                let mut body = inner.text;
                 if body.is_empty() {
                     continue;
                 }
@@ -469,6 +469,12 @@ fn write_marks(
                     || body.starts_with(delim)
                     || body.ends_with(delim)
                     || (delim == '/' && body.starts_with('*') && body.ends_with('*'));
+                if body.ends_with('{') {
+                    let backslashes = body.as_bytes()[..body.len() - 1].iter().rev().take_while(|&&byte| byte == b'\\').count();
+                    if backslashes % 2 == 0 {
+                        body.insert(body.len() - 1, '\\');
+                    }
+                }
                 let (open, close) = if braced {
                     (format!("{{{delim}"), format!("{delim}}}"))
                 } else {

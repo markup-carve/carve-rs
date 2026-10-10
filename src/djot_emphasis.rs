@@ -598,32 +598,22 @@ fn process(
         literals: RefCell::new(Vec::new()),
         rendered: RefCell::new(HashMap::new()),
     };
-    let mut work: Vec<_> = roots.iter().rev().map(|index| (*index, 0, false)).collect();
-    while let Some((index, outer, ready)) = work.pop() {
+    let mut work: Vec<_> = roots.iter().rev().map(|index| (*index, 0, 0, false)).collect();
+    while let Some((index, outer, depth, ready)) = work.pop() {
         let pair = &pairs[index];
         if ready {
-            let rendered = renderer.render(index, outer);
+            let rendered = renderer.render(index, outer, depth);
             renderer.rendered.borrow_mut().insert(index, rendered);
             continue;
         }
-        work.push((index, outer, true));
+        work.push((index, outer, depth, true));
         let bit = kind_bit(pair.kind);
-        if outer & bit != 0 {
+        if depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             losses.push(pair.start);
         }
-        let scope = pair
-            .children
-            .iter()
-            .any(|child| pairs[*child].kinds & outer != 0);
-        let inner = if outer & bit != 0 {
-            outer
-        } else if scope {
-            bit
-        } else {
-            outer | bit
-        };
+        let inner = outer | bit;
         for child in pair.children.iter().rev() {
-            work.push((*child, inner, false));
+            work.push((*child, inner, depth + 1, false));
         }
     }
     let out = convert_plain(&renderer.body(0, source.len(), &roots, 0));
@@ -742,21 +732,21 @@ impl Renderer<'_> {
         out.push_str(&self.plain(cursor, end));
         out
     }
-    fn render(&self, index: usize, outer: u8) -> String {
+    fn render(&self, index: usize, outer: u8, depth: usize) -> String {
         let pair = &self.pairs[index];
         let bit = kind_bit(pair.kind);
-        if outer & bit != 0 {
+        if depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             return self.body(pair.open_end, pair.close, &pair.children, outer);
         }
-        let scope = pair
+        let scope = outer & bit != 0 || pair
             .children
             .iter()
-            .any(|child| self.pairs[*child].kinds & outer != 0);
+            .any(|child| self.pairs[*child].kinds & bit != 0);
         let content = self.body(
             pair.open_end,
             pair.close,
             &pair.children,
-            if scope { bit } else { outer | bit },
+            outer | bit,
         );
         let delimiter = match pair.kind {
             b'_' => '/',

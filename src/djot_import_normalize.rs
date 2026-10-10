@@ -1172,7 +1172,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     findings.extend(
         nested
             .into_iter()
-            .map(|at| (at, "Nested emphasis of the same kind is flattened.")),
+            .map(|at| (at, "Emphasis exceeding the native nesting budget is flattened; its text is preserved.")),
     );
     let definitions = loss_references(source, &mask);
     let references = reference_uses(source, &mask);
