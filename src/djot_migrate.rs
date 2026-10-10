@@ -4207,6 +4207,15 @@ fn djot_inline_boundaries_with_code_scopes(
     mask: &str,
     code_scopes: bool,
 ) -> Vec<usize> {
+    djot_inline_boundaries_with_div_closers(source, mask, code_scopes, None)
+}
+
+fn djot_inline_boundaries_with_div_closers(
+    source: &str,
+    mask: &str,
+    code_scopes: bool,
+    mut div_closers: Option<&mut HashMap<usize, Vec<usize>>>,
+) -> Vec<usize> {
     let rows = djot_table_rows(source, mask);
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
     let marker = cached_regex!(r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+)").unwrap();
@@ -4223,6 +4232,7 @@ fn djot_inline_boundaries_with_code_scopes(
     struct DivOwner {
         minimum_width: usize,
         scope_start: usize,
+        start: usize,
         depth: usize,
         item_column: Option<usize>,
         item_depth: usize,
@@ -4247,11 +4257,20 @@ fn djot_inline_boundaries_with_code_scopes(
         let item = marker.find(trimmed);
         let starts_item = item.is_some()
             && (previous_blank
+                || code_scopes && previous_block
                 || items
                     .last()
                     .is_some_and(|&(column, item_depth)| depth <= item_depth && indent < column));
         let blank = trimmed.is_empty() || trimmed == "\r";
         if code_scopes {
+            if previous_block && !blank && !starts_item {
+                while items
+                    .last()
+                    .is_some_and(|&(column, item_depth)| depth == item_depth && indent < column)
+                {
+                    items.pop();
+                }
+            }
             let block_start = scope_block.is_match(trimmed) || item.is_some();
             while let Some(owner) = divs.last() {
                 let outside_quote =
@@ -4292,13 +4311,19 @@ fn djot_inline_boundaries_with_code_scopes(
                         .is_some_and(|column| depth == fence_depth && indent < column && !blank)
             }) {
                 code_fence = None;
+                while items
+                    .last()
+                    .is_some_and(|&(column, item_depth)| depth == item_depth && indent < column)
+                {
+                    items.pop();
+                }
             }
             let ticks = scope_ticks.captures(body);
             if let Some((ch, width, fence_depth, _)) = code_fence {
                 if ticks.as_ref().is_some_and(|t| {
                     t[1].as_bytes()[0] == ch
                         && t[1].len() >= width
-                        && t[2].trim().is_empty()
+                        && t[2].trim_matches([' ', '\t']).is_empty()
                         && body_depth == fence_depth
                 }) {
                     code_fence = None;
@@ -4348,6 +4373,12 @@ fn djot_inline_boundaries_with_code_scopes(
                             low = mid + 1;
                         }
                     }
+                    if let Some(closers) = div_closers.as_mut() {
+                        closers.insert(
+                            offset,
+                            divs[low..].iter().rev().map(|owner| owner.start).collect(),
+                        );
+                    }
                     divs.truncate(low);
                     previous_block = true;
                 } else if fence.is_some() && visible && can_open {
@@ -4361,6 +4392,7 @@ fn djot_inline_boundaries_with_code_scopes(
                             .filter(|owner| owner.depth == body_depth)
                             .map_or(divs.len(), |owner| owner.scope_start),
                         depth: body_depth,
+                        start: offset,
                         item_column: if starts_item {
                             Some(
                                 indent
@@ -4391,7 +4423,9 @@ fn djot_inline_boundaries_with_code_scopes(
                         || rows[row]
                         || (can_open
                             && (scope_heading.is_match(body)
-                                || attrs.is_some_and(|(end, _)| body[end..].trim().is_empty())));
+                                || attrs.is_some_and(|(end, _)| {
+                                    body[end..].trim_matches([' ', '\t']).is_empty()
+                                })));
                 }
             }
         }

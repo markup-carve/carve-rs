@@ -45,6 +45,19 @@ fn drop_orphan_attribute_line(result: &mut Vec<String>) {
 
 pub(super) fn blocks(source: &str) -> String {
     let mask = mask_code_and_destinations(source);
+    let mut div_closers = HashMap::new();
+    if source.contains(":::") {
+        djot_inline_boundaries_with_div_closers(source, &mask, true, Some(&mut div_closers));
+    }
+    let mut line_offset = 0;
+    let line_offsets: Vec<_> = source
+        .split('\n')
+        .map(|line| {
+            let at = line_offset;
+            line_offset += line.len() + 1;
+            at
+        })
+        .collect();
     let masks: Vec<_> = mask.split('\n').collect();
     let lines: Vec<_> = source.split('\n').collect();
     let rows = djot_table_rows(source, &mask);
@@ -64,7 +77,7 @@ pub(super) fn blocks(source: &str) -> String {
     let mut lists: Vec<List> = Vec::new();
     let mut definition_columns = Vec::new();
     let mut definition_body = false;
-    let mut divs: Vec<(usize, String, bool, Option<usize>)> = Vec::new();
+    let mut divs: Vec<(usize, String, bool, Option<usize>, usize)> = Vec::new();
     let mut paragraph = false;
     let mut previous_blank = true;
     let mut in_heading = false;
@@ -81,12 +94,12 @@ pub(super) fn blocks(source: &str) -> String {
             || visible.starts_with('|')
             || thematic(visible);
         if !raw.trim().is_empty() {
-            while divs.last().is_some_and(|(_, _, _, owner)| {
+            while divs.last().is_some_and(|(_, _, _, owner, _)| {
                 owner.is_some_and(|column| {
                     indent < column && (marker.is_match(visible) || block || previous_blank)
                 })
             }) {
-                let (width, prefix, _, _) = divs.pop().unwrap();
+                let (width, prefix, _, _, _) = divs.pop().unwrap();
                 let before = result
                     .iter()
                     .rposition(|line| !line.trim().is_empty())
@@ -335,6 +348,7 @@ pub(super) fn blocks(source: &str) -> String {
                     " ".repeat(target + marker_end),
                     crate::parse::lint_invalid_container_metadata(item_body),
                     Some(indent + marker_end),
+                    line_offsets[n],
                 ));
             }
             in_heading = heading.is_match(item_body);
@@ -350,19 +364,34 @@ pub(super) fn blocks(source: &str) -> String {
         let width = text.bytes().take_while(|b| *b == b':').count();
         if width >= 3 && visible.starts_with(':') {
             let bare = text[width..].trim().is_empty();
-            if bare && divs.iter().any(|(open, _, _, _)| width >= *open) {
-                let boundary = if divs.iter().any(|(_, _, invalid, _)| *invalid) {
+            if let Some(starts) = div_closers.get(&line_offsets[n]) {
+                drop_orphan_attribute_line(&mut result);
+                let outer_start = *starts.last().unwrap();
+                let mut matched = 0;
+                while divs.last().is_some_and(|owner| owner.4 >= outer_start) {
+                    let (open, prefix, _, _, start) = divs.pop().unwrap();
+                    while starts.get(matched).is_some_and(|&open| open > start) {
+                        matched += 1;
+                    }
+                    if starts.get(matched) == Some(&start) {
+                        result.push(format!("{prefix}{}", ":".repeat(open)));
+                        matched += 1;
+                    }
+                }
+                paragraph = false;
+            } else if bare && divs.iter().any(|(open, _, _, _, _)| width >= *open) {
+                let boundary = if divs.iter().any(|(_, _, invalid, _, _)| *invalid) {
                     divs.iter()
-                        .rposition(|(open, _, _, _)| width >= *open)
+                        .rposition(|(open, _, _, _, _)| width >= *open)
                         .unwrap()
                 } else {
                     divs.iter()
-                        .position(|(open, _, _, _)| width >= *open)
+                        .position(|(open, _, _, _, _)| width >= *open)
                         .unwrap()
                 };
                 drop_orphan_attribute_line(&mut result);
                 while divs.len() > boundary {
-                    let (open, prefix, _, _) = divs.pop().unwrap();
+                    let (open, prefix, _, _, _) = divs.pop().unwrap();
                     result.push(format!("{prefix}{}", ":".repeat(open)));
                 }
                 paragraph = false;
@@ -377,6 +406,7 @@ pub(super) fn blocks(source: &str) -> String {
                         .last()
                         .filter(|list| indent >= list.column)
                         .map(|list| list.column),
+                    line_offsets[n],
                 ));
                 result.push(display.clone());
                 paragraph = false;
@@ -462,7 +492,7 @@ pub(super) fn blocks(source: &str) -> String {
             ));
         }
     }
-    while let Some((width, prefix, _, _)) = divs.pop() {
+    while let Some((width, prefix, _, _, _)) = divs.pop() {
         if !output.ends_with('\n') {
             output.push('\n');
         }

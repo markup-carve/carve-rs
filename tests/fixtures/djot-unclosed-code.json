@@ -218,5 +218,20 @@
     "name": "final review controls 6",
     "source": "::: a\n:::: b\nx `` q\n:::\n` z `",
     "html": "<div class=\"a\"><div class=\"b\"><p>x <code> q</code></p></div></div><p><code> z </code></p>"
+  },
+  {
+    "name": "last review controls 5",
+    "source": "::: a\n- item\n:::\n- next",
+    "html": "<div class=\"a\"><ul><li>item</li></ul></div><ul><li>next</li></ul>"
+  },
+  {
+    "name": "last review controls 3",
+    "source": "::: a\n- x `` a\n- y ` b `\n:::",
+    "html": "<div class=\"a\"><ul><li>x <code> a</code></li><li>y <code> b </code></li></ul></div>"
+  },
+  {
+    "name": "last review controls 4",
+    "source": "::: outer\n:::: a b\nx\n:::\nafter",
+    "html": "<div class=\"outer\"><p>:::: a b\nx</p></div><p>after</p>"
   }
 ]
