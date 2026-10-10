@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::carrier_markers::{carrier_line, spell_carrier_markers, CarrierMarkers};
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
 use crate::render_loss::DeniedSink;
@@ -47,6 +48,7 @@ pub fn render_markdown_with_options(
         doc,
         options.smart_typography,
         options.heading_id_options(),
+        options.carry_markers,
     ))
 }
 
@@ -65,6 +67,7 @@ pub fn render_markdown(doc: &Document) -> Result<String, crate::RenderDepthError
         doc,
         crate::extension::SmartTypographyMode::Glyph,
         Options::default().heading_id_options(),
+        false,
     ))
 }
 
@@ -88,9 +91,10 @@ fn render_markdown_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
     id_opts: crate::extension::HeadingIdOptions,
+    carry_markers: bool,
 ) -> String {
     let _carriers = CarrierGuard::install(CARRIER_DEFAULTS);
-    let first = render_markdown_once(doc, smart_typography, id_opts);
+    let first = render_markdown_once(doc, smart_typography, id_opts, carry_markers);
     let inserted = INSERTED.with(std::cell::Cell::get);
     let seen = SEEN.with(std::cell::Cell::get);
     if (0..CARRIER_COUNT).all(|slot| seen[slot] <= inserted[slot]) {
@@ -101,13 +105,14 @@ fn render_markdown_inner(
         crate::sentinel_run::pick_sentinel_run(&occupied.borrow(), u32::from(CARRIER_DEFAULTS[0]))
     });
     CARRIERS.with(|slot| slot.set(picked));
-    render_markdown_once(doc, smart_typography, id_opts)
+    render_markdown_once(doc, smart_typography, id_opts, carry_markers)
 }
 
 fn render_markdown_once(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
     id_opts: crate::extension::HeadingIdOptions,
+    carry_markers: bool,
 ) -> String {
     INSERTED.with(|counts| counts.set([0; CARRIER_COUNT]));
     SEEN.with(|counts| counts.set([0; CARRIER_COUNT]));
@@ -158,6 +163,9 @@ fn render_markdown_once(
         link_depth: 0,
         table_cell_depth: 0,
         previous_list: None,
+        carry_markers,
+        carrier_depth: 0,
+        in_block_quote: false,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -239,6 +247,72 @@ struct MarkdownContext {
     /// The kind and marker of the list last written in the current flow, when
     /// nothing has been written after it (PART 11 §10o).
     previous_list: Option<(bool, char)>,
+    /// PART 11 §10s: whether an element-less container is bracketed with a
+    /// carrier marker. OFF by default; the mode only ADDS comment lines.
+    carry_markers: bool,
+    /// How many carried containers enclose the block being written, which is
+    /// what decides the colon-fence width a marker payload carries.
+    carrier_depth: usize,
+    /// Inside a block quote, whose every line this target prefixes with `> `.
+    in_block_quote: bool,
+}
+
+/// The marker payloads a container takes, or `None` when the mode is off or the
+/// container is not element-less on this target.
+fn carrier_markers(node: &BlockNode, ctx: &MarkdownContext) -> Option<CarrierMarkers> {
+    if !ctx.carry_markers {
+        return None;
+    }
+    // A HOST THAT PREFIXES ITS LINES TAKES NO MARKER YET. Inside a list item or
+    // a block quote the comment is written at the host's content column or
+    // behind its `>`, and the import reads a marker only at column 0 - so it
+    // would be emitted and never read back, which is worse than degrading
+    // honestly (markup-carve/carve#2850). A table cell never reaches these
+    // block arms at all.
+    if ctx.list_depth > 0 || ctx.in_block_quote {
+        return None;
+    }
+
+    spell_carrier_markers(node, ctx.carrier_depth)
+}
+
+/// Render a carried container's children one fence width in.
+fn carried_children(
+    children: &[BlockNode],
+    markers: Option<&CarrierMarkers>,
+    ctx: &mut MarkdownContext,
+    depth: usize,
+) -> String {
+    if markers.is_none() {
+        return render_blocks(children, ctx, depth);
+    }
+    ctx.carrier_depth += 1;
+    let out = render_blocks(children, ctx, depth);
+    ctx.carrier_depth -= 1;
+
+    out
+}
+
+/// Bracket a container's output with its marker lines.
+///
+/// The body is emitted UNCHANGED, separator and all: the mode adds lines and
+/// moves none, which is what keeps the mode-off bytes the bytes of today.
+fn carried(markers: Option<&CarrierMarkers>, body: String) -> String {
+    let Some(markers) = markers else { return body };
+    let mut out = String::new();
+    for payload in markers
+        .prelude
+        .iter()
+        .chain(std::iter::once(&markers.opener))
+    {
+        out.push_str(&carrier_line(payload));
+        out.push('\n');
+    }
+    out.push_str(&body);
+    out.push_str(&carrier_line(&markers.closer));
+    out.push('\n');
+
+    out
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -365,7 +439,10 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         }
         BlockNode::BlockQuote(quote) => {
             let outer = ctx.previous_list.take();
+            let quoted_host = ctx.in_block_quote;
+            ctx.in_block_quote = true;
             let lines = render_blocks(&quote.children, ctx, depth + 1);
+            ctx.in_block_quote = quoted_host;
             ctx.previous_list = outer;
             let body = trim_block_output(&lines).to_string();
             let quoted = body
@@ -439,15 +516,17 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             {
                 ctx.previous_list = None;
             }
-            let body = render_blocks(&admonition.children, ctx, depth + 1);
+            let markers = carrier_markers(node, ctx);
+            let body = carried_children(&admonition.children, markers.as_ref(), ctx, depth + 1);
             // The LABEL goes on first so the TITLE ends up above it, which is the
             // order the source writes them (`::: tip "Pro Tip" [Build]`) and the
             // order the HTML renderer emits (carve#352, corpus 42-admonitions-4).
             let body = prepend_label(body, admonition.label.as_deref());
-            match title {
+            let body = match title {
                 Some(t) if !t.is_empty() => format!("{t}\n\n{body}"),
                 _ => body,
-            }
+            };
+            carried(markers.as_ref(), body)
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Directive(d) => {
@@ -464,19 +543,22 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             {
                 ctx.previous_list = None;
             }
-            let body = render_blocks(&d.children, ctx, depth + 1);
+            let markers = carrier_markers(node, ctx);
+            let body = carried_children(&d.children, markers.as_ref(), ctx, depth + 1);
             let body = prepend_label(body, d.label.as_deref());
-            match title {
+            let body = match title {
                 Some(t) if !t.is_empty() => format!("{t}\n\n{body}"),
                 _ => body,
-            }
+            };
+            carried(markers.as_ref(), body)
         }
         BlockNode::Div(div) => {
             if div.label.as_deref().is_some_and(|l| !l.is_empty()) {
                 ctx.previous_list = None;
             }
-            let body = render_blocks(&div.children, ctx, depth + 1);
-            prepend_label(body, div.label.as_deref())
+            let markers = carrier_markers(node, ctx);
+            let body = carried_children(&div.children, markers.as_ref(), ctx, depth + 1);
+            carried(markers.as_ref(), prepend_label(body, div.label.as_deref()))
         }
         BlockNode::Section(section) => render_blocks(&section.children, ctx, depth + 1),
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, depth + 1),
@@ -1321,6 +1403,10 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         crate::render_depth::record("markdown");
         return String::new();
     }
+    let markers = carrier_markers(&BlockNode::FigureGroup(node.clone()), ctx);
+    if markers.is_some() {
+        ctx.carrier_depth += 1;
+    }
     let mut out = String::new();
     for child in &node.children {
         match child {
@@ -1337,6 +1423,13 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
             other => out.push_str(&render_block(other, ctx, depth)),
         }
     }
+    if markers.is_some() {
+        ctx.carrier_depth -= 1;
+    }
+    out = carried(markers.as_ref(), out);
+    // The group's own caption sits OUTSIDE the container in Carve too - the slot
+    // hangs on the closing fence - so its fallback follows the closer and is NOT
+    // restored by the round trip (markup-carve/carve#2851).
     if let Some(caption) = &node.caption {
         let caption = pad_outside_on_its_own_line(
             render_block_inlines(caption, ctx),

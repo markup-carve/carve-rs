@@ -1679,6 +1679,9 @@ mod djot_word_attributes;
 
 #[path = "../a_djot_attribute_word_keeps_every_escaped_character.rs"]
 mod a_djot_attribute_word_keeps_every_escaped_character;
+
+#[path = "../an_element_less_container_is_carried_in_a_comment.rs"]
+mod an_element_less_container_is_carried_in_a_comment;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
 

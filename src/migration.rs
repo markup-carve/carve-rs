@@ -209,6 +209,7 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
                 code: match loss.kind {
                     MarkdownLossKind::Unspellable => "structure-unspellable",
                     MarkdownLossKind::RawSpanWhitespaceTrimmed => "raw-span-whitespace-trimmed",
+                    MarkdownLossKind::CarrierMarkersDamaged => "carrier-markers-damaged",
                 }
                 .to_owned(),
                 message: loss.message,
@@ -217,9 +218,15 @@ pub fn try_migrate_markdown(source: &str) -> Result<MigrationResult, crate::Rend
                 // run inside it does not (markup-carve/carve#2804).
                 fidelity: match loss.kind {
                     MarkdownLossKind::Unspellable => MigrationFidelity::Dropped,
-                    MarkdownLossKind::RawSpanWhitespaceTrimmed => MigrationFidelity::Degraded,
+                    MarkdownLossKind::RawSpanWhitespaceTrimmed
+                    | MarkdownLossKind::CarrierMarkersDamaged => MigrationFidelity::Degraded,
                 },
-                confidence: MigrationConfidence::Exact,
+                // A damaged set is a FALLBACK reading: the markers came through
+                // as the raw HTML they are and no container was guessed.
+                confidence: match loss.kind {
+                    MarkdownLossKind::CarrierMarkersDamaged => MigrationConfidence::Fallback,
+                    _ => MigrationConfidence::Exact,
+                },
                 path: loss.line.map(|line| format!("line:{line}")),
             }
         }));
