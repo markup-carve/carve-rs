@@ -14,10 +14,12 @@ struct Pair {
 }
 
 fn kind_bit(kind: u8) -> u8 {
-    if kind == b'_' {
-        1
-    } else {
-        2
+    match kind {
+        b'_' => 1,
+        b'*' => 2,
+        b'~' => 4,
+        b'^' => 8,
+        _ => unreachable!(),
     }
 }
 fn clear(openers: &mut [Vec<(usize, usize, bool)>; 8], from: usize) {
@@ -57,11 +59,34 @@ fn process(
     source: &str,
     mask: &str,
     convert_plain: impl Fn(&str) -> String,
-    paired: Option<&mut HashMap<usize, usize>>,
+    mut paired: Option<&mut HashMap<usize, usize>>,
     losses: &mut Vec<usize>,
 ) -> String {
     let bytes = source.as_bytes();
     let mut mask = mask.as_bytes().to_vec();
+    let cells: HashSet<_> = if source.contains('|') {
+        let cell_mask = super::mask_djot_forms_with_options(
+            source,
+            false,
+            false,
+            None,
+            &[],
+            super::OpaqueOptions {
+                destinations: false,
+                autolinks: false,
+                attribute_values: false,
+                ..super::OpaqueOptions::default()
+            },
+        );
+        super::djot_inline_boundaries(source, &cell_mask)
+            .into_iter()
+            .filter(|&at| {
+                bytes.get(at) == Some(&b'|') && cell_mask.as_bytes().get(at) == Some(&b'|')
+            })
+            .collect()
+    } else {
+        HashSet::new()
+    };
     let code_mask = super::mask_code_and_destinations(source);
     let mut attributes = HashMap::new();
     let mut empty_block_attributes = HashSet::new();
@@ -182,6 +207,7 @@ fn process(
     }
     let mut valid_braces = HashSet::new();
     let mut valid_brace_closers = HashSet::new();
+    let mut brace_ends = HashMap::new();
     let mut literal_dashes = HashSet::new();
     let mut pending_braces: HashMap<u8, Vec<usize>> = HashMap::new();
     let mut brace_line_start = 0;
@@ -189,6 +215,9 @@ fn process(
     let raw_attribute = cached_regex!(r"^\{=[^\s{}`]+\}").unwrap();
     let mut at = 0;
     while at < bytes.len() {
+        if cells.contains(&at) {
+            pending_braces.clear();
+        }
         if bytes[at] == b'\n' {
             if source[brace_line_start..at]
                 .trim_matches([' ', '\t', '>'])
@@ -207,7 +236,7 @@ fn process(
             if bytes[at] == b'{'
                 && bytes
                     .get(at + 1)
-                    .is_some_and(|byte| b"+-=^~".contains(byte))
+                    .is_some_and(|byte| b"+-=^~_*".contains(byte))
             {
                 pending_braces.entry(bytes[at + 1]).or_default().push(at);
             } else if bytes[at] == b'}' && at > 0 && last_escaped != Some(at - 1) {
@@ -218,6 +247,18 @@ fn process(
                     if at > start + 2 {
                         valid_braces.insert(start);
                         valid_brace_closers.insert(at - 1);
+                        brace_ends.insert(start, at - 1);
+                        if let Some(paired) = paired
+                            .as_deref_mut()
+                            .filter(|_| b"+-=".contains(&bytes[start + 1]))
+                        {
+                            paired.insert(start + 1, at + 1);
+                        }
+                        for stack in pending_braces.values_mut() {
+                            while stack.last().is_some_and(|at| *at > start) {
+                                stack.pop();
+                            }
+                        }
                     }
                 } else if bytes[at - 1] == b'-' {
                     let mut first = at - 1;
@@ -255,6 +296,11 @@ fn process(
     let mut thematic_line = false;
     let mut i = 0;
     while i < bytes.len() {
+        if cells.contains(&i) {
+            clear(&mut openers, 0);
+            brackets.clear();
+            braces.clear();
+        }
         if i == line_start {
             let end = source[i..]
                 .find('\n')
@@ -315,12 +361,17 @@ fn process(
             i += 1;
             continue;
         }
-        if ch == b'{' && valid_braces.contains(&i) {
+        if ch == b'{'
+            && valid_braces.contains(&i)
+            && !bytes.get(i + 1).is_some_and(|ch| b"_*".contains(ch))
+        {
             braces.push(i);
             i += 1;
             continue;
         }
         if ch == b'}'
+            && i > 0
+            && !super::is_escaped(bytes, i - 1)
             && braces
                 .last()
                 .is_some_and(|at| bytes[i - 1] == bytes[at + 1])
@@ -342,7 +393,7 @@ fn process(
             i += 1;
             continue;
         }
-        if ch != b'_' && ch != b'*' && !(paired.is_some() && b"~^".contains(&ch)) {
+        if ch != b'_' && ch != b'*' && !b"~^".contains(&ch) {
             i += 1;
             continue;
         }
@@ -385,11 +436,17 @@ fn process(
         if let Some((start, end, forced)) = openers[key].last().copied().filter(|opener| {
             can_close
                 && opener.1 < i
-                && braces.last().map_or(true, |at| {
-                    opener.0 > *at || (paired.is_some() && opener.2 && opener.0 == *at)
-                })
+                && (!opener.2 || braces.last().map_or(true, |at| opener.0 >= *at))
         }) {
             clear(&mut openers, start);
+            while braces.last().is_some_and(|at| *at > start) {
+                let at = braces.pop().unwrap();
+                valid_braces.remove(&at);
+                valid_brace_closers.remove(&brace_ends[&at]);
+                if let Some(paired) = paired.as_deref_mut() {
+                    paired.remove(&(at + 1));
+                }
+            }
             pairs.push(Pair {
                 start,
                 open_end: end,
@@ -400,6 +457,9 @@ fn process(
                 children: Vec::new(),
                 kinds: kind_bit(ch),
             });
+            if forced_close && braces.last() == Some(&start) {
+                braces.pop();
+            }
             i += if forced_close { 2 } else { 1 };
         } else if can_open {
             let key = marker + usize::from(forced_open) * 4;
@@ -466,10 +526,7 @@ fn process(
             literal_brackets.insert(end);
         }
     }
-    let mut literal_prefix = "\0DJOTLITERAL\0".to_string();
-    while source.contains(&literal_prefix) {
-        literal_prefix.push('\0');
-    }
+    let literal_prefix = super::djot_placeholder_prefix(source, "\0DJOTLITERAL\0");
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] == b'\\' {
@@ -624,9 +681,7 @@ impl Renderer<'_> {
                 continue;
             }
             if self.mask[i] == ch
-                && ((b"~^".contains(&ch)
-                    && bytes.get(i + 1) == Some(&b'}')
-                    && !self.valid_brace_closers.contains(&i))
+                && (b"~^".contains(&ch)
                     || (b"_*".contains(&ch) && !self.structural.contains(&i))
                     || self.literal_brackets.contains(&i))
             {
@@ -670,10 +725,16 @@ impl Renderer<'_> {
             &pair.children,
             if scope { bit } else { outer | bit },
         );
-        let delimiter = if pair.kind == b'_' { '/' } else { '*' };
+        let delimiter = match pair.kind {
+            b'_' => '/',
+            b'~' => ',',
+            b'^' => '^',
+            _ => '*',
+        };
         let bytes = self.source.as_bytes();
         let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
-        let forced = pair.forced
+        let forced = b"~^".contains(&pair.kind)
+            || pair.forced
             || scope
             || content.starts_with('\0')
             || content.ends_with('\0')

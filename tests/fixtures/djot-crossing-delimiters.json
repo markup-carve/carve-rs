@@ -1,0 +1,692 @@
+[
+  {
+    "name": "cross-=-+-end",
+    "source": "{=a {+b=} c+}",
+    "html": "<p><mark>a {+b</mark> c+}</p>"
+  },
+  {
+    "name": "cross-=-+-continued",
+    "source": "{=a {+b=} c+} d+",
+    "html": "<p><mark>a {+b</mark> c+} d+</p>"
+  },
+  {
+    "name": "cross-=---end",
+    "source": "{=a {-b=} c-}",
+    "html": "<p><mark>a {-b</mark> c-}</p>"
+  },
+  {
+    "name": "cross-=---continued",
+    "source": "{=a {-b=} c-} d-",
+    "html": "<p><mark>a {-b</mark> c-} d-</p>"
+  },
+  {
+    "name": "cross-=-~-end",
+    "source": "{=a {~b=} c~}",
+    "html": "<p><mark>a {~b</mark> c~}</p>"
+  },
+  {
+    "name": "cross-=-~-continued",
+    "source": "{=a {~b=} c~} d~",
+    "html": "<p><mark>a {~b</mark> c~} d~</p>"
+  },
+  {
+    "name": "cross-=-^-end",
+    "source": "{=a {^b=} c^}",
+    "html": "<p><mark>a {^b</mark> c^}</p>"
+  },
+  {
+    "name": "cross-=-^-continued",
+    "source": "{=a {^b=} c^} d^",
+    "html": "<p><mark>a {^b</mark> c^} d^</p>"
+  },
+  {
+    "name": "cross-=-*-end",
+    "source": "{=a {*b=} c*}",
+    "html": "<p><mark>a {*b</mark> c*}</p>"
+  },
+  {
+    "name": "cross-=-*-continued",
+    "source": "{=a {*b=} c*} d*",
+    "html": "<p><mark>a {*b</mark> c*} d*</p>"
+  },
+  {
+    "name": "cross-=-_-end",
+    "source": "{=a {_b=} c_}",
+    "html": "<p><mark>a {_b</mark> c_}</p>"
+  },
+  {
+    "name": "cross-=-_-continued",
+    "source": "{=a {_b=} c_} d_",
+    "html": "<p><mark>a {_b</mark> c_} d_</p>"
+  },
+  {
+    "name": "cross-+-=-end",
+    "source": "{+a {=b+} c=}",
+    "html": "<p><ins>a {=b</ins> c=}</p>"
+  },
+  {
+    "name": "cross-+-=-continued",
+    "source": "{+a {=b+} c=} d=",
+    "html": "<p><ins>a {=b</ins> c=} d=</p>"
+  },
+  {
+    "name": "cross-+---end",
+    "source": "{+a {-b+} c-}",
+    "html": "<p><ins>a {-b</ins> c-}</p>"
+  },
+  {
+    "name": "cross-+---continued",
+    "source": "{+a {-b+} c-} d-",
+    "html": "<p><ins>a {-b</ins> c-} d-</p>"
+  },
+  {
+    "name": "cross-+-~-end",
+    "source": "{+a {~b+} c~}",
+    "html": "<p><ins>a {~b</ins> c~}</p>"
+  },
+  {
+    "name": "cross-+-~-continued",
+    "source": "{+a {~b+} c~} d~",
+    "html": "<p><ins>a {~b</ins> c~} d~</p>"
+  },
+  {
+    "name": "cross-+-^-end",
+    "source": "{+a {^b+} c^}",
+    "html": "<p><ins>a {^b</ins> c^}</p>"
+  },
+  {
+    "name": "cross-+-^-continued",
+    "source": "{+a {^b+} c^} d^",
+    "html": "<p><ins>a {^b</ins> c^} d^</p>"
+  },
+  {
+    "name": "cross-+-*-end",
+    "source": "{+a {*b+} c*}",
+    "html": "<p><ins>a {*b</ins> c*}</p>"
+  },
+  {
+    "name": "cross-+-*-continued",
+    "source": "{+a {*b+} c*} d*",
+    "html": "<p><ins>a {*b</ins> c*} d*</p>"
+  },
+  {
+    "name": "cross-+-_-end",
+    "source": "{+a {_b+} c_}",
+    "html": "<p><ins>a {_b</ins> c_}</p>"
+  },
+  {
+    "name": "cross-+-_-continued",
+    "source": "{+a {_b+} c_} d_",
+    "html": "<p><ins>a {_b</ins> c_} d_</p>"
+  },
+  {
+    "name": "cross---=-end",
+    "source": "{-a {=b-} c=}",
+    "html": "<p><del>a {=b</del> c=}</p>"
+  },
+  {
+    "name": "cross---=-continued",
+    "source": "{-a {=b-} c=} d=",
+    "html": "<p><del>a {=b</del> c=} d=</p>"
+  },
+  {
+    "name": "cross---+-end",
+    "source": "{-a {+b-} c+}",
+    "html": "<p><del>a {+b</del> c+}</p>"
+  },
+  {
+    "name": "cross---+-continued",
+    "source": "{-a {+b-} c+} d+",
+    "html": "<p><del>a {+b</del> c+} d+</p>"
+  },
+  {
+    "name": "cross---~-end",
+    "source": "{-a {~b-} c~}",
+    "html": "<p><del>a {~b</del> c~}</p>"
+  },
+  {
+    "name": "cross---~-continued",
+    "source": "{-a {~b-} c~} d~",
+    "html": "<p><del>a {~b</del> c~} d~</p>"
+  },
+  {
+    "name": "cross---^-end",
+    "source": "{-a {^b-} c^}",
+    "html": "<p><del>a {^b</del> c^}</p>"
+  },
+  {
+    "name": "cross---^-continued",
+    "source": "{-a {^b-} c^} d^",
+    "html": "<p><del>a {^b</del> c^} d^</p>"
+  },
+  {
+    "name": "cross---*-end",
+    "source": "{-a {*b-} c*}",
+    "html": "<p><del>a {*b</del> c*}</p>"
+  },
+  {
+    "name": "cross---*-continued",
+    "source": "{-a {*b-} c*} d*",
+    "html": "<p><del>a {*b</del> c*} d*</p>"
+  },
+  {
+    "name": "cross---_-end",
+    "source": "{-a {_b-} c_}",
+    "html": "<p><del>a {_b</del> c_}</p>"
+  },
+  {
+    "name": "cross---_-continued",
+    "source": "{-a {_b-} c_} d_",
+    "html": "<p><del>a {_b</del> c_} d_</p>"
+  },
+  {
+    "name": "cross-~-=-end",
+    "source": "{~a {=b~} c=}",
+    "html": "<p><sub>a {=b</sub> c=}</p>"
+  },
+  {
+    "name": "cross-~-=-continued",
+    "source": "{~a {=b~} c=} d=",
+    "html": "<p><sub>a {=b</sub> c=} d=</p>"
+  },
+  {
+    "name": "cross-~-+-end",
+    "source": "{~a {+b~} c+}",
+    "html": "<p><sub>a {+b</sub> c+}</p>"
+  },
+  {
+    "name": "cross-~-+-continued",
+    "source": "{~a {+b~} c+} d+",
+    "html": "<p><sub>a {+b</sub> c+} d+</p>"
+  },
+  {
+    "name": "cross-~---end",
+    "source": "{~a {-b~} c-}",
+    "html": "<p><sub>a {-b</sub> c-}</p>"
+  },
+  {
+    "name": "cross-~---continued",
+    "source": "{~a {-b~} c-} d-",
+    "html": "<p><sub>a {-b</sub> c-} d-</p>"
+  },
+  {
+    "name": "cross-~-^-end",
+    "source": "{~a {^b~} c^}",
+    "html": "<p><sub>a {^b</sub> c^}</p>"
+  },
+  {
+    "name": "cross-~-^-continued",
+    "source": "{~a {^b~} c^} d^",
+    "html": "<p><sub>a {^b</sub> c^} d^</p>"
+  },
+  {
+    "name": "cross-~-*-end",
+    "source": "{~a {*b~} c*}",
+    "html": "<p><sub>a {*b</sub> c*}</p>"
+  },
+  {
+    "name": "cross-~-*-continued",
+    "source": "{~a {*b~} c*} d*",
+    "html": "<p><sub>a {*b</sub> c*} d*</p>"
+  },
+  {
+    "name": "cross-~-_-end",
+    "source": "{~a {_b~} c_}",
+    "html": "<p><sub>a {_b</sub> c_}</p>"
+  },
+  {
+    "name": "cross-~-_-continued",
+    "source": "{~a {_b~} c_} d_",
+    "html": "<p><sub>a {_b</sub> c_} d_</p>"
+  },
+  {
+    "name": "cross-^-=-end",
+    "source": "{^a {=b^} c=}",
+    "html": "<p><sup>a {=b</sup> c=}</p>"
+  },
+  {
+    "name": "cross-^-=-continued",
+    "source": "{^a {=b^} c=} d=",
+    "html": "<p><sup>a {=b</sup> c=} d=</p>"
+  },
+  {
+    "name": "cross-^-+-end",
+    "source": "{^a {+b^} c+}",
+    "html": "<p><sup>a {+b</sup> c+}</p>"
+  },
+  {
+    "name": "cross-^-+-continued",
+    "source": "{^a {+b^} c+} d+",
+    "html": "<p><sup>a {+b</sup> c+} d+</p>"
+  },
+  {
+    "name": "cross-^---end",
+    "source": "{^a {-b^} c-}",
+    "html": "<p><sup>a {-b</sup> c-}</p>"
+  },
+  {
+    "name": "cross-^---continued",
+    "source": "{^a {-b^} c-} d-",
+    "html": "<p><sup>a {-b</sup> c-} d-</p>"
+  },
+  {
+    "name": "cross-^-~-end",
+    "source": "{^a {~b^} c~}",
+    "html": "<p><sup>a {~b</sup> c~}</p>"
+  },
+  {
+    "name": "cross-^-~-continued",
+    "source": "{^a {~b^} c~} d~",
+    "html": "<p><sup>a {~b</sup> c~} d~</p>"
+  },
+  {
+    "name": "cross-^-*-end",
+    "source": "{^a {*b^} c*}",
+    "html": "<p><sup>a {*b</sup> c*}</p>"
+  },
+  {
+    "name": "cross-^-*-continued",
+    "source": "{^a {*b^} c*} d*",
+    "html": "<p><sup>a {*b</sup> c*} d*</p>"
+  },
+  {
+    "name": "cross-^-_-end",
+    "source": "{^a {_b^} c_}",
+    "html": "<p><sup>a {_b</sup> c_}</p>"
+  },
+  {
+    "name": "cross-^-_-continued",
+    "source": "{^a {_b^} c_} d_",
+    "html": "<p><sup>a {_b</sup> c_} d_</p>"
+  },
+  {
+    "name": "cross-*-=-end",
+    "source": "{*a {=b*} c=}",
+    "html": "<p><strong>a {=b</strong> c=}</p>"
+  },
+  {
+    "name": "cross-*-=-continued",
+    "source": "{*a {=b*} c=} d=",
+    "html": "<p><strong>a {=b</strong> c=} d=</p>"
+  },
+  {
+    "name": "cross-*-+-end",
+    "source": "{*a {+b*} c+}",
+    "html": "<p><strong>a {+b</strong> c+}</p>"
+  },
+  {
+    "name": "cross-*-+-continued",
+    "source": "{*a {+b*} c+} d+",
+    "html": "<p><strong>a {+b</strong> c+} d+</p>"
+  },
+  {
+    "name": "cross-*---end",
+    "source": "{*a {-b*} c-}",
+    "html": "<p><strong>a {-b</strong> c-}</p>"
+  },
+  {
+    "name": "cross-*---continued",
+    "source": "{*a {-b*} c-} d-",
+    "html": "<p><strong>a {-b</strong> c-} d-</p>"
+  },
+  {
+    "name": "cross-*-~-end",
+    "source": "{*a {~b*} c~}",
+    "html": "<p><strong>a {~b</strong> c~}</p>"
+  },
+  {
+    "name": "cross-*-~-continued",
+    "source": "{*a {~b*} c~} d~",
+    "html": "<p><strong>a {~b</strong> c~} d~</p>"
+  },
+  {
+    "name": "cross-*-^-end",
+    "source": "{*a {^b*} c^}",
+    "html": "<p><strong>a {^b</strong> c^}</p>"
+  },
+  {
+    "name": "cross-*-^-continued",
+    "source": "{*a {^b*} c^} d^",
+    "html": "<p><strong>a {^b</strong> c^} d^</p>"
+  },
+  {
+    "name": "cross-*-_-end",
+    "source": "{*a {_b*} c_}",
+    "html": "<p><strong>a {_b</strong> c_}</p>"
+  },
+  {
+    "name": "cross-*-_-continued",
+    "source": "{*a {_b*} c_} d_",
+    "html": "<p><strong>a {_b</strong> c_} d_</p>"
+  },
+  {
+    "name": "cross-_-=-end",
+    "source": "{_a {=b_} c=}",
+    "html": "<p><em>a {=b</em> c=}</p>"
+  },
+  {
+    "name": "cross-_-=-continued",
+    "source": "{_a {=b_} c=} d=",
+    "html": "<p><em>a {=b</em> c=} d=</p>"
+  },
+  {
+    "name": "cross-_-+-end",
+    "source": "{_a {+b_} c+}",
+    "html": "<p><em>a {+b</em> c+}</p>"
+  },
+  {
+    "name": "cross-_-+-continued",
+    "source": "{_a {+b_} c+} d+",
+    "html": "<p><em>a {+b</em> c+} d+</p>"
+  },
+  {
+    "name": "cross-_---end",
+    "source": "{_a {-b_} c-}",
+    "html": "<p><em>a {-b</em> c-}</p>"
+  },
+  {
+    "name": "cross-_---continued",
+    "source": "{_a {-b_} c-} d-",
+    "html": "<p><em>a {-b</em> c-} d-</p>"
+  },
+  {
+    "name": "cross-_-~-end",
+    "source": "{_a {~b_} c~}",
+    "html": "<p><em>a {~b</em> c~}</p>"
+  },
+  {
+    "name": "cross-_-~-continued",
+    "source": "{_a {~b_} c~} d~",
+    "html": "<p><em>a {~b</em> c~} d~</p>"
+  },
+  {
+    "name": "cross-_-^-end",
+    "source": "{_a {^b_} c^}",
+    "html": "<p><em>a {^b</em> c^}</p>"
+  },
+  {
+    "name": "cross-_-^-continued",
+    "source": "{_a {^b_} c^} d^",
+    "html": "<p><em>a {^b</em> c^} d^</p>"
+  },
+  {
+    "name": "cross-_-*-end",
+    "source": "{_a {*b_} c*}",
+    "html": "<p><em>a {*b</em> c*}</p>"
+  },
+  {
+    "name": "cross-_-*-continued",
+    "source": "{_a {*b_} c*} d*",
+    "html": "<p><em>a {*b</em> c*} d*</p>"
+  },
+  {
+    "name": "nested-control-=-+",
+    "source": "{=a {+b+} c=}",
+    "html": "<p><mark>a <ins>b</ins> c</mark></p>"
+  },
+  {
+    "name": "nested-control-=--",
+    "source": "{=a {-b-} c=}",
+    "html": "<p><mark>a <del>b</del> c</mark></p>"
+  },
+  {
+    "name": "nested-control-=-~",
+    "source": "{=a {~b~} c=}",
+    "html": "<p><mark>a <sub>b</sub> c</mark></p>"
+  },
+  {
+    "name": "nested-control-=-^",
+    "source": "{=a {^b^} c=}",
+    "html": "<p><mark>a <sup>b</sup> c</mark></p>"
+  },
+  {
+    "name": "nested-control-=-*",
+    "source": "{=a {*b*} c=}",
+    "html": "<p><mark>a <strong>b</strong> c</mark></p>"
+  },
+  {
+    "name": "nested-control-=-_",
+    "source": "{=a {_b_} c=}",
+    "html": "<p><mark>a <em>b</em> c</mark></p>"
+  },
+  {
+    "name": "nested-control-+-=",
+    "source": "{+a {=b=} c+}",
+    "html": "<p><ins>a <mark>b</mark> c</ins></p>"
+  },
+  {
+    "name": "nested-control-+--",
+    "source": "{+a {-b-} c+}",
+    "html": "<p><ins>a <del>b</del> c</ins></p>"
+  },
+  {
+    "name": "nested-control-+-~",
+    "source": "{+a {~b~} c+}",
+    "html": "<p><ins>a <sub>b</sub> c</ins></p>"
+  },
+  {
+    "name": "nested-control-+-^",
+    "source": "{+a {^b^} c+}",
+    "html": "<p><ins>a <sup>b</sup> c</ins></p>"
+  },
+  {
+    "name": "nested-control-+-*",
+    "source": "{+a {*b*} c+}",
+    "html": "<p><ins>a <strong>b</strong> c</ins></p>"
+  },
+  {
+    "name": "nested-control-+-_",
+    "source": "{+a {_b_} c+}",
+    "html": "<p><ins>a <em>b</em> c</ins></p>"
+  },
+  {
+    "name": "nested-control---=",
+    "source": "{-a {=b=} c-}",
+    "html": "<p><del>a <mark>b</mark> c</del></p>"
+  },
+  {
+    "name": "nested-control---+",
+    "source": "{-a {+b+} c-}",
+    "html": "<p><del>a <ins>b</ins> c</del></p>"
+  },
+  {
+    "name": "nested-control---~",
+    "source": "{-a {~b~} c-}",
+    "html": "<p><del>a <sub>b</sub> c</del></p>"
+  },
+  {
+    "name": "nested-control---^",
+    "source": "{-a {^b^} c-}",
+    "html": "<p><del>a <sup>b</sup> c</del></p>"
+  },
+  {
+    "name": "nested-control---*",
+    "source": "{-a {*b*} c-}",
+    "html": "<p><del>a <strong>b</strong> c</del></p>"
+  },
+  {
+    "name": "nested-control---_",
+    "source": "{-a {_b_} c-}",
+    "html": "<p><del>a <em>b</em> c</del></p>"
+  },
+  {
+    "name": "nested-control-~-=",
+    "source": "{~a {=b=} c~}",
+    "html": "<p><sub>a <mark>b</mark> c</sub></p>"
+  },
+  {
+    "name": "nested-control-~-+",
+    "source": "{~a {+b+} c~}",
+    "html": "<p><sub>a <ins>b</ins> c</sub></p>"
+  },
+  {
+    "name": "nested-control-~--",
+    "source": "{~a {-b-} c~}",
+    "html": "<p><sub>a <del>b</del> c</sub></p>"
+  },
+  {
+    "name": "nested-control-~-^",
+    "source": "{~a {^b^} c~}",
+    "html": "<p><sub>a <sup>b</sup> c</sub></p>"
+  },
+  {
+    "name": "nested-control-~-*",
+    "source": "{~a {*b*} c~}",
+    "html": "<p><sub>a <strong>b</strong> c</sub></p>"
+  },
+  {
+    "name": "nested-control-~-_",
+    "source": "{~a {_b_} c~}",
+    "html": "<p><sub>a <em>b</em> c</sub></p>"
+  },
+  {
+    "name": "nested-control-^-=",
+    "source": "{^a {=b=} c^}",
+    "html": "<p><sup>a <mark>b</mark> c</sup></p>"
+  },
+  {
+    "name": "nested-control-^-+",
+    "source": "{^a {+b+} c^}",
+    "html": "<p><sup>a <ins>b</ins> c</sup></p>"
+  },
+  {
+    "name": "nested-control-^--",
+    "source": "{^a {-b-} c^}",
+    "html": "<p><sup>a <del>b</del> c</sup></p>"
+  },
+  {
+    "name": "nested-control-^-~",
+    "source": "{^a {~b~} c^}",
+    "html": "<p><sup>a <sub>b</sub> c</sup></p>"
+  },
+  {
+    "name": "nested-control-^-*",
+    "source": "{^a {*b*} c^}",
+    "html": "<p><sup>a <strong>b</strong> c</sup></p>"
+  },
+  {
+    "name": "nested-control-^-_",
+    "source": "{^a {_b_} c^}",
+    "html": "<p><sup>a <em>b</em> c</sup></p>"
+  },
+  {
+    "name": "nested-control-*-=",
+    "source": "{*a {=b=} c*}",
+    "html": "<p><strong>a <mark>b</mark> c</strong></p>"
+  },
+  {
+    "name": "nested-control-*-+",
+    "source": "{*a {+b+} c*}",
+    "html": "<p><strong>a <ins>b</ins> c</strong></p>"
+  },
+  {
+    "name": "nested-control-*--",
+    "source": "{*a {-b-} c*}",
+    "html": "<p><strong>a <del>b</del> c</strong></p>"
+  },
+  {
+    "name": "nested-control-*-~",
+    "source": "{*a {~b~} c*}",
+    "html": "<p><strong>a <sub>b</sub> c</strong></p>"
+  },
+  {
+    "name": "nested-control-*-^",
+    "source": "{*a {^b^} c*}",
+    "html": "<p><strong>a <sup>b</sup> c</strong></p>"
+  },
+  {
+    "name": "nested-control-*-_",
+    "source": "{*a {_b_} c*}",
+    "html": "<p><strong>a <em>b</em> c</strong></p>"
+  },
+  {
+    "name": "nested-control-_-=",
+    "source": "{_a {=b=} c_}",
+    "html": "<p><em>a <mark>b</mark> c</em></p>"
+  },
+  {
+    "name": "nested-control-_-+",
+    "source": "{_a {+b+} c_}",
+    "html": "<p><em>a <ins>b</ins> c</em></p>"
+  },
+  {
+    "name": "nested-control-_--",
+    "source": "{_a {-b-} c_}",
+    "html": "<p><em>a <del>b</del> c</em></p>"
+  },
+  {
+    "name": "nested-control-_-~",
+    "source": "{_a {~b~} c_}",
+    "html": "<p><em>a <sub>b</sub> c</em></p>"
+  },
+  {
+    "name": "nested-control-_-^",
+    "source": "{_a {^b^} c_}",
+    "html": "<p><em>a <sup>b</sup> c</em></p>"
+  },
+  {
+    "name": "nested-control-_-*",
+    "source": "{_a {*b*} c_}",
+    "html": "<p><em>a <strong>b</strong> c</em></p>"
+  },
+  {
+    "name": "code",
+    "source": "`{=a {~b=} c~}`",
+    "html": "<p><code>{=a {~b=} c~}</code></p>"
+  },
+  {
+    "name": "fence",
+    "source": "```\n{=a {~b=} c~}\n```",
+    "html": "<pre><code>{=a {~b=} c~}\n</code></pre>"
+  },
+  {
+    "name": "escaped-open",
+    "source": "\\{=a {~b=} c~}",
+    "html": "<p>{=a <sub>b=} c</sub></p>"
+  },
+  {
+    "name": "escaped-close",
+    "source": "{=a {~b\\=} c~}",
+    "html": "<p>{=a <sub>b=} c</sub></p>"
+  },
+  {
+    "name": "later-bare",
+    "source": "{*a {=b*} c=} _d_",
+    "html": "<p><strong>a {=b</strong> c=} <em>d</em></p>"
+  },
+  {
+    "name": "table",
+    "source": "| {=a {~b=} c~} | ok |",
+    "html": "<table><tr><td><mark>a {~b</mark> c~}</td><td>ok</td></tr></table>"
+  },
+  {
+    "name": "review-0",
+    "source": "_a {*b_ c*}",
+    "html": "<p><em>a {*b</em> c*}</p>"
+  },
+  {
+    "name": "review-1",
+    "source": "*a {_b* c_}",
+    "html": "<p><strong>a {_b</strong> c_}</p>"
+  },
+  {
+    "name": "review-2",
+    "source": "*a {*b* c*}",
+    "html": "<p><strong>a {*b</strong> c*}</p>"
+  },
+  {
+    "name": "review-3",
+    "source": "_a {*b_ c*} d_",
+    "html": "<p><em>a {*b</em> c*} d_</p>"
+  },
+  {
+    "name": "review-4",
+    "source": "{*a\\*} b*}",
+    "html": "<p><strong>a*} b</strong></p>"
+  },
+  {
+    "name": "review-5",
+    "source": "{_a\\_} b_}",
+    "html": "<p><em>a_} b</em></p>"
+  }
+]

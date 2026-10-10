@@ -1,0 +1,482 @@
+[
+  {
+    "name": "bare-outer-*-*",
+    "source": "*a {*b* c*}",
+    "html": "<p><strong>a {*b</strong> c*}</p>"
+  },
+  {
+    "name": "forced-outer-*-*",
+    "source": "{*a *b*} c*",
+    "html": "<p><strong>a *b</strong> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-*",
+    "source": "*a {*b* c*}{.c}",
+    "html": "<p><strong>a {*b</strong><span class=\"c\">c*}</span></p>"
+  },
+  {
+    "name": "bare-outer-*-_",
+    "source": "*a {_b* c_}",
+    "html": "<p><strong>a {_b</strong> c_}</p>"
+  },
+  {
+    "name": "forced-outer-*-_",
+    "source": "{_a *b_} c*",
+    "html": "<p><em>a *b</em> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-_",
+    "source": "*a {_b* c_}{.c}",
+    "html": "<p><strong>a {_b</strong><span class=\"c\">c_}</span></p>"
+  },
+  {
+    "name": "bare-outer-*-~",
+    "source": "*a {~b* c~}",
+    "html": "<p><strong>a {~b</strong> c~}</p>"
+  },
+  {
+    "name": "forced-outer-*-~",
+    "source": "{~a *b~} c*",
+    "html": "<p><sub>a *b</sub> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-~",
+    "source": "*a {~b* c~}{.c}",
+    "html": "<p><strong>a {~b</strong><span class=\"c\">c~}</span></p>"
+  },
+  {
+    "name": "bare-outer-*-^",
+    "source": "*a {^b* c^}",
+    "html": "<p><strong>a {^b</strong> c^}</p>"
+  },
+  {
+    "name": "forced-outer-*-^",
+    "source": "{^a *b^} c*",
+    "html": "<p><sup>a *b</sup> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-^",
+    "source": "*a {^b* c^}{.c}",
+    "html": "<p><strong>a {^b</strong><span class=\"c\">c^}</span></p>"
+  },
+  {
+    "name": "bare-outer-*-=",
+    "source": "*a {=b* c=}",
+    "html": "<p><strong>a {=b</strong> c=}</p>"
+  },
+  {
+    "name": "forced-outer-*-=",
+    "source": "{=a *b=} c*",
+    "html": "<p><mark>a *b</mark> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-=",
+    "source": "*a {=b* c=}{.c}",
+    "html": "<p><strong>a {=b</strong><span class=\"c\">c=}</span></p>"
+  },
+  {
+    "name": "bare-outer-*-+",
+    "source": "*a {+b* c+}",
+    "html": "<p><strong>a {+b</strong> c+}</p>"
+  },
+  {
+    "name": "forced-outer-*-+",
+    "source": "{+a *b+} c*",
+    "html": "<p><ins>a *b</ins> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*-+",
+    "source": "*a {+b* c+}{.c}",
+    "html": "<p><strong>a {+b</strong><span class=\"c\">c+}</span></p>"
+  },
+  {
+    "name": "bare-outer-*--",
+    "source": "*a {-b* c-}",
+    "html": "<p><strong>a {-b</strong> c-}</p>"
+  },
+  {
+    "name": "forced-outer-*--",
+    "source": "{-a *b-} c*",
+    "html": "<p><del>a *b</del> c*</p>"
+  },
+  {
+    "name": "bare-outer-attrs-*--",
+    "source": "*a {-b* c-}{.c}",
+    "html": "<p><strong>a {-b</strong><span class=\"c\">c-}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-*",
+    "source": "_a {*b_ c*}",
+    "html": "<p><em>a {*b</em> c*}</p>"
+  },
+  {
+    "name": "forced-outer-_-*",
+    "source": "{*a _b*} c_",
+    "html": "<p><strong>a _b</strong> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-*",
+    "source": "_a {*b_ c*}{.c}",
+    "html": "<p><em>a {*b</em><span class=\"c\">c*}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-_",
+    "source": "_a {_b_ c_}",
+    "html": "<p><em>a {_b</em> c_}</p>"
+  },
+  {
+    "name": "forced-outer-_-_",
+    "source": "{_a _b_} c_",
+    "html": "<p><em>a _b</em> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-_",
+    "source": "_a {_b_ c_}{.c}",
+    "html": "<p><em>a {_b</em><span class=\"c\">c_}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-~",
+    "source": "_a {~b_ c~}",
+    "html": "<p><em>a {~b</em> c~}</p>"
+  },
+  {
+    "name": "forced-outer-_-~",
+    "source": "{~a _b~} c_",
+    "html": "<p><sub>a _b</sub> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-~",
+    "source": "_a {~b_ c~}{.c}",
+    "html": "<p><em>a {~b</em><span class=\"c\">c~}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-^",
+    "source": "_a {^b_ c^}",
+    "html": "<p><em>a {^b</em> c^}</p>"
+  },
+  {
+    "name": "forced-outer-_-^",
+    "source": "{^a _b^} c_",
+    "html": "<p><sup>a _b</sup> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-^",
+    "source": "_a {^b_ c^}{.c}",
+    "html": "<p><em>a {^b</em><span class=\"c\">c^}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-=",
+    "source": "_a {=b_ c=}",
+    "html": "<p><em>a {=b</em> c=}</p>"
+  },
+  {
+    "name": "forced-outer-_-=",
+    "source": "{=a _b=} c_",
+    "html": "<p><mark>a _b</mark> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-=",
+    "source": "_a {=b_ c=}{.c}",
+    "html": "<p><em>a {=b</em><span class=\"c\">c=}</span></p>"
+  },
+  {
+    "name": "bare-outer-_-+",
+    "source": "_a {+b_ c+}",
+    "html": "<p><em>a {+b</em> c+}</p>"
+  },
+  {
+    "name": "forced-outer-_-+",
+    "source": "{+a _b+} c_",
+    "html": "<p><ins>a _b</ins> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_-+",
+    "source": "_a {+b_ c+}{.c}",
+    "html": "<p><em>a {+b</em><span class=\"c\">c+}</span></p>"
+  },
+  {
+    "name": "bare-outer-_--",
+    "source": "_a {-b_ c-}",
+    "html": "<p><em>a {-b</em> c-}</p>"
+  },
+  {
+    "name": "forced-outer-_--",
+    "source": "{-a _b-} c_",
+    "html": "<p><del>a _b</del> c_</p>"
+  },
+  {
+    "name": "bare-outer-attrs-_--",
+    "source": "_a {-b_ c-}{.c}",
+    "html": "<p><em>a {-b</em><span class=\"c\">c-}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-*",
+    "source": "~a {*b~ c*}",
+    "html": "<p><sub>a {*b</sub> c*}</p>"
+  },
+  {
+    "name": "forced-outer-~-*",
+    "source": "{*a ~b*} c~",
+    "html": "<p><strong>a ~b</strong> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-*",
+    "source": "~a {*b~ c*}{.c}",
+    "html": "<p><sub>a {*b</sub><span class=\"c\">c*}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-_",
+    "source": "~a {_b~ c_}",
+    "html": "<p><sub>a {_b</sub> c_}</p>"
+  },
+  {
+    "name": "forced-outer-~-_",
+    "source": "{_a ~b_} c~",
+    "html": "<p><em>a ~b</em> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-_",
+    "source": "~a {_b~ c_}{.c}",
+    "html": "<p><sub>a {_b</sub><span class=\"c\">c_}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-~",
+    "source": "~a {~b~ c~}",
+    "html": "<p><sub>a {~b</sub> c~}</p>"
+  },
+  {
+    "name": "forced-outer-~-~",
+    "source": "{~a ~b~} c~",
+    "html": "<p><sub>a ~b</sub> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-~",
+    "source": "~a {~b~ c~}{.c}",
+    "html": "<p><sub>a {~b</sub><span class=\"c\">c~}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-^",
+    "source": "~a {^b~ c^}",
+    "html": "<p><sub>a {^b</sub> c^}</p>"
+  },
+  {
+    "name": "forced-outer-~-^",
+    "source": "{^a ~b^} c~",
+    "html": "<p><sup>a ~b</sup> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-^",
+    "source": "~a {^b~ c^}{.c}",
+    "html": "<p><sub>a {^b</sub><span class=\"c\">c^}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-=",
+    "source": "~a {=b~ c=}",
+    "html": "<p><sub>a {=b</sub> c=}</p>"
+  },
+  {
+    "name": "forced-outer-~-=",
+    "source": "{=a ~b=} c~",
+    "html": "<p><mark>a ~b</mark> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-=",
+    "source": "~a {=b~ c=}{.c}",
+    "html": "<p><sub>a {=b</sub><span class=\"c\">c=}</span></p>"
+  },
+  {
+    "name": "bare-outer-~-+",
+    "source": "~a {+b~ c+}",
+    "html": "<p><sub>a {+b</sub> c+}</p>"
+  },
+  {
+    "name": "forced-outer-~-+",
+    "source": "{+a ~b+} c~",
+    "html": "<p><ins>a ~b</ins> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~-+",
+    "source": "~a {+b~ c+}{.c}",
+    "html": "<p><sub>a {+b</sub><span class=\"c\">c+}</span></p>"
+  },
+  {
+    "name": "bare-outer-~--",
+    "source": "~a {-b~ c-}",
+    "html": "<p><sub>a {-b</sub> c-}</p>"
+  },
+  {
+    "name": "forced-outer-~--",
+    "source": "{-a ~b-} c~",
+    "html": "<p><del>a ~b</del> c~</p>"
+  },
+  {
+    "name": "bare-outer-attrs-~--",
+    "source": "~a {-b~ c-}{.c}",
+    "html": "<p><sub>a {-b</sub><span class=\"c\">c-}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-*",
+    "source": "^a {*b^ c*}",
+    "html": "<p><sup>a {*b</sup> c*}</p>"
+  },
+  {
+    "name": "forced-outer-^-*",
+    "source": "{*a ^b*} c^",
+    "html": "<p><strong>a ^b</strong> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-*",
+    "source": "^a {*b^ c*}{.c}",
+    "html": "<p><sup>a {*b</sup><span class=\"c\">c*}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-_",
+    "source": "^a {_b^ c_}",
+    "html": "<p><sup>a {_b</sup> c_}</p>"
+  },
+  {
+    "name": "forced-outer-^-_",
+    "source": "{_a ^b_} c^",
+    "html": "<p><em>a ^b</em> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-_",
+    "source": "^a {_b^ c_}{.c}",
+    "html": "<p><sup>a {_b</sup><span class=\"c\">c_}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-~",
+    "source": "^a {~b^ c~}",
+    "html": "<p><sup>a {~b</sup> c~}</p>"
+  },
+  {
+    "name": "forced-outer-^-~",
+    "source": "{~a ^b~} c^",
+    "html": "<p><sub>a ^b</sub> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-~",
+    "source": "^a {~b^ c~}{.c}",
+    "html": "<p><sup>a {~b</sup><span class=\"c\">c~}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-^",
+    "source": "^a {^b^ c^}",
+    "html": "<p><sup>a {^b</sup> c^}</p>"
+  },
+  {
+    "name": "forced-outer-^-^",
+    "source": "{^a ^b^} c^",
+    "html": "<p><sup>a ^b</sup> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-^",
+    "source": "^a {^b^ c^}{.c}",
+    "html": "<p><sup>a {^b</sup><span class=\"c\">c^}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-=",
+    "source": "^a {=b^ c=}",
+    "html": "<p><sup>a {=b</sup> c=}</p>"
+  },
+  {
+    "name": "forced-outer-^-=",
+    "source": "{=a ^b=} c^",
+    "html": "<p><mark>a ^b</mark> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-=",
+    "source": "^a {=b^ c=}{.c}",
+    "html": "<p><sup>a {=b</sup><span class=\"c\">c=}</span></p>"
+  },
+  {
+    "name": "bare-outer-^-+",
+    "source": "^a {+b^ c+}",
+    "html": "<p><sup>a {+b</sup> c+}</p>"
+  },
+  {
+    "name": "forced-outer-^-+",
+    "source": "{+a ^b+} c^",
+    "html": "<p><ins>a ^b</ins> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^-+",
+    "source": "^a {+b^ c+}{.c}",
+    "html": "<p><sup>a {+b</sup><span class=\"c\">c+}</span></p>"
+  },
+  {
+    "name": "bare-outer-^--",
+    "source": "^a {-b^ c-}",
+    "html": "<p><sup>a {-b</sup> c-}</p>"
+  },
+  {
+    "name": "forced-outer-^--",
+    "source": "{-a ^b-} c^",
+    "html": "<p><del>a ^b</del> c^</p>"
+  },
+  {
+    "name": "bare-outer-attrs-^--",
+    "source": "^a {-b^ c-}{.c}",
+    "html": "<p><sup>a {-b</sup><span class=\"c\">c-}</span></p>"
+  },
+  {
+    "name": "tilde-review-0",
+    "source": "```\n\\~~~ x\n```",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-1",
+    "source": "~~~\n\\~~~ x\n~~~",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-2",
+    "source": "~~~~\n\\~~~ x\n~~~~",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-3",
+    "source": "para\n~~~x~\nmore",
+    "html": "<p>para\n~~<sub>x</sub>\nmore</p>"
+  },
+  {
+    "name": "tilde-review-4",
+    "source": "~~~x~ y",
+    "html": "<p>~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-5",
+    "source": "> a\n> ~~~x~ y",
+    "html": "<blockquote><p>a\n~~<sub>x</sub> y</p></blockquote>"
+  },
+  {
+    "name": "tilde-review-6",
+    "source": "\\~~~x~ y",
+    "html": "<p>~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-7",
+    "source": "a\n\\~~~x~ y",
+    "html": "<p>a\n~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-8",
+    "source": "a\n~~~x\ny~",
+    "html": "<p>a\n~~<sub>x\ny</sub></p>"
+  },
+  {
+    "name": "tilde-review-9",
+    "source": "a\n\\~~~\nx\n\\~~~",
+    "html": "<p>a\n~<sub>~\nx\n~</sub>~</p>"
+  },
+  {
+    "name": "tilde-review-10",
+    "source": "a\n~~~\nx~",
+    "html": "<p>a\n~<sub>~\nx</sub></p>"
+  },
+  {
+    "name": "tilde-review-11",
+    "source": "a\n~~~x\nx\n~~~",
+    "html": "<p>a\n~~~x\nx\n~~~</p>"
+  }
+]

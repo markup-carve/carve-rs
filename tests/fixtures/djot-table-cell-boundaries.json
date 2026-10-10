@@ -1,0 +1,277 @@
+[
+  {
+    "name": "| `a|b` |",
+    "source": "| `a|b` |",
+    "html": "<table><tr><td><code>a|b</code></td></tr></table>"
+  },
+  {
+    "name": "| a~b \\| c~d |",
+    "source": "| a~b \\| c~d |",
+    "html": "<table><tr><td>a<sub>b | c</sub>d</td></tr></table>"
+  },
+  {
+    "name": "a~b | c~d",
+    "source": "a~b | c~d",
+    "html": "<p>a<sub>b | c</sub>d</p>"
+  },
+  {
+    "name": "| x \\\\|",
+    "source": "| x \\\\|",
+    "html": "<p>| x \\|</p>"
+  },
+  {
+    "name": "| a_ b | c_ d |",
+    "source": "| a_ b | c_ d |",
+    "html": "<table><tr><td>a_ b</td><td>c_ d</td></tr></table>"
+  },
+  {
+    "name": "| a~b | c~d |",
+    "source": "| a~b | c~d |",
+    "html": "<table><tr><td>a~b</td><td>c~d</td></tr></table>"
+  },
+  {
+    "name": "| a{~b | c~}d |",
+    "source": "| a{~b | c~}d |",
+    "html": "<table><tr><td>a{~b</td><td>c~}d</td></tr></table>"
+  },
+  {
+    "name": "| a^b | c^d |",
+    "source": "| a^b | c^d |",
+    "html": "<table><tr><td>a^b</td><td>c^d</td></tr></table>"
+  },
+  {
+    "name": "| a{^b | c^}d |",
+    "source": "| a{^b | c^}d |",
+    "html": "<table><tr><td>a{^b</td><td>c^}d</td></tr></table>"
+  },
+  {
+    "name": "| a_b | c_d |",
+    "source": "| a_b | c_d |",
+    "html": "<table><tr><td>a_b</td><td>c_d</td></tr></table>"
+  },
+  {
+    "name": "| a{_b | c_}d |",
+    "source": "| a{_b | c_}d |",
+    "html": "<table><tr><td>a{_b</td><td>c_}d</td></tr></table>"
+  },
+  {
+    "name": "| a*b | c*d |",
+    "source": "| a*b | c*d |",
+    "html": "<table><tr><td>a*b</td><td>c*d</td></tr></table>"
+  },
+  {
+    "name": "| a{*b | c*}d |",
+    "source": "| a{*b | c*}d |",
+    "html": "<table><tr><td>a{*b</td><td>c*}d</td></tr></table>"
+  },
+  {
+    "name": "> | a~b | c~d |",
+    "source": "> | a~b | c~d |",
+    "html": "<blockquote><table><tr><td>a~b</td><td>c~d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a{~b | c~}d |",
+    "source": "> | a{~b | c~}d |",
+    "html": "<blockquote><table><tr><td>a{~b</td><td>c~}d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a^b | c^d |",
+    "source": "> | a^b | c^d |",
+    "html": "<blockquote><table><tr><td>a^b</td><td>c^d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a{^b | c^}d |",
+    "source": "> | a{^b | c^}d |",
+    "html": "<blockquote><table><tr><td>a{^b</td><td>c^}d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a_b | c_d |",
+    "source": "> | a_b | c_d |",
+    "html": "<blockquote><table><tr><td>a_b</td><td>c_d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a{_b | c_}d |",
+    "source": "> | a{_b | c_}d |",
+    "html": "<blockquote><table><tr><td>a{_b</td><td>c_}d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a*b | c*d |",
+    "source": "> | a*b | c*d |",
+    "html": "<blockquote><table><tr><td>a*b</td><td>c*d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "> | a{*b | c*}d |",
+    "source": "> | a{*b | c*}d |",
+    "html": "<blockquote><table><tr><td>a{*b</td><td>c*}d</td></tr></table></blockquote>"
+  },
+  {
+    "name": "- | a~b | c~d |",
+    "source": "- | a~b | c~d |",
+    "html": "<ul><li><table><tr><td>a~b</td><td>c~d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a{~b | c~}d |",
+    "source": "- | a{~b | c~}d |",
+    "html": "<ul><li><table><tr><td>a{~b</td><td>c~}d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a^b | c^d |",
+    "source": "- | a^b | c^d |",
+    "html": "<ul><li><table><tr><td>a^b</td><td>c^d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a{^b | c^}d |",
+    "source": "- | a{^b | c^}d |",
+    "html": "<ul><li><table><tr><td>a{^b</td><td>c^}d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a_b | c_d |",
+    "source": "- | a_b | c_d |",
+    "html": "<ul><li><table><tr><td>a_b</td><td>c_d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a{_b | c_}d |",
+    "source": "- | a{_b | c_}d |",
+    "html": "<ul><li><table><tr><td>a{_b</td><td>c_}d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a*b | c*d |",
+    "source": "- | a*b | c*d |",
+    "html": "<ul><li><table><tr><td>a*b</td><td>c*d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "- | a{*b | c*}d |",
+    "source": "- | a{*b | c*}d |",
+    "html": "<ul><li><table><tr><td>a{*b</td><td>c*}d</td></tr></table></li></ul>"
+  },
+  {
+    "name": "> - | a~b | c~d |",
+    "source": "> - | a~b | c~d |",
+    "html": "<blockquote><ul><li><table><tr><td>a~b</td><td>c~d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a{~b | c~}d |",
+    "source": "> - | a{~b | c~}d |",
+    "html": "<blockquote><ul><li><table><tr><td>a{~b</td><td>c~}d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a^b | c^d |",
+    "source": "> - | a^b | c^d |",
+    "html": "<blockquote><ul><li><table><tr><td>a^b</td><td>c^d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a{^b | c^}d |",
+    "source": "> - | a{^b | c^}d |",
+    "html": "<blockquote><ul><li><table><tr><td>a{^b</td><td>c^}d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a_b | c_d |",
+    "source": "> - | a_b | c_d |",
+    "html": "<blockquote><ul><li><table><tr><td>a_b</td><td>c_d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a{_b | c_}d |",
+    "source": "> - | a{_b | c_}d |",
+    "html": "<blockquote><ul><li><table><tr><td>a{_b</td><td>c_}d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a*b | c*d |",
+    "source": "> - | a*b | c*d |",
+    "html": "<blockquote><ul><li><table><tr><td>a*b</td><td>c*d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | a{*b | c*}d |",
+    "source": "> - | a{*b | c*}d |",
+    "html": "<blockquote><ul><li><table><tr><td>a{*b</td><td>c*}d</td></tr></table></li></ul></blockquote>"
+  },
+  {
+    "name": "| ` |",
+    "source": "| ` |",
+    "html": "<p>| <code> |</code></p>"
+  },
+  {
+    "name": "| `` |",
+    "source": "| `` |",
+    "html": "<p>| <code> |</code></p>"
+  },
+  {
+    "name": "> | ` |",
+    "source": "> | ` |",
+    "html": "<blockquote><p>| <code> |</code></p></blockquote>"
+  },
+  {
+    "name": "> | `` |",
+    "source": "> | `` |",
+    "html": "<blockquote><p>| <code> |</code></p></blockquote>"
+  },
+  {
+    "name": "- | ` |",
+    "source": "- | ` |",
+    "html": "<ul><li>| <code> |</code></li></ul>"
+  },
+  {
+    "name": "- | `` |",
+    "source": "- | `` |",
+    "html": "<ul><li>| <code> |</code></li></ul>"
+  },
+  {
+    "name": "> - | ` |",
+    "source": "> - | ` |",
+    "html": "<blockquote><ul><li>| <code> |</code></li></ul></blockquote>"
+  },
+  {
+    "name": "> - | `` |",
+    "source": "> - | `` |",
+    "html": "<blockquote><ul><li>| <code> |</code></li></ul></blockquote>"
+  },
+  {
+    "name": "| a{~b | c |\n| d | e~}f |",
+    "source": "| a{~b | c |\n| d | e~}f |",
+    "html": "<table><tr><td>a{~b</td><td>c</td></tr><tr><td>d</td><td>e~}f</td></tr></table>"
+  },
+  {
+    "name": "| a~b | c |\n| d | e~f |",
+    "source": "| a~b | c |\n| d | e~f |",
+    "html": "<table><tr><td>a~b</td><td>c</td></tr><tr><td>d</td><td>e~f</td></tr></table>"
+  },
+  {
+    "name": "```\n\n| a~b | c~d |\n```",
+    "source": "```\n\n| a~b | c~d |\n```",
+    "html": "<pre><code>\n| a~b | c~d |\n</code></pre>"
+  },
+  {
+    "name": "table context control 1",
+    "source": "***\n| a | b |",
+    "html": "<hr><table><tr><td>a</td><td>b</td></tr></table>"
+  },
+  {
+    "name": "table context control 2",
+    "source": "> a\n| t |",
+    "html": "<blockquote><p>a</p></blockquote><table><tr><td>t</td></tr></table>"
+  },
+  {
+    "name": "table context control 3",
+    "source": "- a\n| t |",
+    "html": "<ul><li>a</li></ul><table><tr><td>t</td></tr></table>"
+  },
+  {
+    "name": "table context control 4",
+    "source": "| _a [b](x|y) c_ |",
+    "html": "<table><tr><td>_a [b](x</td><td>y) c_</td></tr></table>"
+  },
+  {
+    "name": "table context control 5",
+    "source": "| _a <x:y|z> c_ |",
+    "html": "<table><tr><td>_a &lt;x:y</td><td>z&gt; c_</td></tr></table>"
+  },
+  {
+    "name": "table context control 6",
+    "source": "| x \\\\|",
+    "html": "<p>| x \\|</p>"
+  },
+  {
+    "name": "table context control 7",
+    "source": "| _a | b_ |\r\n",
+    "html": "<table><tr><td>_a</td><td>b_</td></tr></table>"
+  }
+]

@@ -1781,8 +1781,31 @@ mod short_caption_conversion_reports;
 #[path = "../unused_continuation_fence_payload.rs"]
 mod unused_continuation_fence_payload;
 
+#[path = "../djot_crossing_delimiters.rs"]
+mod djot_crossing_delimiters;
 #[path = "../markdown_code_span_whitespace.rs"]
 mod markdown_code_span_whitespace;
 
+#[path = "../djot_literal_closer_attributes.rs"]
+mod djot_literal_closer_attributes;
+
+#[path = "../djot_escaped_brace_atoms.rs"]
+mod djot_escaped_brace_atoms;
+
+#[path = "../djot_destination_boundaries.rs"]
+mod djot_destination_boundaries;
+
+#[path = "../djot_placeholder_prefixes.rs"]
+mod djot_placeholder_prefixes;
+
+#[path = "../djot_bare_crossing.rs"]
+mod djot_bare_crossing;
+
+#[path = "../djot_table_cell_boundaries.rs"]
+mod djot_table_cell_boundaries;
+
 #[path = "../markdown_terminal_hard_break.rs"]
 mod markdown_terminal_hard_break;
+
+#[path = "../djot_unclosed_code.rs"]
+mod djot_unclosed_code;
