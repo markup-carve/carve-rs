@@ -294,6 +294,12 @@ fn process(
     let mut line_end = bytes.len();
     let mut structural_end = 0;
     let mut thematic_line = false;
+    // A Djot table caption (`^ text` under a table, blank line allowed) carries
+    // the same marker Carve uses, so its `^` must reach the output bare. Only a
+    // line in the table's own marker column and quote depth can hold one.
+    let mut table_column: Option<usize> = None;
+    let mut table_quote_depth: Option<usize> = None;
+    let mut caption_line = false;
     let mut i = 0;
     while i < bytes.len() {
         if cells.contains(&i) {
@@ -307,6 +313,18 @@ fn process(
                 .map_or(bytes.len(), |offset| i + offset);
             line_end = end;
             structural_end = i + structural_prefix_end(&source[i..end]);
+            let prefix = &source[i..structural_end];
+            let quote_depth = prefix.bytes().filter(|byte| *byte == b'>').count();
+            caption_line = table_column.is_some_and(|column| prefix.len() >= column)
+                && table_quote_depth == Some(quote_depth);
+            // A blank line leaves the table in scope, which is how a caption
+            // separated from its table by one keeps binding to it.
+            if !source[structural_end..end].trim().is_empty() {
+                let table_line = bytes.get(structural_end) == Some(&b'|')
+                    && mask.get(structural_end) == Some(&b'|');
+                table_column = table_line.then_some(prefix.len());
+                table_quote_depth = table_line.then_some(quote_depth);
+            }
             thematic_line = stars.is_match(&source[i..end]);
             let line = quoted_prefix.replace(&source[i..end], "");
             let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
@@ -394,6 +412,16 @@ fn process(
             continue;
         }
         if ch != b'_' && ch != b'*' && !b"~^".contains(&ch) {
+            i += 1;
+            continue;
+        }
+        if ch == b'^'
+            && caption_line
+            && i == structural_end
+            && (i == line_start || b" \t".contains(&bytes[i - 1]))
+            && bytes.get(i + 1).is_some_and(|byte| b" \t".contains(byte))
+        {
+            structural.insert(i);
             i += 1;
             continue;
         }
@@ -681,8 +709,7 @@ impl Renderer<'_> {
                 continue;
             }
             if self.mask[i] == ch
-                && (b"~^".contains(&ch)
-                    || (b"_*".contains(&ch) && !self.structural.contains(&i))
+                && (b"~^_*".contains(&ch) && !self.structural.contains(&i)
                     || self.literal_brackets.contains(&i))
             {
                 out.extend_from_slice(self.protect(&format!("\\{}", char::from(ch))).as_bytes());
@@ -694,6 +721,12 @@ impl Renderer<'_> {
             }
             out.push(ch);
             i += 1;
+            // Carve opens a caption on `^ `, never on `^\t`, so a tab-separated
+            // Djot caption needs the space the marker requires.
+            if ch == b'^' && self.structural.contains(&(i - 1)) && bytes.get(i) == Some(&b'\t') {
+                out.push(b' ');
+                i += 1;
+            }
         }
         String::from_utf8(out).expect("ASCII delimiter escaping preserves UTF-8")
     }
