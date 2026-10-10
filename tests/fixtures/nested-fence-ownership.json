@@ -32,12 +32,12 @@
   {
     "name": "- [x]  depth 2",
     "source": "- [x] a\n  - [x] a\n    ```\n    p\nx\n    ```\n",
-    "html": "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul>\n      <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+    "html": "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul class=\"task-list\">\n      <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <pre><code>p\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
   },
   {
     "name": "- [x]  depth 4",
     "source": "- [x] a\n  - [x] a\n    - [x] a\n      - [x] a\n        ```\n        p\nx\n        ```\n",
-    "html": "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul>\n      <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <ul>\n          <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n            <ul>\n              <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
+    "html": "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    <ul class=\"task-list\">\n      <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n        <ul class=\"task-list\">\n          <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n            <ul class=\"task-list\">\n              <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n                <pre><code>p\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x\n<code></code></p>"
   },
   {
     "name": "-{.item}  depth 2",

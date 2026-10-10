@@ -24,10 +24,59 @@ fn the_value_is_escaped_like_any_other() {
 }
 
 #[test]
-fn the_two_states_the_box_tells_apart_carry_nothing() {
+fn an_open_item_and_a_plain_item_carry_nothing() {
     assert!(!to_html("- [ ] a\n").contains("data-task-state"));
-    assert!(!to_html("- [x] a\n").contains("data-task-state"));
     assert!(!to_html("- a\n").contains("data-task-state"));
+}
+
+/// carve#2887: a done item names its state so a stylesheet reaches it without
+/// `:has()`, and both spellings of the box write the one lowercase value.
+#[test]
+fn a_done_item_names_its_state_in_lowercase() {
+    for state in ['x', 'X'] {
+        let html = to_html(&format!("- [{state}] a\n"));
+        assert!(
+            html.contains("<li data-task-state=\"x\"><input type=\"checkbox\" checked"),
+            "{html}"
+        );
+    }
+    assert!(to_html("-{.c} [X] a\n").contains("<li data-task-state=\"x\" class=\"c\">"));
+}
+
+#[test]
+fn an_authored_copy_does_not_write_the_attribute_twice() {
+    let html = to_html("-{DATA-TASK-STATE=? .c} [x] a\n");
+    assert!(
+        html.contains("<li data-task-state=\"x\" class=\"c\">"),
+        "{html}"
+    );
+    let html = to_html("-{data-task-state=q} [-] a\n");
+    assert!(html.contains("<li data-task-state=\"-\">"), "{html}");
+}
+
+#[test]
+fn the_done_state_is_consumed_beside_a_checked_box() {
+    let imported = html_to_carve(
+        "<ul><li data-task-state=\"x\"><input type=\"checkbox\" checked disabled> a</li></ul>",
+        &HtmlImportOptions::default(),
+    )
+    .expect("imports");
+    assert_eq!(fmt(&imported.value), "- [x] a\n");
+    assert!(
+        imported.report.diagnostics.is_empty(),
+        "{:?}",
+        imported.report
+    );
+}
+
+#[test]
+fn an_uppercase_done_value_is_not_the_state_this_engine_writes() {
+    let imported = html_to_carve(
+        "<ul><li data-task-state=\"X\"><input type=\"checkbox\" checked disabled> a</li></ul>",
+        &HtmlImportOptions::default(),
+    )
+    .expect("imports");
+    assert_eq!(fmt(&imported.value), "-{data-task-state=X} [x] a\n");
 }
 
 #[test]

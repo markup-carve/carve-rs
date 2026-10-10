@@ -52,7 +52,7 @@ fn a_task_item_imports_as_a_task_item() {
     assert_eq!(carve, "- [x] a\n- [ ] b\n");
     assert_eq!(
         to_html(&carve),
-        "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a</li>\n  <li><input type=\"checkbox\" disabled aria-label=\"b\"> b</li>\n</ul>"
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a</li>\n  <li><input type=\"checkbox\" disabled aria-label=\"b\"> b</li>\n</ul>"
     );
 }
 
@@ -66,7 +66,7 @@ fn this_engines_own_rendered_task_list_survives_a_round_trip() {
     let rendered = to_html(source);
     assert_eq!(
         rendered,
-        "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a</li>\n  <li><input type=\"checkbox\" disabled aria-label=\"b\"> b</li>\n</ul>"
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a</li>\n  <li><input type=\"checkbox\" disabled aria-label=\"b\"> b</li>\n</ul>"
     );
     assert_eq!(migrated(&rendered), source);
 }

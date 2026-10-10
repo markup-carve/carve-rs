@@ -142,6 +142,25 @@ fn shape(html: &str, list_marker: Option<&str>) -> Vec<Shape> {
                 if generated_delimiter {
                     attributes.push(("data-delim".to_owned(), ")".to_owned()));
                 }
+                if list_marker.is_some() {
+                    let checkbox = |child: &Shape| matches!(child, Shape::Element(tag, attrs, _) if tag == "input" && attrs.iter().any(|(key, value)| key == "type" && value == "checkbox"));
+                    if tag == "li" && children.iter().any(checkbox) && children.iter().any(|child| matches!(child, Shape::Element(tag, attrs, _) if tag == "input" && attrs.iter().any(|(key, _)| key == "checked"))) {
+                        attributes.push(("data-task-state".to_owned(), "x".to_owned()));
+                    }
+                    let items: Vec<_> = children
+                        .iter()
+                        .filter_map(|child| match child {
+                            Shape::Element(tag, _, children) if tag == "li" => Some(children),
+                            _ => None,
+                        })
+                        .collect();
+                    if tag == "ul"
+                        && !items.is_empty()
+                        && items.iter().all(|children| children.iter().any(checkbox))
+                    {
+                        attributes.push(("class".to_owned(), "task-list".to_owned()));
+                    }
+                }
                 attributes.sort();
                 vec![Shape::Element(tag, attributes, children)]
             }

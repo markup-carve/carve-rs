@@ -41,7 +41,7 @@ fn the_checkbox_sits_on_the_li_opener_line_for_every_lead() {
         // (PART 9 section 16a), whose text differs per lead, and this test is
         // about which LINE the checkbox is written on.
         let expected = if state == 'x' {
-            "<li><input type=\"checkbox\" checked disabled"
+            "<li data-task-state=\"x\"><input type=\"checkbox\" checked disabled"
         } else {
             "<li><input type=\"checkbox\" disabled"
         };
@@ -83,11 +83,11 @@ fn only_the_content_moves_between_an_inline_and_a_block_lead() {
     // trailing space the checkbox carries included.
     assert_eq!(
         to_html("- [ ] a\n"),
-        "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"a\"> a</li>\n</ul>"
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"a\"> a</li>\n</ul>"
     );
     assert_eq!(
         to_html("- [ ] > q\n"),
-        "<ul>\n  <li><input type=\"checkbox\" disabled> \n    \
+        "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    \
          <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
@@ -98,11 +98,11 @@ fn corpus_363_renders_byte_for_byte() {
     assert_eq!(
         to_html("- [ ] > q\n- [x] # h\n- [ ] ---\n"),
         concat!(
-            "<ul>\n",
+            "<ul class=\"task-list\">\n",
             "  <li><input type=\"checkbox\" disabled> \n",
             "    <blockquote><p>q</p></blockquote>\n",
             "  </li>\n",
-            "  <li><input type=\"checkbox\" checked disabled> \n",
+            "  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled> \n",
             "    <h1 id=\"h\">h</h1>\n",
             "  </li>\n",
             "  <li><input type=\"checkbox\" disabled> \n",
