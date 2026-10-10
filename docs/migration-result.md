@@ -41,6 +41,13 @@ form resolved. Confidence follows the opener, `inferred` for a bare `---` and
 `structure-unspellable`. This deliberately fails closed at the worst-case
 outcome: byte differences are not evidence of semantic fidelity.
 
+Markdown reports `raw-code-fallback` with warning severity, degraded fidelity
+and exact confidence when an HTML code payload needs raw HTML to preserve its
+content or structure in Carve source. The HTML output keeps the code payload;
+targets and profiles that escape or omit raw HTML change its structure and
+content. A payload that can round-trip through a native Code node does not take
+this loss.
+
 Markdown reports `raw-span-whitespace-trimmed`, warning/degraded/exact, at the
 source line of every raw span whose content would end a content line in
 whitespace. CARVE-P2-025 drops a whitespace run at the end of every content

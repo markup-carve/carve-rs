@@ -81,6 +81,23 @@ fn native_code_controls_keep_structure_and_neighboring_text() {
         let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
         let mut codes = Vec::new();
         code_records(&dom.document, &[], &mut codes);
+        fn attributes(node: &Handle, found: &mut Vec<Value>) {
+            if let NodeData::Element { name, attrs, .. } = &node.data {
+                if matches!(name.local.as_ref(), "a" | "img") {
+                    let mut row = serde_json::Map::new();
+                    row.insert("tag".into(), name.local.to_string().into());
+                    for attr in attrs.borrow().iter() {
+                        if matches!(attr.name.local.as_ref(), "href" | "title" | "src" | "alt") {
+                            row.insert(attr.name.local.to_string(), attr.value.to_string().into());
+                        }
+                    }
+                    found.push(Value::Object(row));
+                }
+            }
+            for child in node.children.borrow().iter() {
+                attributes(child, found);
+            }
+        }
         fn roots(node: &Handle, found: &mut Vec<Value>) {
             if let NodeData::Element { name, .. } = &node.data {
                 if matches!(name.local.as_ref(), "p" | "h1" | "h2" | "td" | "th") {
@@ -93,9 +110,11 @@ fn native_code_controls_keep_structure_and_neighboring_text() {
         }
         let mut values = Vec::new();
         roots(&dom.document, &mut values);
+        let mut attrs = Vec::new();
+        attributes(&dom.document, &mut attrs);
         assert_eq!(
-            json!({"codes": codes, "roots": values}),
-            json!({"codes": case["codes"], "roots": case["roots"]}),
+            json!({"codes": codes, "roots": values, "attributes": attrs}),
+            json!({"codes": case["codes"], "roots": case["roots"], "attributes": case["attributes"]}),
             "{}\n{source}",
             case["markdown"]
         );
@@ -116,4 +135,12 @@ fn raw_code_fallback_is_reported_as_a_rendering_capability_change() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].fidelity, carve::MigrationFidelity::Degraded);
     assert_eq!(rows[0].confidence, carve::MigrationConfidence::Exact);
+}
+
+#[test]
+fn a_footnote_inside_html_code_keeps_its_definition() {
+    let source = carve::try_markdown_to_carve("<code>x[^1]</code>\n\n[^1]: note body\n").unwrap();
+    let html = carve::to_html(&source);
+    assert!(html.contains("note body"), "{source}\n{html}");
+    assert!(html.contains("doc-noteref"), "{source}\n{html}");
 }
