@@ -47,11 +47,29 @@ fn imported_code_payloads_keep_exact_text_and_containers() {
     let cases: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/markdown-html-code-payloads.json")).unwrap();
     for case in cases {
-        let source = carve::try_markdown_to_carve(case["markdown"].as_str().unwrap()).unwrap();
-        let html = carve::to_html(&source);
+        let result = carve::try_migrate_markdown(case["markdown"].as_str().unwrap()).unwrap();
+        let source = &result.value;
+        let html = carve::to_html(source);
         let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
         let mut records = Vec::new();
         code_records(&dom.document, &[], &mut records);
+        let value = case["value"].as_str().unwrap();
+        if !value.is_empty() && !value.contains(['\r', '\n']) {
+            assert!(!result
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "raw-code-fallback"));
+            let options = carve::Options {
+                allow_raw_html: false,
+                ..Default::default()
+            };
+            let html = carve::render_html_with_options(&carve::parse(source), &options).unwrap();
+            let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+            let mut safe_records = Vec::new();
+            code_records(&dom.document, &[], &mut safe_records);
+            assert_eq!(safe_records, records);
+        }
         assert_eq!(
             records,
             vec![json!({"value": case["value"], "ancestors": case["ancestors"], "elements": []})],
@@ -352,10 +370,13 @@ fn unrelated_native_code_survives_single_line_writer_contexts() {
 
 #[test]
 fn misnested_code_close_restores_prose_newlines() {
-    for markdown in ["<code>*a</code> b&#10;&#10;c*", "<code>*a</code> b&#13;c*"] {
+    for (markdown, expected) in [
+        ("<code>*a</code> b&#10;&#10;c*", " b  c"),
+        ("<code>*a</code> b&#13;c*", " b c"),
+    ] {
         let source = carve::try_markdown_to_carve(markdown).unwrap();
         assert!(
-            carve::to_html(&source).contains(" b  c") || carve::to_html(&source).contains(" b c"),
+            carve::to_html(&source).contains(expected),
             "{markdown}\n{source}\n{}",
             carve::to_html(&source)
         );

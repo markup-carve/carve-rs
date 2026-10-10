@@ -2330,5 +2330,57 @@
       }
     ],
     "nativeHtml": "<p>x <img src=\"u\" alt=\"&lt;b&gt;x&lt;/b&gt;\" /></p>\n"
+  },
+  {
+    "markdown": "[x](u<code>a</code>\n)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u%3Ccode%3Ea%3C/code%3E"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u%3Ccode%3Ea%3C/code%3E\">x</a></p>\n"
+  },
+  {
+    "markdown": "x ![i](u<code>a</code>\n)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x "
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "img",
+        "src": "u%3Ccode%3Ea%3C/code%3E",
+        "alt": "i"
+      }
+    ],
+    "nativeHtml": "<p>x <img src=\"u%3Ccode%3Ea%3C/code%3E\" alt=\"i\" /></p>\n"
+  },
+  {
+    "markdown": "[x](u\n)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u\">x</a></p>\n"
   }
 ]
