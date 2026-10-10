@@ -2,12 +2,16 @@
   {
     "name": "same-word-_",
     "source": "\\{a\\_b}{.c}",
-    "html": "<p>{a<span class=\"c\">_b}</span></p>"
+    "html": "<p>{a<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-_",
     "source": "\\{a x\\_b}{.c}",
-    "html": "<p>{a x<span class=\"c\">_b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-_",
@@ -17,17 +21,23 @@
   {
     "name": "adjacent-groups-_",
     "source": "\\{a\\_b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">_b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">_b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-*",
     "source": "\\{a\\*b}{.c}",
-    "html": "<p>{a<span class=\"c\">*b}</span></p>"
+    "html": "<p>{a<span class=\"c\">*b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a*b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-*",
     "source": "\\{a x\\*b}{.c}",
-    "html": "<p>{a x<span class=\"c\">*b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">*b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x*b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-*",
@@ -37,17 +47,23 @@
   {
     "name": "adjacent-groups-*",
     "source": "\\{a\\*b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">*b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">*b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a*b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-+",
     "source": "\\{a\\+b}{.c}",
-    "html": "<p>{a<span class=\"c\">+b}</span></p>"
+    "html": "<p>{a<span class=\"c\">+b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a+b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-+",
     "source": "\\{a x\\+b}{.c}",
-    "html": "<p>{a x<span class=\"c\">+b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">+b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x+b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-+",
@@ -57,17 +73,23 @@
   {
     "name": "adjacent-groups-+",
     "source": "\\{a\\+b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">+b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">+b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a+b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word--",
     "source": "\\{a\\-b}{.c}",
-    "html": "<p>{a<span class=\"c\">-b}</span></p>"
+    "html": "<p>{a<span class=\"c\">-b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a-b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space--",
     "source": "\\{a x\\-b}{.c}",
-    "html": "<p>{a x<span class=\"c\">-b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">-b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x-b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space--",
@@ -77,17 +99,23 @@
   {
     "name": "adjacent-groups--",
     "source": "\\{a\\-b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">-b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">-b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a-b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-=",
     "source": "\\{a\\=b}{.c}",
-    "html": "<p>{a<span class=\"c\">=b}</span></p>"
+    "html": "<p>{a<span class=\"c\">=b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a=b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-=",
     "source": "\\{a x\\=b}{.c}",
-    "html": "<p>{a x<span class=\"c\">=b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">=b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x=b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-=",
@@ -97,17 +125,23 @@
   {
     "name": "adjacent-groups-=",
     "source": "\\{a\\=b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">=b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">=b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a=b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-#",
     "source": "\\{a\\#b}{.c}",
-    "html": "<p>{a<span class=\"c\">#b}</span></p>"
+    "html": "<p>{a<span class=\"c\">#b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a#b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-#",
     "source": "\\{a x\\#b}{.c}",
-    "html": "<p>{a x<span class=\"c\">#b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">#b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x#b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-#",
@@ -117,17 +151,23 @@
   {
     "name": "adjacent-groups-#",
     "source": "\\{a\\#b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">#b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">#b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a#b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-\\",
     "source": "\\{a\\\\b}{.c}",
-    "html": "<p>{a<span class=\"c\">\\b}</span></p>"
+    "html": "<p>{a<span class=\"c\">\\b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a\\b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "after-space-\\",
     "source": "\\{a x\\\\b}{.c}",
-    "html": "<p>{a x<span class=\"c\">\\b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">\\b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x\\b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "before-space-\\",
@@ -137,7 +177,9 @@
   {
     "name": "adjacent-groups-\\",
     "source": "\\{a\\\\b}{.c}{#i}",
-    "html": "<p>{a<span class=\"c\" id=\"i\">\\b}</span></p>"
+    "html": "<p>{a<span class=\"c\" id=\"i\">\\b}</span></p>",
+    "carveHtml": "<p><span class=\"c\" id=\"i\">{a\\b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "same-word-q",
@@ -192,7 +234,9 @@
   {
     "name": "control-38",
     "source": "\\{a\\_b\\*c}{.c}",
-    "html": "<p>{a_b<span class=\"c\">*c}</span></p>"
+    "html": "<p>{a_b<span class=\"c\">*c}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a_b*c}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "control-39",
@@ -212,7 +256,9 @@
   {
     "name": "control-42",
     "source": "w\\{x}{.c}",
-    "html": "<p>w<span class=\"c\">{x}</span></p>"
+    "html": "<p>w<span class=\"c\">{x}</span></p>",
+    "carveHtml": "<p><span class=\"c\">w{x}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "control-43",
@@ -222,7 +268,9 @@
   {
     "name": "control-44",
     "source": "\\{a*bold*x}{.c}",
-    "html": "<p>{a<strong>bold</strong><span class=\"c\">x}</span></p>"
+    "html": "<p>{a<strong>bold</strong><span class=\"c\">x}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a<strong>bold</strong>x}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "unicode-nel-word",
@@ -232,7 +280,9 @@
   {
     "name": "unicode-nel-escape",
     "source": "\\{ax\\_b}{.c}",
-    "html": "<p>{ax<span class=\"c\">_b}</span></p>"
+    "html": "<p>{ax<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{ax_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "unicode-nbsp-word",
@@ -242,7 +292,9 @@
   {
     "name": "unicode-nbsp-escape",
     "source": "\\{a x\\_b}{.c}",
-    "html": "<p>{a x<span class=\"c\">_b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "unicode-figure-word",
@@ -252,7 +304,9 @@
   {
     "name": "unicode-figure-escape",
     "source": "\\{a x\\_b}{.c}",
-    "html": "<p>{a x<span class=\"c\">_b}</span></p>"
+    "html": "<p>{a x<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p>{a <span class=\"c\">x_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "unicode-bom-word",
@@ -262,7 +316,9 @@
   {
     "name": "unicode-bom-escape",
     "source": "\\{a﻿x\\_b}{.c}",
-    "html": "<p>{a﻿x<span class=\"c\">_b}</span></p>"
+    "html": "<p>{a﻿x<span class=\"c\">_b}</span></p>",
+    "carveHtml": "<p>{a﻿<span class=\"c\">x_b}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "review-image-alt",

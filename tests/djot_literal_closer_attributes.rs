@@ -5,6 +5,8 @@ struct Case {
     name: String,
     source: String,
     html: String,
+    #[serde(rename = "carveHtml")]
+    carve_html: Option<String>,
 }
 
 #[test]
@@ -19,7 +21,7 @@ fn literal_delimiter_boundaries() {
             .replace("</tbody>", "");
         assert_eq!(
             between_tags.replace_all(&html, "><"),
-            row.html,
+            row.carve_html.unwrap_or(row.html),
             "{}",
             row.name
         );

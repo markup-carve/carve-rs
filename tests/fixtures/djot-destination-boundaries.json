@@ -323,5 +323,95 @@
     "name": "reference-url-defined-note",
     "source": "[a][r]\n\n[r]: http://example.com/[^x]\n\n[^x]: note\n",
     "html": "<p><a href=\"http://example.com/[^x]\">a</a></p>"
+  },
+  {
+    "name": "review4-code-65",
+    "source": "[a](b`c) `d`",
+    "html": "<p>[a](b<code>c) </code>d<code></code></p>"
+  },
+  {
+    "name": "review4-code-66",
+    "source": "| [a](b`c`d) |",
+    "html": "<table><tr><td><a href=\"b%60c%60d\">a</a></td></tr></table>"
+  },
+  {
+    "name": "review4-code-67",
+    "source": "| [a](b`c|d`e) |",
+    "html": "<table><tr><td><a href=\"b%60c%7Cd%60e\">a</a></td></tr></table>"
+  },
+  {
+    "name": "cancel-68",
+    "source": "[t](u][r]z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><a href=\"v\">t](u</a>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-69",
+    "source": "[t](u]{.c}z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><span class=\"c\">t](u</span>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-70",
+    "source": "a][t](u][r]z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p>a]<a href=\"v\">t](u</a>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-71",
+    "source": "a][t](u]{.c}z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p>a]<span class=\"c\">t](u</span>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-72",
+    "source": "[^n][t](u][r]z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><a href=\"v\">t](u</a>z) after <sub>z</sub></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "cancel-73",
+    "source": "[^n][t](u]{.c}z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a><span class=\"c\">t](u</span>z) after <sub>z</sub></p><section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section>"
+  },
+  {
+    "name": "cancel-74",
+    "source": "[a][r][t](u][r]z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><a href=\"v\">a</a><a href=\"v\">t](u</a>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-75",
+    "source": "[a][r][t](u]{.c}z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><a href=\"v\">a</a><span class=\"c\">t](u</span>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-76",
+    "source": "[span]{.c}[t](u][r]z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><span class=\"c\">span</span><a href=\"v\">t](u</a>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-77",
+    "source": "[span]{.c}[t](u]{.c}z) after ~z~\n\n[^n]: note\n\n[r]: v",
+    "html": "<p><span class=\"c\">span</span><span class=\"c\">t](u</span>z) after <sub>z</sub></p>"
+  },
+  {
+    "name": "cancel-scope-78",
+    "source": "[a]((b](c~x~)",
+    "html": "<p><a href=\"c~x~\">a]((b</a></p>"
+  },
+  {
+    "name": "cancel-scope-79",
+    "source": "[a](b]{not valid})",
+    "html": "<p>[a](b]{not valid})</p>"
+  },
+  {
+    "name": "cancel-scope-80",
+    "source": "[a](b`c) `d`\n\nnext",
+    "html": "<p>[a](b<code>c) </code>d<code></code></p><p>next</p>"
+  },
+  {
+    "name": "cancel-scope-81",
+    "source": "> [a](b`c) `d`\n>\n> next",
+    "html": "<blockquote><p>[a](b<code>c) </code>d<code></code></p><p>next</p></blockquote>"
+  },
+  {
+    "name": "cancel-scope-82",
+    "source": "- [a](b`c) `d`\n\nnext",
+    "html": "<ul><li>[a](b<code>c) </code>d<code></code></li></ul><p>next</p>"
   }
 ]

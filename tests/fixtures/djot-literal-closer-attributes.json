@@ -17,12 +17,16 @@
   {
     "name": "=-escaped-delimiter",
     "source": "a b\\=}{.c}",
-    "html": "<p>a b<span class=\"c\">=}</span></p>"
+    "html": "<p>a b<span class=\"c\">=}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b=}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "=-escaped-brace",
     "source": "a b=\\}{.c}",
-    "html": "<p>a b=<span class=\"c\">}</span></p>"
+    "html": "<p>a b=<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b=}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "=-matched",
@@ -52,12 +56,16 @@
   {
     "name": "+-escaped-delimiter",
     "source": "a b\\+}{.c}",
-    "html": "<p>a b<span class=\"c\">+}</span></p>"
+    "html": "<p>a b<span class=\"c\">+}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b+}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "+-escaped-brace",
     "source": "a b+\\}{.c}",
-    "html": "<p>a b+<span class=\"c\">}</span></p>"
+    "html": "<p>a b+<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b+}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "+-matched",
@@ -87,12 +95,16 @@
   {
     "name": "--escaped-delimiter",
     "source": "a b\\-}{.c}",
-    "html": "<p>a b<span class=\"c\">-}</span></p>"
+    "html": "<p>a b<span class=\"c\">-}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b-}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "--escaped-brace",
     "source": "a b-\\}{.c}",
-    "html": "<p>a b-<span class=\"c\">}</span></p>"
+    "html": "<p>a b-<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b-}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "--matched",
@@ -122,12 +134,16 @@
   {
     "name": "~-escaped-delimiter",
     "source": "a b\\~}{.c}",
-    "html": "<p>a b<span class=\"c\">~}</span></p>"
+    "html": "<p>a b<span class=\"c\">~}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b~}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "~-escaped-brace",
     "source": "a b~\\}{.c}",
-    "html": "<p>a b~<span class=\"c\">}</span></p>"
+    "html": "<p>a b~<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b~}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "~-matched",
@@ -157,12 +173,16 @@
   {
     "name": "^-escaped-delimiter",
     "source": "a b\\^}{.c}",
-    "html": "<p>a b<span class=\"c\">^}</span></p>"
+    "html": "<p>a b<span class=\"c\">^}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b^}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "^-escaped-brace",
     "source": "a b^\\}{.c}",
-    "html": "<p>a b^<span class=\"c\">}</span></p>"
+    "html": "<p>a b^<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b^}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "^-matched",
@@ -192,12 +212,16 @@
   {
     "name": "*-escaped-delimiter",
     "source": "a b\\*}{.c}",
-    "html": "<p>a b<span class=\"c\">*}</span></p>"
+    "html": "<p>a b<span class=\"c\">*}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b*}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "*-escaped-brace",
     "source": "a b*\\}{.c}",
-    "html": "<p>a b*<span class=\"c\">}</span></p>"
+    "html": "<p>a b*<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b*}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "*-matched",
@@ -227,12 +251,16 @@
   {
     "name": "_-escaped-delimiter",
     "source": "a b\\_}{.c}",
-    "html": "<p>a b<span class=\"c\">_}</span></p>"
+    "html": "<p>a b<span class=\"c\">_}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b_}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "_-escaped-brace",
     "source": "a b_\\}{.c}",
-    "html": "<p>a b_<span class=\"c\">}</span></p>"
+    "html": "<p>a b_<span class=\"c\">}</span></p>",
+    "carveHtml": "<p>a <span class=\"c\">b_}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "_-matched",
@@ -507,37 +535,51 @@
   {
     "name": "escaped-atom-review-0",
     "source": "\\{a\\=}{.c}",
-    "html": "<p>{a<span class=\"c\">=}</span></p>"
+    "html": "<p>{a<span class=\"c\">=}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a=}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-1",
     "source": "\\{a\\+}{.c}",
-    "html": "<p>{a<span class=\"c\">+}</span></p>"
+    "html": "<p>{a<span class=\"c\">+}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a+}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-2",
     "source": "\\{a\\-}{.c}",
-    "html": "<p>{a<span class=\"c\">-}</span></p>"
+    "html": "<p>{a<span class=\"c\">-}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a-}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-3",
     "source": "\\{a\\~}{.c}",
-    "html": "<p>{a<span class=\"c\">~}</span></p>"
+    "html": "<p>{a<span class=\"c\">~}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a~}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-4",
     "source": "\\{a\\^}{.c}",
-    "html": "<p>{a<span class=\"c\">^}</span></p>"
+    "html": "<p>{a<span class=\"c\">^}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a^}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-5",
     "source": "\\{a\\*}{.c}",
-    "html": "<p>{a<span class=\"c\">*}</span></p>"
+    "html": "<p>{a<span class=\"c\">*}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a*}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-6",
     "source": "\\{a\\_}{.c}",
-    "html": "<p>{a<span class=\"c\">_}</span></p>"
+    "html": "<p>{a<span class=\"c\">_}</span></p>",
+    "carveHtml": "<p><span class=\"c\">{a_}</span></p>",
+    "policy": "escaped-word"
   },
   {
     "name": "escaped-atom-review-7",

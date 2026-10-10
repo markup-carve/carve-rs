@@ -5,6 +5,8 @@ struct Case {
     name: String,
     source: String,
     html: String,
+    #[serde(rename = "carveHtml")]
+    carve_html: Option<String>,
 }
 
 #[test]
@@ -22,7 +24,10 @@ fn literal_delimiter_boundaries() {
         assert_eq!(
             between_tags.replace_all(&html, "><"),
             image_attributes.replace_all(
-                &row.html.replace("&nbsp;", "\u{a0}"),
+                &row.carve_html
+                    .as_ref()
+                    .unwrap_or(&row.html)
+                    .replace("&nbsp;", "\u{a0}"),
                 r#"<img src="$2" alt="$1">"#
             ),
             "{}",

@@ -18,6 +18,8 @@ fn destination_boundaries() {
     for row in cases {
         let html = carve::to_html(&carve::djot_to_carve(&row.source))
             .trim()
+            .replace(" aria-label=\"Footnotes\"", "")
+            .replace(" aria-label=\"Back to reference\"", "")
             .replace("&nbsp;", "\u{a0}")
             .replace("<tbody>", "")
             .replace("</tbody>", "");

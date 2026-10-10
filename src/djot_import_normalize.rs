@@ -688,7 +688,9 @@ struct ReferenceUse<'a> {
 }
 
 fn reference_mask(source: &str) -> String {
-    let mut mask = mask_djot_inline(source, false).into_bytes();
+    let mut mask =
+        mask_djot_forms_with_options(source, false, true, None, &[], OpaqueOptions::default())
+            .into_bytes();
     let mut at = 0;
     while at < source.len() {
         if mask[at] == b'{' && !is_escaped(source.as_bytes(), at) {
