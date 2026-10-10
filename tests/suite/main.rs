@@ -1676,6 +1676,9 @@ mod an_empty_code_payload_renders_no_characters;
 mod an_empty_raw_payload_is_written_back_empty;
 #[path = "../djot_word_attributes.rs"]
 mod djot_word_attributes;
+
+#[path = "../a_djot_attribute_word_keeps_every_escaped_character.rs"]
+mod a_djot_attribute_word_keeps_every_escaped_character;
 #[path = "../markdown_fence_language.rs"]
 mod markdown_fence_language;
 

@@ -3262,7 +3262,7 @@
   {
     "name": "owner-review-8",
     "source": "w\\{x\\}{.d}",
-    "html": "<p>w{x<span class=\"d\">}</span></p>",
+    "html": "<p><span class=\"d\">w{x}</span></p>",
     "table": true
   },
   {
@@ -3424,7 +3424,7 @@
   {
     "name": "adjacent-text-10",
     "source": "a\\[^x]{.c}",
-    "html": "<p>a<span class=\"c\">[^x]</span></p>",
+    "html": "<p><span class=\"c\">a[^x]</span></p>",
     "table": true
   },
   {
@@ -3442,13 +3442,13 @@
   {
     "name": "adjacent-text-13",
     "source": "\\[^x\\]{.c}",
-    "html": "<p>[^x<span class=\"c\">]</span></p>",
+    "html": "<p><span class=\"c\">[^x]</span></p>",
     "table": true
   },
   {
     "name": "adjacent-text-14",
     "source": "w\\[^x\\]{.c}",
-    "html": "<p>w[^x<span class=\"c\">]</span></p>",
+    "html": "<p><span class=\"c\">w[^x]</span></p>",
     "table": true
   },
   {
