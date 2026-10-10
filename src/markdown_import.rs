@@ -110,7 +110,26 @@ fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
     })
 }
 
-/// Convert Markdown source to Carve source.
+fn fence_language(info: &str) -> Option<&str> {
+    info.trim_matches([' ', '\t'])
+        .split([' ', '\t'])
+        .next()
+        .filter(|word| {
+            !word.is_empty()
+                && word
+                    .bytes()
+                    .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
+        })
+}
+
+fn is_empty_destination(destination: &str) -> bool {
+    destination
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .is_empty()
+}
+
+/// Convert Markdown to Carve. Use [`try_markdown_to_carve`] to handle a writer
+/// refusal without a panic.
 ///
 /// GFM tables, strikethrough and task lists are enabled: they are what real
 /// Markdown documents carry, and Carve has a spelling for each.
@@ -122,14 +141,6 @@ fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
 /// `---` fence is a thematic break and the key line beneath it a setext
 /// heading, so `title: T` became an `<h2>`. Both were caught by the
 /// differential against carve-js, not by reasoning.
-fn is_empty_destination(destination: &str) -> bool {
-    destination
-        .trim_matches(|c: char| c.is_ascii_whitespace())
-        .is_empty()
-}
-
-/// Convert Markdown to Carve. Use [`try_markdown_to_carve`] to handle a writer
-/// refusal without a panic.
 ///
 /// # Panics
 ///
@@ -255,6 +266,15 @@ fn markdown_to_ast_with_losses(
     // The block is claimed here instead; the bare form stays on pulldown's own
     // metadata-block path, which is the one every other test covers.
     let claimed = leading.as_ref().filter(|block| block.typed);
+    let claimed_lines = claimed.map_or(0, |block| {
+        without_nuls
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .chars()
+            .filter(|ch| *ch == '\n')
+            .count()
+            - block.body.chars().filter(|ch| *ch == '\n').count()
+    });
     let without_nuls = match claimed {
         Some(block) => Cow::Owned(block.body.clone()),
         None => without_nuls,
@@ -302,7 +322,8 @@ fn markdown_to_ast_with_losses(
     let mut text_end = None;
     let mut parser = Parser::new_ext(&source, options).into_offset_iter();
     while let Some((mut event, range)) = parser.next() {
-        builder.current_line = line_starts.partition_point(|start| *start <= range.start);
+        builder.current_line =
+            claimed_lines + line_starts.partition_point(|start| *start <= range.start);
         if let Some((kept, rest)) = text_end.take().and_then(|end| {
             let (kept, rest) = stripped_line_end(&source, end)?;
             // An event starting inside the run already carries those characters.
@@ -315,6 +336,41 @@ fn markdown_to_ast_with_losses(
             if matches!(event, Event::HardBreak) && rest < 2 {
                 event = Event::SoftBreak;
             }
+        }
+        match &event {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
+                if is_empty_destination(dest_url)
+                    && !builder
+                        .frames
+                        .iter()
+                        .any(|frame| matches!(frame, Frame::Image { .. })) =>
+            {
+                let image = matches!(&event, Event::Start(Tag::Image { .. }));
+                builder.losses.push(MarkdownImportLoss {
+                    message: if image {
+                        "Dropped an image with an empty destination; retained its alt text and title."
+                    } else {
+                        "Dropped a link with an empty destination; retained its label and title."
+                    }.to_owned(),
+                    line: Some(builder.current_line),
+                    kind: MarkdownLossKind::Unspellable,
+                });
+            }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                let word = info
+                    .trim_matches([' ', '\t'])
+                    .split([' ', '\t'])
+                    .next()
+                    .unwrap_or("");
+                if !word.is_empty() && fence_language(info).is_none() {
+                    builder.losses.push(MarkdownImportLoss {
+                        message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
+                        line: Some(builder.current_line),
+                        kind: MarkdownLossKind::Unspellable,
+                    });
+                }
+            }
+            _ => {}
         }
         let empty_title = match &event {
             Event::Start(
@@ -1217,17 +1273,7 @@ impl Builder {
                     // Only the first word of the info string is the language;
                     // the rest is the author's metadata, which Carve's fence
                     // has no slot for.
-                    CodeBlockKind::Fenced(info) => info
-                        .trim_matches([' ', '\t'])
-                        .split([' ', '\t'])
-                        .next()
-                        .filter(|word| {
-                            !word.is_empty()
-                                && word
-                                    .bytes()
-                                    .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
-                        })
-                        .map(str::to_string),
+                    CodeBlockKind::Fenced(info) => fence_language(&info).map(str::to_string),
                     CodeBlockKind::Indented => None,
                 },
                 content: String::new(),
@@ -1861,6 +1907,7 @@ fn inline_text(node: &InlineNode) -> String {
         InlineNode::Code(code) => code.value.clone(),
         InlineNode::Emphasis(emphasis) => inline_run_text(&emphasis.children),
         InlineNode::Link(link) => inline_run_text(&link.children),
+        InlineNode::Span(span) => inline_run_text(&span.children),
         InlineNode::Image(image) => image.alt.clone(),
         _ => String::new(),
     }
