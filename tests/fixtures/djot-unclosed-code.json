@@ -183,5 +183,40 @@
     "name": "code ownership controls 13",
     "source": "> ::: a\n> x\n\n> ::: b\n> y `` q\n> :::\n> ` z `",
     "html": "<blockquote><div class=\"a\"><p>x</p></div></blockquote><blockquote><div class=\"b\"><p>y <code> q</code></p></div><p><code> z </code></p></blockquote>"
+  },
+  {
+    "name": "final review controls 2",
+    "source": "- item\n::: a\nx `` a\n:::\n` b `",
+    "html": "<ul><li>item</li></ul><div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "final review controls 3",
+    "source": "> quote\n::: a\nx `` a\n:::\n` b `",
+    "html": "<blockquote><p>quote</p></blockquote><div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "final review controls 4",
+    "source": "> ::: a\n> x `` a\nHello. world\n> :::\n> ` b `",
+    "html": "<blockquote><div class=\"a\"><p>x <code> a\nHello. world</code></p></div><p><code> b </code></p></blockquote>"
+  },
+  {
+    "name": "final review controls 5",
+    "source": "- ```\n  code\nafter\n\n::: a\nx `` q\n:::\n` z `",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p><div class=\"a\"><p>x <code> q</code></p></div><p><code> z </code></p>"
+  },
+  {
+    "name": "final review controls 7",
+    "source": "::: a\nx `` q\n    :::\n` z `",
+    "html": "<div class=\"a\"><p>x <code> q</code></p></div><p><code> z </code></p>"
+  },
+  {
+    "name": "final review controls 1",
+    "source": "{.a}\n::: a\nx `` a\n:::\n` b `",
+    "html": "<div class=\"a a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "final review controls 6",
+    "source": "::: a\n:::: b\nx `` q\n:::\n` z `",
+    "html": "<div class=\"a\"><div class=\"b\"><p>x <code> q</code></p></div></div><p><code> z </code></p>"
   }
 ]

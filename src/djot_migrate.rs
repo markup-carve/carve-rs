@@ -4211,24 +4211,26 @@ fn djot_inline_boundaries_with_code_scopes(
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
     let marker = cached_regex!(r"^(?:\[\^[^\]\n]+\]:[ \t]*|(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)|:)[ \t]+)").unwrap();
     let scope_block =
-        cached_regex!(r"^(?:#{1,6}(?: |$)|:{3,}|[`~]{3,}|[-*+] |[0-9A-Za-z]+[.)] )").unwrap();
+        cached_regex!(r"^(?:#{1,6}(?: |$)|:{3,}|[`~]{3,}|(?:[*-][ \t]*){3,}$)").unwrap();
     let scope_quote = cached_regex!(r"^(?:>[ \t]+)*").unwrap();
     let scope_ticks = cached_regex!(r"^(`{3,}|~{3,})(.*)$").unwrap();
     let scope_div = cached_regex!(r"^(:{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*$").unwrap();
-    let scope_heading = cached_regex!(r"^#{1,6}(?: |$)").unwrap();
+    let scope_heading =
+        cached_regex!(r"^(?:#{1,6}(?: |$)|(?:[*-][ \t]*){3,}$|\[[^\]]+\]:)").unwrap();
     let mut boundaries = Vec::new();
     let mut items: Vec<(usize, usize)> = Vec::new();
     #[derive(Clone, Copy)]
     struct DivOwner {
-        width: usize,
-        column: usize,
+        minimum_width: usize,
+        scope_start: usize,
         depth: usize,
         item_column: Option<usize>,
         item_depth: usize,
     }
     let mut divs: Vec<DivOwner> = Vec::new();
     let mut previous_block = true;
-    let mut code_fence: Option<(u8, usize, usize)> = None;
+    let mut previous_depth = 0;
+    let mut code_fence: Option<(u8, usize, usize, Option<usize>)> = None;
     let mut offset = 0;
     let mut previous_blank = true;
     for (row, raw_line) in source.split('\n').enumerate() {
@@ -4250,7 +4252,7 @@ fn djot_inline_boundaries_with_code_scopes(
                     .is_some_and(|&(column, item_depth)| depth <= item_depth && indent < column));
         let blank = trimmed.is_empty() || trimmed == "\r";
         if code_scopes {
-            let block_start = scope_block.is_match(trimmed);
+            let block_start = scope_block.is_match(trimmed) || item.is_some();
             while let Some(owner) = divs.last() {
                 let outside_quote =
                     depth < owner.depth && (blank || previous_blank || starts_item || block_start);
@@ -4271,22 +4273,28 @@ fn djot_inline_boundaries_with_code_scopes(
                 0
             };
             let mut body = &trimmed[marker_width..];
-            let mut column = indent + marker_width;
             let padding = body.len() - body.trim_start_matches([' ', '\t']).len();
             body = &body[padding..];
-            column += padding;
             let nested_quote = scope_quote.find(body).unwrap().as_str();
             let body_depth = depth + nested_quote.bytes().filter(|&ch| ch == b'>').count();
             body = &body[nested_quote.len()..];
-            if !nested_quote.is_empty() {
-                column = 0;
-            }
-            let can_open = previous_block || previous_blank || starts_item;
-            if code_fence.is_some_and(|(_, _, fence_depth)| depth < fence_depth) {
+            let can_open = previous_block
+                || previous_blank
+                || starts_item
+                || (block_start
+                    && (depth < previous_depth
+                        || items.last().is_some_and(|&(column, item_depth)| {
+                            depth == item_depth && indent < column
+                        })));
+            if code_fence.is_some_and(|(_, _, fence_depth, item_column)| {
+                depth < fence_depth
+                    || item_column
+                        .is_some_and(|column| depth == fence_depth && indent < column && !blank)
+            }) {
                 code_fence = None;
             }
             let ticks = scope_ticks.captures(body);
-            if let Some((ch, width, fence_depth)) = code_fence {
+            if let Some((ch, width, fence_depth, _)) = code_fence {
                 if ticks.as_ref().is_some_and(|t| {
                     t[1].as_bytes()[0] == ch
                         && t[1].len() >= width
@@ -4303,7 +4311,20 @@ fn djot_inline_boundaries_with_code_scopes(
                 .is_some_and(|t| can_open && (t[1].as_bytes()[0] != b'`' || !t[2].contains('`')))
             {
                 let ticks = ticks.unwrap();
-                code_fence = Some((ticks[1].as_bytes()[0], ticks[1].len(), body_depth));
+                let item_column = if starts_item {
+                    Some(indent + marker_width)
+                } else {
+                    items
+                        .last()
+                        .filter(|&&(column, item_depth)| depth == item_depth && indent >= column)
+                        .map(|&(column, _)| column)
+                };
+                code_fence = Some((
+                    ticks[1].as_bytes()[0],
+                    ticks[1].len(),
+                    body_depth,
+                    item_column,
+                ));
                 previous_block = false;
             } else {
                 let fence = scope_div.captures(body);
@@ -4313,24 +4334,32 @@ fn djot_inline_boundaries_with_code_scopes(
                     visible
                         && body[f[1].len()..].trim_matches([' ', '\t']).is_empty()
                         && body_depth == owner.depth
-                        && column <= owner.column + 3
-                        && f[1].len() >= owner.width
+                        && f[1].len() >= owner.minimum_width
                 }) {
                     boundaries.push(offset);
                     let width = fence.unwrap()[1].len();
-                    divs.pop();
-                    while divs
-                        .last()
-                        .is_some_and(|owner| body_depth == owner.depth && width >= owner.width)
-                    {
-                        divs.pop();
+                    let mut low = owner.unwrap().scope_start;
+                    let mut high = divs.len() - 1;
+                    while low < high {
+                        let mid = (low + high) / 2;
+                        if divs[mid].minimum_width <= width {
+                            high = mid;
+                        } else {
+                            low = mid + 1;
+                        }
                     }
+                    divs.truncate(low);
                     previous_block = true;
                 } else if fence.is_some() && visible && can_open {
                     boundaries.push(offset);
+                    let width = fence.unwrap()[1].len();
                     divs.push(DivOwner {
-                        width: fence.unwrap()[1].len(),
-                        column,
+                        minimum_width: owner
+                            .filter(|owner| owner.depth == body_depth)
+                            .map_or(width, |owner| owner.minimum_width.min(width)),
+                        scope_start: owner
+                            .filter(|owner| owner.depth == body_depth)
+                            .map_or(divs.len(), |owner| owner.scope_start),
                         depth: body_depth,
                         item_column: if starts_item {
                             Some(
@@ -4353,7 +4382,16 @@ fn djot_inline_boundaries_with_code_scopes(
                     });
                     previous_block = true;
                 } else {
-                    previous_block = blank || (can_open && scope_heading.is_match(body));
+                    let attrs = if body.starts_with('{') {
+                        read_djot_word_attributes(body, 0)
+                    } else {
+                        None
+                    };
+                    previous_block = blank
+                        || rows[row]
+                        || (can_open
+                            && (scope_heading.is_match(body)
+                                || attrs.is_some_and(|(end, _)| body[end..].trim().is_empty())));
                 }
             }
         }
@@ -4391,6 +4429,7 @@ fn djot_inline_boundaries_with_code_scopes(
             }
         }
         previous_blank = blank;
+        previous_depth = depth;
         offset += raw_line.len() + 1;
     }
     boundaries
