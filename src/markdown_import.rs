@@ -316,6 +316,41 @@ fn markdown_to_ast_with_losses(
                 event = Event::SoftBreak;
             }
         }
+        match &event {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. })
+                if is_empty_destination(dest_url) =>
+            {
+                let image = matches!(&event, Event::Start(Tag::Image { .. }));
+                builder.losses.push(MarkdownImportLoss {
+                    message: if image {
+                        "Dropped an image with an empty destination; retained its alt text and title."
+                    } else {
+                        "Dropped a link with an empty destination; retained its label and title."
+                    }.to_owned(),
+                    line: Some(builder.current_line),
+                    kind: MarkdownLossKind::Unspellable,
+                });
+            }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(info))) => {
+                let word = info
+                    .trim_matches([' ', '\t'])
+                    .split([' ', '\t'])
+                    .next()
+                    .unwrap_or("");
+                if !word.is_empty()
+                    && !word
+                        .bytes()
+                        .all(|ch| ch.is_ascii_alphanumeric() || b"_+#/.-".contains(&ch))
+                {
+                    builder.losses.push(MarkdownImportLoss {
+                        message: format!("Dropped code-block language {word:?}; Carve cannot spell this language token."),
+                        line: Some(builder.current_line),
+                        kind: MarkdownLossKind::Unspellable,
+                    });
+                }
+            }
+            _ => {}
+        }
         let empty_title = match &event {
             Event::Start(
                 Tag::Link {
