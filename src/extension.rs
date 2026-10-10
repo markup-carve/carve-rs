@@ -355,6 +355,14 @@ pub struct Options<'a> {
     /// author's source run. Default `Glyph`; only the Markdown target reads
     /// this.
     pub smart_typography: SmartTypographyMode,
+    /// Carry an element-less container through a Markdown round trip in an HTML
+    /// comment holding its Carve opener verbatim (PART 11 §10s). OFF by
+    /// default, because a Markdown renderer with raw HTML turned off shows the
+    /// comment as text.
+    ///
+    /// The mode only ADDS comment lines: with it off the emitted bytes are the
+    /// ones this target emits today. Only the Markdown target reads this.
+    pub carry_markers: bool,
     /// When `true`, lowercase the kept characters of an auto-generated heading
     /// id per code point (`char::to_lowercase`). Default `false`: heading ids
     /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
@@ -438,6 +446,7 @@ impl Default for Options<'_> {
             labels: BTreeMap::new(),
             allow_raw_html: true,
             smart_typography: SmartTypographyMode::Glyph,
+            carry_markers: false,
             lowercase_heading_ids: false,
             ascii_heading_ids: AsciiHeadingIds::Off,
             source_lines: false,
@@ -474,6 +483,14 @@ impl<'a> Options<'a> {
     /// render headings flat with the id on the `<h*>`. See [`Options::sections`].
     pub fn with_sections(mut self, enabled: bool) -> Self {
         self.sections = enabled;
+        self
+    }
+
+    /// Carry an element-less container through a Markdown round trip in an HTML
+    /// comment holding its Carve opener verbatim (PART 11 §10s). Markdown
+    /// output only.
+    pub fn with_carry_markers(mut self, enabled: bool) -> Self {
+        self.carry_markers = enabled;
         self
     }
 

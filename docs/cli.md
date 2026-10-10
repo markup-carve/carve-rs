@@ -98,6 +98,11 @@ repeated. Passing an unknown key prints the accepted registry keys.
 `--tabs-mode` and `--citation-mode` configure their respective named extensions.
 `--no-sections` renders headings without section wrappers, while `--source-lines`
 emits `data-source-line` annotations.
+`--carry-markers` applies to `--markdown` alone and is refused on any other
+target. It brackets every container the Markdown target writes as its children
+alone with an HTML comment carrying the container's Carve opener, so an export
+and a re-import return the container (see
+[Carrying a container through Markdown](rendering.md#carrying-a-container-through-markdown)).
 Host resolver callbacks remain library-only because they cannot be represented
 as command-line values.
 `--no-raw-html` (alias `--safe`) escapes `=html` raw

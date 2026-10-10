@@ -1,6 +1,8 @@
 # Rendering behavior
 
-Two rendering choices this engine exposes: how sections are wrapped, and how heading ids are derived.
+Three rendering choices this engine exposes: how sections are wrapped, how
+heading ids are derived, and whether the Markdown target carries the containers
+it cannot spell.
 
 ## Section wrappers
 
@@ -71,3 +73,68 @@ the ids the option actually produced.
 ---
 
 [Back to the README](../README.md)
+
+## Carrying a container through Markdown
+
+A container the Markdown target writes as its children alone - a tab set, an
+admonition, a named div, a columns block, a disclosure, a spoiler, a composite
+figure group - leaves nothing in the file that says it was there, so an import
+cannot return it however good it gets. PART 11 §10s (CARVE-P11-063) defines an
+opt-in mode that brackets each one with an HTML comment holding the container's
+Carve opener and closer verbatim, and the import reverses it.
+
+`Options::with_carry_markers` turns it on, `--carry-markers` does on the CLI, and
+both apply to Markdown output only. The mode is OFF by default, because a
+Markdown renderer with raw HTML turned off shows the comment as text. With it off
+the emitted bytes are the ones this target emits today: the mode only ADDS comment
+lines and moves none.
+
+```rust
+use carve::{markdown_to_carve, to_markdown_with_options, Options};
+
+let options = Options::default().with_carry_markers(true);
+let source = "::: note\nAn admonition body.\n:::\n";
+let markdown = to_markdown_with_options(source, &options);
+assert_eq!(
+    markdown,
+    "<!-- carve: ::: note -->\nAn admonition body.\n\n<!-- carve: ::: -->\n"
+);
+assert_eq!(markdown_to_carve(&markdown), source);
+```
+
+The payload is Carve source, spelled by the canonical writer rather than a second
+time by this target, so the opener is the one `carve fmt` writes. An attributed
+container is two Carve lines and so takes two markers: PART 4 is strict that an
+opener line carries no inline `{...}` attributes, so the attributes travel on the
+line above and that line takes a marker of its own.
+
+### What is not carried
+
+- **A container this target already spells.** An attributes-only opener is read as
+  a paragraph and a list table is written as a pipe table, so neither is
+  element-less and neither takes a marker.
+- **A container inside a host that prefixes its lines.** In a list item, a block
+  quote or a table cell the comment would land at the host's content column or
+  behind its `>`, where the import does not read it, so writing one would look
+  like a carry and not be. The container degrades there exactly as it does with
+  the mode off. Reading a prefixed marker is an owed follow-up.
+- **A composite figure group's own caption.** The caption slot hangs outside the
+  closing fence, so its Markdown fallback follows the closer and the round trip
+  does not restore it.
+- **A marker-shaped line inside a fenced code block.** A code block's payload is
+  verbatim content, so a page documenting this mode holds marker-shaped lines that
+  record no container. They are left exactly as written.
+
+### The escape
+
+A `-->` in the payload would end the comment, so it is written `--\>`, and a
+backslash the payload already carries before such a `>` grows by one. Nothing else
+is escaped: the payload is Carve source, and Carve's own escape is the one the
+reader already has.
+
+### A damaged set is never guessed
+
+A marker deleted, two reordered or a set left unbalanced imports as ordinary
+Markdown, comments and all, with exactly one `carrier-markers-damaged` row on the
+migration report at `degraded` fidelity and `fallback` confidence. No container is
+partially reconstructed.

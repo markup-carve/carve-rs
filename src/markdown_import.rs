@@ -41,11 +41,19 @@ pub(crate) struct MarkdownImportLoss {
 pub(crate) enum MarkdownLossKind {
     Unspellable,
     RawSpanWhitespaceTrimmed,
+    /// PART 11 §10s: a carrier marker set that records no structure.
+    CarrierMarkersDamaged,
 }
 
 /// A raw span whose content ends a line in whitespace, which CARVE-P2-025
 /// drops from every content line - a verbatim run crossing a line break
 /// included.
+/// A carrier marker set the import will not guess at: a marker deleted, two
+/// reordered or a set left unbalanced (PART 11 §10s).
+pub(crate) const CARRIER_MARKERS_DAMAGED: &str =
+    "A carrier marker set does not record a container: the markers imported as \
+     the raw HTML they are and no container was reconstructed";
+
 pub(crate) const RAW_SPAN_WHITESPACE_TRIMMED: &str =
     "A raw span ends a content line in whitespace, which Carve drops; \
      the whitespace did not reach the converted source";
@@ -138,7 +146,19 @@ pub fn try_markdown_to_carve(markdown: &str) -> Result<String, crate::RenderCarv
 pub(crate) fn markdown_to_carve_with_losses(
     markdown: &str,
 ) -> Result<(String, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
-    let (mut document, mut losses, notices) = markdown_to_ast_with_losses(markdown)?;
+    // PART 11 §10s: a carrier marker is lifted to a placeholder before the
+    // conversion and written back as the Carve line it is afterwards, so the
+    // Markdown reading in between never sees a comment it would carry across as
+    // raw HTML.
+    let lift = crate::carrier_markers::lift_carrier_markers(markdown);
+    let (mut document, mut losses, notices) = markdown_to_ast_with_losses(&lift.source)?;
+    if lift.damaged {
+        losses.push(MarkdownImportLoss {
+            message: CARRIER_MARKERS_DAMAGED.to_owned(),
+            line: None,
+            kind: MarkdownLossKind::CarrierMarkersDamaged,
+        });
+    }
     // ONLY ON THE WRITING PATH, as the HTML importer does it: the AST keeps the
     // nesting the source carried, and only a Carve SPELLING has to give it up
     // (carve-rs#2098).
@@ -151,7 +171,9 @@ pub(crate) fn markdown_to_carve_with_losses(
                 kind: MarkdownLossKind::Unspellable,
             }),
     );
-    render_carve(&document).map(|value| (value, losses, notices))
+    render_carve(&document)
+        .map(|value| crate::carrier_markers::restore_carrier_markers(&value, &lift))
+        .map(|value| (value, losses, notices))
 }
 
 /// Convert Markdown source to a Carve [`Document`].
