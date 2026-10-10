@@ -6,6 +6,7 @@ use crate::render_loss::DeniedSink;
 use crate::render_text::{strip_high_controls as strip_control_chars, trim_non_nbsp};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -161,7 +162,7 @@ fn render_markdown_once(
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index,
         link_depth: 0,
-        table_cell_depth: 0,
+        single_line_depth: 0,
         previous_list: None,
         carry_markers,
         carrier_depth: 0,
@@ -243,7 +244,7 @@ struct MarkdownContext {
     /// inside a link, which is not valid Markdown (carve-rs#436).
     link_depth: usize,
     /// Nonzero while rendering a table cell's content.
-    table_cell_depth: usize,
+    single_line_depth: usize,
     /// The kind and marker of the list last written in the current flow, when
     /// nothing has been written after it (PART 11 §10o).
     previous_list: Option<(bool, char)>,
@@ -369,7 +370,9 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         // No `{#id}` suffix: GFM has no heading-id syntax, and a link reaches
         // the heading through its slug instead (PART 11 §11).
         BlockNode::Heading(heading) => {
+            ctx.single_line_depth += 1;
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
+            ctx.single_line_depth -= 1;
             format!("{} {text}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
@@ -1206,9 +1209,9 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
                     }
                     None => crate::render_plain::flatten_cell_inlines(&cell.children, true),
                 };
-                ctx.table_cell_depth += 1;
+                ctx.single_line_depth += 1;
                 let content = trim_non_nbsp(&render_block_inlines(&inlines, ctx)).to_string();
-                ctx.table_cell_depth -= 1;
+                ctx.single_line_depth -= 1;
                 escape_cell_pipes(&content)
             })
             .map(|content| content.replace(['\r', '\n'], " "))
@@ -1609,6 +1612,25 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
     let mut parts: Vec<String> = Vec::with_capacity(nodes.len());
     for node in nodes {
         parts.push(render_inline(node, ctx, depth));
+    }
+    let has_content = |part: &str| {
+        part.bytes()
+            .any(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+    };
+    for i in (0..parts.len()).rev() {
+        if matches!(nodes[i], InlineNode::HardBreak(_)) && parts[i] == "\\\n" {
+            let preceding_content = parts[..i].iter().any(|part| has_content(part));
+            parts[i] = if preceding_content {
+                "<br>"
+            } else {
+                "<br><!-- -->"
+            }
+            .to_owned();
+            break;
+        }
+        if has_content(&parts[i]) {
+            break;
+        }
     }
     if nodes.len() > 1 {
         reflank_runs(nodes, &mut parts);
@@ -2163,7 +2185,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // whitespace checks -- and losing ONE of the two spaces is enough for the
         // break to vanish rather than degrade, silently, in a file nobody edited.
         // In a table cell the newline would end the GFM row (PART 11 section 9a).
-        InlineNode::HardBreak(_) if ctx.table_cell_depth > 0 => "<br>".to_string(),
+        InlineNode::HardBreak(_) if ctx.single_line_depth > 0 => "<br>".to_string(),
         InlineNode::HardBreak(_) => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
             format!(
@@ -2417,8 +2439,21 @@ fn render_code(content: &str) -> String {
     if content.is_empty() {
         return "<code></code>".to_owned();
     }
-    let content = content.replace('\n', " ");
-    let fence = safe_fence(&content, 1);
+    if content.contains('\n') {
+        let mut escaped = String::with_capacity(content.len());
+        for character in content.chars() {
+            if character == '\n' || character.is_ascii_punctuation() {
+                write!(&mut escaped, "&#{};", u32::from(character)).expect("writing to a String");
+                if character == '@' {
+                    escaped.push_str("<!---->");
+                }
+            } else {
+                escaped.push(character);
+            }
+        }
+        return format!("<code>{escaped}</code>");
+    }
+    let fence = safe_fence(content, 1);
     let needs_padding = content.starts_with('`')
         || content.ends_with('`')
         || (content.starts_with(' ')

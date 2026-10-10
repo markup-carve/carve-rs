@@ -1,0 +1,2044 @@
+[
+  {
+    "template": "seed",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "seed<br>\n",
+    "nativeHtml": "<p>seed<br></p>\n"
+  },
+  {
+    "template": "seed",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "<br><!-- -->\n",
+    "nativeHtml": "<p><br><!-- --></p>\n"
+  },
+  {
+    "template": "seed",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "seed\\\n<br>\n",
+    "nativeHtml": "<p>seed<br />\n<br></p>\n"
+  },
+  {
+    "template": "seed",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": "tail"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "seed\\\ntail\n",
+    "nativeHtml": "<p>seed<br />\ntail</p>\n"
+  },
+  {
+    "template": "seed",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": " "
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "seed<br>\n",
+    "nativeHtml": "<p>seed<br></p>\n"
+  },
+  {
+    "template": "seed",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "soft_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 4
+    },
+    "markdown": "seed<br>\n",
+    "nativeHtml": "<p>seed<br></p>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- seed<br>\n",
+    "nativeHtml": "<ul>\n<li>seed<br></li>\n</ul>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- <br><!-- -->\n",
+    "nativeHtml": "<ul>\n<li><br><!-- --></li>\n</ul>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- seed\\\n  <br>\n",
+    "nativeHtml": "<ul>\n<li>seed<br />\n<br></li>\n</ul>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": "tail"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- seed\\\n  tail\n",
+    "nativeHtml": "<ul>\n<li>seed<br />\ntail</li>\n</ul>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": " "
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- seed<br>\n",
+    "nativeHtml": "<ul>\n<li>seed<br></li>\n</ul>\n"
+  },
+  {
+    "template": "- seed",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "soft_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "- seed<br>\n",
+    "nativeHtml": "<ul>\n<li>seed<br></li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "seed"
+                            },
+                            {
+                              "type": "hard_break"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - seed<br>\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li>seed<br></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "hard_break"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - <br><!-- -->\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li><br><!-- --></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "seed"
+                            },
+                            {
+                              "type": "hard_break"
+                            },
+                            {
+                              "type": "hard_break"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - seed\\\n    <br>\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li>seed<br />\n<br></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "seed"
+                            },
+                            {
+                              "type": "hard_break"
+                            },
+                            {
+                              "type": "text",
+                              "value": "tail"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - seed\\\n    tail\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li>seed<br />\ntail</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "seed"
+                            },
+                            {
+                              "type": "hard_break"
+                            },
+                            {
+                              "type": "text",
+                              "value": " "
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - seed<br>\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li>seed<br></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "- - seed",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "tight": true,
+          "items": [
+            {
+              "type": "list_item",
+              "children": [
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "tight": true,
+                  "items": [
+                    {
+                      "type": "list_item",
+                      "children": [
+                        {
+                          "type": "paragraph",
+                          "children": [
+                            {
+                              "type": "text",
+                              "value": "seed"
+                            },
+                            {
+                              "type": "hard_break"
+                            },
+                            {
+                              "type": "soft_break"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "- - seed<br>\n",
+    "nativeHtml": "<ul>\n<li>\n<ul>\n<li>seed<br></li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> seed<br>\n",
+    "nativeHtml": "<blockquote>\n<p>seed<br></p>\n</blockquote>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> <br><!-- -->\n",
+    "nativeHtml": "<blockquote>\n<p><br><!-- --></p>\n</blockquote>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> seed\\\n> <br>\n",
+    "nativeHtml": "<blockquote>\n<p>seed<br />\n<br></p>\n</blockquote>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> seed\\\n> tail\n",
+    "nativeHtml": "<blockquote>\n<p>seed<br />\ntail</p>\n</blockquote>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": " "
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> seed<br>\n",
+    "nativeHtml": "<blockquote>\n<p>seed<br></p>\n</blockquote>\n"
+  },
+  {
+    "template": "> seed",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "block_quote",
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "soft_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "> seed<br>\n",
+    "nativeHtml": "<blockquote>\n<p>seed<br></p>\n</blockquote>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**seed<br>**\n",
+    "nativeHtml": "<p><strong>seed<br></strong></p>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**<br><!-- -->**\n",
+    "nativeHtml": "<p><strong><br><!-- --></strong></p>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**seed\\\n<br>**\n",
+    "nativeHtml": "<p><strong>seed<br />\n<br></strong></p>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**seed\\\ntail**\n",
+    "nativeHtml": "<p><strong>seed<br />\ntail</strong></p>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": " "
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**seed<br>**\n",
+    "nativeHtml": "<p><strong>seed<br></strong></p>\n"
+  },
+  {
+    "template": "{*seed*}",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "strong",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "soft_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "**seed<br>**\n",
+    "nativeHtml": "<p><strong>seed<br></strong></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*seed<br>*\n",
+    "nativeHtml": "<p><em>seed<br></em></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*<br><!-- -->*\n",
+    "nativeHtml": "<p><em><br><!-- --></em></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*seed\\\n<br>*\n",
+    "nativeHtml": "<p><em>seed<br />\n<br></em></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*seed\\\ntail*\n",
+    "nativeHtml": "<p><em>seed<br />\ntail</em></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": " "
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*seed<br>*\n",
+    "nativeHtml": "<p><em>seed<br></em></p>\n"
+  },
+  {
+    "template": "{/seed/}",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "emphasis",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "soft_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "*seed<br>*\n",
+    "nativeHtml": "<p><em>seed<br></em></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup>seed<br></sup>\n",
+    "nativeHtml": "<p><sup>seed<br></sup></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup><br><!-- --></sup>\n",
+    "nativeHtml": "<p><sup><br><!-- --></sup></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup>seed\\\n<br></sup>\n",
+    "nativeHtml": "<p><sup>seed<br />\n<br></sup></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup>seed\\\ntail</sup>\n",
+    "nativeHtml": "<p><sup>seed<br />\ntail</sup></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": " "
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup>seed<br> </sup>\n",
+    "nativeHtml": "<p><sup>seed<br> </sup></p>\n"
+  },
+  {
+    "template": "{^seed^}",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "superscript",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "soft_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "<sup>seed<br>\n</sup>\n",
+    "nativeHtml": "<p><sup>seed<br>\n</sup></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[seed<br>](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\">seed<br></a></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[<br><!-- -->](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\"><br><!-- --></a></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "hard_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[seed\\\n<br>](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\">seed<br />\n<br></a></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": "tail"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[seed\\\ntail](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\">seed<br />\ntail</a></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "text",
+                  "value": " "
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[seed<br> ](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\">seed<br> </a></p>\n"
+  },
+  {
+    "template": "[seed](https://example.test)",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "link",
+              "href": "https://example.test",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "seed"
+                },
+                {
+                  "type": "hard_break"
+                },
+                {
+                  "type": "soft_break"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 28
+    },
+    "markdown": "[seed<br>\n](https://example.test)\n",
+    "nativeHtml": "<p><a href=\"https://example.test\">seed<br>\n</a></p>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# seed<br>\n",
+    "nativeHtml": "<h1>seed<br></h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# <br>\n",
+    "nativeHtml": "<h1><br></h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "hard_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# seed<br><br>\n",
+    "nativeHtml": "<h1>seed<br><br></h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": "tail"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# seed<br>tail\n",
+    "nativeHtml": "<h1>seed<br>tail</h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "text",
+              "value": " "
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# seed<br>\n",
+    "nativeHtml": "<h1>seed<br></h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "seed"
+            },
+            {
+              "type": "hard_break"
+            },
+            {
+              "type": "soft_break"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# seed<br>\n",
+    "nativeHtml": "<h1>seed<br></h1>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "terminal",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| seed<br> |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>seed<br></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "only",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| <br> |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><br></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "repeated",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "hard_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| seed<br><br> |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>seed<br><br></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "interior",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": "tail"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| seed<br>tail |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>seed<br>tail</td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "trailing-space",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "text",
+                      "value": " "
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| seed<br> |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>seed<br></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "| seed |",
+    "name": "trailing-soft-break",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "table",
+          "rows": [
+            {
+              "type": "table_row",
+              "cells": [
+                {
+                  "type": "table_cell",
+                  "header": false,
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "seed"
+                    },
+                    {
+                      "type": "hard_break"
+                    },
+                    {
+                      "type": "soft_break"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 8
+    },
+    "markdown": "|  |\n| --- |\n| seed<br> |\n",
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>seed<br></td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "soft-break-edge-spaces",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "a "
+            },
+            {
+              "type": "soft_break"
+            },
+            {
+              "type": "text",
+              "value": " b"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# a b\n",
+    "nativeHtml": "<h1>a b</h1>\n"
+  },
+  {
+    "template": "# seed",
+    "name": "soft-break-edge-tabs",
+    "document": {
+      "type": "document",
+      "children": [
+        {
+          "type": "heading",
+          "level": 1,
+          "children": [
+            {
+              "type": "text",
+              "value": "a\t"
+            },
+            {
+              "type": "soft_break"
+            },
+            {
+              "type": "text",
+              "value": "\tb"
+            }
+          ]
+        }
+      ],
+      "srcByteLength": 6
+    },
+    "markdown": "# a b\n",
+    "nativeHtml": "<h1>a b</h1>\n"
+  }
+]
