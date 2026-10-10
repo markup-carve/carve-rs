@@ -4967,6 +4967,8 @@ fn normalize_djot_footnotes(
     let item = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
     let block = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)")
         .unwrap();
+    let reference_head = cached_regex!(r"^\[(?:[^\^\]\n][^\]\n]*)?\]:[ \t]*(\S*)[ \t]*$").unwrap();
+    let mut reference_payloads = Vec::new();
     for (n, line) in note_lines.iter().enumerate() {
         let at = prefix.find(line).unwrap().len();
         line_heads.insert(offset + at);
@@ -4981,6 +4983,12 @@ fn normalize_djot_footnotes(
             || item.is_match(&line[..at])
             || line[..at].matches('>').count() < previous_prefix.matches('>').count()
             || block.is_match(previous);
+        if boundary && mask.as_bytes().get(offset + at) == Some(&b'[') {
+            if let Some(caps) = reference_head.captures(&line[at..]) {
+                let target = caps.get(1).unwrap();
+                reference_payloads.push((offset + at + target.start(), offset + at + target.end()));
+            }
+        }
         if let Some(caps) = head.captures(&line[at..]) {
             if boundary && mask.as_bytes().get(offset + at) == Some(&b'[') {
                 let key = key_of(&caps[1]);
@@ -4996,6 +5004,11 @@ fn normalize_djot_footnotes(
         }
         offset += line.len() + 1;
     }
+    let mut mask = mask.into_bytes();
+    for (start, end) in reference_payloads {
+        blank_out(&mut mask, start, end);
+    }
+    let mask = String::from_utf8(mask).expect("reference masks preserve UTF-8");
     let angles: HashMap<_, _> = cached_regex!(r"<[^<>\s]+>")
         .unwrap()
         .find_iter(source)

@@ -313,5 +313,15 @@
     "name": "review3-table-label-pipe",
     "source": "| [a | b](c~d~e) |",
     "html": "<table><tr><td>[a</td><td>b](c<sub>d</sub>e)</td></tr></table>"
+  },
+  {
+    "name": "reference-url-undefined-note",
+    "source": "[a][r]\n\n[r]: http://example.com/[^x]\n",
+    "html": "<p><a href=\"http://example.com/[^x]\">a</a></p>"
+  },
+  {
+    "name": "reference-url-defined-note",
+    "source": "[a][r]\n\n[r]: http://example.com/[^x]\n\n[^x]: note\n",
+    "html": "<p><a href=\"http://example.com/[^x]\">a</a></p>"
   }
 ]
