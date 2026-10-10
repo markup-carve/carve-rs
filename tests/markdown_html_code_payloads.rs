@@ -317,3 +317,46 @@ fn text_after_a_misnested_code_close_survives_raw_html_stripping() {
     let html = carve::render_html_with_options(&carve::parse(&source), &options).unwrap();
     assert!(html.contains(" b"), "{source}\n{html}");
 }
+
+#[test]
+fn repeated_empty_comments_keep_code_text() {
+    let markdown = format!("<code>{}</code>", "a<!---->".repeat(20_000));
+    let source = carve::try_markdown_to_carve(&markdown).unwrap();
+    assert_eq!(
+        carve::to_html(&source),
+        format!("<p><code>{}</code></p>", "a".repeat(20_000))
+    );
+}
+
+#[test]
+fn code_opening_whitespace_loss_keeps_its_source_line() {
+    let result = carve::try_migrate_markdown("<code \nclass=\"x\">a\nb\nc</code>").unwrap();
+    let rows: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "raw-span-whitespace-trimmed")
+        .collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].path.as_deref(), Some("line:1"));
+}
+
+#[test]
+fn unrelated_native_code_survives_single_line_writer_contexts() {
+    for markdown in ["`keep`\n\n$`x`", "`keep`\n\n[^u]: `b`"] {
+        let source = carve::try_markdown_to_carve(markdown).unwrap();
+        assert!(!source.contains("{=html}"), "{markdown}\n{source}");
+    }
+}
+
+#[test]
+fn misnested_code_close_restores_prose_newlines() {
+    for markdown in ["<code>*a</code> b&#10;&#10;c*", "<code>*a</code> b&#13;c*"] {
+        let source = carve::try_markdown_to_carve(markdown).unwrap();
+        assert!(
+            carve::to_html(&source).contains(" b  c") || carve::to_html(&source).contains(" b c"),
+            "{markdown}\n{source}\n{}",
+            carve::to_html(&source)
+        );
+    }
+}

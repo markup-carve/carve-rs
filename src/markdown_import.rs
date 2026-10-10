@@ -366,33 +366,51 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
     struct Preserve {
         code_depth: usize,
     }
+    fn freeze_tail(nodes: &mut [InlineNode]) {
+        let Some(node @ InlineNode::Text(_)) = nodes.last_mut() else {
+            return;
+        };
+        let InlineNode::Text(text) = node else {
+            unreachable!()
+        };
+        let html = text
+            .value
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('\n', "<!---->&#10;<!---->");
+        *node = InlineNode::RawInline(RawInline {
+            format: "html".into(),
+            content: html,
+            injected: false,
+            pos: text.pos.clone(),
+        });
+    }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, _: &mut Vec<BlockNode>) {}
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
             let mut coalesced = Vec::with_capacity(nodes.len());
-            for node in std::mem::take(nodes) {
-                match node {
-                    InlineNode::Text(text) => {
-                        if let Some(InlineNode::Text(previous)) = coalesced.last_mut() {
-                            previous.value.push_str(&text.value);
-                        } else {
-                            coalesced.push(InlineNode::Text(text));
-                        }
-                    }
-                    InlineNode::SoftBreak(_) => {
-                        if let Some(InlineNode::Text(previous)) = coalesced.last_mut() {
-                            previous.value.push('\n');
-                        } else {
-                            coalesced.push(InlineNode::text("\n"));
-                        }
-                    }
-                    other => coalesced.push(other),
+            for mut node in std::mem::take(nodes) {
+                if matches!(node, InlineNode::SoftBreak(_)) && self.code_depth > 0 {
+                    node = InlineNode::text("\n");
                 }
-            }
-            *nodes = coalesced;
-
-            for node in nodes {
-                if let InlineNode::RawInline(raw) = node {
+                if let InlineNode::Text(mut text) = node {
+                    if self.code_depth == 0 {
+                        text.value = text.value.replace("\r\n", " ").replace(['\r', '\n'], " ");
+                    }
+                    if let Some(InlineNode::Text(previous)) = coalesced.last_mut() {
+                        previous.value.push_str(&text.value);
+                    } else {
+                        coalesced.push(InlineNode::Text(text));
+                    }
+                    continue;
+                }
+                if self.code_depth > 0 {
+                    freeze_tail(&mut coalesced);
+                }
+                if let InlineNode::RawInline(raw) = &node {
                     if raw.format == "html" {
                         if let Some(tag) = html_tag(&raw.content) {
                             if tag.name.eq_ignore_ascii_case("code") {
@@ -405,29 +423,13 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
                         }
                     }
                 }
-                let value = match node {
-                    InlineNode::Text(text) if self.code_depth > 0 && !text.value.is_empty() => {
-                        Some(text.value.clone())
-                    }
-                    _ => None,
-                };
-                if let Some(value) = value {
-                    let html = value
-                        .replace("\r\n", "\n")
-                        .replace('\r', "\n")
-                        .replace('&', "&amp;")
-                        .replace('<', "&lt;")
-                        .replace('>', "&gt;")
-                        .replace('\n', "<!---->&#10;<!---->");
-                    *node = InlineNode::RawInline(RawInline {
-                        format: "html".into(),
-                        content: html,
-                        injected: false,
-                        pos: None,
-                    });
-                }
-                visit_inline_children(node, self);
+                visit_inline_children(&mut node, self);
+                coalesced.push(node);
             }
+            if self.code_depth > 0 {
+                freeze_tail(&mut coalesced);
+            }
+            *nodes = coalesced;
         }
     }
     Preserve { code_depth: 1 }.inlines(nodes);
@@ -1372,7 +1374,10 @@ impl Builder {
         if value == "<!---->" {
             if let Some(Frame::HtmlCode { children, .. }) = self.frames.last_mut() {
                 if let Some(InlineNode::Text(text)) = children.last_mut() {
-                    text.value = text.value.replace("\r\n", "\n").replace('\r', "\n");
+                    if text.value.ends_with('\r') {
+                        text.value.pop();
+                        text.value.push('\n');
+                    }
                 }
                 return;
             }
@@ -1847,7 +1852,10 @@ impl Builder {
                 ..
             } => {
                 self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
+                let closing_line = self.current_line;
+                self.current_line = line;
                 self.raw_inline(open);
+                self.current_line = closing_line;
                 preserve_code_text(&mut children);
                 for child in children {
                     self.inline(child);
@@ -2075,7 +2083,10 @@ impl Builder {
                     ));
                 } else {
                     self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
+                    let closing_line = self.current_line;
+                    self.current_line = line;
                     self.raw_inline(open);
+                    self.current_line = closing_line;
                     let mut children = children;
                     preserve_code_text(&mut children);
                     for child in children {
