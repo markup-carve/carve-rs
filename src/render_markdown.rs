@@ -243,7 +243,7 @@ struct MarkdownContext {
     /// `[see </#H>](/outer)` must render as `[see H](/outer)`, not as a link
     /// inside a link, which is not valid Markdown (carve-rs#436).
     link_depth: usize,
-    /// Nonzero while rendering a table cell's content.
+    /// Nonzero while rendering a table cell or heading.
     single_line_depth: usize,
     /// The kind and marker of the list last written in the current flow, when
     /// nothing has been written after it (PART 11 §10o).
@@ -2439,10 +2439,12 @@ fn render_code(content: &str) -> String {
     if content.is_empty() {
         return "<code></code>".to_owned();
     }
-    if content.contains('\n') {
+    if content.contains('\n') || content.contains('\t') {
         let mut escaped = String::with_capacity(content.len());
         for character in content.chars() {
-            if character == '\n' || character.is_ascii_punctuation() {
+            if character == '\n' {
+                escaped.push_str("<!---->&#10;<!---->");
+            } else if character == '\t' || character.is_ascii_punctuation() {
                 write!(&mut escaped, "&#{};", u32::from(character)).expect("writing to a String");
                 if character == '@' {
                     escaped.push_str("<!---->");

@@ -50,43 +50,43 @@
   {
     "template": "`seed`",
     "value": "\n",
-    "markdown": "<code>&#10;</code>\n",
+    "markdown": "<code><!---->&#10;<!----></code>\n",
     "code": "\n"
   },
   {
     "template": "`seed`",
     "value": "\na",
-    "markdown": "<code>&#10;a</code>\n",
+    "markdown": "<code><!---->&#10;<!---->a</code>\n",
     "code": "\na"
   },
   {
     "template": "`seed`",
     "value": "a\n",
-    "markdown": "<code>a&#10;</code>\n",
+    "markdown": "<code>a<!---->&#10;<!----></code>\n",
     "code": "a\n"
   },
   {
     "template": "`seed`",
     "value": "\na\n",
-    "markdown": "<code>&#10;a&#10;</code>\n",
+    "markdown": "<code><!---->&#10;<!---->a<!---->&#10;<!----></code>\n",
     "code": "\na\n"
   },
   {
     "template": "`seed`",
     "value": "a\nb",
-    "markdown": "<code>a&#10;b</code>\n",
+    "markdown": "<code>a<!---->&#10;<!---->b</code>\n",
     "code": "a\nb"
   },
   {
     "template": "`seed`",
     "value": "a\n\nb",
-    "markdown": "<code>a&#10;&#10;b</code>\n",
+    "markdown": "<code>a<!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\nb"
   },
   {
     "template": "`seed`",
     "value": "a\n\n\nb",
-    "markdown": "<code>a&#10;&#10;&#10;b</code>\n",
+    "markdown": "<code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\n\nb"
   },
   {
@@ -116,19 +116,19 @@
   {
     "template": "`seed`",
     "value": "\nx\n```",
-    "markdown": "<code>&#10;x&#10;&#96;&#96;&#96;</code>\n",
+    "markdown": "<code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code>\n",
     "code": "\nx\n```"
   },
   {
     "template": "`seed`",
     "value": "a\tb",
-    "markdown": "`a\tb`\n",
+    "markdown": "<code>a&#9;b</code>\n",
     "code": "a\tb"
   },
   {
     "template": "`seed`",
     "value": "\t a \t",
-    "markdown": "`\t a \t`\n",
+    "markdown": "<code>&#9; a &#9;</code>\n",
     "code": "\t a \t"
   },
   {
@@ -152,56 +152,92 @@
   {
     "template": "`seed`",
     "value": "https://example.test\n",
-    "markdown": "<code>https&#58;&#47;&#47;example&#46;test&#10;</code>\n",
+    "markdown": "<code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "https://example.test\n"
   },
   {
     "template": "`seed`",
     "value": "a@b.test\n",
-    "markdown": "<code>a&#64;<!---->b&#46;test&#10;</code>\n",
+    "markdown": "<code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code>\n",
     "code": "a@b.test\n"
   },
   {
     "template": "`seed`",
     "value": "www.example.test\n",
-    "markdown": "<code>www&#46;example&#46;test&#10;</code>\n",
+    "markdown": "<code>www&#46;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "www.example.test\n"
   },
   {
     "template": "`seed`",
     "value": "a|b\n",
-    "markdown": "<code>a&#124;b&#10;</code>\n",
+    "markdown": "<code>a&#124;b<!---->&#10;<!----></code>\n",
     "code": "a|b\n"
   },
   {
     "template": "`seed`",
     "value": "*a*~b~\n",
-    "markdown": "<code>&#42;a&#42;&#126;b&#126;&#10;</code>\n",
+    "markdown": "<code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code>\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "`seed`",
     "value": "[x](u)\n",
-    "markdown": "<code>&#91;x&#93;&#40;u&#41;&#10;</code>\n",
+    "markdown": "<code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code>\n",
     "code": "[x](u)\n"
   },
   {
     "template": "`seed`",
     "value": "a\\b\n",
-    "markdown": "<code>a&#92;b&#10;</code>\n",
+    "markdown": "<code>a&#92;b<!---->&#10;<!----></code>\n",
     "code": "a\\b\n"
   },
   {
     "template": "`seed`",
     "value": "-- \"x\" ...\n",
-    "markdown": "<code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code>\n",
+    "markdown": "<code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code>\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "`seed`",
     "value": "` \n `",
-    "markdown": "<code>&#96; &#10; &#96;</code>\n",
+    "markdown": "<code>&#96; <!---->&#10;<!----> &#96;</code>\n",
     "code": "` \n `"
+  },
+  {
+    "template": "`seed`",
+    "value": "a \nb",
+    "markdown": "<code>a <!---->&#10;<!---->b</code>\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\n b",
+    "markdown": "<code>a<!---->&#10;<!----> b</code>\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "`seed`",
+    "value": " \n ",
+    "markdown": "<code> <!---->&#10;<!----> </code>\n",
+    "code": " \n "
+  },
+  {
+    "template": "`seed`",
+    "value": "\t\n\t",
+    "markdown": "<code>&#9;<!---->&#10;<!---->&#9;</code>\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "`seed`",
+    "value": "a \n b",
+    "markdown": "<code>a <!---->&#10;<!----> b</code>\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "`seed`",
+    "value": "a\t\n b@c.test",
+    "markdown": "<code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code>\n",
+    "code": "a\t\n b@c.test"
   },
   {
     "template": "- `seed`",
@@ -254,43 +290,43 @@
   {
     "template": "- `seed`",
     "value": "\n",
-    "markdown": "- <code>&#10;</code>\n",
+    "markdown": "- <code><!---->&#10;<!----></code>\n",
     "code": "\n"
   },
   {
     "template": "- `seed`",
     "value": "\na",
-    "markdown": "- <code>&#10;a</code>\n",
+    "markdown": "- <code><!---->&#10;<!---->a</code>\n",
     "code": "\na"
   },
   {
     "template": "- `seed`",
     "value": "a\n",
-    "markdown": "- <code>a&#10;</code>\n",
+    "markdown": "- <code>a<!---->&#10;<!----></code>\n",
     "code": "a\n"
   },
   {
     "template": "- `seed`",
     "value": "\na\n",
-    "markdown": "- <code>&#10;a&#10;</code>\n",
+    "markdown": "- <code><!---->&#10;<!---->a<!---->&#10;<!----></code>\n",
     "code": "\na\n"
   },
   {
     "template": "- `seed`",
     "value": "a\nb",
-    "markdown": "- <code>a&#10;b</code>\n",
+    "markdown": "- <code>a<!---->&#10;<!---->b</code>\n",
     "code": "a\nb"
   },
   {
     "template": "- `seed`",
     "value": "a\n\nb",
-    "markdown": "- <code>a&#10;&#10;b</code>\n",
+    "markdown": "- <code>a<!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\nb"
   },
   {
     "template": "- `seed`",
     "value": "a\n\n\nb",
-    "markdown": "- <code>a&#10;&#10;&#10;b</code>\n",
+    "markdown": "- <code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\n\nb"
   },
   {
@@ -320,19 +356,19 @@
   {
     "template": "- `seed`",
     "value": "\nx\n```",
-    "markdown": "- <code>&#10;x&#10;&#96;&#96;&#96;</code>\n",
+    "markdown": "- <code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code>\n",
     "code": "\nx\n```"
   },
   {
     "template": "- `seed`",
     "value": "a\tb",
-    "markdown": "- `a\tb`\n",
+    "markdown": "- <code>a&#9;b</code>\n",
     "code": "a\tb"
   },
   {
     "template": "- `seed`",
     "value": "\t a \t",
-    "markdown": "- `\t a \t`\n",
+    "markdown": "- <code>&#9; a &#9;</code>\n",
     "code": "\t a \t"
   },
   {
@@ -356,56 +392,92 @@
   {
     "template": "- `seed`",
     "value": "https://example.test\n",
-    "markdown": "- <code>https&#58;&#47;&#47;example&#46;test&#10;</code>\n",
+    "markdown": "- <code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "https://example.test\n"
   },
   {
     "template": "- `seed`",
     "value": "a@b.test\n",
-    "markdown": "- <code>a&#64;<!---->b&#46;test&#10;</code>\n",
+    "markdown": "- <code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code>\n",
     "code": "a@b.test\n"
   },
   {
     "template": "- `seed`",
     "value": "www.example.test\n",
-    "markdown": "- <code>www&#46;example&#46;test&#10;</code>\n",
+    "markdown": "- <code>www&#46;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "www.example.test\n"
   },
   {
     "template": "- `seed`",
     "value": "a|b\n",
-    "markdown": "- <code>a&#124;b&#10;</code>\n",
+    "markdown": "- <code>a&#124;b<!---->&#10;<!----></code>\n",
     "code": "a|b\n"
   },
   {
     "template": "- `seed`",
     "value": "*a*~b~\n",
-    "markdown": "- <code>&#42;a&#42;&#126;b&#126;&#10;</code>\n",
+    "markdown": "- <code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code>\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "- `seed`",
     "value": "[x](u)\n",
-    "markdown": "- <code>&#91;x&#93;&#40;u&#41;&#10;</code>\n",
+    "markdown": "- <code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code>\n",
     "code": "[x](u)\n"
   },
   {
     "template": "- `seed`",
     "value": "a\\b\n",
-    "markdown": "- <code>a&#92;b&#10;</code>\n",
+    "markdown": "- <code>a&#92;b<!---->&#10;<!----></code>\n",
     "code": "a\\b\n"
   },
   {
     "template": "- `seed`",
     "value": "-- \"x\" ...\n",
-    "markdown": "- <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code>\n",
+    "markdown": "- <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code>\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "- `seed`",
     "value": "` \n `",
-    "markdown": "- <code>&#96; &#10; &#96;</code>\n",
+    "markdown": "- <code>&#96; <!---->&#10;<!----> &#96;</code>\n",
     "code": "` \n `"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a \nb",
+    "markdown": "- <code>a <!---->&#10;<!---->b</code>\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\n b",
+    "markdown": "- <code>a<!---->&#10;<!----> b</code>\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "- `seed`",
+    "value": " \n ",
+    "markdown": "- <code> <!---->&#10;<!----> </code>\n",
+    "code": " \n "
+  },
+  {
+    "template": "- `seed`",
+    "value": "\t\n\t",
+    "markdown": "- <code>&#9;<!---->&#10;<!---->&#9;</code>\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a \n b",
+    "markdown": "- <code>a <!---->&#10;<!----> b</code>\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "- `seed`",
+    "value": "a\t\n b@c.test",
+    "markdown": "- <code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code>\n",
+    "code": "a\t\n b@c.test"
   },
   {
     "template": "- - `seed`",
@@ -458,43 +530,43 @@
   {
     "template": "- - `seed`",
     "value": "\n",
-    "markdown": "- - <code>&#10;</code>\n",
+    "markdown": "- - <code><!---->&#10;<!----></code>\n",
     "code": "\n"
   },
   {
     "template": "- - `seed`",
     "value": "\na",
-    "markdown": "- - <code>&#10;a</code>\n",
+    "markdown": "- - <code><!---->&#10;<!---->a</code>\n",
     "code": "\na"
   },
   {
     "template": "- - `seed`",
     "value": "a\n",
-    "markdown": "- - <code>a&#10;</code>\n",
+    "markdown": "- - <code>a<!---->&#10;<!----></code>\n",
     "code": "a\n"
   },
   {
     "template": "- - `seed`",
     "value": "\na\n",
-    "markdown": "- - <code>&#10;a&#10;</code>\n",
+    "markdown": "- - <code><!---->&#10;<!---->a<!---->&#10;<!----></code>\n",
     "code": "\na\n"
   },
   {
     "template": "- - `seed`",
     "value": "a\nb",
-    "markdown": "- - <code>a&#10;b</code>\n",
+    "markdown": "- - <code>a<!---->&#10;<!---->b</code>\n",
     "code": "a\nb"
   },
   {
     "template": "- - `seed`",
     "value": "a\n\nb",
-    "markdown": "- - <code>a&#10;&#10;b</code>\n",
+    "markdown": "- - <code>a<!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\nb"
   },
   {
     "template": "- - `seed`",
     "value": "a\n\n\nb",
-    "markdown": "- - <code>a&#10;&#10;&#10;b</code>\n",
+    "markdown": "- - <code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\n\nb"
   },
   {
@@ -524,19 +596,19 @@
   {
     "template": "- - `seed`",
     "value": "\nx\n```",
-    "markdown": "- - <code>&#10;x&#10;&#96;&#96;&#96;</code>\n",
+    "markdown": "- - <code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code>\n",
     "code": "\nx\n```"
   },
   {
     "template": "- - `seed`",
     "value": "a\tb",
-    "markdown": "- - `a\tb`\n",
+    "markdown": "- - <code>a&#9;b</code>\n",
     "code": "a\tb"
   },
   {
     "template": "- - `seed`",
     "value": "\t a \t",
-    "markdown": "- - `\t a \t`\n",
+    "markdown": "- - <code>&#9; a &#9;</code>\n",
     "code": "\t a \t"
   },
   {
@@ -560,56 +632,92 @@
   {
     "template": "- - `seed`",
     "value": "https://example.test\n",
-    "markdown": "- - <code>https&#58;&#47;&#47;example&#46;test&#10;</code>\n",
+    "markdown": "- - <code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "https://example.test\n"
   },
   {
     "template": "- - `seed`",
     "value": "a@b.test\n",
-    "markdown": "- - <code>a&#64;<!---->b&#46;test&#10;</code>\n",
+    "markdown": "- - <code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code>\n",
     "code": "a@b.test\n"
   },
   {
     "template": "- - `seed`",
     "value": "www.example.test\n",
-    "markdown": "- - <code>www&#46;example&#46;test&#10;</code>\n",
+    "markdown": "- - <code>www&#46;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "www.example.test\n"
   },
   {
     "template": "- - `seed`",
     "value": "a|b\n",
-    "markdown": "- - <code>a&#124;b&#10;</code>\n",
+    "markdown": "- - <code>a&#124;b<!---->&#10;<!----></code>\n",
     "code": "a|b\n"
   },
   {
     "template": "- - `seed`",
     "value": "*a*~b~\n",
-    "markdown": "- - <code>&#42;a&#42;&#126;b&#126;&#10;</code>\n",
+    "markdown": "- - <code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code>\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "- - `seed`",
     "value": "[x](u)\n",
-    "markdown": "- - <code>&#91;x&#93;&#40;u&#41;&#10;</code>\n",
+    "markdown": "- - <code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code>\n",
     "code": "[x](u)\n"
   },
   {
     "template": "- - `seed`",
     "value": "a\\b\n",
-    "markdown": "- - <code>a&#92;b&#10;</code>\n",
+    "markdown": "- - <code>a&#92;b<!---->&#10;<!----></code>\n",
     "code": "a\\b\n"
   },
   {
     "template": "- - `seed`",
     "value": "-- \"x\" ...\n",
-    "markdown": "- - <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code>\n",
+    "markdown": "- - <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code>\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "- - `seed`",
     "value": "` \n `",
-    "markdown": "- - <code>&#96; &#10; &#96;</code>\n",
+    "markdown": "- - <code>&#96; <!---->&#10;<!----> &#96;</code>\n",
     "code": "` \n `"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a \nb",
+    "markdown": "- - <code>a <!---->&#10;<!---->b</code>\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\n b",
+    "markdown": "- - <code>a<!---->&#10;<!----> b</code>\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": " \n ",
+    "markdown": "- - <code> <!---->&#10;<!----> </code>\n",
+    "code": " \n "
+  },
+  {
+    "template": "- - `seed`",
+    "value": "\t\n\t",
+    "markdown": "- - <code>&#9;<!---->&#10;<!---->&#9;</code>\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a \n b",
+    "markdown": "- - <code>a <!---->&#10;<!----> b</code>\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "- - `seed`",
+    "value": "a\t\n b@c.test",
+    "markdown": "- - <code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code>\n",
+    "code": "a\t\n b@c.test"
   },
   {
     "template": "> `seed`",
@@ -662,43 +770,43 @@
   {
     "template": "> `seed`",
     "value": "\n",
-    "markdown": "> <code>&#10;</code>\n",
+    "markdown": "> <code><!---->&#10;<!----></code>\n",
     "code": "\n"
   },
   {
     "template": "> `seed`",
     "value": "\na",
-    "markdown": "> <code>&#10;a</code>\n",
+    "markdown": "> <code><!---->&#10;<!---->a</code>\n",
     "code": "\na"
   },
   {
     "template": "> `seed`",
     "value": "a\n",
-    "markdown": "> <code>a&#10;</code>\n",
+    "markdown": "> <code>a<!---->&#10;<!----></code>\n",
     "code": "a\n"
   },
   {
     "template": "> `seed`",
     "value": "\na\n",
-    "markdown": "> <code>&#10;a&#10;</code>\n",
+    "markdown": "> <code><!---->&#10;<!---->a<!---->&#10;<!----></code>\n",
     "code": "\na\n"
   },
   {
     "template": "> `seed`",
     "value": "a\nb",
-    "markdown": "> <code>a&#10;b</code>\n",
+    "markdown": "> <code>a<!---->&#10;<!---->b</code>\n",
     "code": "a\nb"
   },
   {
     "template": "> `seed`",
     "value": "a\n\nb",
-    "markdown": "> <code>a&#10;&#10;b</code>\n",
+    "markdown": "> <code>a<!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\nb"
   },
   {
     "template": "> `seed`",
     "value": "a\n\n\nb",
-    "markdown": "> <code>a&#10;&#10;&#10;b</code>\n",
+    "markdown": "> <code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code>\n",
     "code": "a\n\n\nb"
   },
   {
@@ -728,19 +836,19 @@
   {
     "template": "> `seed`",
     "value": "\nx\n```",
-    "markdown": "> <code>&#10;x&#10;&#96;&#96;&#96;</code>\n",
+    "markdown": "> <code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code>\n",
     "code": "\nx\n```"
   },
   {
     "template": "> `seed`",
     "value": "a\tb",
-    "markdown": "> `a\tb`\n",
+    "markdown": "> <code>a&#9;b</code>\n",
     "code": "a\tb"
   },
   {
     "template": "> `seed`",
     "value": "\t a \t",
-    "markdown": "> `\t a \t`\n",
+    "markdown": "> <code>&#9; a &#9;</code>\n",
     "code": "\t a \t"
   },
   {
@@ -764,56 +872,92 @@
   {
     "template": "> `seed`",
     "value": "https://example.test\n",
-    "markdown": "> <code>https&#58;&#47;&#47;example&#46;test&#10;</code>\n",
+    "markdown": "> <code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "https://example.test\n"
   },
   {
     "template": "> `seed`",
     "value": "a@b.test\n",
-    "markdown": "> <code>a&#64;<!---->b&#46;test&#10;</code>\n",
+    "markdown": "> <code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code>\n",
     "code": "a@b.test\n"
   },
   {
     "template": "> `seed`",
     "value": "www.example.test\n",
-    "markdown": "> <code>www&#46;example&#46;test&#10;</code>\n",
+    "markdown": "> <code>www&#46;example&#46;test<!---->&#10;<!----></code>\n",
     "code": "www.example.test\n"
   },
   {
     "template": "> `seed`",
     "value": "a|b\n",
-    "markdown": "> <code>a&#124;b&#10;</code>\n",
+    "markdown": "> <code>a&#124;b<!---->&#10;<!----></code>\n",
     "code": "a|b\n"
   },
   {
     "template": "> `seed`",
     "value": "*a*~b~\n",
-    "markdown": "> <code>&#42;a&#42;&#126;b&#126;&#10;</code>\n",
+    "markdown": "> <code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code>\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "> `seed`",
     "value": "[x](u)\n",
-    "markdown": "> <code>&#91;x&#93;&#40;u&#41;&#10;</code>\n",
+    "markdown": "> <code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code>\n",
     "code": "[x](u)\n"
   },
   {
     "template": "> `seed`",
     "value": "a\\b\n",
-    "markdown": "> <code>a&#92;b&#10;</code>\n",
+    "markdown": "> <code>a&#92;b<!---->&#10;<!----></code>\n",
     "code": "a\\b\n"
   },
   {
     "template": "> `seed`",
     "value": "-- \"x\" ...\n",
-    "markdown": "> <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code>\n",
+    "markdown": "> <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code>\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "> `seed`",
     "value": "` \n `",
-    "markdown": "> <code>&#96; &#10; &#96;</code>\n",
+    "markdown": "> <code>&#96; <!---->&#10;<!----> &#96;</code>\n",
     "code": "` \n `"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a \nb",
+    "markdown": "> <code>a <!---->&#10;<!---->b</code>\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\n b",
+    "markdown": "> <code>a<!---->&#10;<!----> b</code>\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "> `seed`",
+    "value": " \n ",
+    "markdown": "> <code> <!---->&#10;<!----> </code>\n",
+    "code": " \n "
+  },
+  {
+    "template": "> `seed`",
+    "value": "\t\n\t",
+    "markdown": "> <code>&#9;<!---->&#10;<!---->&#9;</code>\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a \n b",
+    "markdown": "> <code>a <!---->&#10;<!----> b</code>\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "> `seed`",
+    "value": "a\t\n b@c.test",
+    "markdown": "> <code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code>\n",
+    "code": "a\t\n b@c.test"
   },
   {
     "template": "*`seed`*",
@@ -866,43 +1010,43 @@
   {
     "template": "*`seed`*",
     "value": "\n",
-    "markdown": "**<code>&#10;</code>**\n",
+    "markdown": "**<code><!---->&#10;<!----></code>**\n",
     "code": "\n"
   },
   {
     "template": "*`seed`*",
     "value": "\na",
-    "markdown": "**<code>&#10;a</code>**\n",
+    "markdown": "**<code><!---->&#10;<!---->a</code>**\n",
     "code": "\na"
   },
   {
     "template": "*`seed`*",
     "value": "a\n",
-    "markdown": "**<code>a&#10;</code>**\n",
+    "markdown": "**<code>a<!---->&#10;<!----></code>**\n",
     "code": "a\n"
   },
   {
     "template": "*`seed`*",
     "value": "\na\n",
-    "markdown": "**<code>&#10;a&#10;</code>**\n",
+    "markdown": "**<code><!---->&#10;<!---->a<!---->&#10;<!----></code>**\n",
     "code": "\na\n"
   },
   {
     "template": "*`seed`*",
     "value": "a\nb",
-    "markdown": "**<code>a&#10;b</code>**\n",
+    "markdown": "**<code>a<!---->&#10;<!---->b</code>**\n",
     "code": "a\nb"
   },
   {
     "template": "*`seed`*",
     "value": "a\n\nb",
-    "markdown": "**<code>a&#10;&#10;b</code>**\n",
+    "markdown": "**<code>a<!---->&#10;<!----><!---->&#10;<!---->b</code>**\n",
     "code": "a\n\nb"
   },
   {
     "template": "*`seed`*",
     "value": "a\n\n\nb",
-    "markdown": "**<code>a&#10;&#10;&#10;b</code>**\n",
+    "markdown": "**<code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code>**\n",
     "code": "a\n\n\nb"
   },
   {
@@ -932,19 +1076,19 @@
   {
     "template": "*`seed`*",
     "value": "\nx\n```",
-    "markdown": "**<code>&#10;x&#10;&#96;&#96;&#96;</code>**\n",
+    "markdown": "**<code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code>**\n",
     "code": "\nx\n```"
   },
   {
     "template": "*`seed`*",
     "value": "a\tb",
-    "markdown": "**`a\tb`**\n",
+    "markdown": "**<code>a&#9;b</code>**\n",
     "code": "a\tb"
   },
   {
     "template": "*`seed`*",
     "value": "\t a \t",
-    "markdown": "**`\t a \t`**\n",
+    "markdown": "**<code>&#9; a &#9;</code>**\n",
     "code": "\t a \t"
   },
   {
@@ -968,56 +1112,92 @@
   {
     "template": "*`seed`*",
     "value": "https://example.test\n",
-    "markdown": "**<code>https&#58;&#47;&#47;example&#46;test&#10;</code>**\n",
+    "markdown": "**<code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code>**\n",
     "code": "https://example.test\n"
   },
   {
     "template": "*`seed`*",
     "value": "a@b.test\n",
-    "markdown": "**<code>a&#64;<!---->b&#46;test&#10;</code>**\n",
+    "markdown": "**<code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code>**\n",
     "code": "a@b.test\n"
   },
   {
     "template": "*`seed`*",
     "value": "www.example.test\n",
-    "markdown": "**<code>www&#46;example&#46;test&#10;</code>**\n",
+    "markdown": "**<code>www&#46;example&#46;test<!---->&#10;<!----></code>**\n",
     "code": "www.example.test\n"
   },
   {
     "template": "*`seed`*",
     "value": "a|b\n",
-    "markdown": "**<code>a&#124;b&#10;</code>**\n",
+    "markdown": "**<code>a&#124;b<!---->&#10;<!----></code>**\n",
     "code": "a|b\n"
   },
   {
     "template": "*`seed`*",
     "value": "*a*~b~\n",
-    "markdown": "**<code>&#42;a&#42;&#126;b&#126;&#10;</code>**\n",
+    "markdown": "**<code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code>**\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "*`seed`*",
     "value": "[x](u)\n",
-    "markdown": "**<code>&#91;x&#93;&#40;u&#41;&#10;</code>**\n",
+    "markdown": "**<code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code>**\n",
     "code": "[x](u)\n"
   },
   {
     "template": "*`seed`*",
     "value": "a\\b\n",
-    "markdown": "**<code>a&#92;b&#10;</code>**\n",
+    "markdown": "**<code>a&#92;b<!---->&#10;<!----></code>**\n",
     "code": "a\\b\n"
   },
   {
     "template": "*`seed`*",
     "value": "-- \"x\" ...\n",
-    "markdown": "**<code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code>**\n",
+    "markdown": "**<code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code>**\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "*`seed`*",
     "value": "` \n `",
-    "markdown": "**<code>&#96; &#10; &#96;</code>**\n",
+    "markdown": "**<code>&#96; <!---->&#10;<!----> &#96;</code>**\n",
     "code": "` \n `"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a \nb",
+    "markdown": "**<code>a <!---->&#10;<!---->b</code>**\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\n b",
+    "markdown": "**<code>a<!---->&#10;<!----> b</code>**\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": " \n ",
+    "markdown": "**<code> <!---->&#10;<!----> </code>**\n",
+    "code": " \n "
+  },
+  {
+    "template": "*`seed`*",
+    "value": "\t\n\t",
+    "markdown": "**<code>&#9;<!---->&#10;<!---->&#9;</code>**\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a \n b",
+    "markdown": "**<code>a <!---->&#10;<!----> b</code>**\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "*`seed`*",
+    "value": "a\t\n b@c.test",
+    "markdown": "**<code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code>**\n",
+    "code": "a\t\n b@c.test"
   },
   {
     "template": "| `seed` |",
@@ -1070,43 +1250,43 @@
   {
     "template": "| `seed` |",
     "value": "\n",
-    "markdown": "|  |\n| --- |\n| <code>&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code><!---->&#10;<!----></code> |\n",
     "code": "\n"
   },
   {
     "template": "| `seed` |",
     "value": "\na",
-    "markdown": "|  |\n| --- |\n| <code>&#10;a</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code><!---->&#10;<!---->a</code> |\n",
     "code": "\na"
   },
   {
     "template": "| `seed` |",
     "value": "a\n",
-    "markdown": "|  |\n| --- |\n| <code>a&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a<!---->&#10;<!----></code> |\n",
     "code": "a\n"
   },
   {
     "template": "| `seed` |",
     "value": "\na\n",
-    "markdown": "|  |\n| --- |\n| <code>&#10;a&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code><!---->&#10;<!---->a<!---->&#10;<!----></code> |\n",
     "code": "\na\n"
   },
   {
     "template": "| `seed` |",
     "value": "a\nb",
-    "markdown": "|  |\n| --- |\n| <code>a&#10;b</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a<!---->&#10;<!---->b</code> |\n",
     "code": "a\nb"
   },
   {
     "template": "| `seed` |",
     "value": "a\n\nb",
-    "markdown": "|  |\n| --- |\n| <code>a&#10;&#10;b</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a<!---->&#10;<!----><!---->&#10;<!---->b</code> |\n",
     "code": "a\n\nb"
   },
   {
     "template": "| `seed` |",
     "value": "a\n\n\nb",
-    "markdown": "|  |\n| --- |\n| <code>a&#10;&#10;&#10;b</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a<!---->&#10;<!----><!---->&#10;<!----><!---->&#10;<!---->b</code> |\n",
     "code": "a\n\n\nb"
   },
   {
@@ -1136,19 +1316,19 @@
   {
     "template": "| `seed` |",
     "value": "\nx\n```",
-    "markdown": "|  |\n| --- |\n| <code>&#10;x&#10;&#96;&#96;&#96;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code><!---->&#10;<!---->x<!---->&#10;<!---->&#96;&#96;&#96;</code> |\n",
     "code": "\nx\n```"
   },
   {
     "template": "| `seed` |",
     "value": "a\tb",
-    "markdown": "|  |\n| --- |\n| `a\tb` |\n",
+    "markdown": "|  |\n| --- |\n| <code>a&#9;b</code> |\n",
     "code": "a\tb"
   },
   {
     "template": "| `seed` |",
     "value": "\t a \t",
-    "markdown": "|  |\n| --- |\n| `\t a \t` |\n",
+    "markdown": "|  |\n| --- |\n| <code>&#9; a &#9;</code> |\n",
     "code": "\t a \t"
   },
   {
@@ -1172,55 +1352,91 @@
   {
     "template": "| `seed` |",
     "value": "https://example.test\n",
-    "markdown": "|  |\n| --- |\n| <code>https&#58;&#47;&#47;example&#46;test&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>https&#58;&#47;&#47;example&#46;test<!---->&#10;<!----></code> |\n",
     "code": "https://example.test\n"
   },
   {
     "template": "| `seed` |",
     "value": "a@b.test\n",
-    "markdown": "|  |\n| --- |\n| <code>a&#64;<!---->b&#46;test&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a&#64;<!---->b&#46;test<!---->&#10;<!----></code> |\n",
     "code": "a@b.test\n"
   },
   {
     "template": "| `seed` |",
     "value": "www.example.test\n",
-    "markdown": "|  |\n| --- |\n| <code>www&#46;example&#46;test&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>www&#46;example&#46;test<!---->&#10;<!----></code> |\n",
     "code": "www.example.test\n"
   },
   {
     "template": "| `seed` |",
     "value": "a|b\n",
-    "markdown": "|  |\n| --- |\n| <code>a&#124;b&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a&#124;b<!---->&#10;<!----></code> |\n",
     "code": "a|b\n"
   },
   {
     "template": "| `seed` |",
     "value": "*a*~b~\n",
-    "markdown": "|  |\n| --- |\n| <code>&#42;a&#42;&#126;b&#126;&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>&#42;a&#42;&#126;b&#126;<!---->&#10;<!----></code> |\n",
     "code": "*a*~b~\n"
   },
   {
     "template": "| `seed` |",
     "value": "[x](u)\n",
-    "markdown": "|  |\n| --- |\n| <code>&#91;x&#93;&#40;u&#41;&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>&#91;x&#93;&#40;u&#41;<!---->&#10;<!----></code> |\n",
     "code": "[x](u)\n"
   },
   {
     "template": "| `seed` |",
     "value": "a\\b\n",
-    "markdown": "|  |\n| --- |\n| <code>a&#92;b&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>a&#92;b<!---->&#10;<!----></code> |\n",
     "code": "a\\b\n"
   },
   {
     "template": "| `seed` |",
     "value": "-- \"x\" ...\n",
-    "markdown": "|  |\n| --- |\n| <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;&#10;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>&#45;&#45; &#34;x&#34; &#46;&#46;&#46;<!---->&#10;<!----></code> |\n",
     "code": "-- \"x\" ...\n"
   },
   {
     "template": "| `seed` |",
     "value": "` \n `",
-    "markdown": "|  |\n| --- |\n| <code>&#96; &#10; &#96;</code> |\n",
+    "markdown": "|  |\n| --- |\n| <code>&#96; <!---->&#10;<!----> &#96;</code> |\n",
     "code": "` \n `"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a \nb",
+    "markdown": "|  |\n| --- |\n| <code>a <!---->&#10;<!---->b</code> |\n",
+    "code": "a \nb"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\n b",
+    "markdown": "|  |\n| --- |\n| <code>a<!---->&#10;<!----> b</code> |\n",
+    "code": "a\n b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": " \n ",
+    "markdown": "|  |\n| --- |\n| <code> <!---->&#10;<!----> </code> |\n",
+    "code": " \n "
+  },
+  {
+    "template": "| `seed` |",
+    "value": "\t\n\t",
+    "markdown": "|  |\n| --- |\n| <code>&#9;<!---->&#10;<!---->&#9;</code> |\n",
+    "code": "\t\n\t"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a \n b",
+    "markdown": "|  |\n| --- |\n| <code>a <!---->&#10;<!----> b</code> |\n",
+    "code": "a \n b"
+  },
+  {
+    "template": "| `seed` |",
+    "value": "a\t\n b@c.test",
+    "markdown": "|  |\n| --- |\n| <code>a&#9;<!---->&#10;<!----> b&#64;<!---->c&#46;test</code> |\n",
+    "code": "a\t\n b@c.test"
   }
 ]
