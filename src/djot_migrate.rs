@@ -4680,7 +4680,6 @@ fn djot_destination_lines(source: &str, depth: usize) -> String {
 }
 
 fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
-    use std::collections::HashMap;
     if !source.contains("](") {
         return source.to_owned();
     }
@@ -5247,7 +5246,6 @@ fn fold_djot_references(source: &str) -> String {
 }
 
 fn normalize_djot_paragraph_fences(source: &str) -> String {
-    use std::collections::HashMap;
     let rows = djot_table_rows(source, &mask_djot_inline(source, false));
     let mask = mask_djot_fences(source, None, &rows, true);
     if !mask.contains("```") {
@@ -5370,7 +5368,6 @@ fn normalize_djot_footnotes(
     boundaries: Option<&DjotFootnoteAttributeStrip>,
     inherited: &HashSet<String>,
 ) -> String {
-    use std::collections::HashMap;
     if !source.contains("[^") {
         return source.to_owned();
     }
@@ -6874,7 +6871,6 @@ fn normalize_djot_table_pipes(source: &str) -> String {
     fn punctuation(byte: Option<&u8>) -> bool {
         byte.is_some_and(u8::is_ascii_punctuation)
     }
-    use std::collections::HashMap;
     let renamed = rename_djot_pipe_footnotes(source);
     let source = renamed.as_str();
     let mask = mask_djot_forms_with_options(
