@@ -413,5 +413,25 @@
     "name": "cancel-scope-82",
     "source": "- [a](b`c) `d`\n\nnext",
     "html": "<ul><li>[a](b<code>c) </code>d<code></code></li></ul><p>next</p>"
+  },
+  {
+    "name": "pending-review-83",
+    "source": "[a](][`](b\\{\n\n[r]: /u\n\n[^n]: note\n",
+    "html": "<p>[a](][<code>](b\\{</code></p>"
+  },
+  {
+    "name": "pending-review-84",
+    "source": "[r]\\(u){=|[r](u)](][\n- [r] \n",
+    "html": "<p>[r](u){=|<a href=\"u\">r</a>](][\n- [r]</p>"
+  },
+  {
+    "name": "pending-review-85",
+    "source": "|  |[\\|{.c}]([*(\\|{ |\n",
+    "html": "<table><tr><td></td><td>[<span class=\"c\">|</span>]([*(|{</td></tr></table>"
+  },
+  {
+    "name": "pending-review-86",
+    "source": "| {.c}[>](u)^[[a](}\\\\|_< |\n",
+    "html": "<table><tr><td><a href=\"u\">&gt;</a>^[[a](}\\|_&lt;</td></tr></table>"
   }
 ]

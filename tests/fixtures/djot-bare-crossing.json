@@ -418,5 +418,65 @@
     "name": "bare-outer-attrs-^--",
     "source": "^a {-b^ c-}{.c}",
     "html": "<p><sup>a {-b</sup><span class=\"c\">c-}</span></p>"
+  },
+  {
+    "name": "tilde-review-0",
+    "source": "```\n\\~~~ x\n```",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-1",
+    "source": "~~~\n\\~~~ x\n~~~",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-2",
+    "source": "~~~~\n\\~~~ x\n~~~~",
+    "html": "<pre><code>\\~~~ x\n</code></pre>"
+  },
+  {
+    "name": "tilde-review-3",
+    "source": "para\n~~~x~\nmore",
+    "html": "<p>para\n~~<sub>x</sub>\nmore</p>"
+  },
+  {
+    "name": "tilde-review-4",
+    "source": "~~~x~ y",
+    "html": "<p>~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-5",
+    "source": "> a\n> ~~~x~ y",
+    "html": "<blockquote><p>a\n~~<sub>x</sub> y</p></blockquote>"
+  },
+  {
+    "name": "tilde-review-6",
+    "source": "\\~~~x~ y",
+    "html": "<p>~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-7",
+    "source": "a\n\\~~~x~ y",
+    "html": "<p>a\n~~<sub>x</sub> y</p>"
+  },
+  {
+    "name": "tilde-review-8",
+    "source": "a\n~~~x\ny~",
+    "html": "<p>a\n~~<sub>x\ny</sub></p>"
+  },
+  {
+    "name": "tilde-review-9",
+    "source": "a\n\\~~~\nx\n\\~~~",
+    "html": "<p>a\n~<sub>~\nx\n~</sub>~</p>"
+  },
+  {
+    "name": "tilde-review-10",
+    "source": "a\n~~~\nx~",
+    "html": "<p>a\n~<sub>~\nx</sub></p>"
+  },
+  {
+    "name": "tilde-review-11",
+    "source": "a\n~~~x\nx\n~~~",
+    "html": "<p>a\n~~~x\nx\n~~~</p>"
   }
 ]

@@ -159,3 +159,13 @@ fn empty_notes_and_definition_items_leave_reference_boundaries() {
         assert!(html.contains("href=\"#fn1\""));
     }
 }
+
+#[test]
+fn outer_destinations_after_nested_links() {
+    for (source, expected) in [
+        ("[[a](u)](v w)", "[[a](u)](v%20w)"),
+        (r#"[x [a](u) y](v"w)"#, "[x [a](u) y](v%22w)"),
+    ] {
+        assert_eq!(carve::djot_to_carve(source), expected);
+    }
+}

@@ -769,7 +769,8 @@ fn protect_attributed_words(
     prefix: &str,
     spans: &mut Vec<String>,
     inherited: &HashSet<String>,
-) -> String {    if !source.contains('{') {
+) -> String {
+    if !source.contains('{') {
         return source.to_owned();
     }
     let paired = emphasis::paired_openers(source, &emphasis_mask(source));
@@ -784,7 +785,7 @@ fn protect_attributed_words(
     let mut literal_braces = std::collections::HashMap::new();
     let paired_closes: HashSet<usize> = paired.values().copied().collect();
     let mut escaped_brace_closes = HashSet::new();
-    let mut escaped_word_characters = HashMap::new();
+    let mut word_atoms = HashMap::new();
     for note in cached_regex!(r"\[\^[^\]\n]*\]").unwrap().find_iter(source) {
         if is_escaped(source.as_bytes(), note.start())
             && !is_escaped(source.as_bytes(), note.end() - 1)
@@ -821,7 +822,7 @@ fn protect_attributed_words(
                 continue;
             }
             if !djot_word_whitespace(ch) {
-                escaped_word_characters.insert(
+                word_atoms.insert(
                     if source[at..].starts_with("\0U\0") {
                         at + 3
                     } else {
@@ -859,6 +860,9 @@ fn protect_attributed_words(
             last_inline_end = Some(at + ch.len_utf8());
             continue;
         }
+        if source[at..].starts_with("\0U\0") {
+            word_atoms.insert(at + 3, at);
+        }
         if ch == '{' && at >= attribute_end {
             attribute_end = read_brace_attributes.read(at).map_or(at, |(end, _)| end);
         }
@@ -886,7 +890,7 @@ fn protect_attributed_words(
             ));
         } else if ch == '}' {
             if let Some((begin, true, opening_space)) = brace_stack.pop() {
-                if !escaped_brace_closes.contains(&at) {
+                if !escaped_brace_closes.contains(&at) && !paired_closes.contains(&(at + 1)) {
                     if let Some(from) = last_atom_escape.max(last_inline_end).filter(|from| {
                         *from >= begin && last_space.map_or(true, |space| *from > space)
                     }) {
@@ -941,7 +945,7 @@ fn protect_attributed_words(
             && masked.as_bytes()[i - 1] == bytes[i - 1]
             && (!b"`*_~^]}>".contains(&bytes[i - 1])
                 || literal_braces.contains_key(&(i - 1))
-                || escaped_word_characters.contains_key(&i))
+                || word_atoms.contains_key(&i))
         {
             while word > cursor {
                 if let Some(&literal) = literal_braces
@@ -951,7 +955,7 @@ fn protect_attributed_words(
                     word = literal;
                     continue;
                 }
-                if let Some(&begin) = escaped_word_characters.get(&word) {
+                if let Some(&begin) = word_atoms.get(&word) {
                     if begin >= cursor {
                         word = begin;
                         continue;
@@ -2426,7 +2430,7 @@ fn mask_djot_forms_with_options(
         None
     };
 
-    let mut mask = mask_djot_fences(source, on_fence_line, row_boundaries, false).into_bytes();
+    let mut mask = mask_djot_fences(source, on_fence_line, row_boundaries, true).into_bytes();
 
     mask = mask_djot_opaque(&String::from_utf8(mask).unwrap(), options);
     if inline_forms && footnotes {
@@ -4347,6 +4351,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     #[derive(Clone)]
     struct Link {
         at: usize,
+        image: bool,
         depth: usize,
         label_end: usize,
         target: Option<usize>,
@@ -4432,7 +4437,8 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
     while i < source.len() {
         if boundaries.contains(&i) {
             if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
-                edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+                let at = owner.target.unwrap() - 1;
+                edits.insert(at, (at + 1, "\\(".to_owned()));
             }
             stack.clear();
             pending_notes.clear();
@@ -4442,7 +4448,8 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             line += 1;
             if blank.is_match(&source[i..]) {
                 if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
-                    edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+                    let at = owner.target.unwrap() - 1;
+                    edits.insert(at, (at + 1, "\\(".to_owned()));
                 }
                 stack.clear();
                 pending_notes.clear();
@@ -4474,7 +4481,8 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             && i.checked_sub(1).and_then(|p| bytes.get(p)) != Some(&b'\\')
         {
             if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
-                edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+                let at = owner.target.unwrap() - 1;
+                edits.insert(at, (at + 1, "\\(".to_owned()));
             }
             stack.clear();
             pending_notes.clear();
@@ -4491,6 +4499,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             }
             stack.push(Link {
                 at: i,
+                image: i > 0 && bytes[i - 1] == b'!' && !is_escaped(bytes, i - 1),
                 depth: quote_depths[line],
                 label_end: 0,
                 target: None,
@@ -4514,8 +4523,8 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             if bytes.get(i + 1) == Some(&b'(') {
                 if let Some(owner) = destination_owner {
                     if owner != tip {
-                        let at = stack[owner].at;
-                        edits.insert(at, (at + 1, "\\[".to_owned()));
+                        let at = stack[owner].target.unwrap() - 1;
+                        edits.insert(at, (at + 1, "\\(".to_owned()));
                     }
                 }
                 stack[tip].label_end = i;
@@ -4527,13 +4536,13 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             }
             if bytes.get(i + 1) == Some(&b'[') {
                 let mut end = i + 2;
-                while end < bytes.len() && bytes[end] != b']' {
+                while end < bytes.len() && bytes[end] != b']' && bytes[end] != b'[' {
                     if bytes[end] == b'\\' {
                         end += 1;
                     }
                     end += 1;
                 }
-                if bytes.get(end) == Some(&b']') {
+                if bytes.get(end) == Some(&b']') && mask.as_bytes().get(end) == Some(&b']') {
                     if stack[tip].target.is_some() {
                         let at = stack[tip].at;
                         let label = label_of(source, &mask, &angles, &edits, at + 1, i);
@@ -4601,9 +4610,11 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
             continue;
         }
         if tip != owner_index {
-            edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+            let at = owner.target.unwrap() - 1;
+            edits.insert(at, (at + 1, "\\(".to_owned()));
             if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
-                edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+                let at = owner.target.unwrap() - 1;
+                edits.insert(at, (at + 1, "\\(".to_owned()));
             }
             stack.clear();
             pending_notes.clear();
@@ -4674,11 +4685,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
                 })
                 .into_owned();
         }
-        if owner.at > 0
-            && bytes[owner.at - 1] == b'!'
-            && !is_escaped(bytes, owner.at - 1)
-            && label.contains(&b'[')
-        {
+        if owner.image && label.contains(&b'[') {
             let raw = String::from_utf8(label).expect("image labels preserve UTF-8");
             let raw = remove_inherited_attribute_markers(&raw, inherited);
             let converted = djot_to_carve(&format!("DJOTALT {raw} DJOTEND"));
@@ -4754,7 +4761,8 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
         i += 1;
     }
     if let Some(owner) = destination_owner.and_then(|index| stack.get(index)) {
-        edits.insert(owner.at, (owner.at + 1, "\\[".to_owned()));
+        let at = owner.target.unwrap() - 1;
+        edits.insert(at, (at + 1, "\\(".to_owned()));
     }
     let mut output = Vec::new();
     i = 0;
@@ -4913,7 +4921,7 @@ fn normalize_djot_paragraph_fences(source: &str) -> String {
     use std::collections::HashMap;
     let rows = djot_table_rows(source, &mask_djot_inline(source, false));
     let mask = mask_djot_fences(source, None, &rows, true);
-    if !mask.contains("```") && !mask.contains("~~~") {
+    if !mask.contains("```") {
         return source.to_owned();
     }
     let bytes = source.as_bytes();
@@ -4953,7 +4961,6 @@ fn normalize_djot_paragraph_fences(source: &str) -> String {
     }
     let mut output = String::new();
     let (mut copied, mut boundary, mut i) = (0, 0, 0);
-    let tilde = cached_regex!(r"^~{3,}[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*(?:\n|$)").unwrap();
     let payload_end = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*$").unwrap();
     while i < source.len() {
         if mask.as_bytes()[i] == b' ' {
@@ -5003,17 +5010,6 @@ fn normalize_djot_paragraph_fences(source: &str) -> String {
             }
             i = end + if closed { width } else { 0 };
             continue;
-        }
-        if bytes[i] == b'~' && heads.contains(&i) {
-            if let Some(m) = tilde.find(&source[i..]) {
-                let text = m.as_str().trim_end_matches('\n');
-                output.push_str(&source[copied..i]);
-                output.push('\\');
-                output.push_str(text);
-                copied = i + text.len();
-                i = copied;
-                continue;
-            }
         }
         i += 1;
     }

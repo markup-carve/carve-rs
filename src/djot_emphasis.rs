@@ -322,14 +322,6 @@ fn process(
             i += 1;
             continue;
         }
-        if ch == b'\\' && i <= structural_end && bytes[i..].starts_with(b"\\~~~") {
-            i += 1;
-            while bytes.get(i) == Some(&b'~') {
-                structural.insert(i);
-                i += 1;
-            }
-            continue;
-        }
         if ch == b'\\' && bytes.get(i + 1) != Some(&b'\n') {
             i += 2;
             continue;
@@ -372,13 +364,6 @@ fn process(
         }
         if ch != b'_' && ch != b'*' && !b"~^".contains(&ch) {
             i += 1;
-            continue;
-        }
-        if ch == b'~' && i <= structural_end && bytes[i..].starts_with(b"~~~") {
-            while bytes.get(i) == Some(&b'~') {
-                structural.insert(i);
-                i += 1;
-            }
             continue;
         }
         if ch == b'*' && i <= structural_end {
@@ -656,15 +641,11 @@ impl Renderer<'_> {
                 }
                 continue;
             }
-            if ch == b'~' && self.structural.contains(&i)
-                || ch == b'='
-                    && (self.valid_brace_closers.contains(&i)
-                        || i > 0 && self.valid_braces.contains(&(i - 1)))
+            if ch == b'='
+                && (self.valid_brace_closers.contains(&i)
+                    || i > 0 && self.valid_braces.contains(&(i - 1)))
             {
-                out.extend_from_slice(
-                    self.protect(if ch == b'~' { "\\~" } else { "=" })
-                        .as_bytes(),
-                );
+                out.extend_from_slice(self.protect("=").as_bytes());
                 i += 1;
                 continue;
             }

@@ -344,5 +344,45 @@
     "name": "review-image-alt-two-braces",
     "source": "before ![a {x} {y} [b]{.c}](u) after",
     "html": "<p>before <img alt=\"a {x} {y} b\" src=\"u\"> after</p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-0",
+    "source": "{+\\{ +}{.c}",
+    "html": "<p><ins class=\"c\">{ </ins></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-1",
+    "source": "{-\\{ -}{.c}",
+    "html": "<p><del class=\"c\">{ </del></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-2",
+    "source": "{=\\{ =}{.c}",
+    "html": "<p><mark class=\"c\">{ </mark></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-3",
+    "source": "{+a \\{b +}{.c}",
+    "html": "<p><ins class=\"c\">a {b </ins></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-4",
+    "source": "{+\\]\\{\" +}{.c}",
+    "html": "<p><ins class=\"c\">]{“ </ins></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-5",
+    "source": "{+a\\{b+}{.c}",
+    "html": "<p><ins class=\"c\">a{b</ins></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-6",
+    "source": "{+\\{+}{.c}",
+    "html": "<p><ins class=\"c\">{</ins></p>"
+  },
+  {
+    "name": "forced-span-literal-brace-attributes-7",
+    "source": "{+\\[ +}{.c}",
+    "html": "<p><ins class=\"c\">[ </ins></p>"
   }
 ]

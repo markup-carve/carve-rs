@@ -19,7 +19,12 @@ fn user_placeholders_survive_namespace_selection() {
                 "{token} w{{x}}{{.c}} ![*alt*](u)\n\na {{.o}} b\n\n{{.orphan}}\n\n: ```\n  payload\n  ```\n\n{{+unclosed\n"
             );
             let converted = carve::djot_to_carve(&source);
-            assert!(converted.contains(&token));
+            let expected = if source.starts_with("\0{.a}") {
+                format!("[\0]{{.a}}{base}\0")
+            } else {
+                token.clone()
+            };
+            assert!(converted.contains(&expected));
             assert!(!converted.replace(&token, "").contains("\0DJOT"));
             let html = carve::to_html(&converted);
             assert!(html.contains("class=\"c\""));
@@ -41,9 +46,9 @@ fn frontmatter_keeps_user_placeholder_text() {
 }
 
 #[test]
-fn user_markers_formed_by_orphan_removal_are_preserved() {
+fn attributed_nuls_before_foreign_markers_are_preserved() {
     for index in [0, 7] {
-        let token = format!("\0DJOTSTRONG0\0{index}\0");
+        let token = format!("[\0]{{.a}}DJOTSTRONG0\0{index}\0");
         let source = format!("\0{{.a}}DJOTSTRONG0\0{index}\0 w{{.c}}");
         assert_eq!(carve::djot_to_carve(&source), format!("{token} [w]{{.c}}"));
     }
@@ -123,8 +128,23 @@ fn single_index_user_markers_survive_syntax_removal() {
         ] {
             let converted =
                 carve::djot_to_carve(&format!("{source}\n\n[^n]: note\n\n  {{.c}}\n\n[^n]"));
-            assert!(converted.contains(&token));
+            let expected = if source.starts_with("\0{.a}") {
+                format!("[\0]{{.a}}{base}\0")
+            } else {
+                token.clone()
+            };
+            assert!(converted.contains(&expected));
             assert!(!converted.replace(&token, "").contains("\0DJOT"));
         }
+    }
+}
+
+#[test]
+fn the_whole_attributed_word_with_nuls_is_preserved() {
+    for word in ["\0", "a\0", "x\0y", "\0U\0", "\0\0"] {
+        assert_eq!(
+            carve::djot_to_carve(&format!("{word}{{.a}}")),
+            format!("[{word}]{{.a}}")
+        );
     }
 }
