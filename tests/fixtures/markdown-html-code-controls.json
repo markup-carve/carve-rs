@@ -1932,5 +1932,403 @@
     ],
     "attributes": [],
     "nativeHtml": "<p><code>a\\<em>b</code> c</em></p>\n"
+  },
+  {
+    "markdown": "<code>int[][]</code>",
+    "codes": [
+      {
+        "value": "int[][]",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "int[][]"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>int[][]</code></p>\n"
+  },
+  {
+    "markdown": "<code>m[i][j]</code>",
+    "codes": [
+      {
+        "value": "m[i][j]",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "m[i][j]"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>m[i][j]</code></p>\n"
+  },
+  {
+    "markdown": "<code>a ~~ b ~~ c</code>",
+    "codes": [
+      {
+        "value": "a ~~ b ~~ c",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a ~~ b ~~ c"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>a ~~ b ~~ c</code></p>\n"
+  },
+  {
+    "markdown": "<code>x ~~ y</code> and <code>p ~~ q</code>",
+    "codes": [
+      {
+        "value": "x ~~ y",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      },
+      {
+        "value": "p ~~ q",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x ~~ y and p ~~ q"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>x ~~ y</code> and <code>p ~~ q</code></p>\n"
+  },
+  {
+    "markdown": "<code>a\\<!---->b</code>",
+    "codes": [
+      {
+        "value": "a<!---->b",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a<!---->b"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>a&lt;!----&gt;b</code></p>\n"
+  },
+  {
+    "markdown": "<code>a\\*b&#10;c</code>",
+    "codes": [
+      {
+        "value": "a*b\nc",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a*b\nc"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code>a*b\nc</code></p>\n"
+  },
+  {
+    "markdown": "[x](u \"a\n<code>b</code>\")",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u",
+        "title": "a\n<code>b</code>"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u\" title=\"a\n&lt;code&gt;b&lt;/code&gt;\">x</a></p>\n"
+  },
+  {
+    "markdown": "[x](u \"a\n<code></code>\")",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u",
+        "title": "a\n<code></code>"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u\" title=\"a\n&lt;code&gt;&lt;/code&gt;\">x</a></p>\n"
+  },
+  {
+    "markdown": "*x <code>a**</code> *y <code>a*</code>",
+    "codes": [
+      {
+        "value": "a",
+        "ancestors": [
+          "p",
+          "em",
+          "code"
+        ],
+        "elements": []
+      },
+      {
+        "value": "*",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      },
+      {
+        "value": "a",
+        "ancestors": [
+          "p",
+          "em",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x a* y a"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><em>x <code>a</em>*</code> <em>y <code>a</em></code></p>\n"
+  },
+  {
+    "markdown": "> <code class=\"x\">a&#13;\n> b</code>\n> | h |\n> |---|\n> | c |",
+    "codes": [
+      {
+        "value": "a\nb",
+        "ancestors": [
+          "blockquote",
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a\nb"
+      },
+      {
+        "tag": "th",
+        "value": "h"
+      },
+      {
+        "tag": "td",
+        "value": "c"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<blockquote>\n<p><code class=\"x\">a\r\nb</code></p>\n<table>\n<thead>\n<tr>\n<th>h</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>c</td>\n</tr>\n</tbody>\n</table>\n</blockquote>\n"
+  },
+  {
+    "markdown": "[a [b](c) d](u<code>x</code>)",
+    "codes": [
+      {
+        "value": "x",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "[a b d](ux)"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "c"
+      }
+    ],
+    "nativeHtml": "<p>[a <a href=\"c\">b</a> d](u<code>x</code>)</p>\n"
+  },
+  {
+    "markdown": "x[^1](u<code>a</code>)\n\n[^1]: note",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x^1"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u%3Ccode%3Ea%3C/code%3E"
+      }
+    ],
+    "nativeHtml": "<p>x<a href=\"u%3Ccode%3Ea%3C/code%3E\">^1</a></p>\n"
+  },
+  {
+    "markdown": "[^x](u)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "^x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u\">^x</a></p>\n"
+  },
+  {
+    "markdown": "[x](\nu<code>a</code>)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "a",
+        "href": "u%3Ccode%3Ea%3C/code%3E"
+      }
+    ],
+    "nativeHtml": "<p><a href=\"u%3Ccode%3Ea%3C/code%3E\">x</a></p>\n"
+  },
+  {
+    "markdown": "[x](\n<code>a</code>)",
+    "codes": [
+      {
+        "value": "a",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "[x](\na)"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p>[x](\n<code>a</code>)</p>\n"
+  },
+  {
+    "markdown": "*a*~~.b <code>c~~</code>",
+    "codes": [
+      {
+        "value": "c",
+        "ancestors": [
+          "p",
+          "del",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a.b c"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><em>a</em><del>.b <code>c</del></code></p>\n"
+  },
+  {
+    "markdown": "<code class=\"x\">a&#13;\n  b</code>",
+    "codes": [
+      {
+        "value": "a\nb",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a\nb"
+      }
+    ],
+    "attributes": [],
+    "nativeHtml": "<p><code class=\"x\">a\r\nb</code></p>\n"
+  },
+  {
+    "markdown": "x ![<b>x</b>](u)",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x "
+      }
+    ],
+    "attributes": [
+      {
+        "tag": "img",
+        "src": "u",
+        "alt": "<b>x</b>"
+      }
+    ],
+    "nativeHtml": "<p>x <img src=\"u\" alt=\"&lt;b&gt;x&lt;/b&gt;\" /></p>\n"
   }
 ]

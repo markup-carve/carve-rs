@@ -174,7 +174,9 @@ pub(crate) fn markdown_to_carve_with_losses(
     // Markdown reading in between never sees a comment it would carry across as
     // raw HTML.
     let lift = crate::carrier_markers::lift_carrier_markers(markdown);
-    let (mut document, mut losses, notices) = markdown_to_ast_with_losses(&lift.source)?;
+    let mut code_lines = Vec::new();
+    let (mut document, mut losses, notices) =
+        markdown_to_ast_with_code_lines(&lift.source, Some(&mut code_lines))?;
     if lift.damaged {
         losses.push(MarkdownImportLoss {
             message: CARRIER_MARKERS_DAMAGED.to_owned(),
@@ -204,6 +206,9 @@ pub(crate) fn markdown_to_carve_with_losses(
             }),
     );
     let expected_code = document.markdown_code_values();
+    if code_lines.len() != expected_code.len() {
+        code_lines = vec![None; expected_code.len()];
+    }
     match render_carve(&document) {
         Ok(value)
             if expected_code.is_empty()
@@ -216,7 +221,11 @@ pub(crate) fn markdown_to_carve_with_losses(
             ))
         }
         Ok(_) | Err(crate::RenderCarveError::SourceUnspellable(_)) => {
-            losses.extend(preserve_html_code_for_writing(&mut document, false));
+            losses.extend(preserve_html_code_for_writing(
+                &mut document,
+                false,
+                &mut code_lines,
+            ));
             let value = match render_carve(&document) {
                 Ok(value)
                     if document.markdown_code_values()
@@ -225,7 +234,11 @@ pub(crate) fn markdown_to_carve_with_losses(
                     value
                 }
                 Ok(_) | Err(crate::RenderCarveError::SourceUnspellable(_)) => {
-                    losses.extend(preserve_html_code_for_writing(&mut document, true));
+                    losses.extend(preserve_html_code_for_writing(
+                        &mut document,
+                        true,
+                        &mut code_lines,
+                    ));
                     render_carve(&document)?
                 }
                 Err(error) => return Err(error),
@@ -252,6 +265,7 @@ pub(crate) fn markdown_to_carve_with_losses(
 fn preserve_html_code_for_writing(
     document: &mut Document,
     force_all: bool,
+    code_lines: &mut Vec<Option<usize>>,
 ) -> Vec<MarkdownImportLoss> {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
     struct Preserve {
@@ -261,6 +275,9 @@ fn preserve_html_code_for_writing(
         inline_depth: usize,
         label_depth: usize,
         force_all: bool,
+        code_lines: Vec<Option<usize>>,
+        code_index: usize,
+        kept_lines: Vec<Option<usize>>,
     }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
@@ -290,6 +307,9 @@ fn preserve_html_code_for_writing(
             let length = nodes.len();
             for (index, node) in nodes.iter_mut().enumerate() {
                 if let InlineNode::Code(code) = node {
+                    let source_line = self.code_lines.get(self.code_index).copied().flatten();
+                    self.code_index += 1;
+                    self.kept_lines.push(source_line);
                     if code.attrs.is_none()
                         && (self.force_all
                             || code.value.is_empty()
@@ -323,7 +343,8 @@ fn preserve_html_code_for_writing(
                             }
                         }
                         let body = code_html(&code.value);
-                        self.losses.push(MarkdownImportLoss { message: "Preserved a code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
+                        self.kept_lines.pop();
+                        self.losses.push(MarkdownImportLoss { message: "Preserved a code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: source_line, kind: MarkdownLossKind::RawCodeFallback });
                         *node = InlineNode::RawInline(RawInline {
                             format: "html".into(),
                             content: body,
@@ -353,11 +374,15 @@ fn preserve_html_code_for_writing(
         inline_depth: 0,
         label_depth: 0,
         force_all,
+        code_lines: std::mem::take(code_lines),
+        code_index: 0,
+        kept_lines: Vec::new(),
     };
     preserve.blocks(&mut document.children);
     for blocks in document.footnote_defs.values_mut() {
         preserve.blocks(blocks);
     }
+    *code_lines = preserve.kept_lines;
     preserve.losses
 }
 
@@ -555,6 +580,13 @@ fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
 fn markdown_to_ast_with_losses(
     markdown: &str,
 ) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
+    markdown_to_ast_with_code_lines(markdown, None)
+}
+
+fn markdown_to_ast_with_code_lines(
+    markdown: &str,
+    code_lines: Option<&mut Vec<Option<usize>>>,
+) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
     } else {
@@ -601,7 +633,10 @@ fn markdown_to_ast_with_losses(
 
     let headings = normalize_heading_closers(&without_nuls, options);
     let source = normalize_table_email_autolinks(&headings, options);
-    let mut builder = Builder::default();
+    let mut builder = Builder {
+        track_code_lines: code_lines.is_some(),
+        ..Builder::default()
+    };
     if source.contains("[^") && source.contains('|') {
         for (offset, _) in source.match_indices("carve-import-footnote-") {
             let digits: String = source[offset + "carve-import-footnote-".len()..]
@@ -806,7 +841,10 @@ fn markdown_to_ast_with_losses(
     if builder.over_depth {
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
-    let (mut document, losses) = builder.finish();
+    let (mut document, losses, locations) = builder.finish();
+    if let Some(code_lines) = code_lines {
+        *code_lines = locations;
+    }
     if let Some(block) = claimed {
         document.frontmatter_raw = Some(Frontmatter {
             format: block.format.clone(),
@@ -1274,9 +1312,27 @@ struct Builder {
     frontmatter: Option<Frontmatter>,
     losses: Vec<MarkdownImportLoss>,
     current_line: usize,
+    track_code_lines: bool,
+    code_lines: BTreeMap<Option<String>, Vec<Option<usize>>>,
 }
 
 impl Builder {
+    fn native_code(&mut self, value: String, line: usize) {
+        if self.track_code_lines
+            && !self
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::Image { .. }))
+        {
+            let owner = self.frames.iter().rev().find_map(|frame| match frame {
+                Frame::FootnoteDef { label, .. } => Some(label.clone()),
+                _ => None,
+            });
+            self.code_lines.entry(owner).or_default().push(Some(line));
+        }
+        self.inline(InlineNode::code(value, None));
+    }
+
     fn footnote_label(&mut self, label: &str) -> String {
         if !label.contains('|') {
             return label.to_owned();
@@ -1311,7 +1367,7 @@ impl Builder {
             Event::Start(tag) => self.start(tag, source, empty_title),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
-            Event::Code(code) => self.inline(InlineNode::code(code.to_string(), None)),
+            Event::Code(code) => self.native_code(code.to_string(), self.current_line),
             // A soft break is a newline the author wrote inside a paragraph;
             // Carve keeps it, so the writer can re-wrap at the same place.
             Event::SoftBreak => self.inline(InlineNode::soft_break()),
@@ -1655,11 +1711,17 @@ impl Builder {
                 cells: Vec::new(),
             },
             Tag::TableCell => Frame::TableCell(Vec::new()),
-            Tag::FootnoteDefinition(label) => Frame::FootnoteDef {
-                label: self.footnote_label(&label),
-                children: Vec::new(),
-                outer_levels: (0, 0),
-            },
+            Tag::FootnoteDefinition(label) => {
+                let label = self.footnote_label(&label);
+                if self.track_code_lines {
+                    self.code_lines.insert(Some(label.clone()), Vec::new());
+                }
+                Frame::FootnoteDef {
+                    label,
+                    children: Vec::new(),
+                    outer_levels: (0, 0),
+                }
+            }
             Tag::MetadataBlock(_) => Frame::Metadata(String::new()),
             // Nothing else is enabled, so nothing reaches here; an unopened
             // frame would desync the stack on the matching end event, hence a
@@ -2077,10 +2139,7 @@ impl Builder {
                     _ => false,
                 });
                 if plain && native {
-                    self.inline(InlineNode::code(
-                        content.replace("\r\n", "\n").replace('\r', "\n"),
-                        None,
-                    ));
+                    self.native_code(content.replace("\r\n", "\n").replace('\r', "\n"), line);
                 } else {
                     self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
                     let closing_line = self.current_line;
@@ -2188,7 +2247,7 @@ impl Builder {
         }
     }
 
-    fn finish(mut self) -> (Document, Vec<MarkdownImportLoss>) {
+    fn finish(mut self) -> (Document, Vec<MarkdownImportLoss>, Vec<Option<usize>>) {
         // Truncated input can leave frames open; closing them keeps the content
         // rather than discarding a half-built tree.
         while !self.frames.is_empty() {
@@ -2245,7 +2304,15 @@ impl Builder {
             source_len: 0,
             ingest_payload_len: 0,
         };
-        (document, self.losses)
+        let mut code_lines = self.code_lines.remove(&None).unwrap_or_default();
+        for label in document.footnote_defs.keys() {
+            code_lines.extend(
+                self.code_lines
+                    .remove(&Some(label.clone()))
+                    .unwrap_or_default(),
+            );
+        }
+        (document, self.losses, code_lines)
     }
 }
 

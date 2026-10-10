@@ -143,6 +143,7 @@ fn raw_code_fallback_is_reported_as_a_rendering_capability_change() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].fidelity, carve::MigrationFidelity::Degraded);
     assert_eq!(rows[0].confidence, carve::MigrationConfidence::Exact);
+    assert_eq!(rows[0].path.as_deref(), Some("line:3"));
 }
 
 #[test]
@@ -359,4 +360,45 @@ fn misnested_code_close_restores_prose_newlines() {
             carve::to_html(&source)
         );
     }
+}
+
+#[test]
+fn payload_fallbacks_keep_unrelated_code_native() {
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("fixtures/markdown-html-code-payloads.json")).unwrap();
+    let options = carve::Options {
+        allow_raw_html: false,
+        ..Default::default()
+    };
+    for case in cases {
+        let markdown = format!("{}\n\n`keep`", case["markdown"].as_str().unwrap());
+        let result = carve::try_migrate_markdown(&markdown).unwrap();
+        let document = carve::parse(&result.value);
+        let html = carve::render_html_with_options(&document, &options).unwrap();
+        assert!(html.contains("<code>keep</code>"), "{}", case["template"]);
+        assert!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "raw-code-fallback")
+                .count()
+                <= 1,
+            "{}",
+            case["template"]
+        );
+    }
+}
+
+#[test]
+fn a_label_fallback_keeps_its_source_line() {
+    let result = carve::try_migrate_markdown("text\n\n[<code></code>](u)").unwrap();
+    let rows: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "raw-code-fallback")
+        .collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].path.as_deref(), Some("line:3"));
 }
