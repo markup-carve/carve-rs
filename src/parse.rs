@@ -13555,6 +13555,19 @@ fn collect_indented_block_mapped_with_columns(
         //     never the marker's, so it falls through to the rules its own
         //     column names - which for a column below the item's content column
         //     is no container at all.
+        // A marker that attaches no block leaves the open fence unchanged.
+        // Its following blank or indented lines remain fence payload (SS17 L3).
+        if fence.is_some()
+            && indent == parent_indent
+            && trim_ascii(line) == "+"
+            && cur.lines.line(cur.pos + 1).is_some_and(|next| {
+                is_blank_line(next)
+                    || !attaches_flush_left(cur.source_col(cur.pos + 1), Some(&next))
+            })
+        {
+            cur.consume();
+            continue;
+        }
         if lead_is_continuation && lines.is_empty() {
             if indent == 0 && detect_list_marker_full(line).is_some() {
                 break;
