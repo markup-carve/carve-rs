@@ -285,9 +285,14 @@ fn boundary_loss_lines_include_typed_frontmatter() {
 
 #[test]
 fn nested_image_and_raw_html_content_do_not_claim_retained_link_titles() {
-    for source in ["![a [b](<> \"t\") c](x.png)", "<span>[x](<> \"t\")</span>"] {
+    for source in [
+        "![a [b](<> \"t\") c](x.png)",
+        "![a ![b](<> \"t\") c](x.png)",
+    ] {
+        let result = migrate_markdown(source);
+        assert_eq!(result.value.trim(), "![a b c](x.png)");
         assert!(
-            !migrate_markdown(source)
+            !result
                 .report
                 .diagnostics
                 .iter()
@@ -295,4 +300,9 @@ fn nested_image_and_raw_html_content_do_not_claim_retained_link_titles() {
             "{source}"
         );
     }
+    assert!(!migrate_markdown("<span>[x](<> \"t\")</span>")
+        .report
+        .diagnostics
+        .iter()
+        .any(|row| row.code == "structure-unspellable"));
 }

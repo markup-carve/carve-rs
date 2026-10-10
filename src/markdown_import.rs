@@ -110,18 +110,6 @@ fn titled_span(title: String, children: Vec<InlineNode>) -> InlineNode {
     })
 }
 
-/// Convert Markdown source to Carve source.
-///
-/// GFM tables, strikethrough and task lists are enabled: they are what real
-/// Markdown documents carry, and Carve has a spelling for each.
-///
-/// Footnotes and YAML frontmatter are enabled for a second reason - leaving
-/// them OFF is not neutral, it corrupts. Without footnotes, `[^1]: Note.` is a
-/// link-reference definition and `Text[^1]` a shortcut link to it, so the note
-/// became the destination: `Text[^1](Note.)`. Without metadata blocks, a
-/// `---` fence is a thematic break and the key line beneath it a setext
-/// heading, so `title: T` became an `<h2>`. Both were caught by the
-/// differential against carve-js, not by reasoning.
 fn fence_language(info: &str) -> Option<&str> {
     info.trim_matches([' ', '\t'])
         .split([' ', '\t'])
@@ -146,6 +134,18 @@ fn is_empty_destination(destination: &str) -> bool {
 /// # Panics
 ///
 /// Panics if the canonical writer cannot represent the imported document.
+/// Convert Markdown source to Carve source.
+///
+/// GFM tables, strikethrough and task lists are enabled: they are what real
+/// Markdown documents carry, and Carve has a spelling for each.
+///
+/// Footnotes and YAML frontmatter are enabled for a second reason - leaving
+/// them OFF is not neutral, it corrupts. Without footnotes, `[^1]: Note.` is a
+/// link-reference definition and `Text[^1]` a shortcut link to it, so the note
+/// became the destination: `Text[^1](Note.)`. Without metadata blocks, a
+/// `---` fence is a thematic break and the key line beneath it a setext
+/// heading, so `title: T` became an `<h2>`. Both were caught by the
+/// differential against carve-js, not by reasoning.
 pub fn markdown_to_carve(markdown: &str) -> String {
     try_markdown_to_carve(markdown).expect("the Markdown import cannot be written as Carve")
 }
@@ -1907,6 +1907,7 @@ fn inline_text(node: &InlineNode) -> String {
         InlineNode::Code(code) => code.value.clone(),
         InlineNode::Emphasis(emphasis) => inline_run_text(&emphasis.children),
         InlineNode::Link(link) => inline_run_text(&link.children),
+        InlineNode::Span(span) => inline_run_text(&span.children),
         InlineNode::Image(image) => image.alt.clone(),
         _ => String::new(),
     }
