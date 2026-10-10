@@ -11177,6 +11177,16 @@ fn parse_list(
             if sublist_source_loosens_outer_item(&stream.source) {
                 tight = false;
             }
+            if detect_fence_open(innermost_content).is_some()
+                && stream.source.lines().skip(1).all(is_blank_line)
+            {
+                if let Some(end) = stream.source.find('\n') {
+                    stream.source.truncate(end);
+                    stream.line_map.truncate(1);
+                    stream.col_map.truncate(1);
+                    stream.reached.truncate(1);
+                }
+            }
             let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
