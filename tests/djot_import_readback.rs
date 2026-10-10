@@ -71,3 +71,14 @@ fn djot_empty_attributes_leave_adjacent_emphasis_bare() {
         assert_eq!(carve::djot_to_carve(source), expected, "{source:?}");
     }
 }
+
+/// A line the code mask hides is fenced payload, so its pipes are not table edges and
+/// must not pick up an escape.
+#[test]
+fn djot_table_edge_escapes_leave_fenced_payloads_alone() {
+    assert_eq!(
+        carve::djot_to_carve("```\n|`x`|\n```\n"),
+        "```\n|`x`|\n```\n"
+    );
+    assert_eq!(carve::djot_to_carve("para\n|`x`|\n"), "para\n\\|`x`|\n");
+}
