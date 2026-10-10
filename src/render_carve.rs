@@ -3787,6 +3787,11 @@ fn render_inline_body(
     next_opens_a_bracket: bool,
     may_run_to_end: bool,
 ) -> String {
+    if empty_code_run_children(node).is_some() || matches!(node, InlineNode::CriticSubstitute(_)) {
+        ctx.emphasis_depth_peak = ctx
+            .emphasis_depth_peak
+            .max(ctx.inline_depth + ctx.block_depth);
+    }
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
         // the canonical form writes it back verbatim. The parser drops the

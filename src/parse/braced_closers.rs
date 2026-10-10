@@ -1,5 +1,8 @@
 use super::substitution_scanner::SubstitutionScanner;
-use super::{delim_brace_slot, find_seq, raw_inline_format_end, read_attrs_at, scanned_autolink_end, skip_code_span, trailing_comment_end, DELIM_BRACE_SLOTS, MAX_NESTING_DEPTH};
+use super::{
+    delim_brace_slot, find_seq, raw_inline_format_end, read_attrs_at, scanned_autolink_end,
+    skip_code_span, trailing_comment_end, DELIM_BRACE_SLOTS, MAX_NESTING_DEPTH,
+};
 use std::collections::HashMap;
 
 const RAW_CLOSE_FLAG: usize = 1 << (usize::BITS - 1);
@@ -92,9 +95,15 @@ impl BracedClosers {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
             let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
             for at in points {
-                if bytes.get(at) != Some(&b'{') { continue; }
-                let Some(&marker) = bytes.get(at + 1) else { continue; };
-                if !matches!(marker, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=') { continue; }
+                if bytes.get(at) != Some(&b'{') {
+                    continue;
+                }
+                let Some(&marker) = bytes.get(at + 1) else {
+                    continue;
+                };
+                if !matches!(marker, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=') {
+                    continue;
+                }
                 let stop = self.emphasis_pairs.as_ref().unwrap().close(at + 2, marker);
                 if let Some(close) = stop.and_then(|stop| self.resolve_stop(bytes, marker, stop)) {
                     hosts.insert(at, close + 2);
@@ -103,31 +112,61 @@ impl BracedClosers {
             self.substitution_hosts = Some(hosts);
         }
         self.substitutions
-            .find(bytes, open + 2, pair, &mut self.code_ends, self.substitution_hosts.as_ref().unwrap())
+            .find(
+                bytes,
+                open + 2,
+                pair,
+                &mut self.code_ends,
+                self.substitution_hosts.as_ref().unwrap(),
+            )
             .map(|arrow| (pair, arrow))
     }
 
     pub(super) fn after_attributes(&mut self, bytes: &[u8], end: usize) -> usize {
-        if !*self.has_attribute_candidates.get_or_insert_with(|| bytes.windows(2).any(|pair| pair[0] == b'{' && (pair[1].is_ascii_alphabetic() || matches!(pair[1], b'.' | b'#' | b':')))) { return end; }
-        if self.emphasis_pairs.is_none() { self.build_emphasis_pairs(bytes); }
+        if !*self.has_attribute_candidates.get_or_insert_with(|| {
+            bytes.windows(2).any(|pair| {
+                pair[0] == b'{'
+                    && (pair[1].is_ascii_alphabetic() || matches!(pair[1], b'.' | b'#' | b':'))
+            })
+        }) {
+            return end;
+        }
+        if self.emphasis_pairs.is_none() {
+            self.build_emphasis_pairs(bytes);
+        }
         self.attribute_tails.get(&end).copied().unwrap_or(end)
     }
 
     pub(super) fn bare_attributes(&mut self, bytes: &[u8], open: usize) -> Option<(usize, usize)> {
-        if !*self.has_attribute_candidates.get_or_insert_with(|| bytes.windows(2).any(|pair| pair[0] == b'{' && (pair[1].is_ascii_alphabetic() || matches!(pair[1], b'.' | b'#' | b':')))) { return None; }
-        if self.emphasis_pairs.is_none() { self.build_emphasis_pairs(bytes); }
+        if !*self.has_attribute_candidates.get_or_insert_with(|| {
+            bytes.windows(2).any(|pair| {
+                pair[0] == b'{'
+                    && (pair[1].is_ascii_alphabetic() || matches!(pair[1], b'.' | b'#' | b':'))
+            })
+        }) {
+            return None;
+        }
+        if self.emphasis_pairs.is_none() {
+            self.build_emphasis_pairs(bytes);
+        }
         self.bare_attribute_pairs.get(&open).copied()
     }
 
     pub(super) fn close(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
+        if !matches!(delim, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=') {
+            return self.close_editorial(bytes, open, delim);
+        }
         self.queries += 1;
-        let native = matches!(delim, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=');
-        if native && self.emphasis_pairs.is_none() {
+        if self.emphasis_pairs.is_none() {
             self.build_emphasis_pairs(bytes);
         }
-        let result = if native {
-            self.emphasis_pairs.as_ref().unwrap().close(open + 2, delim)
-        } else if let Some(dense) = &self.dense {
+        let result = self.emphasis_pairs.as_ref().unwrap().close(open + 2, delim);
+        self.finish_close(bytes, delim, result)
+    }
+
+    fn close_editorial(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
+        self.queries += 1;
+        let result = if let Some(dense) = &self.dense {
             dense.close(open + 2, delim)
         } else {
             match self.scan(bytes, open + 2, delim, 0) {
@@ -140,6 +179,10 @@ impl BracedClosers {
                 }
             }
         };
+        self.finish_close(bytes, delim, result)
+    }
+
+    fn finish_close(&mut self, bytes: &[u8], delim: u8, result: Option<usize>) -> Option<usize> {
         self.last_verbatim_start = result
             .filter(|stop| stop & RAW_CLOSE_FLAG != 0)
             .map(|stop| stop & !RAW_CLOSE_FLAG);
@@ -317,49 +360,92 @@ impl BracedClosers {
         let mut last_label_end = None;
         let mut at = 0;
         while at + 1 < bytes.len() {
-            while label_ends.last().is_some_and(|&end| end <= at) { last_label_end = label_ends.pop(); }
-            if bytes[at] == b'\\' { at += 2; continue; }
-            if let Some(&end) = self.opaque.get(&at) {
-                if bytes[at] == b'[' { label_ends.push(end - 1); }
-                else { at = end; continue; }
+            while label_ends.last().is_some_and(|&end| end <= at) {
+                last_label_end = label_ends.pop();
             }
-            let attribute_end = if bytes[at] == b'{' && (bytes[at + 1].is_ascii_alphabetic() || matches!(bytes[at + 1], b'.' | b'#' | b':')) {
+            if bytes[at] == b'\\' {
+                at += 2;
+                continue;
+            }
+            if let Some(&end) = self.opaque.get(&at) {
+                if bytes[at] == b'[' {
+                    label_ends.push(end - 1);
+                } else {
+                    at = end;
+                    continue;
+                }
+            }
+            let attribute_end = if bytes[at] == b'{'
+                && (bytes[at + 1].is_ascii_alphabetic()
+                    || matches!(bytes[at + 1], b'.' | b'#' | b':'))
+            {
                 read_attrs_at(bytes, at, last_brace).map(|(_, end)| end)
-            } else { None };
-            if let Some(end) = attribute_end { attributes.push((at, end)); }
+            } else {
+                None
+            };
+            if let Some(end) = attribute_end {
+                attributes.push((at, end));
+            }
             let end = match bytes[at] {
-                b'`' => self.code_end(bytes, at).map(|end| raw_inline_format_end(bytes, end).map_or(end, |close| close + 1)),
+                b'`' => self
+                    .code_end(bytes, at)
+                    .map(|end| raw_inline_format_end(bytes, end).map_or(end, |close| close + 1)),
                 b'<' => scanned_autolink_end(bytes, at).map(|close| close + 1),
-                b'%' if bytes[at + 1] == b'%' && (at == 0 || matches!(bytes[at - 1], b' ' | b'\t' | b'\n') || bytes[at - 1] == b'[' && self.opaque.contains_key(&(at - 1))) => {
-                    let end = trailing_comment_end(bytes, at + 2, label_ends.last().copied()).unwrap_or(bytes.len());
+                b'%' if bytes[at + 1] == b'%'
+                    && (at == 0
+                        || matches!(bytes[at - 1], b' ' | b'\t' | b'\n')
+                        || bytes[at - 1] == b'[' && self.opaque.contains_key(&(at - 1))) =>
+                {
+                    let end = trailing_comment_end(bytes, at + 2, label_ends.last().copied())
+                        .unwrap_or(bytes.len());
                     self.line_comment_ends.insert(at, end);
                     Some(end)
                 }
                 b'{' if bytes[at + 1] == b'#' && last_label_end == at.checked_sub(1) => {
-                    read_attrs_at(bytes, at, last_brace).map(|(_, end)| end).or_else(|| {
-                        find_seq(bytes, at + 2, b"#}").filter(|&close| close > at + 2).map(|close| close + 2)
-                    })
+                    read_attrs_at(bytes, at, last_brace)
+                        .map(|(_, end)| end)
+                        .or_else(|| {
+                            if !last_editorial.is_some_and(|close| close >= at + 2) {
+                                return None;
+                            }
+                            if next_comments[1] < at + 2 {
+                                next_comments[1] =
+                                    find_seq(bytes, at + 2, b"#}").unwrap_or(bytes.len());
+                            }
+                            let close = next_comments[1];
+                            (close < bytes.len() && close > at + 2).then_some(close + 2)
+                        })
                 }
                 b'{' => {
                     let marker = bytes[at + 1];
-                    let last = match marker { b'%' => last_percent, b'#' => last_editorial, _ => None };
+                    let last = match marker {
+                        b'%' => last_percent,
+                        b'#' => last_editorial,
+                        _ => None,
+                    };
                     if last.is_some_and(|close| close >= at + 2) {
                         let slot = usize::from(marker == b'#');
                         if next_comments[slot] < at + 2 {
-                            next_comments[slot] = find_seq(bytes, at + 2, &[marker, b'}']).unwrap_or(bytes.len());
+                            next_comments[slot] =
+                                find_seq(bytes, at + 2, &[marker, b'}']).unwrap_or(bytes.len());
                         }
                         let close = next_comments[slot];
-                        (close < bytes.len() && (marker == b'%' || close > at + 2)).then_some(close + 2)
+                        (close < bytes.len() && (marker == b'%' || close > at + 2))
+                            .then_some(close + 2)
                     } else if marker.is_ascii_alphabetic() || matches!(marker, b'.' | b'#' | b':') {
                         read_attrs_at(bytes, at, last_brace).map(|(_, end)| end)
-                    } else { None }
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             };
             if let Some(end) = end {
                 self.opaque.insert(at, end);
                 at = attribute_end.unwrap_or(end);
-            } else { at = attribute_end.unwrap_or(at + 1); }
+            } else {
+                at = attribute_end.unwrap_or(at + 1);
+            }
         }
         attributes
     }
@@ -381,15 +467,27 @@ impl BracedClosers {
             }
         }
         let mut points = Vec::new();
-        let bracket_ends: std::collections::HashSet<usize> = self.opaque.iter()
-            .filter_map(|(&open, &end)| (bytes.get(open) == Some(&b'[') && bytes.get(end.saturating_sub(1)) == Some(&b']')).then_some(end - 1))
+        let bracket_ends: std::collections::HashSet<usize> = self
+            .opaque
+            .iter()
+            .filter_map(|(&open, &end)| {
+                (bytes.get(open) == Some(&b'[') && bytes.get(end.saturating_sub(1)) == Some(&b']'))
+                    .then_some(end - 1)
+            })
             .collect();
         let mut opener_marks = std::collections::HashSet::new();
         let mut at = 0;
         while at + 1 < bytes.len() {
-            if bytes[at] == b'\\' { at += 2; continue; }
-            if bytes[at] == b'{' && delim_brace_slot(bytes[at + 1]).is_some() { opener_marks.insert(at + 1); at += 2; }
-            else { at += 1; }
+            if bytes[at] == b'\\' {
+                at += 2;
+                continue;
+            }
+            if bytes[at] == b'{' && delim_brace_slot(bytes[at + 1]).is_some() {
+                opener_marks.insert(at + 1);
+                at += 2;
+            } else {
+                at += 1;
+            }
         }
         for at in 0..bytes.len() {
             let next = bytes.get(at + 1).copied().unwrap_or(0);
@@ -419,22 +517,30 @@ impl BracedClosers {
                 let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
                 for &delim in b"+-~#/*_^,=" {
                     let slot = delim_brace_slot(delim).unwrap();
-                    raw[slot] = self.raw_close(bytes, at, delim).filter(|&close| close < end).map_or(usize::MAX, index);
+                    raw[slot] = self
+                        .raw_close(bytes, at, delim)
+                        .filter(|&close| close < end)
+                        .map_or(usize::MAX, index);
                 }
                 BracedStep::LineComment(Box::new(raw), index(end))
             } else if let Some(&end) = self.opaque.get(&at) {
                 let end = if matches!(bytes[at], b'[' | b'<' | b'(' | b'`') {
                     attribute_tails.get(&end).copied().unwrap_or(end)
-                } else { end };
+                } else {
+                    end
+                };
                 BracedStep::Jump(index(end))
             } else {
                 match bytes[at] {
                     b'\\' => BracedStep::Jump(index(at + 2)),
                     b'`' => match self.code_end(bytes, at) {
                         Some(end) => {
-                            let end = raw_inline_format_end(bytes, end).map_or(end, |close| close + 1);
-                            BracedStep::Jump(index(attribute_tails.get(&end).copied().unwrap_or(end)))
-                        },
+                            let end =
+                                raw_inline_format_end(bytes, end).map_or(end, |close| close + 1);
+                            BracedStep::Jump(index(
+                                attribute_tails.get(&end).copied().unwrap_or(end),
+                            ))
+                        }
                         None => {
                             let mut raw = [usize::MAX; DELIM_BRACE_SLOTS];
                             for &delim in b"+-~#/*_^,=" {
@@ -449,7 +555,9 @@ impl BracedClosers {
                         BracedStep::Scope(delim_brace_slot(bytes[at + 1]).unwrap(), index(at + 2))
                     }
                     _ if opener_marks.contains(&at) => BracedStep::Literal,
-                    delim if bytes.get(at + 1) == Some(&b'}') => BracedStep::Closer(delim_brace_slot(delim).unwrap()),
+                    delim if bytes.get(at + 1) == Some(&b'}') => {
+                        BracedStep::Closer(delim_brace_slot(delim).unwrap())
+                    }
                     _ => BracedStep::Literal,
                 }
             };
@@ -457,53 +565,79 @@ impl BracedClosers {
         }
         let mut current: [Vec<usize>; DELIM_BRACE_SLOTS] =
             std::array::from_fn(|_| vec![usize::MAX; points.len()]);
-        let mut bare: [Vec<usize>; DELIM_BRACE_SLOTS] =
-            std::array::from_fn(|slot| if bare_slots[slot] { vec![usize::MAX; points.len()] } else { Vec::new() });
+        let mut bare: [Vec<usize>; DELIM_BRACE_SLOTS] = std::array::from_fn(|slot| {
+            if bare_slots[slot] {
+                vec![usize::MAX; points.len()]
+            } else {
+                Vec::new()
+            }
+        });
         for at in (0..steps.len()).rev() {
             let position = points[at];
             let marker = bytes[position];
-            let before = position.checked_sub(1).and_then(|at| bytes.get(at)).copied();
+            let before = position
+                .checked_sub(1)
+                .and_then(|at| bytes.get(at))
+                .copied();
             let next = bytes.get(position + 1).copied();
             let resolve = |encoded: usize, slot: usize| {
-                if encoded == usize::MAX { usize::MAX }
-                else if encoded & RAW_CLOSE_FLAG != 0 {
+                if encoded == usize::MAX {
+                    usize::MAX
+                } else if encoded & RAW_CLOSE_FLAG != 0 {
                     match &steps[encoded & !RAW_CLOSE_FLAG] {
                         BracedStep::Raw(raw) => raw[slot],
                         _ => unreachable!(),
                     }
-                } else { encoded }
+                } else {
+                    encoded
+                }
             };
             let child_close = if let BracedStep::Scope(kind, from) = &steps[at] {
                 let close = resolve(current[*kind][*from], *kind);
                 (close != usize::MAX && points[close] >= position + 2).then_some(close)
-            } else { None };
+            } else {
+                None
+            };
             let child_after = child_close.map(|close| {
                 let end = points[close] + 2;
                 index(attribute_tails.get(&end).copied().unwrap_or(end))
             });
             for slot in 0..DELIM_BRACE_SLOTS {
-                if !bare_slots[slot] { continue; }
+                if !bare_slots[slot] {
+                    continue;
+                }
                 bare[slot][at] = match &steps[at] {
                     BracedStep::Boundary | BracedStep::Raw(_) => usize::MAX,
                     BracedStep::LineComment(_, next) => bare[slot][*next],
                     BracedStep::Jump(next) => bare[slot][*next],
-                    BracedStep::Scope(_, _) if child_after.is_some() => bare[slot][child_after.unwrap()],
+                    BracedStep::Scope(_, _) if child_after.is_some() => {
+                        bare[slot][child_after.unwrap()]
+                    }
                     _ if delim_brace_slot(marker) == Some(slot)
-                        && before.is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
-                        && !next.is_some_and(|byte| byte.is_ascii_alphanumeric()) => at,
+                        && before
+                            .is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+                        && !next.is_some_and(|byte| byte.is_ascii_alphanumeric()) =>
+                    {
+                        at
+                    }
                     _ => bare[slot][at + 1],
                 };
             }
             let bare_slot = delim_brace_slot(marker).filter(|&slot| bare_slots[slot]);
             let bare_open = bare_slot.filter(|_| {
-                next.is_some_and(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker)
-                    && before != Some(marker)
+                next.is_some_and(|byte| {
+                    !matches!(byte, b' ' | b'\t' | b'\r' | b'\n') && byte != marker
+                }) && before != Some(marker)
                     && !before.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
                     && (marker != b'=' || next != Some(b'>'))
                     && (!matches!(marker, b'/' | b'_') || before != Some(b'/'))
             });
-            let bare_close = bare_open.map(|slot| bare[slot][at + 1]).filter(|&close| close != usize::MAX);
-            let bare_tail = bare_close.and_then(|close| attribute_tails.get(&(points[close] + 1))).copied();
+            let bare_close = bare_open
+                .map(|slot| bare[slot][at + 1])
+                .filter(|&close| close != usize::MAX);
+            let bare_tail = bare_close
+                .and_then(|close| attribute_tails.get(&(points[close] + 1)))
+                .copied();
             if let (Some(close), Some(end)) = (bare_close, bare_tail) {
                 bare_attribute_pairs.insert(position, (points[close], end));
             }
@@ -511,15 +645,35 @@ impl BracedClosers {
                 let mut stop = match &steps[at] {
                     BracedStep::Boundary => usize::MAX,
                     BracedStep::Jump(next) => current[slot][*next],
-                    BracedStep::LineComment(raw, next) => if raw[slot] == usize::MAX { current[slot][*next] } else { raw[slot] },
-                    BracedStep::Raw(raw) => if raw[slot] == usize::MAX { usize::MAX } else { at | RAW_CLOSE_FLAG },
+                    BracedStep::LineComment(raw, next) => {
+                        if raw[slot] == usize::MAX {
+                            current[slot][*next]
+                        } else {
+                            raw[slot]
+                        }
+                    }
+                    BracedStep::Raw(raw) => {
+                        if raw[slot] == usize::MAX {
+                            usize::MAX
+                        } else {
+                            at | RAW_CLOSE_FLAG
+                        }
+                    }
                     BracedStep::Closer(closer) if *closer == slot => at,
-                    BracedStep::Scope(kind, _) if (*kind != slot || !matches!(*kind, 0 | 1)) && child_after.is_some() => current[slot][child_after.unwrap()],
+                    BracedStep::Scope(kind, _)
+                        if (*kind != slot || !matches!(*kind, 0 | 1)) && child_after.is_some() =>
+                    {
+                        current[slot][child_after.unwrap()]
+                    }
                     _ => current[slot][at + 1],
                 };
                 if matches!(steps[at], BracedStep::Literal | BracedStep::Closer(_)) {
-                    if let (Some(kind), Some(close), Some(end)) = (bare_open, bare_close, bare_tail) {
-                        if kind != slot && (stop == usize::MAX || points[stop & !RAW_CLOSE_FLAG] >= points[close]) {
+                    if let (Some(kind), Some(close), Some(end)) = (bare_open, bare_close, bare_tail)
+                    {
+                        if kind != slot
+                            && (stop == usize::MAX
+                                || points[stop & !RAW_CLOSE_FLAG] >= points[close])
+                        {
                             stop = current[slot][index(end)];
                         }
                     }
@@ -726,8 +880,14 @@ mod braced_closer_memo_tests {
             (0, text.rfind("*}").unwrap()),
             (label + 1, text.find("*}").unwrap()),
         ] {
-            assert_eq!(sparse.close(text.as_bytes(), open, b'*'), Some(expected));
-            assert_eq!(dense.close(text.as_bytes(), open, b'*'), Some(expected));
+            assert_eq!(
+                sparse.close_editorial(text.as_bytes(), open, b'*'),
+                Some(expected)
+            );
+            assert_eq!(
+                dense.close_editorial(text.as_bytes(), open, b'*'),
+                Some(expected)
+            );
         }
     }
 
@@ -739,7 +899,7 @@ mod braced_closer_memo_tests {
         let mut dense = BracedClosers::with_hosts(hosts);
         dense.build_dense(text.as_bytes());
         for memo in [&mut sparse, &mut dense] {
-            assert_eq!(memo.close(text.as_bytes(), 0, b'*'), Some(8));
+            assert_eq!(memo.close_editorial(text.as_bytes(), 0, b'*'), Some(8));
             assert_eq!(memo.last_verbatim_start(), Some(3));
         }
     }
@@ -756,7 +916,7 @@ mod braced_closer_memo_tests {
         let mut memo = BracedClosers::with_hosts(hosts);
         for open in (0..text.len() - 2).step_by(10) {
             assert_eq!(
-                memo.close(text.as_bytes(), open, b','),
+                memo.close_editorial(text.as_bytes(), open, b','),
                 Some(text.len() - 2)
             );
         }
@@ -788,13 +948,13 @@ mod braced_closer_memo_tests {
                 }
                 for delim in *b"_*~+-=" {
                     assert_eq!(
-                        memo.close(bytes, open, delim),
+                        memo.close_editorial(bytes, open, delim),
                         reference_close(bytes, open, delim, 0),
                         "production query: {text:?}, {open}, {delim}"
                     );
                     if case < 50 {
                         assert_eq!(
-                            dense.close(bytes, open, delim),
+                            dense.close_editorial(bytes, open, delim),
                             reference_close(bytes, open, delim, 0),
                             "dense query: {text:?}, {open}, {delim}"
                         );
@@ -822,7 +982,7 @@ mod braced_closer_memo_tests {
     fn the_first_alternating_scope_scan_shares_plain_suffix_states() {
         let text = "{_".to_string() + &"{*{_".repeat(40) + &"x".repeat(100_000) + "_}";
         let mut memo = BracedClosers::default();
-        assert!(memo.close(text.as_bytes(), 0, b'_').is_some());
+        assert!(memo.close_editorial(text.as_bytes(), 0, b'_').is_some());
         assert!(memo.steps < text.len() * 8, "{} steps", memo.steps);
         assert!(
             memo.states.len() < text.len() * 4,
@@ -849,7 +1009,7 @@ mod braced_closer_memo_tests {
                 }
                 for delim in *b"_*~+-=" {
                     assert_eq!(
-                        memo.close(text.as_bytes(), open, delim),
+                        memo.close_editorial(text.as_bytes(), open, delim),
                         reference_close(text.as_bytes(), open, delim, 0),
                         "{text}, {open}"
                     );
@@ -862,7 +1022,7 @@ mod braced_closer_memo_tests {
     fn cap_sensitive_dense_openers_keep_a_bounded_cache() {
         let text = "{/".to_string() + &"{*{_{^{,{~{={+{-".repeat(512) + "*}_}^},}~}=}+}-}/}";
         let mut memo = BracedClosers::default();
-        memo.close(text.as_bytes(), 0, b'/');
+        memo.close_editorial(text.as_bytes(), 0, b'/');
         assert!(memo.states.len() <= text.len() * 4);
         let dense = memo
             .dense
@@ -878,7 +1038,7 @@ mod braced_closer_memo_tests {
                 let text = "{_k=x}".repeat(n) + suffix;
                 let mut memo = BracedClosers::default();
                 for open in (0..n * 6).step_by(6) {
-                    memo.close(text.as_bytes(), open, b'_');
+                    memo.close_editorial(text.as_bytes(), open, b'_');
                 }
                 assert!(
                     memo.steps <= text.len() * 4,
@@ -894,7 +1054,7 @@ mod braced_closer_memo_tests {
         let text = "{_".to_string() + &"{+\\```+}".repeat(1024) + "_}";
         let mut memo = BracedClosers::default();
         assert_eq!(
-            memo.close(text.as_bytes(), 0, b'_'),
+            memo.close_editorial(text.as_bytes(), 0, b'_'),
             reference_close(text.as_bytes(), 0, b'_', 0)
         );
         assert_eq!(memo.code_ends.as_ref().unwrap().runs.len(), 1024);
@@ -908,7 +1068,7 @@ mod braced_closer_memo_tests {
             let mut memo = BracedClosers::default();
             memo.build_dense(text.as_bytes());
             assert_eq!(
-                memo.close(text.as_bytes(), 0, b'*'),
+                memo.close_editorial(text.as_bytes(), 0, b'*'),
                 reference_close(text.as_bytes(), 0, b'*', 0)
             );
         }
@@ -921,7 +1081,7 @@ mod braced_closer_memo_tests {
         memo.build_dense(text.as_bytes());
         assert!(memo.dense.as_ref().unwrap().points.len() < 8);
         assert_eq!(
-            memo.close(text.as_bytes(), 0, b'*'),
+            memo.close_editorial(text.as_bytes(), 0, b'*'),
             reference_close(text.as_bytes(), 0, b'*', 0)
         );
     }
