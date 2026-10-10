@@ -2499,10 +2499,9 @@ fn mask_djot_opaque_with_comments(
     let autolink_scheme = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
     let attribute_value = cached_regex!(r#"=\s*("(?:\\.|[^"\\])*"|[^\s{}%]+)"#).unwrap();
     let definition_prefix = cached_regex!(
-        r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\[(?:[^\]\n^][^\]\n]*)$"
+        r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)])[ \t]+)?\[(?:[^\]\n^][^\]\n]*)\]:"
     )
     .unwrap();
-    let raw_format = cached_regex!(r"^\{=[^}\n]*\}").unwrap();
     let destinations = if options.destinations {
         djot_simple_destination_ranges(source).unwrap_or_else(|| {
             let code_mask = mask_djot_forms_with_options(
@@ -2522,6 +2521,41 @@ fn mask_djot_opaque_with_comments(
     } else {
         HashMap::new()
     };
+    let mut definition_lines = std::collections::HashSet::new();
+    let mut line_offset = 0;
+    let mut previous_line: &str = "";
+    if source.contains("]:") {
+        for line in source.split('\n') {
+            if let Some(definition) = definition_prefix.find(line) {
+                if line_offset == 0
+                    || previous_line.trim().is_empty()
+                    || reference_boundary.is_match(previous_line.trim())
+                {
+                    definition_lines.insert(line_offset + definition.end() - 2);
+                }
+            }
+            line_offset += line.len() + 1;
+            previous_line = line;
+        }
+    }
+    let mut raw_formats = HashMap::new();
+    if source.contains("{=") {
+        let bytes = source.as_bytes();
+        let mut raw_end = None;
+        for at in (0..bytes.len()).rev() {
+            if bytes[at] == b'}' {
+                raw_end = Some(at + 1);
+            } else if bytes[at] == b'\n' {
+                raw_end = None;
+            }
+            if bytes[at] == b'{' && bytes.get(at + 1) == Some(&b'=') {
+                if let Some(end) = raw_end {
+                    raw_formats.insert(at, end);
+                }
+            }
+        }
+    }
+    let last_brace = source.rfind('}');
     let mut comments = Vec::new();
     let bytes = source.as_bytes();
     let mut mask = bytes.to_vec();
@@ -2559,7 +2593,7 @@ fn mask_djot_opaque_with_comments(
             }
         }
         if bytes[at] == b'{' {
-            if bytes.get(at + 1) == Some(&b'%') {
+            if bytes.get(at + 1) == Some(&b'%') && last_brace.is_some_and(|end| at < end) {
                 let mut end = at + 2;
                 while end < bytes.len() && bytes[end] != b'}' && !bytes[end..].starts_with(b"%}") {
                     end += 1;
@@ -2594,26 +2628,17 @@ fn mask_djot_opaque_with_comments(
             at += 1;
             continue;
         }
-        if bytes[at] == b']' && brackets.pop().is_some() && bytes.get(at + 1) == Some(&b':') {
-            let line_start = source[..at].rfind('\n').map_or(0, |n| n + 1);
-            let definition = definition_prefix.is_match(&source[line_start..at]);
-            let previous = source[..line_start]
-                .strip_suffix('\n')
-                .unwrap_or("")
-                .rsplit('\n')
-                .next()
-                .unwrap_or("")
-                .trim();
-            let boundary =
-                line_start == 0 || previous.is_empty() || reference_boundary.is_match(previous);
-            if definition && boundary {
-                let end = source[at..].find('\n').map_or(bytes.len(), |n| at + n);
-                if options.destinations {
-                    blank_out(&mut mask, at + 2, end);
-                }
-                at = end;
-                continue;
+        if bytes[at] == b']'
+            && brackets.pop().is_some()
+            && bytes.get(at + 1) == Some(&b':')
+            && definition_lines.contains(&at)
+        {
+            let end = source[at..].find('\n').map_or(bytes.len(), |n| at + n);
+            if options.destinations {
+                blank_out(&mut mask, at + 2, end);
             }
+            at = end;
+            continue;
         }
         if bytes[at] != b'`' {
             at += 1;
@@ -2622,12 +2647,12 @@ fn mask_djot_opaque_with_comments(
         let width = bytes[at..].iter().take_while(|b| **b == b'`').count();
         if let Some(close) = find_backtick_close(&bytes[..paragraph_end], at + width, width) {
             let end = close + width;
-            let raw = raw_format.find(&source[end..]);
+            let raw_end = raw_formats.get(&end).copied();
             let math = at > 0 && bytes[at - 1] == b'$';
-            if options.code || raw.is_some() || math {
+            if options.code || raw_end.is_some() || math {
                 blank_out(&mut mask, at - usize::from(math), end);
             }
-            at = end + raw.map_or(0, |m| m.end());
+            at = raw_end.unwrap_or(end);
         } else if options.code && options.unclosed_code {
             blank_out(&mut mask, at, paragraph_end);
             at = paragraph_end;

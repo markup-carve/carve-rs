@@ -1038,7 +1038,6 @@ fn empty_description(lines: &[&str], masks: &[&str], n: usize) -> bool {
 }
 
 pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
-    let empty_destination = cached_regex!(r"\[[^\]\n]+\]\(\)").unwrap();
     let empty_heading = cached_regex!(r"^#{1,6}$").unwrap();
     let heading_boundary = cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap();
 
@@ -1060,36 +1059,69 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             .map(|at| (at, "Nested emphasis of the same kind is flattened.")),
     );
     let definitions = loss_references(source, &mask);
-    for reference in reference_uses(source, &mask) {
+    let references = reference_uses(source, &mask);
+    for reference in &references {
         let at = reference.start;
-        if at > 0 && source.as_bytes()[at - 1] == b'!' {
+        if reference.text.starts_with('^') {
             continue;
         }
+        let image =
+            at > 0 && source.as_bytes()[at - 1] == b'!' && !is_escaped(source.as_bytes(), at - 1);
         let key = reference_label(reference.text, reference.label);
         match definitions.get(&key) {
             Some(destination) if destination.is_empty() => findings.push((
                 at,
-                "A link with an empty destination cannot be written in Carve.",
+                if image {
+                    "An image with an empty destination cannot be written in Carve."
+                } else {
+                    "A link with an empty destination cannot be written in Carve."
+                },
             )),
-            None => findings.push((at, "An unresolved Djot reference loses its link element.")),
+            None => findings.push((
+                at,
+                if image {
+                    "An unresolved Djot image reference loses its image element."
+                } else {
+                    "An unresolved Djot reference loses its link element."
+                },
+            )),
             _ => (),
         }
     }
-    for m in empty_destination.find_iter(source) {
-        if mask.as_bytes()[m.start()] == b'[' && !is_escaped(source.as_bytes(), m.start()) {
-            findings.push((
-                m.start(),
-                "A link with an empty destination cannot be written in Carve.",
-            ));
-        }
-    }
+    let destinations = djot_simple_destination_ranges(source).unwrap_or_else(|| {
+        let destination_mask = mask_djot_forms_with_options(
+            source,
+            false,
+            true,
+            None,
+            &[],
+            OpaqueOptions {
+                destinations: false,
+                attribute_values: false,
+                autolinks: false,
+                ..OpaqueOptions::default()
+            },
+        );
+        djot_destination_ranges(source, &destination_mask)
+    });
+    let reference_starts: HashSet<_> = references.iter().map(|reference| reference.start).collect();
+    let boundaries = djot_inline_boundaries(source, &mask);
+    let mut boundary = 0;
     // Track label brackets separately from destination parentheses.
     let mut brackets: Vec<(usize, bool)> = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if mask.as_bytes()[i] != bytes[i] || is_escaped(bytes, i) {
+        while boundaries.get(boundary).is_some_and(|at| *at <= i) {
+            brackets.clear();
+            boundary += 1;
+        }
+        if mask.as_bytes()[i] != bytes[i] {
             i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' {
+            i += 2;
             continue;
         }
         if bytes[i] == b'[' {
@@ -1097,13 +1129,26 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         }
         if bytes[i] == b']' {
             if let Some((start, nested)) = brackets.pop() {
-                if bytes.get(i + 1) == Some(&b'(')
-                    && source[i + 2..].contains(')')
-                    && !(start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1))
+                let image = start > 0 && bytes[start - 1] == b'!' && !is_escaped(bytes, start - 1);
+                let valid_form =
+                    destinations.contains_key(&(i + 1)) || reference_starts.contains(&start);
+                let is_link = !image && bytes.get(start + 1) != Some(&b'^') && valid_form;
+                if bytes.get(start + 1) != Some(&b'^')
+                    && destinations.get(&(i + 1)) == Some(&(i + 3))
                 {
-                    if nested {
-                        findings.push((start, "A link nested inside another link is flattened."));
-                    }
+                    findings.push((
+                        start,
+                        if image {
+                            "An image with an empty destination cannot be written in Carve."
+                        } else {
+                            "A link with an empty destination cannot be written in Carve."
+                        },
+                    ));
+                }
+                if is_link && nested {
+                    findings.push((start, "A link nested inside another link is flattened."));
+                }
+                if is_link || nested && !(image && valid_form) {
                     if let Some(parent) = brackets.last_mut() {
                         parent.1 = true;
                     }
@@ -1116,7 +1161,11 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     let masks: Vec<_> = mask.split('\n').collect();
     let rows = djot_table_rows(source, &mask);
     let mut offset = 0;
+    let mut table_start = 0;
     for (n, line) in lines.iter().enumerate() {
+        if !rows[n] {
+            table_start = n + 1;
+        }
         let text = line.trim();
         let visible = masks[n].trim();
         let block_allowed = n == 0
@@ -1137,8 +1186,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         }
         if rows[n] && text.len() >= 2 {
             if separator(text) {
-                let start = (0..n).rev().find(|&k| !rows[k]).map_or(0, |k| k + 1);
-                if n > start + 1 {
+                if n > table_start + 1 {
                     findings.push((offset, "A table separator inside the table loses the preceding header row and alignment change."));
                 }
                 if (n == 0 || !rows[n - 1])
@@ -1169,26 +1217,27 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     findings.sort_unstable();
     findings.dedup();
     let mut reported = HashSet::new();
-    findings.retain(|(at, message)| {
-        reported.insert((
-            source[..*at].bytes().filter(|b| *b == b'\n').count(),
-            *message,
-        ))
-    });
-    findings
-        .into_iter()
-        .map(|(at, message)| MigrationDiagnostic {
-            code: "structure-unspellable".to_owned(),
-            message: message.to_owned(),
-            severity: HtmlImportSeverity::Warning,
-            fidelity: MigrationFidelity::Dropped,
-            confidence: MigrationConfidence::Exact,
-            path: Some(format!(
-                "line:{}",
-                source[..at].bytes().filter(|b| *b == b'\n').count() + line_offset + 1
-            )),
-        })
-        .collect()
+    let mut diagnostics = Vec::new();
+    let mut line = line_offset + 1;
+    let mut cursor = 0;
+    for (at, message) in findings {
+        line += source.as_bytes()[cursor..at]
+            .iter()
+            .filter(|&&b| b == b'\n')
+            .count();
+        cursor = at;
+        if reported.insert((line, message)) {
+            diagnostics.push(MigrationDiagnostic {
+                code: "structure-unspellable".to_owned(),
+                message: message.to_owned(),
+                severity: HtmlImportSeverity::Warning,
+                fidelity: MigrationFidelity::Dropped,
+                confidence: MigrationConfidence::Exact,
+                path: Some(format!("line:{line}")),
+            });
+        }
+    }
+    diagnostics
 }
 
 #[cfg(test)]
@@ -1707,5 +1756,144 @@ mod tests {
             .diagnostics
             .iter()
             .any(|d| d.code == "structure-unspellable"));
+    }
+    #[test]
+    fn empty_heading_report_paths_follow_original_lines() {
+        let source = "#\n\n".repeat(512);
+        let result = migrate_djot(&source);
+        let losses: Vec<_> = result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.code == "structure-unspellable")
+            .collect();
+        assert_eq!(losses.len(), 512);
+        assert_eq!(losses[0].path.as_deref(), Some("line:1"));
+        assert_eq!(losses[511].path.as_deref(), Some("line:1023"));
+    }
+
+    #[test]
+    fn unfinished_destination_report_is_literal() {
+        let source = "x^[[a](b ".repeat(8192);
+        let result = migrate_djot(&source);
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "structure-unspellable"));
+    }
+    #[test]
+    fn an_unclosed_outer_destination_is_not_a_nested_link() {
+        let result = migrate_djot("[[a](u)]( unfinished\n\nx)");
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("nested inside another link")));
+    }
+    #[test]
+    fn nested_link_loss_survives_a_plain_bracket() {
+        for source in [
+            "[a [b [c](u)] d](v)",
+            "[text [span [x](u)]{.c}](v)",
+            "[![a [b](u)] text](v)",
+            "[[a][r]](v)\n\n[r]: u",
+            "[[a](u(1))](v)",
+        ] {
+            let result = migrate_djot(source);
+            assert!(
+                result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains("nested inside another link")),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn image_alt_links_are_not_nested_anchors() {
+        let result = migrate_djot("[![a [b](u)](image)](outer)");
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("nested inside another link")));
+    }
+    #[test]
+    fn missing_image_destinations_have_exact_losses() {
+        for source in ["![a]()", "![a][missing]", "![a][]\n\n[a]:"] {
+            let report = migrate_djot(source);
+            assert!(report
+                .report
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "structure-unspellable"
+                    && diagnostic.message.contains("image")));
+        }
+        let report = migrate_djot("[a]( )");
+        assert!(!report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("empty destination")));
+    }
+
+    #[test]
+    fn adjacent_footnotes_are_not_reference_links() {
+        let report = migrate_djot("[see [^1][^2]](v)\n\n[^1]: one\n\n[^2]: two");
+        assert!(!report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "structure-unspellable"));
+    }
+
+    #[test]
+    fn escaped_bang_keeps_unresolved_link_loss() {
+        let report = migrate_djot("\\![x][undefined]");
+        assert!(report
+            .report
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.message.contains("unresolved Djot reference")));
+    }
+
+    #[test]
+    fn unfinished_raw_formats_stop_at_line_boundaries() {
+        let source = "`a`{=".repeat(8192);
+        assert_eq!(
+            super::mask_djot_opaque(&source, super::OpaqueOptions::default()),
+            "   {=".repeat(8192).as_bytes()
+        );
+        assert_eq!(
+            super::mask_djot_opaque(&(source + "\n}"), super::OpaqueOptions::default()),
+            ("   {=".repeat(8192) + "\n}").as_bytes()
+        );
+    }
+
+    #[test]
+    fn inline_pseudo_definitions_stay_literal() {
+        let source = "[] [a]: ".repeat(8192);
+        assert_eq!(
+            super::mask_djot_opaque(&source, super::OpaqueOptions::default()),
+            source.as_bytes()
+        );
+        assert_eq!(
+            super::mask_djot_opaque("[a]: u\n[b]: v", super::OpaqueOptions::default()),
+            b"[a]:  \n[b]:  "
+        );
+    }
+
+    #[test]
+    fn repeated_unfinished_comments_stay_literal() {
+        let source = "{% ".repeat(8192);
+        let mask = super::mask_djot_opaque(&source, super::OpaqueOptions::default());
+        assert_eq!(mask, source.as_bytes());
+        assert_eq!(
+            crate::to_html(&migrate_djot(&source).value),
+            format!("<p>{}</p>", source.trim_end())
+        );
     }
 }
