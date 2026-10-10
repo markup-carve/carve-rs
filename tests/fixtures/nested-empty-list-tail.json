@@ -82,5 +82,13 @@
   {
     "source": "- - +\n\n  Z\n",
     "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n    <p>Z</p>\n  </li>\n</ul>"
+  },
+  {
+    "source": "- - +\n  +\n - x\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li></li>\n    </ul>\n  </li>\n</ul>\n<ul>\n  <li>x</li>\n</ul>"
+  },
+  {
+    "source": "- - - +\n    +\n   - x\n",
+    "html": "<ul>\n  <li>\n    <ul>\n      <li>\n        <ul>\n          <li></li>\n        </ul>\n      </li>\n    </ul>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
   }
 ]

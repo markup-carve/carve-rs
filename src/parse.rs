@@ -11022,6 +11022,7 @@ fn parse_list(
                 base_indent
             };
             let nested_lead_is_continuation = trim_ascii(innermost_content) == "+";
+            let before_collection = stream.source.len();
             if nested_lead_is_continuation {
                 stream.append(collect_indented_block_mapped_after_continuation(
                     cur,
@@ -11039,7 +11040,8 @@ fn parse_list(
                     content_col,
                 ));
             }
-            last_item_bare_continuation = nested_lead_is_continuation && cur.pos == before_block;
+            last_item_bare_continuation =
+                nested_lead_is_continuation && stream.source.len() == before_collection;
             // A blank line closes the sub-list's last paragraph, so the next
             // flush-left line starts a NEW top-level block instead of folding in
             // (carve-rs#490). The collected source keeps no trace of a trailing
