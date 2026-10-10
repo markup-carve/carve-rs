@@ -13,6 +13,8 @@ which the published crate does not carry.
 
 ### Fixed
 
+- Markdown code spans preserve significant edge spaces and normalize payload newlines before paragraph and table layout. Empty spans use an inline HTML fallback.
+
 - Document `source_len` and JSON `srcByteLength` count the original UTF-8 input before BOM, NUL and line-ending normalization. Source-length limits and authored provenance use that same input length.
 
 - List-item code fences keep blank and indented payload after a continuation marker that attaches nothing (carve-rs#2431).

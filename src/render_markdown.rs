@@ -2321,8 +2321,17 @@ fn safe_fence_with_marker(content: &str, min: usize, marker: char) -> String {
 }
 
 fn render_code(content: &str) -> String {
-    let fence = safe_fence(content, 1);
-    if content.starts_with('`') || content.ends_with('`') {
+    if content.is_empty() {
+        return "<code></code>".to_owned();
+    }
+    let content = content.replace('\n', " ");
+    let fence = safe_fence(&content, 1);
+    let needs_padding = content.starts_with('`')
+        || content.ends_with('`')
+        || (content.starts_with(' ')
+            && content.ends_with(' ')
+            && content.chars().any(|ch| ch != ' '));
+    if needs_padding {
         format!("{fence} {content} {fence}")
     } else {
         format!("{fence}{content}{fence}")
