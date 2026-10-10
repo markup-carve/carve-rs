@@ -674,8 +674,6 @@ impl Renderer<'_> {
         let bytes = self.source.as_bytes();
         let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
         let forced = pair.forced
-            || self.source[pair.end..].starts_with("{}")
-            || self.source[..pair.start].ends_with("{}")
             || scope
             || content.starts_with('\0')
             || content.ends_with('\0')

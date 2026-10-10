@@ -367,6 +367,23 @@ fn escape_invalid_djot_attributes(source: &str) -> String {
                 output.push_str(&source[cursor..at]);
                 output.push_str("\\{");
                 cursor = at + 1;
+                // Every brace inside the same rejected run is literal Djot text too, so a
+                // later pass must not read one as a forced quote and swallow it.
+                let bytes = source.as_bytes();
+                let mut inner = at + 1;
+                while inner < source.len() && bytes[inner] != b'\n' && bytes[inner] != b'}' {
+                    if bytes[inner] == b'{'
+                        && mask.as_bytes()[inner] == b'{'
+                        && read_djot_word_attributes(source, inner).is_none()
+                    {
+                        output.push_str(&source[cursor..inner]);
+                        output.push_str("\\{");
+                        cursor = inner + 1;
+                    }
+                    inner += 1;
+                }
+                at = cursor;
+                continue;
             }
         }
         at += 1;
@@ -4937,6 +4954,7 @@ fn normalize_djot_autolinks(source: &str) -> String {
     let valid_angle = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
     let email = cached_regex!(r"[^:]@").unwrap();
     let authority_pattern = cached_regex!(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/?#\\]*").unwrap();
+    let scheme_pattern = cached_regex!(r"^[A-Za-z][A-Za-z0-9+.-]*:").unwrap();
     let angle_ends: std::collections::HashMap<usize, usize> = cached_regex!(r"<[^<>\s]+>")
         .unwrap()
         .find_iter(source)
@@ -5081,11 +5099,15 @@ fn normalize_djot_autolinks(source: &str) -> String {
             continue;
         }
         let body = capture[1].to_owned();
-        if !valid_angle.is_match(&body)
-            || (!image
-                && !body.contains(['[', ']', '{', '}', '`', '|', '\\'])
-                && !(email.is_match(&body) && body.contains(':')))
-        {
+        // A body that already carries a scheme is a URL, not a bare address: djot.js
+        // prefixes it with a second `mailto:` (jgm/djot.js#162), which we do not copy.
+        let address = email.is_match(&body) && !scheme_pattern.is_match(&body);
+        // Such an address keeps its autolink, but only where Carve reads one back: a dash
+        // run or an ellipsis inside it becomes punctuation instead.
+        let written = body.contains(['[', ']', '{', '}', '`', '|', '\\'])
+            || (address && body.contains(':'))
+            || (!address && email.is_match(&body) && (body.contains("--") || body.contains("...")));
+        if !valid_angle.is_match(&body) || (!image && !written) {
             continue;
         }
         if rows[line] && body.contains(['|', '`']) {
@@ -5098,7 +5120,7 @@ fn normalize_djot_autolinks(source: &str) -> String {
             }
             label.push(ch);
         }
-        let destination = if email.is_match(&body) {
+        let destination = if address {
             format!("mailto:{body}")
         } else {
             body.clone()

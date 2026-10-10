@@ -29,6 +29,20 @@ struct List {
     loose: bool,
 }
 
+/// Djot attaches an attribute line with no block after it to nothing, so drop it.
+fn drop_orphan_attribute_line(result: &mut Vec<String>) {
+    let Some(last) = result.last() else { return };
+    let last = last.trim_end();
+    let at = last.find(|c: char| !c.is_whitespace());
+    let Some(at) = at else { return };
+    if !last[at..].starts_with('{') {
+        return;
+    }
+    if read_djot_word_attributes(last, at).is_some_and(|(end, _)| end == last.len()) {
+        result.pop();
+    }
+}
+
 pub(super) fn blocks(source: &str) -> String {
     let mask = mask_code_and_destinations(source);
     let masks: Vec<_> = mask.split('\n').collect();
@@ -346,6 +360,7 @@ pub(super) fn blocks(source: &str) -> String {
                         .position(|(open, _, _, _)| width >= *open)
                         .unwrap()
                 };
+                drop_orphan_attribute_line(&mut result);
                 while divs.len() > boundary {
                     let (open, prefix, _, _) = divs.pop().unwrap();
                     result.push(format!("{prefix}{}", ":".repeat(open)));
@@ -424,6 +439,16 @@ pub(super) fn blocks(source: &str) -> String {
             paragraph = !in_heading && (paragraph || !(attribute || reference.is_match(text)));
         }
         previous_blank = false;
+    }
+    if !divs.is_empty() {
+        let trailing = result.last().is_some_and(|line| line.is_empty());
+        if trailing {
+            result.pop();
+        }
+        drop_orphan_attribute_line(&mut result);
+        if trailing && !result.last().is_some_and(|line| line.is_empty()) {
+            result.push(String::new());
+        }
     }
     let mut output = result.join("\n");
     if !divs.is_empty() {
@@ -1282,8 +1307,8 @@ mod tests {
     #[test]
     fn djot_empty_attributes_preserve_separate_emphasis_spans() {
         for (source, expected) in [
-            ("*a*{}*b*\n", "{*a*}{%%}{*b*}\n"),
-            ("_a_{}{}_b_\n", "{/a/}{%%}{/b/}\n"),
+            ("*a*{}*b*\n", "*a*{%%}*b*\n"),
+            ("_a_{}{}_b_\n", "/a/{%%}/b/\n"),
             ("*a*{ }*b*\n", "*a*{%%}*b*\n"),
         ] {
             let value = migrate_djot(source).value;

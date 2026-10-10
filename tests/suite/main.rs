@@ -1708,6 +1708,9 @@ mod opaque_marker_quote_ownership;
 #[path = "../djot_orphan_attributes.rs"]
 mod djot_orphan_attributes;
 
+#[path = "../djot_import_readback.rs"]
+mod djot_import_readback;
+
 #[path = "../djot_emphasis_pairing.rs"]
 mod djot_emphasis_pairing;
 

@@ -2754,7 +2754,7 @@
     "name": "autolink-context-x:y[^a|b]@z.io paragraph",
     "source": "<x:y[^a|b]@z.io>\n",
     "contains": [
-      "href=\"mailto:x:y%5B^a%7Cb%5D@z.io\""
+      "href=\"x:y%5B^a%7Cb%5D@z.io\""
     ],
     "excludes": [
       "doc-noteref",
@@ -3020,7 +3020,7 @@
     "name": "review-autolink-email-priority",
     "source": "<http://u@x/y>\n",
     "contains": [
-      "href=\"mailto:http://u@x/y\""
+      "href=\"http://u@x/y\""
     ]
   },
   {
@@ -3028,7 +3028,7 @@
     "name": "review-autolink-mailto",
     "source": "<mailto:x@y>\n",
     "contains": [
-      "href=\"mailto:mailto:x@y\""
+      "href=\"mailto:x@y\""
     ]
   },
   {
