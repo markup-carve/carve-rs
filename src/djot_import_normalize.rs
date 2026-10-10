@@ -528,6 +528,25 @@ pub(super) fn inline(source: &str) -> String {
     .collect();
     let boundary = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n").unwrap();
     let bytes = source.as_bytes();
+    let mut breaks: Vec<_> = if bytes.contains(&b'`') {
+        boundary.find_iter(source).map(|m| m.start()).collect()
+    } else {
+        Vec::new()
+    };
+    if bytes.contains(&b'`') && bytes.contains(&b'\n') {
+        breaks.extend(
+            djot_inline_boundaries_with_code_scopes(
+                source,
+                &String::from_utf8_lossy(&protected),
+                true,
+            )
+            .into_iter()
+            .filter(|&at| at > 0 && at < bytes.len() && bytes[at - 1] == b'\n' && bytes[at] != b'|')
+            .map(|at| at - 1),
+        );
+        breaks.sort_unstable();
+    }
+    let mut paragraph = 0;
     let mut output = String::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -540,13 +559,17 @@ pub(super) fn inline(source: &str) -> String {
         }
         if bytes[i] == b'`' && protected[i] == b'`' && !is_escaped(bytes, i) {
             let run = bytes[i..].iter().take_while(|b| **b == b'`').count();
-            let paragraph_end = boundary
-                .find(&source[i..])
-                .map_or(bytes.len(), |m| i + m.start());
+            while breaks.get(paragraph).is_some_and(|end| *end <= i) {
+                paragraph += 1;
+            }
+            let paragraph_end = breaks.get(paragraph).copied().unwrap_or(bytes.len());
             if let Some(end) = find_backtick_close(&bytes[..paragraph_end], i + run, run) {
                 let payload = &source[i + run..end];
-                let line = &source[source[..i].rfind('\n').map_or(0, |at| at + 1)..i];
-                let fenced = run >= 3 && line.trim().is_empty() && payload.starts_with('\n');
+                let fenced = run >= 3
+                    && payload.starts_with('\n')
+                    && source[source[..i].rfind('\n').map_or(0, |at| at + 1)..i]
+                        .trim()
+                        .is_empty();
                 output.push_str(&source[i..i + run]);
                 let pad = !fenced
                     && payload.starts_with(' ')
@@ -564,6 +587,9 @@ pub(super) fn inline(source: &str) -> String {
                 i = end + run;
                 continue;
             }
+            output.push_str(&source[i..paragraph_end]);
+            i = paragraph_end;
+            continue;
         }
         if mask.as_bytes()[i] == bytes[i] && protected[i] == bytes[i] && !is_escaped(bytes, i) {
             if bytes[i] == b'{' {

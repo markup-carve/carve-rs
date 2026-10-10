@@ -1804,3 +1804,6 @@ mod djot_table_cell_boundaries;
 
 #[path = "../markdown_terminal_hard_break.rs"]
 mod markdown_terminal_hard_break;
+
+#[path = "../djot_unclosed_code.rs"]
+mod djot_unclosed_code;

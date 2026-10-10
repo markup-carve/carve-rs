@@ -1,0 +1,187 @@
+[
+  {
+    "name": "unclosed verbatim control 1",
+    "source": "x `` a ` b ` c",
+    "html": "<p>x <code> a ` b ` c</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 2",
+    "source": "x ```` a ``` b",
+    "html": "<p>x <code> a ``` b</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 3",
+    "source": "x ``` a `` b `` c",
+    "html": "<p>x <code> a `` b `` c</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 4",
+    "source": "x `` a ` b `\n\nnext",
+    "html": "<p>x <code> a ` b `</code></p><p>next</p>"
+  },
+  {
+    "name": "unclosed verbatim control 5",
+    "source": "> x `` a ` b ` c",
+    "html": "<blockquote><p>x <code> a ` b ` c</code></p></blockquote>"
+  },
+  {
+    "name": "unclosed verbatim control 6",
+    "source": "- x `` a ` b ` c",
+    "html": "<ul><li>x <code> a ` b ` c</code></li></ul>"
+  },
+  {
+    "name": "unclosed verbatim control 7",
+    "source": "`a` x `` a ` b ` c",
+    "html": "<p><code>a</code> x <code> a ` b ` c</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 8",
+    "source": "x \\`` a ` b ` c",
+    "html": "<p>x `<code> a </code> b <code> c</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 9",
+    "source": "x ``````q\n\nx \\`` a ` b ` c",
+    "html": "<p>x <code>q</code></p><p>x `<code> a </code> b <code> c</code></p>"
+  },
+  {
+    "name": "unclosed verbatim control 10",
+    "source": "x `` a \\` b \\` c",
+    "html": "<p>x <code> a \\` b \\` c</code></p>"
+  },
+  {
+    "name": "quoted paragraph boundary > a `b\n>\n> ` c ` d",
+    "source": "> a `b\n>\n> ` c ` d",
+    "html": "<blockquote><p>a <code>b</code></p><p><code> c </code> d</p></blockquote>"
+  },
+  {
+    "name": "quoted paragraph boundary > a ``b\n>\n> ` c ` d",
+    "source": "> a ``b\n>\n> ` c ` d",
+    "html": "<blockquote><p>a <code>b</code></p><p><code> c </code> d</p></blockquote>"
+  },
+  {
+    "name": "quoted paragraph boundary > a `b\n>\n> `` c `` d",
+    "source": "> a `b\n>\n> `` c `` d",
+    "html": "<blockquote><p>a <code>b</code></p><p><code> c </code> d</p></blockquote>"
+  },
+  {
+    "name": "sibling code scopes 1",
+    "source": "- `` a\n- ` b `",
+    "html": "<ul><li><code> a</code></li><li><code> b </code></li></ul>"
+  },
+  {
+    "name": "sibling code scopes 2",
+    "source": "- `` a\n- ` b `\n",
+    "html": "<ul><li><code> a</code></li><li><code> b </code></li></ul>"
+  },
+  {
+    "name": "sibling code scopes 3",
+    "source": "- x `` a\n- y ` b ` c",
+    "html": "<ul><li>x <code> a</code></li><li>y <code> b </code> c</li></ul>"
+  },
+  {
+    "name": "sibling code scopes 4",
+    "source": "1. x `` a\n2. y ` b ` c",
+    "html": "<ol><li>x <code> a</code></li><li>y <code> b </code> c</li></ol>"
+  },
+  {
+    "name": "sibling code scopes 5",
+    "source": "> - x `` a\n> - y ` b ` c",
+    "html": "<blockquote><ul><li>x <code> a</code></li><li>y <code> b </code> c</li></ul></blockquote>"
+  },
+  {
+    "name": "sibling code scopes 6",
+    "source": "- x `` a\n- y ` b `{.c} c",
+    "html": "<ul><li>x <code> a</code></li><li>y <code class=\"c\"> b </code> c</li></ul>"
+  },
+  {
+    "name": "container code scopes 1",
+    "source": "::: a\nx `` a\n:::\n` b `",
+    "html": "<div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "container code scopes 2",
+    "source": "::: a\nx `` a\n:::\n\n` b `",
+    "html": "<div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "container code scopes 3",
+    "source": "> ::: a\n> x `` a\n> :::\n> ` b `",
+    "html": "<blockquote><div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p></blockquote>"
+  },
+  {
+    "name": "container code scopes 4",
+    "source": ":::: a\n\n::: b\nx `` a\n:::\n` b `\n::::",
+    "html": "<div class=\"a\"><div class=\"b\"><p>x <code> a</code></p></div><p><code> b </code></p></div>"
+  },
+  {
+    "name": "container code scopes 5",
+    "source": "- x `` a\n+ y ` b `",
+    "html": "<ul><li>x <code> a</code></li></ul><ul><li>y <code> b </code></li></ul>"
+  },
+  {
+    "name": "code ownership controls 1",
+    "source": ":::: a\n::: b\nx `` a\n:::\n` b `\n::::",
+    "html": "<div class=\"a\"><div class=\"b\"><p>x <code> a</code></p></div><p><code> b </code></p></div>"
+  },
+  {
+    "name": "code ownership controls 2",
+    "source": "::: a\r\nx `` a\r\n:::\r\n` b `",
+    "html": "<div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p>"
+  },
+  {
+    "name": "code ownership controls 3",
+    "source": ":::: a\n\n::: b\nx `` a\n::::\n` b `",
+    "html": "<div class=\"a\"><div class=\"b\"><p>x <code> a</code></p></div></div><p><code> b </code></p>"
+  },
+  {
+    "name": "code ownership controls 4",
+    "source": "::: a\n```\n:::\n```\ny `` q\n:::\n` z `",
+    "html": "<div class=\"a\"><pre><code>:::\n</code></pre><p>y <code> q</code></p></div><p><code> z </code></p>"
+  },
+  {
+    "name": "code ownership controls 5",
+    "source": "> ::: a\n> ```\n> :::\n> ```\n> y `` q\n> :::\n> ` z `",
+    "html": "<blockquote><div class=\"a\"><pre><code>:::\n</code></pre><p>y <code> q</code></p></div><p><code> z </code></p></blockquote>"
+  },
+  {
+    "name": "code ownership controls 6",
+    "source": "> ::: a\n> ```\n> x\n> ```\n> y `` q\n> :::\n> ` z `",
+    "html": "<blockquote><div class=\"a\"><pre><code>x\n</code></pre><p>y <code> q</code></p></div><p><code> z </code></p></blockquote>"
+  },
+  {
+    "name": "code ownership controls 7",
+    "source": "- ::: a\n  x `` a\n  :::\n  > ` b `",
+    "html": "<ul><li><div class=\"a\"><p>x <code> a</code></p></div><blockquote><p><code> b </code></p></blockquote></li></ul>"
+  },
+  {
+    "name": "code ownership controls 8",
+    "source": "> - ::: a\n>   x `` a\n>   :::\n>   > ` b `",
+    "html": "<blockquote><ul><li><div class=\"a\"><p>x <code> a</code></p></div><blockquote><p><code> b </code></p></blockquote></li></ul></blockquote>"
+  },
+  {
+    "name": "code ownership controls 9",
+    "source": "x `` a | b ` | c",
+    "html": "<p>x <code> a | b ` | c</code></p>"
+  },
+  {
+    "name": "code ownership controls 10",
+    "source": "| a | b |\nx `` c | d",
+    "html": "<table><tr><td>a</td><td>b</td></tr></table><p>x <code> c | d</code></p>"
+  },
+  {
+    "name": "code ownership controls 11",
+    "source": "x `` a | b\nc |",
+    "html": "<p>x <code> a | b\nc |</code></p>"
+  },
+  {
+    "name": "code ownership controls 12",
+    "source": "# h\n::: a\nx `` a\n:::\n` b `",
+    "html": "<section id=\"h\"><h1>h</h1><div class=\"a\"><p>x <code> a</code></p></div><p><code> b </code></p></section>"
+  },
+  {
+    "name": "code ownership controls 13",
+    "source": "> ::: a\n> x\n\n> ::: b\n> y `` q\n> :::\n> ` z `",
+    "html": "<blockquote><div class=\"a\"><p>x</p></div></blockquote><blockquote><div class=\"b\"><p>y <code> q</code></p></div><p><code> z </code></p></blockquote>"
+  }
+]
