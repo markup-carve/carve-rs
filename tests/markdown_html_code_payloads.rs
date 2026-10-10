@@ -144,3 +144,100 @@ fn a_footnote_inside_html_code_keeps_its_definition() {
     assert!(html.contains("note body"), "{source}\n{html}");
     assert!(html.contains("doc-noteref"), "{source}\n{html}");
 }
+
+#[test]
+fn a_table_fallback_does_not_degrade_a_native_paragraph_code() {
+    let result = carve::try_migrate_markdown(
+        "<code>a<!---->&#10;<!---->b</code>\n\n| h |\n|---|\n| <code>x&#10;y</code> |\n",
+    )
+    .unwrap();
+    let rows: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "raw-code-fallback")
+        .collect();
+    assert_eq!(rows.len(), 1, "{:?}", result.report.diagnostics);
+    let document = carve::parse(&result.value);
+    let carve::BlockNode::Paragraph(paragraph) = &document.children[0] else {
+        panic!("paragraph")
+    };
+    assert!(
+        matches!(&paragraph.children[..], [carve::InlineNode::Code(code)] if code.value == "a\nb")
+    );
+    let options = carve::Options {
+        allow_raw_html: false,
+        ..Default::default()
+    };
+    let html = carve::render_html_with_options(&document, &options).unwrap();
+    assert!(html.starts_with("<p><code>a\nb</code></p>"), "{html}");
+}
+
+#[test]
+fn a_multiline_html_code_loss_names_the_opening_line() {
+    let result = carve::try_migrate_markdown("<code>*a*\nb</code>\n").unwrap();
+    let rows: Vec<_> = result
+        .report
+        .diagnostics
+        .iter()
+        .filter(|row| row.code == "raw-code-fallback")
+        .collect();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].path.as_deref(), Some("line:1"));
+}
+
+#[test]
+fn nested_and_attributed_html_code_keep_newlines() {
+    for markdown in [
+        "<code>*a&#10;b*</code>",
+        "<code><em>a&#10;b</em></code>",
+        "<code>[a&#10;b](u)</code>",
+        "<code class=\"x\">a&#10;b</code>",
+    ] {
+        let result = carve::try_migrate_markdown(markdown).unwrap();
+        let html = carve::to_html(&result.value);
+        let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
+        let mut records = Vec::new();
+        code_records(&dom.document, &[], &mut records);
+        assert_eq!(records.len(), 1, "{markdown}\n{}", result.value);
+        assert_eq!(records[0]["value"], "a\nb", "{markdown}\n{}", result.value);
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "raw-code-fallback")
+                .count(),
+            1,
+            "{markdown}"
+        );
+    }
+}
+
+#[test]
+fn a_table_fallback_does_not_degrade_a_trailing_empty_code() {
+    let result = carve::try_migrate_markdown(
+        "text <code></code>\n\n| h |\n|---|\n| <code>x&#10;y</code> |\n",
+    )
+    .unwrap();
+    assert_eq!(
+        result
+            .report
+            .diagnostics
+            .iter()
+            .filter(|row| row.code == "raw-code-fallback")
+            .count(),
+        1,
+        "{:?}",
+        result.report.diagnostics
+    );
+    let document = carve::parse(&result.value);
+    let carve::BlockNode::Paragraph(paragraph) = &document.children[0] else {
+        panic!("paragraph")
+    };
+    assert!(
+        matches!(paragraph.children.last(), Some(carve::InlineNode::Code(code)) if code.value.is_empty()),
+        "{}",
+        result.value
+    );
+}

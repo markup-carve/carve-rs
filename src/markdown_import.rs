@@ -216,36 +216,92 @@ pub(crate) fn markdown_to_carve_with_losses(
             ))
         }
         Ok(_) | Err(crate::RenderCarveError::SourceUnspellable(_)) => {
-            losses.extend(preserve_html_code_for_writing(&mut document));
-            render_carve(&document).map(|value| {
-                (
-                    crate::carrier_markers::restore_carrier_markers(&value, &lift),
-                    losses,
-                    notices,
-                )
-            })
+            losses.extend(preserve_html_code_for_writing(&mut document, false));
+            let value = match render_carve(&document) {
+                Ok(value)
+                    if document.markdown_code_values()
+                        == crate::parse::parse(&value).markdown_code_values() =>
+                {
+                    value
+                }
+                Ok(_) | Err(crate::RenderCarveError::SourceUnspellable(_)) => {
+                    losses.extend(preserve_html_code_for_writing(&mut document, true));
+                    render_carve(&document)?
+                }
+                Err(error) => return Err(error),
+            };
+            if document.markdown_code_values() != crate::parse::parse(&value).markdown_code_values()
+            {
+                return Err(crate::RenderCarveError::SourceUnspellable(
+                    crate::render_carve_error::SourceUnspellable::new(
+                        "code",
+                        "the imported code payload does not survive source readback",
+                    ),
+                ));
+            }
+            Ok((
+                crate::carrier_markers::restore_carrier_markers(&value, &lift),
+                losses,
+                notices,
+            ))
         }
         Err(error) => Err(error),
     }
 }
 
-fn preserve_html_code_for_writing(document: &mut Document) -> Vec<MarkdownImportLoss> {
+fn preserve_html_code_for_writing(
+    document: &mut Document,
+    force_all: bool,
+) -> Vec<MarkdownImportLoss> {
     use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
-    struct Preserve(Vec<MarkdownImportLoss>);
+    struct Preserve {
+        losses: Vec<MarkdownImportLoss>,
+        paragraph: bool,
+        inline_depth: usize,
+        force_all: bool,
+    }
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
             for block in blocks {
+                let saved = (self.paragraph, self.inline_depth);
+                self.paragraph = matches!(block, BlockNode::Paragraph(_));
+                self.inline_depth = 0;
                 visit_block_children(block, self);
+                (self.paragraph, self.inline_depth) = saved;
             }
         }
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
-            for node in nodes {
+            let standalone = self.inline_depth == 0 && nodes.len() == 1;
+            self.inline_depth += 1;
+            let length = nodes.len();
+            for (index, node) in nodes.iter_mut().enumerate() {
                 if let InlineNode::Code(code) = node {
                     if code.attrs.is_none()
                         && (code.value.is_empty() || code.value.contains(['\n', '\r']))
                     {
+                        if self.paragraph && !self.force_all {
+                            let mut probe = crate::parse::parse("x\n");
+                            let BlockNode::Paragraph(paragraph) = &mut probe.children[0] else {
+                                unreachable!()
+                            };
+                            paragraph.children = vec![InlineNode::Code(code.clone())];
+                            if !standalone {
+                                if index + 1 == length {
+                                    paragraph.children.insert(0, InlineNode::text("x "));
+                                } else {
+                                    paragraph.children.push(InlineNode::text(" x"));
+                                }
+                            }
+                            if let Ok(source) = render_carve(&probe) {
+                                if probe.markdown_code_values()
+                                    == crate::parse::parse(&source).markdown_code_values()
+                                {
+                                    continue;
+                                }
+                            }
+                        }
                         let body = code_html(&code.value);
-                        self.0.push(MarkdownImportLoss { message: "Preserved an HTML code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
+                        self.losses.push(MarkdownImportLoss { message: "Preserved an HTML code payload as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
                         *node = InlineNode::RawInline(RawInline {
                             format: "html".into(),
                             content: body,
@@ -256,14 +312,20 @@ fn preserve_html_code_for_writing(document: &mut Document) -> Vec<MarkdownImport
                 }
                 visit_inline_children(node, self);
             }
+            self.inline_depth -= 1;
         }
     }
-    let mut preserve = Preserve(Vec::new());
+    let mut preserve = Preserve {
+        losses: Vec::new(),
+        paragraph: false,
+        inline_depth: 0,
+        force_all,
+    };
     preserve.blocks(&mut document.children);
     for blocks in document.footnote_defs.values_mut() {
         preserve.blocks(blocks);
     }
-    preserve.0
+    preserve.losses
 }
 
 fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
@@ -272,6 +334,28 @@ fn preserve_code_text(nodes: &mut Vec<InlineNode>) {
     impl SubtreeVisitor for Preserve {
         fn blocks(&mut self, _: &mut Vec<BlockNode>) {}
         fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            let mut coalesced = Vec::with_capacity(nodes.len());
+            for node in std::mem::take(nodes) {
+                match node {
+                    InlineNode::Text(text) => {
+                        if let Some(InlineNode::Text(previous)) = coalesced.last_mut() {
+                            previous.value.push_str(&text.value);
+                        } else {
+                            coalesced.push(InlineNode::Text(text));
+                        }
+                    }
+                    InlineNode::SoftBreak(_) => {
+                        if let Some(InlineNode::Text(previous)) = coalesced.last_mut() {
+                            previous.value.push('\n');
+                        } else {
+                            coalesced.push(InlineNode::text("\n"));
+                        }
+                    }
+                    other => coalesced.push(other),
+                }
+            }
+            *nodes = coalesced;
+
             for node in nodes {
                 let value = match node {
                     InlineNode::Text(text) if !text.value.is_empty() => Some(text.value.clone()),
@@ -1039,6 +1123,8 @@ enum Frame {
     HtmlCode {
         line: usize,
         tag: String,
+        open: String,
+        native: bool,
         children: Vec<InlineNode>,
     },
     HtmlInsert {
@@ -1234,8 +1320,13 @@ impl Builder {
             return;
         }
 
-        if value == "<!---->" && matches!(self.frames.last(), Some(Frame::HtmlCode { .. })) {
-            return;
+        if value == "<!---->" {
+            if let Some(Frame::HtmlCode { children, .. }) = self.frames.last_mut() {
+                if let Some(InlineNode::Text(text)) = children.last_mut() {
+                    text.value = text.value.replace("\r\n", "\n").replace('\r', "\n");
+                }
+                return;
+            }
         }
         let Some(tag) = html_tag(value) else {
             self.raw_inline(value.to_string());
@@ -1279,7 +1370,7 @@ impl Builder {
         // tag (`<b class="x">`) becomes a raw-inline span holding the start tag
         // and nothing else, so its attributes survive verbatim while the text
         // after its `>` stays in the document (markup-carve/carve-rs#2409).
-        if !tag.bare {
+        if !tag.bare && name != "code" {
             self.raw_inline(value.to_string());
             return;
         }
@@ -1321,6 +1412,8 @@ impl Builder {
             "code" => Frame::HtmlCode {
                 line: self.current_line,
                 tag: name,
+                open: value.to_string(),
+                native: tag.bare,
                 children: Vec::new(),
             },
             _ => {
@@ -1386,14 +1479,28 @@ impl Builder {
     /// Text lands in whatever is open: a code block collects it verbatim, an
     /// image's alt is a plain string on the node, everything else takes a node.
     fn text(&mut self, value: &str) {
+        let inside_html_code = self
+            .frames
+            .iter()
+            .any(|frame| matches!(frame, Frame::HtmlCode { .. }));
         match self.frames.last_mut() {
             Some(Frame::CodeBlock { content, .. }) | Some(Frame::Metadata(content)) => {
                 content.push_str(value)
             }
-            Some(Frame::HtmlCode { children, .. }) => children.push(InlineNode::text(value)),
+            Some(Frame::HtmlCode { children, .. }) => {
+                if let Some(InlineNode::Text(text)) = children.last_mut() {
+                    text.value.push_str(value);
+                } else {
+                    children.push(InlineNode::text(value));
+                }
+            }
             Some(Frame::Image { alt, .. }) => alt.push_str(value),
             _ => {
-                let text = value.replace(['\r', '\n'], " ");
+                let text = if inside_html_code {
+                    value.to_string()
+                } else {
+                    value.replace(['\r', '\n'], " ")
+                };
                 self.inline(InlineNode::text(text));
             }
         }
@@ -1686,12 +1793,12 @@ impl Builder {
             }
             Frame::HtmlCode {
                 line,
-                tag,
+                open,
                 mut children,
                 ..
             } => {
                 self.losses.push(MarkdownImportLoss { message: "Preserved unclosed HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
-                self.raw_inline(format!("<{tag}>"));
+                self.raw_inline(open);
                 preserve_code_text(&mut children);
                 for child in children {
                     self.inline(child);
@@ -1893,7 +2000,13 @@ impl Builder {
                     pos: None,
                 }));
             }
-            Some(Frame::HtmlCode { line, children, .. }) => {
+            Some(Frame::HtmlCode {
+                line,
+                open,
+                native,
+                children,
+                ..
+            }) => {
                 let mut content = String::new();
                 let plain = children.iter().all(|child| match child {
                     InlineNode::Text(text) => {
@@ -1906,11 +2019,11 @@ impl Builder {
                     }
                     _ => false,
                 });
-                if plain {
+                if plain && native {
                     self.inline(InlineNode::code(content, None));
                 } else {
                     self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that escape or omit raw HTML change its code structure and content".into(), line: Some(line), kind: MarkdownLossKind::RawCodeFallback });
-                    self.raw_inline("<code>".into());
+                    self.raw_inline(open);
                     let mut children = children;
                     preserve_code_text(&mut children);
                     for child in children {
