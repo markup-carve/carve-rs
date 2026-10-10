@@ -55,7 +55,6 @@ prepare canonical formatting with `to_carve_patch` and apply it with
 See [Source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md)
 and the [full usage walkthrough](https://github.com/markup-carve/carve-rs/blob/main/docs/reference.md).
 
-
 ### Straight quotes with smart typography
 
 Set `Options { smart_typography: SmartTypographyMode::QuotesSource,

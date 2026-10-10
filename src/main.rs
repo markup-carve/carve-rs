@@ -1733,8 +1733,8 @@ fn print_usage() {
          emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
-         --smart-typography MODE     glyph (default), source, or quotes-source: emit the runs\n                              \
-         the author typed instead of the resolved glyphs\n  \
+         --smart-typography MODE     glyph (default), source (all source runs),\n                              \
+         quotes-source (quotes only); every presentation target\n  \
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          --strict-losses             refuse output when rendering loses content or structure\n  \
          --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
