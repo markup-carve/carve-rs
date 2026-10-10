@@ -19,23 +19,27 @@ pub(crate) trait SubtreeVisitor {
     fn image(&mut self, _image: &mut Image) {}
     /// Called for every node's position, block and inline alike.
     fn position(&mut self, _pos: &mut Pos) {}
+    /// The position SLOT, for a pass that REMOVES a position rather than
+    /// rewriting one. The default hands a present position to `position`, so a
+    /// visitor that only rewrites coordinates is unaffected.
+    fn position_slot(&mut self, pos: &mut Option<Pos>) {
+        if let Some(pos) = pos.as_mut() {
+            self.position(pos);
+        }
+    }
 }
 
 /// A position on a part that is not a node of its own: a list item, a table row
 /// or cell, a definition term or body, a citation item. It reaches the wire all
 /// the same.
 fn visit_pos<V: SubtreeVisitor>(pos: &mut Option<Pos>, v: &mut V) {
-    if let Some(pos) = pos.as_mut() {
-        v.position(pos);
-    }
+    v.position_slot(pos);
 }
 
 /// Visit the sequences held directly by one block, without revisiting the block
 /// itself. The caller decides whether to recurse further.
 pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: &mut V) {
-    if let Some(pos) = block_pos_mut(block) {
-        v.position(pos);
-    }
+    v.position_slot(block_pos_slot(block));
     match block {
         BlockNode::Heading(h) => v.inlines(&mut h.children),
         BlockNode::Paragraph(p) => v.inlines(&mut p.children),
@@ -169,9 +173,7 @@ pub(crate) fn visit_block_children<V: SubtreeVisitor>(block: &mut BlockNode, v: 
 
 /// Visit the sequences held by one inline node.
 pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v: &mut V) {
-    if let Some(pos) = inline_pos_mut(node) {
-        v.position(pos);
-    }
+    v.position_slot(inline_pos_slot(node));
     match node {
         InlineNode::Image(image) => v.image(image),
         InlineNode::Emphasis(e) => v.inlines(&mut e.children),
@@ -232,65 +234,73 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
 }
 
 // Keep position matches exhaustive so new variants cannot silently lose spans.
-pub(crate) fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
+pub(crate) fn block_pos_slot(block: &mut BlockNode) -> &mut Option<Pos> {
     match block {
-        BlockNode::Heading(n) => n.pos.as_mut(),
-        BlockNode::Paragraph(n) => n.pos.as_mut(),
-        BlockNode::CodeBlock(n) => n.pos.as_mut(),
-        BlockNode::List(n) => n.pos.as_mut(),
-        BlockNode::BlockQuote(n) => n.pos.as_mut(),
-        BlockNode::Table(n) => n.pos.as_mut(),
-        BlockNode::Admonition(n) => n.pos.as_mut(),
-        BlockNode::Directive(n) => n.pos.as_mut(),
-        BlockNode::Div(n) => n.pos.as_mut(),
-        BlockNode::Section(n) => n.pos.as_mut(),
-        BlockNode::LineBlock(n) => n.pos.as_mut(),
-        BlockNode::DefinitionList(n) => n.pos.as_mut(),
-        BlockNode::Figure(n) => n.pos.as_mut(),
-        BlockNode::FigureGroup(n) => n.pos.as_mut(),
-        BlockNode::AbbreviationDef(n) => n.pos.as_mut(),
-        BlockNode::LinkReferenceDefinition(n) => n.pos.as_mut(),
-        BlockNode::CitationDefinition(n) => n.pos.as_mut(),
-        BlockNode::RawBlock(n) => n.pos.as_mut(),
-        BlockNode::Comment(n) => n.pos.as_mut(),
-        BlockNode::BlockExtension(n) => n.pos.as_mut(),
-        BlockNode::ExtensionCarrier(n) => n.pos.as_mut(),
-        BlockNode::BlockImage(n) => n.pos.as_mut(),
-        BlockNode::ThematicBreak(n) => n.pos.as_mut(),
+        BlockNode::Heading(n) => &mut n.pos,
+        BlockNode::Paragraph(n) => &mut n.pos,
+        BlockNode::CodeBlock(n) => &mut n.pos,
+        BlockNode::List(n) => &mut n.pos,
+        BlockNode::BlockQuote(n) => &mut n.pos,
+        BlockNode::Table(n) => &mut n.pos,
+        BlockNode::Admonition(n) => &mut n.pos,
+        BlockNode::Directive(n) => &mut n.pos,
+        BlockNode::Div(n) => &mut n.pos,
+        BlockNode::Section(n) => &mut n.pos,
+        BlockNode::LineBlock(n) => &mut n.pos,
+        BlockNode::DefinitionList(n) => &mut n.pos,
+        BlockNode::Figure(n) => &mut n.pos,
+        BlockNode::FigureGroup(n) => &mut n.pos,
+        BlockNode::AbbreviationDef(n) => &mut n.pos,
+        BlockNode::LinkReferenceDefinition(n) => &mut n.pos,
+        BlockNode::CitationDefinition(n) => &mut n.pos,
+        BlockNode::RawBlock(n) => &mut n.pos,
+        BlockNode::Comment(n) => &mut n.pos,
+        BlockNode::BlockExtension(n) => &mut n.pos,
+        BlockNode::ExtensionCarrier(n) => &mut n.pos,
+        BlockNode::BlockImage(n) => &mut n.pos,
+        BlockNode::ThematicBreak(n) => &mut n.pos,
+    }
+}
+
+pub(crate) fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
+    block_pos_slot(block).as_mut()
+}
+
+pub(crate) fn inline_pos_slot(node: &mut InlineNode) -> &mut Option<Pos> {
+    match node {
+        InlineNode::Text(n) => &mut n.pos,
+        InlineNode::EscapedText(n) => &mut n.pos,
+        InlineNode::SmartPunctuation(n) => &mut n.pos,
+        InlineNode::Emphasis(n) => &mut n.pos,
+        InlineNode::Code(n) => &mut n.pos,
+        InlineNode::Link(n) => &mut n.pos,
+        InlineNode::Image(n) => &mut n.pos,
+        InlineNode::Span(n) => &mut n.pos,
+        InlineNode::Ruby(n) => &mut n.pos,
+        InlineNode::Math(n) => &mut n.pos,
+        InlineNode::RawInline(n) => &mut n.pos,
+        InlineNode::LiteralInline(n) => &mut n.pos,
+        InlineNode::Symbol(n) => &mut n.pos,
+        InlineNode::AutoLink(n) => &mut n.pos,
+        InlineNode::CrossRef(n) => &mut n.pos,
+        InlineNode::CaptionNumber(n) => &mut n.pos,
+        InlineNode::Mention(n) => &mut n.pos,
+        InlineNode::Tag(n) => &mut n.pos,
+        InlineNode::CitationGroup(n) => &mut n.pos,
+        InlineNode::Extension(n) => &mut n.pos,
+        InlineNode::Abbreviation(n) => &mut n.pos,
+        InlineNode::Footnote(n) => &mut n.pos,
+        InlineNode::NonBreakingSpace(n) => &mut n.pos,
+        InlineNode::SoftBreak(n) => &mut n.pos,
+        InlineNode::HardBreak(n) => &mut n.pos,
+        InlineNode::CriticInsert(n) => &mut n.pos,
+        InlineNode::CriticDelete(n) => &mut n.pos,
+        InlineNode::CriticSubstitute(n) => &mut n.pos,
+        InlineNode::CriticComment(n) => &mut n.pos,
+        InlineNode::Comment(n) => &mut n.pos,
     }
 }
 
 pub(crate) fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
-    match node {
-        InlineNode::Text(n) => n.pos.as_mut(),
-        InlineNode::EscapedText(n) => n.pos.as_mut(),
-        InlineNode::SmartPunctuation(n) => n.pos.as_mut(),
-        InlineNode::Emphasis(n) => n.pos.as_mut(),
-        InlineNode::Code(n) => n.pos.as_mut(),
-        InlineNode::Link(n) => n.pos.as_mut(),
-        InlineNode::Image(n) => n.pos.as_mut(),
-        InlineNode::Span(n) => n.pos.as_mut(),
-        InlineNode::Ruby(n) => n.pos.as_mut(),
-        InlineNode::Math(n) => n.pos.as_mut(),
-        InlineNode::RawInline(n) => n.pos.as_mut(),
-        InlineNode::LiteralInline(n) => n.pos.as_mut(),
-        InlineNode::Symbol(n) => n.pos.as_mut(),
-        InlineNode::AutoLink(n) => n.pos.as_mut(),
-        InlineNode::CrossRef(n) => n.pos.as_mut(),
-        InlineNode::CaptionNumber(n) => n.pos.as_mut(),
-        InlineNode::Mention(n) => n.pos.as_mut(),
-        InlineNode::Tag(n) => n.pos.as_mut(),
-        InlineNode::CitationGroup(n) => n.pos.as_mut(),
-        InlineNode::Extension(n) => n.pos.as_mut(),
-        InlineNode::Abbreviation(n) => n.pos.as_mut(),
-        InlineNode::Footnote(n) => n.pos.as_mut(),
-        InlineNode::NonBreakingSpace(n) => n.pos.as_mut(),
-        InlineNode::SoftBreak(n) => n.pos.as_mut(),
-        InlineNode::HardBreak(n) => n.pos.as_mut(),
-        InlineNode::CriticInsert(n) => n.pos.as_mut(),
-        InlineNode::CriticDelete(n) => n.pos.as_mut(),
-        InlineNode::CriticSubstitute(n) => n.pos.as_mut(),
-        InlineNode::CriticComment(n) => n.pos.as_mut(),
-        InlineNode::Comment(n) => n.pos.as_mut(),
-    }
+    inline_pos_slot(node).as_mut()
 }

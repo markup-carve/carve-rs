@@ -1524,6 +1524,8 @@ mod the_escape_search_reaches_the_minimal_form;
 mod the_extension_list_in_the_docs_is_the_registry;
 #[path = "../the_footnotes_placement_marker_is_picked.rs"]
 mod the_footnotes_placement_marker_is_picked;
+#[path = "../the_formatter_keeps_the_punctuation_that_decides_a_smart_quote.rs"]
+mod the_formatter_keeps_the_punctuation_that_decides_a_smart_quote;
 #[path = "../the_heading_index_is_built_in_document_order.rs"]
 mod the_heading_index_is_built_in_document_order;
 #[path = "../the_layout_path_answers_as_the_parser_does.rs"]

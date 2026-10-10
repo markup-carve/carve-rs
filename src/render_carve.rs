@@ -355,11 +355,29 @@ fn render_carve_once(session: &RenderSession, doc: &Document) -> String {
     if minimal == conservative {
         return minimal;
     }
+    // The minimal form that re-parses to THIS document is the document's
+    // canonical spelling, whatever the conservative form does. Without this the
+    // check below reads the conservative form as the reference, so an escape
+    // that CHANGES the re-parse keeps itself: a backslash before the
+    // punctuation that decides a smart quote's direction flipped the quote and
+    // `fmt` changed what the document renders (carve-rs#2455).
+    //
+    // ONE-WAY, which is what keeps `escaping_is_redundant`'s reasoning intact:
+    // the writer does not satisfy `parse(fmt(x)) == parse(x)` for every
+    // construct, so a match emits the minimal form and a miss decides nothing.
+    // carve-js takes the same shortcut in the same place.
+    let minimal_tree = comparable_tree(&minimal);
+    if minimal_tree
+        .as_ref()
+        .is_some_and(|tree| *tree == comparable_document(doc.clone()))
+    {
+        return minimal;
+    }
     // ONE parse of the conservative form, shared by the redundancy check and the
     // narrowing below. Parsing it in each made every narrowed document pay a
     // second full parse of its own output for an answer it already had.
     let conservative_tree = comparable_tree(&conservative);
-    if escaping_is_redundant(&minimal, conservative_tree.as_ref()) {
+    if escaping_is_redundant(minimal_tree.as_ref(), conservative_tree.as_ref()) {
         return minimal;
     }
     // The minimal form of the WHOLE document does not hold, which used to end
@@ -1160,15 +1178,19 @@ fn render_with_escapes_once(
 /// `conservative_tree` is the caller's single parse of the conservative form;
 /// `None` means it did not parse, which answers the question conservatively -
 /// as does a minimal form that will not parse either.
-fn escaping_is_redundant(minimal: &str, conservative_tree: Option<&Document>) -> bool {
-    let Some(conservative_tree) = conservative_tree else {
-        return false;
-    };
-    comparable_tree(minimal).is_some_and(|minimal_tree| &minimal_tree == conservative_tree)
+fn escaping_is_redundant(
+    minimal_tree: Option<&Document>,
+    conservative_tree: Option<&Document>,
+) -> bool {
+    match (minimal_tree, conservative_tree) {
+        (Some(minimal_tree), Some(conservative_tree)) => minimal_tree == conservative_tree,
+        _ => false,
+    }
 }
 
 fn comparable_document(mut doc: Document) -> Document {
     doc.source_len = 0;
+    strip_positions(&mut doc);
     for block in &mut doc.children {
         normalize_escapes_block(block);
     }
@@ -1183,6 +1205,45 @@ fn comparable_document(mut doc: Document) -> Document {
         }
     }
     doc
+}
+
+/// Drop every source position in the document.
+///
+/// A position records where a node was READ, never what it is, so it is not
+/// part of the question this comparison asks. The two renders are parsed the
+/// same way and carry none, which is why dropping them is a no-op for them -
+/// but the WRITER's own document was parsed with positions on, and comparing
+/// through them answered "different" for every document.
+fn strip_positions(doc: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+
+    struct Strip;
+    impl SubtreeVisitor for Strip {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                visit_inline_children(inline, self);
+            }
+        }
+        fn position_slot(&mut self, pos: &mut Option<crate::ast::Pos>) {
+            *pos = None;
+        }
+    }
+
+    let mut strip = Strip;
+    strip.blocks(&mut doc.children);
+    for blocks in doc.footnote_defs.values_mut() {
+        strip.blocks(blocks);
+    }
+    // Not nodes, so the walk above does not reach them.
+    doc.footnote_def_pos.clear();
+    if let Some(frontmatter) = doc.frontmatter_raw.as_mut() {
+        frontmatter.pos = None;
+    }
 }
 
 /// Collapse adjacent text and escaped-text nodes into one text node.
