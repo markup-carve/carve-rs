@@ -290,6 +290,15 @@ fn prefixed_hosts() -> Vec<(&'static str, &'static str, &'static str)> {
             "- - <!-- carve: ::: note -->\n    Body.\n\n    <!-- carve: ::: -->\n",
         ),
         (
+            // AND THREE, where the body stands six columns in. The parse puts
+            // the body at the column EVERY prefix put it at; a line scan would
+            // have had to accumulate that itself, which is what carve-php and
+            // carve-js had to add (carve-php#3074, carve-js#2712).
+            "a container opening three list items at once",
+            "- - - ::: note\n      Body.\n      :::\n",
+            "- - - <!-- carve: ::: note -->\n      Body.\n\n      <!-- carve: ::: -->\n",
+        ),
+        (
             // A SIBLING ITEM AFTER THE CLOSER MUST NOT GO LOOSE. A closer and
             // what follows take a blank line between them where they are
             // siblings; the item below belongs to the host above the container,
@@ -481,6 +490,13 @@ fn a_marker_shaped_line_in_a_verbatim_run_is_left_alone_at_any_column() {
         "Text.\n\n     ```md\n     <!-- carve: ::: note -->\n     ```\n",
         // An inline code span, which is not a line of its own at all.
         "Text with `<!-- carve: ::: note -->` in it.\n",
+        // A FENCE WHOSE PAYLOAD HOLDS A MARKER-SHAPED FENCE LINE. A list
+        // marker inside an open fence is verbatim content, so the `- ````
+        // line below must not be read as the fence's closer - the comments
+        // under it would then be lifted out of the payload. The parse answers
+        // this one too; the line-rewriting engines needed the rule spelled out
+        // (carve-php#3074, carve-js#2712).
+        "- ```\n  - ```\n  <!-- carve: ::: note -->\n  Body\n  <!-- carve: ::: -->\n  ```\n",
     ] {
         let result = carve::migrate_markdown(source);
         assert!(
