@@ -332,10 +332,7 @@ fn tabs_in_the_titles_code_are_normalized() {
 }
 
 #[test]
-fn a_same_kind_nesting_in_an_imported_title_is_unwrapped() {
-    // The writer refuses a span nested in one of its own kind, so an import
-    // that leaves one in the title cannot be written at all: the whole
-    // document is lost, not the title.
+fn a_same_kind_nesting_in_an_imported_title_is_preserved() {
     for (kind, html) in [
         ("toc", "<div class=\"toc\"><p class=\"admonition-title\">a <em>x <em>y</em></em> b</p><p>body</p></div>"),
         ("note", "<aside class=\"admonition note\"><p class=\"admonition-title\">a <em>x <em>y</em></em> b</p><p>body</p></aside>"),
@@ -344,8 +341,8 @@ fn a_same_kind_nesting_in_an_imported_title_is_unwrapped() {
             .expect("the fragment imports");
         assert_eq!(
             imported.value,
-            format!("::: {kind} \"a /x y/ b\"\nbody\n:::\n"),
-            "{kind}: the nested emphasis was not unwrapped"
+            format!("::: {kind} \"a {{/x {{/y/}}/}} b\"\nbody\n:::\n"),
+            "{kind}: the nested emphasis was not preserved"
         );
     }
 }

@@ -1,8 +1,4 @@
-//! E3 pushes no second level of a kind while one is open, and the forced
-//! `{X X}` form shares the stack with the bare one, so an opener of an open kind
-//! is content (markup-carve/carve#2078, markup-carve/carve-rs#1741). A braced
-//! inline of another kind starts its own scope for E3 and E2
-//! (markup-carve/carve#2091, markup-carve/carve-rs#1747).
+//! Bare same-kind openers remain literal; explicit braced openers nest.
 
 /// Both routes: `to_html`, which may take the layout fast path, and a full parse.
 fn html(source: &str) -> String {
@@ -32,11 +28,11 @@ macro_rules! cases {
 }
 
 cases! {
-    a_forced_opener_inside_a_bare_span: "*a {*b*} c*" => "<p><strong>a {*b</strong>} c*</p>",
+    a_forced_opener_inside_a_bare_span: "*a {*b*} c*" => "<p><strong>a <strong>b</strong> c</strong></p>",
     a_bare_opener_inside_a_forced_span: "{*a *b* c*}" => "<p><strong>a *b* c</strong></p>",
-    a_forced_opener_inside_a_forced_span: "a{*{*x*}*}b" => "<p>a<strong>{*x</strong>*}b</p>",
-    a_forced_pair_the_outer_scan_runs_past: "*a {*b *} c*" => "<p><strong>a {*b *} c</strong></p>",
-    a_forced_opener_through_a_bare_span: "{/a *b {/c/}*/}" => "<p><em>a *b {/c</em>*/}</p>",
+    a_forced_opener_inside_a_forced_span: "a{*{*x*}*}b" => "<p>a<strong><strong>x</strong></strong>b</p>",
+    a_forced_pair_the_outer_scan_runs_past: "*a {*b *} c*" => "<p><strong>a <strong>b </strong> c</strong></p>",
+    a_forced_opener_through_a_bare_span: "{/a *b {/c/}*/}" => "<p><em>a <strong>b <em>c</em></strong></em></p>",
     a_braced_scope_nests_its_outer_kind: "{*a {/b {*c*} d/} e*}"
         => "<p><strong>a <em>b <strong>c</strong> d</em> e</strong></p>",
     a_closer_inside_a_braced_scope_stays_there: "{*a {/b *} d/} e*}"
@@ -56,7 +52,7 @@ cases! {
     sibling_spans_of_one_kind: "a {*b*} c {*d*} e" => "<p>a <strong>b</strong> c <strong>d</strong> e</p>",
 }
 
-/// A same-kind nesting with no braced scope between has no spelling.
+/// Explicit braces preserve direct same-kind nesting.
 #[test]
 fn the_writer_refuses_a_direct_same_kind_nesting() {
     let doc = carve::html_to_ast(
@@ -65,10 +61,8 @@ fn the_writer_refuses_a_direct_same_kind_nesting() {
     )
     .unwrap()
     .value;
-    assert!(matches!(
-        carve::render_carve(&doc),
-        Err(carve::RenderCarveError::SourceUnspellable(_))
-    ));
+    let source = carve::render_carve(&doc).unwrap();
+    assert_eq!(html(&source), "<p><strong>a <strong>b</strong> c</strong></p>");
 }
 
 /// Through a span of another kind the writer braces that span to scope it.
@@ -80,5 +74,5 @@ fn the_writer_braces_the_scope_between() {
     )
     .unwrap()
     .value;
-    assert_eq!(carve::render_carve(&doc).unwrap(), "*a {/b *c* d/} e*\n");
+    assert_eq!(carve::render_carve(&doc).unwrap(), "{*a /b {*c*} d/ e*}\n");
 }

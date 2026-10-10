@@ -1,11 +1,8 @@
-//! A braced opener is text while a braced span of its kind is open, so a braced
-//! span inside one of its own kind has no spelling: the writer refuses the tree
-//! and the HTML importer unwraps the inner span (ruling markup-carve/carve#2066,
-//! markup-carve/carve-rs#1725).
+//! Native braced emphasis preserves repeated kinds; editorial insertion still flattens.
 
 use carve::{
     html_to_ast, html_to_carve, parse, render_carve, to_carve, to_html, to_json,
-    HtmlImportDiagnosticCode, HtmlImportOptions, RenderCarveError,
+    HtmlImportDiagnosticCode, HtmlImportOptions,
 };
 
 fn imported(html: &str) -> (String, Vec<(HtmlImportDiagnosticCode, String)>) {
@@ -50,16 +47,16 @@ macro_rules! imports {
 }
 
 imports! {
-    strong_ending_in_a_break: "<p>a<strong><b>x<br></b></strong>b</p>" => "a{*x\\\n*}b\n",
-        ["/p[1]/strong[2]/b[1]"],
-    superscript: "<p><sup><sup>x</sup></sup></p>" => "{^x^}\n",
-        ["/p[1]/sup[1]/sup[1]"],
+    strong_ending_in_a_break: "<p>a<strong><b>x<br></b></strong>b</p>" => "a{*{*x\\\n*}*}b\n",
+        [],
+    superscript: "<p><sup><sup>x</sup></sup></p>" => "{^{^x^}^}\n",
+        [],
     insertion: "<p><ins><ins>x</ins></ins></p>" => "{+x+}\n",
         ["/p[1]/ins[1]/ins[1]"],
-    bare_inside_braced: "<p>a<strong><b>x</b></strong>b</p>" => "a{*x*}b\n",
-        ["/p[1]/strong[2]/b[1]"],
-    three_levels: "<p><sup>a<sup>b<sup>c</sup></sup></sup></p>" => "{^abc^}\n",
-        ["/p[1]/sup[1]/sup[2]", "/p[1]/sup[1]/sup[2]/sup[2]"],
+    bare_inside_braced: "<p>a<strong><b>x</b></strong>b</p>" => "a{*{*x*}*}b\n",
+        [],
+    three_levels: "<p><sup>a<sup>b<sup>c</sup></sup></sup></p>" => "{^a{^b{^c^}^}^}\n",
+        [],
 }
 
 /// Control: a braced span of another kind starts its own scope, so the
@@ -88,7 +85,7 @@ fn the_ast_import_keeps_the_nesting() {
     assert!(to_json(&doc).contains(r#"{"type":"superscript","children":[{"type":"superscript""#));
 }
 
-/// The writer refuses the same tree.
+/// The native writer preserves both levels.
 #[test]
 fn the_writer_refuses_the_tree() {
     let doc = html_to_ast(
@@ -97,10 +94,8 @@ fn the_writer_refuses_the_tree() {
     )
     .unwrap()
     .value;
-    assert!(matches!(
-        render_carve(&doc),
-        Err(RenderCarveError::SourceUnspellable(_))
-    ));
+    let source = render_carve(&doc).unwrap();
+    assert_eq!(to_html(&source), "<p><sup><sup>x</sup></sup></p>");
 }
 
 /// Control: the writer accepts a braced span of another kind inside one.

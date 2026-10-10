@@ -649,7 +649,7 @@ const IMPLEMENTED: &[&str] = &[
     "the-round-trip-comparison-normalizes-a-named-list",
     "a-quote-is-an-ordinary-link-destination-character",
     "an-empty-link-destination-is-not-a-link",
-    "a-forced-opener-of-an-open-kind-is-literal",
+    "braced-emphasis-can-nest-its-own-kind",
     "substitution-content-is-inline-and-only-a-top-level-arrow-splits-it",
     "a-run-of-asterisks-inside-a-combined-token-is-content",
     "glued-attribute-blocks-on-an-inline-element-merge",
