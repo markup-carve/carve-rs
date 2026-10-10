@@ -1821,3 +1821,5 @@ mod smart_quote_rules;
 
 #[path = "../a_djot_table_caption_and_an_empty_note_body_survive_import.rs"]
 mod a_djot_table_caption_and_an_empty_note_body_survive_import;
+#[path = "../quotes_only_typography.rs"]
+mod quotes_only_typography;

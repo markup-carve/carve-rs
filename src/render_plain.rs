@@ -51,7 +51,9 @@ fn footnote_is_defined(id: &str) -> bool {
 }
 
 fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
-    if SMART_TYPOGRAPHY.with(std::cell::Cell::get) == crate::extension::SmartTypographyMode::Source
+    if SMART_TYPOGRAPHY
+        .with(std::cell::Cell::get)
+        .uses_source(&node.kind)
     {
         return &node.value;
     }

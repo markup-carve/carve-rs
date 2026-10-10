@@ -55,6 +55,17 @@ prepare canonical formatting with `to_carve_patch` and apply it with
 See [Source-preserving patches](https://github.com/markup-carve/carve-rs/blob/main/docs/source-patches.md)
 and the [full usage walkthrough](https://github.com/markup-carve/carve-rs/blob/main/docs/reference.md).
 
+
+### Straight quotes with smart typography
+
+Set `Options { smart_typography: SmartTypographyMode::QuotesSource,
+..Options::default() }` to emit quote and apostrophe source runs while keeping
+other smart substitutions enabled. The setting applies to HTML, Markdown,
+plain text, and ANSI. `Glyph` remains the default; `Source` still emits every
+source run. Parsing and heading IDs are unchanged; typed curly quotes and
+escapes keep their existing behavior. The CLI accepts
+`--smart-typography quotes-source`.
+
 ## CLI and migration
 
 The `carve` CLI renders documents, formats source, exports the serialized AST,

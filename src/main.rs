@@ -198,15 +198,18 @@ fn main() -> ExitCode {
                 // into something else, so the flag belongs here rather than
                 // only in the library API.
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --smart-typography requires a mode (glyph|source)");
+                    eprintln!(
+                        "carve: --smart-typography requires a mode (glyph|source|quotes-source)"
+                    );
                     return ExitCode::FAILURE;
                 };
                 options.smart_typography = match value.as_str() {
                     "glyph" => carve::SmartTypographyMode::Glyph,
                     "source" => carve::SmartTypographyMode::Source,
+                    "quotes-source" => carve::SmartTypographyMode::QuotesSource,
                     other => {
                         eprintln!(
-                            "carve: unknown smart typography mode: {other} (expected glyph|source)"
+                            "carve: unknown smart typography mode: {other} (expected glyph|source|quotes-source)"
                         );
                         return ExitCode::FAILURE;
                     }
@@ -1730,7 +1733,7 @@ fn print_usage() {
          emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
-         --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
+         --smart-typography MODE     glyph (default), source, or quotes-source: emit the runs\n                              \
          the author typed instead of the resolved glyphs\n  \
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          --strict-losses             refuse output when rendering loses content or structure\n  \

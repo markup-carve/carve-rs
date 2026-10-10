@@ -103,3 +103,12 @@ fn a_missing_value_is_rejected() {
     assert!(!ok);
     assert!(err.contains("requires a mode"), "{err}");
 }
+
+#[test]
+fn quotes_source_mode_reaches_every_target() {
+    for target in ["--html", "--markdown", "--plain", "--ansi"] {
+        let (out, err, ok) = run(&[target, "--smart-typography", "quotes-source"], INPUT);
+        assert!(ok, "{err}");
+        assert!(out.contains("He said \"hi\" – really… 1 → 2"), "{out}");
+    }
+}

@@ -1106,7 +1106,7 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
             // The document-global switch decides this, not the extractor
             // (PART 9 §19). Resolving the glyph here put the answer out of
             // every renderer's reach; see `apply_profile_with_typography`.
-            if smart == SmartTypographyMode::Source {
+            if smart.uses_source(&s.kind) {
                 s.value.clone()
             } else {
                 smart_punctuation_glyph(s).to_string()

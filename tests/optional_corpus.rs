@@ -201,12 +201,11 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
     let semantic_span = SemanticSpan;
     let smart_quotes_de = SmartQuotes::new("de");
 
-    // Carve-rs spells the typography switch `glyph | source` and has no third
-    // "off" state: with no glyph substitution to make, `Source` renders the
-    // author's run, which is what an engine with an off switch writes. The
-    // manifest's `smart-typography-off` case is compared against that.
+    // Source mode emits every authored run; QuotesSource selects only quotes.
     let mut source_typography = Options::new();
     source_typography.smart_typography = SmartTypographyMode::Source;
+    let mut quotes_typography = Options::new();
+    quotes_typography.smart_typography = SmartTypographyMode::QuotesSource;
 
     // The manifest's resolver case: `alice` and `release` resolve, `missing`
     // and `private` do not, and `unsafe` resolves to a `javascript:` URL the
@@ -303,6 +302,7 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
         // one shared id, because a manifest entry names one feature and one
         // target, and an engine that carries the mode on Markdown but drops it
         // on plain text has to be able to say so (carve#560).
+        "smart-typography-quotes-off" => target.render(source, &quotes_typography),
         "smart-typography-off"
         | "markdown-typography-source"
         | "plain-typography-source"
