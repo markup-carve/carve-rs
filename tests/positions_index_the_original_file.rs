@@ -57,3 +57,28 @@ fn the_mark_is_still_stripped_for_parsing() {
     // The boundary the offset fix must not undo.
     assert_eq!(carve::to_html("\u{feff}# T\n"), carve::to_html("# T\n"));
 }
+
+#[test]
+fn byte_length_counts_the_input_before_normalization() {
+    for (source, normalized, bytes) in [
+        ("alpha\r\n", "alpha\n", 7),
+        ("🙂\r\n", "🙂\n", 6),
+        ("\u{feff}a\n", "a\n", 5),
+        ("a\0b\n", "a\u{fffd}b\n", 4),
+        ("a\rb\r\n", "a\nb\n", 5),
+        ("\u{feff}🙂\0\r\n", "🙂\u{fffd}\n", 10),
+    ] {
+        assert_eq!(carve::to_html(source), carve::to_html(normalized));
+        for positions in [true, false] {
+            let doc =
+                carve::parse_with_options(source, &Options::default().with_positions(positions));
+            assert_eq!(doc.source_len, bytes, "{source:?}");
+            assert!(
+                carve::authored_provenance(&doc, source, None).is_ok(),
+                "{source:?}"
+            );
+            let wire: serde_json::Value = serde_json::from_str(&carve::to_json(&doc)).unwrap();
+            assert_eq!(wire["srcByteLength"], bytes, "{source:?}");
+        }
+    }
+}
