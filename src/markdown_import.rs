@@ -43,6 +43,7 @@ pub(crate) enum MarkdownLossKind {
     RawSpanWhitespaceTrimmed,
     /// PART 11 §10s: a carrier marker set that records no structure.
     CarrierMarkersDamaged,
+    RawCodeFallback,
 }
 
 /// A raw span whose content ends a line in whitespace, which CARVE-P2-025
@@ -202,9 +203,109 @@ pub(crate) fn markdown_to_carve_with_losses(
                 kind: MarkdownLossKind::Unspellable,
             }),
     );
-    render_carve(&document)
-        .map(|value| crate::carrier_markers::restore_carrier_markers(&value, &lift))
-        .map(|value| (value, losses, notices))
+    match render_carve(&document) {
+        Ok(value) if code_values(&document) == code_values(&crate::parse::parse(&value)) => Ok((
+            crate::carrier_markers::restore_carrier_markers(&value, &lift),
+            losses,
+            notices,
+        )),
+        Ok(_) | Err(crate::RenderCarveError::SourceUnspellable(_)) => {
+            losses.extend(preserve_html_code_for_writing(&mut document));
+            render_carve(&document).map(|value| {
+                (
+                    crate::carrier_markers::restore_carrier_markers(&value, &lift),
+                    losses,
+                    notices,
+                )
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+// The import AST retains code nodes. Writing single-line source slots uses HTML
+// for empty or multiline values so the source parser cannot fold their payload.
+fn code_values(document: &Document) -> Vec<String> {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Values(Vec<String>);
+    impl SubtreeVisitor for Values {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            for node in nodes {
+                if let InlineNode::Code(code) = node {
+                    self.0
+                        .push(code.value.replace("\r\n", "\n").replace('\r', "\n"));
+                }
+                visit_inline_children(node, self);
+            }
+        }
+    }
+    let mut document = document.clone();
+    let mut values = Values(Vec::new());
+    values.blocks(&mut document.children);
+    for blocks in document.footnote_defs.values_mut() {
+        values.blocks(blocks);
+    }
+    values.0
+}
+
+fn preserve_html_code_for_writing(document: &mut Document) -> Vec<MarkdownImportLoss> {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Preserve(Vec<MarkdownImportLoss>);
+    impl SubtreeVisitor for Preserve {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, nodes: &mut Vec<InlineNode>) {
+            for node in nodes {
+                if let InlineNode::Code(code) = node {
+                    if code.attrs.is_none()
+                        && (code.value.is_empty() || code.value.contains(['\n', '\r']))
+                    {
+                        let body = code_html(&code.value);
+                        self.0.push(MarkdownImportLoss { message: "Preserved an HTML code payload as raw HTML; targets and profiles that omit raw HTML do not preserve this code span".into(), line: None, kind: MarkdownLossKind::RawCodeFallback });
+                        *node = InlineNode::RawInline(RawInline {
+                            format: "html".into(),
+                            content: body,
+                            injected: false,
+                            pos: code.pos.clone(),
+                        });
+                    }
+                }
+                visit_inline_children(node, self);
+            }
+        }
+    }
+    let mut preserve = Preserve(Vec::new());
+    preserve.blocks(&mut document.children);
+    for blocks in document.footnote_defs.values_mut() {
+        preserve.blocks(blocks);
+    }
+    preserve.0
+}
+
+fn code_html(value: &str) -> String {
+    let mut html = String::from("<code>");
+    for ch in value.replace("\r\n", "\n").replace('\r', "\n").chars() {
+        if ch == '\n' {
+            html.push_str("<!---->&#10;<!---->");
+        } else if ch.is_ascii_punctuation() || ch == ' ' || ch == '\t' {
+            html.push_str(&format!("&#{};", ch as u32));
+            if ch == '@' {
+                html.push_str("<!---->");
+            }
+        } else {
+            html.push(ch);
+        }
+    }
+    html.push_str("</code>");
+    html
 }
 
 /// Drop whitespace a decoded character reference left at the head of an inline
@@ -927,7 +1028,7 @@ enum Frame {
     },
     HtmlCode {
         tag: String,
-        content: String,
+        children: Vec<InlineNode>,
     },
     HtmlInsert {
         tag: String,
@@ -985,6 +1086,7 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
         Frame::Emphasis(..)
         | Frame::Link { .. }
         | Frame::HtmlEmphasis { .. }
+        | Frame::HtmlCode { .. }
         | Frame::HtmlInsert { .. }
         | Frame::HtmlDelete { .. } => (0, 1),
         // A paragraph, heading or cell OPENS an inline sequence rather than
@@ -994,7 +1096,6 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
         | Frame::ListItem { .. }
         | Frame::CodeBlock { .. }
         | Frame::RawHtml(_)
-        | Frame::HtmlCode { .. }
         | Frame::Image { .. }
         | Frame::TableRow { .. }
         | Frame::TableCell(_)
@@ -1113,6 +1214,9 @@ impl Builder {
     }
 
     fn inline_html(&mut self, value: &str) {
+        if value == "<!---->" && matches!(self.frames.last(), Some(Frame::HtmlCode { .. })) {
+            return;
+        }
         let Some(tag) = html_tag(value) else {
             self.raw_inline(value.to_string());
             return;
@@ -1196,7 +1300,7 @@ impl Builder {
             },
             "code" => Frame::HtmlCode {
                 tag: name,
-                content: String::new(),
+                children: Vec::new(),
             },
             _ => {
                 self.raw_inline(value.to_string());
@@ -1265,7 +1369,7 @@ impl Builder {
             Some(Frame::CodeBlock { content, .. }) | Some(Frame::Metadata(content)) => {
                 content.push_str(value)
             }
-            Some(Frame::HtmlCode { content, .. }) => content.push_str(value),
+            Some(Frame::HtmlCode { children, .. }) => children.push(InlineNode::text(value)),
             Some(Frame::Image { alt, .. }) => alt.push_str(value),
             _ => {
                 let text = value.replace(['\r', '\n'], " ");
@@ -1559,10 +1663,10 @@ impl Builder {
                     self.inline(child);
                 }
             }
-            Frame::HtmlCode { tag, content, .. } => {
+            Frame::HtmlCode { tag, children, .. } => {
                 self.raw_inline(format!("<{tag}>"));
-                if !content.is_empty() {
-                    self.text(&content);
+                for child in children {
+                    self.inline(child);
                 }
             }
             Frame::HtmlDelete { open, children, .. } => {
@@ -1761,8 +1865,30 @@ impl Builder {
                     pos: None,
                 }));
             }
-            Some(Frame::HtmlCode { content, .. }) => {
-                self.inline(InlineNode::code(content, None));
+            Some(Frame::HtmlCode { children, .. }) => {
+                let mut content = String::new();
+                let plain = children.iter().all(|child| match child {
+                    InlineNode::Text(text) => {
+                        content.push_str(&text.value);
+                        true
+                    }
+                    InlineNode::SoftBreak(_) => {
+                        content.push('\n');
+                        true
+                    }
+                    _ => false,
+                });
+                if plain {
+                    self.inline(InlineNode::code(content, None));
+                } else {
+                    let options = crate::Options {
+                        smart_typography: crate::SmartTypographyMode::Source,
+                        ..Default::default()
+                    };
+                    let body = crate::render::render_inlines_with_options(&children, &options);
+                    self.losses.push(MarkdownImportLoss { message: "Preserved HTML code markup as raw HTML; targets and profiles that omit raw HTML do not preserve its code structure".into(), line: Some(self.current_line), kind: MarkdownLossKind::RawCodeFallback });
+                    self.raw_inline(format!("<code>{body}</code>"));
+                }
             }
             Some(Frame::HtmlInsert { children, .. }) => {
                 // A deletion immediately followed by an insertion is ONE
@@ -1830,6 +1956,7 @@ impl Builder {
             | Some(Frame::Heading(_, children))
             | Some(Frame::Emphasis(_, children))
             | Some(Frame::HtmlEmphasis { children, .. })
+            | Some(Frame::HtmlCode { children, .. })
             | Some(Frame::HtmlInsert { children, .. })
             | Some(Frame::HtmlDelete { children, .. })
             | Some(Frame::Link { children, .. })

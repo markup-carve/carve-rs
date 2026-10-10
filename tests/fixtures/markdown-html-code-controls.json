@@ -1,0 +1,565 @@
+[
+  {
+    "markdown": "<code>&copy=2</code>\n",
+    "codes": [
+      {
+        "value": "&copy=2",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "&copy=2"
+      }
+    ],
+    "nativeHtml": "<p><code>&amp;copy=2</code></p>\n"
+  },
+  {
+    "markdown": "<code>&reg</code>\n",
+    "codes": [
+      {
+        "value": "&reg",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "&reg"
+      }
+    ],
+    "nativeHtml": "<p><code>&amp;reg</code></p>\n"
+  },
+  {
+    "markdown": "<code>&notit;</code>\n",
+    "codes": [
+      {
+        "value": "&notit;",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "&notit;"
+      }
+    ],
+    "nativeHtml": "<p><code>&amp;notit;</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#128;</code>\n",
+    "codes": [
+      {
+        "value": "",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": ""
+      }
+    ],
+    "nativeHtml": "<p><code></code></p>\n"
+  },
+  {
+    "markdown": "<code>&#0;</code>\n",
+    "codes": [
+      {
+        "value": "�",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "�"
+      }
+    ],
+    "nativeHtml": "<p><code>�</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#xD800;</code>\n",
+    "codes": [
+      {
+        "value": "�",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "�"
+      }
+    ],
+    "nativeHtml": "<p><code>�</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#1114112;</code>\n",
+    "codes": [
+      {
+        "value": "�",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "�"
+      }
+    ],
+    "nativeHtml": "<p><code>�</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#0000000010;</code>\n",
+    "codes": [
+      {
+        "value": "&#0000000010;",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "&#0000000010;"
+      }
+    ],
+    "nativeHtml": "<p><code>&amp;#0000000010;</code></p>\n"
+  },
+  {
+    "markdown": "<code>&amp;#10;</code>\n",
+    "codes": [
+      {
+        "value": "&#10;",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "&#10;"
+      }
+    ],
+    "nativeHtml": "<p><code>&amp;#10;</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#128;<!---->&#10;<!---->x</code>\n",
+    "codes": [
+      {
+        "value": "\nx",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "\nx"
+      }
+    ],
+    "nativeHtml": "<p><code><!---->\n<!---->x</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#13;</code>\n",
+    "codes": [
+      {
+        "value": "\n",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "\n"
+      }
+    ],
+    "nativeHtml": "<p><code>\r</code></p>\n"
+  },
+  {
+    "markdown": "<code>&#13;&#10;</code>\n",
+    "codes": [
+      {
+        "value": "\n",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "\n"
+      }
+    ],
+    "nativeHtml": "<p><code>\r\n</code></p>\n"
+  },
+  {
+    "markdown": "<code>a `b` c</code>\n",
+    "codes": [
+      {
+        "value": "a b c",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": [
+          "code"
+        ]
+      },
+      {
+        "value": "b",
+        "ancestors": [
+          "p",
+          "code",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a b c"
+      }
+    ],
+    "nativeHtml": "<p><code>a <code>b</code> c</code></p>\n"
+  },
+  {
+    "markdown": "<code>a*b*c</code>\n",
+    "codes": [
+      {
+        "value": "abc",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": [
+          "em"
+        ]
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "abc"
+      }
+    ],
+    "nativeHtml": "<p><code>a<em>b</em>c</code></p>\n"
+  },
+  {
+    "markdown": "<code>a\\*b</code>\n",
+    "codes": [
+      {
+        "value": "a*b",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a*b"
+      }
+    ],
+    "nativeHtml": "<p><code>a*b</code></p>\n"
+  },
+  {
+    "markdown": "<code>[x](u)</code>\n",
+    "codes": [
+      {
+        "value": "x",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": [
+          "a"
+        ]
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "x"
+      }
+    ],
+    "nativeHtml": "<p><code><a href=\"u\">x</a></code></p>\n"
+  },
+  {
+    "markdown": "<code>a\nb</code>\n",
+    "codes": [
+      {
+        "value": "a\nb",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a\nb"
+      }
+    ],
+    "nativeHtml": "<p><code>a\nb</code></p>\n"
+  },
+  {
+    "markdown": "<code>a<!--memo-->b</code>\n",
+    "codes": [
+      {
+        "value": "ab",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "ab"
+      }
+    ],
+    "nativeHtml": "<p><code>a<!--memo-->b</code></p>\n"
+  },
+  {
+    "markdown": "<code>a<em>b</em>c</code>\n",
+    "codes": [
+      {
+        "value": "abc",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": [
+          "em"
+        ]
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "abc"
+      }
+    ],
+    "nativeHtml": "<p><code>a<em>b</em>c</code></p>\n"
+  },
+  {
+    "markdown": "<CODE>a&#9;b</CODE>\n",
+    "codes": [
+      {
+        "value": "a\tb",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a\tb"
+      }
+    ],
+    "nativeHtml": "<p><CODE>a\tb</CODE></p>\n"
+  },
+  {
+    "markdown": "<code>a</code><code>b</code>\n",
+    "codes": [
+      {
+        "value": "a",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      },
+      {
+        "value": "b",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "ab"
+      }
+    ],
+    "nativeHtml": "<p><code>a</code><code>b</code></p>\n"
+  },
+  {
+    "markdown": "`a`<code>b<!---->&#10;<!---->c</code>\n",
+    "codes": [
+      {
+        "value": "a",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      },
+      {
+        "value": "b\nc",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "ab\nc"
+      }
+    ],
+    "nativeHtml": "<p><code>a</code><code>b<!---->\n<!---->c</code></p>\n"
+  },
+  {
+    "markdown": "before <code></code> after\n",
+    "codes": [
+      {
+        "value": "",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "before  after"
+      }
+    ],
+    "nativeHtml": "<p>before <code></code> after</p>\n"
+  },
+  {
+    "markdown": "!<code>q<!---->&#10;<!---->r</code>\n",
+    "codes": [
+      {
+        "value": "q\nr",
+        "ancestors": [
+          "p",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "!q\nr"
+      }
+    ],
+    "nativeHtml": "<p>!<code>q<!---->\n<!---->r</code></p>\n"
+  },
+  {
+    "markdown": "<?x <code>q</code> ?>\n",
+    "codes": [],
+    "roots": [],
+    "nativeHtml": "<?x <code>q</code> ?>\n"
+  },
+  {
+    "markdown": "<!-- <code>q</code> -->\n",
+    "codes": [],
+    "roots": [],
+    "nativeHtml": "<!-- <code>q</code> -->\n"
+  },
+  {
+    "markdown": "a <span title=\"<code>q</code>\">b</span>\n",
+    "codes": [],
+    "roots": [
+      {
+        "tag": "p",
+        "value": "a b"
+      }
+    ],
+    "nativeHtml": "<p>a <span title=\"<code>q</code>\">b</span></p>\n"
+  },
+  {
+    "markdown": "| header |\n|---|\n| <code>a&#124;b</code> |\n",
+    "codes": [
+      {
+        "value": "a|b",
+        "ancestors": [
+          "table",
+          "tbody",
+          "tr",
+          "td",
+          "code"
+        ],
+        "elements": []
+      }
+    ],
+    "roots": [
+      {
+        "tag": "th",
+        "value": "header"
+      },
+      {
+        "tag": "td",
+        "value": "a|b"
+      }
+    ],
+    "nativeHtml": "<table>\n<thead>\n<tr>\n<th>header</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>a|b</code></td>\n</tr>\n</tbody>\n</table>\n"
+  }
+]
