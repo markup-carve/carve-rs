@@ -11022,7 +11022,7 @@ fn parse_list(
                 base_indent
             };
             let nested_lead_is_continuation = trim_ascii(innermost_content) == "+";
-            last_item_bare_continuation = nested_lead_is_continuation;
+            let before_collection = stream.source.len();
             if nested_lead_is_continuation {
                 stream.append(collect_indented_block_mapped_after_continuation(
                     cur,
@@ -11040,6 +11040,8 @@ fn parse_list(
                     content_col,
                 ));
             }
+            last_item_bare_continuation =
+                nested_lead_is_continuation && stream.source.len() == before_collection;
             // A blank line closes the sub-list's last paragraph, so the next
             // flush-left line starts a NEW top-level block instead of folding in
             // (carve-rs#490). The collected source keeps no trace of a trailing
@@ -11114,7 +11116,7 @@ fn parse_list(
                 // there is nothing of this item for it to fold into: `* * +`
                 // over a column-1 line folded it into the OUTER item, which is
                 // below that item's content column and reaches no container.
-                if nested_lead_is_continuation {
+                if last_item_bare_continuation {
                     break;
                 }
                 // A CLOSED FENCE OR RAW BLOCK ON THE NESTED ITEM'S LEAD
@@ -13554,6 +13556,9 @@ fn collect_indented_block_mapped_with_columns(
         //     column names - which for a column below the item's content column
         //     is no container at all.
         if lead_is_continuation && lines.is_empty() {
+            if indent == 0 && detect_list_marker_full(line).is_some() {
+                break;
+            }
             if indent == 0 {
                 // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
                 // and `col_map` parallel to `lines`, and a push that skips them
@@ -13570,7 +13575,11 @@ fn collect_indented_block_mapped_with_columns(
                 cur.consume();
                 continue;
             }
-            break;
+            if indent < strip_cols
+                || (indent == strip_cols && detect_list_marker_full(line).is_none())
+            {
+                break;
+            }
         }
         if nested_fence.is_some() && indent < strip_cols {
             *fence = nested_fence;
