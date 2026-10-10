@@ -35,6 +35,7 @@ struct CarveContext {
     /// Depth of line-block nesting, so the inline writer drops the explicit
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
     line_block_depth: usize,
+    rendered_verbatim_tail: bool,
     colon_fence_depth: usize,
     /// Inside a table cell, where a leading `^` cannot open a caption: a
     /// caption marker is a BLOCK line, and a cell's content is not one.
@@ -1033,6 +1034,7 @@ fn render_with_escapes_once(
         inline_depth: 0,
         list_depth: 0,
         line_block_depth: 0,
+        rendered_verbatim_tail: false,
         colon_fence_depth: 0,
         table_cell_depth: 0,
         cell_not_last: false,
@@ -3426,6 +3428,7 @@ fn render_nodes_with_verbatim(
     verbatim: &BTreeSet<usize>,
 ) -> String {
     let mut out = String::new();
+    let mut verbatim_tail = false;
     let mut first_line = true;
     let mut line_node_count = 0usize;
     let mut line_hosts_caption = false;
@@ -3464,6 +3467,7 @@ fn render_nodes_with_verbatim(
         let carried = ctx.paired_closer_carry.replace(false);
         let is_text = matches!(node, InlineNode::Text(_)) && !verbatim.contains(&idx);
         ctx.paired_closer_carry.set(carried && is_text);
+        ctx.rendered_verbatim_tail = false;
         let rendered = if layout_space {
             note_inserted(session, S_STAGED_SPACE);
             staged_space(session).to_string()
@@ -3606,14 +3610,19 @@ fn render_nodes_with_verbatim(
         let run = ['`', EMPTY_CODE_MARK];
         if out.ends_with(run)
             && rendered.starts_with(run)
-            && (matches!(
-                nodes.get(idx.wrapping_sub(1)),
-                Some(InlineNode::Code(_) | InlineNode::LiteralInline(_))
-            ) || !ends_in_an_escape(&out))
+            && (verbatim_tail || !ends_in_an_escape(&out))
         {
             out.push_str("{%  %}");
         }
         out.push_str(&rendered);
+        if !rendered.is_empty() {
+            verbatim_tail = rendered.ends_with('`')
+                && (ctx.rendered_verbatim_tail
+                    || matches!(
+                        node,
+                        InlineNode::Code(_) | InlineNode::Math(_) | InlineNode::LiteralInline(_)
+                    ));
+        }
         if matches!(node, InlineNode::SoftBreak(_)) {
             caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
             first_line = false;
@@ -3625,6 +3634,7 @@ fn render_nodes_with_verbatim(
             caption_can_open = false;
         }
     }
+    ctx.rendered_verbatim_tail = verbatim_tail;
     out
 }
 
@@ -4777,6 +4787,13 @@ fn brace_a_refused_bare_opener(
 /// inside the comment, where the block layer takes it with the rest of the line
 /// and the run never closes at all.
 fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
+    let normalized;
+    let content = if content.contains('\r') {
+        normalized = content.replace("\r\n", "\n").replace('\r', "\n");
+        normalized.as_str()
+    } else {
+        content
+    };
     if !in_line_block || !content.contains('\n') {
         return content.to_string();
     }
@@ -4822,12 +4839,6 @@ fn code_span_fence(content: &str) -> String {
 fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) -> String {
     if ctx.line_block_depth > 0 {
         return written.to_owned();
-    }
-    if written.contains("\n\n") {
-        crate::render_carve_error::record_unspellable(
-            "code",
-            "a blank line ends the code span paragraph",
-        );
     }
     static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let marker =

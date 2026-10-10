@@ -13,7 +13,7 @@ which the published crate does not carry.
 
 ### Fixed
 
-- Keep adjacent code spans separate when a payload ends in a backslash. Refuse blank-line code payloads outside line blocks instead of writing a different document.
+- Keep adjacent verbatim spans separate when a payload ends in a backslash, including empty siblings and transparent wrappers. Normalize CR and CRLF before spelling blank verbatim lines in line blocks.
 
 - Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
 

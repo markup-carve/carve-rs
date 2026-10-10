@@ -1259,23 +1259,64 @@ mod include_directives_survive_formatting {
 }
 
 #[test]
-fn code_source_boundaries_preserve_payloads_or_refuse() {
+fn code_source_boundaries_preserve_payloads() {
     for value in ["a\\", "a\\\\\\"] {
-        let mut document = carve::parse("`Q`{%  %}`b`\n");
+        for prefix in ["", "$", "!"] {
+            for empty in [false, true] {
+                let mut document = carve::parse(&format!("{prefix}`Q`{{%  %}}`b`\n"));
+                let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
+                    panic!("paragraph")
+                };
+                match &mut paragraph.children[0] {
+                    carve::InlineNode::Code(code) => code.value = value.into(),
+                    carve::InlineNode::Math(math) => math.content = value.into(),
+                    carve::InlineNode::LiteralInline(literal) => literal.content = value.into(),
+                    _ => panic!("verbatim span"),
+                }
+                paragraph
+                    .children
+                    .retain(|node| !matches!(node, carve::InlineNode::Comment(_)));
+                if empty {
+                    paragraph
+                        .children
+                        .insert(1, carve::InlineNode::Text("".into()));
+                }
+                let written = carve::render_carve(&document).unwrap();
+                assert!(written.contains("{%  %}"), "{written}");
+                assert_eq!(
+                    carve::render_html(&carve::parse(&written)).unwrap(),
+                    carve::render_html(&document).unwrap()
+                );
+            }
+        }
+    }
+    for prefix in ["", "$", "!"] {
+        let mut document = carve::parse(&format!("{prefix}`a\\`{{%  %}}`b`\n"));
         let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
             panic!("paragraph")
         };
-        let carve::InlineNode::Code(code) = &mut paragraph.children[0] else {
-            panic!("code")
-        };
-        code.value = value.into();
+        paragraph
+            .children
+            .retain(|node| !matches!(node, carve::InlineNode::Comment(_)));
+        let expected = carve::render_html(&document).unwrap();
+        let first = paragraph.children.remove(0);
+        paragraph.children.insert(
+            0,
+            carve::InlineNode::Emphasis(carve::Emphasis {
+                attrs: None,
+                kind: carve::EmphasisKind::SmallCaps,
+                children: vec![first, carve::InlineNode::Text("".into())],
+                pos: None,
+            }),
+        );
         let written = carve::render_carve(&document).unwrap();
+        assert!(written.contains("{%  %}"), "{written}");
         assert_eq!(
             carve::render_html(&carve::parse(&written)).unwrap(),
-            carve::render_html(&document).unwrap()
+            expected
         );
     }
-    for value in ["a\n\nb", "a\r\rb", "\n\nb", "a\n\n"] {
+    for value in ["a\n\nb", "a\r\rb", "a\r\n\r\nb", "\n\nb", "a\n\n"] {
         let mut document = carve::parse("`Q`\n");
         let carve::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
             panic!("paragraph")
@@ -1284,10 +1325,6 @@ fn code_source_boundaries_preserve_payloads_or_refuse() {
             panic!("code")
         };
         code.value = value.into();
-        assert!(matches!(
-            carve::render_carve(&document),
-            Err(carve::RenderCarveError::SourceUnspellable(_))
-        ));
         let mut verse = carve::parse("::: |\n`Q`\n:::\n");
         let carve::BlockNode::LineBlock(block) = &mut verse.children[0] else {
             panic!("line block")
