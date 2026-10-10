@@ -1792,3 +1792,6 @@ mod djot_placeholder_prefixes;
 
 #[path = "../djot_bare_crossing.rs"]
 mod djot_bare_crossing;
+
+#[path = "../djot_table_cell_boundaries.rs"]
+mod djot_table_cell_boundaries;

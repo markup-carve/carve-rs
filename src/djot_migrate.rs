@@ -112,7 +112,7 @@ fn convert_djot_document(stripped_definitions: &DjotFootnoteAttributeStrip) -> S
     let footnotes = normalize_djot_footnotes(&references, Some(stripped_definitions), &inherited);
     let links = normalize_djot_links(&footnotes, &inherited);
     let autolinks = normalize_djot_autolinks(&links);
-    let table_pipes = normalize_djot_table_pipes(&autolinks);
+    let table_pipes = escape_djot_non_table_rows(&normalize_djot_table_pipes(&autolinks));
     let folded = fold_heading_continuations(&table_pipes);
     let collapsed = cached_regex!(r"(!?\[([^\[\]\n]*)\])\[\]").unwrap();
     let mut collapsed_mask = mask_code_and_destinations(&folded).into_bytes();
@@ -6520,6 +6520,48 @@ fn close_djot_table_code(source: &str) -> String {
     }
     output.push_str(&source[cursor..]);
     output
+}
+
+fn escape_djot_non_table_rows(source: &str) -> String {
+    if !source.contains('|') {
+        return source.to_owned();
+    }
+    let mask = mask_djot_forms_with_options(
+        source,
+        false,
+        true,
+        None,
+        &[],
+        OpaqueOptions {
+            destinations: false,
+            autolinks: false,
+            attribute_values: false,
+            ..OpaqueOptions::default()
+        },
+    );
+    let rows = djot_table_rows(source, &mask);
+    let mut out = String::with_capacity(source.len());
+    let mut offset = 0;
+    for (n, line) in source.split('\n').enumerate() {
+        if n > 0 {
+            out.push('\n');
+        }
+        let start = djot_content_start(line);
+        if !rows[n]
+            && line.as_bytes().get(start) == Some(&b'|')
+            && line.trim_end().ends_with('|')
+            && mask.as_bytes().get(offset + start) == Some(&b'|')
+            && mask.as_bytes().get(offset + line.trim_end().len().saturating_sub(1)) != Some(&b'|')
+        {
+            out.push_str(&line[..start]);
+            out.push('\\');
+            out.push_str(&line[start..]);
+        } else {
+            out.push_str(line);
+        }
+        offset += line.len() + 1;
+    }
+    out
 }
 
 fn normalize_djot_table_pipes(source: &str) -> String {

@@ -64,6 +64,29 @@ fn process(
 ) -> String {
     let bytes = source.as_bytes();
     let mut mask = mask.as_bytes().to_vec();
+    let cells: HashSet<_> = if source.contains('|') {
+        let cell_mask = super::mask_djot_forms_with_options(
+            source,
+            false,
+            false,
+            None,
+            &[],
+            super::OpaqueOptions {
+                destinations: false,
+                autolinks: false,
+                attribute_values: false,
+                ..super::OpaqueOptions::default()
+            },
+        );
+        super::djot_inline_boundaries(source, &cell_mask)
+            .into_iter()
+            .filter(|&at| {
+                bytes.get(at) == Some(&b'|') && cell_mask.as_bytes().get(at) == Some(&b'|')
+            })
+            .collect()
+    } else {
+        HashSet::new()
+    };
     let code_mask = super::mask_code_and_destinations(source);
     let mut attributes = HashMap::new();
     let mut empty_block_attributes = HashSet::new();
@@ -192,6 +215,9 @@ fn process(
     let raw_attribute = cached_regex!(r"^\{=[^\s{}`]+\}").unwrap();
     let mut at = 0;
     while at < bytes.len() {
+        if cells.contains(&at) {
+            pending_braces.clear();
+        }
         if bytes[at] == b'\n' {
             if source[brace_line_start..at]
                 .trim_matches([' ', '\t', '>'])
@@ -270,6 +296,11 @@ fn process(
     let mut thematic_line = false;
     let mut i = 0;
     while i < bytes.len() {
+        if cells.contains(&i) {
+            clear(&mut openers, 0);
+            brackets.clear();
+            braces.clear();
+        }
         if i == line_start {
             let end = source[i..]
                 .find('\n')
