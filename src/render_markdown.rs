@@ -6,6 +6,7 @@ use crate::render_loss::DeniedSink;
 use crate::render_text::{strip_high_controls as strip_control_chars, trim_non_nbsp};
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -161,7 +162,7 @@ fn render_markdown_once(
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index,
         link_depth: 0,
-        table_cell_depth: 0,
+        single_line_depth: 0,
         previous_list: None,
         carry_markers,
         carrier_depth: 0,
@@ -242,8 +243,8 @@ struct MarkdownContext {
     /// `[see </#H>](/outer)` must render as `[see H](/outer)`, not as a link
     /// inside a link, which is not valid Markdown (carve-rs#436).
     link_depth: usize,
-    /// Nonzero while rendering a table cell's content.
-    table_cell_depth: usize,
+    /// Nonzero while rendering a table cell or heading.
+    single_line_depth: usize,
     /// The kind and marker of the list last written in the current flow, when
     /// nothing has been written after it (PART 11 §10o).
     previous_list: Option<(bool, char)>,
@@ -369,7 +370,9 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         // No `{#id}` suffix: GFM has no heading-id syntax, and a link reaches
         // the heading through its slug instead (PART 11 §11).
         BlockNode::Heading(heading) => {
+            ctx.single_line_depth += 1;
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
+            ctx.single_line_depth -= 1;
             format!("{} {text}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
@@ -1206,9 +1209,9 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
                     }
                     None => crate::render_plain::flatten_cell_inlines(&cell.children, true),
                 };
-                ctx.table_cell_depth += 1;
+                ctx.single_line_depth += 1;
                 let content = trim_non_nbsp(&render_block_inlines(&inlines, ctx)).to_string();
-                ctx.table_cell_depth -= 1;
+                ctx.single_line_depth -= 1;
                 escape_cell_pipes(&content)
             })
             .map(|content| content.replace(['\r', '\n'], " "))
@@ -1609,6 +1612,25 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
     let mut parts: Vec<String> = Vec::with_capacity(nodes.len());
     for node in nodes {
         parts.push(render_inline(node, ctx, depth));
+    }
+    let has_content = |part: &str| {
+        part.bytes()
+            .any(|byte| !matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+    };
+    for i in (0..parts.len()).rev() {
+        if matches!(nodes[i], InlineNode::HardBreak(_)) && parts[i] == "\\\n" {
+            let preceding_content = parts[..i].iter().any(|part| has_content(part));
+            parts[i] = if preceding_content {
+                "<br>"
+            } else {
+                "<br><!---->"
+            }
+            .to_owned();
+            break;
+        }
+        if has_content(&parts[i]) {
+            break;
+        }
     }
     if nodes.len() > 1 {
         reflank_runs(nodes, &mut parts);
@@ -2163,7 +2185,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // whitespace checks -- and losing ONE of the two spaces is enough for the
         // break to vanish rather than degrade, silently, in a file nobody edited.
         // In a table cell the newline would end the GFM row (PART 11 section 9a).
-        InlineNode::HardBreak(_) if ctx.table_cell_depth > 0 => "<br>".to_string(),
+        InlineNode::HardBreak(_) if ctx.single_line_depth > 0 => "<br>".to_string(),
         InlineNode::HardBreak(_) => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
             format!(
@@ -2417,8 +2439,23 @@ fn render_code(content: &str) -> String {
     if content.is_empty() {
         return "<code></code>".to_owned();
     }
-    let content = content.replace('\n', " ");
-    let fence = safe_fence(&content, 1);
+    if content.contains('\n') || content.contains('\t') {
+        let mut escaped = String::with_capacity(content.len());
+        for character in content.chars() {
+            if character == '\n' {
+                escaped.push_str("<!---->&#10;<!---->");
+            } else if matches!(character, ' ' | '\t') || character.is_ascii_punctuation() {
+                write!(&mut escaped, "&#{};", u32::from(character)).expect("writing to a String");
+                if character == '@' {
+                    escaped.push_str("<!---->");
+                }
+            } else {
+                escaped.push(character);
+            }
+        }
+        return format!("<code>{escaped}</code>");
+    }
+    let fence = safe_fence(content, 1);
     let needs_padding = content.starts_with('`')
         || content.ends_with('`')
         || (content.starts_with(' ')
@@ -3441,11 +3478,11 @@ fn next_heading_id(
 // core, including `CitationGroup` -> `raw`, so a citation heading's id is
 // consistent here too.
 fn plain_inlines(nodes: &[InlineNode]) -> String {
-    plain_inlines_with(nodes, ' ')
+    plain_inlines_with(nodes, ' ', " ")
 }
 
 /// `plain_inlines`, spelling the staged no-break space as `nbsp`.
-fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
+fn plain_inlines_with(nodes: &[InlineNode], nbsp: char, hard_break_text: &str) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
@@ -3462,11 +3499,13 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             // ways has to be one id.
             InlineNode::EscapedText(escaped) => out.push_str(&escaped.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
-            InlineNode::Emphasis(emphasis) => {
-                out.push_str(&plain_inlines_with(&emphasis.children, nbsp))
-            }
+            InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines_with(
+                &emphasis.children,
+                nbsp,
+                hard_break_text,
+            )),
             InlineNode::Span(span) if !span.injected => {
-                out.push_str(&plain_inlines_with(&span.children, nbsp))
+                out.push_str(&plain_inlines_with(&span.children, nbsp, hard_break_text))
             }
             InlineNode::Code(code) => out.push_str(&code.value),
             // An inline literal renders as visible prose (§27), so it feeds a
@@ -3483,13 +3522,19 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
             // would slug `# A </#a>` as `A-A` and every id derived here would
             // disagree with the one the core assigned before resolution.
             InlineNode::Link(link) if link.from_crossref => {}
-            InlineNode::Link(link) => out.push_str(&plain_inlines_with(&link.children, nbsp)),
-            InlineNode::Ruby(r) => out.push_str(&plain_inlines_with(&r.flattened(), nbsp)),
+            InlineNode::Link(link) => {
+                out.push_str(&plain_inlines_with(&link.children, nbsp, hard_break_text))
+            }
+            InlineNode::Ruby(r) => {
+                out.push_str(&plain_inlines_with(&r.flattened(), nbsp, hard_break_text))
+            }
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::AutoLink(autolink) => out.push_str(&autolink.text),
-            InlineNode::Extension(extension) => {
-                out.push_str(&plain_inlines_with(&extension.children, nbsp))
-            }
+            InlineNode::Extension(extension) => out.push_str(&plain_inlines_with(
+                &extension.children,
+                nbsp,
+                hard_break_text,
+            )),
             InlineNode::CitationGroup(group) => out.push_str(&group.raw),
             InlineNode::Abbreviation(abbr) => out.push_str(&abbr.abbr),
             InlineNode::Mention(mention) => out.push_str(&mention.user),
@@ -3499,7 +3544,8 @@ fn plain_inlines_with(nodes: &[InlineNode], nbsp: char) -> String {
                     out.push_str(&number.to_string());
                 }
             }
-            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
+            InlineNode::SoftBreak(_) => out.push(' '),
+            InlineNode::HardBreak(_) => out.push_str(hard_break_text),
             _ => {}
         }
     }
@@ -3543,7 +3589,7 @@ impl GfmSlugger {
 /// space included as itself.
 fn gfm_heading_text(nodes: &[InlineNode]) -> String {
     use unicode_normalization::UnicodeNormalization;
-    let text = plain_inlines_with(nodes, '\u{00a0}');
+    let text = plain_inlines_with(nodes, '\u{00a0}', "");
     text.trim_matches(|c: char| c.is_ascii_whitespace())
         .nfc()
         .collect()

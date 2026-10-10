@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-dash-run-opens-frontmatter-only-at-the-start-and-only-a-dash-run",
     "an-ordered-list-carries-its-authored-delimiter",
     "multiple-table-bodies-have-positional-source-metadata",
     "empty-table-bodies-keep-their-source-boundaries",

@@ -13,7 +13,11 @@ which the published crate does not carry.
 
 ### Fixed
 
-- Markdown code spans preserve significant edge spaces and normalize payload newlines before paragraph and table layout. Empty spans use an inline HTML fallback.
+- Markdown fragment links to headings with hard breaks use GitHub’s text anchor (#2438).
+
+- Markdown export preserves terminal hard breaks and hard breaks in headings with inline HTML. A break-only paragraph stays a paragraph in GFM readers.
+
+- Markdown code spans preserve significant edge spaces. Empty spans and payloads containing tabs or newlines use an inline HTML fallback that preserves the code text.
 
 - Document `source_len` and JSON `srcByteLength` count the original UTF-8 input before BOM, NUL and line-ending normalization. Source-length limits and authored provenance use that same input length.
 

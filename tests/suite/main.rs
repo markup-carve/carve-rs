@@ -1778,3 +1778,6 @@ mod unused_continuation_fence_payload;
 
 #[path = "../markdown_code_span_whitespace.rs"]
 mod markdown_code_span_whitespace;
+
+#[path = "../markdown_terminal_hard_break.rs"]
+mod markdown_terminal_hard_break;

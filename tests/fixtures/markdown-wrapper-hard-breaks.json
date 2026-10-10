@@ -1,107 +1,107 @@
 [
   {
-    "source": ":: word \\\n: definition\n",
-    "markdown": "<strong>word \\\n</strong>\n\ndefinition\n",
-    "html": "<p><strong>word <br />\n</strong></p>\n<p>definition</p>\n"
+    "html": "<p><strong>word <br></strong></p>\n<p>definition</p>\n",
+    "markdown": "**word <br>**\n\ndefinition\n",
+    "source": ":: word \\\n: definition\n"
   },
   {
-    "source": ":: word\\\n: definition\n",
-    "markdown": "<strong>word\\\n</strong>\n\ndefinition\n",
-    "html": "<p><strong>word<br />\n</strong></p>\n<p>definition</p>\n"
+    "html": "<p><strong>word<br></strong></p>\n<p>definition</p>\n",
+    "markdown": "**word<br>**\n\ndefinition\n",
+    "source": ":: word\\\n: definition\n"
   },
   {
-    "source": ":: word\t\\\n: definition\n",
-    "markdown": "<strong>word\t\\\n</strong>\n\ndefinition\n",
-    "html": "<p><strong>word\t<br />\n</strong></p>\n<p>definition</p>\n"
+    "html": "<p><strong>word\t<br></strong></p>\n<p>definition</p>\n",
+    "markdown": "**word\t<br>**\n\ndefinition\n",
+    "source": ":: word\t\\\n: definition\n"
   },
   {
-    "source": ":: word  \\\n: definition\n",
-    "markdown": "<strong>word  \\\n</strong>\n\ndefinition\n",
-    "html": "<p><strong>word  <br />\n</strong></p>\n<p>definition</p>\n"
+    "html": "<p><strong>word  <br></strong></p>\n<p>definition</p>\n",
+    "markdown": "**word  <br>**\n\ndefinition\n",
+    "source": ":: word  \\\n: definition\n"
   },
   {
-    "source": ":: term\nnext \\\n: definition\n",
-    "markdown": "<strong>term\nnext \\\n</strong>\n\ndefinition\n",
-    "html": "<p><strong>term\nnext <br />\n</strong></p>\n<p>definition</p>\n"
+    "html": "<p><strong>term\nnext <br></strong></p>\n<p>definition</p>\n",
+    "markdown": "**term\nnext <br>**\n\ndefinition\n",
+    "source": ":: term\nnext \\\n: definition\n"
   },
   {
-    "source": "{*a \\\n*}\n",
-    "markdown": "<strong>a\\\n</strong>\n",
-    "html": "<p><strong>a<br />\n</strong></p>\n"
+    "html": "<p><strong>a <br></strong></p>\n",
+    "markdown": "**a <br>**\n",
+    "source": "{*a \\\n*}\n"
   },
   {
-    "source": "{/a \\\n/}\n",
-    "markdown": "<em>a\\\n</em>\n",
-    "html": "<p><em>a<br />\n</em></p>\n"
+    "html": "<p><em>a <br></em></p>\n",
+    "markdown": "*a <br>*\n",
+    "source": "{/a \\\n/}\n"
   },
   {
-    "source": "{~a \\\n~}\n",
-    "markdown": "<del>a\\\n</del>\n",
-    "html": "<p><del>a<br />\n</del></p>\n"
+    "html": "<p><del>a <br></del></p>\n",
+    "markdown": "~~a <br>~~\n",
+    "source": "{~a \\\n~}\n"
   },
   {
-    "source": "x {*a\\\n*} y\n",
-    "markdown": "x <strong>a\\\n</strong> y\n",
-    "html": "<p>x <strong>a<br />\n</strong> y</p>\n"
+    "html": "<p>x <strong>a<br></strong> y</p>\n",
+    "markdown": "x **a<br>** y\n",
+    "source": "x {*a\\\n*} y\n"
   },
   {
-    "source": "x {/a\\\n/} y\n",
-    "markdown": "x <em>a\\\n</em> y\n",
-    "html": "<p>x <em>a<br />\n</em> y</p>\n"
+    "html": "<p>x <em>a<br></em> y</p>\n",
+    "markdown": "x *a<br>* y\n",
+    "source": "x {/a\\\n/} y\n"
   },
   {
-    "source": "x {~a\\\n~} y\n",
-    "markdown": "x <del>a\\\n</del> y\n",
-    "html": "<p>x <del>a<br />\n</del> y</p>\n"
+    "html": "<p>x <del>a<br></del> y</p>\n",
+    "markdown": "x ~~a<br>~~ y\n",
+    "source": "x {~a\\\n~} y\n"
   },
   {
-    "source": "::: figure\n![a](x.png)\n^ p\\\n:::\n^ g\\\n",
-    "markdown": "![a](x.png)\n\n<em>p\\\n</em>\n\n<strong>g\\\n</strong>\n",
-    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p<br />\n</em></p>\n<p><strong>g<br />\n</strong></p>\n"
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p<br></em></p>\n<p><strong>g<br></strong></p>\n",
+    "markdown": "![a](x.png)\n\n*p<br>*\n\n**g<br>**\n",
+    "source": "::: figure\n![a](x.png)\n^ p\\\n:::\n^ g\\\n"
   },
   {
-    "source": "::: figure\n![a](x.png)\n^ p \\\n:::\n^ g \\\n",
-    "markdown": "![a](x.png)\n\n<em>p \\\n</em>\n\n<strong>g \\\n</strong>\n",
-    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p <br />\n</em></p>\n<p><strong>g <br />\n</strong></p>\n"
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p <br></em></p>\n<p><strong>g <br></strong></p>\n",
+    "markdown": "![a](x.png)\n\n*p <br>*\n\n**g <br>**\n",
+    "source": "::: figure\n![a](x.png)\n^ p \\\n:::\n^ g \\\n"
   },
   {
-    "source": "{*\na\\\n*}\n",
-    "markdown": "<strong>a\\\n</strong>\n",
-    "html": "<p><strong>a<br />\n</strong></p>\n"
+    "html": "<p><strong>a<br></strong></p>\n",
+    "markdown": "**a<br>**\n",
+    "source": "{*\na\\\n*}\n"
   },
   {
-    "source": "{/\na\\\n/}\n",
-    "markdown": "<em>a\\\n</em>\n",
-    "html": "<p><em>a<br />\n</em></p>\n"
+    "html": "<p><em>a<br></em></p>\n",
+    "markdown": "*a<br>*\n",
+    "source": "{/\na\\\n/}\n"
   },
   {
-    "source": "{~\na\\\n~}\n",
-    "markdown": "<del>a\\\n</del>\n",
-    "html": "<p><del>a<br />\n</del></p>\n"
+    "html": "<p><del>a<br></del></p>\n",
+    "markdown": "~~a<br>~~\n",
+    "source": "{~\na\\\n~}\n"
   },
   {
-    "source": "{*\n{/a/}\\\n*}\n",
-    "markdown": "<strong>*a*\\\n</strong>\n",
-    "html": "<p><strong><em>a</em><br />\n</strong></p>\n"
+    "html": "<p><strong><em>a</em><br></strong></p>\n",
+    "markdown": "***a*<br>**\n",
+    "source": "{*\n{/a/}\\\n*}\n"
   },
   {
-    "source": "::: figure\n![a](x.png)\n^ {*    p*}\n:::\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em><strong>p</strong></em></p>\n",
     "markdown": "![a](x.png)\n\n***p***\n",
-    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em><strong>p</strong></em></p>\n"
+    "source": "::: figure\n![a](x.png)\n^ {*    p*}\n:::\n"
   },
   {
-    "source": "::: figure\n![a](x.png)\n^ p\n:::\n^ {*    g*}\n",
+    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p</em></p>\n<p><strong><strong>g</strong></strong></p>\n",
     "markdown": "![a](x.png)\n\n*p*\n\n****g****\n",
-    "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p</em></p>\n<p><strong><strong>g</strong></strong></p>\n"
+    "source": "::: figure\n![a](x.png)\n^ p\n:::\n^ {*    g*}\n"
   },
   {
-    "source": "before\n\n:: {*    p*}\n: d\n",
+    "html": "<p>before</p>\n<p><strong><strong>p</strong></strong></p>\n<p>d</p>\n",
     "markdown": "before\n\n****p****\n\nd\n",
-    "html": "<p>before</p>\n<p><strong><strong>p</strong></strong></p>\n<p>d</p>\n"
+    "source": "before\n\n:: {*    p*}\n: d\n"
   },
   {
-    "source": "before\n\n::: note \"    title\"\nbody\n:::\n",
+    "html": "<p>before</p>\n<p><strong>title</strong></p>\n<p>body</p>\n",
     "markdown": "before\n\n**title**\n\nbody\n",
-    "html": "<p>before</p>\n<p><strong>title</strong></p>\n<p>body</p>\n"
+    "source": "before\n\n::: note \"    title\"\nbody\n:::\n"
   }
 ]

@@ -1597,7 +1597,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // 'jolly'`, and it degrades `smart_punctuation` alone with nothing
     // dropped - the kind its siblings 19-3 and 19-10 already carry, so no new
     // kind appears. Strict holds at 1723 and reported-lossy rises to 509.
-    const STRICT: usize = 1723;
+    // Spec b738ffe adds corpus 550, 550-2, 550-3 and 550-4. All four
+    // round-trip without reported loss; no existing document changes bucket.
+    const STRICT: usize = 1727;
     const LOSSY: usize = 509;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
