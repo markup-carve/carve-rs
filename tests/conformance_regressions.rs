@@ -496,16 +496,15 @@ fn empty_list_item_line_keeps_no_trailing_space() {
 }
 
 #[test]
-fn quote_after_non_breaking_space_opens() {
-    // A non-breaking space is whitespace for smart-quote flanking, so a quote
-    // after one opens -- both the escaped `\\ ` form and a literal U+00A0.
+fn quote_after_non_breaking_space_obeys_elision_rules() {
     assert_eq!(
         html("say\\ 'twas a fine\\ \"day\""),
-        "<p>say&nbsp;\u{2018}twas a fine&nbsp;\u{201C}day\u{201D}</p>"
+        "<p>say&nbsp;\u{2019}twas a fine&nbsp;\u{201C}day\u{201D}</p>"
     );
-    assert_eq!(html("a \'tis"), "<p>a&nbsp;\u{2018}tis</p>");
-    // Non-HTML renderers agree on the opening quote too.
-    assert_eq!(carve::to_plain_text("a\\ 'tis").trim_end(), "a \u{2018}tis");
+    assert_eq!(html("a 'tis"), "<p>a&nbsp;\u{2019}tis</p>");
+    assert_eq!(carve::to_plain_text("a\\ 'tis").trim_end(), "a \u{2019}tis");
+    assert_eq!(html("a\\ 'word'"), "<p>a&nbsp;‘word’</p>");
+    assert_eq!(html("a 'word'"), "<p>a&nbsp;‘word’</p>");
 }
 
 // A colon-fence-family opener on a quoted line must end the blockquote's lazy

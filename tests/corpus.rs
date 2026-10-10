@@ -857,7 +857,18 @@ fn expected_corpus_size() -> usize {
 /// Empty is the normal end state: the pin catching up is what retires an entry,
 /// and the `assert_ne!` in `check_pair` is what forces the deletion rather than
 /// leaving a declaration that no longer declares anything.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "19-smart-typography-dashes-and-quotes-11",
+        "R2 listed elision uses an apostrophe",
+        r#"<p>’tis the season to be ‘jolly’</p>"#,
+    ),
+    (
+        "29-non-breaking-space-2",
+        "R2 listed elision uses an apostrophe",
+        r#"<p>say&nbsp;’twas a fine&nbsp;“day”</p>"#,
+    ),
+];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
 /// not reached the rule yet - the mirror of [`AHEAD_OF_PIN`].

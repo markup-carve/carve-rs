@@ -4,6 +4,7 @@
 //! over each block's text. No backtracking.
 
 mod inline_positions;
+mod quote_state;
 mod reference_resolution;
 mod scoped_fence_closers;
 mod verse_whitespace;
@@ -19437,6 +19438,7 @@ fn parse_inline_context(
     // through here one frame per level; over the cap, keep the remaining text
     // literal rather than recursing further (prevents a stack-overflow abort on
     // input like `[[[[[…x]]]]]`). Shares the depth counter with block parsing.
+    let quotes = quote_state::Frame::enter();
     let kinds = OpenKinds::enter();
     let Some(_depth) = DepthGuard::enter() else {
         return vec![InlineNode::text(text.to_string())];
@@ -19743,7 +19745,7 @@ fn parse_inline_context(
                         &mut node,
                         inline_pos(positions, base + i, base + i + raw_consumed),
                     );
-                    out.push(node);
+                    quotes.push(&mut out, node);
                     i += raw_consumed;
                     continue;
                 }
@@ -19787,7 +19789,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19811,7 +19813,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19844,7 +19846,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19929,7 +19931,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19952,7 +19954,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19971,7 +19973,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -19995,7 +19997,7 @@ fn parse_inline_context(
                         &mut node,
                         inline_pos(positions, base + i, base + i + consumed),
                     );
-                    out.push(node);
+                    quotes.push(&mut out, node);
                     i += consumed;
                     continue;
                 }
@@ -20024,7 +20026,7 @@ fn parse_inline_context(
                         &mut node,
                         inline_pos(positions, base + i, base + i + consumed),
                     );
-                    out.push(node);
+                    quotes.push(&mut out, node);
                     i += consumed;
                     continue;
                 }
@@ -20045,7 +20047,7 @@ fn parse_inline_context(
                         &mut node,
                         inline_pos(positions, base + i, base + i + consumed),
                     );
-                    out.push(node);
+                    quotes.push(&mut out, node);
                     i += consumed;
                     continue;
                 }
@@ -20066,7 +20068,7 @@ fn parse_inline_context(
                         &mut node,
                         inline_pos(positions, base + i, base + i + consumed),
                     );
-                    out.push(node);
+                    quotes.push(&mut out, node);
                     i += consumed;
                     continue;
                 }
@@ -20089,7 +20091,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20111,7 +20113,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20151,7 +20153,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20173,7 +20175,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20198,7 +20200,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20217,7 +20219,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20262,7 +20264,7 @@ fn parse_inline_context(
                     inline_pos(positions, base + i + local, base + i + local + width),
                 );
                 local += width;
-                out.push(node);
+                quotes.push(&mut out, node);
             }
             i += consumed;
             continue;
@@ -20288,7 +20290,7 @@ fn parse_inline_context(
                     &mut node,
                     inline_pos(positions, base + i, base + i + consumed),
                 );
-                out.push(node);
+                quotes.push(&mut out, node);
                 i += consumed;
                 continue;
             }
@@ -20327,7 +20329,7 @@ fn parse_inline_context(
                 &mut node,
                 inline_pos(positions, base + i, base + i + consumed),
             );
-            out.push(node);
+            quotes.push(&mut out, node);
             i += consumed;
             continue;
         }
@@ -20396,7 +20398,7 @@ fn parse_inline_context(
                 if let InlineNode::CitationGroup(group) = &mut node {
                     position_citation_items_from_map(group, positions, base + i);
                 }
-                out.push(node);
+                quotes.push(&mut out, node);
                 i = end;
                 continue;
             }
@@ -20418,6 +20420,7 @@ fn parse_inline_context(
         &mut buf_placeable,
         &mut buf_src_delta,
     );
+    quotes.finish(&mut out);
     out
 }
 
@@ -20687,8 +20690,10 @@ fn parse_inline_footnote(
             after = next;
         }
     }
-    let children =
-        parse_inline_context(&content, options, false, true, positions, base + start + 2);
+    let children = {
+        let _scope = quote_state::Scope::enter();
+        parse_inline_context(&content, options, false, true, positions, base + start + 2)
+    };
     Some((
         Footnote {
             attrs,
@@ -21046,7 +21051,8 @@ fn parse_smart_punctuation_at(
 
     let c = text[i..].chars().next()?;
     if c == '"' {
-        let open = quote_open_context(prev);
+        let open =
+            quote_open_context(prev) && !closes_after_dash(prev, text[i + 1..].chars().next());
         let glyph = if open { "“" } else { "”" };
         let kind = if open {
             "left_double_quote"
@@ -21064,12 +21070,16 @@ fn parse_smart_punctuation_at(
         ));
     }
     if c == '\'' {
-        let next_digit = text
-            .as_bytes()
-            .get(i + 1)
-            .is_some_and(|b| b.is_ascii_digit());
-        let prev_alnum = prev.is_alphanumeric();
-        let apostrophe = prev_alnum || next_digit || !quote_open_context(prev);
+        let next = text[i + 1..].chars().next();
+        let open = quote_open_context(prev) && !closes_after_dash(prev, next);
+        let apostrophe = quote_state::single(
+            text,
+            i,
+            prev,
+            next,
+            open,
+            out.len() + usize::from(!buf.is_empty()),
+        );
         let glyph = if apostrophe { "’" } else { "‘" };
         let kind = if apostrophe {
             "right_single_quote"
@@ -21098,7 +21108,12 @@ fn smart_punctuation_source_width(node: &InlineNode) -> usize {
 }
 
 fn last_emitted_glyph(out: &[InlineNode]) -> char {
-    match out.last() {
+    match out
+        .iter()
+        .rev()
+        .find(|node| !matches!(node, InlineNode::Comment(_)))
+    {
+        Some(InlineNode::Text(t)) => t.value.chars().last().unwrap_or('\0'),
         Some(InlineNode::SmartPunctuation(node)) => {
             smart_punctuation_glyph(node).chars().last().unwrap_or('x')
         }
@@ -21112,6 +21127,11 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         None => '\0',
         Some(_) => 'x',
     }
+}
+
+fn closes_after_dash(prev: char, next: Option<char>) -> bool {
+    matches!(prev, '-' | '–' | '—')
+        && next.map_or(true, |c| is_flank_space(c) || "\"'.,;:!?)]".contains(c))
 }
 
 fn quote_open_context(prev: char) -> bool {
