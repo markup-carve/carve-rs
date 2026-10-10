@@ -8636,7 +8636,10 @@ fn append_inline_boundary(nodes: &mut Vec<InlineNode>, node: InlineNode, join: b
 /// Every inline sequence under `blocks`, with whether it is a table cell that
 /// is not the last in its row. EVERY VARIANT, WITH NO WILDCARD ARM, for the
 /// reason `take_candidate_marks` gives.
-fn for_each_inline_run(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Vec<InlineNode>, bool)) {
+pub(crate) fn for_each_inline_run(
+    blocks: &mut [BlockNode],
+    f: &mut impl FnMut(&mut Vec<InlineNode>, bool),
+) {
     fn table(table: &mut Table, f: &mut impl FnMut(&mut Vec<InlineNode>, bool)) {
         if let Some(caption) = &mut table.caption {
             f(caption, false);

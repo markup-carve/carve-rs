@@ -16,6 +16,9 @@ mod the_markdown_target_carries_attributes_on_an_unspellable_inline;
 #[path = "../common/mod.rs"]
 mod common;
 
+#[path = "../a_decoded_leading_whitespace_is_dropped_and_reported.rs"]
+mod a_decoded_leading_whitespace_is_dropped_and_reported;
+
 #[path = "../a_default_list_marker_is_not_recorded.rs"]
 mod a_default_list_marker_is_not_recorded;
 
