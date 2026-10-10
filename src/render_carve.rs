@@ -3274,6 +3274,13 @@ fn render_inlines_with_caption(
             return text.value.clone();
         }
     }
+    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH
+        && nodes.iter().any(|node| matches!(node, InlineNode::Emphasis(_))) {
+        crate::render_carve_error::record_unspellable(
+            "inline", "inline content exceeds the native parser nesting limit",
+        );
+        return String::new();
+    }
     // Flatten before the writer checks neighboring nodes. A ruby base can
     // start with `[` or a code fence, which changes how preceding text escapes.
     let original = nodes;
@@ -3561,6 +3568,18 @@ fn render_nodes_with_verbatim(
                         || matches!(node, InlineNode::Code(code) if code_span_fence(&code.value).len() < 3)),
             )
         };
+        if let InlineNode::CriticComment(comment) = node {
+            if comment.text.contains('}') && idx > 0 && crate::parse::inline_is_attributable(&nodes[idx - 1]) {
+                let probe = crate::parse(&("/x/".to_owned() + &rendered));
+                let keeps_comment = probe.children.first().is_some_and(|block| match block {
+                    BlockNode::Paragraph(paragraph) => paragraph.children.iter().any(|child| matches!(child, InlineNode::CriticComment(found) if found.text == comment.text)),
+                    _ => false,
+                });
+                if !keeps_comment {
+                    crate::render_carve_error::record_unspellable("critic_comment", "a glued editorial comment would attach attributes to the preceding node");
+                }
+            }
+        }
         if !is_text {
             ctx.paired_closer_carry.set(false);
         }
@@ -3816,6 +3835,11 @@ fn render_inline_body(
         InlineNode::Emphasis(emphasis) => {
             let kinds = emphasis_delimiters(emphasis.kind);
             let before_attributes = ctx.attribute_markers.clone();
+            let before_emphasis = ctx.emphasis_counts;
+            let repeated_ancestor = [
+                kinds.first().map(|marker| ctx.open_kinds.contains(marker)).unwrap_or(false),
+                kinds.get(1).map(|marker| ctx.open_kinds.contains(marker)).unwrap_or(false),
+            ];
             ctx.open_kinds.extend_from_slice(kinds);
             let content = if writes_own_brackets(emphasis) {
                 render_bracketed_content(session, &emphasis.children, ctx)
@@ -3827,11 +3851,20 @@ fn render_inline_body(
                 ctx.attribute_markers.get(marker).copied().unwrap_or(0)
                     > before_attributes.get(marker).copied().unwrap_or(0)
             });
-            if attributes_conflict {
+            let repeated = |marker: char| {
+                let index = "/*_~^,=".find(marker).unwrap();
+                kinds.iter().position(|kind| *kind == marker)
+                    .map(|slot| repeated_ancestor[slot]).unwrap_or(false)
+                    || ctx.emphasis_counts[index] > before_emphasis[index]
+            };
+            let repeated_bold_italic = emphasis.kind == EmphasisKind::BoldItalic
+                && !content.is_empty() && (repeated('/') || repeated('*'));
+            if attributes_conflict || repeated_bold_italic {
                 let body = if emphasis.kind == EmphasisKind::BoldItalic {
                     let conflicts = |marker: char| {
                         ctx.attribute_markers.get(&marker).copied().unwrap_or(0)
                             > before_attributes.get(&marker).copied().unwrap_or(0)
+                            || repeated(marker)
                     };
                     let inner = if conflicts('/') {
                         render_forced_emphasis("/", &content)

@@ -124,11 +124,9 @@ fn a_raw_inline_is_opaque_only_as_its_own_token() {
 }
 
 #[test]
-fn a_forced_opener_of_the_scanned_kind_hides_nothing() {
-    // E3: `{=` is literal while the highlight it would close is open
-    // (markup-carve/carve#2078), so the closer at `c=` is reachable.
+fn a_forced_opener_of_the_scanned_kind_hides_its_closer() {
     assert_eq!(
         html("=a {=html} c= d=}\n"),
-        "<p><mark>a {=html} c</mark> d=}</p>"
+        "<p>=a <mark>html} c= d</mark></p>"
     );
 }

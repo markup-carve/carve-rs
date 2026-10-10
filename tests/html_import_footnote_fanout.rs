@@ -127,7 +127,7 @@ fn unwrapping_many_nested_spans_preserves_their_text() {
         "<strong>x</strong> y ".repeat(20)
     );
     let value = word(&input);
-    assert!(value.contains("x y x y"));
+    assert!(carve::to_plain_text(&value).contains("x y x y"));
 }
 
 #[test]

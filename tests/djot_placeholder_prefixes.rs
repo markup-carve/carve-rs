@@ -70,7 +70,7 @@ fn user_markers_survive_flattened_emphasis() {
     ] {
         let source = format!("{{*a \0{{*{base}\x000\0*}} b*}} w{{.c}}");
         let converted = carve::djot_to_carve(&source);
-        assert!(converted.contains(&format!("\0{base}\x000\0")));
+        assert!(converted.contains(&format!("\0{{*{base}\x000\0*}}")));
         assert_eq!(carve::to_html(&converted).matches("class=\"c\"").count(), 1);
     }
 }
@@ -131,7 +131,7 @@ fn single_index_user_markers_survive_syntax_removal() {
             let expected = if source.starts_with("\0{.a}") {
                 format!("[\0]{{.a}}{base}\0")
             } else {
-                token.clone()
+                format!("\0{{*{base}\0*}}")
             };
             assert!(converted.contains(&expected));
             assert!(!converted.replace(&token, "").contains("\0DJOT"));

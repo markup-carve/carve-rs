@@ -11,6 +11,7 @@ struct Pair {
     forced: bool,
     children: Vec<usize>,
     kinds: u8,
+    host_depth: usize,
 }
 
 fn kind_bit(kind: u8) -> u8 {
@@ -484,6 +485,7 @@ fn process(
                 forced,
                 children: Vec::new(),
                 kinds: kind_bit(ch),
+                host_depth: 0,
             });
             if forced_close && braces.last() == Some(&start) {
                 braces.pop();
@@ -581,6 +583,32 @@ fn process(
         }
         at += 1;
     }
+    let mut host_changes: HashMap<usize, isize> = HashMap::new();
+    for &(start, end) in &bracket_pairs {
+        if literal_brackets.contains(&start) || literal_brackets.contains(&end) { continue; }
+        if !bytes.get(end + 1).is_some_and(|ch| b"([{ ".contains(ch) && *ch != b' ')
+            && start.checked_sub(1).and_then(|at| bytes.get(at)) != Some(&b'^') { continue; }
+        *host_changes.entry(start + 1).or_default() += 1;
+        *host_changes.entry(end).or_default() -= 1;
+    }
+    let mut host_depth = 0isize;
+    let mut quote_depth = 0usize;
+    for at in 0..bytes.len() {
+        if at == 0 || bytes[at - 1] == b'\n' {
+            quote_depth = 0;
+            let mut cursor = at;
+            loop {
+                while bytes.get(cursor).is_some_and(|ch| matches!(ch, b' ' | b'\t')) { cursor += 1; }
+                if bytes.get(cursor) != Some(&b'>') { break; }
+                quote_depth += 1;
+                cursor += 1;
+            }
+        }
+        host_depth += host_changes.get(&at).copied().unwrap_or(0);
+        if let Some(&index) = starts.get(&at) {
+            pairs[index].host_depth = host_depth.max(0) as usize + quote_depth;
+        }
+    }
     let renderer = Renderer {
         source,
         mask: &mask,
@@ -608,7 +636,7 @@ fn process(
         }
         work.push((index, outer, depth, true));
         let bit = kind_bit(pair.kind);
-        if depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
+        if depth + pair.host_depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             losses.push(pair.start);
         }
         let inner = outer | bit;
@@ -735,7 +763,7 @@ impl Renderer<'_> {
     fn render(&self, index: usize, outer: u8, depth: usize) -> String {
         let pair = &self.pairs[index];
         let bit = kind_bit(pair.kind);
-        if depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
+        if depth + pair.host_depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             return self.body(pair.open_end, pair.close, &pair.children, outer);
         }
         let scope = outer & bit != 0 || pair
