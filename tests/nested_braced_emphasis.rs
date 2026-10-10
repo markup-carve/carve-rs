@@ -377,21 +377,35 @@ fn djot_host_depth_is_reported_before_native_syntax_becomes_literal() {
                 "link",
                 "quote",
                 "lazy-quote",
+                "nested-lazy-quote",
                 "insert",
                 "delete",
                 "list-quote",
                 "quoted-list",
                 "div",
+                "bare-div",
+                "list-div",
+                "list-continuation-div",
+                "lazy-list-div",
+                "lazy-quoted-div",
+                "indented-div",
             ] {
                 let nested = "{*".repeat(198) + "x" + &"*}".repeat(198);
                 let source = match host {
                     "link" => format!("[{nested}](/u)"),
                     "lazy-quote" => format!("> a\n{nested}"),
+                    "nested-lazy-quote" => format!("> > a\n> {nested}"),
                     "insert" => format!("{{+{nested}+}}"),
                     "delete" => format!("{{-{nested}-}}"),
                     "list-quote" => format!("- > {nested}"),
                     "quoted-list" => format!("> - {nested}"),
                     "div" => format!("::: class\n\n{nested}\n\n:::\n"),
+                    "bare-div" => format!(":::\n\n{nested}\n\n:::\n"),
+                    "list-div" => format!("- ::: note\n  {nested}"),
+                    "list-continuation-div" => format!("- a\n\n  ::: note\n  {nested}"),
+                    "lazy-list-div" => format!("- ::: note\n  x\n{nested}"),
+                    "lazy-quoted-div" => format!("> ::: note\n> x\n{nested}"),
+                    "indented-div" => format!("  ::: note\n  x\n\n{nested}"),
                     _ => format!("> {nested}"),
                 };
                 let result = carve::migrate_djot(&source);
@@ -406,7 +420,15 @@ fn djot_host_depth_is_reported_before_native_syntax_becomes_literal() {
                     "{host}"
                 );
             }
-            for prefix in ["> a\n\n", "> a\n# heading\n\n", "> \n"] {
+            for prefix in [
+                "> a\n\n",
+                "> a\n# heading\n\n",
+                "> \n",
+                "> ::: note\n> x\n\n",
+                "- ::: note\n  x\n\n",
+                "- a\n\n  ::: note\n  x\n\n",
+                ">x\n",
+            ] {
                 let nested = "{*".repeat(198) + "x" + &"*}".repeat(198);
                 let result = carve::migrate_djot(&format!("{prefix}{nested}"));
                 let html = carve::to_html(&result.value);
@@ -477,32 +499,100 @@ fn split_bold_italic_uses_two_native_depth_levels() {
     std::thread::Builder::new()
         .stack_size(32 * 1024 * 1024)
         .spawn(|| {
-            for levels in [196, 197] {
-                let mut document = carve::parse("/*x*/");
-                let carve::ast::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
-                    panic!("paragraph");
-                };
-                let mut children = std::mem::take(&mut paragraph.children);
-                for _ in 0..levels {
-                    children = vec![carve::ast::InlineNode::Emphasis(carve::ast::Emphasis {
-                        attrs: None,
-                        kind: carve::ast::EmphasisKind::Strong,
-                        children,
-                        pos: None,
-                    })];
+            for (input, limit) in [
+                ("/*x*/", 196),
+                ("/*[x](/u)*/", 195),
+                ("/*[x]{.s}*/", 195),
+                ("/*{+x+}*/", 195),
+            ] {
+                for levels in [limit, limit + 1] {
+                    let mut document = carve::parse(input);
+                    let carve::ast::BlockNode::Paragraph(paragraph) = &mut document.children[0]
+                    else {
+                        panic!("paragraph");
+                    };
+                    let mut children = std::mem::take(&mut paragraph.children);
+                    for _ in 0..levels {
+                        children = vec![carve::ast::InlineNode::Emphasis(carve::ast::Emphasis {
+                            attrs: None,
+                            kind: carve::ast::EmphasisKind::Strong,
+                            children,
+                            pos: None,
+                        })];
+                    }
+                    paragraph.children = children;
+                    let written = carve::render_carve(&document);
+                    if levels == limit + 1 {
+                        assert!(written
+                            .unwrap_err()
+                            .to_string()
+                            .contains("native parser nesting limit"));
+                    } else {
+                        let source = written.unwrap();
+                        assert_eq!(
+                            carve::to_html(&source),
+                            carve::render_html(&document).unwrap()
+                        );
+                    }
                 }
-                paragraph.children = children;
-                let written = carve::render_carve(&document);
-                if levels == 197 {
-                    assert!(written
-                        .unwrap_err()
-                        .to_string()
-                        .contains("native parser nesting limit"));
-                } else {
-                    let source = written.unwrap();
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn formerly_lossy_djot_nested_emphasis_is_preserved() {
+    for (source, html) in [
+        ("_({_foo_})_\n", "<p><em>(<em>foo</em>)</em></p>"),
+        ("*****a*****\n", "<p><strong><strong><strong><strong><strong>a</strong></strong></strong></strong></strong></p>"),
+        ("__emphasis inside_ emphasis_\n", "<p><em><em>emphasis inside</em> emphasis</em></p>"),
+    ] {
+        let result = carve::migrate_djot(source);
+        assert_eq!(carve::to_html(&result.value).trim(), html, "{source:?}");
+        assert!(!result.report.diagnostics.iter().any(|item| item.code == "structure-unspellable"), "{source:?}");
+    }
+}
+
+#[test]
+fn djot_container_depth_matches_equivalent_prefix_layouts() {
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            for (left, right) in [
+                ("- - ::: note\n    ", "- a\n\n  - b\n\n    ::: note\n    "),
+                ("- ::: note\n  ", "- a\n\n  - b\n\n  ::: note\n  "),
+                ("> ::: note\n> ", "- a\n> ::: note\n> "),
+            ] {
+                for depth in 194..=198 {
+                    let nested = "{*".repeat(depth) + "x" + &"*}".repeat(depth);
+                    let results = [left, right]
+                        .map(|prefix| carve::migrate_djot(&format!("{prefix}{nested}")));
+                    let html = results
+                        .each_ref()
+                        .map(|result| carve::to_html(&result.value));
+                    assert!(
+                        !html[0].contains("{*") && !html[1].contains("{*"),
+                        "{left:?} {right:?} {depth}"
+                    );
                     assert_eq!(
-                        carve::to_html(&source),
-                        carve::render_html(&document).unwrap()
+                        html[0].matches("<strong>").count(),
+                        html[1].matches("<strong>").count(),
+                        "{left:?} {right:?} {depth}"
+                    );
+                    assert_eq!(
+                        results[0]
+                            .report
+                            .diagnostics
+                            .iter()
+                            .any(|item| item.code == "structure-unspellable"),
+                        results[1]
+                            .report
+                            .diagnostics
+                            .iter()
+                            .any(|item| item.code == "structure-unspellable"),
+                        "{left:?} {right:?} {depth}"
                     );
                 }
             }

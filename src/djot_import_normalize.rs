@@ -1564,9 +1564,6 @@ mod tests {
     #[test]
     fn djot_unspellable_structures_name_losses_on_source_lines() {
         for (source, line, message) in [
-            ("_({_foo_})_\n", 1, "Nested emphasis"),
-            ("*****a*****\n", 1, "Nested emphasis"),
-            ("__emphasis inside_ emphasis_\n", 1, "Nested emphasis"),
             ("##\n", 1, "empty Djot heading"),
             ("[link][]\n\n[link]:\n[link2]: url\n", 1, "empty destination"),
             ("[link][a and\nb]\n", 1, "unresolved Djot reference"),

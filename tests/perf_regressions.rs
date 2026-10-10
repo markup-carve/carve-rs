@@ -2381,3 +2381,11 @@ fn many_note_admonition_titles_import_near_linearly() {
         2048,
     );
 }
+
+#[test]
+fn attached_id_heads_without_a_comment_closer_parse_bounded() {
+    assert_bounded_scan(
+        |n| format!("{{* {} *}}", "[a]{# ".repeat(n)),
+        "attached ID heads without an editorial closer",
+    );
+}
