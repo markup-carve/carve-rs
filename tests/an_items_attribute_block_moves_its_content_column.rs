@@ -11,7 +11,7 @@ fn html(source: &str) -> String {
 fn the_old_full_prefix_column_is_an_authored_heading_base() {
     assert_eq!(
         html("-{#k} [x] a\n      # h\n").trim(),
-        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
          <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
@@ -20,7 +20,7 @@ fn the_old_full_prefix_column_is_an_authored_heading_base() {
 fn a_continuation_at_the_bare_marker_column_is_inside() {
     assert_eq!(
         html("-{#k} [x] a\n  # h\n").trim(),
-        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
          <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
@@ -30,7 +30,7 @@ fn a_continuation_at_the_bare_marker_column_is_inside() {
 fn a_sub_list_reads_the_same_column() {
     assert_eq!(
         html("-{#k} [x] a\n  - sub\n").trim(),
-        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
          <ul>\n      <li>sub</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
@@ -42,7 +42,7 @@ fn a_sub_list_reads_the_same_column() {
 fn a_plain_task_item_still_has_its_column_at_two() {
     assert_eq!(
         html("- [x] a\n  # h\n").trim(),
-        "<ul>\n  <li><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
          <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
@@ -52,7 +52,7 @@ fn a_plain_task_item_still_has_its_column_at_two() {
 /// counting the block would move this to 4, which is what carve-js does not do.
 #[test]
 fn padding_before_the_checkbox_still_moves_nothing() {
-    let expected = "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item\n    \
+    let expected = "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item\n    \
                     <h1 id=\"H\">H</h1>\n  </li>\n</ul>";
     assert_eq!(html("-   [ ] item\n  # H\n").trim(), expected);
     assert_eq!(html("-   [ ] item\n    # H\n").trim(), expected);
@@ -92,6 +92,6 @@ fn an_ordered_item_with_attributes_uses_its_bare_width() {
 fn the_column_reaches_the_outer_items_looseness() {
     assert_eq!(
         html("- outer\n  -{#k} [x] inner\n\n  after\n").trim(),
-        "<ul>\n  <li><p>outer</p>\n    <ul>\n      <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"inner\"> inner</li>\n    </ul>\n    <p>after</p>\n  </li>\n</ul>"
+        "<ul>\n  <li><p>outer</p>\n    <ul class=\"task-list\">\n      <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"inner\"> inner</li>\n    </ul>\n    <p>after</p>\n  </li>\n</ul>"
     );
 }

@@ -1739,18 +1739,21 @@ impl<'a> Importer<'a> {
     }
 
     /// Whether `data-task-state` IS the item's state: one PART 10 §11 writes,
-    /// on an EMPTY box. Anything else is the author's attribute.
+    /// an extended state on an EMPTY box or `x` on a CHECKED one
+    /// (carve#2887). Anything else is the author's attribute.
     fn reads_task_state(li: &Handle) -> bool {
         let Some(state) = Self::attr(li, "data-task-state") else {
             return false;
         };
-        if !matches!(state.as_str(), "-" | "_" | ">" | "?") {
-            return false;
-        }
+        let checked = match state.as_str() {
+            "-" | "_" | ">" | "?" => false,
+            "x" => true,
+            _ => return false,
+        };
         li.children.borrow().iter().any(|child| {
             Self::tag(child).as_deref() == Some("input")
                 && Self::attr(child, "type").is_some_and(|t| t.eq_ignore_ascii_case("checkbox"))
-                && Self::attr(child, "checked").is_none()
+                && Self::attr(child, "checked").is_some() == checked
         })
     }
 
@@ -2990,7 +2993,9 @@ impl<'a> Importer<'a> {
                 let task_state = Self::reads_task_state(li)
                     .then(|| Self::attr(li, "data-task-state"))
                     .flatten()
-                    .and_then(|state| state.chars().next());
+                    .and_then(|state| state.chars().next())
+                    // The box already says done; `x` is never a stored state.
+                    .filter(|state| *state != 'x');
                 // UNSPELLABLE BEHIND AN ORDERED MARKER. `task_marker` in
                 // `resources/spec/03-blocks-core.ebnf` hangs off
                 // `unordered_item` alone, so no Carve source carries a box on an
@@ -3091,7 +3096,13 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
-            let mut attrs = attrs;
+            // PART 19 §1's base class, which the renderer writes back.
+            let task_list = !ordered && items.iter().all(|item| item.checked.is_some());
+            let mut attrs = if task_list {
+                Self::without_structural_class(attrs, "task-list")
+            } else {
+                attrs
+            };
             let ol_type = if ordered {
                 self.ordered_list_type(h, start.unwrap_or(1), items.len(), &mut attrs, path)
             } else {

@@ -29,7 +29,7 @@ fn an_attribute_only_ordered_item_closes_before_a_below_column_heading() {
 fn an_attribute_only_task_item_closes_before_a_below_column_heading() {
     assert_eq!(
         carve::to_html("-{#k} [x] {#h}\n # h\n"),
-        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n</ul>\n<p># h</p>"
+        "<ul class=\"task-list\">\n  <li data-task-state=\"x\" id=\"k\"><input type=\"checkbox\" checked disabled> </li>\n</ul>\n<p># h</p>"
     );
 }
 

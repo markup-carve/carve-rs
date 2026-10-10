@@ -1913,7 +1913,15 @@ fn render_list(
             write!(out, " data-delim=\"{}\"", escape_attr(&delim.to_string())).unwrap();
         }
     }
-    write_attrs(out, &l.attrs);
+    // PART 19 §1: `task-list` is a mandatory base class. Every item has to be a
+    // task, so an ingested mixed list never hides a plain item's bullet.
+    let task_list =
+        !l.ordered && !l.items.is_empty() && l.items.iter().all(|item| item.checked.is_some());
+    if task_list {
+        out.push_str(&render_attrs_with_base_class(&l.attrs, "task-list"));
+    } else {
+        write_attrs(out, &l.attrs);
+    }
     out.push_str(">\n");
     for (i, item) in l.items.iter().enumerate() {
         if i > 0 {
@@ -1942,14 +1950,25 @@ fn render_list_item(
     });
     indent(out, level);
     out.push_str("<li");
-    // PART 10 §11. Structural, so it leads the authored attributes (§1).
-    if let Some(task_state) = item.task_state {
+    // PART 10 §11. Structural, so it leads the authored attributes (§1). A done
+    // item writes `x` whichever case it was authored in (carve#2887).
+    let task_state = match item.checked {
+        Some(true) => Some('x'),
+        _ => item.task_state,
+    };
+    if let Some(task_state) = task_state {
         out.push_str(&format!(
             " data-task-state=\"{}\"",
             escape_attr(&task_state.to_string())
         ));
+        // An authored copy would be a second attribute of the same name.
+        out.push_str(&render_attrs_without_keys(
+            &item.attrs,
+            &["data-task-state"],
+        ));
+    } else {
+        write_attrs(out, &item.attrs);
     }
-    write_attrs(out, &item.attrs);
     out.push('>');
     let task_name = if item.checked.is_some() {
         match item.children.first() {

@@ -121,7 +121,7 @@ fn blank_inside_inner_task_item_does_not_loosen_outer() {
     // receives `d`, as it does in the other implementations.
     assert_eq!(
         carve::to_html("- a\n  - [ ] b\n\n    c\n  d\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li><input type=\"checkbox\" disabled aria-label=\"b\"> <p>b</p>\n        <p>c\nd</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul class=\"task-list\">\n      <li><input type=\"checkbox\" disabled aria-label=\"b\"> <p>b</p>\n        <p>c\nd</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

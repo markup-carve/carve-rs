@@ -487,6 +487,8 @@ mod a_task_box_is_read_only_where_the_extension_reaches;
 mod a_task_items_checkbox_is_not_decided_by_its_first_block;
 #[path = "../a_task_items_checkbox_is_not_part_of_its_marker.rs"]
 mod a_task_items_checkbox_is_not_part_of_its_marker;
+#[path = "../a_task_list_carries_its_class.rs"]
+mod a_task_list_carries_its_class;
 #[path = "../a_task_state_names_itself_in_html.rs"]
 mod a_task_state_names_itself_in_html;
 #[path = "../a_task_state_survives_a_format_cycle.rs"]
