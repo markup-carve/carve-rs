@@ -1787,3 +1787,6 @@ mod djot_escaped_brace_atoms;
 
 #[path = "../djot_destination_boundaries.rs"]
 mod djot_destination_boundaries;
+
+#[path = "../djot_placeholder_prefixes.rs"]
+mod djot_placeholder_prefixes;

@@ -44,6 +44,25 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{BlockNode, FigureTarget};
 
+fn djot_placeholder_prefix(source: &str, base: &str) -> String {
+    if !source.contains(base) {
+        return format!("{base}0\0");
+    }
+    let pattern = cached_regex!(r"(\x00DJOT[A-Z]+\x00?)([0-9]+)").unwrap();
+    let mut reserved = HashSet::new();
+    for caps in pattern.captures_iter(source) {
+        let matched = caps.get(0).unwrap();
+        if &caps[1] == base && source.as_bytes().get(matched.end()) == Some(&0) {
+            reserved.insert(caps[2].to_string());
+        }
+    }
+    let mut serial = 0usize;
+    while reserved.contains(&serial.to_string()) {
+        serial += 1;
+    }
+    format!("{base}{serial}\0")
+}
+
 /// Convert Djot source to Carve source.
 pub fn djot_to_carve(djot: &str) -> String {
     djot_to_carve_prepared(&strip_footnote_definition_attributes(djot))
@@ -122,10 +141,7 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
             caps[0].to_string()
         }
     });
-    let mut alt_prefix = "\0DJOTALT\0".to_string();
-    while folded.contains(&alt_prefix) {
-        alt_prefix.push('\0');
-    }
+    let alt_prefix = djot_placeholder_prefix(&folded, "\0DJOTALT\0");
     let mut alts = Vec::new();
     let mut alt_cache = std::collections::HashMap::<String, String>::new();
     let image = cached_regex!(r"!\[([^\[\]\n]*)\]([\[(])").unwrap();
@@ -170,16 +186,10 @@ pub(crate) fn djot_to_carve_prepared(stripped_definitions: &DjotFootnoteAttribut
             format!("![{alt_prefix}{}\0]{}", alts.len() - 1, &caps[2])
         })
         .into_owned();
-    let mut prefix = "\0DJOTSTRONG".to_string();
-    while folded.contains(&prefix) {
-        prefix.push('\0');
-    }
+    let prefix = djot_placeholder_prefix(&folded, "\0DJOTSTRONG");
     let mut spans = Vec::new();
     let words = protect_attributed_words(&folded, &prefix, &mut spans, &inherited);
-    let mut empty_term = "\0DJOTEMPTYTERM\0".to_string();
-    while words.contains(&empty_term) {
-        empty_term.push('\0');
-    }
+    let empty_term = djot_placeholder_prefix(&words, "\0DJOTEMPTYTERM\0");
     let converted = rewrite_djot_body(&convert_definition_lists(&words, &empty_term))
         .replace(&empty_term, "%%");
     let converted = if spans.is_empty() {
@@ -1548,12 +1558,9 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
     });
     let masked_lines: Vec<&str> = masked.split('\n').collect();
     let mut spans = OrphanAttributeSpans {
-        prefix: "\0DJOTORPHAN\0".into(),
+        prefix: djot_placeholder_prefix(source, "\0DJOTORPHAN\0"),
         values: Vec::new(),
     };
-    while source.contains(&spans.prefix) {
-        spans.prefix.push('\0');
-    }
     let block_end = cached_regex!(
         r"^(?:`{3,}|~{3,}|:{3,}|#{1,6} |[-*+] |[0-9]+[.)] |> |:{1,2} |(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|\|.*\||\[[^\]]+\]:)")
     .unwrap();
@@ -4967,13 +4974,14 @@ fn normalize_djot_footnotes(
             .into_owned()
     };
     let unsupported = |key: &str| key.contains(['[', ']', '`', '<', '>', '|', '\\', '\u{c}', '\0']);
-    let prefix =
-        cached_regex!(r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+)*")
-            .unwrap();
+    let prefix = cached_regex!(
+        r"^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+)*"
+    )
+    .unwrap();
     let head = cached_regex!(r"^\[\^([^\]\n]+)\]:(?:[ \t]|$)").unwrap();
     let thematic = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*][ \t]*){3,}$").unwrap();
     let note_lines: Vec<_> = source.split('\n').collect();
-    let item = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+    let item = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
     let block = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)")
         .unwrap();
     let reference_head =
@@ -5082,6 +5090,7 @@ fn normalize_djot_footnotes(
                 definitions.insert(offset + at, (key.clone(), offset + at + 2 + caps[1].len()));
                 if line[at + caps.get(0).unwrap().len()..].trim().is_empty() {
                     empty_definitions.insert(offset + at);
+                    reference_allowed = true;
                 }
                 if unsupported(&key) {
                     djot_note_alias(&key, &mut labels, &mut serial, &reserved);

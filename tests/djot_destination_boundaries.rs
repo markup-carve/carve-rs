@@ -141,3 +141,19 @@ fn references_after_container_exit_keep_their_urls() {
     let source = "[r]:http://e/\n\n[x][r]\n";
     assert!(!carve::to_html(&carve::djot_to_carve(source)).contains("href=\"http://e/\""));
 }
+
+#[test]
+fn empty_notes_and_definition_items_leave_reference_boundaries() {
+    for source in [
+        "[^a]:\n  [r]: http://e/\n\n[x][r] [^a]\n",
+        ": term\n[r]: http://e/\n\n[x][r] note[^n]\n\n[^n]: n\n",
+    ] {
+        let converted = carve::djot_to_carve(source);
+        let html = carve::to_html(&converted);
+        assert!(
+            html.contains("href=\"http://e/\""),
+            "{source:?}: {converted:?}: {html}"
+        );
+        assert!(html.contains("href=\"#fn1\""));
+    }
+}
