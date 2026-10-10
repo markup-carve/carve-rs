@@ -90,22 +90,7 @@ const DECLARED_UNIMPLEMENTED: &[(&str, &str, Option<&str>)] = &[];
 /// now states, so a regression is caught exactly as the corpus would have
 /// caught it, and it must still DIFFER from the pinned fixture, so an entry the
 /// pin has caught up on fails and is deleted in the commit that moves the pin.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "66-smart-typography-quotes-off-html",
-    "Task-list class, markup-carve/carve#2887",
-    r###"<p>He said "hello" and 'yes'; it's fine… a–b, c—d.</p>
-<p>Arrows → ← ↔ ⇒ and comparisons ≠ ≤ ≥ and © ® ™ ±.</p>
-<p>Typed “curly” ‘quotes’ and escaped "plain" stay literal.</p>
-<p>Code: <code>a--b "q" (c)</code>.</p>
-<ul class="task-list">
-  <li><input type="checkbox" disabled aria-label="Don&apos;t &quot;guess&quot;… a–b"> Don't "guess"… a–b</li>
-</ul>
-<section id="Don-t-guess-a-b">
-  <h1>Don't "guess"… a–b</h1>
-  <p><a href="#Don-t-guess-a-b">Don't "guess"… a–b</a></p>
-</section>
-"###,
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 /// The floor a manifest emptied or halved cannot get past. It sits under the
 /// count today for the same reason the other floors in this repo do: the
