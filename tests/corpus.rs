@@ -290,6 +290,7 @@ const IMPLEMENTED: &[&str] = &[
     "two-backticks-are-not-a-code-fence-opening-or-closing",
     "two-dashes-are-not-a-thematic-break",
     "a-link-definition-written-before-a-footnote-stays-before-it",
+    "a-link-destination-is-opaque-to-the-bracket-scan",
     "a-zero-width-character-in-a-reference-definition-destination",
     "a-block-image-is-separated-from-the-block-after-it-on-every-target",
     "a-tab-indent-is-the-column-it-reaches-whatever-the-line-holds",
