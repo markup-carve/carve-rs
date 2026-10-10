@@ -1812,7 +1812,7 @@ mod markdown_terminal_hard_break;
 
 #[path = "../djot_unclosed_code.rs"]
 mod djot_unclosed_code;
-#[path = "../smart_quote_rules.rs"]
-mod smart_quote_rules;
 #[path = "../markdown_html_code_payloads.rs"]
 mod markdown_html_code_payloads;
+#[path = "../smart_quote_rules.rs"]
+mod smart_quote_rules;
