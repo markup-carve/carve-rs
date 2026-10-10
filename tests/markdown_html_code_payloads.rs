@@ -402,3 +402,77 @@ fn a_label_fallback_keeps_its_source_line() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].path.as_deref(), Some("line:3"));
 }
+
+#[test]
+fn nested_html_code_does_not_consume_ast_depth() {
+    for closed in [false, true] {
+        let depth = 1000;
+        let markdown = format!(
+            "{}x{}",
+            "<code>".repeat(depth),
+            if closed {
+                "</code>".repeat(depth)
+            } else {
+                String::new()
+            }
+        );
+        let result = carve::try_migrate_markdown(&markdown).unwrap();
+        assert_eq!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .filter(|row| row.code == "raw-code-fallback")
+                .count(),
+            1
+        );
+        let html = carve::to_html(&result.value);
+        assert!(
+            html.trim_end() == format!("<p>{markdown}</p>"),
+            "nested code changed its HTML"
+        );
+    }
+}
+
+#[test]
+fn additional_writer_contexts_keep_unrelated_code_native() {
+    let options = carve::Options {
+        allow_raw_html: false,
+        ..Default::default()
+    };
+    for markdown in [
+        "`keep`\n\nx[^1]\n\n[^1]: <code>a&#10;b</code>\n",
+        "`keep`\n\n<ins><code></code></ins> y\n",
+        "`keep`\n\n<sup><code>a&#10;b</code></sup> y\n",
+        "`keep`\n\n~~<code>a&#10;b</code>~~ y\n",
+    ] {
+        let result = carve::try_migrate_markdown(markdown).unwrap();
+        let html = carve::render_html_with_options(&carve::parse(&result.value), &options).unwrap();
+        assert!(html.contains("<code>keep</code>"), "{markdown}");
+    }
+}
+
+#[test]
+fn formatting_outside_code_keeps_its_structure() {
+    for (markdown, expected) in [
+        (
+            "<em><strong>x</strong></em>",
+            "<p><em><strong>x</strong></em></p>",
+        ),
+        (
+            "<b>x<sup>2</sup></b>",
+            "<p><strong>x<sup>2</sup></strong></p>",
+        ),
+        ("<em>H<sub>2</sub>O</em>", "<p><em>H<sub>2</sub>O</em></p>"),
+        (
+            "<strong><del>x</del></strong>",
+            "<p><strong><del>x</del></strong></p>",
+        ),
+    ] {
+        let source = carve::try_markdown_to_carve(markdown).unwrap();
+        let html = carve::to_html(&source)
+            .replace("<s>", "<del>")
+            .replace("</s>", "</del>");
+        assert_eq!(html.trim_end(), expected);
+    }
+}

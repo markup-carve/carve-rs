@@ -1210,6 +1210,7 @@ enum Frame {
         children: Vec<InlineNode>,
     },
     HtmlCode {
+        nested_code_depth: usize,
         line: usize,
         tag: String,
         open: String,
@@ -1444,6 +1445,22 @@ impl Builder {
         };
 
         if tag.closing {
+            if tag.name.eq_ignore_ascii_case("code") {
+                if let Some(Frame::HtmlCode {
+                    nested_code_depth, ..
+                }) = self
+                    .frames
+                    .iter_mut()
+                    .rev()
+                    .find(|frame| matches!(frame, Frame::HtmlCode { .. }))
+                {
+                    if *nested_code_depth > 0 {
+                        *nested_code_depth -= 1;
+                        self.raw_inline(value.to_string());
+                        return;
+                    }
+                }
+            }
             let closes_top = match self.frames.last() {
                 Some(Frame::HtmlEmphasis { tag: open, .. })
                 | Some(Frame::HtmlCode { tag: open, .. })
@@ -1465,6 +1482,20 @@ impl Builder {
         }
 
         let name = tag.name.to_ascii_lowercase();
+        if name == "code" {
+            if let Some(Frame::HtmlCode {
+                nested_code_depth, ..
+            }) = self
+                .frames
+                .iter_mut()
+                .rev()
+                .find(|frame| matches!(frame, Frame::HtmlCode { .. }))
+            {
+                *nested_code_depth += 1;
+                self.raw_inline(value.to_string());
+                return;
+            }
+        }
         // The one attributed tag that converts: section 8c writes a deletion as
         // `<del class="critic-delete">` and the Carve construct carries that
         // class itself, so nothing drops (markup-carve/carve#2845).
@@ -1520,6 +1551,7 @@ impl Builder {
                 children: Vec::new(),
             },
             "code" => Frame::HtmlCode {
+                nested_code_depth: 0,
                 line: self.current_line,
                 tag: name,
                 open: value.to_string(),
