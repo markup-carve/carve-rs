@@ -343,6 +343,8 @@ mod a_markdown_deletion_is_not_a_strike;
 mod a_markdown_line_keeps_a_trailing_form_feed;
 #[path = "../a_markdown_link_with_an_empty_destination_is_its_text.rs"]
 mod a_markdown_link_with_an_empty_destination_is_its_text;
+#[path = "../a_markdown_percent_run_takes_one_escape.rs"]
+mod a_markdown_percent_run_takes_one_escape;
 #[path = "../a_markdown_run_that_cannot_flank_falls_back.rs"]
 mod a_markdown_run_that_cannot_flank_falls_back;
 #[path = "../a_marker_at_a_content_column_opens_a_sublist.rs"]

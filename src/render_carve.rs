@@ -6100,33 +6100,42 @@ fn escape_text(
             || caret_opens_inline
             || opens_a_verbatim_construct;
         let caret_is_a_span_marker = ch == '^' && in_table_cell;
-        let candidate = caret_is_a_span_marker
-            || matches!(
-                ch,
-                '*' | '_'
-                    | '{'
-                    | '}'
-                    | '['
-                    | ']'
-                    | '('
-                    | ')'
-                    | '#'
-                    | '+'
-                    | '-'
-                    | '.'
-                    | '!'
-                    | '~'
-                    | '/'
-                    | '<'
-                    | '>'
-                    | '@'
-                    | '%'
-                    | '|'
-                    | '='
-                    | ':'
-                    | ';'
-                    | '^'
-            );
+        // A comment opens on the first TWO unescaped percent signs of a run, so
+        // the escape on the first one already makes the whole run literal:
+        // `\%%c`, and `\%%%c` for a longer run. A percent repeating the one
+        // before it is therefore never a site, which keeps it out of the run
+        // rule below that would otherwise hand it its predecessor's escape and
+        // write `\%\%c` (carve-rs#2443). The shared escaper corpus pins the
+        // one-escape spelling and both peer engines write it.
+        let continues_percent_run = ch == '%' && offset > 0 && previous == '%';
+        let candidate = !continues_percent_run
+            && (caret_is_a_span_marker
+                || matches!(
+                    ch,
+                    '*' | '_'
+                        | '{'
+                        | '}'
+                        | '['
+                        | ']'
+                        | '('
+                        | ')'
+                        | '#'
+                        | '+'
+                        | '-'
+                        | '.'
+                        | '!'
+                        | '~'
+                        | '/'
+                        | '<'
+                        | '>'
+                        | '@'
+                        | '%'
+                        | '|'
+                        | '='
+                        | ':'
+                        | ';'
+                        | '^'
+                ));
         // In a unit the search has escalated, each candidate site is offered
         // back on its own, so the one occurrence that needed the escape no
         // longer drags the rest of the unit with it (PART 11 §2). A character
