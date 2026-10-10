@@ -16,7 +16,7 @@ fn markdown_paragraph_lines_cannot_become_lists() {
     );
     assert_eq!(
         carve::render_markdown(&carve::parse("para ``code\n- literal``\n")).expect("renders"),
-        "para `code\n- literal`\n"
+        "para `code - literal`\n"
     );
 }
 
