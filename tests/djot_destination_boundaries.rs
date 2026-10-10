@@ -74,3 +74,70 @@ fn footnote_suffix_parentheses_remain_text() {
         }
     }
 }
+
+#[test]
+fn reference_url_boundaries_do_not_hide_paragraph_notes() {
+    for source in ["text\n[a]: b\n[c]: [^x]\n", "[r]: http://e/[^x] \n"] {
+        let converted = carve::djot_to_carve(source);
+        assert!(
+            converted.contains("[^carve-djot-note-0]:"),
+            "{source:?}: {converted:?}"
+        );
+        assert!(
+            carve::to_html(&converted).contains("href=\"#fn1\""),
+            "{source:?}: {converted:?}: {}",
+            carve::to_html(&converted)
+        );
+    }
+    for source in [
+        "[r]: http://example.com/\n  [^x]\n",
+        "[r]:\n  http://example.com/[^x]\n",
+        "# heading\n[r]: [^x]\n",
+    ] {
+        let converted = carve::djot_to_carve(source);
+        assert!(
+            !converted.contains("carve-djot-note"),
+            "{source:?}: {converted:?}"
+        );
+        assert!(converted.contains("[^x]"));
+    }
+}
+
+#[test]
+fn reference_continuations_stay_within_their_container() {
+    for marker in ["> ", "- ", "1. "] {
+        let source = format!("[r]: http://e/\n{marker}[^x]\n\n[^x]: note\n");
+        let html = carve::to_html(&carve::djot_to_carve(&source));
+        assert!(html.contains("href=\"#fn1\""), "{source:?}: {html}");
+    }
+    for prefix in [
+        "```\ncode\n```\n",
+        "::: x\ncontent\n:::\n",
+        "* * *\n",
+        "| a |\n",
+    ] {
+        let source = format!("{prefix}[r]: http://e/[^x]\n");
+        let converted = carve::djot_to_carve(&source);
+        assert!(
+            !converted.contains("carve-djot-note"),
+            "{source:?}: {converted:?}"
+        );
+        assert!(converted.contains("http://e/[^x]"));
+    }
+}
+
+#[test]
+fn references_after_container_exit_keep_their_urls() {
+    for prefix in ["> text\n", "[^a]: note\n", "- item\n"] {
+        let source = format!("{prefix}[r]: http://e/[^x]\n\n[x][r]\n");
+        let converted = carve::djot_to_carve(&source);
+        let html = carve::to_html(&converted);
+        assert!(
+            html.contains("href=\"http://e/[^x]\""),
+            "{source:?}: {converted:?}: {html}"
+        );
+        assert!(!converted.contains("carve-djot-note"));
+    }
+    let source = "[r]:http://e/\n\n[x][r]\n";
+    assert!(!carve::to_html(&carve::djot_to_carve(source)).contains("href=\"http://e/\""));
+}

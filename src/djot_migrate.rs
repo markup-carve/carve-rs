@@ -4710,11 +4710,12 @@ fn fold_djot_references(source: &str) -> String {
     let rows = djot_table_rows(source, &mask);
     let definition = cached_regex!(r"^\[([^\^\]\n][^\]\n]*|)\]:(?:[ \t]+(\S*)[ \t]*|)$").unwrap();
     let boundary = cached_regex!(r"^(?:#{1,6} |:{3,}|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)").unwrap();
+    let fence_end = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*$").unwrap();
     let marker = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
     let token = cached_regex!(r"^\S+$").unwrap();
     let thematic = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*][ \t]*){3,}$").unwrap();
     let mut removed = HashSet::new();
-    let (mut offset, mut previous_depth, mut n) = (0, 0, 0);
+    let (mut offset, mut previous_depth, mut n) = (0usize, 0, 0);
     let mut previous = String::new();
     let mut previous_attribute_block = false;
     while n < lines.len() {
@@ -4730,6 +4731,11 @@ fn fold_djot_references(source: &str) -> String {
             || depth != previous_depth
             || thematic.is_match(previous_line)
             || at < previous_at && marker.is_match(&previous_line[..previous_at])
+            || (fence_end.is_match(&previous)
+                && mask
+                    .as_bytes()
+                    .get(offset.saturating_sub(previous_line.len() + 1) + previous_at)
+                    == Some(&b' '))
             || boundary.is_match(&previous)
             || marker.is_match(&line[..at]);
         if let Some(caps) = definition.captures(content) {
@@ -4742,7 +4748,10 @@ fn fold_djot_references(source: &str) -> String {
                 while end + 1 < lines.len() {
                     let next = &lines[end + 1];
                     let next_at = djot_content_start(next);
-                    if quoted(next).0 != depth || next_at <= at || !token.is_match(&next[next_at..])
+                    if quoted(next).0 != depth
+                        || next_at <= at
+                        || marker.is_match(&next[..next_at])
+                        || !token.is_match(&next[next_at..])
                     {
                         break;
                     }
@@ -4967,8 +4976,18 @@ fn normalize_djot_footnotes(
     let item = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
     let block = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]*\]:|(?:[-*][ \t]*){3,}$)")
         .unwrap();
-    let reference_head = cached_regex!(r"^\[(?:[^\^\]\n][^\]\n]*)?\]:[ \t]*(\S*)[ \t]*$").unwrap();
+    let reference_head =
+        cached_regex!(r"^\[(?:[^\^\]\r\n][^\]\r\n]*)?\]:([ \t]+[^ \t\r\n]*|)\r?$").unwrap();
     let mut reference_payloads = Vec::new();
+    let mut literal_reference_colons = HashSet::new();
+    let reference_candidate = cached_regex!(r"^\[(?:[^\^\]\r\n][^\]\r\n]*)?\]:").unwrap();
+    let mut reference_allowed = true;
+    let mut reference_indent = None;
+    let mut reference_containers: Vec<(usize, usize)> = Vec::new();
+    let mut reference_divs: Vec<(usize, usize)> = Vec::new();
+    let reference_div = cached_regex!(r"^(:{3,})(?:[ \t]+\S.*)?[ \t]*$").unwrap();
+    let reference_fence_end = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*$").unwrap();
+    let reference_continuation = cached_regex!(r"^[^ \t\r\n]+\r?$").unwrap();
     for (n, line) in note_lines.iter().enumerate() {
         let at = prefix.find(line).unwrap().len();
         line_heads.insert(offset + at);
@@ -4983,14 +5002,81 @@ fn normalize_djot_footnotes(
             || item.is_match(&line[..at])
             || line[..at].matches('>').count() < previous_prefix.matches('>').count()
             || block.is_match(previous);
-        if boundary && mask.as_bytes().get(offset + at) == Some(&b'[') {
-            if let Some(caps) = reference_head.captures(&line[at..]) {
-                let target = caps.get(1).unwrap();
-                reference_payloads.push((offset + at + target.start(), offset + at + target.end()));
+        let content = &line[at..];
+        let item_prefix = item.is_match(&line[..at]);
+        let (quote_depth, quote_content) = quoted(line);
+        let quote_prefix = line.len() - quote_content.len();
+        let content_column = at.saturating_sub(quote_prefix);
+        let mut exited_container = false;
+        while reference_containers.last().is_some_and(|&(column, depth)| {
+            quote_depth < depth || (quote_depth == depth && content_column < column)
+        }) {
+            reference_containers.pop();
+            exited_container = true;
+        }
+        if item_prefix {
+            while reference_containers
+                .last()
+                .is_some_and(|&(column, depth)| quote_depth == depth && content_column <= column)
+            {
+                reference_containers.pop();
             }
+            reference_containers.push((content_column, quote_depth));
+        }
+        let allowed = reference_allowed
+            || item_prefix
+            || exited_container
+            || quote_depth < quoted(previous_line).0
+            || n.checked_sub(1).is_some_and(|n| rows.get(n) == Some(&true))
+            || boundaries.is_some_and(|strip| strip.is_boundary(previous_line));
+        let mut closed_div = false;
+        if let Some(caps) = reference_div.captures(content) {
+            let width = caps[1].len();
+            if content.trim() == &caps[1]
+                && reference_divs
+                    .last()
+                    .is_some_and(|&(open_width, depth)| width >= open_width && quote_depth == depth)
+            {
+                reference_divs.pop();
+                closed_div = true;
+            } else if allowed {
+                reference_divs.push((width, quote_depth));
+            }
+        }
+        let reference = allowed && mask.as_bytes().get(offset + at) == Some(&b'[');
+        if let Some(caps) = reference
+            .then(|| reference_head.captures(content))
+            .flatten()
+        {
+            let target = caps.get(1).unwrap();
+            reference_payloads.push((offset + at + target.start(), offset + at + target.end()));
+            reference_indent = Some((content_column, quote_depth));
+            reference_allowed = true;
+        } else if reference_indent
+            .is_some_and(|(indent, depth)| content_column > indent && quote_depth == depth)
+            && !item_prefix
+            && reference_continuation.is_match(content)
+        {
+            reference_payloads.push((offset + at, offset + line.len()));
+        } else {
+            if mask.as_bytes().get(offset + at) == Some(&b'[') {
+                if let Some(candidate) = reference_candidate.find(content) {
+                    literal_reference_colons.insert(offset + at + candidate.end() - 1);
+                }
+            }
+            reference_indent = None;
+            reference_allowed = content.trim().is_empty()
+                || (allowed && !content.starts_with('[') && block.is_match(content))
+                || (allowed && thematic.is_match(line))
+                || rows.get(n) == Some(&true)
+                || boundaries.is_some_and(|strip| strip.is_boundary(line))
+                || closed_div
+                || (reference_fence_end.is_match(content)
+                    && mask.as_bytes().get(offset + at) == Some(&b' '));
         }
         if let Some(caps) = head.captures(&line[at..]) {
             if boundary && mask.as_bytes().get(offset + at) == Some(&b'[') {
+                reference_containers.push((content_column + 2, quote_depth));
                 let key = key_of(&caps[1]);
                 defined.insert(key.clone());
                 definitions.insert(offset + at, (key.clone(), offset + at + 2 + caps[1].len()));
@@ -5167,6 +5253,9 @@ fn normalize_djot_footnotes(
             output.extend_from_slice(&bytes[i..end]);
             i = end;
             continue;
+        }
+        if literal_reference_colons.contains(&i) {
+            output.push(b'\\');
         }
         if non_rows.contains(&i) {
             output.push(b'\\');
