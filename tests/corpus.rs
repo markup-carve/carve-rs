@@ -1031,6 +1031,20 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
 </ul>
 "###,
     ),
+    (
+        "75-list-nesting-and-looseness-4",
+        "a below-column line continues a paragraph only where one is open at the deepest frame (markup-carve/carve#2884)",
+        r#"<ul>
+  <li>a
+    <ul>
+      <li>b
+        <h1 id="N">N</h1>
+      </li>
+    </ul>
+  </li>
+</ul>
+<p>lazy</p>"#,
+    ),
 ];
 
 /// Pairs this engine renders differently from the pinned corpus because it has
