@@ -1650,7 +1650,7 @@ mod layout_html_tests {
         // The scanner is unchanged; exact shadow parity is checked above.
         // Spec 95ddd0ac adds the six 551 bracket-scan documents (carve#2862);
         // three of them are plain link paragraphs this path takes, so 60 to 63
-        // is six NEW documents, not a widening. The scanner is unchanged and
+        // is three new documents, not a widening. The scanner is unchanged and
         // the per-document assertion above proves each byte-identical.
         assert_eq!(
             accepted, 63,
