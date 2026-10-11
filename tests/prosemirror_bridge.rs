@@ -1614,7 +1614,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // repeated marks that report the existing ProseMirror slot loss.
     // Spec 24e2eb6 adds 554, 554-2 and 554-3 caption-scope documents.
     // All three round-trip strictly; no existing document changes bucket.
-    const STRICT: usize = 1752;
+    // Spec 41ae9216 adds category 553 rows 15–29 for deepest-frame continuation.
+    // All fifteen new documents round trip strictly; the lossy count stays fixed.
+    const STRICT: usize = 1767;
     const LOSSY: usize = 548;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
