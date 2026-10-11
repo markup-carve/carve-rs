@@ -8438,17 +8438,23 @@ impl<'a> ParaOpen<'a> {
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
-    let children = parts
+    let children: Vec<BlockNode> = parts
         .into_iter()
         .flat_map(|part| parse_mapped_source(&part.into_source(), options))
         .collect();
-    boxed_blockquote_node(
-        children,
-        span_of(cur, span_start, cur.pos, options),
-        consume_caption(cur, options),
-        span_of(cur, span_start, cur.pos, options),
-        false,
-    )
+    let quote_pos = span_of(cur, span_start, cur.pos, options);
+    // PART 9 §4d: a quote built out of nothing but structural-only `>` lines is
+    // not a captionable host. It holds nothing the caption could be about, and
+    // taking one binds the caption across the container change that opened the
+    // quote - which is how `| a |` / blank / `>` / blank / `^ cap` captioned an
+    // empty quote nobody wrote the caption under (markup-carve/carve#2892).
+    let caption = if children.is_empty() {
+        None
+    } else {
+        consume_caption(cur, options)
+    };
+    let figure_pos = span_of(cur, span_start, cur.pos, options);
+    boxed_blockquote_node(children, quote_pos, caption, figure_pos, false)
 }
 
 /// Which half of a definition-list entry the quote's own lines last left open.

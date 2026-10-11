@@ -609,6 +609,8 @@ mod an_empty_list_is_dropped;
 mod an_empty_or_refused_class_value_adds_no_token;
 #[path = "../an_empty_or_whitespace_edged_mark.rs"]
 mod an_empty_or_whitespace_edged_mark;
+#[path = "../an_empty_quote_takes_no_caption.rs"]
+mod an_empty_quote_takes_no_caption;
 #[path = "../an_empty_term_marker_in_a_description_body_is_text.rs"]
 mod an_empty_term_marker_in_a_description_body_is_text;
 #[path = "../an_empty_unsupported_element_is_dropped_not_unwrapped.rs"]
