@@ -275,3 +275,19 @@ fn a_future_comment_closer_after_a_host_dedent_does_not_mask_closed_colons() {
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     assert_eq!(ast["children"][1]["type"], "list", "{ast}");
 }
+
+#[test]
+fn a_sibling_item_ends_the_previous_colon_scope() {
+    for source in [
+        "> - a\n>   - ::: box\n>     body\n> - next\n>     :::\n- tail\n",
+        "> - ::: box\n>   body\n> - :::bad\n>   :::\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            1,
+            "{source}: {ast}"
+        );
+        assert!(carve::to_html(source).contains("- tail"), "{source}");
+    }
+}

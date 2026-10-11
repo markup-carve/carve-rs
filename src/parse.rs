@@ -8747,7 +8747,13 @@ impl NestedFenceReplay {
             let here = &mut chain[level];
             here.by_fence = false;
             here.by_colon = false;
+            let starts_sibling = detect_list_marker_full(trim_ascii_start(text)).is_some()
+                && here
+                    .hosts
+                    .iter()
+                    .any(|&(marker, _, item)| item && marker == indent_columns(text));
             let lazy_paragraph = here.para
+                && !starts_sibling
                 && !match detect_fence_open(text) {
                     Some(open) => closer_ahead(lines, at, level, |line| is_fence_close(line, open)),
                     None => interrupts_paragraph_with_rest(text, &[]),
