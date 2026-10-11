@@ -405,3 +405,31 @@ fn a_new_item_left_of_the_first_quoted_marker_registers_its_colon_host() {
     assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
     assert_eq!(ast["children"][1]["type"], "paragraph", "{ast}");
 }
+
+#[test]
+fn an_owned_verse_opener_clears_absorption_and_leaves_no_paragraph_claim() {
+    for source in [
+        "> - a\n>   ::: |\n- tail\n",
+        "> - a\n>   - p\n>     :::bad\n>     ::: |\n>     v\n>   text\n>   :::\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            2,
+            "{source}: {ast}"
+        );
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+    }
+}
+
+#[test]
+fn a_future_comment_pair_cannot_hide_an_actual_closed_verse() {
+    let source = "> - ::: |\n>   %%%\n>   :::\n- tail\n>   %%%\n>   :::\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 3, "{ast}");
+    assert_eq!(ast["children"][1]["type"], "list", "{ast}");
+    assert_eq!(
+        ast["children"][0]["children"][0]["items"][0]["children"][0]["type"], "line_block",
+        "{ast}"
+    );
+}

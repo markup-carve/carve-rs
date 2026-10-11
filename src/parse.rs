@@ -3770,6 +3770,7 @@ struct LineCursor<'a> {
     /// which collects into its own `MappedSource`.
     sublists_carry_authored_base: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
+    future_quoted_comments: RefCell<Option<FutureQuotedComments>>,
     /// Last consumed comment closer and the column of its opener.
     closed_comment_location: Option<(usize, usize)>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
@@ -3803,6 +3804,7 @@ impl<'a> LineCursor<'a> {
             reached: None,
             sublists_carry_authored_base: false,
             comment_closer_last_index: None,
+            future_quoted_comments: RefCell::new(None),
             closed_comment_location: None,
             code_closer_last_index: None,
         }
@@ -8565,7 +8567,6 @@ struct NestedFenceReplay {
     scanned: usize,
     chain: Vec<NestedLevel>,
     fence_count: usize,
-    future_comments: Option<FutureQuotedComments>,
 }
 
 #[derive(Default)]
@@ -8691,15 +8692,7 @@ impl NestedFenceReplay {
                         let collected = closer_ahead(lines, at, level, |line| {
                             is_comment_fence_close(trim_ascii_start(line), len)
                         });
-                        if collected
-                            || future_quoted_comment_closes(
-                                &mut self.future_comments,
-                                cur,
-                                level + 1,
-                                column,
-                                len,
-                            )
-                        {
+                        if collected || future_quoted_comment_closes(cur, level + 1, column, len) {
                             chain[level].host_comment = Some((len, column, !collected));
                         }
                     }
@@ -8837,15 +8830,7 @@ impl NestedFenceReplay {
                         let collected = closer_ahead(lines, at, level, |line| {
                             is_comment_fence_close(trim_ascii_start(line), len)
                         });
-                        if collected
-                            || future_quoted_comment_closes(
-                                &mut self.future_comments,
-                                cur,
-                                level + 1,
-                                col,
-                                len,
-                            )
-                        {
+                        if collected || future_quoted_comment_closes(cur, level + 1, col, len) {
                             here.host_comment = Some((len, col, !collected));
                             if collected {
                                 here.para = false;
@@ -8857,6 +8842,8 @@ impl NestedFenceReplay {
                     if let Some(width) = detect_line_block_open(inner) {
                         here.host_verse = Some((width, col));
                         here.para = false;
+                        here.colon_absorption = false;
+                        here.by_colon = !block_start;
                         return;
                     }
                     if let Some(width) = detect_container_open(inner)
@@ -8939,12 +8926,12 @@ struct FutureQuotedComments {
 }
 
 fn future_quoted_comment_closes(
-    cached: &mut Option<FutureQuotedComments>,
     cur: &LineCursor<'_>,
     depth: usize,
     column: usize,
     width: usize,
 ) -> bool {
+    let mut cached = cur.future_quoted_comments.borrow_mut();
     let indexed = cached.get_or_insert_with(|| {
         let source: Vec<_> = cur.lines.range(0..cur.lines.len()).collect();
         let blanks = source
