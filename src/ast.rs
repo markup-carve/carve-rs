@@ -661,7 +661,7 @@ pub struct Table {
     /// wrote NO separator row, which is the half of the distinction the rows
     /// cannot carry: `|= a |` and a plain row over `|---|` parse alike.
     /// Author choice on the same terms as `List::bullet_char`.
-    pub separator_widths: Option<Vec<u32>>,
+    pub separator_widths: Option<Vec<u64>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

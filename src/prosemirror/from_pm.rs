@@ -1439,6 +1439,9 @@ fn separator_widths(a: &Object) -> Json {
     let mut out = Vec::new();
     for entry in value.split(',') {
         let entry = entry.trim();
+        if entry.is_empty() || !entry.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Json::Null;
+        }
         let Ok(width) = entry.parse::<u64>() else {
             return Json::Null;
         };

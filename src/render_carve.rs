@@ -2868,6 +2868,18 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
 /// first row is not a header cell and the row would fall out of the head.
 fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
+    if node.rows.is_empty()
+        && node
+            .separator_widths
+            .as_ref()
+            .is_some_and(|widths| !widths.is_empty())
+    {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "a separator row needs a preceding table row",
+        );
+        return String::new();
+    }
     let mut rows = Vec::new();
     let header_row = node
         .rows
@@ -2882,6 +2894,13 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         .separator_widths
         .as_ref()
         .filter(|widths| !widths.is_empty());
+    if authored_widths.is_some() && !header_row {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "field separatorWidths needs a header row",
+        );
+        return String::new();
+    }
     let needs_delimiter = authored_widths.is_some()
         || header_row
             && node.rows.first().is_some_and(|row| {
@@ -2939,20 +2958,10 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // width instead made the writer a non-fixed-point: the corpus's
             // ragged `| |x |` over `|---|` came back with a second entry the
             // author never wrote, so `fmt(fmt(x))` moved the tree.
-            Some(widths) => widths
-                .iter()
-                .enumerate()
-                .map(|(index, width)| {
-                    let dashes = "-".repeat((*width).max(1) as usize);
-                    match node.rows[0].cells.get(index).and_then(|cell| cell.align) {
-                        Some(TableAlign::Left) => format!(":{dashes}"),
-                        Some(TableAlign::Right) => format!("{dashes}:"),
-                        Some(TableAlign::Center) => format!(":{dashes}:"),
-                        None => dashes,
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("|"),
+            Some(widths) => match render_table_separator(node, widths) {
+                Some(separator) => separator,
+                None => return String::new(),
+            },
             None => vec!["---"; node.rows[0].cells.len()].join("|"),
         };
         rows.insert(1, format!("|{sep}|"));
@@ -2990,6 +2999,52 @@ fn pad_cell(prefix: &str, content: &str) -> String {
 
 fn render_table_row(cells: &[String], attrs: &str) -> String {
     format!("|{}|{}", cells.join("|"), attrs)
+}
+
+fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
+    let fail = || {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "separator row exceeds source allocation capacity",
+        );
+        None
+    };
+    let Some(capacity) = widths
+        .iter()
+        .enumerate()
+        .try_fold(0usize, |total, (index, width)| {
+            let dashes = usize::try_from((*width).max(1)).ok()?;
+            let colons = match table.rows[0].cells.get(index).and_then(|cell| cell.align) {
+                Some(TableAlign::Center) => 2,
+                Some(_) => 1,
+                None => 0,
+            };
+            total
+                .checked_add(dashes)?
+                .checked_add(colons)?
+                .checked_add(usize::from(index > 0))
+        })
+    else {
+        return fail();
+    };
+    let mut separator = String::new();
+    if separator.try_reserve_exact(capacity).is_err() {
+        return fail();
+    }
+    for (index, width) in widths.iter().enumerate() {
+        if index > 0 {
+            separator.push('|');
+        }
+        let align = table.rows[0].cells.get(index).and_then(|cell| cell.align);
+        if matches!(align, Some(TableAlign::Left | TableAlign::Center)) {
+            separator.push(':');
+        }
+        separator.extend(std::iter::repeat('-').take((*width).max(1) as usize));
+        if matches!(align, Some(TableAlign::Right | TableAlign::Center)) {
+            separator.push(':');
+        }
+    }
+    Some(separator)
 }
 
 fn render_table_cell(

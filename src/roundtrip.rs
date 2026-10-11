@@ -38,7 +38,7 @@ pub(crate) const INLINE_FOOTNOTE: &str = "data-carve-inline-footnote";
 /// its other spelling. The FIELD itself has no upper bound - a parse records
 /// what the author typed, and nothing amplifies there. 1000 is a round number
 /// pinned for cross-engine parity, not a bound derived from anything.
-pub(crate) const SEPARATOR_WIDTH_LIMIT: u32 = 1000;
+pub(crate) const SEPARATOR_WIDTH_LIMIT: u64 = 1000;
 
 /// The authored separator-row widths, comma-joined (`<table>`).
 pub(crate) const COL_WIDTHS: &str = "data-carve-col-widths";

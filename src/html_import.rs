@@ -1999,7 +1999,7 @@ impl<'a> Importer<'a> {
     /// [`SEPARATOR_WIDTH_LIMIT`](crate::roundtrip::SEPARATOR_WIDTH_LIMIT).
     /// Neither a partial read nor a clamp: both would put a separator row on
     /// the page whose widths nobody wrote.
-    fn reads_separator_widths(table: &Handle) -> Option<Vec<u32>> {
+    fn reads_separator_widths(table: &Handle) -> Option<Vec<u64>> {
         let value = Self::carrier(table, crate::roundtrip::COL_WIDTHS)?;
         if value.trim().is_empty() {
             // An empty value names no width, and a list of none has no
@@ -2011,7 +2011,7 @@ impl<'a> Importer<'a> {
             .map(|entry| {
                 let entry = entry.trim();
                 (!entry.is_empty() && entry.bytes().all(|b| b.is_ascii_digit()))
-                    .then(|| entry.parse::<u32>().ok())
+                    .then(|| entry.parse::<u64>().ok())
                     .flatten()
                     .filter(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
             })

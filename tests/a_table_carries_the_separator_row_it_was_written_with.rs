@@ -104,11 +104,13 @@ fn the_closed_schema_refuses_a_width_that_is_not_a_positive_integer() {
             r#"{{"type":"document","srcByteLength":0,"children":[{{"type":"table","rows":[{{"type":"table_row","cells":[{{"type":"table_cell","header":true,"children":[]}}]}}],"separatorWidths":{widths}}}]}}"#
         )
     };
-    for widths in ["[0]", "[-1]", "[1.5]", r#"["3"]"#, "[null]", "3"] {
+    for widths in [
+        "[0]", "[-1]", "[1.5]", r#"["3"]"#, "[null]", "3", "[]", "null",
+    ] {
         from_json(&payload(widths)).expect_err(&format!("{widths} is not a separator width list"));
     }
     from_json(&payload("[1]")).expect("one dash is the smallest run there is");
-    from_json(&payload("[]")).expect("presence with no cell is still presence");
+    from_json(&payload("[4294967296]")).expect("the field is not bounded to u32");
 }
 
 // ------------------------------------------------------------------ the writer
@@ -348,4 +350,118 @@ fn the_prosemirror_bridge_carries_the_authored_separator_row() {
 fn a_native_header_carries_nothing_and_its_bytes_do_not_move() {
     let source = "|= a |= b |\n| 1 | 2 |\n";
     assert_eq!(exported(source, true), exported(source, false));
+}
+
+#[test]
+fn a_separator_without_a_preceding_row_has_a_typed_source_refusal() {
+    let doc = from_json(
+        r#"{"type":"document","srcByteLength":0,"children":[{"type":"table","rows":[],"separatorWidths":[3]}]}"#,
+    )
+    .expect("the wire permits a table without rows");
+    match render_carve(&doc).expect_err("a separator cannot open a table") {
+        carve::RenderCarveError::SourceUnspellable(error) => {
+            assert_eq!(error.node_type(), "table");
+            assert_eq!(
+                error.reason(),
+                "a separator row needs a preceding table row"
+            );
+        }
+        other => panic!("expected a source refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn large_widths_remain_exact_on_the_wire_and_refuse_unallocatable_source() {
+    for widths in [
+        vec![u64::MAX],
+        vec![isize::MAX as u64, 1],
+        vec![u64::MAX / 2, u64::MAX / 2, 2],
+    ] {
+        let mut doc = parse(ALIGNED);
+        let Some(BlockNode::Table(table)) = doc.children.first_mut() else {
+            unreachable!()
+        };
+        table.separator_widths = Some(widths);
+        let json = to_json(&doc);
+        assert_eq!(to_json(&from_json(&json).unwrap()), json);
+        match render_carve(&doc).expect_err("source capacity must be checked before allocation") {
+            carve::RenderCarveError::SourceUnspellable(error) => {
+                assert_eq!(error.node_type(), "table");
+                assert_eq!(
+                    error.reason(),
+                    "separator row exceeds source allocation capacity"
+                );
+            }
+            other => panic!("expected source refusal, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn separator_widths_do_not_promote_a_non_header_row() {
+    let html = r#"<table data-carve-col-widths="3"><tr><td>a</td></tr><tr><td>b</td></tr></table>"#;
+    let opts = HtmlImportOptions {
+        mode: HtmlImportMode::Safe,
+        ..HtmlImportOptions::default()
+    };
+    let doc = carve::html_to_ast(html, &opts).unwrap().value;
+    let Some(BlockNode::Table(table)) = doc.children.first() else {
+        unreachable!()
+    };
+    assert_eq!(table.separator_widths, Some(vec![3]));
+    assert!(!table.rows[0].cells[0].header);
+    match render_carve(&doc).expect_err("a separator must not change td into th") {
+        carve::RenderCarveError::SourceUnspellable(error) => {
+            assert_eq!(error.node_type(), "table");
+            assert_eq!(error.reason(), "field separatorWidths needs a header row");
+        }
+        other => panic!("expected source refusal, got {other:?}"),
+    }
+    assert_eq!(
+        carve::html_to_carve(html, &opts).unwrap_err(),
+        carve::HtmlImportError::SourceUnspellable
+    );
+}
+
+#[test]
+fn prosemirror_separator_widths_use_decimal_digits_without_the_html_policy_bound() {
+    let with_widths = |widths: &str| {
+        let mut pm: serde_json::Value =
+            serde_json::from_str(&to_prosemirror(&parse(ALIGNED)).json).unwrap();
+        pm["content"][0]["attrs"]["carveSeparatorWidths"] =
+            serde_json::Value::String(widths.to_owned());
+        from_prosemirror(&pm.to_string()).unwrap()
+    };
+    for invalid in ["+3", "0", "", "2,", "2,x", "1.5", "18446744073709551616"] {
+        let doc = with_widths(invalid);
+        let Some(BlockNode::Table(table)) = doc.children.first() else {
+            unreachable!()
+        };
+        assert_eq!(table.separator_widths, None, "{invalid:?}");
+    }
+    for (value, width) in [
+        ("1001", 1001),
+        ("4294967296", 4294967296),
+        ("18446744073709551615", u64::MAX),
+    ] {
+        let doc = with_widths(value);
+        let Some(BlockNode::Table(table)) = doc.children.first() else {
+            unreachable!()
+        };
+        assert_eq!(table.separator_widths, Some(vec![width]));
+    }
+}
+
+#[test]
+fn invalid_runtime_width_lists_do_not_emit_an_html_carrier() {
+    for widths in [vec![], vec![0, 3]] {
+        let mut doc = parse(ALIGNED);
+        let Some(BlockNode::Table(table)) = doc.children.first_mut() else {
+            unreachable!()
+        };
+        table.separator_widths = Some(widths);
+        let html = carve::render_html_with_options(&doc, &Options::default().with_roundtrip(true))
+            .unwrap();
+        assert!(!html.contains("col-widths"));
+    }
 }

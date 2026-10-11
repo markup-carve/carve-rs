@@ -15566,7 +15566,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut rows: Vec<TableRow> = Vec::new();
     let mut first_is_delim = false;
     let mut saw_separator = false;
-    let mut separator_widths: Option<Vec<u32>> = None;
+    let mut separator_widths: Option<Vec<u64>> = None;
     while let Some(line) = cur.peek() {
         // ONLY a `|` row opens an iteration. A `+` continuation is taken by the
         // row it continues, below, so reaching one here means the row above did
@@ -15822,20 +15822,13 @@ fn is_delim_row(line: &str) -> bool {
 /// Per-cell dash counts from a delimiter row, alignment colons excluded
 /// (PART 12 §3). The row is already known to be a delimiter row, so every cell
 /// has at least one dash and every count is at least 1.
-fn parse_delim_widths(line: &str) -> Vec<u32> {
+fn parse_delim_widths(line: &str) -> Vec<u64> {
     let mut content = trim_ascii(line);
     content = content.strip_prefix('|').unwrap_or(content);
     content = content.strip_suffix('|').unwrap_or(content);
     split_table_cells(content)
         .iter()
-        .map(|c| {
-            trim_cell_padding(c)
-                .bytes()
-                .filter(|b| *b == b'-')
-                .count()
-                .try_into()
-                .unwrap_or(u32::MAX)
-        })
+        .map(|c| trim_cell_padding(c).bytes().filter(|b| *b == b'-').count() as u64)
         .collect()
 }
 

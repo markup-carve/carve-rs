@@ -2300,9 +2300,10 @@ fn render_table(
         .then_some(t.separator_widths.as_ref())
         .flatten()
         .filter(|widths| {
-            widths
-                .iter()
-                .all(|w| *w <= crate::roundtrip::SEPARATOR_WIDTH_LIMIT)
+            !widths.is_empty()
+                && widths
+                    .iter()
+                    .all(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
         });
     if let Some(widths) = widths_carrier {
         let joined = widths

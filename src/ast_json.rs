@@ -3189,29 +3189,25 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
     })
 }
 
-/// `separatorWidths` is an array of integers, each at least 1 (PART 12 §3).
-fn decode_separator_widths(obj: &Map<String, Json>) -> Result<Option<Vec<u32>>, AstJsonError> {
+/// `separatorWidths` is a nonempty array of positive integers (PART 12 §3).
+fn decode_separator_widths(obj: &Map<String, Json>) -> Result<Option<Vec<u64>>, AstJsonError> {
     let entries = match obj.get("separatorWidths") {
-        None | Some(Json::Null) => return Ok(None),
-        Some(Json::Array(entries)) => entries,
+        None => return Ok(None),
+        Some(Json::Array(entries)) if !entries.is_empty() => entries,
         Some(_) => {
             return Err(AstJsonError::new(
-                "table.separatorWidths must be an array".to_owned(),
+                "table.separatorWidths must be a nonempty array".to_owned(),
             ))
         }
     };
     entries
         .iter()
         .map(|entry| {
-            entry
-                .as_u64()
-                .filter(|v| *v >= 1 && *v <= u64::from(u32::MAX))
-                .map(|v| v as u32)
-                .ok_or_else(|| {
-                    AstJsonError::new(
-                        "table.separatorWidths[] must be an integer of at least 1".to_owned(),
-                    )
-                })
+            entry.as_u64().filter(|v| *v >= 1).ok_or_else(|| {
+                AstJsonError::new(
+                    "table.separatorWidths[] must be an integer of at least 1".to_owned(),
+                )
+            })
         })
         .collect::<Result<Vec<_>, _>>()
         .map(Some)
