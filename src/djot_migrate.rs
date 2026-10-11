@@ -514,7 +514,17 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
     if context.1.is_none() {
         return true;
     }
-    let marker = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)\))[ \t]+").unwrap();
+    let item_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)\))[ \t]+").unwrap();
+    let quote_pattern = cached_regex!(r"^[ \t]*(?:>[ \t]*)+").unwrap();
+    let leading_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
+    let heading_pattern = cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap();
+    let fence_pattern = cached_regex!(r"^(`{3,}|~{3,})").unwrap();
+    let definition_pattern = cached_regex!(r"^:[ \t]").unwrap();
+    let footnote_pattern = cached_regex!(r"^\[\^[^\]]+\]:[ \t]*(.*)$").unwrap();
+    let block_pattern =
+        cached_regex!(r"^(?::::|\||\[[^\]]*\]:|:[ \t]|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)")
+            .unwrap();
+    let marker = item_pattern;
     let Some(mut end) = source[..start].rfind('\n') else {
         return false;
     };
@@ -526,10 +536,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
     loop {
         let from = source[..end].rfind('\n').map_or(0, |at| at + 1);
         let raw = &source[from..end];
-        let quotes = cached_regex!(r"^[ \t]*(?:>[ \t]*)+")
-            .unwrap()
-            .find(raw)
-            .map_or("", |m| m.as_str());
+        let quotes = quote_pattern.find(raw).map_or("", |m| m.as_str());
         if quotes.bytes().filter(|b| *b == b'>').count() != context.0 {
             return false;
         }
@@ -542,11 +549,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
                 let parent_from = source[..end].rfind('\n').map_or(0, |at| at + 1);
                 let parent = &source[parent_from..end];
                 if marker.is_match(parent) {
-                    let column = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*")
-                        .unwrap()
-                        .find(parent)
-                        .unwrap()
-                        .end();
+                    let column = leading_pattern.find(parent).unwrap().end();
                     if lines.last().is_some_and(|(raw, _)| {
                         prefix.len() <= column && emphasis::structural_prefix_end(raw) > column
                     }) {
@@ -574,14 +577,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
         if from < attribute_end || kind == Some("paragraph") {
             continue;
         }
-        if marker.is_match(raw)
-            && prefix.len()
-                <= cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*")
-                    .unwrap()
-                    .find(raw)
-                    .unwrap()
-                    .end()
-        {
+        if marker.is_match(raw) && prefix.len() <= leading_pattern.find(raw).unwrap().end() {
             return false;
         }
         let body_at = emphasis::structural_prefix_end(raw);
@@ -601,11 +597,11 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
                 continue;
             }
         }
-        if cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap().is_match(body) {
+        if heading_pattern.is_match(body) {
             kind = Some("heading");
             continue;
         }
-        if let Some(opened) = cached_regex!(r"^(`{3,}|~{3,})").unwrap().find(body) {
+        if let Some(opened) = fence_pattern.find(body) {
             kind = Some("fence");
             fence = opened.as_str();
             continue;
@@ -613,7 +609,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
         if kind == Some("heading") {
             continue;
         }
-        if cached_regex!(r"^:[ \t]").unwrap().is_match(body) {
+        if definition_pattern.is_match(body) {
             if prefix.len() <= body_at {
                 return false;
             }
@@ -624,10 +620,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
             };
             continue;
         }
-        if let Some(note) = cached_regex!(r"^\[\^[^\]]+\]:[ \t]*(.*)$")
-            .unwrap()
-            .captures(body)
-        {
+        if let Some(note) = footnote_pattern.captures(body) {
             if prefix.len() < body_at + 2 {
                 return false;
             }
@@ -638,10 +631,7 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
             };
             continue;
         }
-        if cached_regex!(r"^(?::::|\||\[[^\]]*\]:|:[ \t]|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)")
-            .unwrap()
-            .is_match(body)
-        {
+        if block_pattern.is_match(body) {
             kind = None;
             continue;
         }
