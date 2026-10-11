@@ -8557,6 +8557,7 @@ struct NestedFenceReplay {
     scanned: usize,
     chain: Vec<NestedLevel>,
     fence_count: usize,
+    colon_body_comments: HashMap<usize, QuotedBodyComments>,
 }
 
 #[derive(Default)]
@@ -8830,7 +8831,13 @@ impl NestedFenceReplay {
                 if !colon_opaque
                     && block_start
                     && exact_colon_fence_len(inner).is_some()
-                    && !quoted_colon_body_follows(lines, at, level, floor)
+                    && !quoted_colon_body_follows(
+                        lines,
+                        at,
+                        level,
+                        floor,
+                        self.colon_body_comments.entry(level).or_default(),
+                    )
                 {
                     here.para = true;
                     return;
@@ -9039,11 +9046,62 @@ fn future_quoted_comment_closes(
 
 /// Does a line matching `closes` follow line `from` at nesting `level`, before
 /// the quote at that level ends?
+#[derive(Default)]
+struct QuotedBodyComments {
+    scanned: usize,
+    closers: HashMap<usize, Vec<usize>>,
+    boundaries: Vec<usize>,
+}
+
+impl QuotedBodyComments {
+    fn closes_after(
+        &mut self,
+        lines: &[SourceLine],
+        from: usize,
+        level: usize,
+        width: usize,
+    ) -> bool {
+        for (at, line) in lines.iter().enumerate().skip(self.scanned) {
+            #[cfg(test)]
+            COMMENT_INDEX_LINES.with(|work| work.set(work.get() + 1));
+            let mut text = line.text.as_str();
+            let mut boundary = text.starts_with(LAZY);
+            for _ in 0..level {
+                if let Some(rest) = strip_blockquote_prefix(text) {
+                    text = rest;
+                } else {
+                    boundary = true;
+                    break;
+                }
+            }
+            if boundary {
+                self.boundaries.push(at);
+            } else if let Some(open) = detect_comment_fence_line(trim_ascii_start(text)) {
+                if is_comment_fence_close_any_column(text, open.fence_len) {
+                    self.closers.entry(open.fence_len).or_default().push(at);
+                }
+            }
+        }
+        self.scanned = lines.len();
+        let Some(closers) = self.closers.get(&width) else {
+            return false;
+        };
+        let Some(&close) = closers.get(closers.partition_point(|&at| at <= from)) else {
+            return false;
+        };
+        let boundary = self.boundaries.partition_point(|&at| at <= from);
+        self.boundaries
+            .get(boundary)
+            .map_or(true, |&end| close < end)
+    }
+}
+
 fn quoted_colon_body_follows(
     lines: &[SourceLine],
     from: usize,
     level: usize,
     floor: usize,
+    comments: &mut QuotedBodyComments,
 ) -> bool {
     let mut comment = None;
     for (at, line) in lines.iter().enumerate().skip(from + 1) {
@@ -9064,9 +9122,7 @@ fn quoted_colon_body_follows(
             continue;
         }
         if let Some(open) = detect_comment_fence_line(text) {
-            if closer_ahead(lines, at, level, |candidate| {
-                is_comment_fence_close_any_column(candidate, open.fence_len)
-            }) {
+            if comments.closes_after(lines, at, level, open.fence_len) {
                 comment = Some(open.fence_len);
                 continue;
             }
@@ -26748,6 +26804,33 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn quoted_anonymous_body_comments_share_their_index() {
+        for level in 0..=2 {
+            for count in [64, 512, 4096] {
+                let prefix = "> ".repeat(level);
+                let mut body = LineBuffer::default();
+                for _ in 0..count {
+                    for line in ["- :::", "%%%", "comment", "%%%", "  :::"] {
+                        body.push_at(format!("{prefix}{line}"), None, None);
+                    }
+                }
+                let mut comments = QuotedBodyComments::default();
+                COMMENT_INDEX_LINES.with(|work| work.set(0));
+                for from in (0..body.lines.len()).step_by(5) {
+                    assert!(quoted_colon_body_follows(
+                        &body.lines,
+                        from,
+                        level,
+                        2,
+                        &mut comments,
+                    ));
+                }
+                assert_eq!(COMMENT_INDEX_LINES.with(Cell::get), body.lines.len());
+            }
+        }
+    }
 
     #[test]
     fn repeated_attachment_probes_share_code_and_comment_indices() {
