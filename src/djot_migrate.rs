@@ -629,8 +629,7 @@ type ParagraphContext = (usize, Option<usize>, usize);
 
 struct ParagraphCache {
     source: (usize, usize),
-    starts: HashMap<usize, (ParagraphContext, bool)>,
-    attributes: HashMap<usize, Option<(usize, String)>>,
+    starts: HashMap<usize, (ParagraphContext, bool, usize)>,
 }
 
 thread_local! {
@@ -658,7 +657,6 @@ impl<'a> ParagraphCacheScope<'a> {
                 slot.replace(Some(ParagraphCache {
                     source: identity,
                     starts: HashMap::new(),
-                    attributes: HashMap::new(),
                 })),
                 true,
             )
@@ -695,31 +693,48 @@ fn cached_paragraph_start(
             cache
                 .starts
                 .get(&from)
-                .filter(|(held, _)| *held == context)
-                .map(|(_, result)| *result)
+                .filter(|(held, _, _)| *held == context)
+                .map(|(_, result, _)| *result)
         })
     })
 }
 
 fn comment_continues_paragraph(source: &str, start: usize) -> bool {
-    let context = djot_attribute_context(source, start);
-    let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
-    if cached_paragraph_start(source, from, context) == Some(true) {
+    comment_continues_paragraph_with_context(source, start, djot_attribute_context(source, start))
+}
+
+fn comment_continues_paragraph_with_context(
+    source: &str,
+    start: usize,
+    context: ParagraphContext,
+) -> bool {
+    if context.1.is_none() {
         return true;
     }
-    let result = scan_comment_paragraph(source, start);
+    let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
+    let cached = PARAGRAPH_CACHE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .filter(|cache| cache.source == (source.as_ptr() as usize, source.len()))
+            .and_then(|cache| cache.starts.get(&from))
+            .filter(|(held, _, at)| *held == context && *at == start)
+            .map(|(_, result, _)| *result)
+    });
+    if let Some(result) = cached {
+        return result;
+    }
+    let result = scan_comment_paragraph(source, start, context);
     PARAGRAPH_CACHE.with(|slot| {
         if let Some(cache) = slot.borrow_mut().as_mut() {
             if cache.source == (source.as_ptr() as usize, source.len()) {
-                cache.starts.insert(from, (context, result));
+                cache.starts.insert(from, (context, result, start));
             }
         }
     });
     result
 }
 
-fn scan_comment_paragraph(source: &str, start: usize) -> bool {
-    let context = djot_attribute_context(source, start);
+fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext) -> bool {
     if context.1.is_none() {
         return true;
     }
@@ -876,37 +891,7 @@ fn scan_comment_paragraph(source: &str, start: usize) -> bool {
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
-    if source.as_bytes().get(start + 1) != Some(&b'%') {
-        return read_djot_attributes(source, start, false, false);
-    }
-    let identity = (source.as_ptr() as usize, source.len());
-    let cached = PARAGRAPH_CACHE.with(|slot| {
-        slot.borrow()
-            .as_ref()
-            .filter(|cache| cache.source == identity)
-            .and_then(|cache| cache.attributes.get(&start).cloned())
-    });
-    if let Some(attributes) = cached {
-        return attributes;
-    }
-    let result = read_djot_attributes(source, start, false, false);
-    PARAGRAPH_CACHE.with(|slot| {
-        if let Some(cache) = slot
-            .borrow_mut()
-            .as_mut()
-            .filter(|cache| cache.source == identity)
-        {
-            let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
-            if cache
-                .starts
-                .get(&from)
-                .is_some_and(|(_, paragraph)| *paragraph)
-            {
-                cache.attributes.insert(start, result.clone());
-            }
-        }
-    });
-    result
+    read_djot_attributes(source, start, false, false)
 }
 
 fn read_djot_attributes(
@@ -960,7 +945,8 @@ fn read_djot_attributes_with_context(
             }
         }
         if bytes.get(i) == Some(&b'}') && source[start..=i].contains('\n') {
-            let (depth, block_indent, minimum) = djot_attribute_context(source, start);
+            let (depth, block_indent, minimum) =
+                *context.get_or_insert_with(|| djot_attribute_context(source, start));
             let invalid = source[start..=i].split('\n').skip(1).any(|raw| {
                 let stripped = djot_attribute_line(raw, depth);
                 if block_indent.is_some() && stripped.is_none() {
@@ -976,7 +962,11 @@ fn read_djot_attributes_with_context(
             if invalid
                 && (!parts.is_empty()
                     || !paragraph_context
-                    || !comment_continues_paragraph(source, start))
+                    || !comment_continues_paragraph_with_context(
+                        source,
+                        start,
+                        (depth, block_indent, minimum),
+                    ))
             {
                 return None;
             }
