@@ -7,6 +7,7 @@ use crate::render_text::{strip_high_controls as strip_control_chars, trim_non_nb
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::rc::Rc;
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -96,7 +97,7 @@ fn render_markdown_inner(
     id_opts: crate::extension::HeadingIdOptions,
     carry_markers: bool,
 ) -> String {
-    let _carriers = CarrierGuard::install(CARRIER_DEFAULTS.map(|marker| marker.to_string()));
+    let _carriers = CarrierGuard::install_defaults();
     let losses = crate::render_loss::checkpoint();
     let first = render_markdown_once(doc, smart_typography, id_opts, carry_markers);
     let inserted = INSERTED.with(std::cell::Cell::get);
@@ -113,7 +114,7 @@ fn render_markdown_inner(
             .iter()
             .all(|marker| !occupied.contains(&u32::from(*marker)))
         {
-            return chars.map(|marker| marker.to_string());
+            return chars.map(|marker| Rc::new(marker.to_string()));
         }
         // Punctuation at both ends preserves delimiter flanking. Choose a
         // nonce absent from every assembled token family, without growing the
@@ -124,7 +125,7 @@ fn render_markdown_inner(
                 .find(|nonce| !nonces.contains(nonce))
                 .unwrap()
         });
-        std::array::from_fn(|index| format!("§m{nonce}:{index}§"))
+        std::array::from_fn(|index| Rc::new(format!("§m{nonce}:{index}§")))
     });
     CARRIERS.with(|slot| *slot.borrow_mut() = picked);
     losses.restore();
@@ -657,14 +658,19 @@ fn protect_paragraph_list_markers(text: &str) -> String {
             // So does §8i's `.`, which can be an ordered marker's delimiter.
             let underscore = carrier(C_UNDERSCORE);
             let dot = carrier(C_WWW_DOT);
-            let view = line
-                .replace(underscore.as_str(), "_")
-                .replace(dot.as_str(), ".");
+            let view = if line.contains(underscore.as_str()) || line.contains(dot.as_str()) {
+                std::borrow::Cow::Owned(
+                    line.replace(underscore.as_str(), "_")
+                        .replace(dot.as_str(), "."),
+                )
+            } else {
+                std::borrow::Cow::Borrowed(line.as_str())
+            };
             if let Some(at) = paragraph_marker_escape(&view, written == 0) {
-                if line[at..].starts_with(&underscore) {
+                if line[at..].starts_with(underscore.as_str()) {
                     note_assembled(&line[at..at + underscore.len()]);
                     line.replace_range(at..at + underscore.len(), "\\_");
-                } else if line[at..].starts_with(&dot) {
+                } else if line[at..].starts_with(dot.as_str()) {
                     note_assembled(&line[at..at + dot.len()]);
                     line.replace_range(at..at + dot.len(), "\\.");
                 } else {
@@ -1957,7 +1963,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             let mut chars = text.value.chars();
             match (chars.next(), chars.next()) {
                 (Some(ch), None) if AUTHORED_INERT.contains(&ch) => ch.to_string(),
-                (Some(ch), None) if authored_defers_to_the_line(ch) => positional_sentinel(),
+                (Some(ch), None) if authored_defers_to_the_line(ch) => {
+                    positional_sentinel().to_string()
+                }
                 _ => format!("\\{}", text.value),
             }
         }
@@ -2502,129 +2510,131 @@ fn prepend_label(body: String, label: Option<&str>) -> String {
 }
 
 fn escape_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    // The carriers are read once and the inserts counted here, because a
-    // carried character can be most of a long text and the thread-locals are
-    // not free per character.
-    let carriers = CARRIERS.with(|slot| slot.borrow().clone());
-    let mut inserted = [0usize; CARRIER_COUNT];
-    let mut carry = |slot: usize, out: &mut String| {
-        inserted[slot] += 1;
-        out.push_str(&carriers[slot]);
-    };
-    let autolinks = IN_LINK_TEXT.with(std::cell::Cell::get) == 0;
-    // Both forms start on an ASCII byte and are decided from ASCII bytes, so
-    // the scans read `text` in place: a 50k label is escaped once per
-    // reference, and collecting it first cost more than the whole render.
-    let bytes = text.as_bytes();
-    for (at, ch) in text.char_indices() {
-        // PART 11 §8i: a `:` or `.` that may start an autolink is decided on the
-        // line, since the rest of the form can come from another node.
-        if autolinks && ch == ':' && may_be_scheme_colon(bytes, at) {
-            carry(C_SCHEME_COLON, &mut out);
-            continue;
-        }
-        if autolinks && ch == '.' && may_be_www_dot(bytes, at) {
-            carry(C_WWW_DOT, &mut out);
-            continue;
-        }
-        // E1's local part can start the text, so there is no cheap prefilter the
-        // way `://` and `www` give the other two: every text `@` is carried and
-        // the line decides.
-        if autolinks && ch == '@' {
-            carry(C_EMAIL_AT, &mut out);
-            continue;
-        }
-        match ch {
-            // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
-            // execute it (carve's "HTML is text" guarantee for the Markdown
-            // target too): a literal `<img onerror=…>` becomes inert.
-            //
-            // ONLY `<` AND `>` DO THAT WORK. A bare `&` cannot open a tag: an
-            // entity in Markdown TEXT decodes to a CHARACTER, and a character in
-            // text content is escaped again by whatever writes the HTML.
-            // Measured against pandoc 3.5, commonmark.js and marked with raw
-            // HTML ALLOWED - the entity and bare forms came out byte-identical
-            // and inert, while a bare `<` was live in all three. Escaping every
-            // ampersand cost every document its spelling for nothing
-            // (carve#1071).
-            //
-            // NO EXCEPTION FOR A CHARACTER-REFERENCE OPENER, deliberately: text
-            // authored as `&#65;` is emitted as itself. Whether an `&` opens a
-            // reference depends on the EMITTED LINE, and Carve parses `#65` as a
-            // tag, so this renderer sees two separate text nodes - answering it
-            // here would be one node too early, the mistake section 8a
-            // documents for `_`, `#` and `[`.
-            // PART 11 section 8a M1e: a `<` is escaped only where the emitted
-            // line would read it as markup - before an ASCII letter, `/`, `!`
-            // or `?`, the four things that open raw HTML. Everything else is
-            // inert, and so is `>` mid-line; at line start `>` is a block quote
-            // marker M1 already covers.
-            //
-            // A BACKSLASH, not an entity. Both entities were written
-            // unconditionally with no clause behind them (carve#1148), and that
-            // is precisely because an entity is not the operation this section
-            // describes: M2 and M3 protect a character so it survives as
-            // itself, and an entity replaces it instead. Escaping the `<` alone
-            // suffices - a tag that cannot open cannot be closed.
-            // `<`, `&` and `!` are decided on the EMITTED LINE too, across node
-            // boundaries (PART 11 §8d to §8f): a highlighter puts `<`, the tag
-            // name and `>` in three spans, so the next character is often in
-            // another node.
-            '<' => {
-                carry(C_ANGLE, &mut out);
+    CARRIERS.with(|slot| {
+        let mut out = String::with_capacity(text.len());
+        // The carriers are read once and the inserts counted here, because a
+        // carried character can be most of a long text and the thread-locals are
+        // not free per character.
+        let carriers = slot.borrow();
+        let mut inserted = [0usize; CARRIER_COUNT];
+        let mut carry = |slot: usize, out: &mut String| {
+            inserted[slot] += 1;
+            out.push_str(&carriers[slot]);
+        };
+        let autolinks = IN_LINK_TEXT.with(std::cell::Cell::get) == 0;
+        // Both forms start on an ASCII byte and are decided from ASCII bytes, so
+        // the scans read `text` in place: a 50k label is escaped once per
+        // reference, and collecting it first cost more than the whole render.
+        let bytes = text.as_bytes();
+        for (at, ch) in text.char_indices() {
+            // PART 11 §8i: a `:` or `.` that may start an autolink is decided on the
+            // line, since the rest of the form can come from another node.
+            if autolinks && ch == ':' && may_be_scheme_colon(bytes, at) {
+                carry(C_SCHEME_COLON, &mut out);
                 continue;
             }
-            '&' => {
-                carry(C_AMPERSAND, &mut out);
+            if autolinks && ch == '.' && may_be_www_dot(bytes, at) {
+                carry(C_WWW_DOT, &mut out);
                 continue;
             }
-            '!' => {
-                carry(C_BANG, &mut out);
+            // E1's local part can start the text, so there is no cheap prefilter the
+            // way `://` and `www` give the other two: every text `@` is carried and
+            // the line decides.
+            if autolinks && ch == '@' {
+                carry(C_EMAIL_AT, &mut out);
                 continue;
             }
-            // `_`, `#` and `[` are emitted as SENTINELS rather than as
-            // backslashes: PART 11 §8a decides those three on the EMITTED LINE,
-            // which only `resolve_narrowed_escapes` can see.
-            '_' => {
-                carry(C_UNDERSCORE, &mut out);
-                continue;
-            }
-            '#' => {
-                carry(C_POSITIONAL_HASH, &mut out);
-                continue;
-            }
-            '[' => {
-                if !autolinks {
-                    out.push_str("\\[");
-                } else {
-                    carry(C_BRACKET, &mut out);
+            match ch {
+                // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
+                // execute it (carve's "HTML is text" guarantee for the Markdown
+                // target too): a literal `<img onerror=…>` becomes inert.
+                //
+                // ONLY `<` AND `>` DO THAT WORK. A bare `&` cannot open a tag: an
+                // entity in Markdown TEXT decodes to a CHARACTER, and a character in
+                // text content is escaped again by whatever writes the HTML.
+                // Measured against pandoc 3.5, commonmark.js and marked with raw
+                // HTML ALLOWED - the entity and bare forms came out byte-identical
+                // and inert, while a bare `<` was live in all three. Escaping every
+                // ampersand cost every document its spelling for nothing
+                // (carve#1071).
+                //
+                // NO EXCEPTION FOR A CHARACTER-REFERENCE OPENER, deliberately: text
+                // authored as `&#65;` is emitted as itself. Whether an `&` opens a
+                // reference depends on the EMITTED LINE, and Carve parses `#65` as a
+                // tag, so this renderer sees two separate text nodes - answering it
+                // here would be one node too early, the mistake section 8a
+                // documents for `_`, `#` and `[`.
+                // PART 11 section 8a M1e: a `<` is escaped only where the emitted
+                // line would read it as markup - before an ASCII letter, `/`, `!`
+                // or `?`, the four things that open raw HTML. Everything else is
+                // inert, and so is `>` mid-line; at line start `>` is a block quote
+                // marker M1 already covers.
+                //
+                // A BACKSLASH, not an entity. Both entities were written
+                // unconditionally with no clause behind them (carve#1148), and that
+                // is precisely because an entity is not the operation this section
+                // describes: M2 and M3 protect a character so it survives as
+                // itself, and an entity replaces it instead. Escaping the `<` alone
+                // suffices - a tag that cannot open cannot be closed.
+                // `<`, `&` and `!` are decided on the EMITTED LINE too, across node
+                // boundaries (PART 11 §8d to §8f): a highlighter puts `<`, the tag
+                // name and `>` in three spans, so the next character is often in
+                // another node.
+                '<' => {
+                    carry(C_ANGLE, &mut out);
+                    continue;
                 }
-                continue;
+                '&' => {
+                    carry(C_AMPERSAND, &mut out);
+                    continue;
+                }
+                '!' => {
+                    carry(C_BANG, &mut out);
+                    continue;
+                }
+                // `_`, `#` and `[` are emitted as SENTINELS rather than as
+                // backslashes: PART 11 §8a decides those three on the EMITTED LINE,
+                // which only `resolve_narrowed_escapes` can see.
+                '_' => {
+                    carry(C_UNDERSCORE, &mut out);
+                    continue;
+                }
+                '#' => {
+                    carry(C_POSITIONAL_HASH, &mut out);
+                    continue;
+                }
+                '[' => {
+                    if !autolinks {
+                        out.push_str("\\[");
+                    } else {
+                        carry(C_BRACKET, &mut out);
+                    }
+                    continue;
+                }
+                // Markdown metacharacters. The ASTERISK keeps M1 unconditionally
+                // (§8a M1a): this writer spells emphasis with `*`, so a literal
+                // asterisk is not a character that MIGHT meet markup on the line -
+                // it is the character the line's markup is made of. `*\*\**`
+                // unescaped to `****`, which a CommonMark reader publishes as a
+                // thematic break rather than as emphasis holding two asterisks.
+                // `]` and the rest are M1c: nothing else narrows.
+                // The TILDE is M1 unconditionally too: GFM strikethrough pairs a
+                // run of one or two, so two literal tildes in a paragraph close
+                // over whatever markup stands between them.
+                '\\' | '`' | '*' | '~' | ']' => out.push('\\'),
+                _ => {}
             }
-            // Markdown metacharacters. The ASTERISK keeps M1 unconditionally
-            // (§8a M1a): this writer spells emphasis with `*`, so a literal
-            // asterisk is not a character that MIGHT meet markup on the line -
-            // it is the character the line's markup is made of. `*\*\**`
-            // unescaped to `****`, which a CommonMark reader publishes as a
-            // thematic break rather than as emphasis holding two asterisks.
-            // `]` and the rest are M1c: nothing else narrows.
-            // The TILDE is M1 unconditionally too: GFM strikethrough pairs a
-            // run of one or two, so two literal tildes in a paragraph close
-            // over whatever markup stands between them.
-            '\\' | '`' | '*' | '~' | ']' => out.push('\\'),
-            _ => {}
+            out.push(ch);
         }
-        out.push(ch);
-    }
-    INSERTED.with(|counts| {
-        let mut current = counts.get();
-        for (slot, count) in inserted.iter().enumerate() {
-            current[slot] += count;
-        }
-        counts.set(current);
-    });
-    out
+        INSERTED.with(|counts| {
+            let mut current = counts.get();
+            for (slot, count) in inserted.iter().enumerate() {
+                current[slot] += count;
+            }
+            counts.set(current);
+        });
+        out
+    })
 }
 
 /// Whether the `:` at `at` could be a scheme's, given only its own node: a
@@ -2701,8 +2711,10 @@ thread_local! {
     /// A thread-local for the same reason as `SMART_TYPOGRAPHY` above: they are
     /// written by two escape sites and read by the resolve pass, and threading
     /// them through every signature in the render tree buys nothing.
-    static CARRIERS: std::cell::RefCell<[String; CARRIER_COUNT]> =
-        std::cell::RefCell::new(CARRIER_DEFAULTS.map(|marker| marker.to_string()));
+    static DEFAULT_CARRIER_TOKENS: [Rc<String>; CARRIER_COUNT] =
+        CARRIER_DEFAULTS.map(|marker| Rc::new(marker.to_string()));
+    static CARRIERS: std::cell::RefCell<[Rc<String>; CARRIER_COUNT]> =
+        std::cell::RefCell::new(DEFAULT_CARRIER_TOKENS.with(Clone::clone));
     static OCCUPIED_TOKEN_NONCES: std::cell::RefCell<std::collections::BTreeSet<usize>> =
         const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
     /// How many of each this render INSERTED.
@@ -2724,17 +2736,35 @@ thread_local! {
 
 /// Install `chars` for the duration of one render, restoring the previous run on
 /// drop (panic unwind included).
-struct CarrierGuard([String; CARRIER_COUNT]);
+struct CarrierGuard(Option<[Rc<String>; CARRIER_COUNT]>);
 
 impl CarrierGuard {
-    fn install(chars: [String; CARRIER_COUNT]) -> CarrierGuard {
-        CarrierGuard(CARRIERS.with(|slot| slot.replace(chars)))
+    fn install_defaults() -> CarrierGuard {
+        DEFAULT_CARRIER_TOKENS.with(|defaults| {
+            let installed = CARRIERS.with(|slot| {
+                slot.borrow()
+                    .iter()
+                    .zip(defaults)
+                    .all(|(current, default)| Rc::ptr_eq(current, default))
+            });
+            if installed {
+                CarrierGuard(None)
+            } else {
+                CarrierGuard::install(defaults.clone())
+            }
+        })
+    }
+
+    fn install(chars: [Rc<String>; CARRIER_COUNT]) -> CarrierGuard {
+        CarrierGuard(Some(CARRIERS.with(|slot| slot.replace(chars))))
     }
 }
 
 impl Drop for CarrierGuard {
     fn drop(&mut self) {
-        CARRIERS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.0));
+        if let Some(markers) = self.0.take() {
+            CARRIERS.with(|slot| *slot.borrow_mut() = markers);
+        }
     }
 }
 
@@ -2764,21 +2794,38 @@ struct CarrierToken<'a> {
 
 fn carrier_tokens<'a>(
     text: &'a str,
-    markers: &'a [String; CARRIER_COUNT],
+    markers: &'a [Rc<String>; CARRIER_COUNT],
 ) -> impl Iterator<Item = CarrierToken<'a>> + 'a {
     let mut offset = 0;
+    let first_characters: [char; CARRIER_COUNT] =
+        std::array::from_fn(|index| markers[index].chars().next().unwrap());
+    let single_characters = markers
+        .iter()
+        .zip(first_characters)
+        .all(|(marker, character)| marker.len() == character.len_utf8());
+    debug_assert!(first_characters
+        .iter()
+        .all(|character| !character.is_ascii()));
     std::iter::from_fn(move || {
         if offset == text.len() {
             return None;
         }
         let rest = &text[offset..];
-        let slot = markers.iter().position(|marker| rest.starts_with(marker));
+        let authored = rest.chars().next().unwrap();
+        let slot = if authored.is_ascii() {
+            None
+        } else if single_characters {
+            first_characters
+                .iter()
+                .position(|character| *character == authored)
+        } else {
+            markers
+                .iter()
+                .position(|marker| rest.starts_with(marker.as_str()))
+        };
         let (character, width) = match slot {
             Some(index) => (carried_character(index), markers[index].len()),
-            None => {
-                let ch = rest.chars().next().unwrap();
-                (ch, ch.len_utf8())
-            }
+            None => (authored, authored.len_utf8()),
         };
         let raw = &text[offset..offset + width];
         offset += width;
@@ -2790,7 +2837,7 @@ fn carrier_tokens<'a>(
     })
 }
 
-fn carrier(which: usize) -> String {
+fn carrier(which: usize) -> Rc<String> {
     CARRIERS.with(|slot| slot.borrow()[which].clone())
 }
 
@@ -2811,6 +2858,9 @@ fn note_inserted(which: usize) {
 /// answer is a SET bounded by the private-use area - not the document's text
 /// joined, which would be a second full copy of it.
 fn note_assembled(text: &str) {
+    if text.is_ascii() {
+        return;
+    }
     let mut seen = SEEN.with(std::cell::Cell::get);
     OCCUPIED.with(|occupied| {
         crate::sentinel_run::collect_private_use(text, &mut occupied.borrow_mut());
@@ -2820,16 +2870,33 @@ fn note_assembled(text: &str) {
         TOKEN_FAMILY.get_or_init(|| regex::Regex::new(r"§m([0-9]{1,20}):[0-9]§").unwrap());
     OCCUPIED_TOKEN_NONCES.with(|nonces| {
         let mut nonces = nonces.borrow_mut();
-        for matched in pattern.captures_iter(text) {
-            if let Ok(nonce) = matched[1].parse::<usize>() {
-                nonces.insert(nonce);
+        if text.contains('§') {
+            for matched in pattern.captures_iter(text) {
+                if let Ok(nonce) = matched[1].parse::<usize>() {
+                    nonces.insert(nonce);
+                }
             }
         }
     });
     CARRIERS.with(|slot| {
-        for token in carrier_tokens(text, &slot.borrow()) {
-            if let Some(index) = token.slot {
-                seen[index] += 1;
+        let markers = slot.borrow();
+        let characters: [char; CARRIER_COUNT] =
+            std::array::from_fn(|index| markers[index].chars().next().unwrap());
+        if markers
+            .iter()
+            .zip(characters)
+            .all(|(marker, character)| marker.len() == character.len_utf8())
+        {
+            for character in text.chars().filter(|character| !character.is_ascii()) {
+                if let Some(index) = characters.iter().position(|marker| *marker == character) {
+                    seen[index] += 1;
+                }
+            }
+        } else {
+            for token in carrier_tokens(text, &markers) {
+                if let Some(index) = token.slot {
+                    seen[index] += 1;
+                }
             }
         }
     });
@@ -2859,7 +2926,7 @@ fn authored_defers_to_the_line(ch: char) -> bool {
 }
 
 /// The carrier for an escape the position test decides, counted as inserted.
-fn positional_sentinel() -> String {
+fn positional_sentinel() -> Rc<String> {
     note_inserted(C_POSITIONAL_HASH);
     carrier(C_POSITIONAL_HASH)
 }
@@ -2869,7 +2936,7 @@ fn positional_sentinel() -> String {
 /// Takes the run rather than reading the thread-local, because both callers ask
 /// once per character of the assembled document and the run cannot move under
 /// them mid-pass.
-fn carrier_slot(carriers: &[String; CARRIER_COUNT], ch: char) -> Option<usize> {
+fn carrier_slot(carriers: &[Rc<String>; CARRIER_COUNT], ch: char) -> Option<usize> {
     carriers.iter().position(|current| current.chars().eq([ch]))
 }
 
@@ -3047,21 +3114,44 @@ fn opens_char_ref(rest: &str) -> bool {
 
 fn normalize(text: &str) -> String {
     let carriers = CARRIERS.with(|slot| slot.borrow().clone());
-    let mut out = String::new();
+    let mut out = String::with_capacity(text.len());
     let mut newlines = 0usize;
-    let mut payload = false;
-    for token in carrier_tokens(text, &carriers) {
-        if token.slot == Some(C_PAYLOAD_BOUNDARY) {
-            payload = !payload;
-            out.push_str(token.raw);
-        } else if token.character == '\n' {
-            newlines += 1;
-            if payload || newlines <= 2 {
-                out.push_str(token.raw);
+    for (index, chunk) in text
+        .split(carriers[C_PAYLOAD_BOUNDARY].as_str())
+        .enumerate()
+    {
+        if index > 0 {
+            out.push_str(&carriers[C_PAYLOAD_BOUNDARY]);
+        }
+        if index % 2 == 1 {
+            out.push_str(chunk);
+            let trailing = chunk
+                .bytes()
+                .rev()
+                .take_while(|byte| *byte == b'\n')
+                .count();
+            newlines = if trailing == chunk.len() {
+                newlines + trailing
+            } else {
+                trailing
+            };
+            continue;
+        }
+        let mut cursor = 0;
+        for (at, _) in chunk.match_indices('\n') {
+            if at > cursor {
+                out.push_str(&chunk[cursor..at]);
+                newlines = 0;
             }
-        } else {
+            newlines += 1;
+            if newlines <= 2 {
+                out.push('\n');
+            }
+            cursor = at + 1;
+        }
+        if cursor < chunk.len() {
+            out.push_str(&chunk[cursor..]);
             newlines = 0;
-            out.push_str(token.raw);
         }
     }
     let collapsed = format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '));
@@ -3226,12 +3316,18 @@ fn starts_a_list_item(text: &[char], line_start: usize) -> bool {
 
 /// Resolve the narrowed escapes: PART 11 §8a, M1b.
 fn resolve_narrowed_escapes(text: &str) -> String {
+    if text.is_ascii() {
+        return text.to_string();
+    }
     // READ ONCE. The carriers are a property of the render, not of the
     // character, and this pass asks about every character of the assembled
     // document - twice before the loop even starts.
     let carriers = CARRIERS.with(|slot| slot.borrow().clone());
-    if !carriers.iter().any(|marker| text.contains(marker)) {
-        return text.to_string();
+    if !carriers[..C_PAYLOAD_BOUNDARY]
+        .iter()
+        .any(|marker| text.contains(marker.as_str()))
+    {
+        return text.replace(carriers[C_PAYLOAD_BOUNDARY].as_str(), "");
     }
     let tokens: Vec<_> = carrier_tokens(text, &carriers)
         .filter(|token| token.slot != Some(C_PAYLOAD_BOUNDARY))
