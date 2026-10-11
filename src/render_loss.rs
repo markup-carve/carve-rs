@@ -94,6 +94,7 @@ impl std::fmt::Display for RenderLossError {
 }
 impl std::error::Error for RenderLossError {}
 
+#[derive(Clone)]
 struct Collector {
     target: RenderTarget,
     max: usize,
@@ -102,6 +103,18 @@ struct Collector {
     totals_by_code: BTreeMap<&'static str, usize>,
 }
 thread_local! { static COLLECTOR: RefCell<Option<Collector>> = const { RefCell::new(None) }; }
+
+pub(crate) struct LossCheckpoint(Option<Collector>);
+
+pub(crate) fn checkpoint() -> LossCheckpoint {
+    LossCheckpoint(COLLECTOR.with(|slot| slot.borrow().clone()))
+}
+
+impl LossCheckpoint {
+    pub(crate) fn restore(self) {
+        COLLECTOR.with(|slot| *slot.borrow_mut() = self.0);
+    }
+}
 
 pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<Pos>) {
     COLLECTOR.with(|slot| {
