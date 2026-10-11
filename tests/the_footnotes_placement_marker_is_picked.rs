@@ -452,3 +452,61 @@ fn an_extension_placement_with_an_exhausted_pool_preserves_authored_text() {
     assert!(html.find("</details>").unwrap() < html.find("doc-endnotes").unwrap());
     assert_eq!(to_html("clean"), "<p>clean</p>");
 }
+
+#[test]
+fn marker_retry_reports_each_html_loss_once() {
+    let source = format!(
+        "```\n{}\n```\n\n`one`{{=latex}} and `two`{{=typst}}\n",
+        full_private_use_text()
+    );
+    let document = parse(&source);
+    let report = carve::with_render_loss_report(
+        carve::RenderTarget::Html,
+        carve::CheckedRenderOptions::default(),
+        || render_html(&document).unwrap(),
+    )
+    .unwrap();
+    assert!(report.value.contains(&full_private_use_text()));
+    assert_eq!(report.total_losses, 2);
+    assert_eq!(report.totals_by_code.get("raw-format-dropped"), Some(&2));
+    assert_eq!(report.losses.len(), 2);
+    let capped = carve::with_render_loss_report(
+        carve::RenderTarget::Html,
+        carve::CheckedRenderOptions {
+            strict: false,
+            max_losses: 0,
+        },
+        || render_html(&document).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(capped.total_losses, 2);
+    assert_eq!(capped.totals_by_code.get("raw-format-dropped"), Some(&2));
+    assert!(capped.losses.is_empty());
+    assert!(capped.truncated);
+    let strict = carve::with_render_loss_report(
+        carve::RenderTarget::Html,
+        carve::CheckedRenderOptions {
+            strict: true,
+            max_losses: 1,
+        },
+        || render_html(&document).unwrap(),
+    )
+    .unwrap_err();
+    assert_eq!(strict.total_losses, 2);
+    assert_eq!(strict.totals_by_code.get("raw-format-dropped"), Some(&2));
+    assert_eq!(strict.losses.len(), 1);
+    assert!(strict.truncated);
+}
+
+#[test]
+fn an_exhausted_pool_preserves_authored_short_marker_nonces() {
+    let pool: String = (0xe001..=0xf8ff)
+        .map(|code| char::from_u32(code).unwrap())
+        .collect();
+    let authored = format!("{pool}\u{e009}m0:html\u{e00a}\u{e009}m1:html\u{e00a}");
+    let doc = with_authored_text("X[^a].\n\n::: footnotes\n:::\n\n[^a]: note\n", &authored);
+    let html = render_html(&doc).unwrap();
+    assert!(html.contains(&authored));
+    assert_eq!(html.matches("doc-endnotes").count(), 1);
+    assert!(!html.contains("<div class=\"footnotes\"></div>"));
+}
