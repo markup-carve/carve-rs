@@ -322,7 +322,6 @@ pub(crate) fn transform_blocks(
         match block {
             BlockNode::CodeBlock(code) if claims(code, opts) => {
                 *block = BlockNode::RawBlock(RawBlock {
-                    content_terminated: None,
                     attrs: None,
                     format: "html".into(),
                     content: rendered_html(code, opts, mode),
@@ -362,7 +361,6 @@ pub(crate) fn transform_blocks(
                 match &mut *f.target {
                     FigureTarget::CodeBlock(code) if claims(code, opts) => {
                         f.rendered_target = Some(Box::new(RawBlock {
-                            content_terminated: None,
                             attrs: None,
                             format: "html".into(),
                             content: rendered_html(code, opts, mode),

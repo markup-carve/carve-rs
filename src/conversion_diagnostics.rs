@@ -192,11 +192,18 @@ pub fn conversion_diagnostics(
                         Some("blocks"),
                         "Carve source has no block content in a table cell",
                     )),
-                    Some("raw_block") if object.get("contentTerminated") == Some(&Value::Bool(false)) => losses.push((
-                        ConversionDiagnosticCode::FieldUnspellable,
-                        Some("contentTerminated"),
-                        "Carve source cannot preserve raw payload termination before a closing fence",
-                    )),
+                    Some("raw_block")
+                        if object
+                            .get("content")
+                            .and_then(Value::as_str)
+                            .is_some_and(crate::ast::fenced_payload_needs_ending) =>
+                    {
+                        losses.push((
+                            ConversionDiagnosticCode::FieldUnspellable,
+                            Some("content"),
+                            "A closed raw fence requires a final payload line ending",
+                        ))
+                    }
                     _ => {}
                 }
                 if matches!(ty, Some("table" | "figure")) && object.contains_key("shortCaption") {

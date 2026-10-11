@@ -30,7 +30,7 @@ fn ast_json_carries_and_reads_back_the_attrs() {
     let json = to_json(&parse(SOURCE));
     assert_eq!(
         json,
-        r##"{"type":"document","children":[{"type":"raw_block","format":"html","content":"<p>raw</p>","attrs":{"id":"r","classes":["x"],"order":["#id",".class"]}}],"srcByteLength":32}"##
+        r##"{"type":"document","children":[{"type":"raw_block","format":"html","content":"<p>raw</p>\n","attrs":{"id":"r","classes":["x"],"order":["#id",".class"]}}],"srcByteLength":32}"##
     );
     let decoded = from_json(&json).expect("the encoded tree decodes");
     assert_eq!(to_json(&decoded), json);
