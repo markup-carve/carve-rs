@@ -1853,3 +1853,6 @@ mod smart_quote_rules;
 mod a_djot_table_caption_and_an_empty_note_body_survive_import;
 #[path = "../quotes_only_typography.rs"]
 mod quotes_only_typography;
+
+#[path = "../a_closed_marker_line_fence_ends_its_host.rs"]
+mod a_closed_marker_line_fence_ends_its_host;
