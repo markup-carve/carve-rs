@@ -1063,7 +1063,7 @@ impl<'a> Importer<'a> {
                 && (has_denied_url_scheme(&value)
                     || (!value.is_empty() && sanitize_attr_value(&name, &value).is_empty()));
             let (subject, reason, live) =
-                match Self::refusal(node, tag, &name, &value, &style_filled) {
+                match Self::refusal(node, tag, &name, &value, &style_filled, self.opts.mode) {
                     Some(refusal) => (refusal.subject, refusal.reason, refusal.live || denied),
                     None if denied => (format!("{name} with a denied URL scheme"), "", true),
                     None => continue,
@@ -1787,6 +1787,7 @@ impl<'a> Importer<'a> {
         name: &str,
         value: &str,
         style_filled: &BTreeSet<&'static str>,
+        mode: HtmlImportMode,
     ) -> Option<Refusal> {
         // THE REFUSAL IS DERIVED, NOT ENUMERATED. `is_dangerous_attr_name`
         // is the PART 9 §25 name filter the HTML renderer already
@@ -1853,7 +1854,7 @@ impl<'a> Importer<'a> {
                 live: false,
             });
         }
-        if Self::is_consumed_attribute(handle, tag, name) {
+        if Self::is_consumed_attribute(handle, tag, name, mode) {
             return None;
         }
         if let Some(canonical) = crate::roundtrip::canonical(name) {
@@ -1928,7 +1929,7 @@ impl<'a> Importer<'a> {
     /// CONSUMED by the branch that builds this node, and written back from
     /// there. Keeping it as an attribute as well would spell the same string
     /// twice, and diagnosing it would name a loss that does not happen.
-    fn is_consumed_attribute(handle: &Handle, tag: &str, name: &str) -> bool {
+    fn is_consumed_attribute(handle: &Handle, tag: &str, name: &str, mode: HtmlImportMode) -> bool {
         matches!(
             (tag, name),
             ("a", "href")
@@ -1951,19 +1952,15 @@ impl<'a> Importer<'a> {
                 | ("math", "display" | "alttext" | "xmlns")
         ) || (tag == "li" && name == "data-task-state" && Self::reads_task_state(handle))
             || (tag == "ol" && name == "data-delim" && Self::reads_delim(handle))
-            || Self::reads_carrier(handle, tag, name)
+            || Self::reads_carrier(handle, tag, name, mode)
     }
 
     /// Whether the branch building this node READS the PART 10 §13a carrier
     /// `name`, so the attribute policy neither keeps it nor reports it dropped.
     ///
-    /// Consuming a carrier reconstructs syntax the AST can already express,
-    /// which is not a trust decision, so this is NOT mode-gated (ruling
-    /// markup-carve/carve#2902 question 5). A carrier this engine does not yet
-    /// reconstruct is not listed here: it falls through to `refusal`, which
-    /// reports it dropped rather than letting a reserved name back into the
-    /// document.
-    fn reads_carrier(handle: &Handle, tag: &str, name: &str) -> bool {
+    /// Raw HTML reconstruction follows the selected trust mode (§13b).
+    /// Other recognized carriers retain their grammar checks in every mode.
+    fn reads_carrier(handle: &Handle, tag: &str, name: &str, mode: HtmlImportMode) -> bool {
         let Some(canonical) = crate::roundtrip::canonical(name) else {
             return false;
         };
@@ -1983,7 +1980,9 @@ impl<'a> Importer<'a> {
                     && Self::reads_explicit_id(handle)
             }
             crate::roundtrip::AUTOLINK => tag == "a" && Self::reads_autolink(handle),
-            crate::roundtrip::RAW => tag == "span" && Self::reads_raw_format(handle).is_some(),
+            crate::roundtrip::RAW => {
+                tag == "span" && Self::reads_raw_format(handle, mode).is_some()
+            }
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
             _ => false,
         }
@@ -2020,10 +2019,11 @@ impl<'a> Importer<'a> {
     }
 
     /// The `<span data-carve-raw>` format, where the value spells one.
-    fn reads_raw_format(span: &Handle) -> Option<String> {
+    fn reads_raw_format(span: &Handle, mode: HtmlImportMode) -> Option<String> {
         Self::carrier(span, crate::roundtrip::RAW)
             .map(|v| v.trim().to_owned())
             .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+            .filter(|v| !v.eq_ignore_ascii_case("html") || mode == HtmlImportMode::Roundtrip)
     }
 
     /// The one character a `<span data-carve-escaped>` escaped.
@@ -2121,7 +2121,7 @@ impl<'a> Importer<'a> {
                     // CSS mapping is its reading, not a drop.
                     self.map_style(handle, path, &tag, &value, &mut out);
                 } else if let Some(refusal) =
-                    Self::refusal(handle, &tag, &name, &value, &style_filled)
+                    Self::refusal(handle, &tag, &name, &value, &style_filled, self.opts.mode)
                 {
                     self.refuse_attribute(handle, path, &tag, refusal);
                 } else if name == "id" {
@@ -2139,7 +2139,7 @@ impl<'a> Importer<'a> {
                     // would spell the same string twice - and diagnosing it as
                     // dropped, which is where `datetime` used to land, would
                     // report a loss that no longer happens (carve#1140).
-                } else if Self::is_consumed_attribute(handle, &tag, &name) {
+                } else if Self::is_consumed_attribute(handle, &tag, &name, self.opts.mode) {
                     // Written back by the branch that builds the node.
                 } else {
                     // EVERYTHING ELSE IS KEPT. Carve's attribute syntax can
@@ -6611,8 +6611,8 @@ impl<'a> Importer<'a> {
             }),
             // PART 10 §13a `data-carve-raw`: the span carries the format and
             // holds the content, which is how a `=latex` run survives HTML.
-            "span" if Self::reads_raw_format(h).is_some() => {
-                let format = Self::reads_raw_format(h).unwrap_or_default();
+            "span" if Self::reads_raw_format(h, self.opts.mode).is_some() => {
+                let format = Self::reads_raw_format(h, self.opts.mode).unwrap_or_default();
                 let content = if format == "html" {
                     Self::inner_html(h)
                 } else {
