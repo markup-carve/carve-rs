@@ -8586,6 +8586,8 @@ struct NestedLevel {
     by_fence: bool,
     colons: Vec<(usize, usize)>,
     by_colon: bool,
+    colon_absorption: bool,
+    host_verse: Option<(usize, usize)>,
     fence_ordinal: usize,
 }
 
@@ -8639,6 +8641,7 @@ impl NestedFenceReplay {
                     }
                     chain[level].by_fence = true;
                     chain[level].para = false;
+                    chain[level].colon_absorption = false;
                     chain.truncate(level + 1);
                     return;
                 }
@@ -8660,9 +8663,27 @@ impl NestedFenceReplay {
                 chain.truncate(level + 1);
                 return;
             }
+            if let Some((width, column)) = chain[level].host_verse {
+                if !is_blank_line(text) && indent_columns(text) < column {
+                    chain[level].host_verse = None;
+                } else {
+                    if indent_columns(text) == column
+                        && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
+                    {
+                        chain[level].host_verse = None;
+                        chain[level].by_colon = true;
+                    }
+                    chain[level].para = false;
+                    chain[level].colon_absorption = false;
+                    chain.truncate(level + 1);
+                    return;
+                }
+            }
             if let Some(rest) = strip_blockquote_prefix(text) {
                 chain[level].hosts.clear();
+                chain[level].colons.clear();
                 chain[level].para = false;
+                chain[level].colon_absorption = false;
                 chain[level].by_fence = false;
                 if chain.len() == level + 1 {
                     chain.push(NestedLevel::default());
@@ -8687,12 +8708,22 @@ impl NestedFenceReplay {
             let here = &mut chain[level];
             here.by_fence = false;
             here.by_colon = false;
+            if !is_blank_line(text) {
+                while here
+                    .colons
+                    .last()
+                    .is_some_and(|&(_, col)| col > indent_columns(text))
+                {
+                    here.colons.pop();
+                }
+            }
             if let Some(&(width, column)) = here.colons.last() {
                 if indent_columns(text) == column
                     && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
                 {
                     here.colons.pop();
                     here.para = false;
+                    here.colon_absorption = false;
                     here.by_colon = true;
                     return;
                 }
@@ -8728,11 +8759,18 @@ impl NestedFenceReplay {
                     break;
                 }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
-                if block_start || !here.para {
-                    if let Some(open) = detect_container_open(inner).filter(|_| floor > 0) {
+                if !here.colon_absorption && floor > 0 && col == floor {
+                    if let Some(width) = detect_line_block_open(inner) {
+                        here.host_verse = Some((width, col));
+                        here.para = false;
+                        return;
+                    }
+                    if let Some(open) =
+                        detect_container_open(inner).filter(|_| floor > 0 && col == floor)
+                    {
                         here.colons.push((open.fence_len, col));
                         here.para = false;
-                        here.by_colon = true;
+                        here.colon_absorption = false;
                         return;
                     }
                 }
@@ -8753,6 +8791,7 @@ impl NestedFenceReplay {
                         here.fence_ordinal = self.fence_count;
                         here.host_fence = Some((open, floor, col));
                         here.para = false;
+                        here.colon_absorption = false;
                         here.by_fence = true;
                         return;
                     }
@@ -8766,6 +8805,7 @@ impl NestedFenceReplay {
                     here.fence_ordinal = self.fence_count;
                     here.fence = Some(open);
                     here.para = false;
+                    here.colon_absorption = false;
                     here.by_fence = true;
                     return;
                 }
@@ -8776,7 +8816,13 @@ impl NestedFenceReplay {
                     here.comment = Some(len);
                 }
             }
-            here.para = ParaOpen::from_line(text, false).get();
+            let mut paragraph = ParaOpen::from_line(text, here.colon_absorption);
+            here.para = paragraph.get();
+            here.colon_absorption = here.para
+                && (here.colon_absorption
+                    || is_invalid_colon_fence_opener_text(trim_ascii_start(
+                        innermost_marker_content(text),
+                    )));
             return;
         }
     }
