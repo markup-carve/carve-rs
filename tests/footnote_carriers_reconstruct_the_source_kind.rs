@@ -105,10 +105,13 @@ fn inline_carriers_with_multiple_references_fall_back_to_one_definition() {
             "<li id=\"fn1\"",
             "<li data-carve-inline-footnote=\"1\" id=\"fn1\"",
         )
-        .replace(" data-carve-footnote-label=\"label\"", "");
+        .replace(
+            "<li data-carve-inline-footnote=\"1\" id=\"fn1\" data-carve-footnote-label=\"label\"",
+            "<li data-carve-inline-footnote=\"1\" id=\"fn1\"",
+        );
     let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
     assert_eq!(result.value.matches("note").count(), 1, "{}", result.value);
-    assert!(result.value.contains("[^1]: note"));
+    assert!(result.value.contains("[^label]: note"));
     assert!(!result.report.diagnostics.is_empty());
 }
 
@@ -156,16 +159,16 @@ fn contradictory_endnote_carriers_restore_an_ordinary_numbered_note() {
                     )
                     .unwrap();
                     assert_eq!(result.value, "[^1]\n\n[^1]: body\n", "{html}");
-                    assert!(
-                        result
-                            .report
-                            .diagnostics
-                            .iter()
-                            .any(|diagnostic| diagnostic.code
-                                == carve::HtmlImportDiagnosticCode::AttributeDropped),
-                        "{:?}",
-                        result.report
+                    assert_eq!(result.report.diagnostics.len(), 1, "{:?}", result.report);
+                    let diagnostic = &result.report.diagnostics[0];
+                    assert_eq!(
+                        diagnostic.code,
+                        carve::HtmlImportDiagnosticCode::AttributeDropped
                     );
+                    assert_eq!(diagnostic.severity.as_str(), "warning");
+                    assert_eq!(diagnostic.fidelity.as_str(), "dropped");
+                    assert_eq!(diagnostic.confidence.as_str(), "exact");
+                    assert_eq!(diagnostic.path.as_deref(), Some("footnote"));
                     let exported = to_html_with_options(
                         &result.value,
                         &Options::default().with_roundtrip(true),
@@ -229,6 +232,40 @@ fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
                 "{}: {wire}",
                 case["name"]
             );
+        }
+    }
+}
+
+#[test]
+fn rejected_carriers_do_not_reserve_another_notes_fallback_number() {
+    for label_prefix in ["data-carve-", "data-djot-"] {
+        for inline_prefix in ["data-carve-", "data-djot-"] {
+            for mode in [
+                HtmlImportMode::Safe,
+                HtmlImportMode::Semantic,
+                HtmlImportMode::Roundtrip,
+            ] {
+                let html = format!(
+                    r##"<p><a href="#fn1" role="doc-noteref">1</a> <a href="#fn2" role="doc-noteref" {label_prefix}footnote-label="1">2</a></p><section role="doc-endnotes"><ol><li id="fn1" role="doc-endnote"><p>first</p></li><li id="fn2" role="doc-endnote" {label_prefix}footnote-label="1" {inline_prefix}inline-footnote="1"><p>second</p></li></ol></section>"##
+                );
+                let result = html_to_carve(
+                    &html,
+                    &HtmlImportOptions {
+                        mode,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert_eq!(
+                    result.value, "[^1] [^2]\n\n[^1]: first\n\n[^2]: second\n",
+                    "{html}"
+                );
+                assert_eq!(result.report.diagnostics.len(), 1, "{:?}", result.report);
+                assert_eq!(
+                    result.report.diagnostics[0].code,
+                    carve::HtmlImportDiagnosticCode::AttributeDropped
+                );
+            }
         }
     }
 }
