@@ -15,7 +15,7 @@ use crate::extension::{
 };
 use crate::parse::{label_key, unwrap_nested_anchors};
 use crate::table_spans::{ColspanPlan, TableSpanPlan};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
@@ -145,13 +145,16 @@ fn render_prepared_html(
     crossref_index: crate::parse::CrossrefIndex,
     needs_document_ids: bool,
 ) -> String {
+    let losses = crate::render_loss::checkpoint();
+    let mut default_buffer = [0; 4];
+    let default_marker = FOOTNOTES_PLACEMENT_DEFAULT.encode_utf8(&mut default_buffer);
     let (first, crossref_index) = render_html_pass(
         doc,
         footnotes,
         options,
         crossref_index,
         needs_document_ids,
-        FOOTNOTES_PLACEMENT_DEFAULT,
+        default_marker,
     );
     if first.seen == first.emitted {
         return first.html;
@@ -165,7 +168,7 @@ fn render_prepared_html(
     // marker is free of both) and render again.
     //
     // A THIRD PASS CANNOT BE NEEDED: the retry runs the same code over the same
-    // tree, and the only thing that differs is a code point the assembled
+    // tree, and the only thing that differs is a marker the assembled
     // document does not contain. Same shape, and the same reasoning, as the
     // Markdown target's carrier retry in `render_markdown_inner`.
     let picked = crate::sentinel_run::pick_sentinel_run::<1>(
@@ -175,13 +178,30 @@ fn render_prepared_html(
             .expect("collected when seen differs from emitted"),
         u32::from(FOOTNOTES_PLACEMENT_DEFAULT),
     )[0];
+    let picked = if first
+        .occupied
+        .as_ref()
+        .is_some_and(|set| set.contains(&u32::from(picked)))
+    {
+        let nonces = first
+            .nonce_cores
+            .as_ref()
+            .expect("collected before the splice");
+        let nonce = (0..=nonces.len())
+            .find(|nonce| !nonces.contains(nonce))
+            .unwrap();
+        format!("\u{e009}m{nonce}:html\u{e00a}")
+    } else {
+        picked.to_string()
+    };
+    losses.restore();
     let (second, _) = render_html_pass(
         doc,
         footnotes,
         options,
         crossref_index,
         needs_document_ids,
-        picked,
+        &picked,
     );
     second.html
 }
@@ -201,6 +221,7 @@ struct HtmlPass {
     /// held, collected only when `seen` differed from `emitted` and only from
     /// the text as it stood BEFORE the splice consumed a marker.
     occupied: Option<std::collections::BTreeSet<u32>>,
+    nonce_cores: Option<std::collections::BTreeSet<usize>>,
 }
 
 /// Render `doc` with `marker` standing for a `::: footnotes` placement block,
@@ -211,7 +232,7 @@ fn render_html_pass(
     options: &Options<'_>,
     crossref_index: crate::parse::CrossrefIndex,
     needs_document_ids: bool,
-    marker: char,
+    marker: &str,
 ) -> (HtmlPass, crate::parse::CrossrefIndex) {
     let _abbr_guard = AbbrBudgetGuard::for_document(doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
@@ -269,6 +290,20 @@ fn render_html_pass(
         }
         set
     });
+    let nonce_cores = occupied
+        .as_ref()
+        .filter(|set| {
+            set.len()
+                == (crate::sentinel_run::POOL_LAST - crate::sentinel_run::POOL_FIRST + 1) as usize
+        })
+        .map(|_| {
+            let mut nonces = std::collections::BTreeSet::new();
+            crate::sentinel_run::collect_marker_nonce_cores(&html, &mut nonces);
+            if let Some(section) = &section {
+                crate::sentinel_run::collect_marker_nonce_cores(section, &mut nonces);
+            }
+            nonces
+        });
     if let Some(section) = section {
         // `::: footnotes` placement: every footnote is numbered by now, so flush
         // the endnotes at the marker instead of appending at the end. A
@@ -293,6 +328,7 @@ fn render_html_pass(
         emitted,
         seen,
         occupied,
+        nonce_cores,
     };
     (pass, state.crossref_index)
 }
@@ -335,7 +371,7 @@ thread_local! {
     /// be the default again inside it while the outer render looked for the
     /// picked one.
     #[allow(clippy::missing_const_for_thread_local)]
-    static FOOTNOTES_PLACEMENT: Cell<char> = const { Cell::new(FOOTNOTES_PLACEMENT_DEFAULT) };
+    static FOOTNOTES_PLACEMENT: RefCell<String> = RefCell::new(FOOTNOTES_PLACEMENT_DEFAULT.to_string());
 
     /// How many placement markers the render running on this thread has WRITTEN,
     /// which is what a count of markers standing in the output is compared
@@ -347,12 +383,12 @@ thread_local! {
 /// Install `marker` for the duration of one pass, restoring the previous marker
 /// and emission count on drop (panic unwind included), so a nested render leaves
 /// the outer one exactly as it found it.
-struct FootnotesPlacementGuard(char, usize);
+struct FootnotesPlacementGuard(String, usize);
 
 impl FootnotesPlacementGuard {
-    fn install(marker: char) -> FootnotesPlacementGuard {
+    fn install(marker: &str) -> FootnotesPlacementGuard {
         FootnotesPlacementGuard(
-            FOOTNOTES_PLACEMENT.with(|slot| slot.replace(marker)),
+            FOOTNOTES_PLACEMENT.with(|slot| slot.replace(marker.to_string())),
             PLACEMENTS_EMITTED.with(|slot| slot.replace(0)),
         )
     }
@@ -360,14 +396,11 @@ impl FootnotesPlacementGuard {
 
 impl Drop for FootnotesPlacementGuard {
     fn drop(&mut self) {
-        FOOTNOTES_PLACEMENT.with(|slot| slot.set(self.0));
+        FOOTNOTES_PLACEMENT.with(|slot| {
+            *slot.borrow_mut() = std::mem::take(&mut self.0);
+        });
         PLACEMENTS_EMITTED.with(|slot| slot.set(self.1));
     }
-}
-
-/// The placement marker the render currently running writes.
-fn footnotes_placement_marker() -> char {
-    FOOTNOTES_PLACEMENT.with(Cell::get)
 }
 
 /// Render a fragment that is HANDED TO AN EXTENSION, and do not count the
@@ -395,21 +428,21 @@ pub(crate) fn without_placement_accounting<R>(render: impl FnOnce() -> R) -> R {
 
 /// Write one placement marker, and record that this render wrote it.
 fn push_footnotes_placement_marker(out: &mut String) {
-    out.push(footnotes_placement_marker());
+    FOOTNOTES_PLACEMENT.with(|slot| out.push_str(&slot.borrow()));
     PLACEMENTS_EMITTED.with(|slot| slot.set(slot.get() + 1));
 }
 
 /// Relocate the endnotes section to the first `::: footnotes` marker; any
 /// additional markers degrade to an empty placeholder so a second block never
 /// duplicates the section.
-fn place_footnotes_section(html: String, section: &str, marker: char) -> String {
+fn place_footnotes_section(html: String, section: &str, marker: &str) -> String {
     let Some(pos) = html.find(marker) else {
         return html;
     };
     let mut out = String::with_capacity(html.len() + section.len());
     out.push_str(&html[..pos]);
     out.push_str(section);
-    out.push_str(&html[pos + marker.len_utf8()..]);
+    out.push_str(&html[pos + marker.len()..]);
     out.replace(marker, "<div class=\"footnotes\"></div>")
 }
 

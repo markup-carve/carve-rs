@@ -103,6 +103,39 @@ struct Collector {
 }
 thread_local! { static COLLECTOR: RefCell<Option<Collector>> = const { RefCell::new(None) }; }
 
+pub(crate) struct LossCheckpoint(Option<(usize, usize, BTreeMap<&'static str, usize>)>);
+
+pub(crate) fn checkpoint() -> LossCheckpoint {
+    LossCheckpoint(COLLECTOR.with(|slot| {
+        slot.borrow().as_ref().map(|collector| {
+            (
+                collector.total,
+                collector.losses.len(),
+                collector.totals_by_code.clone(),
+            )
+        })
+    }))
+}
+
+impl LossCheckpoint {
+    pub(crate) fn restore(self) {
+        COLLECTOR.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            match self.0 {
+                None => *slot = None,
+                Some((total, retained, totals_by_code)) => {
+                    let collector = slot
+                        .as_mut()
+                        .expect("render retry keeps its collector scope");
+                    collector.total = total;
+                    collector.losses.truncate(retained);
+                    collector.totals_by_code = totals_by_code;
+                }
+            }
+        });
+    }
+}
+
 pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<Pos>) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();
