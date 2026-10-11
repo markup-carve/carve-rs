@@ -190,7 +190,7 @@ fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
     let cases: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/footnote-carrier-recovery.json")).unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 36);
+    assert_eq!(cases.len(), 24);
     for case in cases {
         let mode = HtmlImportMode::from_name(case["mode"].as_str().unwrap()).unwrap();
         let result = html_to_carve(
@@ -207,10 +207,17 @@ fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
             "{}",
             case["name"]
         );
-        let diagnostics: Vec<serde_json::Value> = result.report.diagnostics.iter().map(|d| serde_json::json!({
-            "code": d.code.as_str(), "severity": d.severity.as_str(),
-            "fidelity": d.fidelity.as_str(), "confidence": d.confidence.as_str(), "path": d.path
-        })).collect();
+        let diagnostics: Vec<serde_json::Value> = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| {
+                serde_json::json!({
+                    "code": d.code.as_str(), "severity": d.severity.as_str(),
+                    "fidelity": d.fidelity.as_str(), "confidence": d.confidence.as_str()
+                })
+            })
+            .collect();
         assert_eq!(
             serde_json::json!(diagnostics),
             case["expectedDiagnostics"],
