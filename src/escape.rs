@@ -65,7 +65,7 @@ pub fn write_escaped_text(out: &mut String, input: &str) {
     write_escaped_text_inner(out, input);
 }
 
-fn write_escaped_text_inner(out: &mut String, input: &str) {
+pub(crate) fn write_escaped_text_inner(out: &mut String, input: &str) {
     let bytes = input.as_bytes();
     let Some(first) = memchr::memchr3(AMPERSAND, LESS_THAN, GREATER_THAN, bytes) else {
         out.push_str(input);

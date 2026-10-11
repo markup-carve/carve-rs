@@ -9,6 +9,7 @@ use crate::ast::*;
 use crate::escape::{
     escape_attr, escape_text, has_denied_url_scheme, is_dangerous_attr_name, is_valid_attr_name,
     sanitize_attr_value, sanitize_destination, write_escaped_attr, write_escaped_text,
+    write_escaped_text_inner,
 };
 use crate::extension::{
     HeadingIdOptions, Options, RenderContext, SocialLinkKind, SocialLinkResolverInput,
@@ -3914,17 +3915,15 @@ fn render_inline_after(
         }
         InlineNode::RawInline(r) => {
             let html = r.format.trim() == "html";
-            // PART 10 §13a: the span carries the raw inline's FORMAT and holds
-            // its content, which is the only way a `=latex` run survives a
-            // target that has no spelling for it. An `=html` run's content stays
-            // verbatim where raw HTML is allowed; every other format's content
-            // is escaped, matching carve-php under the same mode.
+            // PART 10 §13: carrier payload is escaped text. Trusted HTML keeps
+            // its payload bytes; the ordinary disabled-raw path still strips
+            // bidi controls through escape_text.
             if options.html_carriers() {
                 out.push_str("<span");
                 write_carrier(out, crate::roundtrip::RAW, &r.format, &None, r.pos.as_ref());
                 out.push('>');
                 if html && options.allow_raw_html {
-                    out.push_str(&r.content);
+                    write_escaped_text_inner(out, &r.content);
                 } else {
                     out.push_str(&escape_text(&r.content));
                 }

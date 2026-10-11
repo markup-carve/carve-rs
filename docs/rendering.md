@@ -178,7 +178,7 @@ assert_eq!(back.value, source);
 | `data-carve-autolink` | `<a>` | presence: authored as an autolink |
 | `data-carve-footnote-label` | `<a>`, `<li>` | the authored footnote label |
 | `data-carve-inline-footnote` | `<li>` | presence: the endnote was an inline footnote |
-| `data-carve-raw` | `<span>` | the raw inline's format; the span holds its content |
+| `data-carve-raw` | `<span>` | the raw inline's format; the span holds its content as escaped text |
 | `data-carve-escaped` | `<span>` | presence; the span holds the one escaped character |
 
 The prefix is `data-carve-`. Released carve-php versions wrote `data-djot-*`,

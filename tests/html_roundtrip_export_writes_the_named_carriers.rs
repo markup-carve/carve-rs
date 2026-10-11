@@ -156,7 +156,7 @@ fn an_inline_footnote_says_so_on_its_endnote() {
 fn a_raw_inline_carries_its_format_and_holds_its_content() {
     let html = rt("x `<b>h</b>`{=html} y `a<b`{=latex} z\n");
     assert!(
-        html.contains(r#"<span data-carve-raw="html"><b>h</b></span>"#),
+        html.contains(r#"<span data-carve-raw="html">&lt;b&gt;h&lt;/b&gt;</span>"#),
         "{html}"
     );
     // A format HTML has no spelling for: the content is ESCAPED, as carve-php
