@@ -82,6 +82,7 @@ pub(super) fn blocks(source: &str) -> String {
     let mut previous_blank = true;
     let mut in_heading = false;
     let mut in_quote = false;
+    let mut quote_paragraph_depth = None;
     for (n, raw) in lines.iter().enumerate() {
         let (indent, indent_bytes) = leading_indent(raw);
         let text = &raw[indent_bytes..];
@@ -106,6 +107,7 @@ pub(super) fn blocks(source: &str) -> String {
                     .map_or(0, |n| n + 1);
                 result.insert(before, format!("{prefix}{}", ":".repeat(width)));
                 paragraph = false;
+                quote_paragraph_depth = None;
             }
         }
         if block {
@@ -154,6 +156,7 @@ pub(super) fn blocks(source: &str) -> String {
             format!("{}{text}", " ".repeat(target_indent))
         };
         if raw.trim().is_empty() {
+            quote_paragraph_depth = None;
             paragraph = false;
             in_heading = false;
             in_quote = false;
@@ -193,10 +196,46 @@ pub(super) fn blocks(source: &str) -> String {
         if visible.starts_with('>')
             && (in_quote || !paragraph || n > 0 && masks[n - 1].trim_start().starts_with('>'))
         {
+            let (depth, body) = quoted(raw);
+            let block_body = body.trim_start();
+            if let Some(held) =
+                quote_paragraph_depth.filter(|&held| depth > held && !body.trim().is_empty())
+            {
+                let mut at = 0;
+                for _ in 0..held {
+                    let rest = &raw[at..];
+                    at += rest.len() - rest.trim_start_matches([' ', '\t']).len() + 1;
+                    if raw.as_bytes().get(at) == Some(&b' ') {
+                        at += 1;
+                    }
+                }
+                let mut literal = display.clone();
+                let at = if target_indent == indent {
+                    at
+                } else {
+                    at - indent_bytes + target_indent
+                };
+                literal.insert(at, '\\');
+                result.push(literal);
+                previous_blank = false;
+                continue;
+            }
+            if depth < quote_paragraph_depth.unwrap_or(depth)
+                && marker.is_match(block_body)
+                && !previous_blank
+            {
+                result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
+                quote_paragraph_depth = None;
+            }
+            quote_paragraph_depth = (!body.trim().is_empty()
+                && !heading.is_match(block_body)
+                && !marker.is_match(block_body)
+                && !block_body.starts_with(":::"))
+            .then_some(depth.max(quote_paragraph_depth.unwrap_or(depth)));
             result.push(display.clone());
             in_quote = true;
             paragraph = false;
-            previous_blank = false;
+            previous_blank = body.trim().is_empty();
             continue;
         }
         if !paragraph && definition_term(raw).is_some() {
@@ -217,6 +256,11 @@ pub(super) fn blocks(source: &str) -> String {
             }
         }
         if let Some(item) = marker.captures(visible).filter(|_| !thematic(text)) {
+            if in_quote && !previous_blank {
+                result.push(String::new());
+                in_quote = false;
+                quote_paragraph_depth = None;
+            }
             let previous_list = lists.last().cloned();
             let ends_nested = previous_list
                 .as_ref()
@@ -1169,11 +1213,12 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
     let mut findings: Vec<(usize, &'static str)> = Vec::new();
     let mut nested = Vec::new();
     emphasis::convert_with_losses(source, &emphasis_mask(source), str::to_owned, &mut nested);
-    findings.extend(
-        nested
-            .into_iter()
-            .map(|at| (at, "Emphasis exceeding the native nesting budget is flattened; its text is preserved.")),
-    );
+    findings.extend(nested.into_iter().map(|at| {
+        (
+            at,
+            "Emphasis exceeding the native nesting budget is flattened; its text is preserved.",
+        )
+    }));
     let definitions = loss_references(source, &mask);
     let references = reference_uses(source, &mask);
     let mut label_cache = HashMap::new();
@@ -1500,6 +1545,29 @@ mod tests {
         assert_eq!(
             crate::to_html(&value),
             "<blockquote><p>a</p></blockquote>\n<section id=\"a\">\n  <h1>a</h1>\n</section>"
+        );
+    }
+
+    #[test]
+    fn djot_list_after_quote_ends_the_container_paragraph() {
+        let value = migrate_djot("> a\n- *x*").value;
+        assert_eq!(
+            crate::to_html(&value),
+            "<blockquote><p>a</p></blockquote>\n<ul>\n  <li><strong>x</strong></li>\n</ul>"
+        );
+        let value = migrate_djot("> a\n> > b").value;
+        assert_eq!(
+            crate::to_html(&value),
+            "<blockquote><p>a\n&gt; b</p></blockquote>"
+        );
+        let value = migrate_djot("> > a\n> - *x*").value;
+        assert_eq!(crate::to_html(&value), "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <ul>\n    <li><strong>x</strong></li>\n  </ul>\n</blockquote>");
+        let value = migrate_djot("> > a\n>  - *x*").value;
+        assert_eq!(crate::to_html(&value), "<blockquote>\n  <blockquote><p>a</p></blockquote>\n  <ul>\n    <li><strong>x</strong></li>\n  </ul>\n</blockquote>");
+        let value = migrate_djot("> > a\n> b\n> > c").value;
+        assert_eq!(
+            crate::to_html(&value),
+            "<blockquote>\n  <blockquote><p>a\nb\nc</p></blockquote>\n</blockquote>"
         );
     }
 

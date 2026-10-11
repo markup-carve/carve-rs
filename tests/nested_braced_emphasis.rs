@@ -561,6 +561,14 @@ fn djot_container_depth_matches_equivalent_prefix_layouts() {
         .stack_size(32 * 1024 * 1024)
         .spawn(|| {
             for (left, right) in [
+                ("- ", "> a\n- "),
+                ("- b\n\n  > ", "> - a\n\n     - b\n\n       > "),
+                ("> a\n> ", "> a\n> > "),
+                ("- a\n  ", "- a\n  > "),
+                ("> - > ", "> - a\n>\n>   > "),
+                ("- > ", "- a\n\n  > "),
+                ("- > ::: note\n  > ", "- a\n\n  > ::: note\n  > "),
+                ("- :::: a\n  ::: b\n  ", ":::: a\n- ::: b\n  "),
                 ("- - ::: note\n    ", "- a\n\n  - b\n\n    ::: note\n    "),
                 ("- ::: note\n  ", "- a\n\n  - b\n\n  ::: note\n  "),
                 ("> ::: note\n> ", "- a\n> ::: note\n> "),
@@ -574,7 +582,12 @@ fn djot_container_depth_matches_equivalent_prefix_layouts() {
                         .map(|result| carve::to_html(&result.value));
                     assert!(
                         !html[0].contains("{*") && !html[1].contains("{*"),
-                        "{left:?} {right:?} {depth}"
+                        "{left:?} {right:?} {depth}: values {:?}; html prefixes {:?}",
+                        results
+                            .each_ref()
+                            .map(|r| r.value.chars().take(120).collect::<String>()),
+                        html.each_ref()
+                            .map(|h| h.chars().take(150).collect::<String>())
                     );
                     assert_eq!(
                         html[0].matches("<strong>").count(),
