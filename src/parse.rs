@@ -8440,10 +8440,23 @@ impl<'a> ParaOpen<'a> {
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     let (span_start, parts, _) = collect_blockquote_body(cur, options);
-    let children: Vec<BlockNode> = parts
-        .into_iter()
-        .flat_map(|part| parse_mapped_source(&part.into_source(), options))
-        .collect();
+    let mut children = Vec::new();
+    for part in parts {
+        let source = part.into_source();
+        let blocks = parse_mapped_source(&source, options);
+        drop(source);
+        children.extend(blocks);
+    }
+    finish_blockquote(cur, options, span_start, children)
+}
+
+#[inline(never)]
+fn finish_blockquote(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    span_start: usize,
+    children: Vec<BlockNode>,
+) -> Box<BlockNode> {
     let quote_pos = span_of(cur, span_start, cur.pos, options);
     // PART 9 §4d: a quote built out of nothing but structural-only `>` lines is
     // not a captionable host. It holds nothing the caption could be about, and
