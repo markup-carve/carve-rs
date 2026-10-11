@@ -1094,6 +1094,8 @@ mod html_import_ins_and_ol_type;
 mod html_import_list_tightness;
 #[path = "../html_import_mathml.rs"]
 mod html_import_mathml;
+#[path = "../html_import_reads_the_roundtrip_carriers.rs"]
+mod html_import_reads_the_roundtrip_carriers;
 #[path = "../html_import_roundtrip_heading_id.rs"]
 mod html_import_roundtrip_heading_id;
 #[path = "../html_import_roundtrip_sectioning_wrappers.rs"]

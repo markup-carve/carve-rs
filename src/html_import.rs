@@ -1747,6 +1747,17 @@ impl<'a> Importer<'a> {
         Self::attr(ol, "data-delim").as_deref() == Some(")")
     }
 
+    /// Whether an `<ol data-marker>` names the delimiter PART 10 §13a records.
+    ///
+    /// §13a lists `data-marker` on `<ul>` AND `<ol>`, and an ordered list's
+    /// authored marker is its delimiter. carve-php and carve-js both write it
+    /// there beside §12's `data-delim`; this engine's writer leaves the
+    /// delimiter to §12 alone, so the carrier arrives only in the other two
+    /// engines' documents - which is exactly why the READER has to take it.
+    fn reads_ordered_marker(ol: &Handle) -> bool {
+        Self::carrier(ol, crate::roundtrip::MARKER).as_deref() == Some(")")
+    }
+
     /// Whether `data-task-state` IS the item's state: one PART 10 §11 writes,
     /// an extended state on an EMPTY box or `x` on a CHECKED one
     /// (carve#2887). Anything else is the author's attribute.
@@ -1957,7 +1968,11 @@ impl<'a> Importer<'a> {
             return false;
         };
         match canonical {
-            crate::roundtrip::MARKER => tag == "ul" && Self::reads_bullet_char(handle).is_some(),
+            crate::roundtrip::MARKER => match tag {
+                "ul" => Self::reads_bullet_char(handle).is_some(),
+                "ol" => Self::reads_ordered_marker(handle),
+                _ => false,
+            },
             crate::roundtrip::CHAR => tag == "hr" && Self::reads_break_char(handle).is_some(),
             crate::roundtrip::REF => {
                 matches!(tag, "a" | "img")
@@ -3214,7 +3229,8 @@ impl<'a> Importer<'a> {
                 ol_type,
                 bare_marker: false,
                 // PART 10 §12, the only place the delimiter survives a render.
-                delim: (ordered && Self::reads_delim(h)).then_some(')'),
+                delim: (ordered && (Self::reads_delim(h) || Self::reads_ordered_marker(h)))
+                    .then_some(')'),
                 // PART 10 §13a `data-marker`: the bullet a `<ul>` was authored
                 // with, which the element itself does not spell.
                 bullet_char: (!ordered).then(|| Self::reads_bullet_char(h)).flatten(),
@@ -6665,6 +6681,32 @@ impl<'a> Importer<'a> {
     /// role-less document imports exactly as it did before. That is what lets
     /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
     /// it is what the shared fixtures are written over (carve-rs#1313).
+    /// The authored footnote label a §13a carrier names, where it names a
+    /// usable one.
+    ///
+    /// The endnote item is asked first and the references after it, because the
+    /// item is the definition and a reference only points at one. A label has
+    /// to be spellable inside `[^...]` and unique in the document: a value
+    /// holding whitespace, a bracket or a backslash would not reparse, and a
+    /// repeated one would merge two notes into one. Neither is a document this
+    /// serializer writes, so a carrier failing the test is malformed input and
+    /// the ordinal stands rather than the import failing.
+    fn carried_footnote_label(
+        definition: &FootnoteGroup,
+        taken: &HashSet<String>,
+    ) -> Option<String> {
+        std::iter::once(&definition.block)
+            .chain(definition.refs.iter())
+            .find_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
+            .filter(|label| {
+                !label.is_empty()
+                    && !taken.contains(label)
+                    && !label
+                        .chars()
+                        .any(|c| c.is_whitespace() || matches!(c, '[' | ']' | '\\'))
+            })
+    }
+
     fn adapter_footnotes(
         &mut self,
         root: &Handle,
@@ -6698,8 +6740,17 @@ impl<'a> Importer<'a> {
         let mut seen: HashSet<usize> = HashSet::new();
         let mut detached: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
 
+        let mut taken: HashSet<String> = HashSet::new();
         for (index, definition) in definitions.iter().enumerate() {
-            let label = (index + 1).to_string();
+            // PART 10 §13a `data-carve-footnote-label`: the AUTHORED label,
+            // written on the endnote item and on every reference to it. Without
+            // it the labels here are ordinals over document order, because an
+            // id is generated navigation - so `[^note]` came back as `[^1]`,
+            // silently, and two documents differing only in their labels
+            // imported identically.
+            let label = Self::carried_footnote_label(definition, &taken)
+                .unwrap_or_else(|| (index + 1).to_string());
+            taken.insert(label.clone());
             if index == 0 {
                 remove_footnote_separator(&definition.block);
             }
