@@ -55,3 +55,30 @@ fn source_and_ast_preserve_an_occupied_marker_pool() {
         assert_eq!(carve::to_carve("ordinary\n"), "ordinary\n");
     }
 }
+
+#[test]
+fn long_authored_runs_and_token_lookalikes_preserve_large_space_runs() {
+    let pool: String = (0xe000..=0xf8ff)
+        .map(|code| char::from_u32(code).unwrap())
+        .collect();
+    let lookalikes: String = (0..64)
+        .map(|nonce| format!("\u{e009}m{nonce}\u{e00a}"))
+        .collect();
+    let payload = format!("{pool}{lookalikes}{}", "\u{e008}".repeat(1024));
+    for source in [
+        format!("```\n{payload}{}\n\nlast\t\n```\n", " ".repeat(1024)),
+        format!("| {payload}{}\n| last\n", " ".repeat(1024)),
+    ] {
+        let result =
+            carve::to_carve_with_report(&source, carve::CheckedRenderOptions::default()).unwrap();
+        assert!(result.value.contains(&payload));
+        let mut before: serde_json::Value =
+            serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
+        let mut after: serde_json::Value =
+            serde_json::from_str(&carve::to_json(&carve::parse(&result.value))).unwrap();
+        semantic_tree(&mut before);
+        semantic_tree(&mut after);
+        assert_eq!(before, after);
+        assert_eq!(result.total_losses, 0);
+    }
+}

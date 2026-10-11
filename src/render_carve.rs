@@ -5645,21 +5645,21 @@ fn free_sentinel(text: &str, taken: &[String; SENTINEL_COUNT]) -> String {
     {
         return marker.to_string();
     }
-    let longest = text
-        .split(|ch| ch != '\u{e008}')
-        .map(|run| run.chars().count())
-        .max()
-        .unwrap_or(0);
-    let prefix = format!("\u{e009}{}", "\u{e008}".repeat(longest + 1));
-    (0..SENTINEL_COUNT)
-        .map(|index| {
-            format!(
-                "{prefix}{}\u{e00a}",
-                char::from_u32(0xe010 + index as u32).unwrap()
-            )
-        })
-        .find(|token| !taken.contains(token))
-        .expect("one token remains for the replaced slot")
+    static TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern =
+        TOKEN.get_or_init(|| regex::Regex::new("\u{e009}m([0-9]{1,20})\u{e00a}").unwrap());
+    let mut nonces = HashSet::new();
+    for candidate in std::iter::once(text).chain(taken.iter().map(String::as_str)) {
+        for captures in pattern.captures_iter(candidate) {
+            if let Ok(nonce) = captures[1].parse::<usize>() {
+                nonces.insert(nonce);
+            }
+        }
+    }
+    let nonce = (0..=nonces.len())
+        .find(|nonce| !nonces.contains(nonce))
+        .unwrap();
+    format!("\u{e009}m{nonce}\u{e00a}")
 }
 
 fn resolve_nbsp_placeholder(session: &RenderSession, text: &str, in_line_block: bool) -> String {
