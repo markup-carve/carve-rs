@@ -61,13 +61,7 @@ use json::Value;
 /// `tests/corpus_render_fixtures.rs`: a row is asked both whether the vector
 /// still diverges and whether the vector still exists, so a difference that has
 /// closed retires its row instead of reading as coverage.
-const KNOWN_DIFFERENCES: &[(&str, &str)] = &[(
-    "i02-directive-in-a-table-cell",
-    "fmt only: carve#2894 records the authored separator row, so this writer keeps the \
-     row the vector was written with instead of normalizing it to the `|=` head. The \
-     golden is carve-js at its current release, which has not landed the ruling; retire \
-     this row when it has. The HTML half agrees.",
-)];
+const KNOWN_DIFFERENCES: &[(&str, &str)] = &[];
 
 /// Exact HTML corrections pending in the shared vectors, retired when the pin agrees.
 const HTML_AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];

@@ -32,9 +32,7 @@ HELPERS = ("attrs", "pos")
 # branch. Keep the pinned corpus revision unchanged; once that pin contains a
 # field, the set insertion below is simply a no-op.
 
-# table.separatorWidths is a nonempty positive-integer array; decode_separator_widths
-# enforces that shape while this set supplies the closed schema name.
-PENDING_NODE_FIELDS = {"comment": ("delimited",), "table": ("separatorWidths",)}
+PENDING_NODE_FIELDS = {"comment": ("delimited",)}
 # Fields an unmerged schema change removes, so ingest refuses them now.
 PENDING_REMOVED_FIELDS: dict[str, tuple[str, ...]] = {}
 
