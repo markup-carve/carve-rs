@@ -1354,7 +1354,7 @@ fn extract_footnote_defs(
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
     let closer_maxima = fence_closer_suffix_maxima(&lines);
-    let folded_into_term = term_folded_lines(&lines);
+    let folded_into_term = term_folded_lines(&lines, &closer_maxima);
     // Built on the first CONTAINER-scoped opener and never for a document that
     // has none, which is every document that only ever writes `%%%` at column 0.
     let mut container_closers: Option<ContainerCommentClosers> = None;
@@ -2315,7 +2315,10 @@ struct TermLineOwnership {
     fence_openers: std::collections::HashSet<usize>,
 }
 
-fn term_folded_lines(lines: &[&str]) -> TermLineOwnership {
+fn term_folded_lines(
+    lines: &[&str],
+    closer_maxima: &(Vec<usize>, Vec<usize>),
+) -> TermLineOwnership {
     fn view_upto(raw: &str, limit: usize) -> (&str, usize) {
         let mut view = raw;
         let mut quotes = 0usize;
@@ -2353,7 +2356,6 @@ fn term_folded_lines(lines: &[&str]) -> TermLineOwnership {
         at.get(at.partition_point(|&k| k <= index)).copied()
     };
     let mut ownership = TermLineOwnership::default();
-    let closer_maxima = fence_closer_suffix_maxima(lines);
     let mut term: Option<(usize, usize)> = None;
     let mut index = 0;
     while index < lines.len() {
@@ -2418,7 +2420,7 @@ fn term_folded_lines(lines: &[&str]) -> TermLineOwnership {
         if let Some(mut open) = detect_fence_open(rest) {
             open.content_col = col;
             open.quoted = quotes > 0;
-            let fence = prepass_fence_opens(lines, index, open, &closer_maxima, &ownership);
+            let fence = prepass_fence_opens(lines, index, open, closer_maxima, &ownership);
             if !fence.opens {
                 index += 1;
                 continue;
@@ -2696,11 +2698,11 @@ fn extract_link_defs_with_guard(
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
-    let folded_into_term = term_folded_lines(&all_lines);
+    let closer_maxima = fence_closer_suffix_maxima(&all_lines);
+    let folded_into_term = term_folded_lines(&all_lines, &closer_maxima);
     // See the note in `extract_footnote_defs`: lazy, so a document with no
     // container-scoped comment fence pays nothing for it.
     let mut container_closers: Option<ContainerCommentClosers> = None;
-    let closer_maxima = fence_closer_suffix_maxima(&all_lines);
     // See `extract_footnote_defs`: the line the `after_term` gate asks about.
     let mut previous_non_blank = "";
     for (line_index, line) in all_lines.iter().copied().enumerate() {
