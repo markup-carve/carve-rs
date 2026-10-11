@@ -423,12 +423,16 @@ mod cli {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn carve binary");
-        child
+        if let Err(error) = child
             .stdin
             .take()
             .expect("stdin")
             .write_all(input.as_bytes())
-            .expect("write stdin");
+        {
+            if error.kind() != std::io::ErrorKind::BrokenPipe {
+                panic!("write stdin: {error}");
+            }
+        }
         let out = child.wait_with_output().expect("wait");
         (
             out.status.success(),
@@ -457,8 +461,9 @@ mod cli {
 
     #[test]
     fn a_target_with_no_carrier_refuses_the_flag() {
+        let input = "***\n".repeat(65_536);
         for target in ["--plain", "--ansi", "--carve", "--json"] {
-            let (ok, _, stderr) = run(&[target, "--roundtrip"], "***\n");
+            let (ok, _, stderr) = run(&[target, "--roundtrip"], &input);
             assert!(!ok, "{target}");
             assert!(
                 stderr.contains("--roundtrip requires"),
