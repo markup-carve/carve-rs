@@ -212,9 +212,6 @@ fn carrier_collision_report_names_the_attribute_and_accepts_the_canonical_code()
         &[
             "--html",
             "--roundtrip",
-            "--strict-losses",
-            "--allow-loss",
-            "carrier-attribute-dropped",
             "--report-losses",
             path.to_str().unwrap(),
         ],
@@ -229,4 +226,15 @@ fn carrier_collision_report_names_the_attribute_and_accepts_the_canonical_code()
     assert!(report["losses"][0].get("format").is_none());
     assert_eq!(report["losses"][0]["target"], "html");
     assert_eq!(report["losses"][0]["nodeType"], "block");
+    let allowed = run_input(
+        &[
+            "--html",
+            "--roundtrip",
+            "--strict-losses",
+            "--allow-loss",
+            "carrier-attribute-dropped",
+        ],
+        "{data-char=\"_\"}\n***\n",
+    );
+    assert!(allowed.status.success(), "{:?}", allowed.stderr);
 }

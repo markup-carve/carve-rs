@@ -6810,6 +6810,28 @@ const QUOTE_IN_QUOTED_TITLE: &str = "a double quote has no spelling inside a quo
 /// value or a link title writes one too), and a line break writes an opener
 /// that no longer reads as one.
 pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
+    use crate::include_walk::{visit_inline_children, SubtreeVisitor};
+    struct ProbeReferences;
+    impl SubtreeVisitor for ProbeReferences {
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                match inline {
+                    InlineNode::Link(link) => {
+                        link.ref_label = None;
+                        link.raw_ref = None;
+                    }
+                    InlineNode::Image(image) => {
+                        image.ref_label = None;
+                        image.raw_ref = None;
+                    }
+                    _ => {}
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let mut probe_title = title.to_vec();
+    ProbeReferences.inlines(&mut probe_title);
     let probe = Document {
         frontmatter: Default::default(),
         frontmatter_raw: None,
@@ -6818,7 +6840,7 @@ pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
         children: vec![BlockNode::Admonition(Admonition {
             attrs: None,
             kind: "note".into(),
-            title: Some(title.to_vec()),
+            title: Some(probe_title),
             label: None,
             children: vec![BlockNode::Paragraph(Paragraph {
                 attrs: None,

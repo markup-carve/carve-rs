@@ -270,3 +270,34 @@ fn abbreviation_carriers_are_hoisted_and_do_not_import_hidden_frontmatter() {
         assert!(!result.report.diagnostics.is_empty());
     }
 }
+
+#[test]
+fn carried_references_do_not_mask_unspellable_container_titles() {
+    for title in ["say &quot;hi&quot;", "line\nbreak"] {
+        for mode in [
+            HtmlImportMode::Safe,
+            HtmlImportMode::Semantic,
+            HtmlImportMode::Roundtrip,
+        ] {
+            let html = format!("<details><summary><a href='/u' data-carve-ref='x'>t</a> {title}</summary><p>b</p></details>");
+            let result = html_to_carve(
+                &html,
+                &HtmlImportOptions {
+                    mode,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(result.value.contains("[t][x]"), "{}", result.value);
+            assert!(result.value.contains("[x]: /u"), "{}", result.value);
+            let reparsed: Value = serde_json::from_str(&to_json(&parse(&result.value))).unwrap();
+            let mut links = Vec::new();
+            nodes(&reparsed, "link", &mut links);
+            assert_eq!(links[0]["href"], "/u");
+            assert!(result
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "structure-unspellable"));
+        }
+    }
+}
