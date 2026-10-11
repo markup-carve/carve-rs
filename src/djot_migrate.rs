@@ -45,6 +45,7 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{BlockNode, FigureTarget};
 
 fn djot_placeholder_prefix(source: &str, base: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains(base) {
         return format!("{base}0\0");
     }
@@ -279,6 +280,7 @@ fn convert_djot_document(stripped_definitions: &DjotFootnoteAttributeStrip) -> S
 }
 
 pub(crate) fn djot_to_carve_with_losses(source: &str) -> (String, Vec<crate::MigrationDiagnostic>) {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     (djot_to_carve(source), normalize::losses(source))
 }
 
@@ -340,6 +342,13 @@ fn strip_image_alt_attributes(label: &str) -> String {
 
 fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, usize) {
     let mut prefix = &source[source[..start].rfind('\n').map_or(0, |p| p + 1)..start];
+    let enclosing =
+        cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+    if let Some(item) = enclosing.find(prefix) {
+        if prefix[item.end()..].starts_with('>') {
+            prefix = &prefix[item.end()..];
+        }
+    }
     let quote = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut depth = 0;
     while let Some(m) = quote.find(prefix) {
@@ -366,6 +375,7 @@ fn djot_attribute_line(mut line: &str, depth: usize) -> Option<&str> {
 }
 
 fn mask_djot_attribute_source(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let code_mask = mask_djot_inline(source, false);
     let mut mask = mask_code_and_destinations(source).into_bytes();
     let rows = djot_table_rows(source, &code_mask);
@@ -410,6 +420,7 @@ fn mask_djot_attribute_source(source: &str) -> String {
 }
 
 fn remove_inherited_attribute_markers(source: &str, inherited: &HashSet<String>) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     cached_regex!(r"\x00DJOTINVALIDATTR\x00[0-9]+\x00")
         .unwrap()
         .replace_all(source, |value: &regex::Captures<'_>| {
@@ -422,7 +433,95 @@ fn remove_inherited_attribute_markers(source: &str, inherited: &HashSet<String>)
         .into_owned()
 }
 
+fn protect_rejected_comment_quotes(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
+    let mask = mask_djot_attribute_source(source);
+    let quote_pattern = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))+").unwrap();
+    let mut edits = std::collections::BTreeMap::new();
+    for (at, _) in source.match_indices("{%") {
+        if mask.as_bytes()[at] != b'{' || read_djot_word_attributes(source, at).is_some() {
+            continue;
+        }
+        let context = djot_attribute_context(source, at);
+        let Some(indent) = context.1 else {
+            continue;
+        };
+        if context.0 == 0 || comment_continues_paragraph(source, at) {
+            continue;
+        }
+        let Some(first_end) = source[at..].find('\n').map(|n| at + n) else {
+            continue;
+        };
+        if read_djot_word_attributes(&format!("{}}}", &source[at..first_end]), 0).is_none() {
+            continue;
+        }
+        let from = source[..at].rfind('\n').map_or(0, |n| n + 1);
+        let opening_prefix = &source[from..at];
+        let enclosing =
+            cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+        let opening_prefix = enclosing
+            .find(opening_prefix)
+            .filter(|m| opening_prefix[m.end()..].starts_with('>'))
+            .map_or(opening_prefix, |m| &opening_prefix[m.end()..]);
+        let opening_quote = quote_pattern.find(opening_prefix).map(|m| m.as_str());
+        let mut line = Some(first_end);
+        while let Some(pos) = line {
+            let Some(quote) = quote_pattern.find(&source[pos + 1..]) else {
+                break;
+            };
+            if quote.as_str().bytes().filter(|&b| b == b'>').count() < context.0 {
+                edits.insert(pos + 1, format!("{}\n", quote.as_str().trim_end()));
+                break;
+            }
+            if Some(quote.as_str().trim_start()) != opening_quote.map(str::trim_start)
+                || quote.as_str().bytes().filter(|b| *b == b'>').count() != context.0
+            {
+                break;
+            }
+            let end = source[pos + 1..]
+                .find('\n')
+                .map_or(source.len(), |n| pos + 1 + n);
+            let body_at = pos + 1 + quote.end();
+            let body = &source[body_at..end];
+            if body.trim().is_empty() {
+                break;
+            }
+            let held = body
+                .bytes()
+                .take_while(|b| matches!(b, b' ' | b'\t'))
+                .count();
+            if held < context.2 {
+                break;
+            }
+            if held <= indent {
+                edits.insert(
+                    body_at,
+                    format!("{} ", quote.as_str().trim().replace('>', "\\>")),
+                );
+                break;
+            }
+            if body.contains(['}', '%']) {
+                break;
+            }
+            line = (end < source.len()).then_some(end);
+        }
+    }
+    let mut output = String::new();
+    let mut cursor = 0;
+    for (at, text) in edits {
+        output.push_str(&source[cursor..at]);
+        output.push_str(&text);
+        cursor = at;
+    }
+    output.push_str(&source[cursor..]);
+    output
+}
+
 fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
+    let protected = (source.contains("{%") && source.contains('>'))
+        .then(|| protect_rejected_comment_quotes(source));
+    let source = protected.as_deref().unwrap_or(source);
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mask = mask_djot_attribute_source(source);
     let reserved: HashSet<String> = cached_regex!(r"\x00DJOTINVALIDATTR\x00[0-9]+\x00")
         .unwrap()
@@ -476,6 +575,20 @@ fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
                     }
                     inner += 1;
                 }
+                if source.as_bytes().get(at + 1) == Some(&b'%')
+                    && comment_continues_paragraph(source, at)
+                {
+                    let mut inner = at + 2;
+                    while inner < source.len() && !matches!(source.as_bytes()[inner], b'%' | b'}') {
+                        if source.as_bytes()[inner] == b'{' && mask.as_bytes()[inner] == b'{' {
+                            output.push_str(&source[cursor..inner]);
+                            output.push_str("\\{");
+                            output.push_str(&marker());
+                            cursor = inner + 1;
+                        }
+                        inner += 1;
+                    }
+                }
                 at = cursor;
                 continue;
             }
@@ -509,7 +622,77 @@ fn rejected_comment_starts_block(line: &str) -> bool {
     read_djot_word_attributes(&format!("{{{}}}", &capture[1]), 0).is_some()
 }
 
+struct ParagraphCache {
+    source: (usize, usize),
+    starts: HashMap<usize, (ParagraphContext, bool)>,
+}
+
+thread_local! {
+    static PARAGRAPH_CACHE: std::cell::RefCell<Option<ParagraphCache>> = const { std::cell::RefCell::new(None) };
+}
+
+struct ParagraphCacheScope<'a> {
+    previous: Option<ParagraphCache>,
+    _source: &'a str,
+}
+
+impl<'a> ParagraphCacheScope<'a> {
+    fn new(source: &'a str) -> Self {
+        let previous = PARAGRAPH_CACHE.with(|slot| {
+            slot.replace(Some(ParagraphCache {
+                source: (source.as_ptr() as usize, source.len()),
+                starts: HashMap::new(),
+            }))
+        });
+        Self {
+            previous,
+            _source: source,
+        }
+    }
+}
+
+impl Drop for ParagraphCacheScope<'_> {
+    fn drop(&mut self) {
+        PARAGRAPH_CACHE.with(|slot| {
+            slot.replace(self.previous.take());
+        });
+    }
+}
+
+fn cached_paragraph_start(
+    source: &str,
+    from: usize,
+    context: (usize, Option<usize>, usize),
+) -> Option<bool> {
+    PARAGRAPH_CACHE.with(|slot| {
+        slot.borrow().as_ref().and_then(|cache| {
+            if cache.source != (source.as_ptr() as usize, source.len()) {
+                return None;
+            }
+            cache
+                .starts
+                .get(&from)
+                .filter(|(held, _)| *held == context)
+                .map(|(_, result)| *result)
+        })
+    })
+}
+
 fn comment_continues_paragraph(source: &str, start: usize) -> bool {
+    let context = djot_attribute_context(source, start);
+    let result = scan_comment_paragraph(source, start);
+    let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
+    PARAGRAPH_CACHE.with(|slot| {
+        if let Some(cache) = slot.borrow_mut().as_mut() {
+            if cache.source == (source.as_ptr() as usize, source.len()) {
+                cache.starts.insert(from, (context, result));
+            }
+        }
+    });
+    result
+}
+
+fn scan_comment_paragraph(source: &str, start: usize) -> bool {
     let context = djot_attribute_context(source, start);
     if context.1.is_none() {
         return true;
@@ -564,6 +747,25 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
             }
             break;
         }
+        if let Some(cached) = cached_paragraph_start(source, from, context) {
+            if cached {
+                return true;
+            }
+            if let Some((end, _, _)) = read_djot_attributes_with_context(
+                source,
+                from + emphasis::structural_prefix_end(raw),
+                false,
+                false,
+                false,
+            ) {
+                if end <= start {
+                    while lines.last().is_some_and(|(_, from)| *from < end) {
+                        lines.pop();
+                    }
+                    break;
+                }
+            }
+        }
         lines.push((raw, from));
         if from == 0 {
             break;
@@ -604,6 +806,13 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
         if let Some(opened) = fence_pattern.find(body) {
             kind = Some("fence");
             fence = opened.as_str();
+            continue;
+        }
+        if body.starts_with("{%")
+            && read_djot_attributes_with_context(&format!("{body}}}"), 0, false, false, false)
+                .is_some()
+        {
+            kind = Some("paragraph");
             continue;
         }
         if kind == Some("heading") {
@@ -1181,6 +1390,7 @@ fn protect_attributed_words(
 }
 
 fn fold_heading_continuations(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     static BLOCK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let block = BLOCK.get_or_init(|| regex::Regex::new(
         r"^(?:[#>|{]|[-*+][ \t]|[0-9]+[.)][ \t]|:[ \t]|:{2,}|\([0-9a-zA-Z]+\)[ \t]|[`~]{3,}|\^[ \t]|\[[^\]\n]*\]:|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)").unwrap());
@@ -1254,6 +1464,7 @@ fn fold_heading_continuations(source: &str) -> String {
 /// into emphasis. The envelope is already valid Carve frontmatter, so keep it
 /// byte-for-byte and import only the body.
 fn split_frontmatter(source: &str) -> (&str, &str, &str) {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.starts_with("---\n") {
         return ("", "", source);
     }
@@ -1340,6 +1551,7 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
 /// Translate Djot's definition-item shape without canonicalizing unrelated
 /// links, raw blocks, attributes, or author spelling elsewhere in the file.
 fn convert_definition_lists(source: &str, empty_term: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
@@ -1431,6 +1643,14 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
         }
         if lines[index].trim().is_empty() {
             if let Some(frame) = stack.last_mut() {
+                if !frame.body
+                    && lines
+                        .get(index + 1)
+                        .is_some_and(|line| rejected_comment_starts_block(line.trim_start()))
+                {
+                    lines[index] = format!("{}:  {empty_term}\n", " ".repeat(frame.target));
+                    frame.body = true;
+                }
                 frame.ready = true;
             }
             continue;
@@ -1522,6 +1742,7 @@ fn list_marker(line: &str) -> bool {
 }
 
 fn convert_djot_block_markers(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
@@ -1630,6 +1851,7 @@ fn convert_djot_block_markers(source: &str) -> String {
 }
 
 fn mask_djot_attributes(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let pattern = PATTERN.get_or_init(|| {
         let item = r#"(?:[.#][A-Za-z0-9_][A-Za-z0-9_-]*|[A-Za-z_][A-Za-z0-9_-]*=(?:"(?:\\.|[^"\\\n])*"|[A-Za-z0-9_:-]+))"#;
@@ -1743,6 +1965,7 @@ impl OrphanAttributeSpans {
 }
 
 fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans) {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let pattern = PATTERN.get_or_init(|| {
         let item = r#"(?:[.#][A-Za-z0-9_][A-Za-z0-9_-]*|[A-Za-z][A-Za-z0-9_-]*=(?:"(?:\\.|[^"\\\n])*"|[A-Za-z0-9_:-]+))"#;
@@ -1873,6 +2096,7 @@ fn consume_orphan_djot_attributes(source: &str) -> (String, OrphanAttributeSpans
 }
 
 fn emphasis_mask(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut mask = mask_djot_attributes(source).into_bytes();
     let autolink = cached_regex!(r"<[^<>\s]+>").unwrap();
     let scheme = cached_regex!(r"[^:]@|[A-Za-z]:").unwrap();
@@ -1969,6 +2193,7 @@ fn rewrite_djot_body_with(djot: &str, transform: impl FnMut(&str) -> String) -> 
 }
 
 fn rewrite_djot_inline(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let masked = emphasis_mask(source);
     let source = escape_plain_carve_syntax_masked(source, HandledDelimiters::DJOT, &masked);
     let masked = emphasis_mask(&source);
@@ -2368,10 +2593,12 @@ fn quoted_blank_line_follows(bytes: &[u8], index: usize, quoted: bool) -> bool {
 /// scan above cannot see a delimiter that is not one. Offsets are preserved, so
 /// a match in the mask splices into the original unchanged.
 fn mask_code_and_destinations(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     mask_djot_inline(source, true)
 }
 
 fn mask_djot_inline(source: &str, inline_forms: bool) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     mask_djot_forms(source, inline_forms, true, None, &[])
 }
 
@@ -2686,6 +2913,7 @@ impl Default for OpaqueOptions {
 }
 
 fn mask_djot_opaque(source: &str, options: OpaqueOptions) -> Vec<u8> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     mask_djot_opaque_with_comments(source, options).0
 }
 
@@ -2967,6 +3195,7 @@ fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {
 /// languages disagree. Blank lines inside a fenced block are that block's
 /// content and are skipped.
 fn collapse_false_list_boundaries(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let lines: Vec<&str> = source.split('\n').collect();
     let fenced = fenced_lines(&lines);
 
@@ -3011,14 +3240,14 @@ fn quoted(line: &str) -> (usize, &str) {
     loop {
         let trimmed = rest.trim_start_matches([' ', '\t']);
         match trimmed.strip_prefix('>') {
-            Some(after) => {
+            Some(after) if after.is_empty() || after.starts_with([' ', '\t']) => {
                 depth += 1;
                 rest = after.strip_prefix(' ').unwrap_or(after);
             }
             // The remainder is NOT trimmed: an item's own indentation is what
             // says the line continues the item, and inside a quote it sits
             // right after the marker.
-            None => return (depth, rest),
+            _ => return (depth, rest),
         }
     }
 }
@@ -3116,6 +3345,7 @@ fn continues_a_list(line: &str) -> bool {
 /// one byte for one byte, so it runs before the mask is taken for the inline
 /// rules and leaves every later offset valid.
 fn normalize_plus_bullets(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let masked = mask_code_and_destinations(source);
     let mask = masked.as_bytes();
     let mut out = source.as_bytes().to_vec();
@@ -3168,6 +3398,7 @@ fn normalize_plus_bullets(source: &str) -> String {
 }
 
 fn table_continuation_lines(source: &str) -> HashSet<usize> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     fn visit(blocks: &[BlockNode], lines: &mut HashSet<usize>) {
         for block in blocks {
             match block {
@@ -3275,6 +3506,7 @@ const BARE_DELIMITERS: &[u8] = b"/=~*_";
 /// Freeze the Carve constructs in `source` that the caller's language leaves as
 /// literal text, given the delimiters that language HANDLES itself.
 pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters<'_>) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let masked = mask_code_and_destinations(source);
     escape_plain_carve_syntax_masked(source, handled, &masked)
 }
@@ -4443,6 +4675,7 @@ mod heading_continuation_tests {
 }
 
 fn djot_inline_boundaries(source: &str, mask: &str) -> Vec<usize> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     djot_inline_boundaries_with_code_scopes(source, mask, false)
 }
 
@@ -4714,6 +4947,7 @@ fn djot_inline_boundaries_with_div_closers(
 }
 
 fn djot_simple_destination_ranges(source: &str) -> Option<HashMap<usize, usize>> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut ranges = HashMap::new();
     if !source.contains("](") {
         return Some(ranges);
@@ -4738,6 +4972,7 @@ fn djot_simple_destination_ranges(source: &str) -> Option<HashMap<usize, usize>>
 }
 
 fn djot_destination_ranges(source: &str, mask: &str) -> HashMap<usize, usize> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mut ranges = HashMap::new();
     if !source.contains("](") {
         return ranges;
@@ -4887,6 +5122,7 @@ fn djot_destination_ranges(source: &str, mask: &str) -> HashMap<usize, usize> {
 }
 
 fn djot_destination_lines(source: &str, depth: usize) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains('\n') {
         return source.to_owned();
     }
@@ -4924,6 +5160,7 @@ fn djot_destination_lines(source: &str, depth: usize) -> String {
 }
 
 fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains("](") {
         return source.to_owned();
     }
@@ -5351,6 +5588,7 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
 }
 
 fn normalize_djot_attribute_lines(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains('{') {
         return source.to_owned();
     }
@@ -5406,6 +5644,7 @@ fn normalize_djot_attribute_lines(source: &str) -> String {
 }
 
 fn fold_djot_references(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains("]:") {
         return source.to_owned();
     }
@@ -5490,6 +5729,7 @@ fn fold_djot_references(source: &str) -> String {
 }
 
 fn normalize_djot_paragraph_fences(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let rows = djot_table_rows(source, &mask_djot_inline(source, false));
     let mask = mask_djot_fences(source, None, &rows, true);
     if !mask.contains("```") {
@@ -6045,6 +6285,7 @@ fn normalize_djot_footnotes(
 }
 
 fn normalize_djot_fences(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains("```") && !source.contains("~~~") {
         return if source.contains("\\|") {
             close_djot_table_code(source)
@@ -6077,6 +6318,7 @@ fn normalize_djot_fences(source: &str) -> String {
 }
 
 fn normalize_djot_autolinks(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains('<') {
         return source.to_owned();
     }
@@ -6363,6 +6605,7 @@ fn djot_content_start(line: &str) -> usize {
 }
 
 fn djot_table_rows(source: &str, mask: &str) -> Vec<bool> {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let item_re = cached_regex!(r"(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\)|:)[ \t]+").unwrap();
     let boundary_re = cached_regex!(r"^(?:#{1,6} |`{3,}|~{3,}|:{3,}|\{|\[[^\]]+\]:)").unwrap();
     let mut offset = 0;
@@ -6406,6 +6649,7 @@ fn djot_table_rows(source: &str, mask: &str) -> Vec<bool> {
 }
 
 fn rename_djot_pipe_footnotes(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     let mask = mask_djot_inline(source, false);
     let prefix = "carve-djot-footnote-";
     let reserved: std::collections::HashSet<usize> =
@@ -6618,6 +6862,7 @@ fn rename_djot_pipe_footnotes(source: &str) -> String {
 }
 
 fn close_djot_table_code(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains('`') {
         return source.to_owned();
     }
@@ -7066,6 +7311,7 @@ fn close_djot_table_code(source: &str) -> String {
 }
 
 fn escape_djot_non_table_rows(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains('|') {
         return source.to_owned();
     }
@@ -7111,6 +7357,7 @@ fn escape_djot_non_table_rows(source: &str) -> String {
 }
 
 fn normalize_djot_table_pipes(source: &str) -> String {
+    let _paragraph_cache = ParagraphCacheScope::new(source);
     if !source.contains("\\|") {
         return source.to_owned();
     }

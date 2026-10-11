@@ -68,3 +68,32 @@ fn a_comment_that_fails_on_its_first_line_continues_the_heading() {
     assert!(html.contains("<h1>a {% 50% off %}</h1>"), "{html}");
     assert!(!html.contains("<p>"));
 }
+
+#[test]
+fn shared_reference_fixtures_match_the_entire_html() {
+    let fixtures: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/djot-comment-boundary-fixtures.json")).unwrap();
+    let normalize = |html: &str| {
+        let between = regex::Regex::new(r">\s+<")
+            .unwrap()
+            .replace_all(html, "><")
+            .into_owned();
+        regex::Regex::new(r"\s+")
+            .unwrap()
+            .replace_all(&between, " ")
+            .replace(" <", "<")
+            .replace("> ", ">")
+            .trim()
+            .to_owned()
+    };
+    for fixture in fixtures.as_array().unwrap() {
+        assert_eq!(
+            normalize(&to_html(&djot_to_carve(
+                fixture["source"].as_str().unwrap()
+            ))),
+            normalize(fixture["html"].as_str().unwrap()),
+            "{}",
+            fixture["id"]
+        );
+    }
+}

@@ -89,8 +89,24 @@ pub(super) fn blocks(source: &str) -> String {
         let visible = masks[n].get(indent_bytes..).unwrap_or("");
         if rejected_comment_starts_block(visible) {
             let outside_list = lists.first().is_some_and(|list| indent <= list.source);
-            if in_heading || outside_list {
+            let outside_quote = in_quote && !visible.starts_with('>');
+            let outside_definition = definition_columns
+                .last()
+                .is_some_and(|column| indent < *column);
+            if outside_definition {
+                definition_columns.clear();
+                definition_body = false;
+                paragraph = false;
+                previous_blank = true;
+            }
+            if in_heading || outside_list || outside_quote || outside_definition {
                 result.push(raw[..indent_bytes].to_owned());
+            }
+            if outside_quote {
+                in_quote = false;
+                quote_paragraph_depth = None;
+                paragraph = false;
+                previous_blank = true;
             }
             if outside_list {
                 lists.clear();
@@ -205,11 +221,27 @@ pub(super) fn blocks(source: &str) -> String {
             previous_blank = false;
             continue;
         }
-        if visible.starts_with('>')
+        if quoted(raw).0 > 0
             && (in_quote || !paragraph || n > 0 && masks[n - 1].trim_start().starts_with('>'))
         {
             let (depth, body) = quoted(raw);
             let block_body = body.trim_start();
+            if rejected_comment_starts_block(block_body) {
+                let owned = lines[..n]
+                    .iter()
+                    .rev()
+                    .take_while(|line| !line.trim().is_empty())
+                    .any(|line| {
+                        let (parent_depth, parent_body) = quoted(line);
+                        parent_depth == depth
+                            && (marker.is_match(parent_body.trim_start())
+                                || heading.is_match(parent_body.trim_start()))
+                    });
+                if owned {
+                    result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
+                    quote_paragraph_depth = None;
+                }
+            }
             if let Some(held) =
                 quote_paragraph_depth.filter(|&held| depth > held && !body.trim().is_empty())
             {
@@ -394,7 +426,7 @@ pub(super) fn blocks(source: &str) -> String {
                 lazy: false,
                 loose: !nested && top.as_ref().is_some_and(|list| list.loose),
             });
-            in_quote = text[payload_start..].starts_with('>');
+            in_quote = quoted(&text[payload_start..]).0 > 0;
             let item_body = &text[payload_start..];
             let div_width = item_body.bytes().take_while(|b| *b == b':').count();
             let item_div = div_width >= 3;
