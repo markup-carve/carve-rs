@@ -9044,8 +9044,6 @@ fn future_quoted_comment_closes(
         })
 }
 
-/// Does a line matching `closes` follow line `from` at nesting `level`, before
-/// the quote at that level ends?
 #[derive(Default)]
 struct QuotedBodyComments {
     scanned: usize,
@@ -9135,6 +9133,8 @@ fn quoted_colon_body_follows(
     false
 }
 
+/// Does a line matching `closes` follow line `from` at nesting `level`, before
+/// the quote at that level ends?
 fn closer_ahead(
     lines: &[SourceLine],
     from: usize,
