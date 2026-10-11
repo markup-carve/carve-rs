@@ -97,8 +97,29 @@ fn colon_shapes_inside_opaque_blocks_do_not_close_the_host() {
     ] {
         let html = carve::to_html(source);
         assert!(html.contains("tail"), "{source}: {html}");
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
         if source.contains("paragraph") {
+            assert_eq!(
+                ast["children"].as_array().unwrap().len(),
+                1,
+                "{source}: {ast}"
+            );
             assert!(html.contains("- tail"), "{source}: {html}");
+        } else {
+            assert_eq!(
+                ast["children"].as_array().unwrap().len(),
+                2,
+                "{source}: {ast}"
+            );
+            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+            let payload = &ast["children"][0]["children"][0]["items"][0]["children"][0];
+            if source.contains("%%%") {
+                assert_eq!(payload["type"], "comment", "{ast}");
+                assert_eq!(payload["content"], "::: box\n:::", "{ast}");
+            } else {
+                assert_eq!(payload["type"], "code_block", "{ast}");
+                assert_eq!(payload["content"], "::: box\n:::\n", "{ast}");
+            }
         }
     }
 }
@@ -109,4 +130,108 @@ fn a_verse_dedent_does_not_leave_a_stale_colon_owner() {
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
     assert!(carve::to_html(source).contains("- tail"));
+}
+
+#[test]
+fn all_hosted_colon_block_kinds_and_typed_interruptions_release_ownership() {
+    for marker in ["-", "1."] {
+        let pad = " ".repeat(marker.len() + 1);
+        for kind in ["box", ">", "\\", "|"] {
+            for nested in [false, true] {
+                let open = if nested {
+                    format!("> {marker} ::: box\n> {pad}::: {kind}\n")
+                } else {
+                    format!("> {marker} ::: {kind}\n")
+                };
+                let close = if nested {
+                    format!("> {pad}:::\n> {pad}:::\n")
+                } else {
+                    format!("> {pad}:::\n")
+                };
+                let source = format!("{open}> {pad}body\n{close}- tail\n");
+                let ast: Value =
+                    serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
+                assert_eq!(
+                    ast["children"].as_array().unwrap().len(),
+                    2,
+                    "{source}: {ast}"
+                );
+                assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+            }
+        }
+    }
+    let source = "> - :::box\n>   ::: note\n>   :::\n- tail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+}
+
+#[test]
+fn a_lazy_line_after_hosted_comment_shapes_keeps_existing_ownership() {
+    let source = "> - %%%\n>   ::: box\n>   :::\n- tail\n>   %%%\n";
+    let html = carve::to_html(source);
+    assert!(html.ends_with("</blockquote>"), "{html}");
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
+    assert_eq!(
+        ast["children"][0]["children"][0]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "{ast}"
+    );
+}
+
+#[test]
+fn a_comment_inside_verse_keeps_colon_payload_opaque() {
+    let source = "> - ::: |\n>   %%%\n>   :::\n>   %%%\n>   body\n>   :::\n- tail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+    assert_eq!(ast["children"][1]["type"], "list", "{ast}");
+    assert!(carve::to_html(source).contains("body"));
+}
+
+#[test]
+fn a_new_item_or_later_bare_block_does_not_inherit_absorption() {
+    for source in [
+        "> - prose\n>   :::bad\n> - next\n>   :::\n- tail\n",
+        "> - ::: box\nlazy\n>   :::\n- tail\n",
+        "> - ::: box\n>   body\nlazy\n>   :::\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            2,
+            "{source}: {ast}"
+        );
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+    }
+}
+
+#[test]
+fn unclosed_comments_do_not_hide_real_fences_or_colon_closers() {
+    for source in [
+        "> - %%%\n>   ```\n>   code\n>   ```\n- tail\n",
+        "> - item\n>   %%%\n>   ```\n>   code\n>   ```\n- tail\n",
+        "> - %%%\n>   ::: box\n>   :::\n- tail\n",
+        "> - ::: |\n>   %%%\n>   body\n>   :::\n- tail\n",
+        "> - ::: box\n>   body\n> lazy\n>   :::\n- tail\n",
+        "> - a\n>   :::\n- tail\n",
+        "> - a\n>   ::: box\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            2,
+            "{source}: {ast}"
+        );
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+    }
+}
+
+#[test]
+fn a_comment_closer_below_the_item_does_not_hide_its_code_fence() {
+    let source = "> - %%%\n>   ```\n>   code\n>   ```\n- tail\n> %%%\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"][1]["type"], "list", "{ast}");
 }

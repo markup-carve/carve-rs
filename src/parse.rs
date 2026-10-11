@@ -8565,6 +8565,7 @@ struct NestedFenceReplay {
     scanned: usize,
     chain: Vec<NestedLevel>,
     fence_count: usize,
+    future_comments: Option<(ContainerCommentClosers, Vec<usize>)>,
 }
 
 #[derive(Default)]
@@ -8582,6 +8583,7 @@ struct NestedLevel {
     host_fence: Option<(FenceOpen, usize, usize)>,
     fence: Option<FenceOpen>,
     comment: Option<usize>,
+    host_comment: Option<(usize, usize)>,
     para: bool,
     by_fence: bool,
     colons: Vec<(usize, usize)>,
@@ -8600,14 +8602,14 @@ impl NestedFenceReplay {
         })
     }
 
-    fn verdict(&mut self, lines: &[SourceLine]) -> Option<bool> {
+    fn verdict(&mut self, lines: &[SourceLine], cur: &LineCursor<'_>) -> Option<bool> {
         if self.chain.is_empty() {
             self.chain.push(NestedLevel::default());
         }
         while self.scanned < lines.len() {
             let at = self.scanned;
             self.scanned += 1;
-            self.replay(lines, at);
+            self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
         (deepest.fence.is_some()
@@ -8617,7 +8619,7 @@ impl NestedFenceReplay {
             .then_some(false)
     }
 
-    fn replay(&mut self, lines: &[SourceLine], at: usize) {
+    fn replay(&mut self, lines: &[SourceLine], at: usize, cur: &LineCursor<'_>) {
         let chain = &mut self.chain;
         let mut text = lines[at].text.as_str();
         // A lazy line was taken only because a paragraph was open, and it
@@ -8663,10 +8665,37 @@ impl NestedFenceReplay {
                 chain.truncate(level + 1);
                 return;
             }
+            if let Some((width, column)) = chain[level].host_comment {
+                if !is_blank_line(text) && indent_columns(text) < column {
+                    chain[level].host_comment = None;
+                } else {
+                    if indent_columns(text) == column
+                        && is_comment_fence_close(trim_ascii_start(text), width)
+                    {
+                        chain[level].host_comment = None;
+                    }
+                    chain.truncate(level + 1);
+                    return;
+                }
+            }
             if let Some((width, column)) = chain[level].host_verse {
                 if !is_blank_line(text) && indent_columns(text) < column {
                     chain[level].host_verse = None;
                 } else {
+                    if let Some(comment) = detect_comment_fence_line(trim_ascii_start(text)) {
+                        let len = comment.fence_len;
+                        if closer_ahead(lines, at, level, |line| {
+                            is_comment_fence_close(trim_ascii_start(line), len)
+                        }) || future_quoted_comment_closes(
+                            &mut self.future_comments,
+                            cur,
+                            level + 1,
+                            column,
+                            len,
+                        ) {
+                            chain[level].host_comment = Some((len, column));
+                        }
+                    }
                     if indent_columns(text) == column
                         && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
                     {
@@ -8708,7 +8737,7 @@ impl NestedFenceReplay {
             let here = &mut chain[level];
             here.by_fence = false;
             here.by_colon = false;
-            if !is_blank_line(text) {
+            if !is_blank_line(text) && !here.para {
                 while here
                     .colons
                     .last()
@@ -8734,8 +8763,10 @@ impl NestedFenceReplay {
                     .hosts
                     .iter()
                     .any(|&(marker, _, item)| marker == column && item);
-                while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
-                    here.hosts.pop();
+                if !here.para {
+                    while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
+                        here.hosts.pop();
+                    }
                 }
                 let inside_item = here.hosts.last().is_some_and(|&(_, _, item)| item);
                 let mut inner = trim_ascii_start(text);
@@ -8758,17 +8789,41 @@ impl NestedFenceReplay {
                     }
                     break;
                 }
+                if block_start {
+                    here.colon_absorption = false;
+                }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
-                if !here.colon_absorption && floor > 0 && col == floor {
+                if floor > 0 && col == floor {
+                    if let Some(comment) = detect_comment_fence_line(inner) {
+                        let len = comment.fence_len;
+                        if closer_ahead(lines, at, level, |line| {
+                            is_comment_fence_close(trim_ascii_start(line), len)
+                        }) || future_quoted_comment_closes(
+                            &mut self.future_comments,
+                            cur,
+                            level + 1,
+                            col,
+                            len,
+                        ) {
+                            here.host_comment = Some((len, col));
+                            return;
+                        }
+                    }
                     if let Some(width) = detect_line_block_open(inner) {
                         here.host_verse = Some((width, col));
                         here.para = false;
                         return;
                     }
-                    if let Some(open) =
-                        detect_container_open(inner).filter(|_| floor > 0 && col == floor)
+                    if let Some(width) = detect_container_open(inner)
+                        .filter(|_| {
+                            !here.colon_absorption || exact_colon_fence_len(inner).is_none()
+                        })
+                        .map(|open| open.fence_len)
+                        .or_else(|| detect_hardbreaks_block_open(inner))
+                        .or_else(|| detect_quote_block_open(inner))
                     {
-                        here.colons.push((open.fence_len, col));
+                        here.colons.push((width, col));
+                        here.by_colon = !block_start;
                         here.para = false;
                         here.colon_absorption = false;
                         return;
@@ -8826,6 +8881,42 @@ impl NestedFenceReplay {
             return;
         }
     }
+}
+
+fn future_quoted_comment_closes(
+    cached: &mut Option<(ContainerCommentClosers, Vec<usize>)>,
+    cur: &LineCursor<'_>,
+    depth: usize,
+    column: usize,
+    width: usize,
+) -> bool {
+    let (closers, blanks) = cached.get_or_insert_with(|| {
+        let source: Vec<_> = cur.lines.range(0..cur.lines.len()).collect();
+        let blanks = source
+            .iter()
+            .enumerate()
+            .filter_map(|(at, line)| is_blank_line(line).then_some(at))
+            .collect();
+        (ContainerCommentClosers::build(&source), blanks)
+    });
+    let before = cur.pos.saturating_sub(1);
+    let blank = blanks
+        .get(blanks.partition_point(|at| *at < cur.pos))
+        .copied()
+        .unwrap_or(cur.lines.len());
+    closers.next_closer(before, width, depth).is_some_and(|at| {
+        if at >= blank {
+            return false;
+        }
+        let mut text = cur.lines.at(at);
+        for _ in 0..depth {
+            let Some(rest) = strip_blockquote_prefix(text) else {
+                return false;
+            };
+            text = rest;
+        }
+        indent_columns(text) >= column
+    })
 }
 
 /// Does a line matching `closes` follow line `from` at nesting `level`, before
@@ -9015,7 +9106,7 @@ fn collect_blockquote_body(
                 // The line above reached a nested quote, so its fence may be
                 // what the paragraph ended on.
                 let fenced_below = if after_nested {
-                    nested_replay.verdict(&inner.lines)
+                    nested_replay.verdict(&inner.lines, cur)
                 } else {
                     None
                 };
@@ -9185,7 +9276,7 @@ fn collect_blockquote_body(
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
         let fenced_below = if may_hold_fence {
-            *nested_verdict.get_or_insert_with(|| nested_replay.verdict(&inner.lines))
+            *nested_verdict.get_or_insert_with(|| nested_replay.verdict(&inner.lines, cur))
         } else {
             None
         };
