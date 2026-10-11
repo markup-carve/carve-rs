@@ -1984,8 +1984,38 @@ impl<'a> Importer<'a> {
                 tag == "span" && Self::reads_raw_format(handle, mode).is_some()
             }
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
+            crate::roundtrip::COL_WIDTHS => {
+                tag == "table" && Self::reads_separator_widths(handle).is_some()
+            }
             _ => false,
         }
+    }
+
+    /// The `<table data-carve-col-widths>` separator row, comma-joined.
+    ///
+    /// PART 10 §13a `CARVE-P10-016`: the WHOLE carrier is refused - no field at
+    /// all, so the table comes back in the `|=` form - where any entry is not a
+    /// run of decimal digits or exceeds
+    /// [`SEPARATOR_WIDTH_LIMIT`](crate::roundtrip::SEPARATOR_WIDTH_LIMIT).
+    /// Neither a partial read nor a clamp: both would put a separator row on
+    /// the page whose widths nobody wrote.
+    fn reads_separator_widths(table: &Handle) -> Option<Vec<u64>> {
+        let value = Self::carrier(table, crate::roundtrip::COL_WIDTHS)?;
+        if value.trim().is_empty() {
+            // An empty value names no width, and a list of none has no
+            // separator row to spell.
+            return None;
+        }
+        value
+            .split(',')
+            .map(|entry| {
+                let entry = entry.trim();
+                (!entry.is_empty() && entry.bytes().all(|b| b.is_ascii_digit()))
+                    .then(|| entry.parse::<u64>().ok())
+                    .flatten()
+                    .filter(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
+            })
+            .collect()
     }
 
     /// The `<ul data-marker>` bullet, where it names one PART 2 admits and is
@@ -5565,6 +5595,7 @@ impl<'a> Importer<'a> {
             columns: Vec::new(),
             rows: result,
             row_groups: row_groups.map(Box::new),
+            separator_widths: Self::reads_separator_widths(h),
             pos: None,
         }))
     }
@@ -6756,29 +6787,46 @@ impl<'a> Importer<'a> {
         let mut seen: HashSet<usize> = HashSet::new();
         let mut detached: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
         let mut used_labels = HashSet::new();
+        let conflicting_carriers: HashSet<usize> = definitions
+            .iter()
+            .filter(|definition| {
+                Self::carrier(&definition.block, crate::roundtrip::FOOTNOTE_LABEL)
+                    .is_some_and(|label| valid_footnote_carrier_label(&label))
+                    && Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE).is_some()
+            })
+            .map(|definition| node_key(&definition.block))
+            .collect();
         let reserved_labels: HashSet<String> = definitions
             .iter()
+            .filter(|definition| !conflicting_carriers.contains(&node_key(&definition.block)))
             .flat_map(|definition| {
                 std::iter::once(&definition.block)
                     .chain(definition.refs.iter())
                     .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
-                    .filter(|label| {
-                        !crate::parse::label_key(label).is_empty()
-                            && !label.contains(['[', ']', '|', '\r', '\n'])
-                    })
+                    .filter(|label| valid_footnote_carrier_label(label))
             })
             .map(|label| crate::parse::label_key(&label))
             .collect();
 
         for (index, definition) in definitions.iter().enumerate() {
+            let conflicting = conflicting_carriers.contains(&node_key(&definition.block));
+            if conflicting {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    "Dropped conflicting footnote label and inline footnote carriers".into(),
+                    HtmlImportSeverity::Warning,
+                    "footnote",
+                    &definition.block,
+                );
+            }
             let labels: HashSet<String> = std::iter::once(&definition.block)
                 .chain(definition.refs.iter())
+                .filter(|_| !conflicting)
                 .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
                 .collect();
             let requested = labels.iter().next().filter(|label| {
                 labels.len() == 1
-                    && !crate::parse::label_key(label).is_empty()
-                    && !label.contains(['[', ']', '|', '\r', '\n'])
+                    && valid_footnote_carrier_label(label)
                     && !used_labels.contains(&crate::parse::label_key(label))
             });
             let label = if let Some(label) = requested {
@@ -6824,7 +6872,7 @@ impl<'a> Importer<'a> {
             let body: Vec<Handle> = definition.block.children.borrow().clone();
             let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
             let inline_marker = Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE);
-            let inline = if inline_marker.is_some() {
+            let inline = if !conflicting && inline_marker.is_some() {
                 match blocks.as_slice() {
                     [BlockNode::Paragraph(paragraph)]
                         if paragraph.attrs.is_none()
@@ -6850,7 +6898,11 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
-            if inline.is_some() && !labels.is_empty() {
+            if inline.is_some()
+                && labels
+                    .iter()
+                    .any(|label| valid_footnote_carrier_label(label))
+            {
                 self.diag(
                     HtmlImportDiagnosticCode::AttributeDropped,
                     "Dropped footnote label carriers on an inline note".into(),
@@ -7383,6 +7435,10 @@ fn attach_remaining_footnote_references(
     }
 
     definitions
+}
+
+fn valid_footnote_carrier_label(label: &str) -> bool {
+    !crate::parse::label_key(label).is_empty() && !label.contains(['[', ']', '|', '\r', '\n'])
 }
 
 fn footnote_anchor_identity(anchor: &Handle) -> String {

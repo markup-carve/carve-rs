@@ -8,6 +8,7 @@ mod session;
 use session::{CellScope, RenderSession};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 /// A definition the author wrote ON a definition list's description line.
 ///
@@ -321,11 +322,11 @@ pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSe
 fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
     // One render with the default sentinels. If the document turns out to
     // contain one of them itself, the counts disagree and the whole render is
-    // repeated with a character it does not contain (see SENTINEL_DEFAULTS). Only a
+    // repeated with a token absent from the staged text (see SENTINEL_DEFAULTS). Only a
     // document that actually holds a private-use sentinel pays for the second
     // pass, and nothing else changes: the retry runs the same code.
     let first = render_carve_once(session, doc);
-    let current = session.sentinels.with(|s| s.get());
+    let current = session.sentinels.with(|s| s.borrow().clone());
     let inserted = session.inserted.with(|c| c.get());
     let seen = session.seen.with(|c| c.get());
     if (0..SENTINEL_COUNT).all(|i| seen[i] <= inserted[i]) {
@@ -337,10 +338,10 @@ fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
     let mut next = current;
     for i in 0..SENTINEL_COUNT {
         if seen[i] > inserted[i] {
-            next[i] = free_sentinel(&staged, &next);
+            next[i] = Rc::new(free_sentinel(&staged, &next));
         }
     }
-    session.sentinels.with(|s| s.set(next));
+    session.sentinels.with(|s| *s.borrow_mut() = next);
     render_carve_once(session, doc)
 }
 
@@ -1912,7 +1913,7 @@ fn definition_at_line(
 /// block out of the item (markup-carve/carve-rs#1226). carve-js reached the
 /// same place, and moved the same marker into its own picked run, in
 /// markup-carve/carve-js#1289.
-fn marker_column(session: &RenderSession) -> char {
+fn marker_column(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_MARKER_COLUMN)
 }
 
@@ -2433,25 +2434,12 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            // The payload's own lines, then the ending after its LAST line. An
-            // EMPTY payload has no line and writes none (carve-rs#2166).
-            //
-            // An all-blank payload carries its trailing ending IN `content`,
-            // which is how it says how many lines it has, so
-            // `protect_verbatim` is handed the payload WITHOUT that ending or it
-            // stages a line too many. Everything goes through the staging now: a
-            // blank line that bypassed it reached the pass that folds a run of
-            // blank lines, so two authored blank lines came back as one and three
-            // as one (carve-rs#2168). The code fence never had that bug because
-            // its payload was always staged.
+            // Stage the literal payload without its final ending, then write
+            // that ending before the closer. Empty payloads own no line.
             let payload = if raw.content.is_empty() {
                 String::new()
             } else {
-                let lines = raw
-                    .content
-                    .strip_suffix('\n')
-                    .filter(|_| !crate::ast::fenced_payload_needs_ending(&raw.content))
-                    .unwrap_or(&raw.content);
+                let lines = raw.content.strip_suffix('\n').unwrap_or(&raw.content);
                 format!("{}\n", protect_verbatim(session, lines))
             };
             with_block_attrs(
@@ -2679,7 +2667,7 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
         note_seen(
             session,
             S_MARKER_COLUMN,
-            content.matches(marker_column(session)).count(),
+            content.matches(marker_column(session).as_str()).count(),
         );
         let mut lines = if content.is_empty() {
             vec!["".to_string()]
@@ -2696,11 +2684,13 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
         // block opener opens nothing: a heading, a fence or a quote came back as
         // text of the marker line's paragraph.
         let continuation = " ".repeat(continuation_width);
+        let blank = verbatim_blank(session);
+        let column = marker_column(session);
         for line in lines {
-            if line.is_empty() || line.chars().eq([verbatim_blank(session)]) {
+            if line.is_empty() || line == *blank {
                 out.push_str(&line);
                 out.push('\n');
-            } else if let Some(rest) = line.strip_prefix(marker_column(session)) {
+            } else if let Some(rest) = line.strip_prefix(column.as_str()) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
                 out.push_str(&format!("{rest}\n"));
@@ -2868,26 +2858,56 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
 /// first row is not a header cell and the row would fall out of the head.
 fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
+    if node.rows.is_empty()
+        && node
+            .separator_widths
+            .as_ref()
+            .is_some_and(|widths| !widths.is_empty())
+    {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "a separator row needs a preceding table row",
+        );
+        return String::new();
+    }
     let mut rows = Vec::new();
     let header_row = node
         .rows
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
-    let needs_delimiter = header_row
-        && node.rows.first().is_some_and(|row| {
-            let first_span = row.cells.iter().position(|cell| cell.span.is_some());
-            match first_span {
-                None => false,
-                Some(index) => {
-                    // Native only for a trailing run of colspans after a real
-                    // header cell; every other span shape needs the delimiter.
-                    !(index >= 1
-                        && row.cells[index..]
-                            .iter()
-                            .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+    // PART 12 §3: the author's own separator row, where the AST records one.
+    // Its PRESENCE is the choice, so it is written whatever the header shape -
+    // a native `|=` head is what ABSENCE spells. An EMPTY entry list names no
+    // separator cell and so has no separator row to spell; only a hand-built
+    // tree can hold one.
+    let authored_widths = node
+        .separator_widths
+        .as_ref()
+        .filter(|widths| !widths.is_empty());
+    if authored_widths.is_some() && !header_row {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "field separatorWidths needs a header row",
+        );
+        return String::new();
+    }
+    let needs_delimiter = authored_widths.is_some()
+        || header_row
+            && node.rows.first().is_some_and(|row| {
+                let first_span = row.cells.iter().position(|cell| cell.span.is_some());
+                match first_span {
+                    None => false,
+                    Some(index) => {
+                        // Native only for a trailing run of colspans after a
+                        // real header cell; every other span shape needs the
+                        // delimiter.
+                        !(index >= 1
+                            && row.cells[index..]
+                                .iter()
+                                .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+                    }
                 }
-            }
-        });
+            });
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
@@ -2896,7 +2916,19 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
-            cells.push(render_table_cell(session, cell, ctx, mark_header));
+            // A written separator row carries the column alignment, so the
+            // promoted row does not spell it a second time - for the columns
+            // that row reaches. A cell past the last entry has no separator
+            // cell to carry it and keeps its own marker.
+            let suppress_align =
+                row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
+            cells.push(render_table_cell(
+                session,
+                cell,
+                ctx,
+                mark_header,
+                suppress_align,
+            ));
         }
         ctx.cell_not_last = false;
         // A row whose every cell is blank is not a table row
@@ -2911,8 +2943,18 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
-        let sep = vec!["---"; node.rows[0].cells.len()].join("|");
-        rows.insert(1, format!("|{sep}|"));
+        let sep = match authored_widths {
+            // ONE SEPARATOR CELL PER ENTRY, not per row cell. Filling the row's
+            // width instead made the writer a non-fixed-point: the corpus's
+            // ragged `| |x |` over `|---|` came back with a second entry the
+            // author never wrote, so `fmt(fmt(x))` moved the tree.
+            Some(widths) => match render_table_separator(node, widths) {
+                Some(separator) => separator,
+                None => return String::new(),
+            },
+            None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
+        };
+        rows.insert(1, sep);
     }
     if let Some(row) = node
         .caption
@@ -2949,11 +2991,60 @@ fn render_table_row(cells: &[String], attrs: &str) -> String {
     format!("|{}|{}", cells.join("|"), attrs)
 }
 
+fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
+    let fail = || {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "separator row exceeds source allocation capacity",
+        );
+        None
+    };
+    let Some(capacity) = widths
+        .iter()
+        .enumerate()
+        .try_fold(2usize, |total, (index, width)| {
+            let dashes = usize::try_from((*width).max(1)).ok()?;
+            let colons = match table.rows[0].cells.get(index).and_then(|cell| cell.align) {
+                Some(TableAlign::Center) => 2,
+                Some(_) => 1,
+                None => 0,
+            };
+            total
+                .checked_add(dashes)?
+                .checked_add(colons)?
+                .checked_add(usize::from(index > 0))
+        })
+    else {
+        return fail();
+    };
+    let mut separator = String::new();
+    if separator.try_reserve_exact(capacity).is_err() {
+        return fail();
+    }
+    separator.push('|');
+    for (index, width) in widths.iter().enumerate() {
+        if index > 0 {
+            separator.push('|');
+        }
+        let align = table.rows[0].cells.get(index).and_then(|cell| cell.align);
+        if matches!(align, Some(TableAlign::Left | TableAlign::Center)) {
+            separator.push(':');
+        }
+        separator.extend(std::iter::repeat('-').take((*width).max(1) as usize));
+        if matches!(align, Some(TableAlign::Right | TableAlign::Center)) {
+            separator.push(':');
+        }
+    }
+    separator.push('|');
+    Some(separator)
+}
+
 fn render_table_cell(
     session: &RenderSession,
     cell: &TableCell,
     ctx: &mut CarveContext,
     mark_header: bool,
+    suppress_align: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
         crate::render_carve_error::record_unspellable(
@@ -2981,7 +3072,11 @@ fn render_table_cell(
         };
         return pad_cell(&attrs, marker);
     }
-    let align = align_marker(cell.align);
+    let align = if suppress_align {
+        ""
+    } else {
+        align_marker(cell.align)
+    };
     let valign = match cell.valign {
         Some(TableVerticalAlign::Top) => "^",
         Some(TableVerticalAlign::Middle) => "~",
@@ -3134,7 +3229,7 @@ fn render_footnote_def_source(
     ctx.in_footnote_body = previous_footnote_body;
     if raw_body.lines().any(|line| {
         line.trim_start_matches([' ', '\t'])
-            .strip_prefix(sentinel(session, S_CODE_LINE))
+            .strip_prefix(sentinel(session, S_CODE_LINE).as_str())
             .is_some_and(|rest| rest.starts_with('>'))
     }) {
         crate::render_carve_error::record_unspellable(
@@ -4214,7 +4309,7 @@ fn render_inline_body(
             let body = escaped_space(session);
             let attrs = render_inline_attrs(&n.attrs, ctx);
             if attrs.is_empty() {
-                body
+                body.to_string()
             } else {
                 format!("[{body}]{attrs}")
             }
@@ -4887,7 +4982,7 @@ fn render_emphasis(
         || reads_as_bold_italic
         || content.starts_with(delim)
         || content.ends_with(delim)
-        || content.ends_with(sentinel(session, S_ESCAPED_SPACE))
+        || content.ends_with(sentinel(session, S_ESCAPED_SPACE).as_str())
         // A bare opener may not be followed, nor a closer preceded, by `ws`
         // (CARVE-P3-013; space, tab, CR, LF). A trailing hard break also puts
         // the closer at the start of the next line (PART 11 §1a).
@@ -5503,8 +5598,8 @@ impl CarveContext {
     }
 }
 
-fn sentinel(session: &RenderSession, which: usize) -> char {
-    session.sentinels.with(|s| s.get()[which])
+fn sentinel(session: &RenderSession, which: usize) -> Rc<String> {
+    session.sentinels.with(|s| s.borrow()[which].clone())
 }
 
 fn note_inserted(session: &RenderSession, which: usize) {
@@ -5528,30 +5623,48 @@ fn note_seen(session: &RenderSession, which: usize, count: usize) {
     });
 }
 
-fn verbatim_blank(session: &RenderSession) -> char {
+fn verbatim_blank(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_BLANK)
 }
 
-fn thematic_guard(session: &RenderSession) -> char {
+fn thematic_guard(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_GUARD)
 }
 
-fn escaped_space(session: &RenderSession) -> String {
-    sentinel(session, S_ESCAPED_SPACE).to_string()
+fn escaped_space(session: &RenderSession) -> Rc<String> {
+    sentinel(session, S_ESCAPED_SPACE)
 }
 
-fn staged_space(session: &RenderSession) -> char {
+fn staged_space(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_STAGED_SPACE)
 }
 
-fn staged_tab(session: &RenderSession) -> char {
+fn staged_tab(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_STAGED_TAB)
 }
 
-fn free_sentinel(text: &str, taken: &[char; SENTINEL_COUNT]) -> char {
-    ('\u{e020}'..='\u{f8ff}')
-        .find(|c| !taken.contains(c) && !text.contains(*c))
-        .unwrap_or('\u{f8ff}')
+fn free_sentinel(text: &str, taken: &[Rc<String>; SENTINEL_COUNT]) -> String {
+    let occupied: HashSet<char> = text.chars().collect();
+    if let Some(marker) = ('\u{e020}'..='\u{f8ff}')
+        .find(|c| !occupied.contains(c) && !taken.iter().any(|token| token.chars().eq([*c])))
+    {
+        return marker.to_string();
+    }
+    static TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern =
+        TOKEN.get_or_init(|| regex::Regex::new("\u{e009}m([0-9]{1,20})\u{e00a}").unwrap());
+    let mut nonces = HashSet::new();
+    for candidate in std::iter::once(text).chain(taken.iter().map(|token| token.as_str())) {
+        for captures in pattern.captures_iter(candidate) {
+            if let Ok(nonce) = captures[1].parse::<usize>() {
+                nonces.insert(nonce);
+            }
+        }
+    }
+    let nonce = (0..=nonces.len())
+        .find(|nonce| !nonces.contains(nonce))
+        .unwrap();
+    format!("\u{e009}m{nonce}\u{e00a}")
 }
 
 fn resolve_nbsp_placeholder(session: &RenderSession, text: &str, in_line_block: bool) -> String {
@@ -5578,6 +5691,8 @@ fn resolve_nbsp_placeholder(session: &RenderSession, text: &str, in_line_block: 
 /// `a  b` - because inside a line block those are the same document: both parse
 /// to the same pair of placeholders.
 fn stage_line_block_layout(session: &RenderSession, line: &str) -> String {
+    let staged = staged_space(session);
+    let escaped = escaped_space(session);
     let mut out = String::with_capacity(line.len());
     let mut seen_content = false;
     let mut chars = line.chars().peekable();
@@ -5598,12 +5713,12 @@ fn stage_line_block_layout(session: &RenderSession, line: &str) -> String {
         if !seen_content || run >= 2 {
             for _ in 0..run {
                 note_inserted(session, S_STAGED_SPACE);
-                out.push(staged_space(session));
+                out.push_str(&staged);
             }
         } else {
             // A single placeholder mid-line is an escaped space, not layout.
             note_inserted(session, S_ESCAPED_SPACE);
-            out.push_str(&escaped_space(session));
+            out.push_str(&escaped);
         }
     }
 
@@ -5620,7 +5735,7 @@ fn normalize(session: &RenderSession, text: &str) -> String {
     session.staged.with(|c| c.borrow_mut().push_str(text));
     session.seen.with(|c| {
         let mut n = c.get();
-        n[S_ESCAPED_SPACE] += text.matches(&marker).count();
+        n[S_ESCAPED_SPACE] += text.matches(marker.as_str()).count();
         c.set(n);
     });
     // U+E010 marks an escaped space, and it resolves HERE rather than during
@@ -5632,17 +5747,16 @@ fn normalize(session: &RenderSession, text: &str) -> String {
     // document level. The list writer used to indent first and preserve the
     // expanded space as mid-paragraph content (carve-rs#855).
     let mut expanded = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == sentinel(session, S_ESCAPED_SPACE) {
-            expanded.push('\\');
-            if !matches!(chars.peek(), None | Some('\n')) {
-                expanded.push(' ');
-            }
-        } else {
-            expanded.push(ch);
+    let mut cursor = 0;
+    for (offset, _) in text.match_indices(marker.as_str()) {
+        expanded.push_str(&text[cursor..offset]);
+        cursor = offset + marker.len();
+        expanded.push('\\');
+        if !matches!(text.as_bytes().get(cursor), None | Some(b'\n')) {
+            expanded.push(' ');
         }
     }
+    expanded.push_str(&text[cursor..]);
     let text = expanded;
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
@@ -5675,7 +5789,7 @@ fn normalize(session: &RenderSession, text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let staged = trim_non_nbsp(&collapse_blank_lines(&lines)).to_string();
-    let current = session.sentinels.with(|s| s.get());
+    let current = session.sentinels.with(|s| s.borrow().clone());
     session.staged.with(|c| c.borrow_mut().push_str(&staged));
     session.seen.with(|c| {
         let mut n = c.get();
@@ -5685,7 +5799,7 @@ fn normalize(session: &RenderSession, text: &str) -> String {
             // `normalize`, before the replace that resolves it, and the
             // marker-column tag in the list writer's line loop, which strips it.
             if i != S_ESCAPED_SPACE && i != S_MARKER_COLUMN {
-                n[i] += staged.matches(current[i]).count();
+                n[i] += staged.matches(current[i].as_str()).count();
             }
         }
         c.set(n);
@@ -5698,8 +5812,10 @@ fn normalize(session: &RenderSession, text: &str) -> String {
 /// blocks, frontmatter, and block comments reproduce their content byte-exact
 /// (carve-js issue 340). Sentinel-encode the vulnerable bytes before the
 /// content joins the document string; `normalize` restores them at the end.
-/// Markers are allocated from characters absent from the document.
+/// Retry markers are chosen against the staged document.
 fn protect_verbatim(session: &RenderSession, content: &str) -> String {
+    let space = staged_space(session);
+    let tab = staged_tab(session);
     let mut lines = Vec::new();
     for line in content.split('\n') {
         if line.is_empty() {
@@ -5713,10 +5829,10 @@ fn protect_verbatim(session: &RenderSession, content: &str) -> String {
             .map(|ch| {
                 if ch == ' ' {
                     note_inserted(session, S_STAGED_SPACE);
-                    staged_space(session)
+                    space.as_str()
                 } else {
                     note_inserted(session, S_STAGED_TAB);
-                    staged_tab(session)
+                    tab.as_str()
                 }
             })
             .collect();
@@ -5766,16 +5882,22 @@ fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block
 
 /// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
 fn restore_verbatim(session: &RenderSession, text: &str) -> String {
+    let footnote_code_line = sentinel(session, S_FOOTNOTE_CODE_LINE);
+    let code_line = sentinel(session, S_CODE_LINE);
+    let blank = verbatim_blank(session);
+    let guard = thematic_guard(session);
+    let space = staged_space(session);
+    let tab = staged_tab(session);
     let text = text
         .split('\n')
         .map(|line| {
-            if let Some((prefix, rest)) = line.split_once(sentinel(session, S_FOOTNOTE_CODE_LINE)) {
+            if let Some((prefix, rest)) = line.split_once(footnote_code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) && rest.starts_with('[')
                 {
                     return format!("{prefix} {rest}");
                 }
             }
-            if let Some((prefix, rest)) = line.split_once(sentinel(session, S_CODE_LINE)) {
+            if let Some((prefix, rest)) = line.split_once(code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
                     let guarded = if let Some(last_quote) = prefix.rfind('>') {
                         format!("{}  ", &prefix[..=last_quote])
@@ -5785,13 +5907,8 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
                     return format!("{guarded}{rest}");
                 }
             }
-            line.replace(
-                [
-                    sentinel(session, S_CODE_LINE),
-                    sentinel(session, S_FOOTNOTE_CODE_LINE),
-                ],
-                "",
-            )
+            line.replace(code_line.as_str(), "")
+                .replace(footnote_code_line.as_str(), "")
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -5807,13 +5924,13 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             //
             // Drop the marker. A marker sitting next to real text is left alone,
             // which is the point.
-            let prefix = line.trim_end_matches(verbatim_blank(session));
+            let prefix = line.trim_end_matches(blank.as_str());
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
             {
                 return prefix.trim_end_matches([' ', '\t']).to_string();
             }
-            let line = match line.split_once(thematic_guard(session)) {
+            let line = match line.split_once(guard.as_str()) {
                 Some((prefix, rest)) if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) => {
                     format!("{prefix} {rest}")
                 }
@@ -5839,7 +5956,7 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             // RESIDUE, stated rather than implied: an authored run of two or more,
             // or a single one at the start or end of a line, still collides. That
             // needs the insertion counts.
-            restore_staged_runs(session, &line)
+            restore_staged_runs(&line, &space, &tab)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -5851,37 +5968,46 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
 /// A leading run is measured past the container prefix the host may have added
 /// before this runs (spaces, tabs, `>`), the same allowance the blank-line marker
 /// makes a few lines above.
-fn restore_staged_runs(session: &RenderSession, line: &str) -> String {
-    let chars: Vec<char> = line.chars().collect();
-    let staged = |c: char| c == staged_space(session) || c == staged_tab(session);
-    let prefix_end = chars
-        .iter()
-        .position(|&c| !(c == ' ' || c == '\t' || c == '>'))
-        .unwrap_or(chars.len());
+fn restore_staged_runs(line: &str, space: &str, tab: &str) -> String {
+    let prefix_end = line.len() - line.trim_start_matches([' ', '\t', '>']).len();
     let mut out = String::with_capacity(line.len());
-    let mut i = 0usize;
-    while i < chars.len() {
-        if !staged(chars[i]) {
-            out.push(chars[i]);
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < chars.len() && staged(chars[i]) {
-            i += 1;
-        }
-        let run = i - start;
-        let writer_inserted = start == prefix_end || i == chars.len() || run >= 2;
-        for &ch in &chars[start..i] {
-            if writer_inserted {
-                out.push(if ch == staged_space(session) {
-                    ' '
-                } else {
-                    '\t'
-                });
-            } else {
-                out.push(ch);
+    let mut offset = 0;
+    let mut spaces = line.match_indices(space).peekable();
+    let mut tabs = line.match_indices(tab).peekable();
+    while offset < line.len() {
+        let next = match (spaces.peek(), tabs.peek()) {
+            (Some((a, _)), Some((b, _))) => (*a).min(*b),
+            (Some((a, _)), None) | (None, Some((a, _))) => *a,
+            (None, None) => {
+                out.push_str(&line[offset..]);
+                break;
             }
+        };
+        out.push_str(&line[offset..next]);
+        offset = next;
+        let start = offset;
+        let mut run = Vec::new();
+        loop {
+            if line[offset..].starts_with(space) {
+                run.push(' ');
+                offset += space.len();
+            } else if line[offset..].starts_with(tab) {
+                run.push('\t');
+                offset += tab.len();
+            } else {
+                break;
+            }
+        }
+        while spaces.peek().is_some_and(|(at, _)| *at < offset) {
+            spaces.next();
+        }
+        while tabs.peek().is_some_and(|(at, _)| *at < offset) {
+            tabs.next();
+        }
+        if start == prefix_end || offset == line.len() || run.len() >= 2 {
+            out.extend(run);
+        } else {
+            out.push_str(&line[start..offset]);
         }
     }
     out
@@ -6942,7 +7068,7 @@ fn verse_break_needs_backslash(session: &RenderSession, emitted: &str) -> bool {
     if line.is_empty() {
         return true;
     }
-    if line.ends_with(sentinel(session, S_ESCAPED_SPACE)) {
+    if line.ends_with(sentinel(session, S_ESCAPED_SPACE).as_str()) {
         return true;
     }
     line.ends_with(' ') && !line.ends_with("  ")

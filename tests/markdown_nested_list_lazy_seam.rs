@@ -120,3 +120,23 @@ fn the_absorption_set_is_unchanged() {
     );
     assert_eq!(carve::to_markdown("- x\n  > q\n"), "- x\n  > q\n");
 }
+
+#[test]
+fn a_payload_marker_before_a_fence_does_not_loosen_the_outer_item() {
+    let pool: String = (0xe001..=0xf8ff)
+        .map(|code| char::from_u32(code).unwrap())
+        .collect();
+    for anchor in [String::new(), format!("```\n{pool}\n```\n\n")] {
+        for (below, expected_below) in [
+            ("para\n", "  para\n"),
+            ("| a |\n|---|\n", "  | a |\n  | --- |\n"),
+        ] {
+            let source = format!("{anchor}- x\n  - ```\n    c\n    ```\n+\n{below}");
+            let expected = format!("{anchor}- x\n  - ```\n    c\n    ```\n{expected_below}");
+            let markdown = carve::to_markdown(&source);
+            assert_eq!(markdown, expected);
+            let back = carve::markdown_import::markdown_to_ast(&markdown);
+            assert!(first_list(&back.children).tight);
+        }
+    }
+}

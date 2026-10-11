@@ -7,6 +7,9 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../raw_payload_termination.rs"]
+mod raw_payload_termination;
+
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
 #[path = "../footnote_container_paragraph_breaks.rs"]
@@ -14,6 +17,12 @@ mod footnote_container_paragraph_breaks;
 
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
+
+#[path = "../markdown_unicode_marker_exhaustion.rs"]
+mod markdown_unicode_marker_exhaustion;
+
+#[path = "../source_unicode_marker_exhaustion.rs"]
+mod source_unicode_marker_exhaustion;
 
 #[path = "../multiline_inline_code.rs"]
 mod multiline_inline_code;
@@ -502,6 +511,8 @@ mod a_tab_and_four_spaces_are_the_same_column;
 mod a_tab_control_is_a_button_and_one_item_is_selected;
 #[path = "../a_table_caption_is_numbered_among_the_tables_children.rs"]
 mod a_table_caption_is_numbered_among_the_tables_children;
+#[path = "../a_table_carries_the_separator_row_it_was_written_with.rs"]
+mod a_table_carries_the_separator_row_it_was_written_with;
 #[path = "../a_table_cells_blocks_contribute_only_their_payload.rs"]
 mod a_table_cells_blocks_contribute_only_their_payload;
 #[path = "../a_table_section_keeps_the_attributes_it_has_a_slot_for.rs"]
@@ -1866,3 +1877,6 @@ mod a_literal_caption_marker_after_an_empty_quote_needs_no_escape;
 
 #[path = "../raw_html_carriers_follow_the_import_trust_mode.rs"]
 mod raw_html_carriers_follow_the_import_trust_mode;
+
+#[path = "../a_closed_colon_in_a_quoted_item_releases_ownership.rs"]
+mod a_closed_colon_in_a_quoted_item_releases_ownership;

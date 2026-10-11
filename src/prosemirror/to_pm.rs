@@ -570,11 +570,23 @@ impl Renderer {
             ));
         }
         content.extend(rows);
-        Some(node_with(
-            self.name("table")?,
-            attrs(table.attrs.as_ref()),
-            content,
-        ))
+        let mut a = attrs(table.attrs.as_ref());
+        // The authored separator row, carried the way `carveListMarker` carries
+        // an authored bullet: ProseMirror has no slot of its own for it, and
+        // without one the round trip rewrites the table into the `|=` form.
+        if let Some(widths) = &table.separator_widths {
+            a.insert(
+                "carveSeparatorWidths".into(),
+                Json::String(
+                    widths
+                        .iter()
+                        .map(|w| w.to_string())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                ),
+            );
+        }
+        Some(node_with(self.name("table")?, a, content))
     }
 
     fn inlines(&mut self, nodes: &[InlineNode], marks: &[Json]) -> Vec<Json> {

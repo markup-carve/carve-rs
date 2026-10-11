@@ -7,10 +7,12 @@
 //! engine's byte output under `setRoundTripMode(true)`, which is what makes
 //! these assertions a parity gate rather than a restatement of this code.
 //!
-//! Two inventory rows have no assertion here because carve-rs has no datum
-//! behind them: `data-carve-col-widths` holds a separator row this parser
-//! discards, and `data-carve-src` holds verbatim block source nothing retains.
-//! §13 itself names the first as a distinction the AST does not record.
+//! One inventory row has no assertion here because carve-rs has no datum behind
+//! it: `data-carve-src` holds verbatim block source nothing retains.
+//! `data-carve-col-widths` used to sit beside it; the parser now records the
+//! separator row as `table.separatorWidths` (markup-carve/carve#2894), and its
+//! own round trip is measured in
+//! `a_table_carries_the_separator_row_it_was_written_with`.
 
 use carve::{
     html_to_ast, html_to_carve, to_html, to_html_with_options, to_html_with_options_and_report,
@@ -101,6 +103,13 @@ fn a_non_default_bullet_carries_its_marker() {
     assert!(rt("* a\n* b\n").contains(r#"<ul data-marker="*">"#));
     // The DEFAULT needs no spelling (§13a), so a `-` list's bytes do not move.
     assert_eq!(rt("- a\n"), to_html("- a\n"));
+}
+
+#[test]
+fn a_separator_row_carries_its_dash_runs() {
+    assert!(rt("| a | b |\n|:-----|---:|\n").contains(r#"<table data-carve-col-widths="5,3">"#));
+    // A native `|=` header wrote no separator row, so there is nothing to carry.
+    assert_eq!(rt("|= a |= b |\n"), to_html("|= a |= b |\n"));
 }
 
 #[test]

@@ -260,7 +260,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
                 &format!(
                     "[raw:{}] {}",
                     strip_terminal_controls(&raw.format),
-                    strip_terminal_controls(&raw.content)
+                    strip_terminal_controls(raw.target_content())
                 ),
                 DIM
             )
