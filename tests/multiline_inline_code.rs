@@ -140,3 +140,26 @@ fn constructed_code_normalizes_line_endings_without_losing_payload() {
         assert_eq!(code.value, value.replace("\r\n", "\n").replace('\r', "\n"));
     }
 }
+
+#[test]
+fn footnote_guards_do_not_consume_authored_staging_characters() {
+    for source in [
+        "`\u{e013}`[^n]\n\n[^n]: p `a\n  [r]: /url` q\n",
+        "x[^n]\n\n[^n]: `\u{e013}[`\n",
+        "`\u{e014}`[^n]\n\n[^n]: p `a\n  [r]: /url` q\n",
+        "x[^n]\n\n[^n]: `\u{e014}[`\n",
+    ] {
+        let written = carve::to_carve(source);
+        assert_eq!(
+            html_tree(&carve::to_html(&written)),
+            html_tree(&carve::to_html(source)),
+            "{source:?}"
+        );
+        assert_eq!(carve::to_carve(&written), written);
+        assert!(written.contains(if source.contains('\u{e013}') {
+            '\u{e013}'
+        } else {
+            '\u{e014}'
+        }));
+    }
+}

@@ -52,6 +52,7 @@ struct CarveContext {
     /// Inside a definition term, where a comment opening a line keeps its
     /// separator instead of joining a `%`-leading content into a fence.
     in_term: bool,
+    in_footnote_body: bool,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
     ///
@@ -1063,6 +1064,7 @@ fn render_with_escapes_once(
         after_caption_host: false,
         paragraph_starts_after_caption_host: false,
         in_term: false,
+        in_footnote_body: false,
         escape_mode,
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
@@ -3128,15 +3130,10 @@ fn render_footnote_def_source(
     if blocks.is_empty() {
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
+    let previous_footnote_body = ctx.in_footnote_body;
+    ctx.in_footnote_body = true;
     let raw_body = render_blocks(session, blocks, ctx);
-    let guarded_definition = format!("{}[", sentinel(session, S_CODE_LINE));
-    for _ in 0..raw_body.matches(&guarded_definition).count() {
-        note_inserted(session, S_FOOTNOTE_CODE_LINE);
-    }
-    let raw_body = raw_body.replace(
-        &guarded_definition,
-        &format!("{}[", sentinel(session, S_FOOTNOTE_CODE_LINE)),
-    );
+    ctx.in_footnote_body = previous_footnote_body;
     if raw_body.lines().any(|line| {
         line.trim_start_matches([' ', '\t'])
             .strip_prefix(sentinel(session, S_CODE_LINE))
@@ -5006,8 +5003,13 @@ fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) 
                     );
                     return line.to_owned();
                 }
-                note_inserted(session, S_CODE_LINE);
-                format!("{}{line}", sentinel(session, S_CODE_LINE))
+                let kind = if ctx.in_footnote_body && line.starts_with('[') {
+                    S_FOOTNOTE_CODE_LINE
+                } else {
+                    S_CODE_LINE
+                };
+                note_inserted(session, kind);
+                format!("{}{line}", sentinel(session, kind))
             } else {
                 line.to_owned()
             }
@@ -5751,8 +5753,13 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
                     return format!("{guarded}{rest}");
                 }
             }
-            line.replace(sentinel(session, S_CODE_LINE), "")
-                .replace(sentinel(session, S_FOOTNOTE_CODE_LINE), "")
+            line.replace(
+                [
+                    sentinel(session, S_CODE_LINE),
+                    sentinel(session, S_FOOTNOTE_CODE_LINE),
+                ],
+                "",
+            )
         })
         .collect::<Vec<_>>()
         .join("\n");
