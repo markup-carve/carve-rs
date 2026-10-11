@@ -163,6 +163,7 @@ fn transform_blocks(blocks: &mut [BlockNode], ext: &ImgFence) {
             BlockNode::CodeBlock(code) if ext.claims(code.lang.as_deref()) => {
                 let html = render_code_block(code, ext);
                 *block = BlockNode::RawBlock(RawBlock {
+                    content_terminated: None,
                     attrs: None,
                     format: "html".into(),
                     content: html,
@@ -198,6 +199,7 @@ fn transform_blocks(blocks: &mut [BlockNode], ext: &ImgFence) {
             BlockNode::Figure(f) => match &mut *f.target {
                 FigureTarget::CodeBlock(code) if ext.claims(code.lang.as_deref()) => {
                     f.rendered_target = Some(Box::new(RawBlock {
+                        content_terminated: None,
                         attrs: None,
                         format: "html".into(),
                         content: render_code_block(code, ext),

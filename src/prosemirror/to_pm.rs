@@ -398,6 +398,9 @@ impl Renderer {
             BlockNode::RawBlock(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("format".into(), Json::String(n.format.clone()));
+                if let Some(terminated) = n.content_terminated {
+                    a.insert("contentTerminated".into(), Json::Bool(terminated));
+                }
                 (
                     self.name("raw_block")?,
                     a,

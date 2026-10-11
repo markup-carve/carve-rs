@@ -142,6 +142,7 @@ fn transform_blocks(
                     body,
                 );
                 *block = BlockNode::RawBlock(RawBlock {
+                    content_terminated: None,
                     attrs: None,
                     format: "html".into(),
                     content: html,

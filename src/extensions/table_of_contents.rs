@@ -230,6 +230,7 @@ impl CarveExtension for TableOfContents {
             )
         };
         let toc = BlockNode::RawBlock(RawBlock {
+            content_terminated: None,
             attrs: None,
             format: "html".into(),
             content: html,

@@ -324,16 +324,24 @@ impl Reader {
             "table" => self.table(obj),
             "definition_list" => self.definition_list(obj),
             "figure" => self.figure(obj),
-            "raw_block" => Ok(with_attrs(
-                node(
-                    &ty,
-                    [
-                        ("format", string_json(a, "format", "")),
-                        ("content", Json::String(text_content(obj))),
-                    ],
-                ),
-                a,
-            )),
+            "raw_block" => {
+                let mut raw = with_attrs(
+                    node(
+                        &ty,
+                        [
+                            ("format", string_json(a, "format", "")),
+                            ("content", Json::String(text_content(obj))),
+                            (
+                                "contentTerminated",
+                                a.get("contentTerminated").cloned().unwrap_or(Json::Null),
+                            ),
+                        ],
+                    ),
+                    a,
+                );
+                remove_nulls(&mut raw);
+                Ok(raw)
+            }
             "comment" => Ok(with_attrs(
                 node(
                     &ty,

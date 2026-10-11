@@ -1077,11 +1077,33 @@ pub struct CitationDefinition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBlock {
+    /// Final payload termination; omission retains the legacy interpretation.
+    pub content_terminated: Option<bool>,
     pub attrs: Option<Attrs>,
     pub format: String,
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+impl RawBlock {
+    pub fn code_content(&self) -> String {
+        if self.content.is_empty() {
+            return String::new();
+        }
+        if self.content.bytes().all(|b| b == b'\n') {
+            return if self.content_terminated == Some(false) {
+                self.content[..self.content.len() - 1].to_owned()
+            } else {
+                self.content.clone()
+            };
+        }
+        let mut content = self.content.clone();
+        if self.content_terminated != Some(false) {
+            content.push('\n');
+        }
+        content
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

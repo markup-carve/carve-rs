@@ -7832,6 +7832,11 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             content.push('\n');
         }
         BlockNode::RawBlock(RawBlock {
+            content_terminated: UNTERMINATED_SOURCE_LINE.with(|slot| {
+                slot.get()
+                    .filter(|last| last_payload_line == Some(*last))
+                    .map(|_| false)
+            }),
             attrs: None,
             format,
             content,

@@ -1971,10 +1971,7 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
 /// code block with the raw format as its language (markup-carve/carve#2795).
 /// A raw payload leaves its last line ending implicit; a code payload keeps it.
 fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
-    let mut content = r.content.clone();
-    if crate::ast::fenced_payload_needs_ending(&content) {
-        content.push('\n');
-    }
+    let content = r.code_content();
     let code = CodeBlock {
         attrs: r.attrs.clone(),
         lang: Some(r.format.clone()),
@@ -5309,6 +5306,7 @@ mod escaped_raw_block {
     #[test]
     fn the_class_is_the_recorded_format_verbatim() {
         let raw = RawBlock {
+            content_terminated: None,
             attrs: None,
             format: "latex".to_string(),
             content: "\\emph{x}".to_string(),
