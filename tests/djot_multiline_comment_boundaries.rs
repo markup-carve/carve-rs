@@ -20,6 +20,7 @@ fn rejected_block_comments_keep_visible_text_and_heading_ownership() {
 #[test]
 fn valid_comment_shapes_still_disappear() {
     for source in [
+        ": def\n  {% x\n  y %} z\n",
         "- a\n {% x\n y %}\n",
         "para\n# not a heading\n{% x\ny %}\n",
         "para\n- not an item\n{% x\ny %}\n",
@@ -52,4 +53,18 @@ fn a_comment_in_a_footnote_body_is_inline() {
     let html = to_html(&djot_to_carve("a[^n]\n\n[^n]: text\n  {% x\n  y %} z\n"));
     assert!(!html.contains("{% x"), "{html}");
     assert!(html.contains("text") && html.contains('z'));
+}
+
+#[test]
+fn consecutive_block_comments_do_not_recurse_through_their_context() {
+    assert!(to_html(&djot_to_carve(&"{% x\n  y %}\n".repeat(64)))
+        .trim()
+        .is_empty());
+}
+
+#[test]
+fn a_comment_that_fails_on_its_first_line_continues_the_heading() {
+    let html = to_html(&djot_to_carve("# a\n{% 50% off %}\n"));
+    assert!(html.contains("<h1>a {% 50% off %}</h1>"), "{html}");
+    assert!(!html.contains("<p>"));
 }

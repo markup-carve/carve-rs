@@ -87,10 +87,7 @@ pub(super) fn blocks(source: &str) -> String {
         let (indent, indent_bytes) = leading_indent(raw);
         let text = &raw[indent_bytes..];
         let visible = masks[n].get(indent_bytes..).unwrap_or("");
-        if cached_regex!(r"^\\\{\x00DJOTINVALIDATTR\x00[0-9]+\x00%")
-            .unwrap()
-            .is_match(visible)
-        {
+        if rejected_comment_starts_block(visible) {
             let outside_list = lists.first().is_some_and(|list| indent <= list.source);
             if in_heading || outside_list {
                 result.push(raw[..indent_bytes].to_owned());

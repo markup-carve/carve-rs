@@ -499,6 +499,16 @@ fn read_djot_attribute_tokens(
     read_djot_attributes_with_tokens(source, start, false, false)
 }
 
+fn rejected_comment_starts_block(line: &str) -> bool {
+    let Some(capture) = cached_regex!(r"^\\\{\x00DJOTINVALIDATTR\x00[0-9]+\x00(%[^\n]*)")
+        .unwrap()
+        .captures(line)
+    else {
+        return false;
+    };
+    read_djot_word_attributes(&format!("{{{}}}", &capture[1]), 0).is_some()
+}
+
 fn comment_continues_paragraph(source: &str, start: usize) -> bool {
     let context = djot_attribute_context(source, start);
     if context.1.is_none() {
@@ -583,7 +593,9 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
             continue;
         }
         if body.starts_with('{') {
-            if let Some((end, _)) = read_djot_word_attributes(source, from + body_at) {
+            if let Some((end, _, _)) =
+                read_djot_attributes_with_context(source, from + body_at, false, false, false)
+            {
                 attribute_end = end;
                 kind = None;
                 continue;
@@ -599,6 +611,17 @@ fn comment_continues_paragraph(source: &str, start: usize) -> bool {
             continue;
         }
         if kind == Some("heading") {
+            continue;
+        }
+        if cached_regex!(r"^:[ \t]").unwrap().is_match(body) {
+            if prefix.len() <= body_at {
+                return false;
+            }
+            kind = if body[1..].trim().is_empty() {
+                None
+            } else {
+                Some("paragraph")
+            };
             continue;
         }
         if let Some(note) = cached_regex!(r"^\[\^[^\]]+\]:[ \t]*(.*)$")
@@ -646,6 +669,16 @@ fn read_djot_attributes_with_tokens(
     carve: bool,
     table: bool,
 ) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
+    read_djot_attributes_with_context(source, start, carve, table, true)
+}
+
+fn read_djot_attributes_with_context(
+    source: &str,
+    start: usize,
+    carve: bool,
+    table: bool,
+    paragraph_context: bool,
+) -> Option<(usize, String, Vec<DjotAttributeToken>)> {
     let bytes = source.as_bytes();
     let quote_prefix = cached_regex!(r"^[ \t]*>(?:[ \t]|$)").unwrap();
     let mut parts = Vec::new();
@@ -673,7 +706,9 @@ fn read_djot_attributes_with_tokens(
         }
         if bytes.get(i) == Some(&b'}')
             && source[start..=i].contains('\n')
-            && (!parts.is_empty() || !comment_continues_paragraph(source, start))
+            && (!parts.is_empty()
+                || !paragraph_context
+                || !comment_continues_paragraph(source, start))
         {
             let (depth, block_indent, minimum) = djot_attribute_context(source, start);
             for raw in source[start..=i].split('\n').skip(1) {
@@ -1194,10 +1229,7 @@ fn fold_heading_continuations(source: &str) -> String {
                 break;
             }
             let next = lines[i].trim_start_matches([' ', '\t']);
-            if cached_regex!(r"^\\\{\x00DJOTINVALIDATTR\x00[0-9]+\x00%")
-                .unwrap()
-                .is_match(next)
-            {
+            if rejected_comment_starts_block(next) {
                 break;
             }
             let part = if let Some(text) = next.strip_prefix(&prefix) {
