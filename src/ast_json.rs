@@ -2084,8 +2084,8 @@ fn write_table(out: &mut String, n: &Table) {
     w.finish();
 }
 
-/// PART 12 §3's author-choice field: PRESENCE says the author wrote a separator
-/// row, which the rows cannot say, so an empty list is still written.
+/// PART 12 §3's author-choice field records separator spelling independently
+/// of the table rows. The receiving schema validates its nonempty entries.
 fn write_separator_widths(w: &mut Writer<'_>, n: &Table) {
     let Some(widths) = &n.separator_widths else {
         return;
@@ -3205,7 +3205,8 @@ fn decode_separator_widths(obj: &Map<String, Json>) -> Result<Option<Vec<u64>>, 
         .map(|entry| {
             entry.as_u64().filter(|v| *v >= 1).ok_or_else(|| {
                 AstJsonError::new(
-                    "table.separatorWidths[] must be an integer of at least 1".to_owned(),
+                    "table.separatorWidths[] must be a positive integer representable as u64"
+                        .to_owned(),
                 )
             })
         })

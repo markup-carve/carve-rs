@@ -111,6 +111,8 @@ fn the_closed_schema_refuses_a_width_that_is_not_a_positive_integer() {
     }
     from_json(&payload("[1]")).expect("one dash is the smallest run there is");
     from_json(&payload("[4294967296]")).expect("the field is not bounded to u32");
+    let overflow = from_json(&payload("[18446744073709551616]")).unwrap_err();
+    assert!(overflow.to_string().contains("representable as u64"));
 }
 
 // ------------------------------------------------------------------ the writer

@@ -2962,9 +2962,9 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
                 Some(separator) => separator,
                 None => return String::new(),
             },
-            None => vec!["---"; node.rows[0].cells.len()].join("|"),
+            None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
         };
-        rows.insert(1, format!("|{sep}|"));
+        rows.insert(1, sep);
     }
     if let Some(row) = node
         .caption
@@ -3012,7 +3012,7 @@ fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
     let Some(capacity) = widths
         .iter()
         .enumerate()
-        .try_fold(0usize, |total, (index, width)| {
+        .try_fold(2usize, |total, (index, width)| {
             let dashes = usize::try_from((*width).max(1)).ok()?;
             let colons = match table.rows[0].cells.get(index).and_then(|cell| cell.align) {
                 Some(TableAlign::Center) => 2,
@@ -3031,6 +3031,7 @@ fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
     if separator.try_reserve_exact(capacity).is_err() {
         return fail();
     }
+    separator.push('|');
     for (index, width) in widths.iter().enumerate() {
         if index > 0 {
             separator.push('|');
@@ -3044,6 +3045,7 @@ fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
             separator.push(':');
         }
     }
+    separator.push('|');
     Some(separator)
 }
 
