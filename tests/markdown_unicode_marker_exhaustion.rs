@@ -122,3 +122,40 @@ fn code_block_blank_lines_survive_without_marker_exhaustion() {
         assert_eq!(carve::to_markdown(&source), source);
     }
 }
+
+#[test]
+fn partial_marker_families_touching_escapes_preserve_authored_text() {
+    let fragmented: String = (0xe001..=0xf8ff)
+        .step_by(3)
+        .map(|code| char::from_u32(code).unwrap())
+        .collect();
+    for used in [pool(), fragmented] {
+        let anchor = format!("```\n{used}\n```\n\n");
+        for authored in ["§m0:9_x", "_m0:9§", "§m1:0§m0:0§", "§m0:0_x"] {
+            let source = format!("{anchor}{authored}\n");
+            let markdown = carve::to_markdown(&source);
+            assert!(markdown.contains(authored), "lost {authored:?}");
+            let restored = carve::markdown_to_carve(&markdown);
+            assert_eq!(
+                carve::to_html(&restored),
+                carve::to_html(&source),
+                "{authored:?}"
+            );
+            assert_eq!(carve::to_markdown("ordinary\n"), "ordinary\n");
+        }
+    }
+}
+
+#[test]
+fn leading_blank_code_payloads_do_not_add_host_whitespace() {
+    for markdown in ["- ```\n\n    tail\n  ```\n", "> ```\n>\n>   tail\n> ```\n"] {
+        let source = carve::markdown_to_carve(markdown);
+        let rendered = carve::to_markdown(&source);
+        assert!(
+            !rendered.lines().any(|line| line.ends_with(' ')),
+            "{rendered:?}"
+        );
+        let imported = carve::markdown_to_carve(&rendered);
+        assert_eq!(carve::to_html(&imported), carve::to_html(&source));
+    }
+}

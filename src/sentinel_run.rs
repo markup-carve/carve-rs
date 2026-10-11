@@ -105,6 +105,22 @@ pub(crate) fn pick_sentinel_run<const N: usize>(occupied: &BTreeSet<u32>, base: 
     run_from(base)
 }
 
+/// Reserve the nonce core even when adjacent text omits part of a marker.
+pub(crate) fn collect_marker_nonce_cores(
+    text: &str,
+    nonces: &mut std::collections::BTreeSet<usize>,
+) {
+    for (at, _) in text.match_indices('m') {
+        let rest = &text[at + 1..];
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if digits > 0 && rest.as_bytes().get(digits) == Some(&b':') {
+            if let Ok(nonce) = rest[..digits].parse::<usize>() {
+                nonces.insert(nonce);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

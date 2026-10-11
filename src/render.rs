@@ -145,13 +145,16 @@ fn render_prepared_html(
     crossref_index: crate::parse::CrossrefIndex,
     needs_document_ids: bool,
 ) -> String {
+    let losses = crate::render_loss::checkpoint();
+    let mut default_buffer = [0; 4];
+    let default_marker = FOOTNOTES_PLACEMENT_DEFAULT.encode_utf8(&mut default_buffer);
     let (first, crossref_index) = render_html_pass(
         doc,
         footnotes,
         options,
         crossref_index,
         needs_document_ids,
-        &FOOTNOTES_PLACEMENT_DEFAULT.to_string(),
+        default_marker,
     );
     if first.seen == first.emitted {
         return first.html;
@@ -180,17 +183,18 @@ fn render_prepared_html(
         .as_ref()
         .is_some_and(|set| set.contains(&u32::from(picked)))
     {
-        // The bounded character pool is full. A longer delimited run remains
-        // absent from the authored output and cannot overlap adjacent text.
-        format!(
-            "\u{e009}{}\u{e00a}",
-            FOOTNOTES_PLACEMENT_DEFAULT
-                .to_string()
-                .repeat(first.longest_marker_run + 1)
-        )
+        let nonces = first
+            .nonce_cores
+            .as_ref()
+            .expect("collected before the splice");
+        let nonce = (0..=nonces.len())
+            .find(|nonce| !nonces.contains(nonce))
+            .unwrap();
+        format!("\u{e009}m{nonce}:html\u{e00a}")
     } else {
         picked.to_string()
     };
+    losses.restore();
     let (second, _) = render_html_pass(
         doc,
         footnotes,
@@ -217,7 +221,7 @@ struct HtmlPass {
     /// held, collected only when `seen` differed from `emitted` and only from
     /// the text as it stood BEFORE the splice consumed a marker.
     occupied: Option<std::collections::BTreeSet<u32>>,
-    longest_marker_run: usize,
+    nonce_cores: Option<std::collections::BTreeSet<usize>>,
 }
 
 /// Render `doc` with `marker` standing for a `::: footnotes` placement block,
@@ -286,21 +290,20 @@ fn render_html_pass(
         }
         set
     });
-    let longest_marker_run = if occupied.is_some() {
-        [&html, section.as_deref().unwrap_or("")]
-            .into_iter()
-            .map(|text| {
-                text.split(|ch| ch != FOOTNOTES_PLACEMENT_DEFAULT)
-                    .map(str::chars)
-                    .map(Iterator::count)
-                    .max()
-                    .unwrap_or(0)
-            })
-            .max()
-            .unwrap_or(0)
-    } else {
-        0
-    };
+    let nonce_cores = occupied
+        .as_ref()
+        .filter(|set| {
+            set.len()
+                == (crate::sentinel_run::POOL_LAST - crate::sentinel_run::POOL_FIRST + 1) as usize
+        })
+        .map(|_| {
+            let mut nonces = std::collections::BTreeSet::new();
+            crate::sentinel_run::collect_marker_nonce_cores(&html, &mut nonces);
+            if let Some(section) = &section {
+                crate::sentinel_run::collect_marker_nonce_cores(section, &mut nonces);
+            }
+            nonces
+        });
     if let Some(section) = section {
         // `::: footnotes` placement: every footnote is numbered by now, so flush
         // the endnotes at the marker instead of appending at the end. A
@@ -325,7 +328,7 @@ fn render_html_pass(
         emitted,
         seen,
         occupied,
-        longest_marker_run,
+        nonce_cores,
     };
     (pass, state.crossref_index)
 }

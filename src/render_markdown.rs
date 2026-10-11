@@ -106,6 +106,11 @@ fn render_markdown_inner(
         return first;
     }
 
+    if OCCUPIED.with(|occupied| marker_pool_needs_tokens(&occupied.borrow())) {
+        OCCUPIED_TOKEN_NONCES.with(|nonces| {
+            crate::sentinel_run::collect_marker_nonce_cores(&first, &mut nonces.borrow_mut());
+        });
+    }
     let picked = OCCUPIED.with(|occupied| {
         let occupied = occupied.borrow();
         let chars: [char; CARRIER_COUNT] =
@@ -127,7 +132,7 @@ fn render_markdown_inner(
         });
         std::array::from_fn(|index| Rc::new(format!("§m{nonce}:{index}§")))
     });
-    CARRIERS.with(|slot| *slot.borrow_mut() = picked);
+    let _picked_carriers = CarrierGuard::install(picked);
     losses.restore();
     render_markdown_once(doc, smart_typography, id_opts, carry_markers)
 }
@@ -453,7 +458,7 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             note_inserted(C_PAYLOAD_BOUNDARY);
             let boundary = carrier(C_PAYLOAD_BOUNDARY);
             format!(
-                "{fence}{info_separator}{info}\n{boundary}{content}{boundary}{ending}{fence}\n\n"
+                "{fence}{info_separator}{info}{boundary}\n{content}{boundary}{ending}{fence}\n\n"
             )
         }
         BlockNode::BlockQuote(quote) => {
@@ -906,6 +911,8 @@ fn swallowed_by_a_lazy_line(above_text: &str, below: &BlockNode) -> bool {
         .find(|line| !line.trim().is_empty())
         .unwrap_or_default()
         .trim_start_matches([' ', '\t']);
+    let boundary = carrier(C_PAYLOAD_BOUNDARY);
+    let tail = tail.strip_prefix(boundary.as_str()).unwrap_or(tail);
     if bare_marker_line(tail) || thematic_break_line(tail) {
         return false;
     }
@@ -2854,6 +2861,18 @@ fn note_inserted(which: usize) {
     });
 }
 
+fn marker_pool_needs_tokens(occupied: &std::collections::BTreeSet<u32>) -> bool {
+    let pool_size = (crate::sentinel_run::POOL_LAST - crate::sentinel_run::POOL_FIRST + 1) as usize;
+    if occupied.len() < pool_size / CARRIER_COUNT {
+        return false;
+    }
+    let picked: [char; CARRIER_COUNT] =
+        crate::sentinel_run::pick_sentinel_run(occupied, u32::from(CARRIER_DEFAULTS[0]));
+    picked
+        .iter()
+        .any(|marker| occupied.contains(&u32::from(*marker)))
+}
+
 /// Count the carriers standing in the assembled document, and record which
 /// private-use code points it occupies.
 ///
@@ -2865,22 +2884,16 @@ fn note_assembled(text: &str) {
         return;
     }
     let mut seen = SEEN.with(std::cell::Cell::get);
-    OCCUPIED.with(|occupied| {
-        crate::sentinel_run::collect_private_use(text, &mut occupied.borrow_mut());
+    let needs_nonces = OCCUPIED.with(|occupied| {
+        let mut occupied = occupied.borrow_mut();
+        crate::sentinel_run::collect_private_use(text, &mut occupied);
+        marker_pool_needs_tokens(&occupied)
     });
-    static TOKEN_FAMILY: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let pattern =
-        TOKEN_FAMILY.get_or_init(|| regex::Regex::new(r"§m([0-9]{1,20}):[0-9]§").unwrap());
-    OCCUPIED_TOKEN_NONCES.with(|nonces| {
-        let mut nonces = nonces.borrow_mut();
-        if text.contains('§') {
-            for matched in pattern.captures_iter(text) {
-                if let Ok(nonce) = matched[1].parse::<usize>() {
-                    nonces.insert(nonce);
-                }
-            }
-        }
-    });
+    if needs_nonces {
+        OCCUPIED_TOKEN_NONCES.with(|nonces| {
+            crate::sentinel_run::collect_marker_nonce_cores(text, &mut nonces.borrow_mut());
+        });
+    }
     CARRIERS.with(|slot| {
         let markers = slot.borrow();
         let characters: [char; CARRIER_COUNT] =
@@ -3206,13 +3219,13 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 /// One scan per block: an opener pairs with any closer after it, a closer with
 /// any opener before it. Only a `_` from text is a candidate, so one the
 /// author escaped is never half of a pair.
-fn underscores_that_could_pair(text: &[char], literal: &[bool]) -> Vec<bool> {
+fn underscores_that_could_pair(text: &[char], slots: &[u8]) -> Vec<bool> {
     let mut escape = vec![false; text.len()];
     for block in inline_blocks(text) {
         let flags: Vec<(usize, bool, bool)> = block
             .iter()
             .flat_map(|&(start, end)| (start..end).map(move |i| (start, end, i)))
-            .filter(|&(_, _, i)| literal[i])
+            .filter(|&(_, _, i)| slots[i] == C_UNDERSCORE as u8)
             .map(|(start, end, i)| {
                 // A line or cell boundary is whitespace to the reader.
                 let before = if i == start { ' ' } else { text[i - 1] };
@@ -3332,19 +3345,19 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     {
         return text.replace(carriers[C_PAYLOAD_BOUNDARY].as_str(), "");
     }
-    let tokens: Vec<_> = carrier_tokens(text, &carriers)
-        .filter(|token| token.slot != Some(C_PAYLOAD_BOUNDARY))
-        .collect();
-    let line: Vec<char> = tokens.iter().map(|token| token.character).collect();
-    let literal: Vec<bool> = tokens
-        .iter()
-        .map(|token| token.slot == Some(C_UNDERSCORE))
-        .collect();
-    let raw_chars: Vec<char> = tokens
-        .iter()
-        .map(|token| token.raw.chars().next().unwrap())
-        .collect();
-    let pairs = underscores_that_could_pair(&line, &literal);
+    let mut line = Vec::new();
+    let mut raw_chars = Vec::new();
+    let mut slots = Vec::new();
+    const NO_SLOT: u8 = u8::MAX;
+    const { assert!(CARRIER_COUNT < u8::MAX as usize) };
+    for token in
+        carrier_tokens(text, &carriers).filter(|token| token.slot != Some(C_PAYLOAD_BOUNDARY))
+    {
+        line.push(token.character);
+        raw_chars.push(token.raw.chars().next().unwrap());
+        slots.push(token.slot.map_or(NO_SLOT, |slot| slot as u8));
+    }
+    let pairs = underscores_that_could_pair(&line, &slots);
     let mut out = String::with_capacity(text.len());
     // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
     //
@@ -3355,8 +3368,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     // The position is a property of the LINE, not of the candidate, so it is
     // computed once when a line opens and read in O(1) after that.
     let mut content_start = content_position(&line, 0);
-    for (i, token) in tokens.iter().enumerate() {
-        let raw = token.raw.chars().next().unwrap();
+    for (i, (&raw, &slot)) in raw_chars.iter().zip(&slots).enumerate() {
         if raw == '\n' {
             content_start = content_position(&line, i + 1);
             out.push(raw);
@@ -3365,7 +3377,8 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         // TWO FAMILIES, TWO TESTS. M1b asks whether a delimiter of the same
         // character stands beside the candidate; M1f and M2b ask whether the
         // candidate stands where an ATX heading could open.
-        let keep = token.slot.map(|slot| {
+        let keep = (slot != NO_SLOT).then(|| {
+            let slot = usize::from(slot);
             let ch = carried_character(slot);
             if slot == C_POSITIONAL_HASH {
                 (
@@ -3410,7 +3423,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
                 out.push(ch);
             }
             Some((ch, false)) => out.push(ch),
-            None => out.push_str(token.raw),
+            None => out.push(raw),
         }
     }
     out
