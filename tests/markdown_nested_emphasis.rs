@@ -86,3 +86,27 @@ fn repair_keeps_complete_ordered_loss_counts() {
         0
     );
 }
+
+#[test]
+fn markdown_preserves_nested_wrapper_hosts_and_attributes() {
+    #[derive(Deserialize)]
+    struct HostControl {
+        source: String,
+        markdown: String,
+    }
+    let controls: Vec<HostControl> =
+        serde_json::from_str(include_str!("fixtures/markdown-nested-emphasis-hosts.json")).unwrap();
+    assert_eq!(controls.len(), 16);
+    for control in controls {
+        let report =
+            carve::to_markdown_with_report(&control.source, CheckedRenderOptions::default())
+                .unwrap();
+        assert_eq!(report.value, control.markdown, "{}", control.source);
+        assert!(report.losses.is_empty(), "{}", control.source);
+        assert_eq!(report.total_losses, 0);
+        assert_eq!(
+            carve::render_markdown(&carve::parse(&control.source)).unwrap(),
+            report.value
+        );
+    }
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "source": ":: a{*x*}b\n: def\n",
+    "markdown": "**a<strong>x</strong>b**\n\ndef\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ a{/x/}b\n:::\n^ a{*y*}b\n",
+    "markdown": "![a](x.png)\n\n*a<em>x</em>b*\n\n**a<strong>y</strong>b**\n"
+  },
+  {
+    "source": "{*x*}{#s .c}",
+    "markdown": "<strong id=\"s\" class=\"c\">x</strong>\n"
+  },
+  {
+    "source": "{/x/}{#e .c}",
+    "markdown": "<em id=\"e\" class=\"c\">x</em>\n"
+  },
+  {
+    "source": "{~x~}{#d .c}",
+    "markdown": "<del id=\"d\" class=\"c\">x</del>\n"
+  },
+  {
+    "source": "a{*x*}{#s .c}b",
+    "markdown": "a<strong id=\"s\" class=\"c\">x</strong>b\n"
+  },
+  {
+    "source": "a{/x/}{#e .c}b",
+    "markdown": "a<em id=\"e\" class=\"c\">x</em>b\n"
+  },
+  {
+    "source": "{* {/x/} *}{#s .c}",
+    "markdown": "<strong id=\"s\" class=\"c\"> *x* </strong>\n"
+  },
+  {
+    "source": "{* *}{#s .c}",
+    "markdown": "<strong id=\"s\" class=\"c\"> </strong>\n"
+  },
+  {
+    "source": ":: a{*x*}\n: def\n",
+    "markdown": "<strong>a**x**</strong>\n\ndef\n"
+  },
+  {
+    "source": ":: {*x*}b\n: def\n",
+    "markdown": "<strong>**x**b</strong>\n\ndef\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ a{/x/}\n:::\n",
+    "markdown": "![a](x.png)\n\n<em>a*x*</em>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ {/x/}b\n:::\n",
+    "markdown": "![a](x.png)\n\n<em>*x*b</em>\n"
+  },
+  {
+    "source": "::: figure\n![a](x.png)\n^ {/x/}\n:::\n",
+    "markdown": "![a](x.png)\n\n<em>*x*</em>\n"
+  },
+  {
+    "source": "::: note \"/*x*/b\"\nbody\n:::\n",
+    "markdown": "<strong>***x***b</strong>\n\nbody\n"
+  },
+  {
+    "source": "::: tip \"a/*x*/\"\nbody\n:::\n",
+    "markdown": "**a<strong><em>x</em></strong>**\n\nbody\n"
+  }
+]

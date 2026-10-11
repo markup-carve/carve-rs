@@ -42,7 +42,7 @@ fn a_child_at_the_trailing_edge_only_is_enough() {
 
 #[test]
 fn a_strong_inside_a_strong_keeps_both_levels() {
-    // CommonMark drops a Markdown strong whose AST parent is another strong.
+    // Keep both strong elements explicit across Markdown readers.
     assert_eq!(
         from_html("<p><strong><strong>x</strong></strong></p>"),
         "<strong>**x**</strong>\n"

@@ -340,9 +340,33 @@ fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> Stri
     render_inlines(nodes, ctx, 0)
 }
 
+fn render_wrapped_inlines(
+    nodes: &[InlineNode],
+    ctx: &mut MarkdownContext,
+    delimiter: &'static str,
+    open_tag: &str,
+    close_tag: &str,
+) -> String {
+    let owner = &nodes as *const &[InlineNode] as usize;
+    ctx.delimiter_ancestors.push(delimiter);
+    let inner = render_recorded_inlines(nodes, ctx, 0, Some(owner));
+    ctx.delimiter_ancestors.pop();
+    let parts = ctx.rendered_children.remove(&owner);
+    let core = inner.trim();
+    let rendered =
+        if !core.is_empty() && nested_edge_is_invalid(core, delimiter, nodes, parts.as_ref()) {
+            let lead = &inner[..inner.len() - inner.trim_start().len()];
+            let trail = &inner[inner.trim_end().len()..];
+            format!("{lead}{open_tag}{core}{close_tag}{trail}")
+        } else {
+            pad_outside(inner, delimiter, open_tag, close_tag)
+        };
+    trim_non_nbsp(&rendered).to_string()
+}
+
 fn render_title_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
     let nodes = inline_nodes_without_strong(nodes);
-    render_block_inlines(&nodes, ctx)
+    render_wrapped_inlines(&nodes, ctx, "**", "<strong>", "</strong>")
 }
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -528,14 +552,10 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             // Markdown has no admonition; preserve the title (otherwise lost)
             // as a leading bold line, then the body. Both are written before
             // the body, so they separate it from a list above (§10o).
-            let title = admonition.title.as_ref().map(|title| {
-                pad_outside_on_its_own_line(
-                    render_title_inlines(title, ctx),
-                    "**",
-                    "<strong>",
-                    "</strong>",
-                )
-            });
+            let title = admonition
+                .title
+                .as_ref()
+                .map(|title| render_title_inlines(title, ctx));
             if title.as_ref().is_some_and(|t| !t.is_empty())
                 || admonition.label.as_deref().is_some_and(|l| !l.is_empty())
             {
@@ -555,14 +575,10 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Directive(d) => {
-            let title = d.title.as_ref().map(|title| {
-                pad_outside_on_its_own_line(
-                    render_title_inlines(title, ctx),
-                    "**",
-                    "<strong>",
-                    "</strong>",
-                )
-            });
+            let title = d
+                .title
+                .as_ref()
+                .map(|title| render_title_inlines(title, ctx));
             if title.as_ref().is_some_and(|t| !t.is_empty())
                 || d.label.as_deref().is_some_and(|l| !l.is_empty())
             {
@@ -1070,12 +1086,7 @@ fn render_definition_list(
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
-            let term = pad_outside_on_its_own_line(
-                render_block_inlines(term, ctx),
-                "**",
-                "<strong>",
-                "</strong>",
-            );
+            let term = render_wrapped_inlines(term, ctx, "**", "<strong>", "</strong>");
             if !term.is_empty() {
                 ctx.previous_list = None;
                 out.push_str(&term);
@@ -1450,12 +1461,7 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         match child {
             BlockNode::Figure(figure) => {
                 let target = render_figure_target(figure, ctx, depth);
-                let caption = pad_outside_on_its_own_line(
-                    render_block_inlines(&figure.caption, ctx),
-                    "*",
-                    "<em>",
-                    "</em>",
-                );
+                let caption = render_wrapped_inlines(&figure.caption, ctx, "*", "<em>", "</em>");
                 out.push_str(&format!("{target}\n\n{caption}\n\n"));
             }
             other => out.push_str(&render_block(other, ctx, depth)),
@@ -1469,12 +1475,7 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
     // hangs on the closing fence - so its fallback follows the closer and is NOT
     // restored by the round trip (markup-carve/carve#2851).
     if let Some(caption) = &node.caption {
-        let caption = pad_outside_on_its_own_line(
-            render_block_inlines(caption, ctx),
-            "**",
-            "<strong>",
-            "</strong>",
-        );
+        let caption = render_wrapped_inlines(caption, ctx, "**", "<strong>", "</strong>");
         out.push_str(&caption);
         out.push_str("\n\n");
     }
@@ -1591,39 +1592,19 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
     format!("{lead}{delimiter}{core}{delimiter}{trail}")
 }
 
-/// Whether the content's own edge would lengthen the delimiter run past what
-/// the reader can read.
-///
-/// GFM strikethrough is a matching pair of ONE OR TWO tildes; three is not a
-/// longer delimiter, it is no delimiter at all - and at the start of a line it
-/// is a FENCED CODE BLOCK opener that swallows the rest of the document. So a
-/// strike whose content begins or ends with a tilde takes the inline-HTML form.
-///
-/// CommonMark emphasis has no such cap: `***x***` is how a strong holding an
-/// italic is spelled and every reader reads it back, so the asterisk runs are
-/// left alone. They could not reach here in any case - `escape_text` escapes a
-/// literal asterisk, and `~` is deliberately not escaped because GFM reads
-/// `~x~` as strikethrough.
-fn pad_nested_outside(
-    body: String,
+fn nested_edge_is_invalid(
+    core: &str,
     delimiter: &str,
-    open_tag: &str,
-    close_tag: &str,
-    node: &InlineNode,
-    ctx: &MarkdownContext,
-) -> String {
-    let core = body.trim();
+    children: &[InlineNode],
+    parts: Option<&Vec<String>>,
+) -> bool {
     let ch = delimiter.chars().next().unwrap();
     let lead = core.chars().take_while(|c| *c == ch).count();
     let mut invalid_edge = ch == '*' && lead > 0 && delimiter.len() + lead != 3;
     if ch == '*' && live_run_at_end(core, ch) > 0 {
-        if let (InlineNode::Emphasis(emphasis), Some(parts)) = (
-            node,
-            ctx.rendered_children
-                .get(&(node as *const InlineNode as usize)),
-        ) {
+        if let Some(parts) = parts {
             if let Some(i) = parts.iter().rposition(|part| !part.is_empty()) {
-                if let Some((child_delimiter, _, _)) = delimiter_run(&emphasis.children[i]) {
+                if let Some((child_delimiter, _, _)) = delimiter_run(&children[i]) {
                     if child_delimiter.starts_with(ch) {
                         invalid_edge |= child_delimiter == delimiter;
                         if let Some(child) = split_run(&parts[i], child_delimiter) {
@@ -1645,6 +1626,29 @@ fn pad_nested_outside(
             }
         }
     }
+    invalid_edge
+}
+
+fn pad_nested_outside(
+    body: String,
+    delimiter: &str,
+    open_tag: &str,
+    close_tag: &str,
+    node: &InlineNode,
+    ctx: &MarkdownContext,
+) -> String {
+    let core = body.trim();
+    let children = match node {
+        InlineNode::Emphasis(emphasis) => emphasis.children.as_slice(),
+        _ => &[],
+    };
+    let invalid_edge = nested_edge_is_invalid(
+        core,
+        delimiter,
+        children,
+        ctx.rendered_children
+            .get(&(node as *const InlineNode as usize)),
+    );
     if invalid_edge && !core.is_empty() {
         let piece = RunPiece {
             lead: body[..body.len() - body.trim_start().len()].to_string(),
@@ -1656,6 +1660,19 @@ fn pad_nested_outside(
     pad_outside(body, delimiter, open_tag, close_tag)
 }
 
+/// Whether the content's own edge would lengthen the delimiter run past what
+/// the reader can read.
+///
+/// GFM strikethrough is a matching pair of ONE OR TWO tildes; three is not a
+/// longer delimiter, it is no delimiter at all - and at the start of a line it
+/// is a FENCED CODE BLOCK opener that swallows the rest of the document. So a
+/// strike whose content begins or ends with a tilde takes the inline-HTML form.
+///
+/// CommonMark emphasis has no such cap: `***x***` is how a strong holding an
+/// italic is spelled and every reader reads it back, so the asterisk runs are
+/// left alone. They could not reach here in any case - `escape_text` escapes a
+/// literal asterisk, and `~` is deliberately not escaped because GFM reads
+/// `~x~` as strikethrough.
 fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
     let Some(ch) = delimiter.chars().next() else {
         return false;
@@ -1732,12 +1749,16 @@ fn render_recorded_inlines(
         unmerge_runs(nodes, &mut parts, ctx);
     }
     let result = parts.concat();
-    for child in nodes {
-        ctx.rendered_children
-            .remove(&(child as *const InlineNode as usize));
+    if !ctx.rendered_children.is_empty() {
+        for child in nodes {
+            ctx.rendered_children
+                .remove(&(child as *const InlineNode as usize));
+        }
     }
     if let Some(owner) = owner {
-        ctx.rendered_children.insert(owner, parts);
+        if nodes.iter().any(|node| delimiter_run(node).is_some()) {
+            ctx.rendered_children.insert(owner, parts);
+        }
     }
     result
 }
@@ -1841,18 +1862,6 @@ fn split_run(part: &str, delimiter: &str) -> Option<RunPiece> {
     })
 }
 
-/// Whether a run can flank is a property of the SEAM, not of the emphasis node,
-/// so it cannot be answered where the run is built: the character that decides
-/// it belongs to the sibling on the other side. Here is the one place both
-/// neighbours are known, so a run that cannot open or cannot close where it
-/// stands is re-spelled as inline HTML - the same fallback every inline this
-/// writer cannot spell with delimiters already takes (carve-rs#1615).
-///
-/// The neighbour is read off the parts as they stand, so a part already
-/// re-spelled on this pass contributes its `>` or `<` rather than its delimiter.
-/// That only ever makes a later run MORE able to flank, so the pass needs no
-/// second round; a run decided against an earlier neighbour can at worst take
-/// inline HTML it would not have needed.
 fn spell_nested_html(
     node: &InlineNode,
     piece: RunPiece,
@@ -1878,11 +1887,8 @@ fn spell_nested_html(
                             if child.kind == EmphasisKind::Strong {
                                 if let Some(nested) = split_run(part, "**") {
                                     return format!(
-                                        "{}<strong{}>{}</strong>{}",
-                                        nested.lead,
-                                        crate::render::render_attrs(&child.attrs),
-                                        nested.core,
-                                        nested.trail
+                                        "{}<strong>{}</strong>{}",
+                                        nested.lead, nested.core, nested.trail
                                     );
                                 }
                             }
@@ -1897,15 +1903,6 @@ fn spell_nested_html(
             }
         }
     }
-    let open_tag = if let InlineNode::Emphasis(emphasis) = node {
-        open_tag.replacen(
-            '>',
-            &format!("{}>", crate::render::render_attrs(&emphasis.attrs)),
-            1,
-        )
-    } else {
-        open_tag.to_string()
-    };
     format!("{}{open_tag}{core}{close_tag}{}", piece.lead, piece.trail)
 }
 
@@ -1916,6 +1913,9 @@ fn repair_nested_runs(
     direct_parent: bool,
 ) {
     let ancestors = &ctx.delimiter_ancestors;
+    if ancestors.is_empty() {
+        return;
+    }
     let parent = ancestors.last().copied();
     for i in 0..parts.len() {
         let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
@@ -1954,6 +1954,18 @@ fn repair_nested_runs(
     }
 }
 
+/// Whether a run can flank is a property of the SEAM, not of the emphasis node,
+/// so it cannot be answered where the run is built: the character that decides
+/// it belongs to the sibling on the other side. Here is the one place both
+/// neighbours are known, so a run that cannot open or cannot close where it
+/// stands is re-spelled as inline HTML - the same fallback every inline this
+/// writer cannot spell with delimiters already takes (carve-rs#1615).
+///
+/// The neighbour is read off the parts as they stand, so a part already
+/// re-spelled on this pass contributes its `>` or `<` rather than its delimiter.
+/// That only ever makes a later run MORE able to flank, so the pass needs no
+/// second round; a run decided against an earlier neighbour can at worst take
+/// inline HTML it would not have needed.
 fn reflank_runs(nodes: &[InlineNode], parts: &mut [String], ctx: &MarkdownContext) {
     for i in 0..parts.len() {
         let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
@@ -2114,6 +2126,27 @@ fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String], ctx: &MarkdownContex
     }
 }
 
+fn render_attributed_emphasis(
+    emphasis: &Emphasis,
+    ctx: &mut MarkdownContext,
+    depth: usize,
+) -> Option<String> {
+    let (open, close, extra) = match emphasis.kind {
+        EmphasisKind::Italic => ("<em", "</em>", ""),
+        EmphasisKind::Strong => ("<strong", "</strong>", ""),
+        EmphasisKind::Strike => ("<del", "</del>", ""),
+        EmphasisKind::BoldItalic => ("<strong", "</em></strong>", "<em>"),
+        _ => return None,
+    };
+    emphasis.attrs.as_ref()?;
+    let attrs = crate::render::render_attrs(&emphasis.attrs);
+    if attrs.is_empty() {
+        return None;
+    }
+    let inner = render_inlines(&emphasis.children, ctx, depth + 1);
+    Some(format!("{open}{attrs}>{extra}{inner}{close}"))
+}
+
 fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
@@ -2159,91 +2192,96 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // emit it unescaped for the same reason; escaping here turned `->`
         // into `-&gt;` in source mode.
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
-        InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => {
-                ctx.delimiter_ancestors.push("*");
-                let body = render_recorded_inlines(
-                    &emphasis.children,
-                    ctx,
-                    depth + 1,
-                    Some(node as *const InlineNode as usize),
-                );
-                ctx.delimiter_ancestors.pop();
-                pad_nested_outside(body, "*", "<em>", "</em>", node, ctx)
+        InlineNode::Emphasis(emphasis) => {
+            if let Some(rendered) = render_attributed_emphasis(emphasis, ctx, depth) {
+                return rendered;
             }
-            EmphasisKind::Strong => {
-                ctx.delimiter_ancestors.push(if emphasis.children.len() == 1 && matches!(&emphasis.children[0], InlineNode::Emphasis(child) if child.kind == EmphasisKind::Italic) { "***" } else { "**" });
-                let body = render_recorded_inlines(
-                    &emphasis.children,
-                    ctx,
-                    depth + 1,
-                    Some(node as *const InlineNode as usize),
-                );
-                ctx.delimiter_ancestors.pop();
-                pad_nested_outside(body, "**", "<strong>", "</strong>", node, ctx)
+            match emphasis.kind {
+                EmphasisKind::Italic => {
+                    ctx.delimiter_ancestors.push("*");
+                    let body = render_recorded_inlines(
+                        &emphasis.children,
+                        ctx,
+                        depth + 1,
+                        Some(node as *const InlineNode as usize),
+                    );
+                    ctx.delimiter_ancestors.pop();
+                    pad_nested_outside(body, "*", "<em>", "</em>", node, ctx)
+                }
+                EmphasisKind::Strong => {
+                    ctx.delimiter_ancestors.push(if emphasis.children.len() == 1 && matches!(&emphasis.children[0], InlineNode::Emphasis(child) if child.kind == EmphasisKind::Italic) { "***" } else { "**" });
+                    let body = render_recorded_inlines(
+                        &emphasis.children,
+                        ctx,
+                        depth + 1,
+                        Some(node as *const InlineNode as usize),
+                    );
+                    ctx.delimiter_ancestors.pop();
+                    pad_nested_outside(body, "**", "<strong>", "</strong>", node, ctx)
+                }
+                EmphasisKind::Underline => {
+                    format!(
+                        "<u{}>{}</u>",
+                        crate::render::render_attrs(&emphasis.attrs),
+                        render_inlines(&emphasis.children, ctx, depth + 1)
+                    )
+                }
+                // PART 11 section 8c: no Markdown delimiter spelling exists, so the
+                // target uses inline HTML, carrying the construct's attribute set
+                // onto the element the way ruby already does. `smallcaps` is a BASE
+                // class merged into the author's class slot, as on the HTML target.
+                EmphasisKind::SmallCaps => {
+                    format!(
+                        "<span{}>{}</span>",
+                        crate::render::render_attrs_with_base_class(&emphasis.attrs, "smallcaps"),
+                        render_inlines(&emphasis.children, ctx, depth + 1)
+                    )
+                }
+                EmphasisKind::Strike => {
+                    ctx.delimiter_ancestors.push("~~");
+                    let body = render_recorded_inlines(
+                        &emphasis.children,
+                        ctx,
+                        depth + 1,
+                        Some(node as *const InlineNode as usize),
+                    );
+                    ctx.delimiter_ancestors.pop();
+                    pad_nested_outside(body, "~~", "<del>", "</del>", node, ctx)
+                }
+                EmphasisKind::Sub => {
+                    format!(
+                        "<sub{}>{}</sub>",
+                        crate::render::render_attrs(&emphasis.attrs),
+                        render_inlines(&emphasis.children, ctx, depth + 1)
+                    )
+                }
+                EmphasisKind::Super => {
+                    format!(
+                        "<sup{}>{}</sup>",
+                        crate::render::render_attrs(&emphasis.attrs),
+                        render_inlines(&emphasis.children, ctx, depth + 1)
+                    )
+                }
+                EmphasisKind::Highlight => {
+                    format!(
+                        "<mark{}>{}</mark>",
+                        crate::render::render_attrs(&emphasis.attrs),
+                        render_inlines(&emphasis.children, ctx, depth + 1)
+                    )
+                }
+                EmphasisKind::BoldItalic => {
+                    ctx.delimiter_ancestors.push("***");
+                    let body = render_recorded_inlines(
+                        &emphasis.children,
+                        ctx,
+                        depth + 1,
+                        Some(node as *const InlineNode as usize),
+                    );
+                    ctx.delimiter_ancestors.pop();
+                    pad_nested_outside(body, "***", "<strong><em>", "</em></strong>", node, ctx)
+                }
             }
-            EmphasisKind::Underline => {
-                format!(
-                    "<u{}>{}</u>",
-                    crate::render::render_attrs(&emphasis.attrs),
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
-            // PART 11 section 8c: no Markdown delimiter spelling exists, so the
-            // target uses inline HTML, carrying the construct's attribute set
-            // onto the element the way ruby already does. `smallcaps` is a BASE
-            // class merged into the author's class slot, as on the HTML target.
-            EmphasisKind::SmallCaps => {
-                format!(
-                    "<span{}>{}</span>",
-                    crate::render::render_attrs_with_base_class(&emphasis.attrs, "smallcaps"),
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
-            EmphasisKind::Strike => {
-                ctx.delimiter_ancestors.push("~~");
-                let body = render_recorded_inlines(
-                    &emphasis.children,
-                    ctx,
-                    depth + 1,
-                    Some(node as *const InlineNode as usize),
-                );
-                ctx.delimiter_ancestors.pop();
-                pad_nested_outside(body, "~~", "<del>", "</del>", node, ctx)
-            }
-            EmphasisKind::Sub => {
-                format!(
-                    "<sub{}>{}</sub>",
-                    crate::render::render_attrs(&emphasis.attrs),
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
-            EmphasisKind::Super => {
-                format!(
-                    "<sup{}>{}</sup>",
-                    crate::render::render_attrs(&emphasis.attrs),
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
-            EmphasisKind::Highlight => {
-                format!(
-                    "<mark{}>{}</mark>",
-                    crate::render::render_attrs(&emphasis.attrs),
-                    render_inlines(&emphasis.children, ctx, depth + 1)
-                )
-            }
-            EmphasisKind::BoldItalic => {
-                ctx.delimiter_ancestors.push("***");
-                let body = render_recorded_inlines(
-                    &emphasis.children,
-                    ctx,
-                    depth + 1,
-                    Some(node as *const InlineNode as usize),
-                );
-                ctx.delimiter_ancestors.pop();
-                pad_nested_outside(body, "***", "<strong><em>", "</em></strong>", node, ctx)
-            }
-        },
+        }
         InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
