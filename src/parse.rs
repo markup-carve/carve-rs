@@ -8562,6 +8562,7 @@ struct NestedFenceReplay {
 #[derive(Default)]
 struct NestedLevel {
     hosts: Vec<(usize, usize, bool)>,
+    initial_marker_column: Option<usize>,
     /// The fence a quoted host holds open, as (opener, the host's content column,
     /// the opener's own column). The two columns differ when the opener is
     /// SHIFTED past its host, and a closer at either one ends it.
@@ -8574,13 +8575,14 @@ struct NestedLevel {
     host_fence: Option<(FenceOpen, usize, usize)>,
     fence: Option<FenceOpen>,
     comment: Option<usize>,
+    by_comment: bool,
     host_comment: Option<(usize, usize, bool)>,
     para: bool,
     by_fence: bool,
-    colons: Vec<(usize, usize)>,
+    colons: Vec<(usize, usize, usize)>,
     by_colon: bool,
     colon_absorption: bool,
-    host_verse: Option<(usize, usize)>,
+    host_verse: Option<(usize, usize, usize)>,
     fence_ordinal: usize,
 }
 
@@ -8603,6 +8605,14 @@ impl NestedFenceReplay {
             self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
+        if !deepest.colons.is_empty()
+            && deepest.para
+            && deepest.fence.is_none()
+            && deepest.host_fence.is_none()
+            && !deepest.by_fence
+        {
+            return Some(true);
+        }
         (deepest.fence.is_some()
             || deepest.host_fence.is_some()
             || deepest.by_fence
@@ -8653,6 +8663,7 @@ impl NestedFenceReplay {
             if let Some(len) = chain[level].comment {
                 if is_comment_fence_close(text, len) {
                     chain[level].comment = None;
+                    chain[level].by_comment = true;
                 }
                 chain.truncate(level + 1);
                 return;
@@ -8673,20 +8684,11 @@ impl NestedFenceReplay {
                     colon_opaque = true;
                 }
             }
-            if let Some((width, column)) = chain[level].host_verse {
-                if !is_blank_line(text) && indent_columns(text) < column {
+            if let Some((width, floor, column)) = chain[level].host_verse {
+                if !is_blank_line(text) && indent_columns(text) < floor {
                     chain[level].host_verse = None;
                 } else {
-                    if let Some(comment) = detect_comment_fence_line(trim_ascii_start(text)) {
-                        let len = comment.fence_len;
-                        let collected = closer_ahead(lines, at, level, |line| {
-                            is_comment_fence_close(trim_ascii_start(line), len)
-                        });
-                        if collected || future_quoted_comment_closes(cur, level + 1, column, len) {
-                            chain[level].host_comment = Some((len, column, !collected));
-                        }
-                    }
-                    if indent_columns(text) == column
+                    if (indent_columns(text) == floor || indent_columns(text) == column)
                         && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
                     {
                         chain[level].host_verse = None;
@@ -8696,9 +8698,11 @@ impl NestedFenceReplay {
                         chain.truncate(level + 1);
                         return;
                     }
-                    // Keep the existing fence replay; verse payload cannot
-                    // open or close a nested colon scope.
-                    colon_opaque = true;
+                    chain[level].para = false;
+                    chain[level].colon_absorption = false;
+                    chain[level].by_colon = true;
+                    chain.truncate(level + 1);
+                    return;
                 }
             }
             if let Some(rest) = strip_blockquote_prefix(text) {
@@ -8713,6 +8717,15 @@ impl NestedFenceReplay {
                 text = rest;
                 level += 1;
                 continue;
+            }
+            if !colon_opaque
+                && level + 1 == chain.len()
+                && (!chain[level].colons.is_empty() || chain[level].by_colon)
+                && is_line_comment_any_column(text)
+            {
+                chain[level].para = false;
+                chain[level].colon_absorption = false;
+                return;
             }
             // A line short of the deepest quote continues that quote's open
             // paragraph unless it interrupts one.
@@ -8730,13 +8743,14 @@ impl NestedFenceReplay {
             let here = &mut chain[level];
             here.by_fence = false;
             here.by_colon = false;
+            let after_comment = std::mem::take(&mut here.by_comment);
             let starts_sibling = detect_list_marker_full(trim_ascii_start(text)).is_some()
                 && marker_ends_replayed_item(&here.hosts, indent_columns(text));
             let hosted_colon_opener = !colon_opaque
                 && here
                     .hosts
                     .iter()
-                    .any(|&(_, column, _)| column == indent_columns(text))
+                    .any(|&(_, column, _)| column <= indent_columns(text))
                 && (!here.colon_absorption
                     || exact_colon_fence_len(trim_ascii_start(text)).is_none())
                 && (detect_container_open(trim_ascii_start(text)).is_some()
@@ -8754,7 +8768,7 @@ impl NestedFenceReplay {
                 while here
                     .colons
                     .last()
-                    .is_some_and(|&(_, col)| col > indent_columns(text))
+                    .is_some_and(|&(_, floor, _)| floor > indent_columns(text))
                 {
                     here.colons.pop();
                 }
@@ -8762,11 +8776,9 @@ impl NestedFenceReplay {
             if !colon_opaque {
                 let column = indent_columns(text);
                 if let Some(width) = exact_colon_fence_len(trim_ascii_start(text)) {
-                    if let Some(index) = here
-                        .colons
-                        .iter()
-                        .rposition(|&(seen, at)| seen == width && at == column)
-                    {
+                    if let Some(index) = here.colons.iter().rposition(|&(seen, floor, authored)| {
+                        seen == width && (floor == column || authored == column)
+                    }) {
                         here.colons.truncate(index);
                         here.para = false;
                         here.colon_absorption = false;
@@ -8798,6 +8810,7 @@ impl NestedFenceReplay {
                             break;
                         }
                         let next = col + marker_content_col(inner).expect("matched list marker");
+                        here.initial_marker_column.get_or_insert(col);
                         here.hosts.push((col, next, true));
                         col = next + indent_columns(marker.content);
                         inner = trim_ascii_start(marker.content);
@@ -8814,7 +8827,26 @@ impl NestedFenceReplay {
                     here.colon_absorption = false;
                 }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
-                if !colon_opaque && floor > 0 && col == floor {
+                if !colon_opaque
+                    && block_start
+                    && exact_colon_fence_len(inner).is_some()
+                    && !quoted_colon_body_follows(lines, at, level, floor)
+                {
+                    here.para = true;
+                    return;
+                }
+                if !colon_opaque
+                    && floor > 0
+                    && col >= floor
+                    && (col == floor
+                        || exact_colon_fence_len(inner).is_none()
+                        || (here.colons.is_empty()
+                            && here.initial_marker_column.map_or(true, |initial| {
+                                here.hosts
+                                    .last()
+                                    .is_some_and(|&(marker, _, _)| marker >= initial)
+                            })))
+                {
                     if let Some(comment) = detect_comment_fence_line(inner) {
                         let len = comment.fence_len;
                         let collected = closer_ahead(lines, at, level, |line| {
@@ -8830,7 +8862,7 @@ impl NestedFenceReplay {
                         }
                     }
                     if let Some(width) = detect_line_block_open(inner) {
-                        here.host_verse = Some((width, col));
+                        here.host_verse = Some((width, floor, col));
                         here.para = false;
                         here.colon_absorption = false;
                         here.by_colon = !block_start;
@@ -8844,7 +8876,7 @@ impl NestedFenceReplay {
                         .or_else(|| detect_hardbreaks_block_open(inner))
                         .or_else(|| detect_quote_block_open(inner))
                     {
-                        here.colons.push((width, col));
+                        here.colons.push((width, floor, col));
                         here.by_colon = !block_start;
                         here.para = false;
                         here.colon_absorption = false;
@@ -8892,6 +8924,27 @@ impl NestedFenceReplay {
                 if closer_ahead(lines, at, level, |l| is_comment_fence_close(l, len)) {
                     here.comment = Some(len);
                 }
+            }
+            if !colon_opaque
+                && exact_colon_fence_len(trim_ascii_start(text)).is_some()
+                && !here.colons.is_empty()
+            {
+                here.para = true;
+                here.colon_absorption = false;
+                return;
+            }
+            if !colon_opaque
+                && after_comment
+                && !here.para
+                && !here.colon_absorption
+                && here.colons.is_empty()
+                && exact_colon_fence_len(trim_ascii_start(text)).is_some()
+            {
+                here.by_colon = true;
+                return;
+            }
+            if is_blank_line(text) {
+                here.initial_marker_column = None;
             }
             let mut paragraph = ParaOpen::from_line(text, here.colon_absorption);
             here.para = paragraph.get();
@@ -8986,6 +9039,46 @@ fn future_quoted_comment_closes(
 
 /// Does a line matching `closes` follow line `from` at nesting `level`, before
 /// the quote at that level ends?
+fn quoted_colon_body_follows(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    floor: usize,
+) -> bool {
+    let mut comment = None;
+    for (at, line) in lines.iter().enumerate().skip(from + 1) {
+        let mut text = line.text.as_str();
+        if text.starts_with(LAZY) {
+            return false;
+        }
+        for _ in 0..level {
+            let Some(rest) = strip_blockquote_prefix(text) else {
+                return false;
+            };
+            text = rest;
+        }
+        if let Some(width) = comment {
+            if is_comment_fence_close_any_column(text, width) {
+                comment = None;
+            }
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line(text) {
+            if closer_ahead(lines, at, level, |candidate| {
+                is_comment_fence_close_any_column(candidate, open.fence_len)
+            }) {
+                comment = Some(open.fence_len);
+                continue;
+            }
+        }
+        if is_blank_line(text) || trim_ascii_start(text).starts_with("%%") {
+            continue;
+        }
+        return indent_columns(text) >= floor;
+    }
+    false
+}
+
 fn closer_ahead(
     lines: &[SourceLine],
     from: usize,
@@ -12599,27 +12692,34 @@ fn nested_ends_with_open_paragraph(
 /// bodies' state. A line block's body is where such a line is MOST likely to be
 /// content, which is what makes the omission wrong rather than optimistic.
 fn colon_fences_left_open(nested: &str) -> usize {
-    let mut open: Vec<usize> = Vec::new();
+    let mut open: Vec<(usize, usize, usize)> = Vec::new();
     let mut code: Option<FenceOpen> = None;
     let lines: Vec<_> = nested
         .lines()
         .map(|line| {
-            let mut trimmed = trim_ascii_start(line);
-            while let Some(rest) = trimmed.strip_prefix('>') {
-                trimmed = trim_ascii_start(rest);
+            let mut local = line;
+            while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(local)) {
+                local = rest;
             }
-            trimmed
+            local
         })
         .collect();
+    let mut host_floor = 0;
     let mut verse_end = 0;
     let mut closer_index = None;
     let mut comment_closers = None;
-    for (index, trimmed) in lines.iter().copied().enumerate() {
-        let trimmed = if index == 0 {
-            innermost_marker_content(trimmed)
+    for (index, line) in lines.iter().copied().enumerate() {
+        let trimmed = trim_ascii_start(line);
+        let (offset, content) = if index == 0 {
+            innermost_marker_tail(trimmed)
         } else {
-            trimmed
+            (0, trimmed)
         };
+        let column = indent_columns(line) + offset;
+        if index == 0 && offset > 0 {
+            host_floor = column;
+        }
+        let trimmed = content;
         if index < verse_end {
             continue;
         }
@@ -12650,13 +12750,18 @@ fn colon_fences_left_open(nested: &str) -> usize {
             continue;
         }
         if let Some(len) = exact_colon_fence_len(trimmed) {
-            if open.last() == Some(&len) {
-                open.pop();
-                continue;
+            if let Some(&(width, floor, opener_column)) = open.last() {
+                if width == len && (column == floor || column == opener_column) {
+                    open.pop();
+                    continue;
+                }
+                if column != floor && column != opener_column {
+                    continue;
+                }
             }
         }
         if let Some(container) = detect_container_open(trimmed) {
-            open.push(container.fence_len);
+            open.push((container.fence_len, host_floor, column));
         }
     }
     open.len()
