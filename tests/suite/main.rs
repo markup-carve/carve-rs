@@ -10,6 +10,9 @@
 #[path = "../html_roundtrip_export_writes_the_named_carriers.rs"]
 mod html_roundtrip_export_writes_the_named_carriers;
 
+#[path = "../footnote_carriers_reconstruct_the_source_kind.rs"]
+mod footnote_carriers_reconstruct_the_source_kind;
+
 #[path = "../empty_nested_fence_separators.rs"]
 mod empty_nested_fence_separators;
 

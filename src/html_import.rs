@@ -358,7 +358,7 @@ struct Importer<'a> {
     /// which is what makes the address a valid key. A key whose node had been
     /// dropped would be an address the allocator may hand to a live node next,
     /// so the map pins every node it can answer for.
-    footnote_refs: HashMap<usize, (Handle, String)>,
+    footnote_refs: HashMap<usize, (Handle, Footnote)>,
     detached_footnote_blocks: HashSet<usize>,
     admonition_title_ids: RefCell<Option<AdmonitionTitleIndex>>,
     /// Fallback images of formulas that imported as math, dropped where they stand.
@@ -6240,15 +6240,8 @@ impl<'a> Importer<'a> {
         // this walk and records the node rather than rewriting the tree into
         // a synthetic element, so nothing here depends on a tag name that
         // real HTML could also spell.
-        if let Some((_, label)) = self.footnote_refs.get(&node_key(h)) {
-            return Ok(vec![InlineNode::Footnote(Footnote {
-                attrs: None,
-                id: Some(label.clone()),
-                inline: None,
-                number: None,
-                ref_id: None,
-                pos: None,
-            })]);
+        if let Some((_, note)) = self.footnote_refs.get(&node_key(h)) {
+            return Ok(vec![InlineNode::Footnote(note.clone())]);
         }
         let Some(tag) = Self::tag(h) else {
             return Ok(Vec::new());
@@ -6665,48 +6658,6 @@ impl<'a> Importer<'a> {
         Ok(vec![node])
     }
 
-    /// Recognize footnote pairs, record each reference site for `inline` to
-    /// read as a footnote reference, detach the note blocks, and return their
-    /// bodies keyed 1..N by document order.
-    ///
-    /// Labels are assigned 1..N over the notes in document order rather than
-    /// parsed out of the ids: an id is generated navigation an engine
-    /// regenerates, and `_ftn1` or `sdfootnote1sym` is not a label any Carve
-    /// source could carry anyway.
-    ///
-    /// `heuristic` is the word-processor adapters' licence: with it a mutual
-    /// anchor pair alone binds. Without it - `generic` and the editor adapters -
-    /// only an anchor the producer MARKED with `role="doc-noteref"` opens a
-    /// pair, which is authored DPUB-ARIA semantics rather than a guess, so a
-    /// role-less document imports exactly as it did before. That is what lets
-    /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
-    /// it is what the shared fixtures are written over (carve-rs#1313).
-    /// The authored footnote label a §13a carrier names, where it names a
-    /// usable one.
-    ///
-    /// The endnote item is asked first and the references after it, because the
-    /// item is the definition and a reference only points at one. A label has
-    /// to be spellable inside `[^...]` and unique in the document: a value
-    /// holding whitespace, a bracket or a backslash would not reparse, and a
-    /// repeated one would merge two notes into one. Neither is a document this
-    /// serializer writes, so a carrier failing the test is malformed input and
-    /// the ordinal stands rather than the import failing.
-    fn carried_footnote_label(
-        definition: &FootnoteGroup,
-        taken: &HashSet<String>,
-    ) -> Option<String> {
-        std::iter::once(&definition.block)
-            .chain(definition.refs.iter())
-            .find_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
-            .filter(|label| {
-                !label.is_empty()
-                    && !taken.contains(label)
-                    && !label
-                        .chars()
-                        .any(|c| c.is_whitespace() || matches!(c, '[' | ']' | '\\'))
-            })
-    }
-
     fn adapter_footnotes(
         &mut self,
         root: &Handle,
@@ -6734,23 +6685,73 @@ impl<'a> Importer<'a> {
             heuristic,
         );
         drop(lookups);
+        let definition_blocks: HashSet<_> = definitions
+            .iter()
+            .map(|note| node_key(&note.block))
+            .collect();
+        let mut nested_reference_sites = HashSet::new();
+        for reference in definitions.iter().flat_map(|note| note.refs.iter()) {
+            let mut parent = parent_handle(reference);
+            while let Some(handle) = parent {
+                if definition_blocks.contains(&node_key(&handle)) {
+                    nested_reference_sites.insert(node_key(reference));
+                    break;
+                }
+                parent = parent_handle(&handle);
+            }
+        }
 
         let mut defs = BTreeMap::new();
         let mut containers: Vec<Handle> = Vec::new();
         let mut seen: HashSet<usize> = HashSet::new();
         let mut detached: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
+        let mut used_labels = HashSet::new();
+        let reserved_labels: HashSet<String> = definitions
+            .iter()
+            .flat_map(|definition| {
+                std::iter::once(&definition.block)
+                    .chain(definition.refs.iter())
+                    .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
+                    .filter(|label| {
+                        !crate::parse::label_key(label).is_empty()
+                            && !label.contains(['[', ']', '|', '\r', '\n'])
+                    })
+            })
+            .map(|label| crate::parse::label_key(&label))
+            .collect();
 
-        let mut taken: HashSet<String> = HashSet::new();
         for (index, definition) in definitions.iter().enumerate() {
-            // PART 10 §13a `data-carve-footnote-label`: the AUTHORED label,
-            // written on the endnote item and on every reference to it. Without
-            // it the labels here are ordinals over document order, because an
-            // id is generated navigation - so `[^note]` came back as `[^1]`,
-            // silently, and two documents differing only in their labels
-            // imported identically.
-            let label = Self::carried_footnote_label(definition, &taken)
-                .unwrap_or_else(|| (index + 1).to_string());
-            taken.insert(label.clone());
+            let labels: HashSet<String> = std::iter::once(&definition.block)
+                .chain(definition.refs.iter())
+                .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
+                .collect();
+            let requested = labels.iter().next().filter(|label| {
+                labels.len() == 1
+                    && !crate::parse::label_key(label).is_empty()
+                    && !label.contains(['[', ']', '|', '\r', '\n'])
+                    && !used_labels.contains(&crate::parse::label_key(label))
+            });
+            let label = if let Some(label) = requested {
+                label.clone()
+            } else {
+                if !labels.is_empty() {
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        "Dropped invalid, conflicting or duplicate footnote label carriers".into(),
+                        HtmlImportSeverity::Warning,
+                        "footnote",
+                        &definition.block,
+                    );
+                }
+                let mut number = index + 1;
+                while reserved_labels.contains(&number.to_string())
+                    || used_labels.contains(&number.to_string())
+                {
+                    number += 1;
+                }
+                number.to_string()
+            };
+            used_labels.insert(crate::parse::label_key(&label));
             if index == 0 {
                 remove_footnote_separator(&definition.block);
             }
@@ -6772,7 +6773,43 @@ impl<'a> Importer<'a> {
 
             let body: Vec<Handle> = definition.block.children.borrow().clone();
             let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
-            defs.insert(label.clone(), blocks);
+            let inline_marker = Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE);
+            let inline = if inline_marker.is_some() {
+                match blocks.as_slice() {
+                    [BlockNode::Paragraph(paragraph)]
+                        if paragraph.attrs.is_none()
+                            && definition.refs.len() == 1
+                            && !nested_reference_sites.contains(&node_key(&definition.refs[0])) =>
+                    {
+                        Some(paragraph.children.clone())
+                    }
+                    _ => {
+                        self.diag(
+                            HtmlImportDiagnosticCode::AttributeDropped,
+                            "Inline footnote carrier has a body that cannot be represented inline"
+                                .into(),
+                            HtmlImportSeverity::Warning,
+                            "footnote",
+                            &definition.block,
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            if inline.is_some() && !labels.is_empty() {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    "Dropped footnote label carriers on an inline note".into(),
+                    HtmlImportSeverity::Warning,
+                    "footnote",
+                    &definition.block,
+                );
+            }
+            if inline.is_none() {
+                defs.insert(label.clone(), blocks);
+            }
             self.detached_footnote_blocks
                 .insert(node_key(&definition.block));
             if let Some(index) = self.admonition_title_ids.get_mut() {
@@ -6781,8 +6818,24 @@ impl<'a> Importer<'a> {
 
             for reference in &definition.refs {
                 let site = footnote_reference_site(reference);
-                self.footnote_refs
-                    .insert(node_key(&site), (site.clone(), label.clone()));
+                self.footnote_refs.insert(
+                    node_key(&site),
+                    (
+                        site.clone(),
+                        Footnote {
+                            attrs: None,
+                            id: if inline.is_some() {
+                                None
+                            } else {
+                                Some(label.clone())
+                            },
+                            inline: inline.clone(),
+                            number: None,
+                            ref_id: None,
+                            pos: None,
+                        },
+                    ),
+                );
             }
 
             if let Some(container) = parent_handle(&definition.block) {
