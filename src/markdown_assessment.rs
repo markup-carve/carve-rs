@@ -287,7 +287,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     static BARE: OnceLock<regex::Regex> = OnceLock::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
     let bare = BARE.get_or_init(|| {
-        regex::Regex::new(r"(?:https?://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z])").unwrap()
+        regex::Regex::new(r"(?:(?i:https?|ftp)://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z])").unwrap()
     });
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
@@ -814,6 +814,47 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn unsupported_gfm_protocol_links_remain_unassessed() {
+        for source in [
+            "ftp://example.test",
+            "FTP://example.test",
+            "Ftp://example.test",
+            "HTTP://example.test",
+            "HTTPS://example.test",
+            "see ftp://example.test/a",
+            "ftp://x",
+        ] {
+            let result = crate::migrate_markdown(source);
+            let fallback = result
+                .report
+                .diagnostics
+                .iter()
+                .find(|row| row.code == "fidelity-unverified")
+                .expect(source);
+            assert_eq!(
+                fallback.fidelity,
+                crate::MigrationFidelity::Dropped,
+                "{source:?}"
+            );
+            assert_eq!(
+                fallback.confidence,
+                crate::MigrationConfidence::Fallback,
+                "{source:?}"
+            );
+        }
+        for source in ["`ftp://example.test`", "```\nftp://example.test\n```"] {
+            assert!(
+                !crate::migrate_markdown(source)
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source:?}"
+            );
+        }
     }
 
     #[test]
