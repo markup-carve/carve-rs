@@ -5314,7 +5314,7 @@ mod escaped_raw_block {
         render_escaped_raw_block(&mut out, &raw, 0);
         assert_eq!(
             out,
-            "<pre><code class=\"language-latex\">\\emph{x}\n</code></pre>"
+            "<pre><code class=\"language-latex\">\\emph{x}</code></pre>"
         );
     }
 }
