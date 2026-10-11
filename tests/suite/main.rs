@@ -10,6 +10,9 @@
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
 
+#[path = "../source_unicode_marker_exhaustion.rs"]
+mod source_unicode_marker_exhaustion;
+
 #[path = "../multiline_inline_code.rs"]
 mod multiline_inline_code;
 
