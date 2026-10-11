@@ -8691,6 +8691,18 @@ impl NestedFenceReplay {
                 if !is_blank_line(text) && indent_columns(text) < floor {
                     chain[level].host_verse = None;
                 } else {
+                    if let Some(comment) = detect_comment_fence_line(trim_ascii_start(text)) {
+                        let len = comment.fence_len;
+                        let col = indent_columns(text);
+                        let collected = self
+                            .colon_body_comments
+                            .entry(level)
+                            .or_default()
+                            .closes_after(lines, at, level, len);
+                        if collected || future_quoted_comment_closes(cur, level + 1, col, len) {
+                            chain[level].host_comment = Some((len, col, !collected));
+                        }
+                    }
                     if let Some(open) = detect_fence_open(trim_ascii_start(text)) {
                         let opener_column = indent_columns(text);
                         if literal_code_closes(

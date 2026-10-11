@@ -93,5 +93,30 @@
     "id": "review-final-comment-dedented-body",
     "source": "> - :::\n>   %%%\n> c\n>   %%%\n>   body\n- tail\n",
     "html": "<blockquote>\n  <ul>\n    <li>\n      <div>\n\n      </div>\n    </li>\n  </ul>\n  <p>c</p>\n  <p>body\n- tail</p>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-1-3",
+    "source": "> - ::: |\n>   %%%\n>   :::\n>   %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><br>\n:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-1-4",
+    "source": "> - ::: |\n>   %%%%\n>   :::\n>   %%%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><br>\n:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-2-3",
+    "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n          <p><br>\n:::<br>\n</p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-2-4",
+    "source": "> > - ::: |\n> >   %%%%\n> >   :::\n> >   %%%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n          <p><br>\n:::<br>\n</p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "comment-blank-tail",
+    "source": "> - ::: |\n>   %%%\n>\n>   :::\n>   %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p></p>\n        <p>:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
   }
 ]
