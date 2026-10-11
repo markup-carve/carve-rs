@@ -3774,6 +3774,7 @@ struct LineCursor<'a> {
     /// Last consumed comment closer and the column of its opener.
     closed_comment_location: Option<(usize, usize)>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
+    literal_code_lookup: Option<Box<LiteralCodeLookup>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -3807,6 +3808,7 @@ impl<'a> LineCursor<'a> {
             future_quoted_comments: RefCell::new(None),
             closed_comment_location: None,
             code_closer_last_index: None,
+            literal_code_lookup: None,
         }
     }
 
@@ -14053,7 +14055,6 @@ fn collect_indented_block_mapped_with_columns(
     let mut folded_code_paragraph_open = false;
     let mut collected_paragraph_open = false;
     let mut collected_literal_body: Option<(usize, usize)> = None;
-    let mut collected_literal_code_lookup = LiteralCodeLookup::default();
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -14584,7 +14585,7 @@ fn collect_indented_block_mapped_with_columns(
                         strip_cols,
                         indent,
                         open,
-                        &mut collected_literal_code_lookup,
+                        cur.literal_code_lookup.get_or_insert_with(Box::default),
                     )
                 });
             if !folded_inline_fence && !unmatched_literal_fence {
@@ -27152,6 +27153,26 @@ mod shared_colon_work_tests {
             assert_eq!(replay.verdict(&body.lines, &cur), Some(true));
             assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len() * 2);
         }
+    }
+
+    #[test]
+    fn repeated_shifted_literal_items_reuse_the_cursor_index() {
+        let mut counts = Vec::new();
+        for count in [64, 256] {
+            let source = "> - a\n>     ::: |\n>     ```\n>     :::\n>   ```\n>   :::\n>   para\n"
+                .repeat(count)
+                + "lazy\n";
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            let document = parse(&source);
+            assert_eq!(document.children.len(), 1);
+            let work = LITERAL_CODE_LINES.with(Cell::get);
+            assert!(
+                work > 0 && work <= source.lines().count() * 32,
+                "{count}: {work}"
+            );
+            counts.push(work);
+        }
+        assert!(counts[1] <= counts[0] * 5, "{counts:?}");
     }
 
     #[test]
