@@ -578,7 +578,7 @@ fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
                 if source.as_bytes().get(at + 1) == Some(&b'%')
                     && comment_continues_paragraph(source, at)
                 {
-                    let mut inner = at + 2;
+                    let mut inner = (at + 2).max(cursor);
                     while inner < source.len() && !matches!(source.as_bytes()[inner], b'%' | b'}') {
                         if source.as_bytes()[inner] == b'{' && mask.as_bytes()[inner] == b'{' {
                             output.push_str(&source[cursor..inner]);
@@ -621,6 +621,8 @@ fn rejected_comment_starts_block(line: &str) -> bool {
     };
     read_djot_word_attributes(&format!("{{{}}}", &capture[1]), 0).is_some()
 }
+
+type ParagraphContext = (usize, Option<usize>, usize);
 
 struct ParagraphCache {
     source: (usize, usize),
