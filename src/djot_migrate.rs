@@ -499,6 +499,134 @@ fn read_djot_attribute_tokens(
     read_djot_attributes_with_tokens(source, start, false, false)
 }
 
+fn comment_continues_paragraph(source: &str, start: usize) -> bool {
+    let context = djot_attribute_context(source, start);
+    if context.1.is_none() {
+        return true;
+    }
+    let marker = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)\))[ \t]+").unwrap();
+    let Some(mut end) = source[..start].rfind('\n') else {
+        return false;
+    };
+    let prefix = &source[end + 1..start];
+    if marker.is_match(prefix) {
+        return false;
+    }
+    let mut lines: Vec<(&str, usize)> = Vec::new();
+    loop {
+        let from = source[..end].rfind('\n').map_or(0, |at| at + 1);
+        let raw = &source[from..end];
+        let quotes = cached_regex!(r"^[ \t]*(?:>[ \t]*)+")
+            .unwrap()
+            .find(raw)
+            .map_or("", |m| m.as_str());
+        if quotes.bytes().filter(|b| *b == b'>').count() != context.0 {
+            return false;
+        }
+        if raw[emphasis::structural_prefix_end(raw)..]
+            .trim()
+            .is_empty()
+        {
+            let mut parent_end = from.checked_sub(1);
+            while let Some(end) = parent_end {
+                let parent_from = source[..end].rfind('\n').map_or(0, |at| at + 1);
+                let parent = &source[parent_from..end];
+                if marker.is_match(parent) {
+                    let column = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*")
+                        .unwrap()
+                        .find(parent)
+                        .unwrap()
+                        .end();
+                    if lines.last().is_some_and(|(raw, _)| {
+                        prefix.len() <= column && emphasis::structural_prefix_end(raw) > column
+                    }) {
+                        return false;
+                    }
+                    break;
+                }
+                if parent.trim().is_empty() {
+                    break;
+                }
+                parent_end = parent_from.checked_sub(1);
+            }
+            break;
+        }
+        lines.push((raw, from));
+        if from == 0 {
+            break;
+        }
+        end = from - 1;
+    }
+    let mut kind = None;
+    let mut fence = "";
+    let mut attribute_end = 0;
+    for (raw, from) in lines.into_iter().rev() {
+        if from < attribute_end || kind == Some("paragraph") {
+            continue;
+        }
+        if marker.is_match(raw)
+            && prefix.len()
+                <= cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*")
+                    .unwrap()
+                    .find(raw)
+                    .unwrap()
+                    .end()
+        {
+            return false;
+        }
+        let body_at = emphasis::structural_prefix_end(raw);
+        let body = &raw[body_at..];
+        if kind == Some("fence") {
+            if body.starts_with(fence) {
+                kind = None;
+            }
+            continue;
+        }
+        if body.starts_with('{') {
+            if let Some((end, _)) = read_djot_word_attributes(source, from + body_at) {
+                attribute_end = end;
+                kind = None;
+                continue;
+            }
+        }
+        if cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap().is_match(body) {
+            kind = Some("heading");
+            continue;
+        }
+        if let Some(opened) = cached_regex!(r"^(`{3,}|~{3,})").unwrap().find(body) {
+            kind = Some("fence");
+            fence = opened.as_str();
+            continue;
+        }
+        if kind == Some("heading") {
+            continue;
+        }
+        if let Some(note) = cached_regex!(r"^\[\^[^\]]+\]:[ \t]*(.*)$")
+            .unwrap()
+            .captures(body)
+        {
+            if prefix.len() < body_at + 2 {
+                return false;
+            }
+            kind = if note[1].trim().is_empty() {
+                None
+            } else {
+                Some("paragraph")
+            };
+            continue;
+        }
+        if cached_regex!(r"^(?::::|\||\[[^\]]*\]:|:[ \t]|(?:\*[ \t]*){3,}$|(?:-[ \t]*){3,}$)")
+            .unwrap()
+            .is_match(body)
+        {
+            kind = None;
+            continue;
+        }
+        kind = Some("paragraph");
+    }
+    kind == Some("paragraph")
+}
+
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
     read_djot_attributes(source, start, false, false)
 }
@@ -543,7 +671,10 @@ fn read_djot_attributes_with_tokens(
                 i += 1;
             }
         }
-        if bytes.get(i) == Some(&b'}') && !parts.is_empty() && source[start..=i].contains('\n') {
+        if bytes.get(i) == Some(&b'}')
+            && source[start..=i].contains('\n')
+            && (!parts.is_empty() || !comment_continues_paragraph(source, start))
+        {
             let (depth, block_indent, minimum) = djot_attribute_context(source, start);
             for raw in source[start..=i].split('\n').skip(1) {
                 let line = if block_indent.is_some() {
@@ -1063,6 +1194,12 @@ fn fold_heading_continuations(source: &str) -> String {
                 break;
             }
             let next = lines[i].trim_start_matches([' ', '\t']);
+            if cached_regex!(r"^\\\{\x00DJOTINVALIDATTR\x00[0-9]+\x00%")
+                .unwrap()
+                .is_match(next)
+            {
+                break;
+            }
             let part = if let Some(text) = next.strip_prefix(&prefix) {
                 if text.trim().is_empty() {
                     break;
@@ -2647,7 +2784,10 @@ fn mask_djot_opaque_with_comments(
             }
         }
         if bytes[at] == b'{' {
-            if bytes.get(at + 1) == Some(&b'%') && last_brace.is_some_and(|end| at < end) {
+            if read_djot_word_attributes(source, at).is_some()
+                && bytes.get(at + 1) == Some(&b'%')
+                && last_brace.is_some_and(|end| at < end)
+            {
                 let mut end = at + 2;
                 while end < bytes.len() && bytes[end] != b'}' && !bytes[end..].starts_with(b"%}") {
                     end += 1;

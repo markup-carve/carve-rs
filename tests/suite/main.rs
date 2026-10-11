@@ -21,6 +21,8 @@ mod an_emphasis_ending_in_an_escaped_space_keeps_its_braces;
 
 #[path = "../attached_definition_boundaries.rs"]
 mod attached_definition_boundaries;
+#[path = "../djot_multiline_comment_boundaries.rs"]
+mod djot_multiline_comment_boundaries;
 
 #[path = "../html_roundtrip_export_writes_the_named_carriers.rs"]
 mod html_roundtrip_export_writes_the_named_carriers;
