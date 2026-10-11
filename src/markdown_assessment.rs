@@ -287,7 +287,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     static BARE: OnceLock<regex::Regex> = OnceLock::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
     let bare = BARE.get_or_init(|| {
-        regex::Regex::new(r"(?:(?i:https?|ftp)://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z])").unwrap()
+        regex::Regex::new(r"(?:(?:^|[^A-Za-z])(?i:https?|ftp)://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z])")
+            .unwrap()
     });
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
@@ -846,6 +847,26 @@ mod tests {
             );
         }
         for source in ["`ftp://example.test`", "```\nftp://example.test\n```"] {
+            assert!(
+                !crate::migrate_markdown(source)
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_gfm_protocols_and_existing_link_labels_remain_preserved() {
+        for source in [
+            "sftp://example.test",
+            "tftp://example.test",
+            "fooftp://example.test",
+            "[ftp://example.test](https://target.test)",
+            "[https://example.test](https://target.test)",
+        ] {
             assert!(
                 !crate::migrate_markdown(source)
                     .report
