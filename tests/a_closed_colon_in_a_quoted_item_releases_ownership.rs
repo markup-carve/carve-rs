@@ -323,3 +323,45 @@ fn an_item_to_the_left_also_ends_the_previous_colon_scope() {
         }
     }
 }
+
+#[test]
+fn a_marker_below_an_ancestor_content_column_keeps_the_leaf_paragraph() {
+    let base = "> - a\n>   - ::: box\n>     body\n>  - next\n>     :::\n- tail\n";
+    for nested in [false, true] {
+        let source = if nested {
+            base.lines()
+                .map(|line| {
+                    if line.starts_with('>') {
+                        format!("> {line}\n")
+                    } else {
+                        format!("{line}\n")
+                    }
+                })
+                .collect::<String>()
+        } else {
+            base.to_owned()
+        };
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            2,
+            "{source}: {ast}"
+        );
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+        assert!(carve::to_html(&source).contains("body\n- next"), "{source}");
+    }
+    let source = "> - a\n>   - ::: box\n>     body\n>    - ::: inner\n>       :::\n- tail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
+    assert!(carve::to_html(source).contains("- tail"));
+}
+
+#[test]
+fn a_marker_between_deeper_ancestor_columns_keeps_the_closed_leaf_owner() {
+    let source =
+        "> - a\n>   - b\n>     - ::: box\n>       body\n>    - next\n>       :::\n- tail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+    assert_eq!(ast["children"][1]["type"], "list", "{ast}");
+    assert!(carve::to_html(source).contains("body\n- next"));
+}

@@ -8748,10 +8748,7 @@ impl NestedFenceReplay {
             here.by_fence = false;
             here.by_colon = false;
             let starts_sibling = detect_list_marker_full(trim_ascii_start(text)).is_some()
-                && here
-                    .hosts
-                    .iter()
-                    .any(|&(marker, _, item)| item && marker >= indent_columns(text));
+                && marker_ends_replayed_item(&here.hosts, indent_columns(text));
             let lazy_paragraph = here.para
                 && !starts_sibling
                 && !match detect_fence_open(text) {
@@ -8780,10 +8777,7 @@ impl NestedFenceReplay {
             }
             if !is_blank_line(text) {
                 let column = indent_columns(text);
-                let sibling = here
-                    .hosts
-                    .iter()
-                    .any(|&(marker, _, item)| marker >= column && item);
+                let sibling = marker_ends_replayed_item(&here.hosts, column);
                 if !lazy_paragraph {
                     while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
                         here.hosts.pop();
@@ -8795,7 +8789,11 @@ impl NestedFenceReplay {
                 let mut block_start = false;
                 loop {
                     if let Some(marker) = detect_list_marker_full(inner) {
-                        if here.para && !inside_item && !sibling {
+                        let below_host = here
+                            .hosts
+                            .last()
+                            .is_some_and(|&(_, content, _)| col < content);
+                        if here.para && (!inside_item || below_host) && !sibling {
                             break;
                         }
                         let next = col + marker_content_col(inner).expect("matched list marker");
@@ -8905,6 +8903,12 @@ impl NestedFenceReplay {
             return;
         }
     }
+}
+
+fn marker_ends_replayed_item(hosts: &[(usize, usize, bool)], column: usize) -> bool {
+    hosts.iter().enumerate().any(|(index, &(marker, _, item))| {
+        item && column <= marker && (index == 0 || column >= hosts[index - 1].1)
+    })
 }
 
 struct FutureQuotedComments {
