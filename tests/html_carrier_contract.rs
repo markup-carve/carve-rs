@@ -296,11 +296,151 @@ fn carried_references_do_not_mask_unspellable_container_titles() {
             let mut links = Vec::new();
             nodes(&reparsed, "link", &mut links);
             assert_eq!(links[0]["href"], "/u");
-            assert!(result
-                .report
-                .diagnostics
-                .iter()
-                .any(|row| row.code.as_str() == "structure-unspellable"));
         }
     }
+}
+
+#[test]
+fn quoted_reference_labels_move_unspellable_titles_into_the_body() {
+    let html = "<details><summary><a href='/u' data-carve-ref='a&quot;b'>t</a></summary><p>b</p></details>";
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let result = html_to_carve(
+            html,
+            &HtmlImportOptions {
+                mode,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(result.value.contains("[t][a\"b]"), "{}", result.value);
+        let value: Value = serde_json::from_str(&to_json(&parse(&result.value))).unwrap();
+        let mut links = Vec::new();
+        nodes(&value, "link", &mut links);
+        assert_eq!(links[0]["href"], "/u");
+        assert!(result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code.as_str() == "structure-unspellable"));
+    }
+}
+
+#[test]
+fn opening_brackets_in_carried_labels_do_not_break_the_enclosing_span() {
+    let html = "<p><span class='c'>x <a href='/u' data-carve-ref='a[b'>t</a> y</span></p>";
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let ast = json(html, mode);
+        let mut references = Vec::new();
+        nodes(&ast, "link_reference_definition", &mut references);
+        assert_eq!(references[0]["label"], "a[b");
+        let result = html_to_carve(
+            html,
+            &HtmlImportOptions {
+                mode,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let value: Value = serde_json::from_str(&to_json(&parse(&result.value))).unwrap();
+        let mut spans = Vec::new();
+        nodes(&value, "span", &mut spans);
+        assert_eq!(spans.len(), 1, "{}", result.value);
+        assert_eq!(spans[0]["attrs"]["classes"], serde_json::json!(["c"]));
+        let mut links = Vec::new();
+        nodes(&value, "link", &mut links);
+        assert_eq!(links[0]["href"], "/u");
+        assert!(result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.code.as_str() == "attribute-dropped"));
+    }
+}
+
+#[test]
+fn reference_source_recovery_preserves_destinations_across_carrier_contexts() {
+    let labels = [
+        "a\\b", "a\\", "a[b", "a`b", "a{#b", "a|b", "a b", " ", "a\"b",
+    ];
+    let mut checked = 0;
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        for label in labels {
+            for image in [false, true] {
+                let label_html = label.replace('&', "&amp;").replace('"', "&quot;");
+                let child = if image {
+                    format!("<img src='/u' alt='t' data-carve-ref='{label_html}'>")
+                } else {
+                    format!("<a href='/u' data-carve-ref='{label_html}'>t</a>")
+                };
+                for context in ["paragraph", "span", "table", "title"] {
+                    let html = match context {
+                        "span" => format!("<p><span class='c'>before {child} after</span></p>"),
+                        "table" => format!("<table><tr><td>{child}</td><td>next</td></tr></table>"),
+                        "title" => {
+                            format!("<details><summary>{child}</summary><p>body</p></details>")
+                        }
+                        _ => format!("<p>{child}</p>"),
+                    };
+                    let ast = json(&html, mode);
+                    let mut definitions = Vec::new();
+                    nodes(&ast, "link_reference_definition", &mut definitions);
+                    assert_eq!(
+                        definitions.len(),
+                        1,
+                        "{mode:?} {context} {label:?} {image} {ast}"
+                    );
+                    assert_eq!(definitions[0]["label"], label);
+                    let result = html_to_carve(
+                        &html,
+                        &HtmlImportOptions {
+                            mode,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap_or_else(|error| {
+                        panic!("{mode:?} {context} {label:?} {image}: {error:?}")
+                    });
+                    let value: Value =
+                        serde_json::from_str(&to_json(&parse(&result.value))).unwrap();
+                    let mut targets = Vec::new();
+                    nodes(&value, if image { "image" } else { "link" }, &mut targets);
+                    if image {
+                        nodes(&value, "block_image", &mut targets);
+                    }
+                    assert_eq!(
+                        targets.len(),
+                        1,
+                        "{mode:?} {context} {label:?} {image} {} {value}",
+                        result.value
+                    );
+                    assert_eq!(targets[0][if image { "src" } else { "href" }], "/u");
+                    if context == "span" {
+                        let mut spans = Vec::new();
+                        nodes(&value, "span", &mut spans);
+                        assert_eq!(spans.len(), 1, "{}", result.value);
+                        assert_eq!(spans[0]["attrs"]["classes"], serde_json::json!(["c"]));
+                    }
+                    if context == "table" {
+                        let mut cells = Vec::new();
+                        nodes(&value, "table_cell", &mut cells);
+                        assert_eq!(cells.len(), 2, "{} {value}", result.value);
+                    }
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 216);
 }

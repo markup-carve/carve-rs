@@ -4839,7 +4839,7 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     let text =
         escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
     if let Some(label) = &node.ref_label {
-        if !((ctx.table_cell_depth > 0 && label.contains('|')) || label.contains('`'))
+        if !(ctx.table_cell_depth > 0 && label.contains('|'))
             && crate::parse::reference_label_has_source_spelling(label)
             && ctx.reference_targets.get(&crate::parse::label_key(label))
                 == Some(&(node.href.clone(), node.title.clone()))
@@ -4934,7 +4934,7 @@ fn render_image_with_attrs(
         return node.raw_ref.clone().unwrap_or_default();
     }
     if let Some(label) = &node.ref_label {
-        if !((in_table && label.contains('|')) || label.contains('`'))
+        if !(in_table && label.contains('|'))
             && crate::parse::reference_label_has_source_spelling(label)
             && ctx.reference_targets.get(&crate::parse::label_key(label))
                 == Some(&(node.src.clone(), node.title.clone()))
@@ -6813,28 +6813,44 @@ const QUOTE_IN_QUOTED_TITLE: &str = "a double quote has no spelling inside a quo
 /// that no longer reads as one.
 pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
     use crate::include_walk::{visit_inline_children, SubtreeVisitor};
-    struct ProbeReferences;
+    struct ProbeReferences {
+        definitions: Vec<BlockNode>,
+    }
     impl SubtreeVisitor for ProbeReferences {
         fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
             for inline in inlines {
-                match inline {
-                    InlineNode::Link(link) => {
-                        link.ref_label = None;
-                        link.raw_ref = None;
-                    }
-                    InlineNode::Image(image) => {
-                        image.ref_label = None;
-                        image.raw_ref = None;
-                    }
-                    _ => {}
+                let reference = match inline {
+                    InlineNode::Link(link) => link
+                        .ref_label
+                        .as_ref()
+                        .map(|label| (label.clone(), link.href.clone(), link.title.clone())),
+                    InlineNode::Image(image) => image
+                        .ref_label
+                        .as_ref()
+                        .map(|label| (label.clone(), image.src.clone(), image.title.clone())),
+                    _ => None,
+                };
+                if let Some((label, href, title)) = reference {
+                    self.definitions.push(BlockNode::LinkReferenceDefinition(
+                        LinkReferenceDefinition {
+                            attrs: None,
+                            label,
+                            href,
+                            title,
+                            pos: None,
+                        },
+                    ));
                 }
                 visit_inline_children(inline, self);
             }
         }
     }
     let mut probe_title = title.to_vec();
-    ProbeReferences.inlines(&mut probe_title);
-    let probe = Document {
+    let mut references = ProbeReferences {
+        definitions: Vec::new(),
+    };
+    references.inlines(&mut probe_title);
+    let mut probe = Document {
         frontmatter: Default::default(),
         frontmatter_raw: None,
         footnote_defs: Default::default(),
@@ -6856,11 +6872,17 @@ pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
         source_len: 0,
         ingest_payload_len: 0,
     };
+    probe.children.extend(references.definitions);
     match render_carve(&probe) {
-        Ok(source) => matches!(
-            crate::parse::parse(&source).children.as_slice(),
-            [BlockNode::Admonition(admonition)] if admonition.title.is_some()
-        ),
+        Ok(source) => {
+            let parsed = crate::parse::parse(&source);
+            matches!(parsed.children.first(), Some(BlockNode::Admonition(admonition)) if admonition.title.is_some())
+                && parsed
+                    .children
+                    .iter()
+                    .skip(1)
+                    .all(|node| matches!(node, BlockNode::LinkReferenceDefinition(_)))
+        }
         Err(crate::RenderCarveError::SourceUnspellable(error)) => {
             error.reason() != QUOTE_IN_QUOTED_TITLE
         }

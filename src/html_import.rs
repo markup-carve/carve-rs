@@ -2061,7 +2061,6 @@ impl<'a> Importer<'a> {
         single_char(&text).map(|c| c.to_string())
     }
 
-    /// A carrier's value under either spelling, canonical first.
     fn reference_label(
         &mut self,
         h: &Handle,
@@ -2084,7 +2083,6 @@ impl<'a> Importer<'a> {
         }
         if self.writing
             && ((self.cell_depth > 0 && label.contains('|'))
-                || label.contains('`')
                 || !crate::parse::reference_label_has_source_spelling(&label)
                 || href.chars().any(char::is_whitespace)
                 || title
@@ -2134,6 +2132,7 @@ impl<'a> Importer<'a> {
         Some(label)
     }
 
+    /// A carrier's value under either spelling, canonical first.
     fn carrier(handle: &Handle, canonical: &str) -> Option<String> {
         Self::attr(handle, canonical).or_else(|| {
             let deprecated = canonical.replacen("data-carve-", "data-djot-", 1);

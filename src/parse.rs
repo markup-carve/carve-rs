@@ -22629,7 +22629,10 @@ fn reference_label_close(bytes: &[u8], start: usize) -> Option<usize> {
 
 pub(crate) fn reference_label_has_source_spelling(label: &str) -> bool {
     let run = format!("[{label}]");
-    !label.contains("{#") && reference_label_close(run.as_bytes(), 0) == Some(run.len() - 1)
+    !label.contains("{#")
+        && !label.contains('[')
+        && !label.contains('`')
+        && reference_label_close(run.as_bytes(), 0) == Some(run.len() - 1)
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the
