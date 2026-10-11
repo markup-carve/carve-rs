@@ -7156,7 +7156,7 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
 /// carried rather than assumed (markup-carve/carve#2505). A CLOSER is read from
 /// the line as written either way: a marker line starts a fresh item rather than
 /// closing the block already open.
-fn body_open_comment_run<S: AsRef<str>>(body_lines: &[S]) -> Option<usize> {
+fn body_open_comment_run<S: AsRef<str>>(body_lines: impl IntoIterator<Item = S>) -> Option<usize> {
     let mut code: Option<FenceOpen> = None;
     let mut comment: Option<usize> = None;
     let mut at_block_start = true;
@@ -8206,8 +8206,14 @@ fn find_colon_fence_end(
                 if let Some(close) = (idx + 1..lines.len())
                     .find(|&j| is_comment_fence_close_any_column(lines.at(j), open.fence_len))
                 {
-                    idx = close + 1;
-                    continue;
+                    if !literal
+                        || !lines
+                            .range(idx + 1..close)
+                            .any(|line| line.starts_with(LAZY))
+                    {
+                        idx = close + 1;
+                        continue;
+                    }
                 }
             }
         }
@@ -8560,6 +8566,7 @@ struct NestedFenceReplay {
     fence_count: usize,
     colon_body_comments: HashMap<usize, QuotedBodyComments>,
     literal_code_lookup: LiteralCodeLookup,
+    literal_comment_openers: HashSet<usize>,
 }
 
 #[derive(Default)]
@@ -8692,6 +8699,7 @@ impl NestedFenceReplay {
                     chain[level].host_verse = None;
                 } else {
                     if let Some(comment) = detect_comment_fence_line(trim_ascii_start(text)) {
+                        self.literal_comment_openers.insert(at);
                         let len = comment.fence_len;
                         let col = indent_columns(text);
                         let collected = self
@@ -9553,7 +9561,7 @@ fn collect_blockquote_body(
         if let Some(stripped) = strip_blockquote_prefix(line) {
             if stripped.contains("%%%") {
                 let (comment_depth, _, comment_text) = prepass_quote_scope(stripped);
-                if let Some((run, depth)) = comment_run {
+                if let Some((run, depth, _)) = comment_run {
                     if comment_depth == depth
                         && detect_list_marker_full(trim_ascii_start(stripped)).is_none()
                         && is_comment_fence_close_any_column(comment_text, run)
@@ -9566,7 +9574,7 @@ fn collect_blockquote_body(
                     }
                 } else if in_fence.is_none() {
                     comment_run = detect_comment_fence_line_any_column(comment_text)
-                        .map(|open| (open.fence_len, comment_depth));
+                        .map(|open| (open.fence_len, comment_depth, inner.lines.len()));
                 }
             }
             let source_line = cur.source_line(cur.pos);
@@ -9833,7 +9841,16 @@ fn collect_blockquote_body(
         //
         // Every line that is NOT a definition marker is framed so its
         // indentation cannot re-open a block on re-parse (carve-rs#1538).
-        if comment_run.is_some() {
+        if comment_run.is_some()
+            && (!comment_run
+                .is_some_and(|(_, _, at)| nested_replay.literal_comment_openers.contains(&at))
+                || nested_replay.chain.last().is_some_and(|level| {
+                    level.comment.is_some()
+                        || level
+                            .host_comment
+                            .is_some_and(|(_, _, provisional)| !provisional)
+                }))
+        {
             comment_lazy_lines.push((inner.lines.len(), line.to_string(), source_col));
         }
         let trimmed = trim_ascii_start(line);
@@ -11973,6 +11990,11 @@ fn parse_list(
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             let marker_line_was_the_whole_block = cur.pos == before_block;
+            // A paired delimiter beyond the item's column belongs to the quote.
+            // Its literal opener must not let trailing prose reclaim that line.
+            let literal_comment_handoff = detect_line_block_open(marker.content).is_some()
+                && body_open_comment_run(stream.source.lines())
+                    .is_some_and(|run| cur.has_comment_closer_after(cur.pos, run));
             // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
             // above already has it. A fenced body is verbatim and holds no
             // paragraph, so there is nothing below the content column for the
@@ -11996,7 +12018,7 @@ fn parse_list(
                     lazy_column,
                     list_base,
                     |src, _below| {
-                        if swallowed_blank_separator {
+                        if swallowed_blank_separator || literal_comment_handoff {
                             return false;
                         }
                         let src = &src.source;
@@ -12018,7 +12040,8 @@ fn parse_list(
             }
             // A heading, a fence or a table on the marker line leaves the item
             // holding no paragraph - see `item_paragraph_open`.
-            item_paragraph_open = body_ends_with_open_paragraph(&stream.source, options);
+            item_paragraph_open =
+                !literal_comment_handoff && body_ends_with_open_paragraph(&stream.source, options);
             let children = item_body(deferred, items.len(), stream, None, false, options);
             items.push(ListItem {
                 attrs: item_attrs,
@@ -14020,12 +14043,16 @@ fn collect_indented_block_mapped_with_columns(
     let mut reached: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
-    let marker_comment = cur
+    let marker_content = cur
         .pos
         .checked_sub(1)
         .and_then(|at| detect_list_marker_full(cur.lines.at(at)))
-        .and_then(|marker| detect_comment_fence_line(marker.content))
+        .map(|marker| marker.content);
+    let marker_comment = marker_content
+        .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
+    let literal_marker_body =
+        marker_content.is_some_and(|content| detect_line_block_open(content).is_some());
     let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
     let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
     let mut definition_ended_paragraph = false;
@@ -14175,7 +14202,8 @@ fn collect_indented_block_mapped_with_columns(
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
-        let fence_owns_flush_left = ((fence.is_some() || comment_fence.is_some())
+        let fence_owns_flush_left = ((fence.is_some()
+            || (comment_fence.is_some() && !literal_marker_body))
             && line.starts_with(LAZY))
             || (folded_code_span
                 && folded_code_paragraph_open
