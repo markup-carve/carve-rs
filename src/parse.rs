@@ -11992,7 +11992,8 @@ fn parse_list(
             let marker_line_was_the_whole_block = cur.pos == before_block;
             // A paired delimiter beyond the item's column belongs to the quote.
             // Its literal opener must not let trailing prose reclaim that line.
-            let literal_comment_handoff = detect_line_block_open(marker.content).is_some()
+            let literal_comment_handoff = trim_ascii_start(marker.content).starts_with(':')
+                && detect_line_block_open(marker.content).is_some()
                 && body_open_comment_run(stream.source.lines())
                     .is_some_and(|run| cur.has_comment_closer_after(cur.pos, run));
             // NOT WHILE THE FENCE IS STILL OPEN, as the continuation branch
@@ -14051,8 +14052,9 @@ fn collect_indented_block_mapped_with_columns(
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
-    let literal_marker_body =
-        marker_content.is_some_and(|content| detect_line_block_open(content).is_some());
+    let literal_marker_body = marker_content.is_some_and(|content| {
+        trim_ascii_start(content).starts_with(':') && detect_line_block_open(content).is_some()
+    });
     let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
     let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
     let mut definition_ended_paragraph = false;
