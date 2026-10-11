@@ -54,6 +54,7 @@ struct CarveContext {
     /// separator instead of joining a `%`-leading content into a fence.
     in_term: bool,
     in_footnote_body: bool,
+    footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
     ///
@@ -1066,6 +1067,7 @@ fn render_with_escapes_once(
         paragraph_starts_after_caption_host: false,
         in_term: false,
         in_footnote_body: false,
+        footnote_guard_types: Vec::new(),
         escape_mode,
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
@@ -1976,6 +1978,7 @@ fn render_item_blocks(
             continue;
         };
         let next = blocks.get(index + 1);
+        let guard_start = ctx.footnote_guard_types.len();
         let rendered = render_block(session, block, ctx);
         escape_window::leave(session, recorded);
         if writes_nothing(&rendered) {
@@ -1989,7 +1992,9 @@ fn render_item_blocks(
             // that fixed in line_starts_paragraph, keeping it would insert a
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
+            let gap_guard_start = ctx.footnote_guard_types.len();
             if let Some(written) = definition_in_gap(session, prev_block, block, ctx) {
+                ctx.footnote_guard_types[guard_start..].rotate_left(gap_guard_start - guard_start);
                 out.push_str(&written);
                 out.push('\n');
                 // A definition written back BETWEEN the two blocks already ends
@@ -3224,21 +3229,34 @@ fn render_footnote_def_source(
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let previous_footnote_body = ctx.in_footnote_body;
+    let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
     let raw_body = render_blocks(session, blocks, ctx);
     ctx.in_footnote_body = previous_footnote_body;
-    if raw_body.lines().any(|line| {
-        line.trim_start_matches([' ', '\t'])
-            .strip_prefix(sentinel(session, S_CODE_LINE).as_str())
-            .is_some_and(|rest| rest.starts_with('>'))
-    }) {
+    let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
+    if previous_footnote_body {
+        ctx.footnote_guard_types.extend(guard_types.iter().copied());
+    }
+    let guarded_quote = format!("{}>", sentinel(session, S_CODE_LINE));
+    let mut ordinal = 0;
+    let offender = raw_body.lines().find_map(|line| {
+        if line
+            .trim_start_matches([' ', '\t'])
+            .starts_with(&guarded_quote)
+        {
+            return Some(guard_types.get(ordinal).copied().unwrap_or("footnote"));
+        }
+        ordinal += line.matches(&guarded_quote).count();
+        None
+    });
+    if let Some(node_type) = offender {
         crate::render_carve_error::record_unspellable(
-            "code",
+            node_type,
             "a block-marker continuation cannot stay inside a footnote paragraph",
         );
     }
     let single_body;
-    let body = trim_non_nbsp(if blocks.len() == 1 {
+    let body = trim_non_nbsp(if matches!(blocks, [BlockNode::Paragraph(_)]) {
         single_body = raw_body.replace("\n\n", "\n");
         &single_body
     } else {
@@ -4134,7 +4152,8 @@ fn render_inline_body(
                                 && render_inline_attrs(&code.attrs, ctx).is_empty(),
                             ctx.in_term,
                         ),
-                        ctx
+                        ctx,
+                        "code",
                     ),
                     render_inline_attrs(&code.attrs, ctx)
                 )
@@ -4183,9 +4202,14 @@ fn render_inline_body(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(
-                &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
-                ctx
+            guard_code_lines(
+                session,
+                &render_code(
+                    &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
+                    ctx,
+                ),
+                ctx,
+                "math",
             ),
             render_inline_attrs(&math.attrs, ctx)
         ),
@@ -4208,7 +4232,11 @@ fn render_inline_body(
             } else {
                 render_code(&content, ctx)
             };
-            format!("{verbatim}{{={}}}", escape_format(&raw.format))
+            format!(
+                "{}{{={}}}",
+                guard_code_lines(session, &verbatim, ctx, "raw_inline"),
+                escape_format(&raw.format),
+            )
         }
         InlineNode::LiteralInline(lit) => {
             // §27: `!` prefix on a verbatim span. A trailing attribute block is
@@ -4218,7 +4246,7 @@ fn render_inline_body(
             let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
             format!(
                 "!{}{}",
-                render_code(&content, ctx),
+                guard_code_lines(session, &render_code(&content, ctx), ctx, "literal_inline"),
                 render_inline_attrs(&lit.attrs, ctx)
             )
         }
@@ -5096,8 +5124,13 @@ fn code_span_fence(content: &str) -> String {
     safe_fence(content, 1)
 }
 
-fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) -> String {
-    if ctx.line_block_depth > 0 {
+fn guard_code_lines(
+    session: &RenderSession,
+    written: &str,
+    ctx: &mut CarveContext,
+    node_type: &'static str,
+) -> String {
+    if ctx.line_block_depth > 0 || !written.contains('\n') {
         return written.to_owned();
     }
     static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -5110,10 +5143,13 @@ fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) 
             if index > 0 && marker.is_match(line) {
                 if ctx.in_term {
                     crate::render_carve_error::record_unspellable(
-                        "code",
+                        node_type,
                         "a block marker on a continuation line ends the definition term",
                     );
                     return line.to_owned();
+                }
+                if ctx.in_footnote_body && line.starts_with('>') {
+                    ctx.footnote_guard_types.push(node_type);
                 }
                 let kind = if ctx.in_footnote_body && line.starts_with('[') {
                     S_FOOTNOTE_CODE_LINE

@@ -1,0 +1,447 @@
+use html5ever::{parse_document, tendril::TendrilSink};
+use markup5ever_rcdom::{Handle, NodeData, RcDom};
+
+fn collapse_spaces(value: &str) -> String {
+    let mut result = String::new();
+    let mut in_space = false;
+    for ch in value.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r' | '\x0c') {
+            if !in_space {
+                result.push(' ');
+            }
+            in_space = true;
+        } else {
+            result.push(ch);
+            in_space = false;
+        }
+    }
+    result
+}
+
+pub(super) fn html_tree(html: &str) -> serde_json::Value {
+    fn visit(node: &Handle, literal: bool, discard_space: bool) -> Option<serde_json::Value> {
+        match &node.data {
+            NodeData::Text { contents } => {
+                let value = contents.borrow().to_string();
+                if !literal && discard_space && value.trim().is_empty() {
+                    None
+                } else {
+                    Some(
+                        serde_json::json!({"text": if literal { value } else { collapse_spaces(&value) }}),
+                    )
+                }
+            }
+            NodeData::Element { name, attrs, .. } => {
+                let tag = name.local.to_string();
+                let literal = literal || tag == "pre" || tag == "code";
+                let attributes: serde_json::Map<String, serde_json::Value> = attrs
+                    .borrow()
+                    .iter()
+                    .map(|attr| {
+                        let key = attr.name.local.to_string();
+                        let value = if key == "checked" || key == "disabled" {
+                            serde_json::json!(true)
+                        } else {
+                            serde_json::json!(attr.value.to_string())
+                        };
+                        (key, value)
+                    })
+                    .collect();
+                let mut children: Vec<_> = node
+                    .children
+                    .borrow()
+                    .iter()
+                    .filter_map(|child| {
+                        visit(
+                            child,
+                            literal,
+                            [
+                                "html",
+                                "head",
+                                "body",
+                                "blockquote",
+                                "ul",
+                                "ol",
+                                "dl",
+                                "table",
+                                "tbody",
+                                "tr",
+                            ]
+                            .contains(&tag.as_str()),
+                        )
+                    })
+                    .collect();
+                if !literal && ["p", "li", "dt", "dd", "blockquote"].contains(&tag.as_str()) {
+                    if let Some(text) = children.first_mut().and_then(|child| child.get_mut("text"))
+                    {
+                        *text = serde_json::json!(text.as_str().unwrap().trim_start());
+                    }
+                    if let Some(text) = children.last_mut().and_then(|child| child.get_mut("text"))
+                    {
+                        *text = serde_json::json!(text.as_str().unwrap().trim_end());
+                    }
+                }
+                Some(serde_json::json!({"tag":tag,"attributes":attributes,"children":children}))
+            }
+            NodeData::Document => Some(serde_json::Value::Array(
+                node.children
+                    .borrow()
+                    .iter()
+                    .filter_map(|child| visit(child, literal, true))
+                    .collect(),
+            )),
+            _ => None,
+        }
+    }
+    let dom = parse_document(RcDom::default(), Default::default()).one(html);
+    visit(&dom.document, false, true).unwrap()
+}
+
+#[test]
+fn raw_literal_and_math_continuations_keep_their_payload_when_formatted() {
+    let controls: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("fixtures/verbatim-continuation-guards.json")).unwrap();
+    assert_eq!(controls.len(), 1080);
+    for control in controls {
+        let source = control["source"].as_str().unwrap();
+        let doc =
+            carve::parse_with_options(source, &carve::Options::default().with_positions(true));
+        let written = carve::render_carve(&doc).unwrap();
+        let report =
+            carve::to_carve_with_report(source, carve::CheckedRenderOptions::default()).unwrap();
+        assert_eq!(report.value, written, "{source:?}");
+        assert_eq!(report.total_losses, 0, "{source:?}");
+        let reparsed = carve::parse(&written);
+        let before: serde_json::Value = serde_json::from_str(&carve::to_json(&doc)).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&carve::to_json(&reparsed)).unwrap();
+        assert_eq!(
+            super::footnote_container_paragraph_breaks::payloads(&before),
+            super::footnote_container_paragraph_breaks::payloads(&after),
+            "{source:?}"
+        );
+        assert_eq!(
+            carve::render_carve(&reparsed).unwrap(),
+            written,
+            "{source:?}"
+        );
+        let expected = html_tree(control["html"].as_str().unwrap());
+        for html in [
+            carve::to_html(source),
+            carve::render_html(&doc).unwrap(),
+            carve::to_html(&written),
+        ] {
+            assert_eq!(html_tree(&html), expected, "{source:?}");
+        }
+    }
+}
+
+#[test]
+fn definition_term_refusals_identify_the_verbatim_node() {
+    let content = "x\n[r]: /url".to_owned();
+    let nodes = [
+        (
+            "raw_inline",
+            carve::InlineNode::RawInline(carve::RawInline {
+                content: content.clone(),
+                format: "html".into(),
+                injected: false,
+                pos: None,
+            }),
+        ),
+        (
+            "literal_inline",
+            carve::InlineNode::LiteralInline(carve::LiteralInline {
+                content: content.clone(),
+                attrs: None,
+                pos: None,
+            }),
+        ),
+        (
+            "math",
+            carve::InlineNode::Math(carve::Math {
+                content,
+                attrs: None,
+                display: false,
+                label: None,
+                number: None,
+                pos: None,
+            }),
+        ),
+    ];
+    for (kind, node) in nodes {
+        let mut doc = carve::parse(":: term\n: body\n");
+        let carve::BlockNode::DefinitionList(list) = &mut doc.children[0] else {
+            panic!("expected a description list");
+        };
+        list.items[0].terms[0].children = vec![node];
+        match carve::render_carve(&doc).expect_err("the term cannot retain its continuation") {
+            carve::RenderCarveError::SourceUnspellable(error) => {
+                assert_eq!(error.node_type(), kind);
+                assert_eq!(
+                    error.reason(),
+                    "a block marker on a continuation line ends the definition term"
+                );
+            }
+            other => panic!("unexpected refusal: {other}"),
+        }
+    }
+}
+
+#[test]
+fn footnote_refusals_identify_the_verbatim_node() {
+    let content = "x\n> marker".to_owned();
+    let nodes = [
+        (
+            "code",
+            carve::InlineNode::Code(carve::Code {
+                value: content.clone(),
+                attrs: None,
+                pos: None,
+            }),
+        ),
+        (
+            "raw_inline",
+            carve::InlineNode::RawInline(carve::RawInline {
+                content: content.clone(),
+                format: "html".into(),
+                injected: false,
+                pos: None,
+            }),
+        ),
+        (
+            "literal_inline",
+            carve::InlineNode::LiteralInline(carve::LiteralInline {
+                content: content.clone(),
+                attrs: None,
+                pos: None,
+            }),
+        ),
+        (
+            "math",
+            carve::InlineNode::Math(carve::Math {
+                content,
+                attrs: None,
+                display: false,
+                label: None,
+                number: None,
+                pos: None,
+            }),
+        ),
+    ];
+    for (kind, node) in nodes {
+        let mut doc = carve::parse("p [^f]\n\n[^f]: body\n");
+        let carve::BlockNode::Paragraph(paragraph) =
+            &mut doc.footnote_defs.get_mut("f").unwrap()[0]
+        else {
+            panic!("expected a paragraph");
+        };
+        paragraph.children = vec![node];
+        match carve::render_carve(&doc).expect_err("the footnote cannot retain its continuation") {
+            carve::RenderCarveError::SourceUnspellable(error) => {
+                assert_eq!(error.node_type(), kind);
+                assert_eq!(
+                    error.reason(),
+                    "a block-marker continuation cannot stay inside a footnote paragraph"
+                );
+            }
+            other => panic!("unexpected refusal: {other}"),
+        }
+    }
+}
+
+#[test]
+fn nested_hosts_keep_exact_verbatim_payloads() {
+    fn replace_body(blocks: &mut [carve::BlockNode], node: &carve::InlineNode) -> bool {
+        for block in blocks {
+            match block {
+                carve::BlockNode::Paragraph(paragraph)
+                    if paragraph.children.iter().any(|child| matches!(child, carve::InlineNode::Text(text) if text.value == "body")) => {
+                    paragraph.children = vec![node.clone()];
+                    return true;
+                }
+                carve::BlockNode::BlockQuote(quote) => {
+                    if replace_body(&mut quote.children, node) { return true; }
+                }
+                carve::BlockNode::List(list) => {
+                    for item in &mut list.items {
+                        if replace_body(&mut item.children, node) { return true; }
+                    }
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+    let hosts = [
+        "> - body\n",
+        "- > body\n",
+        "- outer\n  - body\n",
+        "p [^f]\n\n[^f]: - > body\n",
+    ];
+    for host in hosts {
+        for marker in ["> marker", "[r]: /url"] {
+            let content = format!("x\n{marker}");
+            let nodes = [
+                carve::InlineNode::Code(carve::Code {
+                    value: content.clone(),
+                    attrs: None,
+                    pos: None,
+                }),
+                carve::InlineNode::RawInline(carve::RawInline {
+                    content: content.clone(),
+                    format: "html".into(),
+                    injected: false,
+                    pos: None,
+                }),
+                carve::InlineNode::LiteralInline(carve::LiteralInline {
+                    content: content.clone(),
+                    attrs: None,
+                    pos: None,
+                }),
+                carve::InlineNode::Math(carve::Math {
+                    content,
+                    attrs: None,
+                    display: false,
+                    label: None,
+                    number: None,
+                    pos: None,
+                }),
+            ];
+            for node in nodes {
+                let mut doc = carve::parse(host);
+                let replaced = if let Some(body) = doc.footnote_defs.get_mut("f") {
+                    replace_body(body, &node)
+                } else {
+                    replace_body(&mut doc.children, &node)
+                };
+                assert!(replaced, "{host:?}");
+                let written = carve::render_carve(&doc).unwrap();
+                let reparsed = carve::parse(&written);
+                let before: serde_json::Value =
+                    serde_json::from_str(&carve::to_json(&doc)).unwrap();
+                let after: serde_json::Value =
+                    serde_json::from_str(&carve::to_json(&reparsed)).unwrap();
+                assert_eq!(
+                    super::footnote_container_paragraph_breaks::payloads(&before),
+                    super::footnote_container_paragraph_breaks::payloads(&after),
+                    "{host:?} {node:?}: {written:?}"
+                );
+                assert_eq!(
+                    html_tree(&carve::render_html(&doc).unwrap()),
+                    html_tree(&carve::to_html(&written)),
+                    "{host:?} {node:?}"
+                );
+                assert_eq!(
+                    carve::render_carve(&reparsed).unwrap(),
+                    written,
+                    "{host:?} {node:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn identical_guard_text_in_a_quote_does_not_steal_the_footnote_refusal_type() {
+    for continuation in ["> m", "> mm"] {
+        let mut doc = carve::parse("p [^f]\n\n[^f]: > body\n\n  tail\n");
+        let blocks = doc.footnote_defs.get_mut("f").unwrap();
+        let carve::BlockNode::BlockQuote(quote) = &mut blocks[0] else {
+            panic!("expected quote");
+        };
+        let carve::BlockNode::Paragraph(quoted) = &mut quote.children[0] else {
+            panic!("expected quoted paragraph");
+        };
+        quoted.children = vec![carve::InlineNode::Code(carve::Code {
+            value: "x\n> m".into(),
+            attrs: None,
+            pos: None,
+        })];
+        let carve::BlockNode::Paragraph(tail) = &mut blocks[1] else {
+            panic!("expected tail paragraph");
+        };
+        tail.children = vec![carve::InlineNode::Math(carve::Math {
+            content: format!("x\n{continuation}"),
+            attrs: None,
+            display: false,
+            label: None,
+            number: None,
+            pos: None,
+        })];
+        match carve::render_carve(&doc).expect_err("math continuation cannot stay in the footnote")
+        {
+            carve::RenderCarveError::SourceUnspellable(error) => {
+                assert_eq!(error.node_type(), "math");
+                assert_eq!(
+                    error.reason(),
+                    "a block-marker continuation cannot stay inside a footnote paragraph"
+                );
+            }
+            other => panic!("unexpected refusal: {other}"),
+        }
+    }
+}
+
+#[test]
+fn a_gap_definition_keeps_guard_types_in_output_order() {
+    let options = carve::Options::default().with_positions(true);
+    let mut template = carve::parse_with_options("- A\n\n  B\n", &options);
+    let carve::BlockNode::List(mut root) = template.children.remove(0) else {
+        panic!("expected list");
+    };
+    root.tight = true;
+    let mut outer = root.clone();
+    root.pos.as_mut().unwrap().start_line = 0;
+    outer.pos.as_mut().unwrap().start_line = 1;
+    for (list, first_line, last_line) in [(&mut root, 0, 5), (&mut outer, 2, 4)] {
+        for (index, line) in [(0, first_line), (1, last_line)] {
+            let carve::BlockNode::Paragraph(paragraph) = &mut list.items[0].children[index] else {
+                panic!("expected paragraph");
+            };
+            let pos = paragraph.pos.as_mut().unwrap();
+            pos.start_line = line;
+            pos.end_line = line;
+        }
+    }
+    let carve::BlockNode::Paragraph(tail) = &mut outer.items[0].children[1] else {
+        panic!("expected tail paragraph");
+    };
+    tail.children = vec![carve::InlineNode::Code(carve::Code {
+        value: "x\n> m".into(),
+        attrs: None,
+        pos: None,
+    })];
+    let mut inner_doc = carve::parse_with_options("> body\n", &options);
+    let carve::BlockNode::BlockQuote(mut inner) = inner_doc.children.remove(0) else {
+        panic!("expected quote");
+    };
+    inner.pos.as_mut().unwrap().start_line = 3;
+    let carve::BlockNode::Paragraph(paragraph) = &mut inner.children[0] else {
+        panic!("expected quoted paragraph");
+    };
+    paragraph.children = vec![carve::InlineNode::Math(carve::Math {
+        content: "x\n> m".into(),
+        attrs: None,
+        display: false,
+        label: None,
+        number: None,
+        pos: None,
+    })];
+    let mut doc = carve::parse("");
+    doc.children = vec![carve::BlockNode::List(root)];
+    doc.footnote_defs
+        .insert("outer".into(), vec![carve::BlockNode::List(outer)]);
+    doc.footnote_defs
+        .insert("inner".into(), vec![carve::BlockNode::BlockQuote(inner)]);
+    match carve::render_carve(&doc).expect_err("the code continuation cannot stay in the footnote")
+    {
+        carve::RenderCarveError::SourceUnspellable(error) => {
+            assert_eq!(error.node_type(), "code");
+            assert_eq!(
+                error.reason(),
+                "a block-marker continuation cannot stay inside a footnote paragraph"
+            );
+        }
+        other => panic!("unexpected refusal: {other}"),
+    }
+}
