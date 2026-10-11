@@ -15566,6 +15566,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut rows: Vec<TableRow> = Vec::new();
     let mut first_is_delim = false;
     let mut saw_separator = false;
+    let mut separator_widths: Option<Vec<u64>> = None;
     while let Some(line) = cur.peek() {
         // ONLY a `|` row opens an iteration. A `+` continuation is taken by the
         // row it continues, below, so reaching one here means the row above did
@@ -15581,6 +15582,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         } else if rows.len() == 1 && !saw_separator && !first_is_delim && is_delim_row(line) {
             // The separator row: make the first row the header, drop the row.
             saw_separator = true;
+            separator_widths = Some(parse_delim_widths(line));
             let column_aligns = parse_delim_aligns(line);
             for cell in &mut rows[0].cells {
                 cell.header = true;
@@ -15654,6 +15656,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         columns: Vec::new(),
         rows,
         row_groups: None,
+        separator_widths,
     };
     // PART 12 §26: the resolved extent is published beside the markers, so it is
     // filled in here rather than recomputed by each consumer of the tree.
@@ -15814,6 +15817,19 @@ fn is_delim_row(line: &str) -> bool {
     // PART 7: cell padding is U+0020 only, so a tab makes the cell content and
     // the cell stops being a delimiter cell -- which unmakes the whole row.
     !cells.is_empty() && cells.iter().all(|c| is_delim_cell(trim_cell_padding(c)))
+}
+
+/// Per-cell dash counts from a delimiter row, alignment colons excluded
+/// (PART 12 §3). The row is already known to be a delimiter row, so every cell
+/// has at least one dash and every count is at least 1.
+fn parse_delim_widths(line: &str) -> Vec<u64> {
+    let mut content = trim_ascii(line);
+    content = content.strip_prefix('|').unwrap_or(content);
+    content = content.strip_suffix('|').unwrap_or(content);
+    split_table_cells(content)
+        .iter()
+        .map(|c| trim_cell_padding(c).bytes().filter(|b| *b == b'-').count() as u64)
+        .collect()
 }
 
 /// Per-column alignment from a delimiter row's colons.

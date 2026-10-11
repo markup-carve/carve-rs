@@ -24,7 +24,7 @@ use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJso
 /// versioned for authors, this is versioned for readers of a tree. A major bump
 /// removes, renames or reinterprets a field or a meaning; a minor bump adds a
 /// field or a node type.
-pub const AST_CONTRACT_VERSION: &str = "1.0";
+pub const AST_CONTRACT_VERSION: &str = "1.1";
 
 /// The vocabulary an envelope with no `vocabulary` is written in.
 pub const CORE_AST_VOCABULARY: &str = "https://markup-carve.org/ast/core";
@@ -135,8 +135,9 @@ impl fmt::Display for AstEnvelopeError {
             Self::Version { found, implemented } => write!(
                 f,
                 "AST envelope announces contract version {found}; this build implements \
-                 {implemented}. A higher major removes, renames or reinterprets, so the payload \
-                 is refused rather than half-read (PART 12 §34(a))"
+                 {implemented}. A higher major removes, renames or reinterprets and a higher \
+                 minor adds a field the closed node schema refuses, so the payload is refused \
+                 rather than half-read (PART 12 §34(a))"
             ),
             Self::Extension(id) => write!(
                 f,
@@ -272,7 +273,7 @@ pub fn from_ast_envelope_json(
             ))
         }
     };
-    let Some((major, _)) = split_contract_version(&ast_version) else {
+    let Some((major, minor)) = split_contract_version(&ast_version) else {
         return Err(AstEnvelopeError::Shape(format!(
             "\"astVersion\" is {ast_version:?}, which is not major.minor with no leading zero"
         )));
@@ -283,11 +284,18 @@ pub fn from_ast_envelope_json(
         ));
     };
 
-    let (our_major, _) = split_contract_version(AST_CONTRACT_VERSION)
+    let (our_major, our_minor) = split_contract_version(AST_CONTRACT_VERSION)
         .expect("the build's own contract version matches the schema pattern");
-    // A higher major only. A LOWER one cannot arrive while this build implements
-    // major 1, which the schema's pattern makes the lowest there is.
-    if compare_version_part(major, our_major) == Ordering::Greater {
+    // ITS OWN VERSION OR LOWER (PART 12 §34). A higher MINOR is refused beside a
+    // higher major: the node schema is closed, so the field a minor adds is one
+    // this build would refuse on ingest anyway, and "a higher minor is accepted"
+    // described a tolerance the reader never had.
+    let higher = match compare_version_part(major, our_major) {
+        Ordering::Greater => true,
+        Ordering::Equal => compare_version_part(minor, our_minor) == Ordering::Greater,
+        Ordering::Less => false,
+    };
+    if higher {
         return Err(AstEnvelopeError::Version {
             found: ast_version,
             implemented: AST_CONTRACT_VERSION.to_string(),

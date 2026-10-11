@@ -1984,8 +1984,38 @@ impl<'a> Importer<'a> {
                 tag == "span" && Self::reads_raw_format(handle, mode).is_some()
             }
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
+            crate::roundtrip::COL_WIDTHS => {
+                tag == "table" && Self::reads_separator_widths(handle).is_some()
+            }
             _ => false,
         }
+    }
+
+    /// The `<table data-carve-col-widths>` separator row, comma-joined.
+    ///
+    /// PART 10 §13a `CARVE-P10-016`: the WHOLE carrier is refused - no field at
+    /// all, so the table comes back in the `|=` form - where any entry is not a
+    /// run of decimal digits or exceeds
+    /// [`SEPARATOR_WIDTH_LIMIT`](crate::roundtrip::SEPARATOR_WIDTH_LIMIT).
+    /// Neither a partial read nor a clamp: both would put a separator row on
+    /// the page whose widths nobody wrote.
+    fn reads_separator_widths(table: &Handle) -> Option<Vec<u64>> {
+        let value = Self::carrier(table, crate::roundtrip::COL_WIDTHS)?;
+        if value.trim().is_empty() {
+            // An empty value names no width, and a list of none has no
+            // separator row to spell.
+            return None;
+        }
+        value
+            .split(',')
+            .map(|entry| {
+                let entry = entry.trim();
+                (!entry.is_empty() && entry.bytes().all(|b| b.is_ascii_digit()))
+                    .then(|| entry.parse::<u64>().ok())
+                    .flatten()
+                    .filter(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
+            })
+            .collect()
     }
 
     /// The `<ul data-marker>` bullet, where it names one PART 2 admits and is
@@ -5565,6 +5595,7 @@ impl<'a> Importer<'a> {
             columns: Vec::new(),
             rows: result,
             row_groups: row_groups.map(Box::new),
+            separator_widths: Self::reads_separator_widths(h),
             pos: None,
         }))
     }

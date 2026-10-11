@@ -2868,26 +2868,56 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// a trailing ROWSPAN (`^`) does not absorb left, so a native `| ^ |` in the
 /// first row is not a header cell and the row would fall out of the head.
 fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -> String {
+    if node.rows.is_empty()
+        && node
+            .separator_widths
+            .as_ref()
+            .is_some_and(|widths| !widths.is_empty())
+    {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "a separator row needs a preceding table row",
+        );
+        return String::new();
+    }
     let mut rows = Vec::new();
     let header_row = node
         .rows
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
-    let needs_delimiter = header_row
-        && node.rows.first().is_some_and(|row| {
-            let first_span = row.cells.iter().position(|cell| cell.span.is_some());
-            match first_span {
-                None => false,
-                Some(index) => {
-                    // Native only for a trailing run of colspans after a real
-                    // header cell; every other span shape needs the delimiter.
-                    !(index >= 1
-                        && row.cells[index..]
-                            .iter()
-                            .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+    // PART 12 §3: the author's own separator row, where the AST records one.
+    // Its PRESENCE is the choice, so it is written whatever the header shape -
+    // a native `|=` head is what ABSENCE spells. An EMPTY entry list names no
+    // separator cell and so has no separator row to spell; only a hand-built
+    // tree can hold one.
+    let authored_widths = node
+        .separator_widths
+        .as_ref()
+        .filter(|widths| !widths.is_empty());
+    if authored_widths.is_some() && !header_row {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "field separatorWidths needs a header row",
+        );
+        return String::new();
+    }
+    let needs_delimiter = authored_widths.is_some()
+        || header_row
+            && node.rows.first().is_some_and(|row| {
+                let first_span = row.cells.iter().position(|cell| cell.span.is_some());
+                match first_span {
+                    None => false,
+                    Some(index) => {
+                        // Native only for a trailing run of colspans after a
+                        // real header cell; every other span shape needs the
+                        // delimiter.
+                        !(index >= 1
+                            && row.cells[index..]
+                                .iter()
+                                .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+                    }
                 }
-            }
-        });
+            });
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
@@ -2896,7 +2926,19 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
-            cells.push(render_table_cell(session, cell, ctx, mark_header));
+            // A written separator row carries the column alignment, so the
+            // promoted row does not spell it a second time - for the columns
+            // that row reaches. A cell past the last entry has no separator
+            // cell to carry it and keeps its own marker.
+            let suppress_align =
+                row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
+            cells.push(render_table_cell(
+                session,
+                cell,
+                ctx,
+                mark_header,
+                suppress_align,
+            ));
         }
         ctx.cell_not_last = false;
         // A row whose every cell is blank is not a table row
@@ -2911,8 +2953,18 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
-        let sep = vec!["---"; node.rows[0].cells.len()].join("|");
-        rows.insert(1, format!("|{sep}|"));
+        let sep = match authored_widths {
+            // ONE SEPARATOR CELL PER ENTRY, not per row cell. Filling the row's
+            // width instead made the writer a non-fixed-point: the corpus's
+            // ragged `| |x |` over `|---|` came back with a second entry the
+            // author never wrote, so `fmt(fmt(x))` moved the tree.
+            Some(widths) => match render_table_separator(node, widths) {
+                Some(separator) => separator,
+                None => return String::new(),
+            },
+            None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
+        };
+        rows.insert(1, sep);
     }
     if let Some(row) = node
         .caption
@@ -2949,11 +3001,60 @@ fn render_table_row(cells: &[String], attrs: &str) -> String {
     format!("|{}|{}", cells.join("|"), attrs)
 }
 
+fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
+    let fail = || {
+        crate::render_carve_error::record_unspellable(
+            "table",
+            "separator row exceeds source allocation capacity",
+        );
+        None
+    };
+    let Some(capacity) = widths
+        .iter()
+        .enumerate()
+        .try_fold(2usize, |total, (index, width)| {
+            let dashes = usize::try_from((*width).max(1)).ok()?;
+            let colons = match table.rows[0].cells.get(index).and_then(|cell| cell.align) {
+                Some(TableAlign::Center) => 2,
+                Some(_) => 1,
+                None => 0,
+            };
+            total
+                .checked_add(dashes)?
+                .checked_add(colons)?
+                .checked_add(usize::from(index > 0))
+        })
+    else {
+        return fail();
+    };
+    let mut separator = String::new();
+    if separator.try_reserve_exact(capacity).is_err() {
+        return fail();
+    }
+    separator.push('|');
+    for (index, width) in widths.iter().enumerate() {
+        if index > 0 {
+            separator.push('|');
+        }
+        let align = table.rows[0].cells.get(index).and_then(|cell| cell.align);
+        if matches!(align, Some(TableAlign::Left | TableAlign::Center)) {
+            separator.push(':');
+        }
+        separator.extend(std::iter::repeat('-').take((*width).max(1) as usize));
+        if matches!(align, Some(TableAlign::Right | TableAlign::Center)) {
+            separator.push(':');
+        }
+    }
+    separator.push('|');
+    Some(separator)
+}
+
 fn render_table_cell(
     session: &RenderSession,
     cell: &TableCell,
     ctx: &mut CarveContext,
     mark_header: bool,
+    suppress_align: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
         crate::render_carve_error::record_unspellable(
@@ -2981,7 +3082,11 @@ fn render_table_cell(
         };
         return pad_cell(&attrs, marker);
     }
-    let align = align_marker(cell.align);
+    let align = if suppress_align {
+        ""
+    } else {
+        align_marker(cell.align)
+    };
     let valign = match cell.valign {
         Some(TableVerticalAlign::Top) => "^",
         Some(TableVerticalAlign::Middle) => "~",
@@ -5540,21 +5645,21 @@ fn free_sentinel(text: &str, taken: &[String; SENTINEL_COUNT]) -> String {
     {
         return marker.to_string();
     }
-    let longest = text
-        .split(|ch| ch != '\u{e008}')
-        .map(|run| run.chars().count())
-        .max()
-        .unwrap_or(0);
-    let prefix = format!("\u{e009}{}", "\u{e008}".repeat(longest + 1));
-    (0..SENTINEL_COUNT)
-        .map(|index| {
-            format!(
-                "{prefix}{}\u{e00a}",
-                char::from_u32(0xe010 + index as u32).unwrap()
-            )
-        })
-        .find(|token| !taken.contains(token))
-        .expect("one token remains for the replaced slot")
+    static TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let pattern =
+        TOKEN.get_or_init(|| regex::Regex::new("\u{e009}m([0-9]{1,20})\u{e00a}").unwrap());
+    let mut nonces = HashSet::new();
+    for candidate in std::iter::once(text).chain(taken.iter().map(String::as_str)) {
+        for captures in pattern.captures_iter(candidate) {
+            if let Ok(nonce) = captures[1].parse::<usize>() {
+                nonces.insert(nonce);
+            }
+        }
+    }
+    let nonce = (0..=nonces.len())
+        .find(|nonce| !nonces.contains(nonce))
+        .unwrap();
+    format!("\u{e009}m{nonce}\u{e00a}")
 }
 
 fn resolve_nbsp_placeholder(session: &RenderSession, text: &str, in_line_block: bool) -> String {

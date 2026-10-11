@@ -23,8 +23,8 @@ fn tree() -> String {
 fn encode_wraps_the_tree_without_moving_it() {
     let doc = parse("# Title\n\nBody.\n");
     let wrapped = to_ast_envelope_json(&doc, &AstEnvelopeOptions::default()).unwrap();
-    assert!(wrapped.starts_with("{\"astVersion\":\"1.0\","));
-    assert_eq!(AST_CONTRACT_VERSION, "1.0");
+    assert!(wrapped.starts_with("{\"astVersion\":\"1.1\","));
+    assert_eq!(AST_CONTRACT_VERSION, "1.1");
     assert!(wrapped.contains(&format!("\"document\":{}", to_json(&doc))));
     assert!(!wrapped.contains("\"vocabulary\""));
     assert!(!wrapped.contains("\"extensions\""));
@@ -71,21 +71,34 @@ fn a_higher_major_is_refused_by_version_not_by_the_schema() {
         other => panic!("expected a version error, got {other:?}"),
     }
     assert!(error.to_string().contains("2.0"));
-    assert!(error.to_string().contains("1.0"));
+    assert!(error.to_string().contains(AST_CONTRACT_VERSION));
 }
 
 #[test]
-fn a_higher_minor_is_accepted() {
+fn a_higher_minor_is_refused_too() {
+    // PART 12 §34: its own version OR LOWER. A minor ADDS a field, the node
+    // schema is closed, so a 1.1 tree reaching a 1.0 reader would be refused on
+    // ingest anyway - "a higher minor is accepted" was a tolerance that never
+    // existed (markup-carve/carve#2894).
     let payload = envelope(&tree(), &[("astVersion", "\"1.7\"")]);
-    from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap();
+    let error = from_ast_envelope_json(&payload, &AstEnvelopeReaderOptions::default()).unwrap_err();
+    match &error {
+        AstEnvelopeError::Version { found, implemented } => {
+            assert_eq!(found, "1.7");
+            assert_eq!(implemented, AST_CONTRACT_VERSION);
+        }
+        other => panic!("expected a version error, got {other:?}"),
+    }
+    assert!(error.to_string().contains("1.7"));
+    assert!(error.to_string().contains(AST_CONTRACT_VERSION));
 }
 
 #[test]
-fn a_higher_minor_is_still_refused_when_it_requires_an_unknown_extension() {
+fn the_implemented_minor_is_still_refused_when_it_requires_an_unknown_extension() {
     let payload = envelope(
         &tree(),
         &[
-            ("astVersion", "\"1.7\""),
+            ("astVersion", &format!("\"{AST_CONTRACT_VERSION}\"")),
             ("extensions", &format!("[{{\"id\":\"{CITATIONS}\"}}]")),
         ],
     );

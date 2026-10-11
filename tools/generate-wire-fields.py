@@ -31,6 +31,7 @@ HELPERS = ("attrs", "pos")
 # Engine features whose normative schema change is still on an unmerged spec
 # branch. Keep the pinned corpus revision unchanged; once that pin contains a
 # field, the set insertion below is simply a no-op.
+
 PENDING_NODE_FIELDS = {"comment": ("delimited",)}
 # Fields an unmerged schema change removes, so ingest refuses them now.
 PENDING_REMOVED_FIELDS: dict[str, tuple[str, ...]] = {}

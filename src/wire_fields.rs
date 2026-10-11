@@ -68,7 +68,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("substitution", &["attrs", "new", "old", "pos", "type"]),
     ("superscript", &["attrs", "children", "pos", "type"]),
     ("symbol", &["attrs", "name", "pos", "type"]),
-    ("table", &["attrs", "caption", "columns", "pos", "rowGroups", "rows", "shortCaption", "type"]),
+    ("table", &["attrs", "caption", "columns", "pos", "rowGroups", "rows", "separatorWidths", "shortCaption", "type"]),
     ("table_cell", &["align", "attrs", "blocks", "children", "colspan", "header", "pos", "rowspan", "span", "type", "valign"]),
     ("table_row", &["attrs", "cells", "pos", "type"]),
     ("tag", &["attrs", "name", "pos", "type"]),

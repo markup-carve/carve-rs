@@ -656,6 +656,12 @@ pub struct Table {
     /// for a format whose table model has one. Carve 0.1 source has no spelling
     /// for it, so a parse never sets it.
     pub row_groups: Option<Box<TableRowGroups>>,
+    /// The dash runs the author's separator row spelled, one per separator
+    /// cell, alignment colons excluded (PART 12 §3). `None` means the author
+    /// wrote NO separator row, which is the half of the distinction the rows
+    /// cannot carry: `|= a |` and a plain row over `|---|` parse alike.
+    /// Author choice on the same terms as `List::bullet_char`.
+    pub separator_widths: Option<Vec<u64>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

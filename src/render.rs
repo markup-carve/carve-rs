@@ -2320,7 +2320,40 @@ fn render_table(
     let t = resolved.as_ref();
     indent(out, level);
     out.push_str("<table");
+    // PART 10 §13a: the authored separator row's dash runs, under roundtrip
+    // export only. PRESENCE is the carried half - a `|=` header and a separator
+    // row give the same `<table>` otherwise.
+    // A carrier a conforming reader will refuse is a round-trip promise the
+    // writer cannot keep, so an entry past the §13a bound writes no carrier.
+    let widths_carrier = options
+        .html_carriers()
+        .then_some(t.separator_widths.as_ref())
+        .flatten()
+        .filter(|widths| {
+            !widths.is_empty()
+                && widths
+                    .iter()
+                    .all(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
+        });
+    if let Some(widths) = widths_carrier {
+        let joined = widths
+            .iter()
+            .map(|w| w.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        write_carrier(
+            out,
+            crate::roundtrip::COL_WIDTHS,
+            &joined,
+            &t.attrs,
+            t.pos.as_ref(),
+        );
+    }
     let mut table_attrs = t.attrs.clone();
+    if widths_carrier.is_some() {
+        // The carrier owns the name, so an authored copy does not reach it.
+        table_attrs = strip_keys(&table_attrs, &[crate::roundtrip::COL_WIDTHS]);
+    }
     if let Some(attrs) = &mut table_attrs {
         let has_body_metadata = ["body-rows", "body-header-rows", "body-header-cols"]
             .iter()
@@ -5229,6 +5262,7 @@ mod owned_html_metadata_depth_tests {
                 columns: vec![],
                 rows: vec![],
                 row_groups: None,
+                separator_widths: None,
                 pos: None,
             };
             let node = match slot {

@@ -613,6 +613,7 @@ impl Reader {
                 [
                     ("rows", Json::Array(rows)),
                     ("caption", caption.unwrap_or(Json::Null)),
+                    ("separatorWidths", separator_widths(attrs_obj(obj))),
                 ],
             ),
             attrs_obj(obj),
@@ -1423,6 +1424,35 @@ fn carried_attr(key: &str, value: &Json) -> bool {
     matches!(value, Json::String(_)) && (key == "class" || !is_structural_attr(key))
 }
 
+/// The authored separator row an outbound table put in `carveSeparatorWidths`.
+///
+/// A value that is not a comma-joined run of positive integers names no
+/// separator row, so the table comes back in the `|=` form rather than with a
+/// row nobody wrote.
+fn separator_widths(a: &Object) -> Json {
+    let Some(Json::String(value)) = a.get("carveSeparatorWidths") else {
+        return Json::Null;
+    };
+    if value.trim().is_empty() {
+        return Json::Null;
+    }
+    let mut out = Vec::new();
+    for entry in value.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() || !entry.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Json::Null;
+        }
+        let Ok(width) = entry.parse::<u64>() else {
+            return Json::Null;
+        };
+        if width < 1 {
+            return Json::Null;
+        }
+        out.push(Json::Number(width.into()));
+    }
+    Json::Array(out)
+}
+
 fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
@@ -1445,6 +1475,7 @@ fn is_structural_attr(k: &str) -> bool {
             | "carveMarker"
             | "carveRawRef"
             | "carveRef"
+            | "carveSeparatorWidths"
             | "carveSource"
             | "carveSpanMarker"
             | "carveTaskState"

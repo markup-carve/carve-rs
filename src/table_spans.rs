@@ -236,6 +236,7 @@ mod tests {
             short_caption: None,
             columns: vec![],
             row_groups: None,
+            separator_widths: None,
             pos: None,
             rows: markers
                 .iter()
