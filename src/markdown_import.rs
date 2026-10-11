@@ -82,7 +82,7 @@ pub(crate) struct FrontmatterNotice {
     pub typed_opener: bool,
 }
 
-fn markdown_destination(destination: &str, email: bool) -> String {
+pub(crate) fn markdown_destination(destination: &str, email: bool) -> String {
     if is_empty_destination(destination) {
         return destination.to_string();
     }
@@ -96,7 +96,7 @@ fn markdown_destination(destination: &str, email: bool) -> String {
             || byte >= 0x7f
             || matches!(
                 byte,
-                b'"' | b'<' | b'>' | b'[' | b'\\' | b']' | b'`' | b'{' | b'|' | b'}'
+                b'"' | b'<' | b'>' | b'[' | b'\\' | b']' | b'`' | b'^' | b'{' | b'|' | b'}'
             )
         {
             encoded.push('%');
@@ -107,6 +107,20 @@ fn markdown_destination(destination: &str, email: bool) -> String {
         }
     }
     encoded
+}
+
+pub(crate) fn literal_bare_link(label: &str, prefix: &str) -> InlineNode {
+    InlineNode::Link(Link {
+        attrs: None,
+        href: markdown_destination(&format!("{prefix}{label}"), false),
+        title: None,
+        children: vec![InlineNode::text(label)],
+        ref_label: None,
+        raw_ref: None,
+        from_crossref: false,
+        from_heading_reference: false,
+        pos: None,
+    })
 }
 
 /// The title of a link or image with no destination, which has no slot left to
@@ -665,7 +679,15 @@ fn markdown_to_ast_with_code_lines(
     }
     let mut table_autolink = false;
     let mut text_end = None;
-    let mut parser = Parser::new_ext(&source, options).into_offset_iter();
+    let prepared_urls = crate::markdown_gfm_autolinks::prepare_urls(&source, options);
+    let parser_source = prepared_urls
+        .as_ref()
+        .map_or(source.as_ref(), |prepared| prepared.0.as_str());
+    let bare_urls = prepared_urls
+        .as_ref()
+        .map_or(&[][..], |prepared| prepared.1.as_slice());
+    let mut bare_url_at = 0;
+    let mut parser = Parser::new_ext(parser_source, options).into_offset_iter();
     while let Some((mut event, range)) = parser.next() {
         builder.current_line =
             claimed_lines + line_starts.partition_point(|start| *start <= range.start);
@@ -841,7 +863,41 @@ fn markdown_to_ast_with_code_lines(
         if line_text {
             text_end = Some(range.end);
         }
-        builder.push(event, &source[range], empty_title);
+        if matches!(&event, Event::Text(_)) {
+            while bare_urls
+                .get(bare_url_at)
+                .is_some_and(|link| link.end <= range.start)
+            {
+                bare_url_at += 1;
+            }
+            if bare_urls
+                .get(bare_url_at)
+                .is_some_and(|link| link.start >= range.start && link.end <= range.end)
+            {
+                let mut cursor = range.start;
+                while let Some(link) = bare_urls
+                    .get(bare_url_at)
+                    .filter(|link| link.start >= cursor && link.end <= range.end)
+                {
+                    if cursor < link.start {
+                        builder.text(&source[cursor..link.start]);
+                    }
+                    builder.inline(literal_bare_link(
+                        &source[link.start..link.end],
+                        link.prefix,
+                    ));
+                    cursor = link.end;
+                    bare_url_at += 1;
+                }
+                if cursor < range.end {
+                    builder.text(&source[cursor..range.end]);
+                }
+            } else {
+                builder.push(event, &source[range], empty_title);
+            }
+        } else {
+            builder.push(event, &source[range], empty_title);
+        }
         if builder.over_depth {
             break;
         }
@@ -851,6 +907,7 @@ fn markdown_to_ast_with_code_lines(
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
     let (mut document, losses, locations) = builder.finish();
+    crate::markdown_gfm_autolinks::link_email_text(&mut document);
     if let Some(code_lines) = code_lines {
         *code_lines = locations;
     }
@@ -1966,14 +2023,19 @@ impl Builder {
                     items.push(item);
                 }
             }
-            Frame::CodeBlock { lang, content } => self.block(BlockNode::CodeBlock(CodeBlock {
-                attrs: None,
-                lang,
-                title: None,
-                label: None,
-                content,
-                pos: None,
-            })),
+            Frame::CodeBlock { lang, mut content } => {
+                if !content.is_empty() && !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                self.block(BlockNode::CodeBlock(CodeBlock {
+                    attrs: None,
+                    lang,
+                    title: None,
+                    label: None,
+                    content,
+                    pos: None,
+                }));
+            }
             // The frame has already been popped, so the raw block folds into
             // the container the element sits in - a quote, a list item or a
             // footnote definition - instead of landing at the top of the

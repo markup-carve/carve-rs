@@ -39,6 +39,7 @@ pub mod incremental;
 mod index_budget;
 pub mod lint;
 mod markdown_assessment;
+mod markdown_gfm_autolinks;
 pub mod markdown_import;
 pub mod migration;
 mod parse;

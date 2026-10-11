@@ -12,6 +12,65 @@ pub(crate) struct Assessment {
     pub complete: bool,
 }
 
+fn append_bare_link<'a>(events: &mut Vec<Event<'a>>, label: &str, prefix: &str) {
+    events.push(Event::Start(Tag::Link {
+        link_type: LinkType::Autolink,
+        dest_url: crate::markdown_import::markdown_destination(&format!("{prefix}{label}"), false)
+            .into(),
+        title: "".into(),
+        id: "".into(),
+    }));
+    events.push(Event::Text(label.to_owned().into()));
+    events.push(Event::End(TagEnd::Link));
+}
+
+fn email_events(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+    use crate::markdown_gfm_autolinks::{bare_links, Mode};
+    let mut result = Vec::new();
+    let mut input = events.into_iter().peekable();
+    let mut opaque = 0usize;
+    while let Some(event) = input.next() {
+        if opaque == 0 {
+            if let Event::Text(first) = &event {
+                let mut text = first.to_string();
+                let mut original = vec![event];
+                while let Some(Event::Text(next)) = input.peek() {
+                    text.push_str(next);
+                    original.push(input.next().unwrap());
+                }
+                let links = bare_links(&text, Mode::Email);
+                if links.is_empty() {
+                    result.extend(original);
+                    continue;
+                }
+                let mut cursor = 0;
+                for link in links {
+                    if cursor < link.start {
+                        result.push(Event::Text(text[cursor..link.start].to_owned().into()));
+                    }
+                    append_bare_link(&mut result, &text[link.start..link.end], link.prefix);
+                    cursor = link.end;
+                }
+                if cursor < text.len() {
+                    result.push(Event::Text(text[cursor..].to_owned().into()));
+                }
+                continue;
+            }
+        }
+        match &event {
+            Event::Start(
+                Tag::Link { .. } | Tag::Image { .. } | Tag::CodeBlock(_) | Tag::MetadataBlock(_),
+            ) => opaque += 1,
+            Event::End(
+                TagEnd::Link | TagEnd::Image | TagEnd::CodeBlock | TagEnd::MetadataBlock(_),
+            ) => opaque = opaque.saturating_sub(1),
+            _ => {}
+        }
+        result.push(event);
+    }
+    result
+}
+
 fn diagnostic(
     construct: &str,
     line_starts: &[usize],
@@ -262,7 +321,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             | Options::ENABLE_FOOTNOTES
             | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
     );
-    let parser = Parser::new_ext(&source, options);
+    let prepared_urls = crate::markdown_gfm_autolinks::prepare_urls(&source, options);
+    let parser_source = prepared_urls
+        .as_ref()
+        .map_or(source.as_str(), |prepared| prepared.0.as_str());
+    let bare_urls = prepared_urls
+        .as_ref()
+        .map_or(&[][..], |prepared| prepared.1.as_slice());
+    let mut bare_url_at = 0;
+    let parser = Parser::new_ext(parser_source, options);
     let mut diagnostics = Vec::new();
     let mut complete = true;
     let mut definition_spans = Vec::new();
@@ -284,17 +351,47 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut code_depth = 0usize;
     let mut html_block = false;
     let mut html_fragments = 0usize;
-    static BARE: OnceLock<regex::Regex> = OnceLock::new();
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
-    let bare = BARE.get_or_init(|| {
-        regex::Regex::new(r"(?:(?:^|[^A-Za-z])(?i:https?|ftp)://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z])")
-            .unwrap()
-    });
     let rewrite = REWRITE.get_or_init(|| regex::Regex::new(r"&(?:#[xX][\da-fA-F]+|#\d+|[A-Za-z][A-Za-z\d]+);|\\[!\x22#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~]").unwrap());
     for (event, range) in parser.into_offset_iter() {
         let mut paren_list = false;
         if !matches!(event, Event::Start(_) | Event::End(_)) {
             content_spans.push(range.clone());
+        }
+        if matches!(&event, Event::Text(_)) && link_depth == 0 && code_depth == 0 {
+            while bare_urls
+                .get(bare_url_at)
+                .is_some_and(|link| link.end <= range.start)
+            {
+                bare_url_at += 1;
+            }
+            if bare_urls
+                .get(bare_url_at)
+                .is_some_and(|link| link.start >= range.start && link.end <= range.end)
+            {
+                let mut cursor = range.start;
+                while let Some(link) = bare_urls
+                    .get(bare_url_at)
+                    .filter(|link| link.start >= cursor && link.end <= range.end)
+                {
+                    if cursor < link.start {
+                        events.push(Event::Text(source[cursor..link.start].into()));
+                    }
+                    append_bare_link(&mut events, &source[link.start..link.end], link.prefix);
+                    diagnostics.push(diagnostic(
+                        "bare-autolink",
+                        &line_starts,
+                        link.start,
+                        Normalized,
+                    ));
+                    cursor = link.end;
+                    bare_url_at += 1;
+                }
+                if cursor < range.end {
+                    events.push(Event::Text(source[cursor..range.end].into()));
+                }
+                continue;
+            }
         }
         let mut assessment = None;
         match &event {
@@ -375,12 +472,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                             _ => ("link", Preserved),
                         })
                     }
-                    Tag::Image { link_type, .. } => Some(match link_type {
-                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
-                            ("reference-link", Normalized)
-                        }
-                        _ => ("image", Preserved),
-                    }),
+                    Tag::Image { link_type, .. } => {
+                        link_depth += 1;
+                        Some(match link_type {
+                            LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut => {
+                                ("reference-link", Normalized)
+                            }
+                            _ => ("image", Preserved),
+                        })
+                    }
                     Tag::Table(_) => Some(("table", Preserved)),
                     Tag::TableHead | Tag::TableRow => Some(("table-row", Preserved)),
                     Tag::TableCell => Some(("table-cell", Preserved)),
@@ -404,7 +504,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             Event::End(TagEnd::List(_)) => {
                 lists.pop();
             }
-            Event::End(TagEnd::Link) => {
+            Event::End(TagEnd::Link | TagEnd::Image) => {
                 link_depth = link_depth.saturating_sub(1);
             }
             Event::End(TagEnd::CodeBlock) => {
@@ -429,8 +529,22 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                         Normalized,
                     ));
                 }
-                if link_depth == 0 && bare.is_match(input) {
-                    complete = false;
+                if link_depth == 0 {
+                    if text.as_ref() == input {
+                        for link in crate::markdown_gfm_autolinks::bare_links(
+                            input,
+                            crate::markdown_gfm_autolinks::Mode::All,
+                        ) {
+                            diagnostics.push(diagnostic(
+                                "bare-autolink",
+                                &line_starts,
+                                range.start + link.start,
+                                Normalized,
+                            ));
+                        }
+                    } else if text.contains('@') {
+                        complete = false;
+                    }
                 }
                 for matched in rewrite.find_iter(input) {
                     if text.as_ref() == input {
@@ -576,7 +690,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     }
     if complete {
         let mut expected = String::new();
-        pulldown_cmark::html::push_html(&mut expected, events.into_iter());
+        pulldown_cmark::html::push_html(&mut expected, email_events(events).into_iter());
         expected = expected
             .replace(
                 "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",
@@ -818,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_gfm_protocol_links_remain_unassessed() {
+    fn gfm_protocol_links_have_exact_evidence() {
         for source in [
             "ftp://example.test",
             "FTP://example.test",
@@ -829,20 +943,28 @@ mod tests {
             "ftp://x",
         ] {
             let result = crate::migrate_markdown(source);
-            let fallback = result
+            assert!(
+                !result
+                    .report
+                    .diagnostics
+                    .iter()
+                    .any(|row| row.code == "fidelity-unverified"),
+                "{source:?}"
+            );
+            let link = result
                 .report
                 .diagnostics
                 .iter()
-                .find(|row| row.code == "fidelity-unverified")
+                .find(|row| row.code == "markdown-bare-autolink")
                 .expect(source);
             assert_eq!(
-                fallback.fidelity,
-                crate::MigrationFidelity::Dropped,
+                link.fidelity,
+                crate::MigrationFidelity::Normalized,
                 "{source:?}"
             );
             assert_eq!(
-                fallback.confidence,
-                crate::MigrationConfidence::Fallback,
+                link.confidence,
+                crate::MigrationConfidence::Exact,
                 "{source:?}"
             );
         }
@@ -881,7 +1003,7 @@ mod tests {
     #[test]
     fn unsupported_input_and_changed_output_fail_closed() {
         for source in [
-            "https://example.org",
+            "<code>http://example.org</code>",
             "[^note]\n\n[^note]: note",
             "Text[^1]\n\n[^1]: note\n\n    1) item\n",
             "\0",
