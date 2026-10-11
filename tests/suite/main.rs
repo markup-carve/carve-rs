@@ -9,6 +9,9 @@
 
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
+#[path = "../footnote_container_paragraph_breaks.rs"]
+mod footnote_container_paragraph_breaks;
+
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
 

@@ -18,7 +18,7 @@ fn collapse_spaces(value: &str) -> String {
     result
 }
 
-fn html_tree(html: &str) -> serde_json::Value {
+pub(super) fn html_tree(html: &str) -> serde_json::Value {
     fn visit(node: &Handle, literal: bool, discard_space: bool) -> Option<serde_json::Value> {
         match &node.data {
             NodeData::Text { contents } => {

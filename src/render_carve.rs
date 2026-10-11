@@ -3143,7 +3143,7 @@ fn render_footnote_def_source(
         );
     }
     let single_body;
-    let body = trim_non_nbsp(if blocks.len() == 1 {
+    let body = trim_non_nbsp(if matches!(blocks, [BlockNode::Paragraph(_)]) {
         single_body = raw_body.replace("\n\n", "\n");
         &single_body
     } else {
