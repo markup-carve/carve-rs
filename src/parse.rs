@@ -7925,6 +7925,7 @@ thread_local! {
     static COLON_CLOSER_LINES: Cell<usize> = const { Cell::new(0) };
     static COMMENT_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
     static CODE_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
+    static LITERAL_CODE_LINES: Cell<usize> = const { Cell::new(0) };
 }
 
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
@@ -8558,6 +8559,7 @@ struct NestedFenceReplay {
     chain: Vec<NestedLevel>,
     fence_count: usize,
     colon_body_comments: HashMap<usize, QuotedBodyComments>,
+    literal_code_lookup: LiteralCodeLookup,
 }
 
 #[derive(Default)]
@@ -8689,6 +8691,20 @@ impl NestedFenceReplay {
                 if !is_blank_line(text) && indent_columns(text) < floor {
                     chain[level].host_verse = None;
                 } else {
+                    if let Some(open) = detect_fence_open(trim_ascii_start(text)) {
+                        let opener_column = indent_columns(text);
+                        if literal_code_closes(
+                            lines,
+                            at,
+                            level,
+                            floor,
+                            opener_column,
+                            open,
+                            &mut self.literal_code_lookup,
+                        ) {
+                            chain[level].host_fence = Some((open, floor, opener_column));
+                        }
+                    }
                     if (indent_columns(text) == floor || indent_columns(text) == column)
                         && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
                     {
@@ -9047,6 +9063,8 @@ fn future_quoted_comment_closes(
 #[derive(Default)]
 struct QuotedBodyComments {
     scanned: usize,
+    scope_start: Option<usize>,
+    scope_end: Option<usize>,
     closers: HashMap<usize, Vec<usize>>,
     boundaries: Vec<usize>,
 }
@@ -9059,7 +9077,21 @@ impl QuotedBodyComments {
         level: usize,
         width: usize,
     ) -> bool {
-        for (at, line) in lines.iter().enumerate().skip(self.scanned) {
+        if self.scope_start.is_some_and(|start| from < start)
+            || self.scope_end.is_some_and(|end| from >= end)
+        {
+            self.closers.clear();
+            self.boundaries.clear();
+            self.scope_end = None;
+            self.scanned = from + 1;
+            self.scope_start = Some(from);
+        }
+        if self.scope_start.is_none() {
+            self.scope_start = Some(from);
+            self.scanned = from + 1;
+        }
+        let scan_end = self.scope_end.unwrap_or(lines.len());
+        for (at, line) in lines.iter().enumerate().take(scan_end).skip(self.scanned) {
             #[cfg(test)]
             COMMENT_INDEX_LINES.with(|work| work.set(work.get() + 1));
             let mut text = line.text.as_str();
@@ -9074,13 +9106,15 @@ impl QuotedBodyComments {
             }
             if boundary {
                 self.boundaries.push(at);
+                self.scope_end = Some(at);
+                break;
             } else if let Some(open) = detect_comment_fence_line(trim_ascii_start(text)) {
                 if is_comment_fence_close_any_column(text, open.fence_len) {
                     self.closers.entry(open.fence_len).or_default().push(at);
                 }
             }
         }
-        self.scanned = lines.len();
+        self.scanned = self.scope_end.map_or(lines.len(), |end| end + 1);
         let Some(closers) = self.closers.get(&width) else {
             return false;
         };
@@ -9092,6 +9126,197 @@ impl QuotedBodyComments {
             .get(boundary)
             .map_or(true, |&end| close < end)
     }
+}
+
+#[derive(Default)]
+struct LiteralCodeLookup {
+    indices: HashMap<usize, LiteralCodeIndex>,
+    scopes: HashMap<(usize, usize), LiteralCodeScope>,
+}
+
+#[derive(Default)]
+struct LiteralCodeIndex {
+    scanned: usize,
+    boundaries: Vec<usize>,
+    scope_end: Option<usize>,
+    columns: HashMap<(u8, usize), LiteralCodeColumn>,
+}
+
+// Store each run once; the maximum tree finds a sufficiently wide later closer.
+#[derive(Default)]
+struct LiteralCodeColumn {
+    positions: Vec<usize>,
+    maxima: Vec<usize>,
+    capacity: usize,
+}
+
+impl LiteralCodeColumn {
+    fn push(&mut self, position: usize, width: usize) {
+        if self.positions.len() == self.capacity {
+            let old_capacity = self.capacity;
+            self.capacity = old_capacity.max(1) * 2;
+            let mut maxima = vec![0; self.capacity * 2];
+            maxima[self.capacity..self.capacity + self.positions.len()]
+                .copy_from_slice(&self.maxima[old_capacity..old_capacity + self.positions.len()]);
+            for index in (1..self.capacity).rev() {
+                maxima[index] = maxima[index * 2].max(maxima[index * 2 + 1]);
+            }
+            self.maxima = maxima;
+        }
+        let mut index = self.capacity + self.positions.len();
+        self.positions.push(position);
+        self.maxima[index] = width;
+        while index > 1 {
+            index /= 2;
+            self.maxima[index] = self.maxima[index * 2].max(self.maxima[index * 2 + 1]);
+        }
+    }
+
+    fn next(&self, from: usize, width: usize) -> Option<usize> {
+        let start = self.positions.partition_point(|&position| position <= from);
+        self.find(1, 0, self.capacity, start, width)
+            .and_then(|index| self.positions.get(index).copied())
+    }
+
+    fn find(
+        &self,
+        node: usize,
+        left: usize,
+        right: usize,
+        start: usize,
+        width: usize,
+    ) -> Option<usize> {
+        if right <= start || self.maxima.get(node).copied().unwrap_or(0) < width {
+            return None;
+        }
+        if right - left == 1 {
+            return Some(left);
+        }
+        let middle = left + (right - left) / 2;
+        self.find(node * 2, left, middle, start, width)
+            .or_else(|| self.find(node * 2 + 1, middle, right, start, width))
+    }
+}
+
+struct LiteralCodeScope {
+    from: usize,
+    length: usize,
+    end: usize,
+}
+
+impl LiteralCodeIndex {
+    fn refresh(&mut self, lines: &[SourceLine], level: usize, from: usize) {
+        if let Some(end) = self.scope_end {
+            if from < end {
+                return;
+            }
+            self.columns.clear();
+            self.boundaries.clear();
+            self.scope_end = None;
+        }
+        self.scanned = self.scanned.max(from + 1);
+        for (index, line) in lines.iter().enumerate().skip(self.scanned) {
+            #[cfg(test)]
+            LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
+            let mut text = line.text.as_str();
+            let mut boundary = text.starts_with(LAZY);
+            for _ in 0..level {
+                let Some(rest) = strip_blockquote_prefix(text) else {
+                    boundary = true;
+                    break;
+                };
+                text = rest;
+            }
+            if boundary {
+                self.boundaries.push(index);
+                self.scope_end = Some(index);
+                self.scanned = index + 1;
+                return;
+            }
+            let column = indent_columns(text);
+            let bytes = trim_ascii_start(text).as_bytes();
+            let Some(&character @ (b'`' | b'~')) = bytes.first() else {
+                continue;
+            };
+            let width = bytes.iter().take_while(|&&byte| byte == character).count();
+            if !bytes[width..]
+                .iter()
+                .all(|&byte| byte == b' ' || byte == b'\t')
+            {
+                continue;
+            }
+            self.columns
+                .entry((character, column))
+                .or_default()
+                .push(index, width);
+        }
+        self.scanned = lines.len();
+    }
+
+    fn next(&self, from: usize, column: usize, open: FenceOpen) -> Option<usize> {
+        self.columns
+            .get(&(open.fence_char, column))?
+            .next(from, open.fence_len)
+    }
+}
+
+fn literal_code_closes(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    floor: usize,
+    column: usize,
+    open: FenceOpen,
+    lookup: &mut LiteralCodeLookup,
+) -> bool {
+    let index = lookup.indices.entry(level).or_default();
+    index.refresh(lines, level, from);
+    let closer = match (
+        index.next(from, floor, open),
+        index.next(from, column, open),
+    ) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(at), None) | (None, Some(at)) => at,
+        (None, None) => return false,
+    };
+    if index
+        .boundaries
+        .get(index.boundaries.partition_point(|&at| at <= from))
+        .is_some_and(|&at| at <= closer)
+    {
+        return false;
+    }
+    let key = (level, floor);
+    if let Some(scope) = lookup
+        .scopes
+        .get(&key)
+        .filter(|scope| from >= scope.from && from < scope.end && scope.length == lines.len())
+    {
+        return closer < scope.end;
+    }
+    for (at, line) in lines.iter().enumerate().take(closer + 1).skip(from + 1) {
+        #[cfg(test)]
+        LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
+        let mut text = line.text.as_str();
+        for _ in 0..level {
+            let Some(rest) = strip_blockquote_prefix(text) else {
+                return false;
+            };
+            text = rest;
+        }
+        if !is_blank_line(text) && indent_columns(text) < floor {
+            lookup.scopes.insert(
+                key,
+                LiteralCodeScope {
+                    from,
+                    length: lines.len(),
+                    end: at,
+                },
+            );
+            return false;
+        }
+    }
+    true
 }
 
 fn quoted_colon_body_follows(
@@ -26827,8 +27052,323 @@ mod shared_colon_work_tests {
                         &mut comments,
                     ));
                 }
-                assert_eq!(COMMENT_INDEX_LINES.with(Cell::get), body.lines.len());
+                assert!(COMMENT_INDEX_LINES.with(Cell::get) <= body.lines.len());
             }
+        }
+    }
+
+    #[test]
+    fn quoted_body_comment_indices_stop_at_their_quote_scope() {
+        let mut body = LineBuffer::default();
+        for _ in 0..4096 {
+            body.push_at("> prelude".to_owned(), None, None);
+        }
+        let mut groups = Vec::new();
+        for level in 2..=32 {
+            let prefix = "> ".repeat(level);
+            groups.push((level, body.lines.len()));
+            body.push_at(format!("{prefix}%%%"), None, None);
+            body.push_at(format!("{prefix}%%%"), None, None);
+            body.push_at("departure".to_owned(), None, None);
+        }
+        COMMENT_INDEX_LINES.with(|work| work.set(0));
+        for (level, from) in groups {
+            assert!(QuotedBodyComments::default().closes_after(&body.lines, from, level, 3));
+        }
+        assert!(COMMENT_INDEX_LINES.with(Cell::get) <= 32 * 2);
+    }
+
+    #[test]
+    fn quoted_body_comment_index_reenters_and_can_rewind() {
+        let mut body = LineBuffer::default();
+        for line in ["> %%%", "> %%%", "departure", "> %%%%", "> %%%%"] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut comments = QuotedBodyComments::default();
+        assert!(comments.closes_after(&body.lines, 0, 1, 3));
+        assert!(comments.closes_after(&body.lines, 3, 1, 4));
+        assert!(!comments.closes_after(&body.lines, 3, 1, 3));
+        assert!(comments.closes_after(&body.lines, 0, 1, 3));
+    }
+
+    #[test]
+    fn literal_code_index_reenters_a_later_quote_scope() {
+        let mut body = LineBuffer::default();
+        for line in [
+            ">   ``` info",
+            ">   ```",
+            "departure",
+            ">   ~~~ info",
+            ">   ~~~",
+        ] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut lookup = LiteralCodeLookup::default();
+        assert!(literal_code_closes(
+            &body.lines,
+            0,
+            1,
+            2,
+            2,
+            detect_fence_open("``` info").unwrap(),
+            &mut lookup
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            3,
+            1,
+            2,
+            2,
+            detect_fence_open("~~~ info").unwrap(),
+            &mut lookup
+        ));
+        assert!(!literal_code_closes(
+            &body.lines,
+            3,
+            1,
+            2,
+            2,
+            detect_fence_open("``` info").unwrap(),
+            &mut lookup
+        ));
+    }
+
+    #[test]
+    fn literal_code_indices_do_not_scan_unrelated_quote_scopes() {
+        let mut body = LineBuffer::default();
+        for _ in 0..4096 {
+            body.push_at("> prelude".to_owned(), None, None);
+        }
+        let mut groups = Vec::new();
+        for level in 2..=32 {
+            let prefix = "> ".repeat(level);
+            groups.push((level, body.lines.len()));
+            body.push_at(format!("{prefix}  ``` info"), None, None);
+            body.push_at(format!("{prefix}  ```"), None, None);
+            body.push_at("departure".to_owned(), None, None);
+        }
+        let mut lookup = LiteralCodeLookup::default();
+        let open = detect_fence_open("``` info").unwrap();
+        LITERAL_CODE_LINES.with(|work| work.set(0));
+        for (level, from) in groups {
+            assert!(literal_code_closes(
+                &body.lines,
+                from,
+                level,
+                2,
+                2,
+                open,
+                &mut lookup
+            ));
+        }
+        assert!(LITERAL_CODE_LINES.with(Cell::get) <= 32 * 3);
+    }
+
+    #[test]
+    fn literal_code_columns_store_one_record_per_run() {
+        let mut column = LiteralCodeColumn::default();
+        for index in 0..4096 {
+            column.push(index * 2, 1_000_000 - index);
+        }
+        assert_eq!(column.positions.len(), 4096);
+        assert!(column.maxima.len() <= column.positions.len() * 4);
+        assert_eq!(column.next(0, 999_999), Some(2));
+        assert_eq!(column.next(2, 999_999), None);
+        assert_eq!(column.next(8190, 1), None);
+    }
+
+    #[test]
+    fn literal_code_scope_misses_share_the_departure_bound() {
+        for count in [64, 512, 4096] {
+            let mut body = LineBuffer::default();
+            for _ in 0..count {
+                body.push_at("  ``` info".to_string(), None, None);
+            }
+            body.push_at("- sibling".to_string(), None, None);
+            body.push_at("  ```".to_string(), None, None);
+            let mut lookup = LiteralCodeLookup::default();
+            let open = detect_fence_open("``` info").unwrap();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for from in 0..count {
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    from,
+                    0,
+                    2,
+                    2,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len() * 2);
+        }
+    }
+
+    #[test]
+    fn literal_code_misses_refute_varied_unclosed_runs() {
+        for level in 0..=2 {
+            for count in [64, 512, 4096] {
+                let prefix = "> ".repeat(level);
+                let mut body = LineBuffer::default();
+                for index in 0..count {
+                    body.push_at(
+                        format!("{prefix}    {} info", "`".repeat(3 + index % 8)),
+                        None,
+                        None,
+                    );
+                }
+                body.push_at(format!("{prefix}     ``````````"), None, None);
+                let mut misses = LiteralCodeLookup::default();
+                LITERAL_CODE_LINES.with(|work| work.set(0));
+                for index in 0..count {
+                    let open =
+                        detect_fence_open(&format!("{} info", "`".repeat(3 + index % 8))).unwrap();
+                    assert!(!literal_code_closes(
+                        &body.lines,
+                        index,
+                        level,
+                        4,
+                        4,
+                        open,
+                        &mut misses
+                    ));
+                }
+                assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+            }
+        }
+    }
+
+    #[test]
+    fn literal_code_descending_bare_runs_share_the_index() {
+        for count in [64, 512] {
+            let mut body = LineBuffer::default();
+            for index in 0..count {
+                body.push_at(format!("    {}", "`".repeat(count - index + 3)), None, None);
+            }
+            let mut misses = LiteralCodeLookup::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                let open = detect_fence_open(&"`".repeat(count - index + 3)).unwrap();
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    index,
+                    0,
+                    4,
+                    4,
+                    open,
+                    &mut misses
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+        }
+    }
+
+    #[test]
+    fn literal_code_cached_index_answers_smaller_widths() {
+        let mut body = LineBuffer::default();
+        for line in [
+            "    ```` info",
+            "    ``` info",
+            "    ```",
+            "- sibling",
+            "    ```",
+            "    ```",
+        ] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut misses = LiteralCodeLookup::default();
+        assert!(!literal_code_closes(
+            &body.lines,
+            0,
+            0,
+            4,
+            4,
+            detect_fence_open("```` info").unwrap(),
+            &mut misses
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            1,
+            0,
+            4,
+            4,
+            detect_fence_open("``` info").unwrap(),
+            &mut misses
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            4,
+            0,
+            4,
+            4,
+            detect_fence_open("```").unwrap(),
+            &mut misses
+        ));
+    }
+
+    #[test]
+    fn literal_code_varied_columns_and_growing_buffers_are_indexed_once() {
+        for count in [64, 512] {
+            let mut body = LineBuffer::default();
+            for index in 0..count {
+                body.push_at(format!("{}``` info", " ".repeat(index + 3)), None, None);
+            }
+            body.push_at(" ```".to_owned(), None, None);
+            let mut lookup = LiteralCodeLookup::default();
+            let open = detect_fence_open("``` info").unwrap();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    index,
+                    0,
+                    2,
+                    index + 3,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+
+            let mut growing = LineBuffer::default();
+            let mut lookup = LiteralCodeLookup::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                growing.push_at("    ``` info".to_owned(), None, None);
+                assert!(!literal_code_closes(
+                    &growing.lines,
+                    index,
+                    0,
+                    4,
+                    4,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert_eq!(LITERAL_CODE_LINES.with(Cell::get), 0);
+        }
+    }
+
+    #[test]
+    fn literal_code_closes_only_at_host_or_authored_column() {
+        let open = detect_fence_open("``` info").unwrap();
+        for (closer, expected) in [("  ```", true), ("    ```", true), ("   ```", false)] {
+            let mut body = LineBuffer::default();
+            for line in ["    ``` info", closer] {
+                body.push_at(line.to_owned(), None, None);
+            }
+            assert_eq!(
+                literal_code_closes(
+                    &body.lines,
+                    0,
+                    0,
+                    2,
+                    4,
+                    open,
+                    &mut LiteralCodeLookup::default()
+                ),
+                expected
+            );
         }
     }
 

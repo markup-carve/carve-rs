@@ -289,7 +289,11 @@ fn a_sibling_item_ends_the_previous_colon_scope() {
             expected,
             "{source}: {ast}"
         );
-        assert!(carve::to_html(source).contains("tail"), "{source}");
+        if expected == 2 {
+            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+        } else {
+            assert!(carve::to_html(source).contains("- tail"), "{source}");
+        }
     }
 }
 
@@ -321,7 +325,11 @@ fn an_item_to_the_left_also_ends_the_previous_colon_scope() {
                 expected,
                 "{source}: {ast}"
             );
-            assert!(carve::to_html(&source).contains("tail"), "{source}");
+            if expected == 2 {
+                assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+            } else {
+                assert!(carve::to_html(&source).contains("- tail"), "{source}");
+            }
         }
     }
 }
@@ -468,6 +476,25 @@ fn quoted_hosted_colon_followups_match_shared_html() {
             whitespace.replace_all(&actual, "><").trim(),
             case["html"].as_str().unwrap(),
             "{source}"
+        );
+    }
+}
+
+#[test]
+fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
+    let cases: Value = serde_json::from_str(include_str!(
+        "fixtures/descendant_literal_code_ownership.json"
+    ))
+    .unwrap();
+    let whitespace = regex::Regex::new(r">\s+<").unwrap();
+    for case in cases.as_array().unwrap() {
+        let source = case["source"].as_str().unwrap();
+        assert_eq!(
+            whitespace.replace_all(&carve::to_html(source), "><").trim(),
+            whitespace
+                .replace_all(case["html"].as_str().unwrap(), "><")
+                .trim(),
+            "{source}",
         );
     }
 }
