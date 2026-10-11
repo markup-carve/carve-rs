@@ -1,6 +1,6 @@
 use carve::{
-    html_to_ast, html_to_carve, to_html, to_html_with_options, to_json, HtmlImportDiagnosticCode,
-    HtmlImportMode, HtmlImportOptions, Options,
+    html_to_ast, html_to_carve, migrate_html, to_html, to_html_with_options, to_json,
+    HtmlImportDiagnosticCode, HtmlImportMode, HtmlImportOptions, Options,
 };
 
 fn options(mode: HtmlImportMode) -> HtmlImportOptions {
@@ -33,6 +33,10 @@ fn untrusted_raw_html_payloads_do_not_reappear_after_filtering() {
                         }),
                         "{mode:?} {name} {format} {payload}: {:?}",
                         result.report.diagnostics
+                    );
+                    assert_eq!(
+                        migrate_html(&input, &options(mode)).unwrap().value,
+                        result.value
                     );
                     let ast = html_to_ast(&input, &options(mode)).unwrap().value;
                     assert!(!to_json(&ast).contains("raw_inline"));
@@ -117,5 +121,52 @@ fn a_newline_label_cannot_insert_a_raw_block() {
             diagnostic.code == HtmlImportDiagnosticCode::AttributeDropped
                 && diagnostic.message.contains("footnote label")
         }));
+    }
+}
+
+#[test]
+fn html_import_raw_carriers_decode_text_payloads_in_roundtrip_mode() {
+    for name in ["data-carve-raw", "data-djot-raw"] {
+        for (format, payload, decoded) in [
+            ("html", "&lt;b&gt;y&lt;/b&gt;", "<b>y</b>"),
+            ("html", "&lt;b&gt;`y` &amp; z&lt;/b&gt;", "<b>`y` & z</b>"),
+            ("tex", "x &lt; y &amp; z", "x < y & z"),
+        ] {
+            let input = format!("<p>a <span {name}=\"{format}\">{payload}</span> b</p>");
+            for mode in [
+                HtmlImportMode::Safe,
+                HtmlImportMode::Semantic,
+                HtmlImportMode::Roundtrip,
+            ] {
+                let result = html_to_carve(&input, &options(mode)).unwrap();
+                if format == "html" && mode != HtmlImportMode::Roundtrip {
+                    assert_eq!(
+                        result.value,
+                        format!("a {} b\n", decoded.replace('`', "\\`"))
+                    );
+                } else {
+                    let fence = if decoded.contains('`') { "``" } else { "`" };
+                    assert_eq!(
+                        result.value,
+                        format!("a {fence}{decoded}{fence}{{={format}}} b\n")
+                    );
+                }
+                assert_eq!(
+                    migrate_html(&input, &options(mode)).unwrap().value,
+                    result.value
+                );
+                let ast = html_to_ast(&input, &options(mode)).unwrap().value;
+                let json: serde_json::Value = serde_json::from_str(&to_json(&ast)).unwrap();
+                let children = json["children"][0]["children"].as_array().unwrap();
+                let raw = children.iter().find(|node| node["type"] == "raw_inline");
+                if format == "html" && mode != HtmlImportMode::Roundtrip {
+                    assert!(raw.is_none());
+                } else {
+                    let raw = raw.unwrap();
+                    assert_eq!(raw["format"], format);
+                    assert_eq!(raw["content"], decoded);
+                }
+            }
+        }
     }
 }

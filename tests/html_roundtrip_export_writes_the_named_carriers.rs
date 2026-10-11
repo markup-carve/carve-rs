@@ -63,39 +63,6 @@ fn turning_it_off_explicitly_is_the_default_bytes() {
     );
 }
 
-// ---------------------------------------------------------------- §13c aliases
-
-#[test]
-fn either_enabled_option_enables_the_markdown_carriers() {
-    // §13c: the Markdown target's carrier comments answer to BOTH spellings and
-    // a default never overrides an alias the caller enabled.
-    assert!(!Options::default().markdown_carriers());
-    assert!(Options::default()
-        .with_carry_markers(true)
-        .markdown_carriers());
-    assert!(Options::default().with_roundtrip(true).markdown_carriers());
-    assert!(Options::default()
-        .with_carry_markers(true)
-        .with_roundtrip(false)
-        .markdown_carriers());
-    assert!(Options::default()
-        .with_roundtrip(true)
-        .with_carry_markers(false)
-        .markdown_carriers());
-}
-
-#[test]
-fn carry_markers_keeps_its_markdown_only_scope() {
-    // §13c: `carryMarkers` is NOT redefined as an HTML option, so the HTML
-    // target reads only the canonical one.
-    assert!(!Options::default().with_carry_markers(true).html_carriers());
-    assert!(Options::default().with_roundtrip(true).html_carriers());
-    assert_eq!(
-        to_html_with_options("* a\n", &Options::default().with_carry_markers(true)),
-        to_html("* a\n")
-    );
-}
-
 // ---------------------------------------------------------------- the inventory
 
 #[test]
@@ -462,10 +429,21 @@ mod cli {
         // §13: the TARGET decides the carrier, so one flag reaches both.
         let (ok, with, stderr) = run(&["--markdown", "--roundtrip"], "::: note\nx\n:::\n");
         assert!(ok, "{stderr}");
-        let (_, alias, _) = run(&["--markdown", "--carry-markers"], "::: note\nx\n:::\n");
-        assert_eq!(with, alias);
+        assert!(with.contains("<!-- carve: ::: note -->"), "{with}");
         let (_, without, _) = run(&["--markdown"], "::: note\nx\n:::\n");
         assert_ne!(with, without);
+    }
+
+    #[test]
+    fn the_removed_flag_is_unknown() {
+        let flag = "--carry-markers";
+        let (ok, stdout, stderr) = run(&["--markdown", flag], "");
+        assert!(!ok);
+        assert!(stdout.is_empty(), "{stdout}");
+        assert!(
+            stderr.contains(&format!("carve: unknown option: {flag}")),
+            "{stderr}"
+        );
     }
 
     #[test]

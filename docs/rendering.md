@@ -83,16 +83,16 @@ cannot return it however good it gets. PART 11 §10s (CARVE-P11-063) defines an
 opt-in mode that brackets each one with an HTML comment holding the container's
 Carve opener and closer verbatim, and the import reverses it.
 
-`Options::with_carry_markers` turns it on, `--carry-markers` does on the CLI, and
-both apply to Markdown output only. The mode is OFF by default, because a
-Markdown renderer with raw HTML turned off shows the comment as text. With it off
-the emitted bytes are the ones this target emits today: the mode only ADDS comment
-lines and moves none.
+`Options::with_roundtrip(true)` or `--roundtrip` enables the container comments
+for Markdown output. The same option enables preservation attributes for HTML
+output. It is off by default. A Markdown renderer with raw HTML turned off
+shows the comments as text. Enabling it adds comment lines without moving the
+existing output.
 
 ```rust
 use carve::{markdown_to_carve, to_markdown_with_options, Options};
 
-let options = Options::default().with_carry_markers(true);
+let options = Options::default().with_roundtrip(true);
 let source = "::: note\nAn admonition body.\n:::\n";
 let markdown = to_markdown_with_options(source, &options);
 assert_eq!(
