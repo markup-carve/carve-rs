@@ -585,3 +585,21 @@ fn root_block_boundaries_release_and_readmit_list_term_hosts() {
     assert!(output.contains("role=\"doc-noteref\""), "{output}");
     assert!(!output.contains("<pre>"), "{output}");
 }
+
+#[test]
+fn nonparagraph_item_blocks_release_a_following_root_paragraph() {
+    for prefix in ["", "> "] {
+        for body in ["# h\n", "```\ncode\n```\n", "|x|\n"] {
+            let body = body
+                .lines()
+                .map(|line| format!("{prefix}  {line}\n"))
+                .collect::<String>();
+            let source = format!("{prefix}- :: a\n{body}{prefix}p\n{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
+            let output = html(&source);
+            assert!(
+                output.contains("role=\"doc-noteref\""),
+                "{source:?}: {output}"
+            );
+        }
+    }
+}

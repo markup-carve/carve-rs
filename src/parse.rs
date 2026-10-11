@@ -2419,7 +2419,7 @@ fn term_folded_lines(
     let mut ownership = TermLineOwnership::default();
     let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
-    let mut marker_term_host: Option<(usize, usize)> = None;
+    let mut term_start = None;
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut previous_non_blank = "";
@@ -2452,22 +2452,11 @@ fn term_folded_lines(
         }
         if is_blank_line(view_line) {
             term = None;
-            marker_term_host = None;
             index += 1;
             continue;
         }
         let col = indent_columns(view_line);
         let rest = trim_ascii_start(view_line);
-        if marker_term_host.is_some_and(|(floor, depth)| {
-            depth != quotes
-                || (col < floor
-                    && !is_list_marker(rest)
-                    && (opens_block_for_term_lint(rest)
-                        || parse_standalone_attrs(rest).is_some()
-                        || rest.starts_with("%%")))
-        }) {
-            marker_term_host = None;
-        }
         let comment =
             detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
         if let Some((term_col, term_quotes)) = term {
@@ -2479,7 +2468,35 @@ fn term_folded_lines(
                 index = last + 1;
                 continue;
             }
-            if quotes == term_quotes && col == term_col && detect_fence_open(rest).is_some() {
+            if quotes == term_quotes
+                && col == term_col
+                && detect_fence_open(rest).is_some()
+                && term_start.is_some_and(|start| {
+                    if !marker_line_may_be_lazy(lines[start])
+                        || probing()
+                        || start == 0
+                        || is_blank_line(view(lines[start - 1]).0)
+                    {
+                        return true;
+                    }
+                    if term_probe_budget == 0 {
+                        return false;
+                    }
+                    let mut unaffordable = false;
+                    let folds = paragraph_continuation_probe(
+                        &lines[..start],
+                        lines[start],
+                        options,
+                        &mut term_probe_budget,
+                        &mut unaffordable,
+                        true,
+                    );
+                    if unaffordable {
+                        term_probe_budget = 0;
+                    }
+                    !(folds || unaffordable)
+                })
+            {
                 ownership.fence_openers.insert(
                     index,
                     TermFenceHost {
@@ -2615,48 +2632,10 @@ fn term_folded_lines(
         // A term may follow list markers on its line; its column is then the
         // item's content column.
         if let Some(term_col) = term_start_column(view_line).filter(|&term_col| {
-            if term_col != 0 && columns.reached_by_at(quotes, term_col) != term_col {
-                return false;
-            }
-            if !marker_line_may_be_lazy(lines[index]) {
-                return true;
-            }
-            if marker_term_host == Some((term_col, quotes))
-                || probing()
-                || index == 0
-                || is_blank_line(view(lines[index - 1]).0)
-            {
-                return true;
-            }
-            let above = lines[index - 1];
-            if detect_heading(above).is_some()
-                || detect_thematic_break(above)
-                || is_definition_list_start(above)
-                || is_line_comment_any_column(above)
-            {
-                return true;
-            }
-            if term_probe_budget == 0 {
-                return false;
-            }
-            let mut unaffordable = false;
-            let folds = paragraph_continuation_probe(
-                &lines[..index],
-                lines[index],
-                options,
-                &mut term_probe_budget,
-                &mut unaffordable,
-                true,
-            );
-            if unaffordable {
-                term_probe_budget = 0;
-            }
-            !(folds || unaffordable)
+            term_col == 0 || columns.reached_by_at(quotes, term_col) == term_col
         }) {
             term = Some((term_col, quotes));
-            if marker_line_may_be_lazy(lines[index]) {
-                marker_term_host = term;
-            }
+            term_start = Some(index);
             term_quote_columns = term_quote_columns_for(lines[index], &columns);
         }
         index += 1;
