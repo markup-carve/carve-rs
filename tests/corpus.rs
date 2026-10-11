@@ -412,6 +412,7 @@ const IMPLEMENTED: &[&str] = &[
     "table-cell-padding-must-be-a-space",
     "the-flush-left-line-after-a-container-a-quoted-line-opened",
     "a-below-column-marker-after-a-comment-where-no-paragraph-is-open",
+    "a-below-column-line-continues-a-paragraph-only-where-one-is-open",
     "a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text",
     // carve#950: a fenced body is not a paragraph, so a line below the item's
     // content column closes the item instead of folding into it (carve-rs#770).
@@ -649,7 +650,7 @@ const IMPLEMENTED: &[&str] = &[
     "the-round-trip-comparison-normalizes-a-named-list",
     "a-quote-is-an-ordinary-link-destination-character",
     "an-empty-link-destination-is-not-a-link",
-    "a-forced-opener-of-an-open-kind-is-literal",
+    "braced-emphasis-can-nest-its-own-kind",
     "substitution-content-is-inline-and-only-a-top-level-arrow-splits-it",
     "a-run-of-asterisks-inside-a-combined-token-is-content",
     "glued-attribute-blocks-on-an-inline-element-merge",

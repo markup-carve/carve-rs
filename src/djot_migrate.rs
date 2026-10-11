@@ -3445,9 +3445,9 @@ mod tests {
     }
 
     #[test]
-    fn the_markdown_habits_collapse_to_one_delimiter() {
-        assert_eq!(djot_to_carve("**strong**"), "*strong*");
-        assert_eq!(djot_to_carve("~~gone~~"), "{,gone,}");
+    fn repeated_djot_delimiters_preserve_nested_nodes() {
+        assert_eq!(djot_to_carve("**strong**"), "{*{*strong*}*}");
+        assert_eq!(djot_to_carve("~~gone~~"), "{,{,gone,},}");
     }
 
     #[test]
@@ -3586,7 +3586,7 @@ mod tests {
     #[test]
     fn the_surrounding_underscore_shapes_are_unchanged() {
         assert_eq!(djot_to_carve("a _x_ b"), "a /x/ b");
-        assert_eq!(djot_to_carve("__init__"), "/init/");
+        assert_eq!(djot_to_carve("__init__"), "{/{/init/}/}");
         assert_eq!(djot_to_carve("_leading"), "\\_leading");
         assert_eq!(djot_to_carve("[t](/a_b_c)"), "[t](/a_b_c)");
     }
@@ -3650,7 +3650,7 @@ mod tests {
 
     #[test]
     fn nesting_of_different_families_composes() {
-        assert_eq!(djot_to_carve("_a **b** c_"), "/a *b* c/");
+        assert_eq!(djot_to_carve("_a **b** c_"), "/a {*{*b*}*} c/");
     }
 
     /// Djot spells subscript braced as well as bare and means the same by each,

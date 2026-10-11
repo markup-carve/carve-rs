@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+type DivHost = (usize, usize, usize, Option<usize>, usize, Option<usize>);
+
 #[derive(Clone)]
 struct Pair {
     start: usize,
@@ -11,6 +13,7 @@ struct Pair {
     forced: bool,
     children: Vec<usize>,
     kinds: u8,
+    host_depth: usize,
 }
 
 fn kind_bit(kind: u8) -> u8 {
@@ -19,6 +22,7 @@ fn kind_bit(kind: u8) -> u8 {
         b'*' => 2,
         b'~' => 4,
         b'^' => 8,
+        b'=' => 16,
         _ => unreachable!(),
     }
 }
@@ -484,6 +488,7 @@ fn process(
                 forced,
                 children: Vec::new(),
                 kinds: kind_bit(ch),
+                host_depth: 0,
             });
             if forced_close && braces.last() == Some(&start) {
                 braces.pop();
@@ -502,6 +507,23 @@ fn process(
             paired.insert(pair.open_end - 1, pair.end);
         }
         return String::new();
+    }
+    for &start in &valid_braces {
+        if bytes[start + 1] != b'=' {
+            continue;
+        }
+        let close = brace_ends[&start];
+        pairs.push(Pair {
+            start,
+            open_end: start + 2,
+            close,
+            end: close + 2,
+            kind: b'=',
+            forced: true,
+            children: Vec::new(),
+            kinds: kind_bit(b'='),
+            host_depth: 0,
+        });
     }
     pairs.sort_by_key(|pair| (pair.start, std::cmp::Reverse(pair.end)));
     let mut roots = Vec::new();
@@ -581,6 +603,201 @@ fn process(
         }
         at += 1;
     }
+    let mut host_changes: HashMap<usize, isize> = HashMap::new();
+    for &start in &valid_braces {
+        if starts.contains_key(&start) {
+            continue;
+        }
+        let end = brace_ends[&start];
+        *host_changes.entry(start + 2).or_default() += 1;
+        *host_changes.entry(end).or_default() -= 1;
+    }
+    for &(start, end) in &bracket_pairs {
+        if literal_brackets.contains(&start) || literal_brackets.contains(&end) {
+            continue;
+        }
+        if !bytes
+            .get(end + 1)
+            .is_some_and(|ch| b"([{ ".contains(ch) && *ch != b' ')
+            && start.checked_sub(1).and_then(|at| bytes.get(at)) != Some(&b'^')
+        {
+            continue;
+        }
+        *host_changes.entry(start + 1).or_default() += 1;
+        *host_changes.entry(end).or_default() -= 1;
+    }
+    let mut host_depth = 0isize;
+    let mut quote_depth = 0usize;
+    let mut quote_paragraph_open = false;
+    let mut quote_column = None;
+    let mut list_columns: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let mut quote_count = 0;
+    let mut paragraph_open = false;
+    let mut paragraph_list_id = None;
+    let mut div_fences: Vec<DivHost> = Vec::new();
+    let mut div_depth = 0usize;
+    let mut block_host_depth = 0usize;
+    for at in 0..bytes.len() {
+        if at == 0 || bytes[at - 1] == b'\n' {
+            let end = source[at..]
+                .find('\n')
+                .map_or(bytes.len(), |offset| at + offset);
+            let mut physical_depth = 0;
+            let mut physical_quote_column = None;
+            let mut physical_quotes = 0;
+            let mut pending_lists = 0;
+            let mut literal_list_marker = false;
+            let mut cursor = at;
+            loop {
+                while cursor < end && matches!(bytes[cursor], b' ' | b'\t') {
+                    cursor += 1;
+                }
+                if bytes.get(cursor) == Some(&b'>')
+                    && (cursor + 1 == end
+                        || bytes
+                            .get(cursor + 1)
+                            .is_some_and(|byte| b" \t".contains(byte)))
+                {
+                    loop {
+                        let prefix = list_columns
+                            .partition_point(|(_, scope, _, _)| *scope <= physical_quotes);
+                        if prefix == 0 || list_columns[prefix - 1].0 <= cursor - at {
+                            break;
+                        }
+                        list_columns.truncate(prefix - 1);
+                    }
+                    if paragraph_open
+                        && physical_quotes >= quote_count
+                        && list_columns.last().map(|entry| entry.2) == paragraph_list_id
+                    {
+                        break;
+                    }
+                    physical_quote_column.get_or_insert(cursor - at);
+                    physical_depth += 1;
+                    physical_quotes += 1;
+                    pending_lists = 0;
+                    cursor += 1;
+                } else if let Some(item) = item_prefix.find(&source[cursor..end]) {
+                    if pending_lists == 0
+                        && paragraph_open
+                        && physical_quotes == quote_count
+                        && list_columns
+                            .last()
+                            .map_or(true, |(_, _, _, marker_column)| {
+                                cursor - at > *marker_column
+                            })
+                    {
+                        literal_list_marker = true;
+                        break;
+                    }
+                    while list_columns.last().is_some_and(|(column, scope, _, _)| {
+                        *scope > physical_quotes || *column > cursor - at
+                    }) {
+                        list_columns.pop();
+                    }
+                    pending_lists += 1;
+                    let marker_column = cursor - at;
+                    let marker_at = cursor;
+                    cursor += item.end();
+                    list_columns.push((cursor - at, physical_quotes, marker_at, marker_column));
+                    if bytes.get(cursor) == Some(&b'[')
+                        && bytes
+                            .get(cursor + 1)
+                            .is_some_and(|byte| b" xX-".contains(byte))
+                        && bytes.get(cursor + 2) == Some(&b']')
+                        && bytes
+                            .get(cursor + 3)
+                            .is_some_and(|byte| b" \t".contains(byte))
+                    {
+                        cursor += 3;
+                    }
+                } else {
+                    break;
+                }
+            }
+            let content = &source[cursor..end];
+            let paragraph = !content.trim().is_empty()
+                && !block_start.is_match(content)
+                && (literal_list_marker || !marker.is_match(content));
+            if physical_depth > 0 {
+                quote_depth =
+                    if quote_paragraph_open && paragraph && quote_column == physical_quote_column {
+                        quote_depth.max(physical_depth)
+                    } else {
+                        physical_depth
+                    };
+                quote_count =
+                    if quote_paragraph_open && paragraph && quote_column == physical_quote_column {
+                        quote_count.max(physical_quotes)
+                    } else {
+                        physical_quotes
+                    };
+                quote_column = physical_quote_column;
+                quote_paragraph_open = paragraph;
+            } else if pending_lists > 0 || !quote_paragraph_open || !paragraph {
+                quote_depth = 0;
+                quote_column = None;
+                quote_count = 0;
+                quote_paragraph_open = false;
+            }
+            if !content.trim().is_empty() {
+                while list_columns.last().is_some_and(|(column, scope, _, _)| {
+                    *scope > quote_count
+                        || (*column > cursor - at && !(paragraph_open && paragraph))
+                }) {
+                    list_columns.pop();
+                }
+            }
+            if !content.trim().is_empty() {
+                while div_fences
+                    .last()
+                    .is_some_and(|(_, _, quote, column, count, id)| {
+                        quote_depth < *quote
+                            || (*count > 0
+                                && list_columns.get(count - 1).map(|entry| entry.2) != *id)
+                            || (column.is_some_and(|column| cursor - at < column)
+                                && !(paragraph_open && paragraph))
+                    })
+                {
+                    let (_, depth, _, _, _, _) = div_fences.pop().unwrap();
+                    div_depth -= depth;
+                }
+            }
+            let colon_width = content.bytes().take_while(|byte| *byte == b':').count();
+            if colon_width >= 3 && mask.get(cursor) == Some(&b':') {
+                let tail = content[colon_width..].trim();
+                if tail.is_empty()
+                    && div_fences
+                        .last()
+                        .is_some_and(|(width, _, _, _, _, _)| colon_width >= *width)
+                {
+                    let (_, depth, _, _, _, _) = div_fences.pop().unwrap();
+                    div_depth -= depth;
+                } else {
+                    let depth = 1;
+                    div_fences.push((
+                        colon_width,
+                        depth,
+                        quote_depth,
+                        list_columns.last().map(|(column, _, _, _)| *column),
+                        list_columns.len(),
+                        list_columns.last().map(|entry| entry.2),
+                    ));
+                    div_depth += depth;
+                }
+            }
+            paragraph_open = paragraph;
+            paragraph_list_id = list_columns.last().map(|entry| entry.2);
+            let quoted_lists =
+                list_columns.partition_point(|(_, scope, _, _)| *scope < quote_count);
+            let div_lists = div_fences.last().map_or(0, |fence| fence.4);
+            block_host_depth = quote_depth + div_depth + quoted_lists.max(div_lists);
+        }
+        host_depth += host_changes.get(&at).copied().unwrap_or(0);
+        if let Some(&index) = starts.get(&at) {
+            pairs[index].host_depth = host_depth.max(0) as usize + block_host_depth;
+        }
+    }
     let renderer = Renderer {
         source,
         mask: &mask,
@@ -598,32 +815,26 @@ fn process(
         literals: RefCell::new(Vec::new()),
         rendered: RefCell::new(HashMap::new()),
     };
-    let mut work: Vec<_> = roots.iter().rev().map(|index| (*index, 0, false)).collect();
-    while let Some((index, outer, ready)) = work.pop() {
+    let mut work: Vec<_> = roots
+        .iter()
+        .rev()
+        .map(|index| (*index, 0, 0, false))
+        .collect();
+    while let Some((index, outer, depth, ready)) = work.pop() {
         let pair = &pairs[index];
         if ready {
-            let rendered = renderer.render(index, outer);
+            let rendered = renderer.render(index, outer, depth);
             renderer.rendered.borrow_mut().insert(index, rendered);
             continue;
         }
-        work.push((index, outer, true));
+        work.push((index, outer, depth, true));
         let bit = kind_bit(pair.kind);
-        if outer & bit != 0 {
+        if depth + pair.host_depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             losses.push(pair.start);
         }
-        let scope = pair
-            .children
-            .iter()
-            .any(|child| pairs[*child].kinds & outer != 0);
-        let inner = if outer & bit != 0 {
-            outer
-        } else if scope {
-            bit
-        } else {
-            outer | bit
-        };
+        let inner = outer | bit;
         for child in pair.children.iter().rev() {
-            work.push((*child, inner, false));
+            work.push((*child, inner, depth + 1, false));
         }
     }
     let out = convert_plain(&renderer.body(0, source.len(), &roots, 0));
@@ -742,26 +953,23 @@ impl Renderer<'_> {
         out.push_str(&self.plain(cursor, end));
         out
     }
-    fn render(&self, index: usize, outer: u8) -> String {
+    fn render(&self, index: usize, outer: u8, depth: usize) -> String {
         let pair = &self.pairs[index];
         let bit = kind_bit(pair.kind);
-        if outer & bit != 0 {
+        if depth + pair.host_depth >= crate::parse::MAX_NESTING_DEPTH - 2 {
             return self.body(pair.open_end, pair.close, &pair.children, outer);
         }
-        let scope = pair
-            .children
-            .iter()
-            .any(|child| self.pairs[*child].kinds & outer != 0);
-        let content = self.body(
-            pair.open_end,
-            pair.close,
-            &pair.children,
-            if scope { bit } else { outer | bit },
-        );
+        let scope = outer & bit != 0
+            || pair
+                .children
+                .iter()
+                .any(|child| self.pairs[*child].kinds & bit != 0);
+        let content = self.body(pair.open_end, pair.close, &pair.children, outer | bit);
         let delimiter = match pair.kind {
             b'_' => '/',
             b'~' => ',',
             b'^' => '^',
+            b'=' => '=',
             _ => '*',
         };
         let bytes = self.source.as_bytes();

@@ -31,6 +31,7 @@ enum DefinitionAtLine {
 struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
+    emphasis_depth_peak: usize,
     list_depth: usize,
     /// Depth of line-block nesting, so the inline writer drops the explicit
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
@@ -77,6 +78,7 @@ struct CarveContext {
     braced_spans: Vec<(char, Option<usize>)>,
     /// The emphasis kinds open around the node being written.
     open_kinds: Vec<char>,
+    emphasis_counts: [usize; 7],
     attribute_bracket_depth: usize,
     attribute_markers: HashMap<char, usize>,
     /// The brackets of the inline run being written, as (text node address,
@@ -1050,6 +1052,7 @@ fn render_with_escapes_once(
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
+        emphasis_depth_peak: 0,
         list_depth: 0,
         line_block_depth: 0,
         rendered_verbatim_tail: false,
@@ -1066,6 +1069,7 @@ fn render_with_escapes_once(
         written_in_place: HashSet::new(),
         braced_spans: Vec::new(),
         open_kinds: Vec::new(),
+        emphasis_counts: [0; 7],
         attribute_bracket_depth: 0,
         attribute_markers: HashMap::new(),
         brackets: BracketScope::default(),
@@ -3272,6 +3276,17 @@ fn render_inlines_with_caption(
             return text.value.clone();
         }
     }
+    if ctx.inline_depth + ctx.block_depth + 1 >= crate::parse::MAX_NESTING_DEPTH - 1
+        && nodes
+            .iter()
+            .any(|node| matches!(node, InlineNode::Emphasis(_)))
+    {
+        crate::render_carve_error::record_unspellable(
+            "inline",
+            "inline content exceeds the native parser nesting limit",
+        );
+        return String::new();
+    }
     // Flatten before the writer checks neighboring nodes. A ruby base can
     // start with `[` or a code fence, which changes how preceding text escapes.
     let original = nodes;
@@ -3514,6 +3529,7 @@ fn render_nodes_with_verbatim(
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
         let braced_before = ctx.braced_spans.len();
+        let emphasis_before = ctx.emphasis_counts;
         let opens_bracket = nodes
             .get(idx + 1)
             .is_some_and(|next| leading_bracket_run(next).is_some());
@@ -3558,6 +3574,24 @@ fn render_nodes_with_verbatim(
                         || matches!(node, InlineNode::Code(code) if code_span_fence(&code.value).len() < 3)),
             )
         };
+        if let InlineNode::CriticComment(comment) = node {
+            if comment.text.contains('}')
+                && idx > 0
+                && crate::parse::inline_is_attributable(&nodes[idx - 1])
+            {
+                let probe = crate::parse(&("/x/".to_owned() + &rendered));
+                let keeps_comment = probe.children.first().is_some_and(|block| match block {
+                    BlockNode::Paragraph(paragraph) => paragraph.children.iter().any(|child| matches!(child, InlineNode::CriticComment(found) if found.text == comment.text)),
+                    _ => false,
+                });
+                if !keeps_comment {
+                    crate::render_carve_error::record_unspellable(
+                        "critic_comment",
+                        "a glued editorial comment would attach attributes to the preceding node",
+                    );
+                }
+            }
+        }
         if !is_text {
             ctx.paired_closer_carry.set(false);
         }
@@ -3600,7 +3634,7 @@ fn render_nodes_with_verbatim(
         if let InlineNode::Emphasis(emphasis) = node {
             rendered = brace_a_refused_bare_opener(rendered, emphasis, out.chars().next_back());
         }
-        note_braced_span(node, &mut rendered, braced_before, ctx);
+        note_braced_span(node, &mut rendered, braced_before, emphasis_before, ctx);
         if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
             // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
             // boundary between two lines, so nothing hardens there and the
@@ -3753,6 +3787,11 @@ fn render_inline_body(
     next_opens_a_bracket: bool,
     may_run_to_end: bool,
 ) -> String {
+    if empty_code_run_children(node).is_some() || matches!(node, InlineNode::CriticSubstitute(_)) {
+        ctx.emphasis_depth_peak = ctx
+            .emphasis_depth_peak
+            .max(ctx.inline_depth + ctx.block_depth);
+    }
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
         // the canonical form writes it back verbatim. The parser drops the
@@ -3813,6 +3852,21 @@ fn render_inline_body(
         InlineNode::Emphasis(emphasis) => {
             let kinds = emphasis_delimiters(emphasis.kind);
             let before_attributes = ctx.attribute_markers.clone();
+            let before_emphasis = ctx.emphasis_counts;
+            let repeated_ancestor = [
+                kinds
+                    .first()
+                    .map(|marker| ctx.open_kinds.contains(marker))
+                    .unwrap_or(false),
+                kinds
+                    .get(1)
+                    .map(|marker| ctx.open_kinds.contains(marker))
+                    .unwrap_or(false),
+            ];
+            let preceding_peak = std::mem::replace(
+                &mut ctx.emphasis_depth_peak,
+                ctx.inline_depth + ctx.block_depth,
+            );
             ctx.open_kinds.extend_from_slice(kinds);
             let content = if writes_own_brackets(emphasis) {
                 render_bracketed_content(session, &emphasis.children, ctx)
@@ -3820,15 +3874,41 @@ fn render_inline_body(
                 render_inlines(session, &emphasis.children, ctx)
             };
             ctx.open_kinds.truncate(ctx.open_kinds.len() - kinds.len());
+            let content_peak = ctx.emphasis_depth_peak;
+            ctx.emphasis_depth_peak = preceding_peak.max(content_peak);
             let attributes_conflict = kinds.iter().any(|marker| {
                 ctx.attribute_markers.get(marker).copied().unwrap_or(0)
                     > before_attributes.get(marker).copied().unwrap_or(0)
             });
-            if attributes_conflict {
+            let repeated = |marker: char| {
+                let index = "/*_~^,=".find(marker).unwrap();
+                kinds
+                    .iter()
+                    .position(|kind| *kind == marker)
+                    .map(|slot| repeated_ancestor[slot])
+                    .unwrap_or(false)
+                    || ctx.emphasis_counts[index] > before_emphasis[index]
+            };
+            let repeated_bold_italic = emphasis.kind == EmphasisKind::BoldItalic
+                && !content.is_empty()
+                && (repeated('/') || repeated('*'));
+            if attributes_conflict || repeated_bold_italic {
+                if emphasis.kind == EmphasisKind::BoldItalic {
+                    let split_peak = content_peak + 1;
+                    ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);
+                    if split_peak >= crate::parse::MAX_NESTING_DEPTH - 1 {
+                        crate::render_carve_error::record_unspellable(
+                            "inline",
+                            "inline content exceeds the native parser nesting limit",
+                        );
+                        return String::new();
+                    }
+                }
                 let body = if emphasis.kind == EmphasisKind::BoldItalic {
                     let conflicts = |marker: char| {
                         ctx.attribute_markers.get(&marker).copied().unwrap_or(0)
                             > before_attributes.get(&marker).copied().unwrap_or(0)
+                            || repeated(marker)
                     };
                     let inner = if conflicts('/') {
                         render_forced_emphasis("/", &content)
@@ -5901,15 +5981,11 @@ fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
     }
 }
 
-/// An opener is text while a span of its kind is open (PART 9 §9 E3), and the
-/// forced form shares the stack (markup-carve/carve#2078), so an emphasis span
-/// inside one of its own kind has no spelling. An insertion or deletion keeps
-/// the braced-only rule of markup-carve/carve#2066. `braced_before` is where
-/// this node's descendants start in `ctx.braced_spans`.
 fn note_braced_span(
     node: &InlineNode,
     rendered: &mut String,
     braced_before: usize,
+    emphasis_before: [usize; 7],
     ctx: &mut CarveContext,
 ) {
     let (delimiters, pos): (&[char], _) = match node {
@@ -5924,32 +6000,42 @@ fn note_braced_span(
         }
         _ => return,
     };
-    let nested: Vec<Option<usize>> = ctx.braced_spans[braced_before..]
-        .iter()
-        .filter(|(inner, _)| delimiters.contains(inner))
-        .map(|(_, mark)| *mark)
-        .collect();
-    if !nested.is_empty() {
-        crate::render_carve_error::record_unspellable(
-            "emphasis",
-            "a span inside a span of the same kind has no Carve source spelling",
-        );
-        crate::render_carve_error::record_nested_same_kind(nested.into_iter().flatten().collect());
-    }
-    // A braced inline starts its own scope (ruling markup-carve/carve#2091), so
-    // a bare span holding a kind open outside it takes the braced form.
     if let InlineNode::Emphasis(emphasis) = node {
-        let holds_an_outer_kind = ctx.braced_spans[braced_before..]
-            .iter()
-            .any(|(inner, _)| ctx.open_kinds.contains(inner));
-        if holds_an_outer_kind {
+        let repeated = delimiters.iter().any(|marker| {
+            let index = "/*_~^,=".find(*marker).unwrap();
+            ctx.open_kinds.contains(marker) || ctx.emphasis_counts[index] > emphasis_before[index]
+        });
+        if repeated {
             if let Some(delim) = bare_delimiter(emphasis.kind) {
                 if rendered.starts_with(delim) {
-                    let attrs = render_attrs(&emphasis.attrs);
-                    let body = rendered[..rendered.len() - attrs.len()].to_string();
+                    let attrs = render_attrs_with_markers(
+                        &emphasis.attrs,
+                        &ctx.open_kinds,
+                        ctx.attribute_bracket_depth > 0,
+                    );
+                    let body = &rendered[..rendered.len() - attrs.len()];
                     *rendered = format!("{{{body}}}{attrs}");
                 }
             }
+        }
+        for marker in delimiters {
+            let index = "/*_~^,=".find(*marker).unwrap();
+            ctx.emphasis_counts[index] += 1;
+        }
+    } else {
+        let nested: Vec<Option<usize>> = ctx.braced_spans[braced_before..]
+            .iter()
+            .filter(|(inner, _)| delimiters.contains(inner))
+            .map(|(_, mark)| *mark)
+            .collect();
+        if !nested.is_empty() {
+            crate::render_carve_error::record_unspellable(
+                "emphasis",
+                "a span inside a span of the same kind has no Carve source spelling",
+            );
+            crate::render_carve_error::record_nested_same_kind(
+                nested.into_iter().flatten().collect(),
+            );
         }
     }
     if rendered.starts_with('{') {
@@ -6718,9 +6804,13 @@ fn spell_crossref_target(text: &str) -> String {
 }
 
 fn escape_critic_text(text: &str) -> String {
-    text.replace('\\', "\\\\")
-        .replace('{', "\\{")
-        .replace('}', "\\}")
+    if text.contains("#}") {
+        crate::render_carve_error::record_unspellable(
+            "critic_comment",
+            "an editorial comment holding its closing sequence has no Carve source spelling",
+        );
+    }
+    text.to_owned()
 }
 
 fn first_boundary(node: &InlineNode) -> Option<char> {

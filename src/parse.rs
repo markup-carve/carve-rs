@@ -19084,7 +19084,7 @@ fn merge_attrs_into_inline(
 
 /// Whether an inline node can carry an attribute block (so a following `{...}`
 /// attaches rather than staying literal). Text/raw nodes cannot.
-fn inline_is_attributable(node: &InlineNode) -> bool {
+pub(crate) fn inline_is_attributable(node: &InlineNode) -> bool {
     matches!(
         node,
         InlineNode::Emphasis(_)
@@ -22500,6 +22500,9 @@ fn match_emphasis(
         if bytes.get(start).is_some_and(|b| !is_carve_ws(*b)) {
             let opener_run = bounds.bracket_run_at(i);
             if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
+                if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+                    return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 2]).ok()?.to_owned()), close + 2 - i));
+                }
                 let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                 OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
                 return Some((
@@ -22578,6 +22581,9 @@ fn match_emphasis(
         }
     }
     let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
+    if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
+        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 1]).ok()?.to_owned()), close + 1 - i));
+    }
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
     Some((
@@ -24669,11 +24675,6 @@ fn parse_forced_emphasis(
         b'=' => EmphasisKind::Highlight,
         _ => return None,
     };
-    // E3 puts the forced form on the same stack as the bare one, so a forced
-    // opener of an open kind is content (markup-carve/carve#2078).
-    if OpenKinds::is_open(delim) {
-        return None;
-    }
     // The span closes on a `delim}` pair; with no such pair ahead the scan could
     // only walk to end-of-text and fail, so bail in O(1) (keeps `{/`×n linear).
     if !bounds.has_delim_brace_from(delim, i) {
@@ -24690,6 +24691,9 @@ fn parse_forced_emphasis(
     // carve-rs#2173). The bare and the combined forms read the same rule.
     if !braced_closer_shares_the_run(bounds, i, j) {
         return None;
+    }
+    if NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
+        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..j + 2]).ok()?.to_string()), j + 2 - i));
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
     // A braced inline starts its own scope (ruling markup-carve/carve#2091).
@@ -24920,6 +24924,7 @@ fn find_emphasis_close(
     // The run the OPENER sits in. `from` is just past the delimiter, and a `[`
     // is never one, so the delimiter's own run is the run at `from`.
     let opener_run = bounds.bracket_run_at(from);
+    let mut attached = HashMap::new();
     let mut j = from;
     while j < bytes.len() {
         if failed.is_some_and(|f| f[j]) {
@@ -24927,6 +24932,22 @@ fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
+        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=') && ch != delim && !OpenKinds::is_open(ch) {
+            if let Some((close, end)) = bounds.braced_closers(bytes).bare_attributes(bytes, j) {
+                attached.insert(close + 1, end);
+            }
+        }
+        if let Some(&end) = attached.get(&j) {
+            j = end;
+            continue;
+        }
+        if ch == b']' && bounds.openers.get(j).is_some_and(|&open| open != NO_BRACKET_MATCH) {
+            let end = bounds.braced_closers(bytes).after_attributes(bytes, j + 1);
+            if end > j + 1 {
+                j = end;
+                continue;
+            }
+        }
         if ch == b'\\' && j + 1 < bytes.len() {
             j += 2;
             continue;
@@ -24958,19 +24979,20 @@ fn find_emphasis_close(
             if !found {
                 return None;
             }
+            j = bounds.braced_closers(bytes).after_attributes(bytes, j);
             continue;
         }
         // E2a: a link destination and an autolink are opaque too. A link
         // LABEL is not, and neither is a plain brace group.
         if ch == b']' && bytes.get(j + 1) == Some(&b'(') && opens_a_link(bytes, j, bounds) {
             if let Some(end) = link_destination_end(bytes, j + 1) {
-                j = end + 1;
+                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
                 continue;
             }
         }
         if ch == b'<' && bounds.has_gt_from(j) {
             if let Some(end) = scanned_autolink_end(bytes, j) {
-                j = end + 1;
+                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
                 continue;
             }
         }
@@ -24999,13 +25021,13 @@ fn find_emphasis_close(
         // token is opaque (markup-carve/carve-rs#1652).
         if ch == b'{' && j > 0 && bytes[j - 1] == b'`' {
             if let Some(end) = raw_inline_format_end(bytes, j) {
-                j = end + 1;
+                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
                 continue;
             }
         }
         if ch == b'{' {
             if let Some(end) = braced_inline_end(bytes, j, memo, delim, bounds) {
-                j = end + 1;
+                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
                 continue;
             }
         }
@@ -25138,7 +25160,7 @@ fn scanned_autolink_end(bytes: &[u8], open: usize) -> Option<usize> {
 
 /// The `}` of a raw inline's format token at `open`.
 fn raw_inline_format_end(bytes: &[u8], open: usize) -> Option<usize> {
-    if bytes.get(open + 1) != Some(&b'=') {
+    if bytes.get(open) != Some(&b'{') || bytes.get(open + 1) != Some(&b'=') {
         return None;
     }
     let mut i = open + 2;
@@ -25174,7 +25196,7 @@ fn braced_inline_end(
 fn braced_inline_scan(
     bytes: &[u8],
     open: usize,
-    scanning: u8,
+    _scanning: u8,
     bounds: &InlineBounds<'_>,
 ) -> Option<usize> {
     let delim = bytes.get(open + 1).copied()?;
@@ -25184,11 +25206,6 @@ fn braced_inline_scan(
         if let Some((pair, _)) = substitution_at(bytes, open, bounds) {
             return Some(pair + 1);
         }
-    }
-    // A forced opener of an open kind is no span, so it hides nothing; the kind
-    // this scan closes counts as open across its own content.
-    if OpenKinds::bit(delim) != 0 && (delim == scanning || OpenKinds::is_open(delim)) {
-        return None;
     }
     let pair: [u8; 2] = match delim {
         b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=' | b'+' | b'-' | b'#' => [delim, b'}'],
@@ -25202,10 +25219,10 @@ fn braced_inline_scan(
     } else {
         bounds.braced_closers(bytes).close(bytes, open, delim)?
     };
-    if close == content {
+    if close == content && OpenKinds::bit(delim) == 0 {
         return None;
     }
-    Some(close + 1)
+    Some(bounds.braced_closers(bytes).after_attributes(bytes, close + 2) - 1)
 }
 
 #[cfg(test)]

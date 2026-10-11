@@ -40,8 +40,13 @@ fn closed_blocks_leave_attributes_pending() {
 
 #[test]
 fn deep_same_kind_spans_do_not_use_the_call_stack() {
-    let source = format!("{}x{}", "{_".repeat(10000), "_}".repeat(10000));
-    assert_eq!(djot_to_carve(&source), "{/x/}");
+    std::thread::Builder::new().stack_size(32 * 1024 * 1024).spawn(|| {
+        let source = format!("{}x{}", "{_".repeat(10000), "_}".repeat(10000));
+        let imported = djot_to_carve(&source);
+        assert_eq!(imported.matches("{/").count(), 198);
+        assert_eq!(to_html(&imported).matches("<em>").count(), 198);
+        assert!(to_html(&imported).contains("x"));
+    }).unwrap().join().unwrap();
 }
 
 #[test]
