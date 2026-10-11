@@ -1978,6 +1978,10 @@ impl<'a> Importer<'a> {
                 matches!(tag, "a" | "img")
                     && Self::attr(handle, name).is_some_and(|v| !v.is_empty())
             }
+            crate::roundtrip::EXPLICIT_ID => {
+                matches!(tag, "section" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+                    && Self::reads_explicit_id(handle)
+            }
             crate::roundtrip::AUTOLINK => tag == "a" && Self::reads_autolink(handle),
             crate::roundtrip::RAW => tag == "span" && Self::reads_raw_format(handle).is_some(),
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
@@ -1999,6 +2003,12 @@ impl<'a> Importer<'a> {
         Self::carrier(hr, crate::roundtrip::CHAR)
             .and_then(|v| single_char(&v))
             .filter(|c| matches!(c, '*' | '_'))
+    }
+
+    /// Presence distinguishes an authored ID from a generated heading slug.
+    fn reads_explicit_id(handle: &Handle) -> bool {
+        Self::carrier(handle, crate::roundtrip::EXPLICIT_ID).is_some()
+            && Self::attr(handle, "id").is_some_and(|id| !id.is_empty())
     }
 
     /// Whether the anchor was authored as an autolink. A PRESENCE carrier, so
@@ -2857,6 +2867,7 @@ impl<'a> Importer<'a> {
             }
             if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
                 if self.opts.mode == HtmlImportMode::Roundtrip
+                    && !Self::reads_explicit_id(h)
                     && Self::id_in_generated_position(h)
                     && held.id.as_deref().is_some_and(|id| {
                         Self::is_generated_heading_id(id, &crate::render::plain_inlines(&inlines))
@@ -3533,7 +3544,7 @@ impl<'a> Importer<'a> {
         // between rows at the same position, and these are not.
         let mut blocks = self.blocks(&children, path, depth + 1)?;
         let mut attrs = attrs;
-        Self::restore_hoisted_section_id(&tag, &mut attrs, &mut blocks);
+        Self::restore_hoisted_section_id(h, &tag, &mut attrs, &mut blocks, self.writing);
         // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
         // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
         // `<form>` all land here and keep only their children. The keep list
@@ -3556,7 +3567,13 @@ impl<'a> Importer<'a> {
 
     /// Put a `<section id>` back on the heading the renderer hoisted it off
     /// (markup-carve/carve-rs#1380).
-    fn restore_hoisted_section_id(tag: &str, attrs: &mut Option<Attrs>, blocks: &mut [BlockNode]) {
+    fn restore_hoisted_section_id(
+        handle: &Handle,
+        tag: &str,
+        attrs: &mut Option<Attrs>,
+        blocks: &mut [BlockNode],
+        writing: bool,
+    ) {
         if tag != "section" {
             return;
         }
@@ -3579,10 +3596,29 @@ impl<'a> Importer<'a> {
             return;
         }
         held.id = None;
-        if Self::is_generated_heading_id(&id, &crate::render::plain_inlines(&heading.children)) {
+        let explicit = Self::reads_explicit_id(handle);
+        if !explicit
+            && Self::is_generated_heading_id(&id, &crate::render::plain_inlines(&heading.children))
+        {
             return;
         }
-        heading.attrs.get_or_insert_with(Attrs::default).id = Some(id);
+        let heading_attrs = heading.attrs.get_or_insert_with(Attrs::default);
+        heading_attrs.id = Some(id);
+        // The source writer needs the authored ID slot to keep an equal slug.
+        // Published import trees carry no source-layout order.
+        if explicit && writing {
+            if heading_attrs.order.is_empty() {
+                if !heading_attrs.classes.is_empty() {
+                    heading_attrs.order.push(AttrSlot::Class);
+                }
+                heading_attrs
+                    .order
+                    .extend(heading_attrs.key_values.keys().cloned().map(AttrSlot::Key));
+            }
+            if !heading_attrs.order.contains(&AttrSlot::Id) {
+                heading_attrs.order.insert(0, AttrSlot::Id);
+            }
+        }
     }
     /// `<details>/<summary>` to a `details` admonition.
     #[allow(clippy::type_complexity)]

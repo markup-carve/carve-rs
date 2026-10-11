@@ -7,6 +7,15 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
+mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
+
+#[path = "../multiline_inline_code.rs"]
+mod multiline_inline_code;
+
+#[path = "../an_emphasis_ending_in_an_escaped_space_keeps_its_braces.rs"]
+mod an_emphasis_ending_in_an_escaped_space_keeps_its_braces;
+
 #[path = "../attached_definition_boundaries.rs"]
 mod attached_definition_boundaries;
 
