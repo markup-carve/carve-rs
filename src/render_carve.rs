@@ -4039,7 +4039,8 @@ fn render_inline_body(
                                 && render_inline_attrs(&code.attrs, ctx).is_empty(),
                             ctx.in_term,
                         ),
-                        ctx
+                        ctx,
+                        "code",
                     ),
                     render_inline_attrs(&code.attrs, ctx)
                 )
@@ -4088,9 +4089,14 @@ fn render_inline_body(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(
-                &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
-                ctx
+            guard_code_lines(
+                session,
+                &render_code(
+                    &spell_verse_empty_lines(&math.content, ctx.line_block_depth > 0),
+                    ctx,
+                ),
+                ctx,
+                "math",
             ),
             render_inline_attrs(&math.attrs, ctx)
         ),
@@ -4113,7 +4119,11 @@ fn render_inline_body(
             } else {
                 render_code(&content, ctx)
             };
-            format!("{verbatim}{{={}}}", escape_format(&raw.format))
+            format!(
+                "{}{{={}}}",
+                guard_code_lines(session, &verbatim, ctx, "raw_inline"),
+                escape_format(&raw.format),
+            )
         }
         InlineNode::LiteralInline(lit) => {
             // §27: `!` prefix on a verbatim span. A trailing attribute block is
@@ -4123,7 +4133,7 @@ fn render_inline_body(
             let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
             format!(
                 "!{}{}",
-                render_code(&content, ctx),
+                guard_code_lines(session, &render_code(&content, ctx), ctx, "literal_inline"),
                 render_inline_attrs(&lit.attrs, ctx)
             )
         }
@@ -5001,7 +5011,12 @@ fn code_span_fence(content: &str) -> String {
     safe_fence(content, 1)
 }
 
-fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) -> String {
+fn guard_code_lines(
+    session: &RenderSession,
+    written: &str,
+    ctx: &CarveContext,
+    node_type: &'static str,
+) -> String {
     if ctx.line_block_depth > 0 {
         return written.to_owned();
     }
@@ -5015,7 +5030,7 @@ fn guard_code_lines(session: &RenderSession, written: &str, ctx: &CarveContext) 
             if index > 0 && marker.is_match(line) {
                 if ctx.in_term {
                     crate::render_carve_error::record_unspellable(
-                        "code",
+                        node_type,
                         "a block marker on a continuation line ends the definition term",
                     );
                     return line.to_owned();
