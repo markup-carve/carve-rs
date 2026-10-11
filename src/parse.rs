@@ -8608,7 +8608,7 @@ impl NestedFenceReplay {
             self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
-        if !deepest.colons.is_empty()
+        if (!deepest.colons.is_empty() || !deepest.hosts.is_empty())
             && deepest.para
             && deepest.fence.is_none()
             && deepest.host_fence.is_none()
@@ -8896,6 +8896,16 @@ impl NestedFenceReplay {
                             return;
                         }
                     }
+                    if detect_line_block_open(inner).is_some()
+                        && here
+                            .colons
+                            .last()
+                            .is_some_and(|&(_, base, authored)| floor == base && col > authored)
+                    {
+                        here.para = true;
+                        here.colon_absorption = true;
+                        return;
+                    }
                     if let Some(width) = detect_line_block_open(inner) {
                         here.host_verse = Some((width, floor, col));
                         here.para = false;
@@ -8921,15 +8931,19 @@ impl NestedFenceReplay {
                 if let Some(open) = detect_fence_open(inner).filter(|_| floor > 0) {
                     // The host holds the fence whether the opener sits AT its
                     // content column or past it. A fence after an open paragraph
-                    // still needs a closer ahead (section 10), and that closer may
-                    // be at either column.
+                    // still needs a closer ahead (section 10). Inside a colon
+                    // paragraph it must reach the opener's authored column.
                     if block_start
                         || !here.para
-                        || closer_ahead(lines, at, level, |l| {
-                            let seen = indent_columns(l);
-                            (seen == floor || seen == col)
-                                && is_fence_close(trim_ascii_start(l), open)
-                        })
+                        || indexed_code_closes(
+                            lines,
+                            at,
+                            level,
+                            col,
+                            here.colons.is_empty().then_some(floor),
+                            open,
+                            &mut self.literal_code_lookup,
+                        )
                     {
                         self.fence_count += 1;
                         here.fence_ordinal = self.fence_count;
@@ -8939,12 +8953,24 @@ impl NestedFenceReplay {
                         here.by_fence = true;
                         return;
                     }
+                    here.para = true;
+                    return;
                 }
             }
             if let Some(open) = detect_fence_open(text) {
                 // At block start a fence opens with or without a closer; after
                 // a paragraph it needs one (§10), or it is inline verbatim.
-                if !here.para || closer_ahead(lines, at, level, |l| is_fence_close(l, open)) {
+                if !here.para
+                    || indexed_code_closes(
+                        lines,
+                        at,
+                        level,
+                        0,
+                        None,
+                        open,
+                        &mut self.literal_code_lookup,
+                    )
+                {
                     self.fence_count += 1;
                     here.fence_ordinal = self.fence_count;
                     here.fence = Some(open);
@@ -8953,6 +8979,8 @@ impl NestedFenceReplay {
                     here.by_fence = true;
                     return;
                 }
+                here.para = true;
+                return;
             }
             if let Some(comment) = detect_comment_fence_line(text) {
                 let len = comment.fence_len;
@@ -9270,6 +9298,30 @@ impl LiteralCodeIndex {
             .get(&(open.fence_char, column))?
             .next(from, open.fence_len)
     }
+}
+
+fn indexed_code_closes(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    column: usize,
+    alternate_column: Option<usize>,
+    open: FenceOpen,
+    lookup: &mut LiteralCodeLookup,
+) -> bool {
+    let index = lookup.indices.entry(level).or_default();
+    index.refresh(lines, level, from);
+    let closer = index
+        .next(from, column, open)
+        .into_iter()
+        .chain(alternate_column.and_then(|column| index.next(from, column, open)))
+        .min();
+    closer.is_some_and(|close| {
+        index
+            .boundaries
+            .get(index.boundaries.partition_point(|&at| at <= from))
+            .map_or(true, |&end| close < end)
+    })
 }
 
 fn literal_code_closes(
@@ -10950,7 +11002,7 @@ fn parse_list(
                 // rather than folding the line in (#950). The collector below
                 // stops on the same state and would otherwise return nothing,
                 // leaving the cursor where it is.
-                if item_open_fence.is_some() && indent < content_col {
+                if item_open_fence.is_some() && indent < content_col && !line.starts_with(LAZY) {
                     break;
                 }
                 // See `last_item_bare_continuation`. The marker's own block was
@@ -11014,7 +11066,9 @@ fn parse_list(
                         &mut item_open_fence,
                     );
                     nested.authored_base_at_start |= authored_overindented_opener;
-                    if item_open_fence.is_none() {
+                    if item_open_fence.is_none()
+                        || cur.peek().is_some_and(|line| line.starts_with(LAZY))
+                    {
                         fold_lazy_run_and_resume_in_band(
                             cur,
                             &mut nested,
@@ -12080,7 +12134,7 @@ fn parse_list(
             // fence state is one variable across all three of its collection
             // sites, so the outer loop below sees the same open fence and closes
             // the list at this line.
-            if item_open_fence.is_some() && indent < content_col {
+            if item_open_fence.is_some() && indent < content_col && !next.starts_with(LAZY) {
                 break;
             }
             if indent < content_col {
@@ -27825,6 +27879,82 @@ mod nested_list_ladder_work {
                 );
             }
             previous = Some((depth, work));
+        }
+    }
+}
+
+#[cfg(test)]
+mod hosted_inline_fence_lookup_work {
+    use super::*;
+    #[test]
+    fn indexed_closers_match_scans_at_each_authorized_column() {
+        for level in [0, 1, 2] {
+            let prefix = "> ".repeat(level);
+            let mut body = LineBuffer::default();
+            for text in [
+                "``` info",
+                "  ```",
+                "    ````",
+                "~~~",
+                "    ~~~~~",
+                "``` bad",
+                " L tail",
+                "``````",
+            ] {
+                body.push_at(format!("{prefix}{text}"), None, None);
+            }
+            for from in 0..body.lines.len() {
+                for column in [0, 2, 4] {
+                    for alternate in [None, Some(0), Some(2)] {
+                        for marker in ["```", "````", "~~~~"] {
+                            let open = detect_fence_open(marker).unwrap();
+                            let scanned = closer_ahead(&body.lines, from, level, |text| {
+                                let seen = indent_columns(text);
+                                (seen == column || alternate == Some(seen))
+                                    && is_fence_close(trim_ascii_start(text), open)
+                            });
+                            assert_eq!(
+                                indexed_code_closes(
+                                    &body.lines,
+                                    from,
+                                    level,
+                                    column,
+                                    alternate,
+                                    open,
+                                    &mut LiteralCodeLookup::default()
+                                ),
+                                scanned
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_unclosed_openers_share_one_index() {
+        for count in [256, 4096] {
+            let mut body = LineBuffer::default();
+            for _ in 0..count {
+                body.push_at("    ``` language".to_owned(), None, None);
+            }
+            let mut lookup = LiteralCodeLookup::default();
+            let open = detect_fence_open("``` language").unwrap();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for from in 0..count {
+                assert!(!indexed_code_closes(
+                    &body.lines,
+                    from,
+                    0,
+                    4,
+                    None,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) > 0);
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= count);
         }
     }
 }
