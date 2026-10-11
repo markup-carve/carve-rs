@@ -3889,10 +3889,12 @@ fn render_inline_body(
                     .unwrap_or(false)
                     || ctx.emphasis_counts[index] > before_emphasis[index]
             };
-            let repeated_bold_italic = emphasis.kind == EmphasisKind::BoldItalic
-                && !content.is_empty()
-                && (repeated('/') || repeated('*'));
-            if attributes_conflict || repeated_bold_italic {
+            if (attributes_conflict
+                && (emphasis.kind != EmphasisKind::BoldItalic || !hugs_its_delimiters(&content)))
+                || (emphasis.kind == EmphasisKind::BoldItalic
+                    && !hugs_its_delimiters(&content)
+                    && kinds.iter().any(|marker| repeated(*marker)))
+            {
                 if emphasis.kind == EmphasisKind::BoldItalic {
                     let split_peak = content_peak + 1;
                     ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);

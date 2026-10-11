@@ -470,7 +470,11 @@ fn write_marks(
                     || body.ends_with(delim)
                     || (delim == '/' && body.starts_with('*') && body.ends_with('*'));
                 if body.ends_with('{') {
-                    let backslashes = body.as_bytes()[..body.len() - 1].iter().rev().take_while(|&&byte| byte == b'\\').count();
+                    let backslashes = body.as_bytes()[..body.len() - 1]
+                        .iter()
+                        .rev()
+                        .take_while(|&&byte| byte == b'\\')
+                        .count();
                     if backslashes % 2 == 0 {
                         body.insert(body.len() - 1, '\\');
                     }

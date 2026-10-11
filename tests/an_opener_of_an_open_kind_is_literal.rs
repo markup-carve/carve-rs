@@ -62,7 +62,10 @@ fn the_writer_refuses_a_direct_same_kind_nesting() {
     .unwrap()
     .value;
     let source = carve::render_carve(&doc).unwrap();
-    assert_eq!(html(&source), "<p><strong>a <strong>b</strong> c</strong></p>");
+    assert_eq!(
+        html(&source),
+        "<p><strong>a <strong>b</strong> c</strong></p>"
+    );
 }
 
 /// Through a span of another kind the writer braces that span to scope it.

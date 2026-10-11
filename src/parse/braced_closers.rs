@@ -4,8 +4,28 @@ use super::{
     skip_code_span, trailing_comment_end, DELIM_BRACE_SLOTS, MAX_NESTING_DEPTH,
 };
 use std::collections::HashMap;
+use std::rc::Rc;
 
 const RAW_CLOSE_FLAG: usize = 1 << (usize::BITS - 1);
+
+#[cfg(test)]
+thread_local! {
+    static NATIVE_PAIR_SCAN_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[derive(Clone)]
+pub(super) struct NativeBracedView {
+    data: Rc<NativeBracedData>,
+    offset: usize,
+    length: usize,
+}
+
+struct NativeBracedData {
+    ends: HashMap<usize, (usize, Option<usize>)>,
+    arrows: HashMap<usize, usize>,
+    attributes: HashMap<usize, usize>,
+    bare: HashMap<usize, (usize, usize)>,
+}
 
 pub(super) struct CodeSpanIndex {
     runs: Vec<(usize, usize)>,
@@ -74,11 +94,86 @@ pub(super) struct BracedClosers {
     attribute_tails: HashMap<usize, usize>,
     has_attribute_candidates: Option<bool>,
     bare_attribute_pairs: HashMap<usize, (usize, usize)>,
+    native_view: Option<NativeBracedView>,
+    exported_native: Option<Rc<NativeBracedData>>,
     #[cfg(test)]
     steps: usize,
 }
 
 impl BracedClosers {
+    pub(super) fn inherit(&mut self, view: Option<NativeBracedView>) {
+        self.native_view = view;
+    }
+
+    pub(super) fn view(&mut self, bytes: &[u8], start: usize, length: usize) -> NativeBracedView {
+        if let Some(view) = &self.native_view {
+            return NativeBracedView {
+                data: Rc::clone(&view.data),
+                offset: view.offset + start,
+                length,
+            };
+        }
+        if self.exported_native.is_none() {
+            if self.emphasis_pairs.is_none() {
+                self.build_emphasis_pairs(bytes);
+            }
+            let mut ends = HashMap::new();
+            let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
+            let outer_verbatim = self.last_verbatim_start;
+            for open in points {
+                if bytes.get(open) != Some(&b'{') {
+                    continue;
+                }
+                let Some(&marker) = bytes.get(open + 1) else {
+                    continue;
+                };
+                if !matches!(marker, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=') {
+                    continue;
+                }
+                let stop = self
+                    .emphasis_pairs
+                    .as_ref()
+                    .unwrap()
+                    .close(open + 2, marker);
+                if let Some(close) = self.finish_close(bytes, marker, stop) {
+                    ends.insert(open, (close, self.last_verbatim_start));
+                }
+            }
+            self.last_verbatim_start = outer_verbatim;
+            let strikes: Vec<_> = ends
+                .iter()
+                .filter(|(open, _)| bytes.get(**open + 1) == Some(&b'~'))
+                .map(|(&open, &(close, _))| (open, close))
+                .collect();
+            let mut arrows = HashMap::new();
+            if !strikes.is_empty() {
+                let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
+                for (&open, &(close, _)) in &ends {
+                    hosts.insert(open, close + 2);
+                }
+                let mut scanner = SubstitutionScanner::default();
+                for (open, close) in strikes {
+                    if let Some(arrow) =
+                        scanner.find(bytes, open + 2, close, &mut self.code_ends, &hosts)
+                    {
+                        arrows.insert(open, arrow);
+                    }
+                }
+            }
+            self.exported_native = Some(Rc::new(NativeBracedData {
+                ends,
+                arrows,
+                attributes: self.attribute_tails.clone(),
+                bare: self.bare_attribute_pairs.clone(),
+            }));
+        }
+        NativeBracedView {
+            data: Rc::clone(self.exported_native.as_ref().unwrap()),
+            offset: start,
+            length,
+        }
+    }
+
     pub(super) fn with_hosts(opaque: HashMap<usize, usize>) -> Self {
         Self {
             opaque,
@@ -91,6 +186,11 @@ impl BracedClosers {
             return None;
         }
         let pair = self.close(bytes, open, b'~')?;
+        if let Some(view) = &self.native_view {
+            let arrow = *view.data.arrows.get(&(open + view.offset))?;
+            let arrow = arrow.checked_sub(view.offset)?;
+            return (arrow < pair).then_some((pair, arrow));
+        }
         if self.substitution_hosts.is_none() {
             let mut hosts = self.native_opaque.as_ref().unwrap_or(&self.opaque).clone();
             let points = self.emphasis_pairs.as_ref().unwrap().points.clone();
@@ -123,6 +223,14 @@ impl BracedClosers {
     }
 
     pub(super) fn after_attributes(&mut self, bytes: &[u8], end: usize) -> usize {
+        if let Some(view) = &self.native_view {
+            return view
+                .data
+                .attributes
+                .get(&(end + view.offset))
+                .filter(|&&tail| tail <= view.offset + view.length)
+                .map_or(end, |&tail| tail - view.offset);
+        }
         if !*self.has_attribute_candidates.get_or_insert_with(|| {
             bytes.windows(2).any(|pair| {
                 pair[0] == b'{'
@@ -138,6 +246,11 @@ impl BracedClosers {
     }
 
     pub(super) fn bare_attributes(&mut self, bytes: &[u8], open: usize) -> Option<(usize, usize)> {
+        if let Some(view) = &self.native_view {
+            let &(close, end) = view.data.bare.get(&(open + view.offset))?;
+            return (end <= view.offset + view.length)
+                .then_some((close - view.offset, end - view.offset));
+        }
         if !*self.has_attribute_candidates.get_or_insert_with(|| {
             bytes.windows(2).any(|pair| {
                 pair[0] == b'{'
@@ -155,6 +268,16 @@ impl BracedClosers {
     pub(super) fn close(&mut self, bytes: &[u8], open: usize, delim: u8) -> Option<usize> {
         if !matches!(delim, b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=') {
             return self.close_editorial(bytes, open, delim);
+        }
+        if let Some(view) = &self.native_view {
+            let pair = view.data.ends.get(&(open + view.offset)).copied();
+            self.last_verbatim_start = pair
+                .and_then(|(_, raw)| raw)
+                .and_then(|at| at.checked_sub(view.offset))
+                .filter(|&at| at < view.length);
+            return pair
+                .filter(|(close, _)| *close + 2 <= view.offset + view.length)
+                .map(|(close, _)| close - view.offset);
         }
         self.queries += 1;
         if self.emphasis_pairs.is_none() {
@@ -451,6 +574,8 @@ impl BracedClosers {
     }
 
     fn build_emphasis_pairs(&mut self, bytes: &[u8]) {
+        #[cfg(test)]
+        NATIVE_PAIR_SCAN_BYTES.with(|work| work.set(work.get() + bytes.len()));
         self.queries = self.queries.max(2);
         let original_opaque = self.opaque.clone();
         let mut attribute_tails = HashMap::new();
@@ -837,6 +962,32 @@ impl DenseBracedClosers {
 #[cfg(test)]
 mod braced_closer_memo_tests {
     use super::*;
+
+    #[test]
+    fn nested_native_spans_share_the_payload_index() {
+        let source = "{*".repeat(32) + &"a {#i#} ".repeat(1024) + &"*}".repeat(32);
+        NATIVE_PAIR_SCAN_BYTES.with(|work| work.set(0));
+        let document = crate::parse(&source);
+        assert_eq!(
+            crate::render_html(&document)
+                .unwrap()
+                .matches("<strong>")
+                .count(),
+            32
+        );
+        assert!(NATIVE_PAIR_SCAN_BYTES.with(|work| work.get()) < source.len() * 2);
+    }
+
+    #[test]
+    fn nested_native_strikes_share_substitution_boundaries() {
+        let source = "{~".repeat(32) + &"x~>y ".repeat(1024) + &"~}".repeat(32);
+        NATIVE_PAIR_SCAN_BYTES.with(|work| work.set(0));
+        let document = crate::parse(&source);
+        let html = crate::render_html(&document).unwrap();
+        assert_eq!(html.matches("<s>").count(), 31);
+        assert!(html.contains("<ins>"));
+        assert!(NATIVE_PAIR_SCAN_BYTES.with(|work| work.get()) < source.len() * 2);
+    }
     fn reference_close(bytes: &[u8], open: usize, delim: u8, depth: usize) -> Option<usize> {
         let mut j = open + 2;
         while j + 1 < bytes.len() {

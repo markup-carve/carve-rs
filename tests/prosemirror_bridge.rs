@@ -1610,8 +1610,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Thirteen round-trip strictly; five report soft-break degradation.
     // Nested emphasis moves corpus 471, 471-2 and 471-4 from strict to
     // reported lossy because repeated marks share one ProseMirror slot.
-    const STRICT: usize = 1746;
-    const LOSSY: usize = 546;
+    // Spec 3bf1fc98 adds five emphasis controls: three strict and two with
+    // repeated marks that report the existing ProseMirror slot loss.
+    const STRICT: usize = 1749;
+    const LOSSY: usize = 548;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

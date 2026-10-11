@@ -16,7 +16,10 @@ fn the_underscore_spelling_answers_the_same_way() {
 
 #[test]
 fn a_strong_inside_a_strong_keeps_every_character() {
-    assert_eq!(migrate("__foo, __bar__, baz__\n"), "{*foo, {*bar*}, baz*}\n");
+    assert_eq!(
+        migrate("__foo, __bar__, baz__\n"),
+        "{*foo, {*bar*}, baz*}\n"
+    );
 }
 
 #[test]
@@ -33,7 +36,10 @@ fn what_it_wrote_reads_back_as_one_span_of_the_outer_kind() {
 #[test]
 fn native_nesting_has_no_loss_diagnostic() {
     let report = carve::migrate_markdown("*(*foo*)*\n").report;
-    assert!(!report.diagnostics.iter().any(|diagnostic| diagnostic.code == "structure-unspellable"));
+    assert!(!report
+        .diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.code == "structure-unspellable"));
 }
 
 #[test]

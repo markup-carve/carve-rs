@@ -11,7 +11,7 @@ mod verse_whitespace;
 
 mod braced_closers;
 mod substitution_scanner;
-use braced_closers::BracedClosers;
+use braced_closers::{BracedClosers, NativeBracedView};
 pub(crate) use inline_positions::InlineAnchor;
 use inline_positions::InlinePositionMap;
 use scoped_fence_closers::ScopedFenceClosers;
@@ -14119,6 +14119,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
         crossref_invalid_range: Cell::new(None),
         delim_brace: [None; DELIM_BRACE_SLOTS],
         braced_closers: RefCell::new(None),
+        native_pairs: None,
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
@@ -19184,6 +19185,7 @@ struct InlineBounds<'a> {
     /// emphasis, whose closers are two-byte `X}` pairs.
     delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
     braced_closers: RefCell<Option<BracedClosers>>,
+    native_pairs: Option<NativeBracedView>,
 }
 
 fn inline_pos(map: Option<&InlinePositionMap<'_>>, start: usize, end: usize) -> Option<Pos> {
@@ -19248,7 +19250,11 @@ fn position_citation_items_from_map(
 impl InlineBounds<'_> {
     fn braced_closers(&self, bytes: &[u8]) -> std::cell::RefMut<'_, BracedClosers> {
         std::cell::RefMut::map(self.braced_closers.borrow_mut(), |memo| {
-            memo.get_or_insert_with(|| BracedClosers::with_hosts(self.braced_hosts(bytes)))
+            memo.get_or_insert_with(|| {
+                let mut memo = BracedClosers::with_hosts(self.braced_hosts(bytes));
+                memo.inherit(self.native_pairs.clone());
+                memo
+            })
         })
     }
 
@@ -19420,10 +19426,30 @@ fn parse_caption_inline_with_anchor(
 fn parse_inline_context(
     text: &str,
     options: &Options<'_>,
+    caption_number_allowed: bool,
+    in_footnote: bool,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
+) -> Vec<InlineNode> {
+    parse_inline_context_with_pairs(
+        text,
+        options,
+        caption_number_allowed,
+        in_footnote,
+        positions,
+        base,
+        None,
+    )
+}
+
+fn parse_inline_context_with_pairs(
+    text: &str,
+    options: &Options<'_>,
     mut caption_number_allowed: bool,
     in_footnote: bool,
     positions: Option<&InlinePositionMap<'_>>,
     base: usize,
+    pairs: Option<NativeBracedView>,
 ) -> Vec<InlineNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Nested links/spans/emphasis recurse
     // through here one frame per level; over the cap, keep the remaining text
@@ -19513,6 +19539,7 @@ fn parse_inline_context(
         crossref_invalid_range: Cell::new(None),
         delim_brace,
         braced_closers: RefCell::new(None),
+        native_pairs: pairs,
     };
     let citation_brackets = std::cell::OnceCell::new();
     // Keeps `_a](`×n / `*a](`×n linear. See cached_find_emphasis_close.
@@ -22501,7 +22528,12 @@ fn match_emphasis(
             let opener_run = bounds.bracket_run_at(i);
             if let Some(close) = bold_italic_close(bytes, start, opener_run, no_close, bounds) {
                 if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
-                    return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 2]).ok()?.to_owned()), close + 2 - i));
+                    return Some((
+                        InlineNode::text(
+                            std::str::from_utf8(&bytes[i..close + 2]).ok()?.to_owned(),
+                        ),
+                        close + 2 - i,
+                    ));
                 }
                 let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
                 OpenKinds::pass_on(OpenKinds::bit(b'/') | OpenKinds::bit(b'*'));
@@ -22582,7 +22614,10 @@ fn match_emphasis(
     }
     let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close, bounds)?;
     if NESTING_DEPTH.with(|depth| depth.get() >= MAX_NESTING_DEPTH) {
-        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..close + 1]).ok()?.to_owned()), close + 1 - i));
+        return Some((
+            InlineNode::text(std::str::from_utf8(&bytes[i..close + 1]).ok()?.to_owned()),
+            close + 1 - i,
+        ));
     }
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     OpenKinds::pass_on(OpenKinds::bit(delim));
@@ -24693,22 +24728,37 @@ fn parse_forced_emphasis(
         return None;
     }
     if NESTING_DEPTH.with(Cell::get) >= MAX_NESTING_DEPTH {
-        return Some((InlineNode::text(std::str::from_utf8(&bytes[i..j + 2]).ok()?.to_string()), j + 2 - i));
+        return Some((
+            InlineNode::text(std::str::from_utf8(&bytes[i..j + 2]).ok()?.to_string()),
+            j + 2 - i,
+        ));
     }
     let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
+    let inherited = inner
+        .as_bytes()
+        .windows(2)
+        .any(|pair| {
+            pair[0] == b'{' && matches!(pair[1], b'/' | b'*' | b'_' | b'^' | b',' | b'~' | b'=')
+        })
+        .then(|| {
+            bounds
+                .braced_closers(bytes)
+                .view(bytes, content_start, j - content_start)
+        });
     // A braced inline starts its own scope (ruling markup-carve/carve#2091).
     OpenKinds::pass_only(OpenKinds::bit(delim));
     Some((
         InlineNode::Emphasis(Emphasis {
             attrs: None,
             kind,
-            children: parse_inline_context(
+            children: parse_inline_context_with_pairs(
                 inner,
                 options,
                 false,
                 in_footnote,
                 positions,
                 base + content_start,
+                inherited,
             ),
             pos: None,
         }),
@@ -24932,7 +24982,8 @@ fn find_emphasis_close(
         }
         visited.push(j);
         let ch = bytes[j];
-        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=') && ch != delim && !OpenKinds::is_open(ch) {
+        if matches!(ch, b'/' | b'*' | b'_' | b'~' | b'=') && ch != delim && !OpenKinds::is_open(ch)
+        {
             if let Some((close, end)) = bounds.braced_closers(bytes).bare_attributes(bytes, j) {
                 attached.insert(close + 1, end);
             }
@@ -24941,7 +24992,12 @@ fn find_emphasis_close(
             j = end;
             continue;
         }
-        if ch == b']' && bounds.openers.get(j).is_some_and(|&open| open != NO_BRACKET_MATCH) {
+        if ch == b']'
+            && bounds
+                .openers
+                .get(j)
+                .is_some_and(|&open| open != NO_BRACKET_MATCH)
+        {
             let end = bounds.braced_closers(bytes).after_attributes(bytes, j + 1);
             if end > j + 1 {
                 j = end;
@@ -24986,13 +25042,17 @@ fn find_emphasis_close(
         // LABEL is not, and neither is a plain brace group.
         if ch == b']' && bytes.get(j + 1) == Some(&b'(') && opens_a_link(bytes, j, bounds) {
             if let Some(end) = link_destination_end(bytes, j + 1) {
-                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
+                j = bounds
+                    .braced_closers(bytes)
+                    .after_attributes(bytes, end + 1);
                 continue;
             }
         }
         if ch == b'<' && bounds.has_gt_from(j) {
             if let Some(end) = scanned_autolink_end(bytes, j) {
-                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
+                j = bounds
+                    .braced_closers(bytes)
+                    .after_attributes(bytes, end + 1);
                 continue;
             }
         }
@@ -25021,13 +25081,17 @@ fn find_emphasis_close(
         // token is opaque (markup-carve/carve-rs#1652).
         if ch == b'{' && j > 0 && bytes[j - 1] == b'`' {
             if let Some(end) = raw_inline_format_end(bytes, j) {
-                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
+                j = bounds
+                    .braced_closers(bytes)
+                    .after_attributes(bytes, end + 1);
                 continue;
             }
         }
         if ch == b'{' {
             if let Some(end) = braced_inline_end(bytes, j, memo, delim, bounds) {
-                j = bounds.braced_closers(bytes).after_attributes(bytes, end + 1);
+                j = bounds
+                    .braced_closers(bytes)
+                    .after_attributes(bytes, end + 1);
                 continue;
             }
         }
@@ -25222,7 +25286,12 @@ fn braced_inline_scan(
     if close == content && OpenKinds::bit(delim) == 0 {
         return None;
     }
-    Some(bounds.braced_closers(bytes).after_attributes(bytes, close + 2) - 1)
+    Some(
+        bounds
+            .braced_closers(bytes)
+            .after_attributes(bytes, close + 2)
+            - 1,
+    )
 }
 
 #[cfg(test)]

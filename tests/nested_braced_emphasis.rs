@@ -495,15 +495,15 @@ fn djot_highlight_depth_is_reported() {
 }
 
 #[test]
-fn split_bold_italic_uses_two_native_depth_levels() {
+fn combined_bold_italic_keeps_its_native_depth_budget() {
     std::thread::Builder::new()
         .stack_size(32 * 1024 * 1024)
         .spawn(|| {
             for (input, limit) in [
-                ("/*x*/", 196),
-                ("/*[x](/u)*/", 195),
-                ("/*[x]{.s}*/", 195),
-                ("/*{+x+}*/", 195),
+                ("/*x*/", 197),
+                ("/*[x](/u)*/", 197),
+                ("/*[x]{.s}*/", 197),
+                ("/*{+x+}*/", 197),
             ] {
                 for levels in [limit, limit + 1] {
                     let mut document = carve::parse(input);
@@ -540,6 +540,66 @@ fn split_bold_italic_uses_two_native_depth_levels() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+#[test]
+fn combined_nonhugging_api_body_keeps_its_expanded_depth_budget() {
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| {
+            for levels in [196, 197] {
+                let mut document = carve::parse("/*x*/");
+                let carve::ast::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
+                    panic!("paragraph");
+                };
+                let carve::ast::InlineNode::Emphasis(combined) = &mut paragraph.children[0] else {
+                    panic!("combined emphasis");
+                };
+                combined.children = vec![carve::ast::InlineNode::Text(" x ".to_owned().into())];
+                let mut children = std::mem::take(&mut paragraph.children);
+                for _ in 0..levels {
+                    children = vec![carve::ast::InlineNode::Emphasis(carve::ast::Emphasis {
+                        attrs: None,
+                        kind: carve::ast::EmphasisKind::Strong,
+                        children,
+                        pos: None,
+                    })];
+                }
+                paragraph.children = children;
+                let written = carve::render_carve(&document);
+                if levels == 197 {
+                    assert!(written
+                        .unwrap_err()
+                        .to_string()
+                        .contains("native parser nesting limit"));
+                } else {
+                    assert_eq!(
+                        carve::to_html(&written.unwrap()),
+                        carve::render_html(&document).unwrap()
+                    );
+                }
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn combined_source_keeps_forced_children() {
+    for source in [
+        "/*a {*b*} c*/ x",
+        "/*a {/b/} c*/ x",
+        "/*a {*b*}{.c} c*/ x",
+        "/*a {/b/}{.c} c*/ x",
+        "{*a /*b*/ c*}",
+        "/*a {*b*} c*/{.p}",
+    ] {
+        assert_eq!(
+            carve::render_carve(&carve::parse(source)).unwrap().trim(),
+            source
+        );
+    }
 }
 
 #[test]
