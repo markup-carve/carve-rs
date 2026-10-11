@@ -6613,7 +6613,7 @@ impl<'a> Importer<'a> {
             // holds the content, which is how a `=latex` run survives HTML.
             "span" if Self::reads_raw_format(h, self.opts.mode).is_some() => {
                 let format = Self::reads_raw_format(h, self.opts.mode).unwrap_or_default();
-                let content = if format.eq_ignore_ascii_case("html") {
+                let content = if format == "html" {
                     Self::inner_html(h)
                 } else {
                     Self::text(h)
