@@ -442,3 +442,24 @@ fn an_unowned_description_marker_does_not_open_a_term_quote() {
     assert!(doc.footnote_defs.is_empty(), "{doc:?}");
     assert!(!html(source).contains("<pre>"));
 }
+
+#[test]
+fn indented_description_quotes_stay_literal_term_content() {
+    for source in [
+        ":: t\n  :  > [^a]: note\n",
+        "> :: t\n>   :  > [^a]: note\n",
+        "- :: t\n    :  > [^a]: note\n",
+    ] {
+        let doc = carve::parse(source);
+        assert!(doc.footnote_defs.is_empty(), "{source:?}: {doc:?}");
+        assert!(
+            html(source).contains("[^a]: note"),
+            "{source:?}: {}",
+            html(source)
+        );
+    }
+    let source = ": > :: t\n> ```\n> [^a]: note\n";
+    let doc = carve::parse(source);
+    assert!(doc.footnote_defs.is_empty(), "{doc:?}");
+    assert!(html(source).contains("<pre><code>[^a]: note\n</code></pre>"));
+}

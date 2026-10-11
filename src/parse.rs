@@ -2412,7 +2412,8 @@ fn term_folded_lines(
                 && quotes == term_quotes
                 && !is_blank_line(at_term)
                 && indent_columns(at_term) > term_col
-                && strip_blockquote_prefix(rest).is_some()
+                && (strip_blockquote_prefix(rest).is_some()
+                    || strip_definition_marker(rest).is_some())
             {
                 ownership.folded.insert(index);
                 index += 1;
