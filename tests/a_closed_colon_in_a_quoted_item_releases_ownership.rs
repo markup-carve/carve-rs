@@ -522,3 +522,27 @@ fn quoted_colon_remaining_controls_match_shared_html() {
         }
     }
 }
+
+#[test]
+fn quoted_literal_comment_handoff_matches_native() {
+    let cases: Value =
+        serde_json::from_str(include_str!("fixtures/quoted_literal_comment_handoff.json")).unwrap();
+    let cases = cases.as_array().unwrap();
+    assert_eq!(cases.len(), 226);
+    let whitespace = regex::Regex::new(r">\s+<").unwrap();
+    for case in cases {
+        let source = case["source"].as_str().unwrap();
+        let expected = case["html"].as_str().unwrap();
+        for actual in [
+            carve::to_html(source),
+            carve::render_html(&carve::parse(source)).unwrap(),
+        ] {
+            assert_eq!(
+                whitespace.replace_all(&actual, "><").trim(),
+                expected,
+                "{}: {source}",
+                case["id"]
+            );
+        }
+    }
+}
