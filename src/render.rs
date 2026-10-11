@@ -1629,7 +1629,7 @@ fn render_block(
         BlockNode::CitationDefinition(_) => {}
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options, state),
-        BlockNode::CodeBlock(c) => render_code_block(out, c, level),
+        BlockNode::CodeBlock(c) => render_code_block(out, c, level, options),
         BlockNode::List(l) => render_list(out, l, level, options, state),
         BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
         BlockNode::Table(t) => render_table(out, t, level, options, state),
@@ -1992,15 +1992,51 @@ fn render_paragraph(
     out.push_str("</p>");
 }
 
-fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
+fn render_code_block(out: &mut String, c: &CodeBlock, level: usize, options: &Options) {
     indent(out, level);
     out.push_str("<pre");
-    if let Some(title) = &c.title {
+    let label = c.label.as_ref().filter(|_| options.html_carriers());
+    let structural_title = label.and_then(|_| {
+        c.attrs
+            .as_ref()
+            .and_then(|attrs| {
+                attrs
+                    .key_values
+                    .iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case("title"))
+                    .map(|(_, value)| value)
+            })
+            .or(c.title.as_ref())
+    });
+    if let Some(title) = structural_title {
+        write_attr_key_value(out, "title", title);
+    } else if let Some(title) = &c.title {
         if !attrs_has_key(&c.attrs, "title") {
             write_attr_key_value(out, "title", title);
         }
     }
-    write_attrs(out, &c.attrs);
+    if let Some(label) = label {
+        write_carrier(
+            out,
+            crate::roundtrip::LABEL,
+            label,
+            &c.attrs,
+            c.pos.as_ref(),
+        );
+    }
+    let attrs = if label.is_some() {
+        strip_keys(
+            &c.attrs,
+            if structural_title.is_some() {
+                &[crate::roundtrip::LABEL, "title"]
+            } else {
+                &[crate::roundtrip::LABEL]
+            },
+        )
+    } else {
+        c.attrs.clone()
+    };
+    write_attrs(out, &attrs);
     out.push_str("><code");
     if let Some(lang) = &c.lang {
         out.push_str(" class=\"language-");
@@ -2024,7 +2060,7 @@ fn render_escaped_raw_block(out: &mut String, r: &RawBlock, level: usize) {
         content,
         pos: None,
     };
-    render_code_block(out, &code, level);
+    render_code_block(out, &code, level, &Options::default());
 }
 
 fn attrs_has_key(attrs: &Option<Attrs>, key: &str) -> bool {
