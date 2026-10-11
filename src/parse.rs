@@ -7822,17 +7822,21 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     // The span covers the opener, the body and the closer - the whole block as
     // the author wrote it, not just its content.
     let pos = span_of(cur, span_start, cur.pos, options);
+    let mut content = content_lines
+        .iter()
+        .map(|l| strip_lazy(l))
+        .collect::<Vec<_>>()
+        .join("\n");
+    // Container collection can synthesize a final separator. The original
+    // line map distinguishes that separator from an authored payload break.
+    let unterminated = UNTERMINATED_SOURCE_LINE.with(|slot| {
+        slot.get()
+            .is_some_and(|last| last_payload_line == Some(last))
+    });
+    if !content_lines.is_empty() && !unterminated {
+        content.push('\n');
+    }
     if let Some(format) = raw_format {
-        let mut content = content_lines
-            .iter()
-            .map(|l| strip_lazy(l))
-            .collect::<Vec<_>>()
-            .join("\n");
-        // Joining cannot distinguish zero payload lines from one or more blank
-        // payload lines. The latter still own their newline (corpus 372).
-        if !content_lines.is_empty() && content_lines.iter().all(String::is_empty) {
-            content.push('\n');
-        }
         BlockNode::RawBlock(RawBlock {
             attrs: None,
             format,
@@ -7840,20 +7844,6 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
             pos,
         })
     } else {
-        let mut content = content_lines
-            .iter()
-            .map(|l| strip_lazy(l))
-            .collect::<Vec<_>>()
-            .join("\n");
-        // Container collection can synthesize a final separator. The original
-        // line map distinguishes that separator from an authored payload break.
-        let unterminated = UNTERMINATED_SOURCE_LINE.with(|slot| {
-            slot.get()
-                .is_some_and(|last| last_payload_line == Some(last))
-        });
-        if !content_lines.is_empty() && !unterminated {
-            content.push('\n');
-        }
         BlockNode::CodeBlock(CodeBlock {
             attrs: None,
             lang,

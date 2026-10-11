@@ -578,11 +578,9 @@ pub struct CodeBlock {
     pub pos: Option<Pos>,
 }
 
-/// Whether a raw block payload needs its final line ending supplied by a writer.
-/// Raw blocks encode all-blank payloads with their ending already present.
-/// Code blocks carry literal text and do not use this convention.
+/// Whether a nonempty payload needs a line ending before a closing fence.
 pub fn fenced_payload_needs_ending(content: &str) -> bool {
-    !content.chars().all(|ch| ch == '\n')
+    !content.is_empty() && !content.ends_with('\n')
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1079,9 +1077,21 @@ pub struct CitationDefinition {
 pub struct RawBlock {
     pub attrs: Option<Attrs>,
     pub format: String,
+    /// Literal payload text, including each authored line ending.
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+impl RawBlock {
+    // Target text omits the payload terminator but retains all-blank lines.
+    pub(crate) fn target_content(&self) -> &str {
+        if self.content.bytes().all(|byte| byte == b'\n') {
+            &self.content
+        } else {
+            self.content.strip_suffix('\n').unwrap_or(&self.content)
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
