@@ -3774,6 +3774,7 @@ struct LineCursor<'a> {
     /// Last consumed comment closer and the column of its opener.
     closed_comment_location: Option<(usize, usize)>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
+    list_code_closers: Option<ListCodeClosers>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -3807,6 +3808,7 @@ impl<'a> LineCursor<'a> {
             future_quoted_comments: RefCell::new(None),
             closed_comment_location: None,
             code_closer_last_index: None,
+            list_code_closers: None,
         }
     }
 
@@ -6453,10 +6455,6 @@ fn advance_nested_lead_fence(open: &mut Option<(FenceOpen, usize)>, raw: &str) {
             }
         }
     }
-}
-
-fn unterminated_code_fence_folds(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    detect_fence_open(line).is_some_and(|open| !code_fence_closer_ahead(cur, open))
 }
 
 fn item_block_opener(line: &str) -> bool {
@@ -12183,7 +12181,8 @@ fn parse_list(
                 // still lazy paragraph text.
                 let over_indented = trim_ascii_start(next);
                 if item_block_opener(over_indented)
-                    && !unterminated_code_fence_folds(cur, over_indented)
+                    && !detect_fence_open(over_indented)
+                        .is_some_and(|open| !list_code_fence_closer_ahead(cur, open, content_col))
                 {
                     break;
                 }
@@ -14904,6 +14903,47 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
+#[derive(Default)]
+struct ListCodeClosers {
+    columns: HashMap<(u8, usize), LiteralCodeColumn>,
+}
+
+fn list_code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen, floor: usize) -> bool {
+    let lines = cur.lines;
+    let lookup = cur.list_code_closers.get_or_insert_with(|| {
+        let mut lookup = ListCodeClosers::default();
+        for index in 0..lines.len() {
+            let line = lines.at(index);
+            let bytes = trim_ascii_start(line).as_bytes();
+            let Some(&character @ (b'`' | b'~')) = bytes.first() else {
+                continue;
+            };
+            let width = bytes.iter().take_while(|&&byte| byte == character).count();
+            if width >= 3
+                && bytes[width..]
+                    .iter()
+                    .all(|&byte| byte == b' ' || byte == b'\t')
+            {
+                lookup
+                    .columns
+                    .entry((character, indent_columns(line)))
+                    .or_default()
+                    .push(index, width);
+            }
+        }
+        lookup
+    });
+    let from = cur.pos;
+    let column = indent_columns(lines.at(from));
+    [column, floor].into_iter().any(|column| {
+        lookup
+            .columns
+            .get(&(open.fence_char, column))
+            .and_then(|closers| closers.next(from, open.fence_len))
+            .is_some()
+    })
+}
+
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a
 /// new block (grammar §10, post-Markdown default).
 ///
@@ -14917,11 +14957,8 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// Whether the fence opened on the cursor's current line has a matching closer
 /// ahead (§10 I4: a fence with no closer never opened).
 ///
-/// ONE spelling for two bands. `interrupts_paragraph` asks it at a container's
-/// content column and `parse_list`'s over-indented band asks it past that
-/// column; answering the closer question in only the first is what let the same
-/// fence fold at the column and open a `<pre>` one column further out
-/// (markup-carve/carve-rs#1523).
+/// Paragraph fences at a container's content column use this exact scan.
+/// Over-indented list fences also accept the list's content floor.
 ///
 /// The index answers "no closer anywhere ahead" in constant time. The exact
 /// probe still decides, but without that gate it runs from every opener to the
