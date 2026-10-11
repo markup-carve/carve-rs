@@ -2085,6 +2085,7 @@ impl<'a> Importer<'a> {
         if self.writing
             && ((self.cell_depth > 0 && label.contains('|'))
                 || label.contains('`')
+                || !crate::parse::reference_label_has_source_spelling(&label)
                 || href.chars().any(char::is_whitespace)
                 || title
                     .as_deref()

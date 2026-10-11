@@ -4840,6 +4840,7 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
         escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
     if let Some(label) = &node.ref_label {
         if !((ctx.table_cell_depth > 0 && label.contains('|')) || label.contains('`'))
+            && crate::parse::reference_label_has_source_spelling(label)
             && ctx.reference_targets.get(&crate::parse::label_key(label))
                 == Some(&(node.href.clone(), node.title.clone()))
         {
@@ -4934,6 +4935,7 @@ fn render_image_with_attrs(
     }
     if let Some(label) = &node.ref_label {
         if !((in_table && label.contains('|')) || label.contains('`'))
+            && crate::parse::reference_label_has_source_spelling(label)
             && ctx.reference_targets.get(&crate::parse::label_key(label))
                 == Some(&(node.src.clone(), node.title.clone()))
         {

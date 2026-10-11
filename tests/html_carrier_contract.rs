@@ -212,6 +212,8 @@ fn unspellable_reference_fields_recover_inline_only_on_the_source_exit() {
     ] {
         for html in [
             "<p><a href='/a b' data-carve-ref='x'>t</a></p>",
+            "<p><a href='/u' data-carve-ref='a\\'>t</a></p>",
+            "<p><a href='/u' data-carve-ref='a{#b'>t</a> #}</p>",
             "<p><a href='/a\n# injected' data-carve-ref='x'>t</a></p>",
             "<p><a href='/u' title='a\nb' data-carve-ref='x'>t</a></p>",
             "<p><a href='/u' data-carve-ref='a`b'>t</a> and <code>c</code></p>",
