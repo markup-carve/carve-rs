@@ -295,9 +295,10 @@ fn carried_references_do_not_mask_unspellable_container_titles() {
             nodes(&reparsed, "link", &mut links);
             assert_eq!(links[0]["href"], "/u");
             assert!(result
+                .report
                 .diagnostics
                 .iter()
-                .any(|row| row.code == "structure-unspellable"));
+                .any(|row| row.code.as_str() == "structure-unspellable"));
         }
     }
 }
