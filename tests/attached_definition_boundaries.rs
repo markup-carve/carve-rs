@@ -37,14 +37,14 @@ fn html_tree(html: &str) -> serde_json::Value {
                 let attributes: serde_json::Map<String, serde_json::Value> = attrs
                     .borrow()
                     .iter()
-                    .filter_map(|attr| {
+                    .map(|attr| {
                         let key = attr.name.local.to_string();
                         let value = if key == "checked" || key == "disabled" {
                             serde_json::json!(true)
                         } else {
                             serde_json::json!(attr.value.to_string())
                         };
-                        Some((key, value))
+                        (key, value)
                     })
                     .collect();
                 let mut children: Vec<_> = node
@@ -161,4 +161,40 @@ fn extension_blocks_keep_their_definition_shaped_payload() {
         _ => None,
     });
     assert_eq!(content, Some(" [r]: /url\n"));
+}
+
+#[test]
+fn definitions_after_extension_paragraphs_keep_their_existing_owner() {
+    use carve::{BlockMatch, BlockNode, CarveExtension, MatcherContext, Options, Paragraph};
+
+    struct OneLineBlock;
+    impl CarveExtension for OneLineBlock {
+        fn name(&self) -> &'static str {
+            "one-line-block"
+        }
+
+        fn match_block(
+            &self,
+            lines: &[&str],
+            start: usize,
+            ctx: &MatcherContext<'_>,
+        ) -> Option<BlockMatch> {
+            if *lines.get(start)? != "@@@" {
+                return None;
+            }
+            Some(BlockMatch {
+                node: BlockNode::Paragraph(Paragraph {
+                    children: ctx.parse_inlines("custom"),
+                    ..Default::default()
+                }),
+                lines_consumed: 1,
+            })
+        }
+    }
+    let doc = carve::parse_with_options(
+        "- a\n+\n@@@\n [r]: /url\n\nSee [r][].\n",
+        &Options::default().with_extension(&OneLineBlock),
+    );
+    let html = carve::render_html(&doc).unwrap();
+    assert!(html.find("[r]: /url").unwrap() < html.find("</li>").unwrap());
 }

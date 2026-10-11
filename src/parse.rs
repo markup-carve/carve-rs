@@ -9950,13 +9950,6 @@ fn parse_continuation_block(
             if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
                 return true;
             }
-            if end > start
-                && options.extensions.is_empty()
-                && line_starts_paragraph(lines.at(start))
-                && content_col.is_some_and(|col| below_item_definition(line, base_indent, col))
-            {
-                return true;
-            }
             // A list marker at (or below) the base column is a SIBLING item of the
             // outer list, not part of this `+`-attached block. Bound the block here
             // so it is not absorbed -- now that a bullet does not interrupt, a
@@ -10009,6 +10002,21 @@ fn parse_continuation_block(
     // its own attribute lines are consumed. Stamping the slice's first line
     // would point an editor's scroll-sync at the `{…}` line instead.
     let block_start = sub.pos;
+    // A + attaches one block; below-column definitions remain outside its paragraph.
+    if let Some(content_col) = content_col
+        .filter(|_| options.extensions.is_empty() && sub.peek().is_some_and(line_starts_paragraph))
+    {
+        let paragraph_end = attached_block_end(
+            sub.lines,
+            block_start,
+            &mut sub.comment_closer_last_index,
+            &mut sub.code_closer_last_index,
+            &mut |line, at| {
+                at > block_start && below_item_definition(line, base_indent, content_col)
+            },
+        );
+        sub.lines = CursorLines::Slice(&slice[..paragraph_end]);
+    }
     let mut item_bodies = Vec::new();
     let mut block = parse_block(&mut sub, options, &mut item_bodies)
         .map(|block| drained_list_bodies(block, item_bodies, options));
