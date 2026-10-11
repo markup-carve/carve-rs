@@ -1616,7 +1616,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // All three round-trip strictly; no existing document changes bucket.
     // Spec 41ae9216 adds category 553 rows 15–29 for deepest-frame continuation.
     // All fifteen new documents round trip strictly; the lossy count stays fixed.
-    const STRICT: usize = 1767;
+    // Spec 700adbe3 adds 321-delimited-comments-9, -10, -11 and -12.
+    // All four round-trip strictly; the reported-lossy set is unchanged.
+    const STRICT: usize = 1771;
     const LOSSY: usize = 548;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
