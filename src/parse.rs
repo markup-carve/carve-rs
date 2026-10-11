@@ -9894,6 +9894,7 @@ fn parse_continuation_block(
     cur: &mut LineCursor,
     options: &Options<'_>,
     base_indent: usize,
+    content_col: Option<usize>,
 ) -> Option<BlockNode> {
     // A nested list manages its OWN `+` continuations -- the boundary scan
     // cannot tell a child list's `+` from the parent's, so a list is parsed
@@ -9947,6 +9948,13 @@ fn parse_continuation_block(
         &mut cur.code_closer_last_index,
         &mut |line, end| {
             if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
+                return true;
+            }
+            if end > start
+                && options.extensions.is_empty()
+                && line_starts_paragraph(lines.at(start))
+                && content_col.is_some_and(|col| below_item_definition(line, base_indent, col))
+            {
                 return true;
             }
             // A list marker at (or below) the base column is a SIBLING item of the
@@ -10051,6 +10059,14 @@ fn parse_continuation_block(
     }
     cur.pos += sub.pos;
     block.map(|block| *block)
+}
+
+fn below_item_definition(line: &str, base_indent: usize, content_col: usize) -> bool {
+    let indent = indent_columns(line);
+    let trimmed = trim_ascii_start(line);
+    indent > base_indent
+        && indent < content_col
+        && (parse_link_def_line(trimmed).is_some() || parse_footnote_def_line(trimmed).is_some())
 }
 
 /// A list's extent, taken from the items it holds.
@@ -10250,7 +10266,9 @@ fn parse_list(
                 pending_attrs_pos.take().filter(|_| pending_attrs.is_some()),
             );
             pending_attrs = None;
-            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
+            if let Some(block) =
+                parse_continuation_block(cur, options, base_indent, Some(content_col))
+            {
                 // An EMPTY paragraph is not content and must not become one of
                 // the item's blocks. It arises when the attached block's whole
                 // content was a collected definition: the prepass blanks that
@@ -10274,6 +10292,13 @@ fn parse_list(
                     let last_item = items.len() - 1;
                     place_item_chunk(deferred, last_item, vec![block], Vec::new());
                 }
+            }
+            if options.extensions.is_empty()
+                && cur
+                    .peek()
+                    .is_some_and(|line| below_item_definition(line, base_indent, content_col))
+            {
+                break;
             }
             continue;
         }
@@ -10767,7 +10792,7 @@ fn parse_list(
             let first_block_attaches =
                 attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
             if let Some(block) = first_block_attaches
-                .then(|| parse_continuation_block(cur, options, base_indent))
+                .then(|| parse_continuation_block(cur, options, base_indent, None))
                 .flatten()
             {
                 let is_empty_paragraph = matches!(
