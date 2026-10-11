@@ -91,12 +91,12 @@
   },
   {
     "html": "<p><img src=\"x.png\" alt=\"a\" /></p>\n<p><em>p</em></p>\n<p><strong><strong>g</strong></strong></p>\n",
-    "markdown": "![a](x.png)\n\n*p*\n\n****g****\n",
+    "markdown": "![a](x.png)\n\n*p*\n\n<strong>**g**</strong>\n",
     "source": "::: figure\n![a](x.png)\n^ p\n:::\n^ {*    g*}\n"
   },
   {
     "html": "<p>before</p>\n<p><strong><strong>p</strong></strong></p>\n<p>d</p>\n",
-    "markdown": "before\n\n****p****\n\nd\n",
+    "markdown": "before\n\n<strong>**p**</strong>\n\nd\n",
     "source": "before\n\n:: {*    p*}\n: d\n"
   },
   {
