@@ -833,17 +833,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize, marker: cha
         } else {
             out.push_str(&format!("{prefix}{first}\n"));
         }
-        let continuation = " ".repeat(pad);
-        for line in lines {
-            // A line with no content takes no pad: PART 11 section 7 emits such
-            // a line empty, and trailing whitespace is what editors and
-            // `git apply --whitespace=fix` rewrite behind the writer.
-            if line.is_empty() {
-                out.push('\n');
-            } else {
-                out.push_str(&format!("{continuation}{line}\n"));
-            }
-        }
+        render_continuation_lines(&mut out, lines, pad);
         // A loose list is spelled with a blank line between its items. Without
         // it a list whose looseness lives in the item BOUNDARY reads back tight
         // (carve#2281): `- a` / blank / `- b` came back as two glued markers.
@@ -1525,23 +1515,36 @@ fn render_figure_target(node: &Figure, ctx: &mut MarkdownContext, depth: usize) 
     }
 }
 
+fn render_continuation_lines<'a>(
+    out: &mut String,
+    lines: impl Iterator<Item = &'a str>,
+    pad: usize,
+) {
+    let continuation = " ".repeat(pad);
+    for line in lines {
+        // Empty lines carry no structural indent (PART 11 section 7).
+        if !line.is_empty() {
+            out.push_str(&continuation);
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+}
+
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     let mut out = String::new();
     // SOURCE ORDER, not label order (§7; carve-rs#686). The map is a BTreeMap.
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
+        let outer = ctx.previous_list.take();
+        let body = render_blocks(blocks, ctx, 0);
+        ctx.previous_list = outer;
+        let mut lines = trim_non_nbsp(&body).split('\n');
         out.push_str(&format!(
             "[^{}]: {}\n",
-            // A label is author content, and it is reproduced verbatim in two
-            // places; both escape, so a reference still matches its definition
-            // (carve-rs#807).
             escape_md_html(&strip_controls(label)),
-            {
-                let outer = ctx.previous_list.take();
-                let body = render_blocks(blocks, ctx, 0);
-                ctx.previous_list = outer;
-                trim_non_nbsp(&body).to_string()
-            }
+            lines.next().unwrap_or_default()
         ));
+        render_continuation_lines(&mut out, lines, 4);
     }
     out
 }
