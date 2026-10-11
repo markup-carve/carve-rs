@@ -187,8 +187,10 @@ fn contradictory_endnote_carriers_restore_an_ordinary_numbered_note() {
 
 #[test]
 fn shared_footnote_carrier_recovery_controls_match_the_import_report() {
-    let cases: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/footnote-carrier-recovery.json")).unwrap();
+    let cases: serde_json::Value = serde_json::from_str(include_str!(
+        "spec/resources/footnote-carrier-recovery-fixtures.json"
+    ))
+    .unwrap();
     let cases = cases.as_array().unwrap();
     assert_eq!(cases.len(), 24);
     for case in cases {
