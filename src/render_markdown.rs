@@ -2418,12 +2418,10 @@ fn escape_md_title(title: &str) -> String {
 }
 
 fn escape_md_label(label: &str) -> String {
-    neutralize_char_refs(
-        &label
-            .replace('\\', "\\\\")
-            .replace('[', "\\[")
-            .replace(']', "\\]"),
-    )
+    IN_LINK_TEXT.with(|depth| depth.set(depth.get() + 1));
+    let escaped = escape_text(label);
+    IN_LINK_TEXT.with(|depth| depth.set(depth.get() - 1));
+    escaped
 }
 
 fn sanitize_code_lang(lang: &str) -> String {

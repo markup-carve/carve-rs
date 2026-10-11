@@ -1877,3 +1877,5 @@ mod raw_html_carriers_follow_the_import_trust_mode;
 
 #[path = "../a_closed_colon_in_a_quoted_item_releases_ownership.rs"]
 mod a_closed_colon_in_a_quoted_item_releases_ownership;
+#[path = "../markdown_image_alt_text.rs"]
+mod markdown_image_alt_text;
