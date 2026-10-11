@@ -1341,6 +1341,7 @@ fn extract_footnote_defs(
     // fence cannot span two notes.
     let mut in_fence: Option<FenceOpen> = None;
     let mut term_fence_quotes = 0;
+    let mut term_fence_owned = false;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content, so a definition-shaped line inside
@@ -1409,7 +1410,7 @@ fn extract_footnote_defs(
         // later definition in the document.
         let term_fence = folded_into_term.fence_openers.get(&i);
         let fence_line = if let Some(host) = term_fence {
-            trim_ascii_start(strip_prepass_quote_levels(lines[i], host.quote_depth))
+            &lines[i][host.opener_offset..]
         } else {
             stripped.bare
         };
@@ -1420,13 +1421,15 @@ fn extract_footnote_defs(
             continue;
         }
         if let Some(open) = in_fence {
-            if prepass_fence_ends_above(lines[i], open, fence_closer_ahead) {
+            if (term_fence_owned && term_fence_ends_above(lines[i], open, term_fence_quotes))
+                || prepass_fence_ends_above(lines[i], open, fence_closer_ahead)
+            {
                 in_fence = None;
             } else {
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
                 let close_kept = if term_fence_quotes > 0 {
-                    strip_prepass_quote_levels(lines[i], term_fence_quotes)
+                    strip_prepass_quote_levels(lines[i], term_fence_quotes).unwrap_or(lines[i])
                 } else {
                     lines[i]
                 };
@@ -1506,6 +1509,7 @@ fn extract_footnote_defs(
             if fence.opens {
                 in_fence = Some(open);
                 term_fence_quotes = term_fence.map_or(0, |host| host.quote_depth);
+                term_fence_owned = term_fence.is_some();
                 fence_closer_ahead = fence.closer_ahead;
             }
             body.push(lines[i].to_string());
@@ -2332,6 +2336,7 @@ struct TermLineOwnership {
 struct TermFenceHost {
     content_col: usize,
     quote_depth: usize,
+    opener_offset: usize,
 }
 
 fn term_folded_lines(
@@ -2427,6 +2432,7 @@ fn term_folded_lines(
                     TermFenceHost {
                         content_col: col,
                         quote_depth: quotes,
+                        opener_offset: rest.as_ptr() as usize - lines[index].as_ptr() as usize,
                     },
                 );
             }
@@ -2456,6 +2462,7 @@ fn term_folded_lines(
             continue;
         }
         if let Some(mut open) = detect_fence_open(rest) {
+            let term_fence_owned = ownership.fence_openers.contains_key(&index);
             open.content_col = col;
             open.quoted = quotes > 0;
             let fence = prepass_fence_opens(lines, index, open, closer_maxima, &ownership);
@@ -2465,10 +2472,27 @@ fn term_folded_lines(
             }
             index += 1;
             while index < lines.len() {
-                if prepass_fence_ends_above(lines[index], open, fence.closer_ahead) {
+                if (term_fence_owned && term_fence_ends_above(lines[index], open, quotes))
+                    || prepass_fence_ends_above(lines[index], open, fence.closer_ahead)
+                {
+                    if term_fence_owned {
+                        let (next, depth, _) = view(lines[index]);
+                        let next = trim_ascii_start(next);
+                        if detect_fence_open(next).is_some() {
+                            ownership.fence_openers.insert(
+                                index,
+                                TermFenceHost {
+                                    content_col: indent_columns(view(lines[index]).0),
+                                    quote_depth: depth,
+                                    opener_offset: next.as_ptr() as usize
+                                        - lines[index].as_ptr() as usize,
+                                },
+                            );
+                        }
+                    }
                     break;
                 }
-                let kept = strip_prepass_quote_levels(lines[index], quotes);
+                let kept = strip_prepass_quote_levels(lines[index], quotes).unwrap_or(lines[index]);
                 let close_line = if leading_ws(kept) >= open.content_col {
                     &kept[open.content_col..]
                 } else {
@@ -2679,6 +2703,13 @@ fn prepass_fence_ends_above(line: &str, open: FenceOpen, closer_ahead: bool) -> 
         && indent_columns(line) < open.content_col
 }
 
+fn term_fence_ends_above(line: &str, open: FenceOpen, quote_depth: usize) -> bool {
+    let Some(kept) = strip_prepass_quote_levels(line, quote_depth) else {
+        return true;
+    };
+    !is_blank_line(kept) && indent_columns(kept) < open.content_col
+}
+
 fn extract_link_defs(source: &str, options: &Options<'_>) -> (String, BTreeMap<String, LinkDef>) {
     extract_link_defs_with_guard(source, options, None)
 }
@@ -2708,6 +2739,7 @@ fn extract_link_defs_with_guard(
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
     let mut term_fence_quotes = 0;
+    let mut term_fence_owned = false;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
@@ -2780,7 +2812,9 @@ fn extract_link_defs_with_guard(
             continue;
         }
         if let Some(open) = in_fence {
-            if prepass_fence_ends_above(line, open, fence_closer_ahead) {
+            if (term_fence_owned && term_fence_ends_above(line, open, term_fence_quotes))
+                || prepass_fence_ends_above(line, open, fence_closer_ahead)
+            {
                 in_fence = None;
             } else {
                 body.push(std::borrow::Cow::Borrowed(line));
@@ -2789,7 +2823,7 @@ fn extract_link_defs_with_guard(
                 // line of pure indentation, so a literal marker line inside a
                 // document-level code sample stays content.
                 let close_kept = if term_fence_quotes > 0 {
-                    strip_prepass_quote_levels(line, term_fence_quotes)
+                    strip_prepass_quote_levels(line, term_fence_quotes).unwrap_or(line)
                 } else if open.quoted {
                     strip_prepass_blockquote_prefix(line).unwrap_or(line)
                 } else {
@@ -2815,7 +2849,7 @@ fn extract_link_defs_with_guard(
         let term_fence = folded_into_term.fence_openers.get(&line_index);
         let fence_line = if let Some(host) = term_fence {
             authored_fence_col = host.content_col;
-            trim_ascii_start(strip_prepass_quote_levels(line, host.quote_depth))
+            &line[host.opener_offset..]
         } else if content_col == 0 {
             stripped.bare
         } else {
@@ -2887,6 +2921,7 @@ fn extract_link_defs_with_guard(
             if fence.opens {
                 in_fence = Some(open);
                 term_fence_quotes = term_fence.map_or(0, |host| host.quote_depth);
+                term_fence_owned = term_fence.is_some();
                 fence_closer_ahead = fence.closer_ahead;
             }
             body.push(std::borrow::Cow::Borrowed(line));
@@ -3022,14 +3057,14 @@ fn prepass_line_is_quoted(line: &str) -> bool {
             .is_some_and(|marker| strip_prepass_blockquote_prefix(marker.content).is_some())
 }
 
-fn strip_prepass_quote_levels(mut line: &str, depth: usize) -> &str {
+fn strip_prepass_quote_levels(mut line: &str, depth: usize) -> Option<&str> {
     for _ in 0..depth {
         let Some(rest) = strip_prepass_blockquote_prefix(line) else {
-            return line;
+            return None;
         };
         line = rest;
     }
-    line
+    Some(line)
 }
 
 fn strip_prepass_blockquote_prefix(line: &str) -> Option<&str> {

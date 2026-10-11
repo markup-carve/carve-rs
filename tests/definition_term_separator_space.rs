@@ -288,6 +288,68 @@ fn payload_markers_cannot_close_a_term_owned_fence() {
 }
 
 #[test]
+fn an_unclosed_term_fence_releases_definitions_after_its_host_ends() {
+    for prefix in ["> ", "> > ", "- > "] {
+        let source = if prefix == "- > " {
+            "- > :: t\n  > ```\n  > code\n\nuse [^a]\n\n[^a]: note\n[r]: /u\n".to_string()
+        } else {
+            format!("{prefix}:: t\n{prefix}```\n{prefix}code\n\nuse [^a]\n\n[^a]: note\n[r]: /u\n")
+        };
+        let doc = carve::parse(&source);
+        assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
+        assert!(
+            doc.children.iter().any(
+                |node| matches!(node, BlockNode::LinkReferenceDefinition(def) if def.label == "r")
+            ),
+            "{source:?}: {doc:?}"
+        );
+        assert!(html(&source).contains("doc-noteref"), "{source:?}");
+    }
+    let source = "> - :: t\n>   ```\n>   code\n> [x]: /v\n";
+    assert!(
+        html(source).contains("<pre><code>code\n</code></pre>"),
+        "{source:?}: {}",
+        html(source)
+    );
+}
+
+#[test]
+fn a_shallower_fence_after_a_term_host_starts_its_own_payload() {
+    let source = "> > :: t\n> > ```\n> > code\n> ```\n> [^a]: x\n";
+    let doc = carve::parse(source);
+    assert!(doc.footnote_defs.is_empty(), "{doc:?}");
+    let output = html(source);
+    assert_eq!(output.matches("<pre><code>").count(), 2, "{output}");
+    assert!(
+        output.contains("<pre><code>[^a]: x\n</code></pre>"),
+        "{output}"
+    );
+}
+
+#[test]
+fn a_later_closer_does_not_extend_a_term_fence_past_its_host() {
+    for source in [
+        "> - :: t\n>   ```\n> [r]: /u\n>   ```\n",
+        "> > :: t\n> > ```\n[r]: /u\n> > ```\n",
+        "> :: t\n> ```\n[r]: /u\n> ```\n",
+        "- :: t\n  ```\n[r]: /u\n  ```\n",
+    ] {
+        let doc = carve::parse(source);
+        assert!(
+            doc.children.iter().any(
+                |node| matches!(node, BlockNode::LinkReferenceDefinition(def) if def.label == "r")
+            ),
+            "{source:?}: {doc:?}"
+        );
+        assert!(
+            html(source).contains("<pre><code></code></pre>"),
+            "{source:?}: {}",
+            html(source)
+        );
+    }
+}
+
+#[test]
 fn an_earlier_folded_or_host_ended_fence_does_not_hide_a_later_term() {
     for source in [
         "p\n~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
