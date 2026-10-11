@@ -3349,7 +3349,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     let mut raw_chars = Vec::new();
     let mut slots = Vec::new();
     const NO_SLOT: u8 = u8::MAX;
-    const { assert!(CARRIER_COUNT < u8::MAX as usize) };
+    const _: () = assert!(CARRIER_COUNT < u8::MAX as usize);
     for token in
         carrier_tokens(text, &carriers).filter(|token| token.slot != Some(C_PAYLOAD_BOUNDARY))
     {
