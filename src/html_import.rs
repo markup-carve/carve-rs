@@ -1314,15 +1314,6 @@ impl<'a> Importer<'a> {
             _ => handle.children.borrow().iter().map(Self::text).collect(),
         }
     }
-    /// The element's children serialized, without its own tag.
-    ///
-    /// [`Self::html`] reconstructs the OPEN TAG, which a `data-carve-raw` span
-    /// must not carry back into its payload: the span is the carrier, not part
-    /// of the raw run the author wrote.
-    fn inner_html(handle: &Handle) -> String {
-        handle.children.borrow().iter().map(Self::html).collect()
-    }
-
     fn html(handle: &Handle) -> String {
         let mut bytes = Vec::new();
         let serializable = SerializableHandle::from(handle.clone());
@@ -6644,8 +6635,14 @@ impl<'a> Importer<'a> {
             // holds the content, which is how a `=latex` run survives HTML.
             "span" if Self::reads_raw_format(h, self.opts.mode).is_some() => {
                 let format = Self::reads_raw_format(h, self.opts.mode).unwrap_or_default();
-                let content = if format == "html" {
-                    Self::inner_html(h)
+                // Decode text payloads; serialize element children as payload markup.
+                let holds_elements = h
+                    .children
+                    .borrow()
+                    .iter()
+                    .any(|child| matches!(child.data, NodeData::Element { .. }));
+                let content = if holds_elements {
+                    h.children.borrow().iter().map(Self::html).collect()
                 } else {
                     Self::text(h)
                 };
