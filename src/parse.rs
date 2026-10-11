@@ -9242,7 +9242,13 @@ struct LiteralCodeScope {
 }
 
 impl LiteralCodeIndex {
-    fn refresh(&mut self, lines: &[SourceLine], level: usize, from: usize) {
+    fn refresh<'a>(
+        &mut self,
+        length: usize,
+        line: &impl Fn(usize) -> &'a str,
+        level: usize,
+        from: usize,
+    ) {
         if let Some(end) = self.scope_end {
             if from < end {
                 return;
@@ -9252,10 +9258,10 @@ impl LiteralCodeIndex {
             self.scope_end = None;
         }
         self.scanned = self.scanned.max(from + 1);
-        for (index, line) in lines.iter().enumerate().skip(self.scanned) {
+        for index in self.scanned..length {
             #[cfg(test)]
             LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
-            let mut text = line.text.as_str();
+            let mut text = line(index);
             let mut boundary = text.starts_with(LAZY);
             for _ in 0..level {
                 let Some(rest) = strip_blockquote_prefix(text) else {
@@ -9287,7 +9293,7 @@ impl LiteralCodeIndex {
                 .or_default()
                 .push(index, width);
         }
-        self.scanned = lines.len();
+        self.scanned = length;
     }
 
     fn next(&self, from: usize, column: usize, open: FenceOpen) -> Option<usize> {
@@ -9306,8 +9312,29 @@ fn literal_code_closes(
     open: FenceOpen,
     lookup: &mut LiteralCodeLookup,
 ) -> bool {
+    literal_code_closes_by(
+        (lines.len(), |at| lines[at].text.as_str()),
+        from,
+        level,
+        floor,
+        column,
+        open,
+        lookup,
+    )
+}
+
+fn literal_code_closes_by<'a>(
+    lines: (usize, impl Fn(usize) -> &'a str),
+    from: usize,
+    level: usize,
+    floor: usize,
+    column: usize,
+    open: FenceOpen,
+    lookup: &mut LiteralCodeLookup,
+) -> bool {
     let index = lookup.indices.entry(level).or_default();
-    index.refresh(lines, level, from);
+    let (length, line) = lines;
+    index.refresh(length, &line, level, from);
     let closer = match (
         index.next(from, floor, open),
         index.next(from, column, open),
@@ -9327,14 +9354,14 @@ fn literal_code_closes(
     if let Some(scope) = lookup
         .scopes
         .get(&key)
-        .filter(|scope| from >= scope.from && from < scope.end && scope.length == lines.len())
+        .filter(|scope| from >= scope.from && from < scope.end && scope.length == length)
     {
         return closer < scope.end;
     }
-    for (at, line) in lines.iter().enumerate().take(closer + 1).skip(from + 1) {
+    for at in from + 1..=closer {
         #[cfg(test)]
         LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
-        let mut text = line.text.as_str();
+        let mut text = line(at);
         for _ in 0..level {
             let Some(rest) = strip_blockquote_prefix(text) else {
                 return false;
@@ -9346,7 +9373,7 @@ fn literal_code_closes(
                 key,
                 LiteralCodeScope {
                     from,
-                    length: lines.len(),
+                    length,
                     end: at,
                 },
             );
@@ -14026,6 +14053,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut folded_code_paragraph_open = false;
     let mut collected_paragraph_open = false;
     let mut collected_literal_body: Option<(usize, usize)> = None;
+    let mut collected_literal_code_lookup = LiteralCodeLookup::default();
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -14545,7 +14573,21 @@ fn collect_indented_block_mapped_with_columns(
                 && detect_fence_open(fence_line).is_some_and(|open| {
                     !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
                 });
-            if !folded_inline_fence {
+            let unmatched_literal_fence = collected_literal_body.is_some()
+                && fence.is_none()
+                && detect_fence_open(fence_line).is_some_and(|open| {
+                    let input = cur.lines;
+                    !literal_code_closes_by(
+                        (input.len(), |at| input.at(at)),
+                        cur.pos,
+                        0,
+                        strip_cols,
+                        indent,
+                        open,
+                        &mut collected_literal_code_lookup,
+                    )
+                });
+            if !folded_inline_fence && !unmatched_literal_fence {
                 track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
             }
             collected_paragraph_open = folded_inline_fence
@@ -27109,6 +27151,33 @@ mod shared_colon_work_tests {
             LITERAL_CODE_LINES.with(|work| work.set(0));
             assert_eq!(replay.verdict(&body.lines, &cur), Some(true));
             assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len() * 2);
+        }
+    }
+
+    #[test]
+    fn collector_literal_queries_share_the_same_bounded_index() {
+        for count in [64, 512] {
+            let owned: Vec<String> = (3..count + 3)
+                .rev()
+                .map(|width| format!("    {}", "`".repeat(width)))
+                .collect();
+            let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
+            let view = CursorLines::Slice(&lines);
+            let mut lookup = LiteralCodeLookup::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for (from, line) in lines.iter().enumerate() {
+                let open = detect_fence_open(trim_ascii_start(line)).unwrap();
+                assert!(!literal_code_closes_by(
+                    (view.len(), |at| view.at(at)),
+                    from,
+                    0,
+                    2,
+                    4,
+                    open,
+                    &mut lookup,
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= lines.len());
         }
     }
 

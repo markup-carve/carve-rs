@@ -208,5 +208,55 @@
     "id": "claim-control-2-blank-then-code",
     "source": "> > - prose\n> >   more\n> > \n> >   ```\n> >   code\nlazy\n",
     "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>prose\nmore\n        <pre><code>code\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>lazy</p>"
+  },
+  {
+    "id": "shifted-unclosed-1-```",
+    "source": "> - a\n>     ::: |\n>     ```\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <div class=\"line-block\">\n        <p><code></code></p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-1-~~~",
+    "source": "> - a\n>     ::: |\n>     ~~~\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <div class=\"line-block\">\n        <p>~~~</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-1-%%%",
+    "source": "> - a\n>     ::: |\n>     %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <div class=\"line-block\">\n        <p></p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-```",
+    "source": "> > - a\n> >     ::: |\n> >     ```\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p><code></code></p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-~~~",
+    "source": "> > - a\n> >     ::: |\n> >     ~~~\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>~~~</p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-%%%",
+    "source": "> > - a\n> >     ::: |\n> >     %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p></p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "later-sibling-code-1-```",
+    "source": "> - a\n>     ::: |\n>     ```\n>   :::\n> - sibling\n>   ```\n>   para\nlazy\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <div class=\"line-block\">\n        <p><code></code></p>\n      </div>\n    </li>\n    <li>sibling\n<code>\npara\nlazy</code></li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "later-sibling-code-1-~~~",
+    "source": "> - a\n>     ::: |\n>     ~~~\n>   :::\n> - sibling\n>   ~~~\n>   para\nlazy\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <div class=\"line-block\">\n        <p>~~~</p>\n      </div>\n    </li>\n    <li>sibling\n~~~\npara\nlazy</li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "later-sibling-code-2-```",
+    "source": "> > - a\n> >     ::: |\n> >     ```\n> >   :::\n> > - sibling\n> >   ```\n> >   para\nlazy\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p><code></code></p>\n        </div>\n      </li>\n      <li>sibling\n<code>\npara\nlazy</code></li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "later-sibling-code-2-~~~",
+    "source": "> > - a\n> >     ::: |\n> >     ~~~\n> >   :::\n> > - sibling\n> >   ~~~\n> >   para\nlazy\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <div class=\"line-block\">\n          <p>~~~</p>\n        </div>\n      </li>\n      <li>sibling\n~~~\npara\nlazy</li>\n    </ul>\n  </blockquote>\n</blockquote>"
   }
 ]
