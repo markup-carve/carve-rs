@@ -25,7 +25,7 @@ fn raw_html_carrier_payload_cannot_open_or_close_an_element() {
         assert_eq!(
             html,
             format!(
-                "<p><span data-carve-raw=\"html\">{}</span> tail <strong>s</strong></p>\n",
+                "<p><span data-carve-raw=\"html\">{}</span> tail <strong>s</strong></p>",
                 escaped(payload)
             ),
             "{payload:?}",
@@ -37,7 +37,7 @@ fn raw_html_carrier_payload_cannot_open_or_close_an_element() {
         );
         assert_eq!(
             to_html_with_options(&source, &Options::default()),
-            format!("<p>{payload} tail <strong>s</strong></p>\n")
+            format!("<p>{payload} tail <strong>s</strong></p>")
         );
         for mode in [
             HtmlImportMode::Safe,
@@ -75,7 +75,7 @@ fn trusted_carrier_keeps_bidi_bytes_but_disabled_raw_still_strips_them() {
     let trusted = to_html_with_options(source, &Options::default().with_roundtrip(true));
     assert_eq!(
         trusted,
-        "<p><span data-carve-raw=\"html\">&lt;b&gt;\u{202e}x\u{2066}&lt;/b&gt;</span></p>\n"
+        "<p><span data-carve-raw=\"html\">&lt;b&gt;\u{202e}x\u{2066}&lt;/b&gt;</span></p>"
     );
     let imported = html_to_ast(
         &trusted,
