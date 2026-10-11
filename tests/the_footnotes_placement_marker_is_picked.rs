@@ -350,3 +350,105 @@ fn ids(html: &str) -> Vec<String> {
         })
         .collect()
 }
+
+fn full_private_use_text() -> String {
+    (0xe000..=0xf8ff).filter_map(char::from_u32).collect()
+}
+
+#[test]
+fn an_exhausted_character_pool_keeps_authored_text_in_every_inline_context() {
+    let text = full_private_use_text();
+    for (source, expected) in [
+        (format!("a{text}b"), format!("<p>a{text}b</p>")),
+        (
+            format!("`a{text}b`"),
+            format!("<p><code>a{text}b</code></p>"),
+        ),
+        (format!("!`a{text}b`"), format!("<p>a{text}b</p>")),
+        (format!("`a{text}b`{{=html}}"), format!("<p>a{text}b</p>")),
+        (
+            format!("before ![a{text}b](/image) after"),
+            format!("<p>before <img src=\"/image\" alt=\"a{text}b\"> after</p>"),
+        ),
+        (
+            format!("[a{text}b](/url)"),
+            format!("<p><a href=\"/url\">a{text}b</a></p>"),
+        ),
+        (
+            format!("```\na{text}b\n```"),
+            format!("<pre><code>a{text}b\n</code></pre>"),
+        ),
+    ] {
+        assert_eq!(to_html(&source), expected);
+        assert_eq!(render_html(&parse(&source)).expect("render"), expected);
+    }
+}
+
+#[test]
+fn an_exhausted_character_pool_keeps_text_beside_real_placements() {
+    let text = format!(
+        "{}\u{e009}{}\u{e00a}",
+        full_private_use_text(),
+        "\u{e008}".repeat(100)
+    );
+    for source in [
+        "X[^a].\n\n## After\n\n[^a]: a\n",
+        "X[^a].\n\n::: footnotes\n:::\n\n## After\n\n[^a]: a\n",
+        "X[^a].\n\n::: footnotes\n:::\n\n::: footnotes\n:::\n\n## After\n\n[^a]: a\n",
+    ] {
+        let doc = with_authored_text(source, &text);
+        let html = render_html(&doc).expect("render");
+        assert!(html.starts_with(&format!("<p>{text}")));
+        assert_eq!(html.matches("doc-endnotes").count(), 1);
+        if source.contains("::: footnotes") {
+            assert!(html.find("doc-endnotes").unwrap() < html.find("<h2").unwrap());
+        } else {
+            assert!(html.find("doc-endnotes").unwrap() > html.find("<h2").unwrap());
+        }
+    }
+    assert_eq!(to_html("clean"), "<p>clean</p>");
+}
+
+#[test]
+fn an_exhausted_character_pool_in_the_endnotes_is_literal_text() {
+    let text = full_private_use_text();
+    let mut doc = parse("X[^a].\n\n::: footnotes\n:::\n\n[^a]: a\n");
+    let BlockNode::Paragraph(paragraph) =
+        &mut doc.footnote_defs.get_mut("a").expect("definition")[0]
+    else {
+        panic!("definition paragraph");
+    };
+    let InlineNode::Text(node) = &mut paragraph.children[0] else {
+        panic!("definition text");
+    };
+    node.value = text.clone();
+    let html = render_html(&doc).expect("render");
+    assert!(html.contains(&text));
+    assert_eq!(html.matches("doc-endnotes").count(), 1);
+    assert!(!html.contains("<div class=\"footnotes\"></div>"));
+}
+
+#[test]
+fn an_extension_placement_with_an_exhausted_pool_preserves_authored_text() {
+    let text = full_private_use_text();
+    let extension = Details::new();
+    let options = Options::new().with_extension(&extension);
+    let mut doc = carve::parse_with_options(
+        "X[^a].\n\n::: details \"D\"\n::: footnotes\n:::\n:::\n\n## After\n\n[^a]: a\n",
+        &options,
+    );
+    let BlockNode::Paragraph(paragraph) = &mut doc.children[0] else {
+        panic!("paragraph");
+    };
+    let InlineNode::Text(node) = &mut paragraph.children[0] else {
+        panic!("text");
+    };
+    node.value = text.clone();
+    let doc = carve::prepare_document_for_render(doc, &options, carve::Mode::Interactive, true)
+        .expect("prepare");
+    let html = carve::render_html_with_options(&doc, &options).expect("render");
+    assert!(html.starts_with(&format!("<p>{text}")));
+    assert_eq!(html.matches("doc-endnotes").count(), 1);
+    assert!(html.find("</details>").unwrap() < html.find("doc-endnotes").unwrap());
+    assert_eq!(to_html("clean"), "<p>clean</p>");
+}
