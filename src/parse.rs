@@ -8584,6 +8584,8 @@ struct NestedLevel {
     comment: Option<usize>,
     para: bool,
     by_fence: bool,
+    colons: Vec<(usize, usize)>,
+    by_colon: bool,
     fence_ordinal: usize,
 }
 
@@ -8606,7 +8608,10 @@ impl NestedFenceReplay {
             self.replay(lines, at);
         }
         let deepest = self.chain.last()?;
-        (deepest.fence.is_some() || deepest.host_fence.is_some() || deepest.by_fence)
+        (deepest.fence.is_some()
+            || deepest.host_fence.is_some()
+            || deepest.by_fence
+            || deepest.by_colon)
             .then_some(false)
     }
 
@@ -8681,6 +8686,17 @@ impl NestedFenceReplay {
             chain.truncate(level + 1);
             let here = &mut chain[level];
             here.by_fence = false;
+            here.by_colon = false;
+            if let Some(&(width, column)) = here.colons.last() {
+                if indent_columns(text) == column
+                    && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
+                {
+                    here.colons.pop();
+                    here.para = false;
+                    here.by_colon = true;
+                    return;
+                }
+            }
             if !is_blank_line(text) {
                 let column = indent_columns(text);
                 let sibling = here
@@ -8712,6 +8728,14 @@ impl NestedFenceReplay {
                     break;
                 }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
+                if block_start || !here.para {
+                    if let Some(open) = detect_container_open(inner).filter(|_| floor > 0) {
+                        here.colons.push((open.fence_len, col));
+                        here.para = false;
+                        here.by_colon = true;
+                        return;
+                    }
+                }
                 if let Some(open) = detect_fence_open(inner).filter(|_| floor > 0) {
                     // The host holds the fence whether the opener sits AT its
                     // content column or past it. A fence after an open paragraph
@@ -8911,7 +8935,10 @@ fn collect_blockquote_body(
             nested_verdict = None;
             let after_nested = last_nested && may_hold_fence;
             last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
-            may_hold_fence = may_hold_fence || stripped.contains("```") || stripped.contains("~~~");
+            may_hold_fence = may_hold_fence
+                || stripped.contains("```")
+                || stripped.contains("~~~")
+                || stripped.contains(":::");
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
