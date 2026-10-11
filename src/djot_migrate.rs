@@ -2755,6 +2755,24 @@ fn mask_djot_fences(
                     owner_indent = stack.last().map_or(0, |top| top.2);
                     nested = owner_column > 0;
                 }
+                let body = view.trim_start_matches([' ', '\t']).as_bytes();
+                let first = body.first().copied().unwrap_or(0);
+                let next = body.get(1).copied().unwrap_or(0);
+                let roman = |byte: u8| b"ivxlcdmIVXLCDM".contains(&byte);
+                let marker_lead = matches!(first, b'-' | b'*' | b'+' | b':' | b'[' | b'(')
+                    || first.is_ascii_digit()
+                    || (first.is_ascii_alphabetic()
+                        && (matches!(next, b'.' | b')') || (roman(first) && roman(next))));
+                if stack.is_empty() && !marker_lead {
+                    if level < depth {
+                        let after = view
+                            .trim_start_matches([' ', '\t'])
+                            .strip_prefix('>')
+                            .unwrap();
+                        view = after.strip_prefix(' ').unwrap_or(after);
+                    }
+                    continue;
+                }
                 let marker =
                     !thematic_pattern.is_match(view.trim()) && marker_pattern.is_match(view);
                 let prefix = marker_prefix.find(view).map_or("", |value| value.as_str());
@@ -2780,11 +2798,13 @@ fn mask_djot_fences(
                         columns,
                     ));
                 }
-                stack.push((
-                    note.as_ref().map_or(columns, |note| note[1].len()),
-                    column,
-                    owning_indent,
-                ));
+                if column > 0 {
+                    stack.push((
+                        note.as_ref().map_or(columns, |note| note[1].len()),
+                        column,
+                        owning_indent,
+                    ));
+                }
                 if level < depth {
                     let after = view
                         .trim_start_matches([' ', '\t'])
