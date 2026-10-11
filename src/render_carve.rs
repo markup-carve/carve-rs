@@ -3889,23 +3889,23 @@ fn render_inline_body(
                     .unwrap_or(false)
                     || ctx.emphasis_counts[index] > before_emphasis[index]
             };
+            if emphasis.kind == EmphasisKind::BoldItalic && !hugs_its_delimiters(&content) {
+                let split_peak = content_peak + 1;
+                ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);
+                if split_peak >= crate::parse::MAX_NESTING_DEPTH - 1 {
+                    crate::render_carve_error::record_unspellable(
+                        "inline",
+                        "inline content exceeds the native parser nesting limit",
+                    );
+                    return String::new();
+                }
+            }
             if (attributes_conflict
                 && (emphasis.kind != EmphasisKind::BoldItalic || !hugs_its_delimiters(&content)))
                 || (emphasis.kind == EmphasisKind::BoldItalic
                     && !hugs_its_delimiters(&content)
                     && kinds.iter().any(|marker| repeated(*marker)))
             {
-                if emphasis.kind == EmphasisKind::BoldItalic {
-                    let split_peak = content_peak + 1;
-                    ctx.emphasis_depth_peak = ctx.emphasis_depth_peak.max(split_peak);
-                    if split_peak >= crate::parse::MAX_NESTING_DEPTH - 1 {
-                        crate::render_carve_error::record_unspellable(
-                            "inline",
-                            "inline content exceeds the native parser nesting limit",
-                        );
-                        return String::new();
-                    }
-                }
                 let body = if emphasis.kind == EmphasisKind::BoldItalic {
                     let conflicts = |marker: char| {
                         ctx.attribute_markers.get(&marker).copied().unwrap_or(0)

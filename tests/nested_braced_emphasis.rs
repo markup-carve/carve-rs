@@ -547,36 +547,44 @@ fn combined_nonhugging_api_body_keeps_its_expanded_depth_budget() {
     std::thread::Builder::new()
         .stack_size(32 * 1024 * 1024)
         .spawn(|| {
-            for levels in [196, 197] {
-                let mut document = carve::parse("/*x*/");
-                let carve::ast::BlockNode::Paragraph(paragraph) = &mut document.children[0] else {
-                    panic!("paragraph");
-                };
-                let carve::ast::InlineNode::Emphasis(combined) = &mut paragraph.children[0] else {
-                    panic!("combined emphasis");
-                };
-                combined.children = vec![carve::ast::InlineNode::Text(" x ".to_owned().into())];
-                let mut children = std::mem::take(&mut paragraph.children);
-                for _ in 0..levels {
-                    children = vec![carve::ast::InlineNode::Emphasis(carve::ast::Emphasis {
-                        attrs: None,
-                        kind: carve::ast::EmphasisKind::Strong,
-                        children,
-                        pos: None,
-                    })];
-                }
-                paragraph.children = children;
-                let written = carve::render_carve(&document);
-                if levels == 197 {
-                    assert!(written
-                        .unwrap_err()
-                        .to_string()
-                        .contains("native parser nesting limit"));
-                } else {
-                    assert_eq!(
-                        carve::to_html(&written.unwrap()),
-                        carve::render_html(&document).unwrap()
-                    );
+            for kind in [
+                carve::ast::EmphasisKind::Strong,
+                carve::ast::EmphasisKind::Italic,
+                carve::ast::EmphasisKind::Underline,
+            ] {
+                for levels in [196, 197] {
+                    let mut document = carve::parse("/*x*/");
+                    let carve::ast::BlockNode::Paragraph(paragraph) = &mut document.children[0]
+                    else {
+                        panic!("paragraph");
+                    };
+                    let carve::ast::InlineNode::Emphasis(combined) = &mut paragraph.children[0]
+                    else {
+                        panic!("combined emphasis");
+                    };
+                    combined.children = vec![carve::ast::InlineNode::Text(" x ".to_owned().into())];
+                    let mut children = std::mem::take(&mut paragraph.children);
+                    for _ in 0..levels {
+                        children = vec![carve::ast::InlineNode::Emphasis(carve::ast::Emphasis {
+                            attrs: None,
+                            kind,
+                            children,
+                            pos: None,
+                        })];
+                    }
+                    paragraph.children = children;
+                    let written = carve::render_carve(&document);
+                    if levels == 197 {
+                        assert!(written
+                            .unwrap_err()
+                            .to_string()
+                            .contains("native parser nesting limit"));
+                    } else {
+                        assert_eq!(
+                            carve::to_html(&written.unwrap()),
+                            carve::render_html(&document).unwrap()
+                        );
+                    }
                 }
             }
         })
