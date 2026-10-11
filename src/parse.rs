@@ -7925,6 +7925,7 @@ thread_local! {
     static COLON_CLOSER_LINES: Cell<usize> = const { Cell::new(0) };
     static COMMENT_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
     static CODE_INDEX_LINES: Cell<usize> = const { Cell::new(0) };
+    static LITERAL_CODE_LINES: Cell<usize> = const { Cell::new(0) };
 }
 
 fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
@@ -8557,11 +8558,14 @@ struct NestedFenceReplay {
     scanned: usize,
     chain: Vec<NestedLevel>,
     fence_count: usize,
+    colon_body_comments: HashMap<usize, QuotedBodyComments>,
+    literal_code_lookup: LiteralCodeLookup,
 }
 
 #[derive(Default)]
 struct NestedLevel {
     hosts: Vec<(usize, usize, bool)>,
+    initial_marker_column: Option<usize>,
     /// The fence a quoted host holds open, as (opener, the host's content column,
     /// the opener's own column). The two columns differ when the opener is
     /// SHIFTED past its host, and a closer at either one ends it.
@@ -8574,13 +8578,14 @@ struct NestedLevel {
     host_fence: Option<(FenceOpen, usize, usize)>,
     fence: Option<FenceOpen>,
     comment: Option<usize>,
+    by_comment: bool,
     host_comment: Option<(usize, usize, bool)>,
     para: bool,
     by_fence: bool,
-    colons: Vec<(usize, usize)>,
+    colons: Vec<(usize, usize, usize)>,
     by_colon: bool,
     colon_absorption: bool,
-    host_verse: Option<(usize, usize)>,
+    host_verse: Option<(usize, usize, usize)>,
     fence_ordinal: usize,
 }
 
@@ -8603,6 +8608,14 @@ impl NestedFenceReplay {
             self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
+        if !deepest.colons.is_empty()
+            && deepest.para
+            && deepest.fence.is_none()
+            && deepest.host_fence.is_none()
+            && !deepest.by_fence
+        {
+            return Some(true);
+        }
         (deepest.fence.is_some()
             || deepest.host_fence.is_some()
             || deepest.by_fence
@@ -8653,6 +8666,7 @@ impl NestedFenceReplay {
             if let Some(len) = chain[level].comment {
                 if is_comment_fence_close(text, len) {
                     chain[level].comment = None;
+                    chain[level].by_comment = true;
                 }
                 chain.truncate(level + 1);
                 return;
@@ -8673,20 +8687,37 @@ impl NestedFenceReplay {
                     colon_opaque = true;
                 }
             }
-            if let Some((width, column)) = chain[level].host_verse {
-                if !is_blank_line(text) && indent_columns(text) < column {
+            if let Some((width, floor, column)) = chain[level].host_verse {
+                if !is_blank_line(text) && indent_columns(text) < floor {
                     chain[level].host_verse = None;
                 } else {
                     if let Some(comment) = detect_comment_fence_line(trim_ascii_start(text)) {
                         let len = comment.fence_len;
-                        let collected = closer_ahead(lines, at, level, |line| {
-                            is_comment_fence_close(trim_ascii_start(line), len)
-                        });
-                        if collected || future_quoted_comment_closes(cur, level + 1, column, len) {
-                            chain[level].host_comment = Some((len, column, !collected));
+                        let col = indent_columns(text);
+                        let collected = self
+                            .colon_body_comments
+                            .entry(level)
+                            .or_default()
+                            .closes_after(lines, at, level, len);
+                        if collected || future_quoted_comment_closes(cur, level + 1, col, len) {
+                            chain[level].host_comment = Some((len, col, !collected));
                         }
                     }
-                    if indent_columns(text) == column
+                    if let Some(open) = detect_fence_open(trim_ascii_start(text)) {
+                        let opener_column = indent_columns(text);
+                        if literal_code_closes(
+                            lines,
+                            at,
+                            level,
+                            floor,
+                            opener_column,
+                            open,
+                            &mut self.literal_code_lookup,
+                        ) {
+                            chain[level].host_fence = Some((open, floor, opener_column));
+                        }
+                    }
+                    if (indent_columns(text) == floor || indent_columns(text) == column)
                         && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
                     {
                         chain[level].host_verse = None;
@@ -8696,9 +8727,11 @@ impl NestedFenceReplay {
                         chain.truncate(level + 1);
                         return;
                     }
-                    // Keep the existing fence replay; verse payload cannot
-                    // open or close a nested colon scope.
-                    colon_opaque = true;
+                    chain[level].para = false;
+                    chain[level].colon_absorption = false;
+                    chain[level].by_colon = true;
+                    chain.truncate(level + 1);
+                    return;
                 }
             }
             if let Some(rest) = strip_blockquote_prefix(text) {
@@ -8713,6 +8746,15 @@ impl NestedFenceReplay {
                 text = rest;
                 level += 1;
                 continue;
+            }
+            if !colon_opaque
+                && level + 1 == chain.len()
+                && (!chain[level].colons.is_empty() || chain[level].by_colon)
+                && is_line_comment_any_column(text)
+            {
+                chain[level].para = false;
+                chain[level].colon_absorption = false;
+                return;
             }
             // A line short of the deepest quote continues that quote's open
             // paragraph unless it interrupts one.
@@ -8730,13 +8772,14 @@ impl NestedFenceReplay {
             let here = &mut chain[level];
             here.by_fence = false;
             here.by_colon = false;
+            let after_comment = std::mem::take(&mut here.by_comment);
             let starts_sibling = detect_list_marker_full(trim_ascii_start(text)).is_some()
                 && marker_ends_replayed_item(&here.hosts, indent_columns(text));
             let hosted_colon_opener = !colon_opaque
                 && here
                     .hosts
                     .iter()
-                    .any(|&(_, column, _)| column == indent_columns(text))
+                    .any(|&(_, column, _)| column <= indent_columns(text))
                 && (!here.colon_absorption
                     || exact_colon_fence_len(trim_ascii_start(text)).is_none())
                 && (detect_container_open(trim_ascii_start(text)).is_some()
@@ -8754,7 +8797,7 @@ impl NestedFenceReplay {
                 while here
                     .colons
                     .last()
-                    .is_some_and(|&(_, col)| col > indent_columns(text))
+                    .is_some_and(|&(_, floor, _)| floor > indent_columns(text))
                 {
                     here.colons.pop();
                 }
@@ -8762,11 +8805,9 @@ impl NestedFenceReplay {
             if !colon_opaque {
                 let column = indent_columns(text);
                 if let Some(width) = exact_colon_fence_len(trim_ascii_start(text)) {
-                    if let Some(index) = here
-                        .colons
-                        .iter()
-                        .rposition(|&(seen, at)| seen == width && at == column)
-                    {
+                    if let Some(index) = here.colons.iter().rposition(|&(seen, floor, authored)| {
+                        seen == width && (floor == column || authored == column)
+                    }) {
                         here.colons.truncate(index);
                         here.para = false;
                         here.colon_absorption = false;
@@ -8798,6 +8839,7 @@ impl NestedFenceReplay {
                             break;
                         }
                         let next = col + marker_content_col(inner).expect("matched list marker");
+                        here.initial_marker_column.get_or_insert(col);
                         here.hosts.push((col, next, true));
                         col = next + indent_columns(marker.content);
                         inner = trim_ascii_start(marker.content);
@@ -8814,7 +8856,32 @@ impl NestedFenceReplay {
                     here.colon_absorption = false;
                 }
                 let floor = here.hosts.last().map_or(0, |&(_, col, _)| col);
-                if !colon_opaque && floor > 0 && col == floor {
+                if !colon_opaque
+                    && block_start
+                    && exact_colon_fence_len(inner).is_some()
+                    && !quoted_colon_body_follows(
+                        lines,
+                        at,
+                        level,
+                        floor,
+                        self.colon_body_comments.entry(level).or_default(),
+                    )
+                {
+                    here.para = true;
+                    return;
+                }
+                if !colon_opaque
+                    && floor > 0
+                    && col >= floor
+                    && (col == floor
+                        || exact_colon_fence_len(inner).is_none()
+                        || (here.colons.is_empty()
+                            && here.initial_marker_column.map_or(true, |initial| {
+                                here.hosts
+                                    .last()
+                                    .is_some_and(|&(marker, _, _)| marker >= initial)
+                            })))
+                {
                     if let Some(comment) = detect_comment_fence_line(inner) {
                         let len = comment.fence_len;
                         let collected = closer_ahead(lines, at, level, |line| {
@@ -8830,7 +8897,7 @@ impl NestedFenceReplay {
                         }
                     }
                     if let Some(width) = detect_line_block_open(inner) {
-                        here.host_verse = Some((width, col));
+                        here.host_verse = Some((width, floor, col));
                         here.para = false;
                         here.colon_absorption = false;
                         here.by_colon = !block_start;
@@ -8844,7 +8911,7 @@ impl NestedFenceReplay {
                         .or_else(|| detect_hardbreaks_block_open(inner))
                         .or_else(|| detect_quote_block_open(inner))
                     {
-                        here.colons.push((width, col));
+                        here.colons.push((width, floor, col));
                         here.by_colon = !block_start;
                         here.para = false;
                         here.colon_absorption = false;
@@ -8892,6 +8959,27 @@ impl NestedFenceReplay {
                 if closer_ahead(lines, at, level, |l| is_comment_fence_close(l, len)) {
                     here.comment = Some(len);
                 }
+            }
+            if !colon_opaque
+                && exact_colon_fence_len(trim_ascii_start(text)).is_some()
+                && !here.colons.is_empty()
+            {
+                here.para = true;
+                here.colon_absorption = false;
+                return;
+            }
+            if !colon_opaque
+                && after_comment
+                && !here.para
+                && !here.colon_absorption
+                && here.colons.is_empty()
+                && exact_colon_fence_len(trim_ascii_start(text)).is_some()
+            {
+                here.by_colon = true;
+                return;
+            }
+            if is_blank_line(text) {
+                here.initial_marker_column = None;
             }
             let mut paragraph = ParaOpen::from_line(text, here.colon_absorption);
             here.para = paragraph.get();
@@ -8982,6 +9070,304 @@ fn future_quoted_comment_closes(
             }
             indent_columns(text) >= column
         })
+}
+
+#[derive(Default)]
+struct QuotedBodyComments {
+    scanned: usize,
+    scope_start: Option<usize>,
+    scope_end: Option<usize>,
+    closers: HashMap<usize, Vec<usize>>,
+    boundaries: Vec<usize>,
+}
+
+impl QuotedBodyComments {
+    fn closes_after(
+        &mut self,
+        lines: &[SourceLine],
+        from: usize,
+        level: usize,
+        width: usize,
+    ) -> bool {
+        if self.scope_start.is_some_and(|start| from < start)
+            || self.scope_end.is_some_and(|end| from >= end)
+        {
+            self.closers.clear();
+            self.boundaries.clear();
+            self.scope_end = None;
+            self.scanned = from + 1;
+            self.scope_start = Some(from);
+        }
+        if self.scope_start.is_none() {
+            self.scope_start = Some(from);
+            self.scanned = from + 1;
+        }
+        let scan_end = self.scope_end.unwrap_or(lines.len());
+        for (at, line) in lines.iter().enumerate().take(scan_end).skip(self.scanned) {
+            #[cfg(test)]
+            COMMENT_INDEX_LINES.with(|work| work.set(work.get() + 1));
+            let mut text = line.text.as_str();
+            let mut boundary = text.starts_with(LAZY);
+            for _ in 0..level {
+                if let Some(rest) = strip_blockquote_prefix(text) {
+                    text = rest;
+                } else {
+                    boundary = true;
+                    break;
+                }
+            }
+            if boundary {
+                self.boundaries.push(at);
+                self.scope_end = Some(at);
+                break;
+            } else if let Some(open) = detect_comment_fence_line(trim_ascii_start(text)) {
+                if is_comment_fence_close_any_column(text, open.fence_len) {
+                    self.closers.entry(open.fence_len).or_default().push(at);
+                }
+            }
+        }
+        self.scanned = self.scope_end.map_or(lines.len(), |end| end + 1);
+        let Some(closers) = self.closers.get(&width) else {
+            return false;
+        };
+        let Some(&close) = closers.get(closers.partition_point(|&at| at <= from)) else {
+            return false;
+        };
+        let boundary = self.boundaries.partition_point(|&at| at <= from);
+        self.boundaries
+            .get(boundary)
+            .map_or(true, |&end| close < end)
+    }
+}
+
+#[derive(Default)]
+struct LiteralCodeLookup {
+    indices: HashMap<usize, LiteralCodeIndex>,
+    scopes: HashMap<(usize, usize), LiteralCodeScope>,
+}
+
+#[derive(Default)]
+struct LiteralCodeIndex {
+    scanned: usize,
+    boundaries: Vec<usize>,
+    scope_end: Option<usize>,
+    columns: HashMap<(u8, usize), LiteralCodeColumn>,
+}
+
+// Store each run once; the maximum tree finds a sufficiently wide later closer.
+#[derive(Default)]
+struct LiteralCodeColumn {
+    positions: Vec<usize>,
+    maxima: Vec<usize>,
+    capacity: usize,
+}
+
+impl LiteralCodeColumn {
+    fn push(&mut self, position: usize, width: usize) {
+        if self.positions.len() == self.capacity {
+            let old_capacity = self.capacity;
+            self.capacity = old_capacity.max(1) * 2;
+            let mut maxima = vec![0; self.capacity * 2];
+            maxima[self.capacity..self.capacity + self.positions.len()]
+                .copy_from_slice(&self.maxima[old_capacity..old_capacity + self.positions.len()]);
+            for index in (1..self.capacity).rev() {
+                maxima[index] = maxima[index * 2].max(maxima[index * 2 + 1]);
+            }
+            self.maxima = maxima;
+        }
+        let mut index = self.capacity + self.positions.len();
+        self.positions.push(position);
+        self.maxima[index] = width;
+        while index > 1 {
+            index /= 2;
+            self.maxima[index] = self.maxima[index * 2].max(self.maxima[index * 2 + 1]);
+        }
+    }
+
+    fn next(&self, from: usize, width: usize) -> Option<usize> {
+        let start = self.positions.partition_point(|&position| position <= from);
+        self.find(1, 0, self.capacity, start, width)
+            .and_then(|index| self.positions.get(index).copied())
+    }
+
+    fn find(
+        &self,
+        node: usize,
+        left: usize,
+        right: usize,
+        start: usize,
+        width: usize,
+    ) -> Option<usize> {
+        if right <= start || self.maxima.get(node).copied().unwrap_or(0) < width {
+            return None;
+        }
+        if right - left == 1 {
+            return Some(left);
+        }
+        let middle = left + (right - left) / 2;
+        self.find(node * 2, left, middle, start, width)
+            .or_else(|| self.find(node * 2 + 1, middle, right, start, width))
+    }
+}
+
+struct LiteralCodeScope {
+    from: usize,
+    length: usize,
+    end: usize,
+}
+
+impl LiteralCodeIndex {
+    fn refresh(&mut self, lines: &[SourceLine], level: usize, from: usize) {
+        if let Some(end) = self.scope_end {
+            if from < end {
+                return;
+            }
+            self.columns.clear();
+            self.boundaries.clear();
+            self.scope_end = None;
+        }
+        self.scanned = self.scanned.max(from + 1);
+        for (index, line) in lines.iter().enumerate().skip(self.scanned) {
+            #[cfg(test)]
+            LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
+            let mut text = line.text.as_str();
+            let mut boundary = text.starts_with(LAZY);
+            for _ in 0..level {
+                let Some(rest) = strip_blockquote_prefix(text) else {
+                    boundary = true;
+                    break;
+                };
+                text = rest;
+            }
+            if boundary {
+                self.boundaries.push(index);
+                self.scope_end = Some(index);
+                self.scanned = index + 1;
+                return;
+            }
+            let column = indent_columns(text);
+            let bytes = trim_ascii_start(text).as_bytes();
+            let Some(&character @ (b'`' | b'~')) = bytes.first() else {
+                continue;
+            };
+            let width = bytes.iter().take_while(|&&byte| byte == character).count();
+            if !bytes[width..]
+                .iter()
+                .all(|&byte| byte == b' ' || byte == b'\t')
+            {
+                continue;
+            }
+            self.columns
+                .entry((character, column))
+                .or_default()
+                .push(index, width);
+        }
+        self.scanned = lines.len();
+    }
+
+    fn next(&self, from: usize, column: usize, open: FenceOpen) -> Option<usize> {
+        self.columns
+            .get(&(open.fence_char, column))?
+            .next(from, open.fence_len)
+    }
+}
+
+fn literal_code_closes(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    floor: usize,
+    column: usize,
+    open: FenceOpen,
+    lookup: &mut LiteralCodeLookup,
+) -> bool {
+    let index = lookup.indices.entry(level).or_default();
+    index.refresh(lines, level, from);
+    let closer = match (
+        index.next(from, floor, open),
+        index.next(from, column, open),
+    ) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(at), None) | (None, Some(at)) => at,
+        (None, None) => return false,
+    };
+    if index
+        .boundaries
+        .get(index.boundaries.partition_point(|&at| at <= from))
+        .is_some_and(|&at| at <= closer)
+    {
+        return false;
+    }
+    let key = (level, floor);
+    if let Some(scope) = lookup
+        .scopes
+        .get(&key)
+        .filter(|scope| from >= scope.from && from < scope.end && scope.length == lines.len())
+    {
+        return closer < scope.end;
+    }
+    for (at, line) in lines.iter().enumerate().take(closer + 1).skip(from + 1) {
+        #[cfg(test)]
+        LITERAL_CODE_LINES.with(|work| work.set(work.get() + 1));
+        let mut text = line.text.as_str();
+        for _ in 0..level {
+            let Some(rest) = strip_blockquote_prefix(text) else {
+                return false;
+            };
+            text = rest;
+        }
+        if !is_blank_line(text) && indent_columns(text) < floor {
+            lookup.scopes.insert(
+                key,
+                LiteralCodeScope {
+                    from,
+                    length: lines.len(),
+                    end: at,
+                },
+            );
+            return false;
+        }
+    }
+    true
+}
+
+fn quoted_colon_body_follows(
+    lines: &[SourceLine],
+    from: usize,
+    level: usize,
+    floor: usize,
+    comments: &mut QuotedBodyComments,
+) -> bool {
+    let mut comment = None;
+    for (at, line) in lines.iter().enumerate().skip(from + 1) {
+        let mut text = line.text.as_str();
+        if text.starts_with(LAZY) {
+            return false;
+        }
+        for _ in 0..level {
+            let Some(rest) = strip_blockquote_prefix(text) else {
+                return false;
+            };
+            text = rest;
+        }
+        if let Some(width) = comment {
+            if is_comment_fence_close_any_column(text, width) {
+                comment = None;
+            }
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line(text) {
+            if comments.closes_after(lines, at, level, open.fence_len) {
+                comment = Some(open.fence_len);
+                continue;
+            }
+        }
+        if is_blank_line(text) || trim_ascii_start(text).starts_with("%%") {
+            continue;
+        }
+        return indent_columns(text) >= floor;
+    }
+    false
 }
 
 /// Does a line matching `closes` follow line `from` at nesting `level`, before
@@ -12599,27 +12985,34 @@ fn nested_ends_with_open_paragraph(
 /// bodies' state. A line block's body is where such a line is MOST likely to be
 /// content, which is what makes the omission wrong rather than optimistic.
 fn colon_fences_left_open(nested: &str) -> usize {
-    let mut open: Vec<usize> = Vec::new();
+    let mut open: Vec<(usize, usize, usize)> = Vec::new();
     let mut code: Option<FenceOpen> = None;
     let lines: Vec<_> = nested
         .lines()
         .map(|line| {
-            let mut trimmed = trim_ascii_start(line);
-            while let Some(rest) = trimmed.strip_prefix('>') {
-                trimmed = trim_ascii_start(rest);
+            let mut local = line;
+            while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(local)) {
+                local = rest;
             }
-            trimmed
+            local
         })
         .collect();
+    let mut host_floor = 0;
     let mut verse_end = 0;
     let mut closer_index = None;
     let mut comment_closers = None;
-    for (index, trimmed) in lines.iter().copied().enumerate() {
-        let trimmed = if index == 0 {
-            innermost_marker_content(trimmed)
+    for (index, line) in lines.iter().copied().enumerate() {
+        let trimmed = trim_ascii_start(line);
+        let (offset, content) = if index == 0 {
+            innermost_marker_tail(trimmed)
         } else {
-            trimmed
+            (0, trimmed)
         };
+        let column = indent_columns(line) + offset;
+        if index == 0 && offset > 0 {
+            host_floor = column;
+        }
+        let trimmed = content;
         if index < verse_end {
             continue;
         }
@@ -12650,13 +13043,18 @@ fn colon_fences_left_open(nested: &str) -> usize {
             continue;
         }
         if let Some(len) = exact_colon_fence_len(trimmed) {
-            if open.last() == Some(&len) {
-                open.pop();
-                continue;
+            if let Some(&(width, floor, opener_column)) = open.last() {
+                if width == len && (column == floor || column == opener_column) {
+                    open.pop();
+                    continue;
+                }
+                if column != floor && column != opener_column {
+                    continue;
+                }
             }
         }
         if let Some(container) = detect_container_open(trimmed) {
-            open.push(container.fence_len);
+            open.push((container.fence_len, host_floor, column));
         }
     }
     open.len()
@@ -26643,6 +27041,348 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn quoted_anonymous_body_comments_share_their_index() {
+        for level in 0..=2 {
+            for count in [64, 512, 4096] {
+                let prefix = "> ".repeat(level);
+                let mut body = LineBuffer::default();
+                for _ in 0..count {
+                    for line in ["- :::", "%%%", "comment", "%%%", "  :::"] {
+                        body.push_at(format!("{prefix}{line}"), None, None);
+                    }
+                }
+                let mut comments = QuotedBodyComments::default();
+                COMMENT_INDEX_LINES.with(|work| work.set(0));
+                for from in (0..body.lines.len()).step_by(5) {
+                    assert!(quoted_colon_body_follows(
+                        &body.lines,
+                        from,
+                        level,
+                        2,
+                        &mut comments,
+                    ));
+                }
+                assert!(COMMENT_INDEX_LINES.with(Cell::get) <= body.lines.len());
+            }
+        }
+    }
+
+    #[test]
+    fn quoted_body_comment_indices_stop_at_their_quote_scope() {
+        let mut body = LineBuffer::default();
+        for _ in 0..4096 {
+            body.push_at("> prelude".to_owned(), None, None);
+        }
+        let mut groups = Vec::new();
+        for level in 2..=32 {
+            let prefix = "> ".repeat(level);
+            groups.push((level, body.lines.len()));
+            body.push_at(format!("{prefix}%%%"), None, None);
+            body.push_at(format!("{prefix}%%%"), None, None);
+            body.push_at("departure".to_owned(), None, None);
+        }
+        COMMENT_INDEX_LINES.with(|work| work.set(0));
+        for (level, from) in groups {
+            assert!(QuotedBodyComments::default().closes_after(&body.lines, from, level, 3));
+        }
+        assert!(COMMENT_INDEX_LINES.with(Cell::get) <= 32 * 2);
+    }
+
+    #[test]
+    fn quoted_body_comment_index_reenters_and_can_rewind() {
+        let mut body = LineBuffer::default();
+        for line in ["> %%%", "> %%%", "departure", "> %%%%", "> %%%%"] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut comments = QuotedBodyComments::default();
+        assert!(comments.closes_after(&body.lines, 0, 1, 3));
+        assert!(comments.closes_after(&body.lines, 3, 1, 4));
+        assert!(!comments.closes_after(&body.lines, 3, 1, 3));
+        assert!(comments.closes_after(&body.lines, 0, 1, 3));
+    }
+
+    #[test]
+    fn literal_code_index_reenters_a_later_quote_scope() {
+        let mut body = LineBuffer::default();
+        for line in [
+            ">   ``` info",
+            ">   ```",
+            "departure",
+            ">   ~~~ info",
+            ">   ~~~",
+        ] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut lookup = LiteralCodeLookup::default();
+        assert!(literal_code_closes(
+            &body.lines,
+            0,
+            1,
+            2,
+            2,
+            detect_fence_open("``` info").unwrap(),
+            &mut lookup
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            3,
+            1,
+            2,
+            2,
+            detect_fence_open("~~~ info").unwrap(),
+            &mut lookup
+        ));
+        assert!(!literal_code_closes(
+            &body.lines,
+            3,
+            1,
+            2,
+            2,
+            detect_fence_open("``` info").unwrap(),
+            &mut lookup
+        ));
+    }
+
+    #[test]
+    fn literal_code_indices_do_not_scan_unrelated_quote_scopes() {
+        let mut body = LineBuffer::default();
+        for _ in 0..4096 {
+            body.push_at("> prelude".to_owned(), None, None);
+        }
+        let mut groups = Vec::new();
+        for level in 2..=32 {
+            let prefix = "> ".repeat(level);
+            groups.push((level, body.lines.len()));
+            body.push_at(format!("{prefix}  ``` info"), None, None);
+            body.push_at(format!("{prefix}  ```"), None, None);
+            body.push_at("departure".to_owned(), None, None);
+        }
+        let mut lookup = LiteralCodeLookup::default();
+        let open = detect_fence_open("``` info").unwrap();
+        LITERAL_CODE_LINES.with(|work| work.set(0));
+        for (level, from) in groups {
+            assert!(literal_code_closes(
+                &body.lines,
+                from,
+                level,
+                2,
+                2,
+                open,
+                &mut lookup
+            ));
+        }
+        assert!(LITERAL_CODE_LINES.with(Cell::get) <= 32 * 3);
+    }
+
+    #[test]
+    fn literal_code_columns_store_one_record_per_run() {
+        let mut column = LiteralCodeColumn::default();
+        for index in 0..4096 {
+            column.push(index * 2, 1_000_000 - index);
+        }
+        assert_eq!(column.positions.len(), 4096);
+        assert!(column.maxima.len() <= column.positions.len() * 4);
+        assert_eq!(column.next(0, 999_999), Some(2));
+        assert_eq!(column.next(2, 999_999), None);
+        assert_eq!(column.next(8190, 1), None);
+    }
+
+    #[test]
+    fn literal_code_scope_misses_share_the_departure_bound() {
+        for count in [64, 512, 4096] {
+            let mut body = LineBuffer::default();
+            for _ in 0..count {
+                body.push_at("  ``` info".to_string(), None, None);
+            }
+            body.push_at("- sibling".to_string(), None, None);
+            body.push_at("  ```".to_string(), None, None);
+            let mut lookup = LiteralCodeLookup::default();
+            let open = detect_fence_open("``` info").unwrap();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for from in 0..count {
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    from,
+                    0,
+                    2,
+                    2,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len() * 2);
+        }
+    }
+
+    #[test]
+    fn literal_code_misses_refute_varied_unclosed_runs() {
+        for level in 0..=2 {
+            for count in [64, 512, 4096] {
+                let prefix = "> ".repeat(level);
+                let mut body = LineBuffer::default();
+                for index in 0..count {
+                    body.push_at(
+                        format!("{prefix}    {} info", "`".repeat(3 + index % 8)),
+                        None,
+                        None,
+                    );
+                }
+                body.push_at(format!("{prefix}     ``````````"), None, None);
+                let mut misses = LiteralCodeLookup::default();
+                LITERAL_CODE_LINES.with(|work| work.set(0));
+                for index in 0..count {
+                    let open =
+                        detect_fence_open(&format!("{} info", "`".repeat(3 + index % 8))).unwrap();
+                    assert!(!literal_code_closes(
+                        &body.lines,
+                        index,
+                        level,
+                        4,
+                        4,
+                        open,
+                        &mut misses
+                    ));
+                }
+                assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+            }
+        }
+    }
+
+    #[test]
+    fn literal_code_descending_bare_runs_share_the_index() {
+        for count in [64, 512] {
+            let mut body = LineBuffer::default();
+            for index in 0..count {
+                body.push_at(format!("    {}", "`".repeat(count - index + 3)), None, None);
+            }
+            let mut misses = LiteralCodeLookup::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                let open = detect_fence_open(&"`".repeat(count - index + 3)).unwrap();
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    index,
+                    0,
+                    4,
+                    4,
+                    open,
+                    &mut misses
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+        }
+    }
+
+    #[test]
+    fn literal_code_cached_index_answers_smaller_widths() {
+        let mut body = LineBuffer::default();
+        for line in [
+            "    ```` info",
+            "    ``` info",
+            "    ```",
+            "- sibling",
+            "    ```",
+            "    ```",
+        ] {
+            body.push_at(line.to_owned(), None, None);
+        }
+        let mut misses = LiteralCodeLookup::default();
+        assert!(!literal_code_closes(
+            &body.lines,
+            0,
+            0,
+            4,
+            4,
+            detect_fence_open("```` info").unwrap(),
+            &mut misses
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            1,
+            0,
+            4,
+            4,
+            detect_fence_open("``` info").unwrap(),
+            &mut misses
+        ));
+        assert!(literal_code_closes(
+            &body.lines,
+            4,
+            0,
+            4,
+            4,
+            detect_fence_open("```").unwrap(),
+            &mut misses
+        ));
+    }
+
+    #[test]
+    fn literal_code_varied_columns_and_growing_buffers_are_indexed_once() {
+        for count in [64, 512] {
+            let mut body = LineBuffer::default();
+            for index in 0..count {
+                body.push_at(format!("{}``` info", " ".repeat(index + 3)), None, None);
+            }
+            body.push_at(" ```".to_owned(), None, None);
+            let mut lookup = LiteralCodeLookup::default();
+            let open = detect_fence_open("``` info").unwrap();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                assert!(!literal_code_closes(
+                    &body.lines,
+                    index,
+                    0,
+                    2,
+                    index + 3,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len());
+
+            let mut growing = LineBuffer::default();
+            let mut lookup = LiteralCodeLookup::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            for index in 0..count {
+                growing.push_at("    ``` info".to_owned(), None, None);
+                assert!(!literal_code_closes(
+                    &growing.lines,
+                    index,
+                    0,
+                    4,
+                    4,
+                    open,
+                    &mut lookup
+                ));
+            }
+            assert_eq!(LITERAL_CODE_LINES.with(Cell::get), 0);
+        }
+    }
+
+    #[test]
+    fn literal_code_closes_only_at_host_or_authored_column() {
+        let open = detect_fence_open("``` info").unwrap();
+        for (closer, expected) in [("  ```", true), ("    ```", true), ("   ```", false)] {
+            let mut body = LineBuffer::default();
+            for line in ["    ``` info", closer] {
+                body.push_at(line.to_owned(), None, None);
+            }
+            assert_eq!(
+                literal_code_closes(
+                    &body.lines,
+                    0,
+                    0,
+                    2,
+                    4,
+                    open,
+                    &mut LiteralCodeLookup::default()
+                ),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn repeated_attachment_probes_share_code_and_comment_indices() {

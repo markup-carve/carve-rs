@@ -1,0 +1,566 @@
+[
+  {
+    "source": "> - ::: box\n>   a\n> %% note\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: box\n>   a\n>  %% note\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: box\n>   a\n>   %% note\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: box\n>\n>    :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::: box\n>\n>     :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::: box\n>\n>      :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::: |\n>   x\n> %%%\n> - not a marker\n> %%%\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::</p></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: |\n>   x\n> ```\n> - not a marker\n> ```\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::\n- tail</p></blockquote>"
+  },
+  {
+    "source": "> - ::: |\n>   x\n> %% note\n> - not a marker\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: |\n>   %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::: |\n>   ```\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::: |\n>   - marker\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - a\n>     ::: box\n>     x\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>     ::: box\n>     x\n>     :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: box\n>   a\n> %% note\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: box\n>   a\n>  %% note\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: box\n>   a\n>   %% note\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: box\n>\n>    ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - :::: box\n>\n>     ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - :::: box\n>\n>      ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - :::: |\n>   x\n> %%%\n> - not a marker\n> %%%\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>::::</p></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: |\n>   x\n> ```\n> - not a marker\n> ```\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>::::\n- tail</p></blockquote>"
+  },
+  {
+    "source": "> - :::: |\n>   x\n> %% note\n> - not a marker\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - :::: |\n>   %%%\n>   ::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - :::: |\n>   ```\n>   ::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - :::: |\n>   - marker\n>   ::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - a\n>     :::: box\n>     x\n>   ::::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>     :::: box\n>     x\n>     ::::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: box\n>   a\n> %% note\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: box\n>   a\n>  %% note\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: box\n>   a\n>   %% note\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: box\n>\n>    :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::::: box\n>\n>     :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::::: box\n>\n>      :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::::: |\n>   x\n> %%%\n> - not a marker\n> %%%\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::::</p></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: |\n>   x\n> ```\n> - not a marker\n> ```\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::::\n- tail</p></blockquote>"
+  },
+  {
+    "source": "> - ::::: |\n>   x\n> %% note\n> - not a marker\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::::: |\n>   %%%\n>   :::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::::: |\n>   ```\n>   :::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - ::::: |\n>   - marker\n>   :::::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "source": "> - a\n>     ::::: box\n>     x\n>   :::::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>     ::::: box\n>     x\n>     :::::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: box\n> >   a\n> > %% note\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: box\n> >   a\n> >  %% note\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: box\n> >   a\n> >   %% note\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: box\n> >\n> >    :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: box\n> >\n> >     :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: box\n> >\n> >      :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: |\n> >   x\n> > %%%\n> > - not a marker\n> > %%%\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::</p></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: |\n> >   x\n> > ```\n> > - not a marker\n> > ```\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::\n- tail</p></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: |\n> >   x\n> > %% note\n> > - not a marker\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n        <div></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: |\n> >   ```\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::: |\n> >   - marker\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - a\n> >     ::: box\n> >     x\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - a\n> >     ::: box\n> >     x\n> >     :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: box\n> >   a\n> > %% note\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: box\n> >   a\n> >  %% note\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: box\n> >   a\n> >   %% note\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: box\n> >\n> >    ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: box\n> >\n> >     ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: box\n> >\n> >      ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: |\n> >   x\n> > %%%\n> > - not a marker\n> > %%%\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>::::</p></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: |\n> >   x\n> > ```\n> > - not a marker\n> > ```\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>::::\n- tail</p></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: |\n> >   x\n> > %% note\n> > - not a marker\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n        <div></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - :::: |\n> >   %%%\n> >   ::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: |\n> >   ```\n> >   ::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - :::: |\n> >   - marker\n> >   ::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - a\n> >     :::: box\n> >     x\n> >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - a\n> >     :::: box\n> >     x\n> >     ::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: box\n> >   a\n> > %% note\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: box\n> >   a\n> >  %% note\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: box\n> >   a\n> >   %% note\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: box\n> >\n> >    :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: box\n> >\n> >     :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: box\n> >\n> >      :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   x\n> > %%%\n> > - not a marker\n> > %%%\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::::</p></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   x\n> > ```\n> > - not a marker\n> > ```\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::::\n- tail</p></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   x\n> > %% note\n> > - not a marker\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n        <div></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   %%%\n> >   :::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   ```\n> >   :::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - ::::: |\n> >   - marker\n> >   :::::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "source": "> > - a\n> >     ::::: box\n> >     x\n> >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > - a\n> >     ::::: box\n> >     x\n> >     :::::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >   a\n> > > %% note\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >   a\n> > >  %% note\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >   a\n> > >   %% note\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >\n> > >    :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >\n> > >     :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: box\n> > >\n> > >      :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   x\n> > > %%%\n> > > - not a marker\n> > > %%%\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::</p></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   x\n> > > ```\n> > > - not a marker\n> > > ```\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::\n- tail</p></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   x\n> > > %% note\n> > > - not a marker\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n          <div></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   %%%\n> > >   :::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   ```\n> > >   :::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::: |\n> > >   - marker\n> > >   :::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - a\n> > >     ::: box\n> > >     x\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - a\n> > >     ::: box\n> > >     x\n> > >     :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >   a\n> > > %% note\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >   a\n> > >  %% note\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >   a\n> > >   %% note\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >\n> > >    ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >\n> > >     ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: box\n> > >\n> > >      ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   x\n> > > %%%\n> > > - not a marker\n> > > %%%\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>::::</p></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   x\n> > > ```\n> > > - not a marker\n> > > ```\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>::::\n- tail</p></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   x\n> > > %% note\n> > > - not a marker\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n          <div></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   %%%\n> > >   ::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   ```\n> > >   ::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - :::: |\n> > >   - marker\n> > >   ::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - a\n> > >     :::: box\n> > >     x\n> > >   ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - a\n> > >     :::: box\n> > >     x\n> > >     ::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >   a\n> > > %% note\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >   a\n> > >  %% note\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >   a\n> > >   %% note\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>a</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >\n> > >    :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >\n> > >     :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: box\n> > >\n> > >      :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"box\"><p>:::::\n- tail</p></div></li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   x\n> > > %%%\n> > > - not a marker\n> > > %%%\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><p>:::::</p></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   x\n> > > ```\n> > > - not a marker\n> > > ```\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x</p></div></li></ul><pre><code>- not a marker\n</code></pre><p>:::::\n- tail</p></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   x\n> > > %% note\n> > > - not a marker\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>x<br></p></div></li><li>not a marker\n          <div></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   %%%\n> > >   :::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   ```\n> > >   :::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p><code></code></p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - ::::: |\n> > >   - marker\n> > >   :::::\n> > >   :::bad\n> > >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li><div class=\"line-block\"><p>- marker</p></div>\n          :::bad\n:::\n- tail\n        </li></ul></blockquote></blockquote></blockquote>"
+  },
+  {
+    "source": "> > > - a\n> > >     ::::: box\n> > >     x\n> > >   :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> > > - a\n> > >     ::::: box\n> > >     x\n> > >     :::::\n- tail\n",
+    "html": "<blockquote><blockquote><blockquote><ul><li>a\n          <div class=\"box\"><p>x</p></div></li></ul></blockquote></blockquote></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> -   ::: box\n>     x\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>x\n:::\n- tail</p></div></li></ul></blockquote>"
+  },
+  {
+    "source": "> -   ::: box\n>     x\n>     :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>\n>     ::: box\n>     x\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"box\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>\n>     ::: |\n>     x\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p>x</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - a\n>   - ::: box\n>     body\n> - next\n>     :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <ul><li><div class=\"box\"><p>body</p></div></li></ul></li><li>next\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": ">  - ::: box\n>    body\n> - next\n>    :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n      <div></div></li></ul><p>- tail</p></blockquote>"
+  },
+  {
+    "source": "> - a\n>    - ::: box\n>      body\n>   - next\n>      :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <ul><li><div class=\"box\"><p>body</p></div></li></ul><ul><li>next\n          <div></div></li></ul></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: |\n>   ```\n>   code\n>   ```\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p><code>\ncode\n</code></p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: |\n>   roses\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>roses</p></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": ">   - a\n>\n> para\n>\n> -    :::\n>   body\n>      :::\n- tail\n",
+    "html": "<blockquote><ul><li>a</li></ul><p>para</p><ul><li>:::\nbody\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> -    :::\n>   body\n>      :::\n- tail\n",
+    "html": "<blockquote><ul><li>:::\nbody\n      <div></div></li></ul></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> %%%\n> x\n> %%%\n> :::\n- tail\n",
+    "html": "<blockquote><div></div></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> %%%\n> x\n> %%%\n>\n> :::\n- tail\n",
+    "html": "<blockquote><div></div></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: box\n>   body\n> :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>body</p></div></li></ul><div></div></blockquote><ul><li>tail</li></ul>"
+  },
+  {
+    "source": "> - ::: box\n>   a\n> %% note\n> b\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p><p>b\n- tail</p></div></li></ul></blockquote>"
+  }
+]

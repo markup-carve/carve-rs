@@ -1,0 +1,122 @@
+[
+  {
+    "id": "desc-span-1-```",
+    "source": "> - ::: box\n>   - ::: |\n>     ```\n>     :::\n>     ```\n>     :::\n>     :::bad\n>     :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>\n            <div class=\"line-block\">\n              <p><code>\n:::\n</code></p>\n            </div>\n            :::bad\n:::\n- tail\n          </li>\n        </ul>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-1-~~~",
+    "source": "> - ::: box\n>   - ::: |\n>     ~~~\n>     :::\n>     ~~~\n>     :::\n>     :::bad\n>     :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>\n            <div class=\"line-block\">\n              <p>~~~<br>\n:::<br>\n~~~</p>\n            </div>\n            :::bad\n:::\n- tail\n          </li>\n        </ul>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-2-```",
+    "source": "> > - ::: box\n> >   - ::: |\n> >     ```\n> >     :::\n> >     ```\n> >     :::\n> >     :::bad\n> >     :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"box\">\n          <ul>\n            <li>\n              <div class=\"line-block\">\n                <p><code>\n:::\n</code></p>\n              </div>\n              :::bad\n:::\n- tail\n            </li>\n          </ul>\n        </div>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-2-~~~",
+    "source": "> > - ::: box\n> >   - ::: |\n> >     ~~~\n> >     :::\n> >     ~~~\n> >     :::\n> >     :::bad\n> >     :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"box\">\n          <ul>\n            <li>\n              <div class=\"line-block\">\n                <p>~~~<br>\n:::<br>\n~~~</p>\n              </div>\n              :::bad\n:::\n- tail\n            </li>\n          </ul>\n        </div>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "second-verse-after-miss",
+    "source": "> - ::: |\n>   ``` info\n>   :::\n> - ::: |\n>   ```\n>   :::\n>   ```\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code> info</code></p>\n      </div>\n    </li>\n    <li>\n      <div class=\"line-block\">\n        <p><code>\n:::\n</code></p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "two-closed-code-spans",
+    "source": "> - ::: |\n>   ```\n>   :::\n>   ```\n>   ~~~\n>   :::\n>   ~~~\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code>\n:::\n</code><br>\n~~~<br>\n:::<br>\n~~~</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "future-code-beyond-unquoted-line",
+    "source": "> - ::: |\n>   ```\n>   :::\nlazy\n>   ```\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code></code></p>\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<p>lazy</p>\n<blockquote><p><code>\n:::\n- tail</code></p></blockquote>"
+  },
+  {
+    "id": "review-final-comment",
+    "source": "> - :::\n>   %%%\n>   comment\n>   %%%\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div>\n\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>tail</li>\n</ul>"
+  },
+  {
+    "id": "review-final-stale-fence",
+    "source": "> ```\n> x\n> ```\n> - ::: |\n>   ```\n>   :::\n>   ```\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <pre><code>x\n</code></pre>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code>\n:::\n</code></p>\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>tail</li>\n</ul>"
+  },
+  {
+    "id": "review-final-stale-control",
+    "source": "> ```\n> x\n> ```\n> - ::: |\n>   x\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <pre><code>x\n</code></pre>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p>x</p>\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>tail</li>\n</ul>"
+  },
+  {
+    "id": "review-final-longer-code",
+    "source": "> - ::: |\n>   ```\n>   :::\n>   ````\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><code>\n:::\n````</code></p>\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>tail</li>\n</ul>"
+  },
+  {
+    "id": "desc-span-1-```-crlf",
+    "source": "> - ::: box\r\n>   - ::: |\r\n>     ```\r\n>     :::\r\n>     ```\r\n>     :::\r\n>     :::bad\r\n>     :::\r\n- tail\r\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>\n            <div class=\"line-block\">\n              <p><code>\n:::\n</code></p>\n            </div>\n            :::bad\n:::\n- tail\n          </li>\n        </ul>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-1-~~~-crlf",
+    "source": "> - ::: box\r\n>   - ::: |\r\n>     ~~~\r\n>     :::\r\n>     ~~~\r\n>     :::\r\n>     :::bad\r\n>     :::\r\n- tail\r\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"box\">\n        <ul>\n          <li>\n            <div class=\"line-block\">\n              <p>~~~<br>\n:::<br>\n~~~</p>\n            </div>\n            :::bad\n:::\n- tail\n          </li>\n        </ul>\n      </div>\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-2-```-crlf",
+    "source": "> > - ::: box\r\n> >   - ::: |\r\n> >     ```\r\n> >     :::\r\n> >     ```\r\n> >     :::\r\n> >     :::bad\r\n> >     :::\r\n- tail\r\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"box\">\n          <ul>\n            <li>\n              <div class=\"line-block\">\n                <p><code>\n:::\n</code></p>\n              </div>\n              :::bad\n:::\n- tail\n            </li>\n          </ul>\n        </div>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "desc-span-2-~~~-crlf",
+    "source": "> > - ::: box\r\n> >   - ::: |\r\n> >     ~~~\r\n> >     :::\r\n> >     ~~~\r\n> >     :::\r\n> >     :::bad\r\n> >     :::\r\n- tail\r\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"box\">\n          <ul>\n            <li>\n              <div class=\"line-block\">\n                <p>~~~<br>\n:::<br>\n~~~</p>\n              </div>\n              :::bad\n:::\n- tail\n            </li>\n          </ul>\n        </div>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "review-final-comment-verse",
+    "source": "> - ::: |\n>   %%%\n>   :::\n>   %%%\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><br>\n:::<br>\n</p>\n      </div>\n    </li>\n  </ul>\n</blockquote>\n<ul>\n  <li>tail</li>\n</ul>"
+  },
+  {
+    "id": "review-final-unhosted",
+    "source": "> ::: box\n> body\n>   :::\ntail\n",
+    "html": "<blockquote>\n  <div class=\"box\">\n    <p>body\n:::\ntail</p>\n  </div>\n</blockquote>"
+  },
+  {
+    "id": "review-final-comment-descent",
+    "source": "> %%%\n> c\n> %%%\n> > q\n> :::\n",
+    "html": "<blockquote>\n  <blockquote><p>q</p></blockquote>\n  <div>\n\n  </div>\n</blockquote>"
+  },
+  {
+    "id": "review-final-comment-dedented-body",
+    "source": "> - :::\n>   %%%\n> c\n>   %%%\n>   body\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div>\n\n      </div>\n    </li>\n  </ul>\n  <p>c</p>\n  <p>body\n- tail</p>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-1-3",
+    "source": "> - ::: |\n>   %%%\n>   :::\n>   %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><br>\n:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-1-4",
+    "source": "> - ::: |\n>   %%%%\n>   :::\n>   %%%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p><br>\n:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-2-3",
+    "source": "> > - ::: |\n> >   %%%\n> >   :::\n> >   %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n          <p><br>\n:::<br>\n</p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "paired-comment-tail-2-4",
+    "source": "> > - ::: |\n> >   %%%%\n> >   :::\n> >   %%%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <div class=\"line-block\">\n          <p><br>\n:::<br>\n</p>\n        </div>\n        :::bad\n:::\n- tail\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>"
+  },
+  {
+    "id": "comment-blank-tail",
+    "source": "> - ::: |\n>   %%%\n>\n>   :::\n>   %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <div class=\"line-block\">\n        <p></p>\n        <p>:::<br>\n</p>\n      </div>\n      :::bad\n:::\n- tail\n    </li>\n  </ul>\n</blockquote>"
+  }
+]
