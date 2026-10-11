@@ -181,6 +181,9 @@ fn definitions_inside_an_unclosed_fence_after_a_term_remain_payload() {
         "> - :: t\n>   ```\n>   [r]: /u\n>   [^a]: note\n",
         "> > :: t\n> > ```\n> > [r]: /u\n> > [^a]: note\n",
         "- > :: t\n  > ```\n  > [r]: /u\n  > [^a]: note\n",
+        "- - > :: t\n    > ```\n    > [r]: /u\n    > [^a]: note\n",
+        "> - - > :: t\n>     > ```\n>     > [r]: /u\n>     > [^a]: note\n",
+        ":: outer\n:  > :: t\n   > ```\n   > [r]: /u\n   > [^a]: note\n",
         "> - > :: t\n>   > ```\n>   > [r]: /u\n>   > [^a]: note\n",
     ] {
         let output = html(source);
@@ -426,4 +429,16 @@ fn a_fence_in_a_new_quote_uses_its_own_host_floor() {
             );
         }
     }
+}
+
+#[test]
+fn an_unowned_description_marker_does_not_open_a_term_quote() {
+    let source = ":  > :: t\n   > ```\n   > [r]: /u\n   > [^a]: note\n";
+    let doc = carve::parse(source);
+    assert!(
+        matches!(doc.children.as_slice(), [BlockNode::Paragraph(_)]),
+        "{doc:?}"
+    );
+    assert!(doc.footnote_defs.is_empty(), "{doc:?}");
+    assert!(!html(source).contains("<pre>"));
 }

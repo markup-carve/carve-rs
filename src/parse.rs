@@ -2354,8 +2354,14 @@ fn term_folded_lines(
         let mut through_list = false;
         while quotes < limit {
             let rest = strip_blockquote_prefix(trim_ascii_start(view)).or_else(|| {
-                let marker = detect_list_marker_full(view)?;
-                let rest = strip_blockquote_prefix(trim_ascii_start(marker.content))?;
+                let mut content = view;
+                while let Some(rest) = term_container_content(content) {
+                    content = rest;
+                }
+                if content.len() == view.len() {
+                    return None;
+                }
+                let rest = strip_blockquote_prefix(trim_ascii_start(content))?;
                 through_list = true;
                 Some(rest)
             });
@@ -2730,12 +2736,18 @@ fn prepass_fence_ends_above(line: &str, open: FenceOpen, closer_ahead: bool) -> 
         && indent_columns(line) < open.content_col
 }
 
+fn term_container_content(line: &str) -> Option<&str> {
+    detect_list_marker_full(line)
+        .map(|marker| marker.content)
+        .or_else(|| strip_definition_marker(trim_ascii_start(line)).map(|(body, _)| body))
+}
+
 fn term_quote_columns_for(mut line: &str, columns: &ContentColumns) -> Vec<usize> {
     let mut floors = Vec::new();
     loop {
         let base = line;
-        while let Some(marker) = detect_list_marker_full(line) {
-            line = marker.content;
+        while let Some(content) = term_container_content(line) {
+            line = content;
         }
         let marker_col = line.as_ptr() as usize - base.as_ptr() as usize;
         let floor = marker_col.max(columns.reached_by_at(floors.len(), indent_columns(base)));
