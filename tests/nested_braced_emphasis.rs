@@ -646,16 +646,19 @@ fn djot_container_depth_matches_equivalent_prefix_layouts() {
                     let results = [left, right]
                         .map(|prefix| carve::migrate_djot(&format!("{prefix}{nested}")));
                     let html = results
-                        .each_ref()
-                        .map(|result| carve::to_html(&result.value));
+                        .iter()
+                        .map(|result| carve::to_html(&result.value))
+                        .collect::<Vec<_>>();
                     assert!(
                         !html[0].contains("{*") && !html[1].contains("{*"),
                         "{left:?} {right:?} {depth}: values {:?}; html prefixes {:?}",
                         results
-                            .each_ref()
-                            .map(|r| r.value.chars().take(120).collect::<String>()),
-                        html.each_ref()
+                            .iter()
+                            .map(|r| r.value.chars().take(120).collect::<String>())
+                            .collect::<Vec<_>>(),
+                        html.iter()
                             .map(|h| h.chars().take(150).collect::<String>())
+                            .collect::<Vec<_>>()
                     );
                     assert_eq!(
                         html[0].matches("<strong>").count(),
