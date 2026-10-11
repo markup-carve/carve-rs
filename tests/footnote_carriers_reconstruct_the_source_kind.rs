@@ -276,3 +276,44 @@ fn rejected_carriers_do_not_reserve_another_notes_fallback_number() {
         }
     }
 }
+
+#[test]
+fn invalid_label_values_do_not_conflict_with_valid_inline_carriers() {
+    for label_prefix in ["data-carve-", "data-djot-"] {
+        for inline_prefix in ["data-carve-", "data-djot-"] {
+            for mode in [
+                HtmlImportMode::Safe,
+                HtmlImportMode::Semantic,
+                HtmlImportMode::Roundtrip,
+            ] {
+                for label in [
+                    "",
+                    " ",
+                    "bad[label",
+                    "bad]label",
+                    "bad|label",
+                    "bad&#10;label",
+                    "bad&#13;label",
+                ] {
+                    let html = format!(
+                        r##"<p><a href="#fn1" role="doc-noteref">1</a></p><section role="doc-endnotes"><ol><li id="fn1" role="doc-endnote" {label_prefix}footnote-label="{label}" {inline_prefix}inline-footnote="1"><p>body</p></li></ol></section>"##
+                    );
+                    let result = html_to_carve(
+                        &html,
+                        &HtmlImportOptions {
+                            mode,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    assert_eq!(result.value, "^[body]\n", "{html}");
+                    assert_eq!(result.report.diagnostics.len(), 1, "{:?}", result.report);
+                    assert_eq!(
+                        result.report.diagnostics[0].code,
+                        carve::HtmlImportDiagnosticCode::AttributeDropped
+                    );
+                }
+            }
+        }
+    }
+}

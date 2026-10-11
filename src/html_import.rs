@@ -6790,7 +6790,8 @@ impl<'a> Importer<'a> {
         let conflicting_carriers: HashSet<usize> = definitions
             .iter()
             .filter(|definition| {
-                Self::carrier(&definition.block, crate::roundtrip::FOOTNOTE_LABEL).is_some()
+                Self::carrier(&definition.block, crate::roundtrip::FOOTNOTE_LABEL)
+                    .is_some_and(|label| valid_footnote_carrier_label(&label))
                     && Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE).is_some()
             })
             .map(|definition| node_key(&definition.block))
@@ -6802,10 +6803,7 @@ impl<'a> Importer<'a> {
                 std::iter::once(&definition.block)
                     .chain(definition.refs.iter())
                     .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
-                    .filter(|label| {
-                        !crate::parse::label_key(label).is_empty()
-                            && !label.contains(['[', ']', '|', '\r', '\n'])
-                    })
+                    .filter(|label| valid_footnote_carrier_label(label))
             })
             .map(|label| crate::parse::label_key(&label))
             .collect();
@@ -6828,8 +6826,7 @@ impl<'a> Importer<'a> {
                 .collect();
             let requested = labels.iter().next().filter(|label| {
                 labels.len() == 1
-                    && !crate::parse::label_key(label).is_empty()
-                    && !label.contains(['[', ']', '|', '\r', '\n'])
+                    && valid_footnote_carrier_label(label)
                     && !used_labels.contains(&crate::parse::label_key(label))
             });
             let label = if let Some(label) = requested {
@@ -6901,7 +6898,11 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
-            if inline.is_some() && !labels.is_empty() {
+            if inline.is_some()
+                && labels
+                    .iter()
+                    .any(|label| valid_footnote_carrier_label(label))
+            {
                 self.diag(
                     HtmlImportDiagnosticCode::AttributeDropped,
                     "Dropped footnote label carriers on an inline note".into(),
@@ -7434,6 +7435,10 @@ fn attach_remaining_footnote_references(
     }
 
     definitions
+}
+
+fn valid_footnote_carrier_label(label: &str) -> bool {
+    !crate::parse::label_key(label).is_empty() && !label.contains(['[', ']', '|', '\r', '\n'])
 }
 
 fn footnote_anchor_identity(anchor: &Handle) -> String {
