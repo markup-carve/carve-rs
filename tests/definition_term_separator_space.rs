@@ -114,3 +114,156 @@ fn the_terms_own_text_is_positioned_past_the_separator() {
     assert_eq!(pos.start_column, 5, "{pos:?}");
     assert_eq!(pos.start_offset, 4, "{pos:?}");
 }
+
+#[test]
+fn an_unclosed_code_opener_at_the_container_column_ends_a_term() {
+    for fence in ["```", "~~~", "``` rust", "```=html"] {
+        for ending in ["", "\n"] {
+            let source = format!(":: t\n{fence}{ending}");
+            let doc = carve::parse(&source);
+            assert_eq!(doc.children.len(), 2, "{source:?}: {doc:?}");
+            let BlockNode::DefinitionList(list) = &doc.children[0] else {
+                panic!("{source:?}: expected definition list");
+            };
+            assert_eq!(list.items[0].terms[0].children.len(), 1, "{source:?}");
+            assert!(
+                matches!(&list.items[0].terms[0].children[0], InlineNode::Text(t) if t.value == "t")
+            );
+            assert!(
+                matches!(
+                    &doc.children[1],
+                    BlockNode::CodeBlock(_) | BlockNode::RawBlock(_)
+                ),
+                "{source:?}: {doc:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_code_opener_past_the_container_column_stays_term_text() {
+    for fence in ["```", "~~~", "``` rust", "```=html"] {
+        let source = format!(":: t\n  {fence}\n");
+        let doc = carve::parse(&source);
+        assert_eq!(doc.children.len(), 1, "{source:?}: {doc:?}");
+        assert!(!html(&source).contains("<pre>"), "{source:?}");
+    }
+}
+
+#[test]
+fn an_unclosed_fence_ends_a_term_inside_a_quote_or_list() {
+    for source in ["> :: t\n> ```", "- :: t\n  ```", "> - :: t\n>   ```"] {
+        let output = html(source);
+        assert!(output.contains("<dt>t</dt>"), "{source:?}: {output}");
+        assert!(output.contains("<pre><code>"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn an_unclosed_fence_keeps_folding_into_an_ordinary_paragraph() {
+    for source in ["t\n```", "t\n~~~"] {
+        let doc = carve::parse(source);
+        assert!(
+            matches!(doc.children.as_slice(), [BlockNode::Paragraph(_)]),
+            "{source:?}: {doc:?}"
+        );
+    }
+}
+
+#[test]
+fn definitions_inside_an_unclosed_fence_after_a_term_remain_payload() {
+    for source in [
+        ":: t\n```\n[r]: /u\n[^a]: note\n",
+        ":: t\nmore\n```\n[r]: /u\n[^a]: note\n",
+        ":: a\n:: b\n```\n[r]: /u\n[^a]: note\n",
+        "> :: t\n> ```\n> [r]: /u\n> [^a]: note\n",
+        "- :: t\n  ```\n  [r]: /u\n  [^a]: note\n",
+    ] {
+        let output = html(source);
+        assert!(
+            output.contains("<pre><code>[r]: /u\n[^a]: note\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+        assert!(!output.contains("footnotes"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn fences_past_a_hosted_terms_column_preserve_the_writer_roundtrip() {
+    for source in [":: t\n  ~~~\n", "- :: t\n    ~~~\n", "> :: t\n>   ~~~\n"] {
+        let expected = html(source);
+        assert!(!expected.contains("<pre>"), "{source:?}: {expected}");
+        let canonical = carve::to_carve(source);
+        assert_eq!(html(&canonical), expected, "{source:?}: {canonical:?}");
+        assert_eq!(carve::to_carve(&canonical), canonical, "{source:?}");
+    }
+}
+
+#[test]
+fn the_term_span_ends_before_the_unclosed_fence() {
+    let options = carve::Options {
+        positions: true,
+        ..Default::default()
+    };
+    let doc = carve::parse_with_options(":: t\n```\n[r]: /u", &options);
+    let BlockNode::DefinitionList(list) = &doc.children[0] else {
+        panic!("expected definition list")
+    };
+    let term = list.items[0].terms[0].pos.as_ref().expect("term span");
+    assert_eq!(term.end_line, 1);
+    assert_eq!(term.end_offset, 4);
+    let BlockNode::CodeBlock(code) = &doc.children[1] else {
+        panic!("expected code block")
+    };
+    let pos = code.pos.as_ref().expect("code span");
+    assert_eq!(pos.start_line, 2);
+    assert_eq!(pos.start_column, 1);
+    assert_eq!(pos.start_offset, 5);
+}
+
+#[test]
+fn a_closed_hosted_term_fence_releases_following_definitions() {
+    for source in [
+        ":: t\n```\ncode\n```\n\nuse [^a]\n\n[^a]: note\n",
+        "- :: t\n  ```\n  code\n  ```\n\n  use [^a]\n\n  [^a]: note\n",
+        "> :: t\n> ```\n> code\n> ```\n> use [^a]\n\n[^a]: note\n",
+    ] {
+        let doc = carve::parse(source);
+        assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
+        let output = html(source);
+        assert!(
+            output.contains("<pre><code>code\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+        assert!(output.contains("doc-noteref"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn an_earlier_folded_or_host_ended_fence_does_not_hide_a_later_term() {
+    for source in [
+        "p\n~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
+        "- a\n\n  ~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
+    ] {
+        let output = html(source);
+        assert!(output.contains("<dt>t</dt>"), "{source:?}: {output}");
+        assert!(
+            output.contains("<pre><code>[r]: /u\n[^a]: note\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+    }
+}
+
+#[test]
+fn intervening_blocks_end_term_ownership_before_a_later_paragraph_fence() {
+    for block in ["::: \\\nbody\n:::", "{.k\n .other}"] {
+        let source = format!(":: t\n{block}\np\n```\n[r]: /u\n");
+        let doc = carve::parse(&source);
+        assert!(
+            doc.children.iter().any(
+                |node| matches!(node, BlockNode::LinkReferenceDefinition(def) if def.label == "r")
+            ),
+            "{source:?}: {doc:?}"
+        );
+    }
+}

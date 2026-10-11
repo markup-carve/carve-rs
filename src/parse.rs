@@ -1406,7 +1406,12 @@ fn extract_footnote_defs(
         // This can collect a def from a container-nested fence body, but avoids
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
-        let fence_line = stripped.bare;
+        let term_fence = folded_into_term.fence_openers.contains(&i);
+        let fence_line = if term_fence {
+            trim_ascii_start(stripped.bare)
+        } else {
+            stripped.bare
+        };
         if verse_lines[i].is_owned() {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
@@ -1476,11 +1481,15 @@ fn extract_footnote_defs(
             }
         }
 
-        if let Some(open) = detect_fence_open(fence_line) {
+        if let Some(mut open) = detect_fence_open(fence_line) {
+            if term_fence {
+                open.content_col = indent_columns(&strip_container_prefixes_keep_indent(lines[i]));
+                open.quoted = strip_prepass_blockquote_prefix(lines[i]).is_some();
+            }
             // §10 I4, as `extract_link_defs_with_guard`: an unterminated fence
             // interrupts no open paragraph, so going opaque here hid every
             // definition below one from collection (carve-rs#2096).
-            let fence = prepass_fence_opens(&lines, i, open, &closer_maxima);
+            let fence = prepass_fence_opens(&lines, i, open, &closer_maxima, &folded_into_term);
             if fence.opens {
                 in_fence = Some(open);
                 fence_closer_ahead = fence.closer_ahead;
@@ -1521,7 +1530,7 @@ fn extract_footnote_defs(
                     &mut probe_budget,
                     &mut unaffordable,
                 );
-            !(folds || unaffordable || folded_into_term.contains(&i))
+            !(folds || unaffordable || folded_into_term.folded.contains(&i))
         }) {
             let normalized_label = label_key(label);
             let first_for_label = !definition_keys.contains_key(&normalized_label);
@@ -2299,10 +2308,14 @@ fn line_folds_into_an_open_paragraph(
     after.ends_in_paragraph && before.levels == after.levels
 }
 
-/// Line indexes that fold into an open definition term (carve#2411): past the
-/// column of the term's marker, at the term's quote depth, with no blank line
-/// or container-column opener since the term. A list marker ends the term.
-pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usize> {
+/// Lines folded into a term and fences that end one at its container column.
+#[derive(Default)]
+struct TermLineOwnership {
+    folded: std::collections::HashSet<usize>,
+    fence_openers: std::collections::HashSet<usize>,
+}
+
+fn term_folded_lines(lines: &[&str]) -> TermLineOwnership {
     fn view_upto(raw: &str, limit: usize) -> (&str, usize) {
         let mut view = raw;
         let mut quotes = 0usize;
@@ -2324,7 +2337,7 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
         .iter()
         .any(|raw| term_start_column(view(raw).0).is_some())
     {
-        return std::collections::HashSet::new();
+        return TermLineOwnership::default();
     }
     // Lines by the length of their leading `%` run, so finding the closer of a
     // comment fence opened on `index` stays linear over many unclosed openers.
@@ -2339,7 +2352,8 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
         let at = runs.get(&fence_len)?;
         at.get(at.partition_point(|&k| k <= index)).copied()
     };
-    let mut folded = std::collections::HashSet::new();
+    let mut ownership = TermLineOwnership::default();
+    let closer_maxima = fence_closer_suffix_maxima(lines);
     let mut term: Option<(usize, usize)> = None;
     let mut index = 0;
     while index < lines.len() {
@@ -2352,7 +2366,7 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
                 && indent_columns(at_term) > term_col
                 && strip_blockquote_prefix(rest).is_some()
             {
-                folded.insert(index);
+                ownership.folded.insert(index);
                 index += 1;
                 continue;
             }
@@ -2371,12 +2385,23 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
             if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
                 // A folded comment fence takes its body and closer with it.
                 let last = comment.unwrap_or(index);
-                folded.extend(index..=last);
+                ownership.folded.extend(index..=last);
                 index = last + 1;
                 continue;
             }
+            if quotes == term_quotes && col == term_col && detect_fence_open(rest).is_some() {
+                ownership.fence_openers.insert(index);
+            }
             if quotes != term_quotes
                 || item_block_opener(rest)
+                || is_colon_fence_opener_shape(rest)
+                || (rest.starts_with('{')
+                    && standalone_attrs_block_len_iter(
+                        lines[index..]
+                            .iter()
+                            .map(|line| trim_ascii_start(view(line).0)),
+                    )
+                    .is_some())
                 || is_list_marker(rest)
                 || rest.starts_with("%%")
                 || strip_definition_marker(rest).is_some()
@@ -2390,9 +2415,19 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
             index = close + 1;
             continue;
         }
-        if let Some(open) = detect_fence_open(rest) {
+        if let Some(mut open) = detect_fence_open(rest) {
+            open.content_col = col;
+            open.quoted = quotes > 0;
+            let fence = prepass_fence_opens(lines, index, open, &closer_maxima, &ownership);
+            if !fence.opens {
+                index += 1;
+                continue;
+            }
             index += 1;
             while index < lines.len() {
+                if prepass_fence_ends_above(lines[index], open, fence.closer_ahead) {
+                    break;
+                }
                 let closes = is_fence_close(trim_ascii_start(view(lines[index]).0), open);
                 index += 1;
                 if closes {
@@ -2408,7 +2443,7 @@ pub(crate) fn term_folded_lines(lines: &[&str]) -> std::collections::HashSet<usi
         }
         index += 1;
     }
-    folded
+    ownership
 }
 
 /// The column of a `:: ` term that opens this line, after any list or
@@ -2559,16 +2594,20 @@ fn prepass_fence_closer_ahead(
 /// §10 I4: an UNTERMINATED fence cannot interrupt an open paragraph. Going
 /// opaque there hides every definition below it from collection, so the pass
 /// must stay open instead (`:` / ` ``` ` / `[A]: b`). With no paragraph above,
-/// or with a closer ahead, the fence is real and its body is verbatim.
+/// or after a definition term at its container column (CARVE-P2-028), the
+/// fence is real and its body is verbatim. A closer also makes it real.
 fn prepass_fence_opens(
     lines: &[&str],
     index: usize,
     open: FenceOpen,
     maxima: &(Vec<usize>, Vec<usize>),
+    terms: &TermLineOwnership,
 ) -> PrepassFence {
     let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
     PrepassFence {
-        opens: closer_ahead || !prepass_paragraph_open_above(lines, index),
+        opens: closer_ahead
+            || terms.fence_openers.contains(&index)
+            || !prepass_paragraph_open_above(lines, index),
         closer_ahead,
     }
 }
@@ -2785,7 +2824,13 @@ fn extract_link_defs_with_guard(
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = authored_fence_col;
             open.quoted = raw_is_quoted;
-            let fence = prepass_fence_opens(&all_lines, line_index, open, &closer_maxima);
+            let fence = prepass_fence_opens(
+                &all_lines,
+                line_index,
+                open,
+                &closer_maxima,
+                &folded_into_term,
+            );
             if fence.opens {
                 in_fence = Some(open);
                 fence_closer_ahead = fence.closer_ahead;
@@ -2850,7 +2895,7 @@ fn extract_link_defs_with_guard(
                             &mut unaffordable,
                         )
                     });
-                !(folds || unaffordable || folded_into_term.contains(&line_index))
+                !(folds || unaffordable || folded_into_term.folded.contains(&line_index))
             })
         {
             // A reference definition needs a non-empty destination (carve-js
@@ -15188,7 +15233,9 @@ fn fold_term(
         // the document column too, which is why this cannot ask
         // `at_document_level`. Asked as a paragraph, `:: t` / `*[A]: b` lost the
         // author's second line and defined an abbreviation (carve-rs#2096).
-        if interrupts_paragraph_as_container(cur, &owned) {
+        // A code opener at the container column ends a term even without a
+        // closer (CARVE-P2-028). Paragraph continuation requires a closer.
+        if detect_fence_open(&owned).is_some() || interrupts_paragraph_as_container(cur, &owned) {
             break;
         }
         // A term's continuation line is a CONTENT LINE, so its trailing
