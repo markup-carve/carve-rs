@@ -1492,6 +1492,7 @@ fn encode_table_task<'a>(
                 write_array(out, columns, write_table_column)
             });
         }
+        write_separator_widths(&mut w, n);
         if let Some(caption) = &n.caption {
             w.field("caption", |out| out.push('['));
             tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
@@ -2068,6 +2069,7 @@ fn write_table(out: &mut String, n: &Table) {
             write_array(out, columns, write_table_column)
         });
     }
+    write_separator_widths(&mut w, n);
     if let Some(caption) = &n.caption {
         w.field("caption", |out| write_inlines(out, caption));
     }
@@ -2080,6 +2082,24 @@ fn write_table(out: &mut String, n: &Table) {
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();
+}
+
+/// PART 12 §3's author-choice field: PRESENCE says the author wrote a separator
+/// row, which the rows cannot say, so an empty list is still written.
+fn write_separator_widths(w: &mut Writer<'_>, n: &Table) {
+    let Some(widths) = &n.separator_widths else {
+        return;
+    };
+    w.field("separatorWidths", |out| {
+        out.push('[');
+        for (index, width) in widths.iter().enumerate() {
+            if index > 0 {
+                out.push(',');
+            }
+            out.push_str(&width.to_string());
+        }
+        out.push(']');
+    });
 }
 
 fn columns_from_table_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
@@ -3164,8 +3184,37 @@ fn decode_table(obj: &Map<String, Json>) -> Result<Table, AstJsonError> {
         },
         rows,
         row_groups,
+        separator_widths: decode_separator_widths(obj)?,
         pos: optional_pos(obj, "table")?,
     })
+}
+
+/// `separatorWidths` is an array of integers, each at least 1 (PART 12 §3).
+fn decode_separator_widths(obj: &Map<String, Json>) -> Result<Option<Vec<u32>>, AstJsonError> {
+    let entries = match obj.get("separatorWidths") {
+        None | Some(Json::Null) => return Ok(None),
+        Some(Json::Array(entries)) => entries,
+        Some(_) => {
+            return Err(AstJsonError::new(
+                "table.separatorWidths must be an array".to_owned(),
+            ))
+        }
+    };
+    entries
+        .iter()
+        .map(|entry| {
+            entry
+                .as_u64()
+                .filter(|v| *v >= 1 && *v <= u64::from(u32::MAX))
+                .map(|v| v as u32)
+                .ok_or_else(|| {
+                    AstJsonError::new(
+                        "table.separatorWidths[] must be an integer of at least 1".to_owned(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 fn decode_table_column(value: &Json) -> Result<TableColumn, AstJsonError> {

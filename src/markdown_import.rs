@@ -2069,6 +2069,7 @@ impl Builder {
                 columns: Vec::new(),
                 rows,
                 row_groups: None,
+                separator_widths: None,
                 pos: None,
             })),
             Frame::Table { .. } => {}

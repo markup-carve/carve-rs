@@ -2290,7 +2290,32 @@ fn render_table(
     let t = resolved.as_ref();
     indent(out, level);
     out.push_str("<table");
+    // PART 10 §13a: the authored separator row's dash runs, under roundtrip
+    // export only. PRESENCE is the carried half - a `|=` header and a separator
+    // row give the same `<table>` otherwise.
+    let widths_carrier = options
+        .html_carriers()
+        .then(|| t.separator_widths.as_ref())
+        .flatten();
+    if let Some(widths) = widths_carrier {
+        let joined = widths
+            .iter()
+            .map(|w| w.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        write_carrier(
+            out,
+            crate::roundtrip::COL_WIDTHS,
+            &joined,
+            &t.attrs,
+            t.pos.as_ref(),
+        );
+    }
     let mut table_attrs = t.attrs.clone();
+    if widths_carrier.is_some() {
+        // The carrier owns the name, so an authored copy does not reach it.
+        table_attrs = strip_keys(&table_attrs, &[crate::roundtrip::COL_WIDTHS]);
+    }
     if let Some(attrs) = &mut table_attrs {
         let has_body_metadata = ["body-rows", "body-header-rows", "body-header-cols"]
             .iter()

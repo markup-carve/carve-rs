@@ -1165,6 +1165,7 @@ fn list_table_as_table(node: &Admonition) -> Option<Table> {
         columns: Vec::new(),
         rows,
         row_groups: None,
+        separator_widths: None,
         pos: None,
     })
 }

@@ -1981,8 +1981,25 @@ impl<'a> Importer<'a> {
             crate::roundtrip::AUTOLINK => tag == "a" && Self::reads_autolink(handle),
             crate::roundtrip::RAW => tag == "span" && Self::reads_raw_format(handle).is_some(),
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
+            crate::roundtrip::COL_WIDTHS => {
+                tag == "table" && Self::reads_separator_widths(handle).is_some()
+            }
             _ => false,
         }
+    }
+
+    /// The `<table data-carve-col-widths>` separator row, comma-joined. Every
+    /// entry has to be an integer of at least 1 (PART 12 §3); anything else is
+    /// not this carrier and stays the author's attribute.
+    fn reads_separator_widths(table: &Handle) -> Option<Vec<u32>> {
+        let value = Self::carrier(table, crate::roundtrip::COL_WIDTHS)?;
+        if value.is_empty() {
+            return Some(Vec::new());
+        }
+        value
+            .split(',')
+            .map(|entry| entry.trim().parse::<u32>().ok().filter(|w| *w >= 1))
+            .collect()
     }
 
     /// The `<ul data-marker>` bullet, where it names one PART 2 admits and is
@@ -5529,6 +5546,7 @@ impl<'a> Importer<'a> {
             columns: Vec::new(),
             rows: result,
             row_groups: row_groups.map(Box::new),
+            separator_widths: Self::reads_separator_widths(h),
             pos: None,
         }))
     }

@@ -50,6 +50,7 @@ fn table() -> Table {
         columns: vec![],
         rows: vec![],
         row_groups: None,
+        separator_widths: None,
         pos: None,
     }
 }

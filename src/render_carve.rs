@@ -2873,21 +2873,26 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         .rows
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
-    let needs_delimiter = header_row
-        && node.rows.first().is_some_and(|row| {
-            let first_span = row.cells.iter().position(|cell| cell.span.is_some());
-            match first_span {
-                None => false,
-                Some(index) => {
-                    // Native only for a trailing run of colspans after a real
-                    // header cell; every other span shape needs the delimiter.
-                    !(index >= 1
-                        && row.cells[index..]
-                            .iter()
-                            .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+    // PART 12 §3: the author's own separator row, where the AST records one.
+    // Its PRESENCE is the choice, so it is written whatever the header shape -
+    // a native `|=` head is what ABSENCE spells.
+    let needs_delimiter = node.separator_widths.is_some()
+        || header_row
+            && node.rows.first().is_some_and(|row| {
+                let first_span = row.cells.iter().position(|cell| cell.span.is_some());
+                match first_span {
+                    None => false,
+                    Some(index) => {
+                        // Native only for a trailing run of colspans after a
+                        // real header cell; every other span shape needs the
+                        // delimiter.
+                        !(index >= 1
+                            && row.cells[index..]
+                                .iter()
+                                .all(|cell| cell.span == Some(TableCellSpan::Colspan)))
+                    }
                 }
-            }
-        });
+            });
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
@@ -2896,7 +2901,17 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // In the delimiter form the promoted row is written as ordinary
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
-            cells.push(render_table_cell(session, cell, ctx, mark_header));
+            // A written separator row carries the column alignment, so the
+            // promoted row does not spell it a second time per cell.
+            let suppress_align =
+                row_index == 0 && needs_delimiter && node.separator_widths.is_some();
+            cells.push(render_table_cell(
+                session,
+                cell,
+                ctx,
+                mark_header,
+                suppress_align,
+            ));
         }
         ctx.cell_not_last = false;
         // A row whose every cell is blank is not a table row
@@ -2911,7 +2926,26 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
-        let sep = vec!["---"; node.rows[0].cells.len()].join("|");
+        let cells = node.rows[0].cells.len();
+        let sep = match &node.separator_widths {
+            // An entry count that disagrees with the row is spelled for the
+            // cells that EXIST and no further; a cell past the entries takes
+            // the default run.
+            Some(widths) => (0..cells)
+                .map(|index| {
+                    let width = widths.get(index).copied().unwrap_or(3).max(1) as usize;
+                    let dashes = "-".repeat(width);
+                    match node.rows[0].cells[index].align {
+                        Some(TableAlign::Left) => format!(":{dashes}"),
+                        Some(TableAlign::Right) => format!("{dashes}:"),
+                        Some(TableAlign::Center) => format!(":{dashes}:"),
+                        None => dashes,
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("|"),
+            None => vec!["---"; cells].join("|"),
+        };
         rows.insert(1, format!("|{sep}|"));
     }
     if let Some(row) = node
@@ -2954,6 +2988,7 @@ fn render_table_cell(
     cell: &TableCell,
     ctx: &mut CarveContext,
     mark_header: bool,
+    suppress_align: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
         crate::render_carve_error::record_unspellable(
@@ -2981,7 +3016,11 @@ fn render_table_cell(
         };
         return pad_cell(&attrs, marker);
     }
-    let align = align_marker(cell.align);
+    let align = if suppress_align {
+        ""
+    } else {
+        align_marker(cell.align)
+    };
     let valign = match cell.valign {
         Some(TableVerticalAlign::Top) => "^",
         Some(TableVerticalAlign::Middle) => "~",
