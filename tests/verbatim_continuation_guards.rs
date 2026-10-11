@@ -101,11 +101,16 @@ pub(super) fn html_tree(html: &str) -> serde_json::Value {
 fn raw_literal_and_math_continuations_keep_their_payload_when_formatted() {
     let controls: Vec<serde_json::Value> =
         serde_json::from_str(include_str!("fixtures/verbatim-continuation-guards.json")).unwrap();
+    assert_eq!(controls.len(), 1080);
     for control in controls {
         let source = control["source"].as_str().unwrap();
         let doc =
             carve::parse_with_options(source, &carve::Options::default().with_positions(true));
         let written = carve::render_carve(&doc).unwrap();
+        let report =
+            carve::to_carve_with_report(source, carve::CheckedRenderOptions::default()).unwrap();
+        assert_eq!(report.value, written, "{source:?}");
+        assert_eq!(report.total_losses, 0, "{source:?}");
         let reparsed = carve::parse(&written);
         let before: serde_json::Value = serde_json::from_str(&carve::to_json(&doc)).unwrap();
         let after: serde_json::Value = serde_json::from_str(&carve::to_json(&reparsed)).unwrap();
@@ -332,6 +337,47 @@ fn nested_hosts_keep_exact_verbatim_payloads() {
                     "{host:?} {node:?}"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn identical_guard_text_in_a_quote_does_not_steal_the_footnote_refusal_type() {
+    for continuation in ["> m", "> mm"] {
+        let mut doc = carve::parse("p [^f]\n\n[^f]: > body\n\n  tail\n");
+        let blocks = doc.footnote_defs.get_mut("f").unwrap();
+        let carve::BlockNode::BlockQuote(quote) = &mut blocks[0] else {
+            panic!("expected quote");
+        };
+        let carve::BlockNode::Paragraph(quoted) = &mut quote.children[0] else {
+            panic!("expected quoted paragraph");
+        };
+        quoted.children = vec![carve::InlineNode::Code(carve::Code {
+            value: "x\n> m".into(),
+            attrs: None,
+            pos: None,
+        })];
+        let carve::BlockNode::Paragraph(tail) = &mut blocks[1] else {
+            panic!("expected tail paragraph");
+        };
+        tail.children = vec![carve::InlineNode::Math(carve::Math {
+            content: format!("x\n{continuation}"),
+            attrs: None,
+            display: false,
+            label: None,
+            number: None,
+            pos: None,
+        })];
+        match carve::render_carve(&doc).expect_err("math continuation cannot stay in the footnote")
+        {
+            carve::RenderCarveError::SourceUnspellable(error) => {
+                assert_eq!(error.node_type(), "math");
+                assert_eq!(
+                    error.reason(),
+                    "a block-marker continuation cannot stay inside a footnote paragraph"
+                );
+            }
+            other => panic!("unexpected refusal: {other}"),
         }
     }
 }

@@ -54,7 +54,7 @@ struct CarveContext {
     /// separator instead of joining a `%`-leading content into a fence.
     in_term: bool,
     in_footnote_body: bool,
-    footnote_guard_types: Vec<(&'static str, String)>,
+    footnote_guard_types: Vec<&'static str>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
     ///
@@ -3231,15 +3231,19 @@ fn render_footnote_def_source(
     let raw_body = render_blocks(session, blocks, ctx);
     ctx.in_footnote_body = previous_footnote_body;
     let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
-    if let Some(rest) = raw_body.lines().find_map(|line| {
-        line.trim_start_matches([' ', '\t'])
-            .strip_prefix(sentinel(session, S_CODE_LINE).as_str())
-            .filter(|rest| rest.starts_with('>'))
-    }) {
-        let node_type = guard_types
-            .iter()
-            .find(|(_, line)| rest.starts_with(line.as_str()))
-            .map_or("footnote", |(kind, _)| *kind);
+    let guarded_quote = format!("{}>", sentinel(session, S_CODE_LINE));
+    if let Some((ordinal, _)) =
+        raw_body
+            .match_indices(&guarded_quote)
+            .enumerate()
+            .find(|(_, (offset, _))| {
+                let line_start = raw_body[..*offset].rfind('\n').map_or(0, |at| at + 1);
+                raw_body[line_start..*offset]
+                    .trim_matches([' ', '\t'])
+                    .is_empty()
+            })
+    {
+        let node_type = guard_types.get(ordinal).copied().unwrap_or("footnote");
         crate::render_carve_error::record_unspellable(
             node_type,
             "a block-marker continuation cannot stay inside a footnote paragraph",
@@ -5139,7 +5143,7 @@ fn guard_code_lines(
                     return line.to_owned();
                 }
                 if ctx.in_footnote_body && line.starts_with('>') {
-                    ctx.footnote_guard_types.push((node_type, line.to_owned()));
+                    ctx.footnote_guard_types.push(node_type);
                 }
                 let kind = if ctx.in_footnote_body && line.starts_with('[') {
                     S_FOOTNOTE_CODE_LINE
