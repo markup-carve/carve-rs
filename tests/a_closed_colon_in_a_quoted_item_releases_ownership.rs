@@ -498,3 +498,18 @@ fn closed_code_inside_descendant_verse_preserves_its_real_closer() {
         );
     }
 }
+
+#[test]
+fn folded_fence_paragraphs_keep_the_quoted_item_claim() {
+    let rows: Vec<Value> =
+        serde_json::from_str(include_str!("fixtures/quoted-folded-fence-ownership.json")).unwrap();
+    for row in rows {
+        let source = row["source"].as_str().unwrap();
+        assert_eq!(
+            carve::to_html(source),
+            row["html"].as_str().unwrap(),
+            "{}\n{source}",
+            row["id"]
+        );
+    }
+}

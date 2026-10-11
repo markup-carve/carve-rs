@@ -8587,6 +8587,8 @@ struct NestedLevel {
     colon_absorption: bool,
     host_verse: Option<(usize, usize, usize)>,
     fence_ordinal: usize,
+    // An unmatched code opener folded into the hosted ordinary paragraph.
+    inline_fence_paragraph: bool,
 }
 
 impl NestedFenceReplay {
@@ -8608,7 +8610,7 @@ impl NestedFenceReplay {
             self.replay(lines, at, cur);
         }
         let deepest = self.chain.last()?;
-        if !deepest.colons.is_empty()
+        if (!deepest.colons.is_empty() || deepest.inline_fence_paragraph)
             && deepest.para
             && deepest.fence.is_none()
             && deepest.host_fence.is_none()
@@ -8633,6 +8635,9 @@ impl NestedFenceReplay {
         }
         let mut level = 0;
         loop {
+            if !chain[level].para {
+                chain[level].inline_fence_paragraph = false;
+            }
             let mut colon_opaque = false;
             if let Some((open, floor, opener)) = chain[level].host_fence {
                 if !is_blank_line(text) && indent_columns(text) < floor {
@@ -8873,6 +8878,7 @@ impl NestedFenceReplay {
                 if !colon_opaque
                     && floor > 0
                     && col >= floor
+                    && (col == floor || here.colons.is_empty())
                     && (col == floor
                         || exact_colon_fence_len(inner).is_none()
                         || (here.colons.is_empty()
@@ -8918,7 +8924,9 @@ impl NestedFenceReplay {
                         return;
                     }
                 }
-                if let Some(open) = detect_fence_open(inner).filter(|_| floor > 0) {
+                if let Some(open) = detect_fence_open(inner)
+                    .filter(|_| floor > 0 && (col == floor || here.colons.is_empty()))
+                {
                     // The host holds the fence whether the opener sits AT its
                     // content column or past it. A fence after an open paragraph
                     // still needs a closer ahead (section 10), and that closer may
@@ -8939,6 +8947,22 @@ impl NestedFenceReplay {
                         here.by_fence = true;
                         return;
                     }
+                }
+            }
+            if let Some(open) = detect_fence_open(trim_ascii_start(text)).filter(|_| here.para) {
+                let column = indent_columns(text);
+                let floor = here.hosts.last().map_or(0, |&(_, floor, _)| floor);
+                if !literal_code_closes(
+                    lines,
+                    at,
+                    level,
+                    floor,
+                    column,
+                    open,
+                    &mut self.literal_code_lookup,
+                ) {
+                    here.inline_fence_paragraph = true;
+                    return;
                 }
             }
             if let Some(open) = detect_fence_open(text) {
@@ -8979,6 +9003,7 @@ impl NestedFenceReplay {
                 return;
             }
             if is_blank_line(text) {
+                here.inline_fence_paragraph = false;
                 here.initial_marker_column = None;
             }
             let mut paragraph = ParaOpen::from_line(text, here.colon_absorption);
@@ -13999,6 +14024,8 @@ fn collect_indented_block_mapped_with_columns(
     let mut folded_code_span = false;
     let mut folded_code_column = strip_cols;
     let mut folded_code_paragraph_open = false;
+    let mut collected_paragraph_open = false;
+    let mut collected_literal_body: Option<(usize, usize)> = None;
     // A descendant fence may open past this collector's strip column.
     // Preserve that decision before the deferred child loses its lookahead.
     // A marker-line ladder opens descendants before collection begins.
@@ -14022,6 +14049,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            collected_paragraph_open = false;
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
             // collector: the lookahead below asks whether the ITEM continues,
             // which is the wrong question while a fence is running. The plain
@@ -14458,7 +14486,13 @@ fn collect_indented_block_mapped_with_columns(
                 .any(|column| column == indent && column > strip_cols);
         // Match the authored fence column before rebasing the collected body.
         // Markers inside that body must reach the rebase pass as payload.
-        let fence_line = if let Some(open) = fence.as_ref() {
+        if collected_literal_body.is_none() && lines.is_empty() {
+            collected_literal_body =
+                detect_line_block_open(trim_ascii_start(&sliced)).map(|width| (width, indent));
+        }
+        let fence_line = if collected_literal_body.is_some() {
+            trim_ascii_start(line)
+        } else if let Some(open) = fence.as_ref() {
             if indent == open.content_col {
                 trim_ascii_start(line)
             } else {
@@ -14504,9 +14538,29 @@ fn collect_indented_block_mapped_with_columns(
                 folded_code_paragraph_open = line_starts_paragraph(paragraph_line)
                     || detect_fence_open(paragraph_line).is_some();
             }
-            track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            // A code-shaped line without any future closer remains inline
+            // when an ordinary paragraph already owns this item column.
+            let folded_inline_fence = fence.is_none()
+                && collected_paragraph_open
+                && detect_fence_open(fence_line).is_some_and(|open| {
+                    !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                });
+            if !folded_inline_fence {
+                track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            }
+            collected_paragraph_open = folded_inline_fence
+                || (!opaque_here && indent == strip_cols && line_starts_paragraph(&sliced));
             if fence.is_none() {
                 folded_code_span = false;
+            }
+        }
+        if !opaque_here {
+            if let Some((width, authored)) = collected_literal_body {
+                if (indent == strip_cols || indent == authored)
+                    && exact_colon_fence_len(trim_ascii_start(&sliced)) == Some(width)
+                {
+                    collected_literal_body = None;
+                }
             }
         }
         track_collected_colon_fence(
@@ -27041,6 +27095,22 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn folded_inline_fence_misses_share_the_bounded_index() {
+        for count in [64, 512] {
+            let mut body = LineBuffer::default();
+            body.push_at("- ordinary".to_string(), None, None);
+            for width in (3..count + 3).rev() {
+                body.push_at(format!("  {}", "`".repeat(width)), None, None);
+            }
+            let cur = LineCursor::new_with_cols(&[], None, None);
+            let mut replay = NestedFenceReplay::default();
+            LITERAL_CODE_LINES.with(|work| work.set(0));
+            assert_eq!(replay.verdict(&body.lines, &cur), Some(true));
+            assert!(LITERAL_CODE_LINES.with(Cell::get) <= body.lines.len() * 2);
+        }
+    }
 
     #[test]
     fn quoted_anonymous_body_comments_share_their_index() {
