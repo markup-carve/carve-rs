@@ -291,3 +291,35 @@ fn a_sibling_item_ends_the_previous_colon_scope() {
         assert!(carve::to_html(source).contains("- tail"), "{source}");
     }
 }
+
+#[test]
+fn an_item_to_the_left_also_ends_the_previous_colon_scope() {
+    for source in [
+        ">  - ::: box\n>    body\n> - next\n>    :::\n- tail\n",
+        "> - a\n>    - ::: box\n>      body\n>   - next\n>      :::\n- tail\n",
+    ] {
+        for nested in [false, true] {
+            let source = if nested {
+                source
+                    .lines()
+                    .map(|line| {
+                        if line.starts_with('>') {
+                            format!("> {line}\n")
+                        } else {
+                            format!("{line}\n")
+                        }
+                    })
+                    .collect::<String>()
+            } else {
+                source.to_owned()
+            };
+            let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
+            assert_eq!(
+                ast["children"].as_array().unwrap().len(),
+                1,
+                "{source}: {ast}"
+            );
+            assert!(carve::to_html(&source).contains("- tail"), "{source}");
+        }
+    }
+}

@@ -8751,7 +8751,7 @@ impl NestedFenceReplay {
                 && here
                     .hosts
                     .iter()
-                    .any(|&(marker, _, item)| item && marker == indent_columns(text));
+                    .any(|&(marker, _, item)| item && marker >= indent_columns(text));
             let lazy_paragraph = here.para
                 && !starts_sibling
                 && !match detect_fence_open(text) {
@@ -8783,7 +8783,7 @@ impl NestedFenceReplay {
                 let sibling = here
                     .hosts
                     .iter()
-                    .any(|&(marker, _, item)| marker == column && item);
+                    .any(|&(marker, _, item)| marker >= column && item);
                 if !lazy_paragraph {
                     while here.hosts.last().is_some_and(|&(_, col, _)| col > column) {
                         here.hosts.pop();
