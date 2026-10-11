@@ -365,3 +365,43 @@ fn a_marker_between_deeper_ancestor_columns_keeps_the_closed_leaf_owner() {
     assert_eq!(ast["children"][1]["type"], "list", "{ast}");
     assert!(carve::to_html(source).contains("body\n- next"));
 }
+
+#[test]
+fn an_ancestor_colon_closer_and_a_folded_malformed_marker_leave_no_claim() {
+    for source in [
+        "> - ::: box\n>   - ::: inner\n>     body\n>   :::\n- tail\n",
+        "> - a\n>   - b\n>  - :::bad\n>   :::\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            2,
+            "{source}: {ast}"
+        );
+        assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+    }
+}
+
+#[test]
+fn a_closed_hosted_comment_ends_the_paragraph_before_quoted_dedent() {
+    let source = "> - ::: box\n>   text\n>   %%%\n>   c\n>   %%%\n> out\n>   :::\n- tail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 1, "{ast}");
+    assert!(carve::to_html(source).contains("out\n:::\n- tail"));
+}
+
+#[test]
+fn a_closed_marker_line_colon_releases_an_unquoted_nested_item() {
+    let source = "- a\n  - ::: box\n    body\n - next\n    :::\ntail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+    assert_eq!(ast["children"][1]["type"], "paragraph", "{ast}");
+    assert!(carve::to_html(source).contains("body\n- next"));
+}
+#[test]
+fn a_new_item_left_of_the_first_quoted_marker_registers_its_colon_host() {
+    let source = ">  - a\n> - next\n>   ::: b\n>   x\n>   :::\ntail\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"].as_array().unwrap().len(), 2, "{ast}");
+    assert_eq!(ast["children"][1]["type"], "paragraph", "{ast}");
+}

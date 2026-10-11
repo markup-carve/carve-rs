@@ -8749,8 +8749,20 @@ impl NestedFenceReplay {
             here.by_colon = false;
             let starts_sibling = detect_list_marker_full(trim_ascii_start(text)).is_some()
                 && marker_ends_replayed_item(&here.hosts, indent_columns(text));
+            let hosted_colon_opener = !colon_opaque
+                && here
+                    .hosts
+                    .iter()
+                    .any(|&(_, column, _)| column == indent_columns(text))
+                && (!here.colon_absorption
+                    || exact_colon_fence_len(trim_ascii_start(text)).is_none())
+                && (detect_container_open(trim_ascii_start(text)).is_some()
+                    || detect_line_block_open(trim_ascii_start(text)).is_some()
+                    || detect_hardbreaks_block_open(trim_ascii_start(text)).is_some()
+                    || detect_quote_block_open(trim_ascii_start(text)).is_some());
             let lazy_paragraph = here.para
                 && !starts_sibling
+                && !hosted_colon_opener
                 && !match detect_fence_open(text) {
                     Some(open) => closer_ahead(lines, at, level, |line| is_fence_close(line, open)),
                     None => interrupts_paragraph_with_rest(text, &[]),
@@ -8764,17 +8776,23 @@ impl NestedFenceReplay {
                     here.colons.pop();
                 }
             }
-            if let Some(&(width, column)) = here.colons.last().filter(|_| !colon_opaque) {
-                if indent_columns(text) == column
-                    && exact_colon_fence_len(trim_ascii_start(text)) == Some(width)
-                {
-                    here.colons.pop();
-                    here.para = false;
-                    here.colon_absorption = false;
-                    here.by_colon = true;
-                    return;
+            if !colon_opaque {
+                let column = indent_columns(text);
+                if let Some(width) = exact_colon_fence_len(trim_ascii_start(text)) {
+                    if let Some(index) = here
+                        .colons
+                        .iter()
+                        .rposition(|&(seen, at)| seen == width && at == column)
+                    {
+                        here.colons.truncate(index);
+                        here.para = false;
+                        here.colon_absorption = false;
+                        here.by_colon = true;
+                        return;
+                    }
                 }
             }
+            let mut absorption_text = text;
             if !is_blank_line(text) {
                 let column = indent_columns(text);
                 let sibling = marker_ends_replayed_item(&here.hosts, column);
@@ -8808,6 +8826,7 @@ impl NestedFenceReplay {
                     }
                     break;
                 }
+                absorption_text = inner;
                 if block_start {
                     here.colon_absorption = false;
                 }
@@ -8828,6 +8847,10 @@ impl NestedFenceReplay {
                             )
                         {
                             here.host_comment = Some((len, col, !collected));
+                            if collected {
+                                here.para = false;
+                                here.colon_absorption = false;
+                            }
                             return;
                         }
                     }
@@ -8897,9 +8920,7 @@ impl NestedFenceReplay {
             here.para = paragraph.get();
             here.colon_absorption = here.para
                 && (here.colon_absorption
-                    || is_invalid_colon_fence_opener_text(trim_ascii_start(
-                        innermost_marker_content(text),
-                    )));
+                    || is_invalid_colon_fence_opener_text(trim_ascii_start(absorption_text)));
             return;
         }
     }
@@ -12617,6 +12638,11 @@ fn colon_fences_left_open(nested: &str) -> usize {
     let mut closer_index = None;
     let mut comment_closers = None;
     for (index, trimmed) in lines.iter().copied().enumerate() {
+        let trimmed = if index == 0 {
+            innermost_marker_content(trimmed)
+        } else {
+            trimmed
+        };
         if index < verse_end {
             continue;
         }
