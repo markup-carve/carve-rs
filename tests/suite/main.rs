@@ -7,6 +7,15 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
+mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
+
+#[path = "../multiline_inline_code.rs"]
+mod multiline_inline_code;
+
+#[path = "../an_emphasis_ending_in_an_escaped_space_keeps_its_braces.rs"]
+mod an_emphasis_ending_in_an_escaped_space_keeps_its_braces;
+
 #[path = "../attached_definition_boundaries.rs"]
 mod attached_definition_boundaries;
 
@@ -1846,3 +1855,11 @@ mod smart_quote_rules;
 mod a_djot_table_caption_and_an_empty_note_body_survive_import;
 #[path = "../quotes_only_typography.rs"]
 mod quotes_only_typography;
+
+#[path = "../a_closed_marker_line_fence_ends_its_host.rs"]
+mod a_closed_marker_line_fence_ends_its_host;
+#[path = "../a_literal_caption_marker_after_an_empty_quote_needs_no_escape.rs"]
+mod a_literal_caption_marker_after_an_empty_quote_needs_no_escape;
+
+#[path = "../raw_html_carriers_follow_the_import_trust_mode.rs"]
+mod raw_html_carriers_follow_the_import_trust_mode;

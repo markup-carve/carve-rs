@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-below-column-line-continues-a-paragraph-only-where-one-is-open",
+    "a-caption-scope-resets-at-a-structural-only-line",
     "a-dash-run-opens-frontmatter-only-at-the-start-and-only-a-dash-run",
     "an-ordered-list-carries-its-authored-delimiter",
     "multiple-table-bodies-have-positional-source-metadata",
