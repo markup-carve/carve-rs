@@ -371,14 +371,6 @@ pub struct Options<'a> {
     /// author's source run. Default `Glyph`; only the Markdown target reads
     /// this.
     pub smart_typography: SmartTypographyMode,
-    /// Carry an element-less container through a Markdown round trip in an HTML
-    /// comment holding its Carve opener verbatim (PART 11 §10s). OFF by
-    /// default, because a Markdown renderer with raw HTML turned off shows the
-    /// comment as text.
-    ///
-    /// The mode only ADDS comment lines: with it off the emitted bytes are the
-    /// ones this target emits today. Only the Markdown target reads this.
-    pub carry_markers: bool,
     /// Roundtrip export: add the preservation carriers PART 10 §13 names, so
     /// a render-and-import cycle recovers distinctions the serialization has no
     /// spelling for. OFF by default on every surface, and enabling it neither
@@ -386,8 +378,7 @@ pub struct Options<'a> {
     ///
     /// The TARGET decides the carrier (§13). HTML writes the attribute
     /// inventory of §13a; Markdown writes the container carrier comments
-    /// [`Options::carry_markers`] already selects, so this option SELECTS them
-    /// rather than redefining them.
+    /// of PART 11 §10s.
     ///
     /// It is an EXPORT option (§13b). It never enables a trusted HTML import,
     /// never widens an importer's mode and never relaxes a destination check.
@@ -475,7 +466,6 @@ impl Default for Options<'_> {
             labels: BTreeMap::new(),
             allow_raw_html: true,
             smart_typography: SmartTypographyMode::Glyph,
-            carry_markers: false,
             roundtrip: false,
             lowercase_heading_ids: false,
             ascii_heading_ids: AsciiHeadingIds::Off,
@@ -516,33 +506,13 @@ impl<'a> Options<'a> {
         self
     }
 
-    /// Carry an element-less container through a Markdown round trip in an HTML
-    /// comment holding its Carve opener verbatim (PART 11 §10s). Markdown
-    /// output only.
-    pub fn with_carry_markers(mut self, enabled: bool) -> Self {
-        self.carry_markers = enabled;
-        self
-    }
-
     /// Turn roundtrip export on or off (PART 10 §13). See [`Options::roundtrip`].
     pub fn with_roundtrip(mut self, enabled: bool) -> Self {
         self.roundtrip = enabled;
         self
     }
 
-    /// Whether the Markdown target writes its container carrier comments.
-    ///
-    /// PART 10 §13c: either enabled option enables preservation, in either
-    /// order, so a `roundtrip` default never overrides a `carry_markers` the
-    /// caller enabled and the reverse holds too.
-    pub fn markdown_carriers(&self) -> bool {
-        self.carry_markers || self.roundtrip
-    }
-
     /// Whether the HTML target writes the §13a carriers.
-    ///
-    /// `carry_markers` is NOT redefined as an HTML option (§13c), so only the
-    /// canonical option reaches this target.
     pub fn html_carriers(&self) -> bool {
         self.roundtrip
     }

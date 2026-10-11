@@ -52,7 +52,7 @@ pub fn render_markdown_with_options(
         doc,
         options.smart_typography,
         options.heading_id_options(),
-        options.markdown_carriers(),
+        options.roundtrip,
     ))
 }
 
@@ -95,11 +95,11 @@ fn render_markdown_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
     id_opts: crate::extension::HeadingIdOptions,
-    carry_markers: bool,
+    roundtrip: bool,
 ) -> String {
     let _carriers = CarrierGuard::install_defaults();
     let losses = crate::render_loss::checkpoint();
-    let first = render_markdown_once(doc, smart_typography, id_opts, carry_markers);
+    let first = render_markdown_once(doc, smart_typography, id_opts, roundtrip);
     let inserted = INSERTED.with(std::cell::Cell::get);
     let seen = SEEN.with(std::cell::Cell::get);
     if (0..CARRIER_COUNT).all(|slot| seen[slot] <= inserted[slot]) {
@@ -134,14 +134,14 @@ fn render_markdown_inner(
     });
     let _picked_carriers = CarrierGuard::install(picked);
     losses.restore();
-    render_markdown_once(doc, smart_typography, id_opts, carry_markers)
+    render_markdown_once(doc, smart_typography, id_opts, roundtrip)
 }
 
 fn render_markdown_once(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
     id_opts: crate::extension::HeadingIdOptions,
-    carry_markers: bool,
+    roundtrip: bool,
 ) -> String {
     INSERTED.with(|counts| counts.set([0; CARRIER_COUNT]));
     SEEN.with(|counts| counts.set([0; CARRIER_COUNT]));
@@ -193,7 +193,7 @@ fn render_markdown_once(
         link_depth: 0,
         single_line_depth: 0,
         previous_list: None,
-        carry_markers,
+        roundtrip,
         carrier_depth: 0,
         delimiter_ancestors: Vec::new(),
         rendered_children: HashMap::new(),
@@ -280,7 +280,7 @@ struct MarkdownContext {
     previous_list: Option<(bool, char)>,
     /// PART 11 §10s: whether an element-less container is bracketed with a
     /// carrier marker. OFF by default; the mode only ADDS comment lines.
-    carry_markers: bool,
+    roundtrip: bool,
     /// How many carried containers enclose the block being written, which is
     /// what decides the colon-fence width a marker payload carries.
     carrier_depth: usize,
@@ -291,7 +291,7 @@ struct MarkdownContext {
 /// The marker payloads a container takes, or `None` when the mode is off or the
 /// container is not element-less on this target.
 fn carrier_markers(node: &BlockNode, ctx: &MarkdownContext) -> Option<CarrierMarkers> {
-    if !ctx.carry_markers {
+    if !ctx.roundtrip {
         return None;
     }
     spell_carrier_markers(node, ctx.carrier_depth)

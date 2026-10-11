@@ -229,11 +229,6 @@ fn main() -> ExitCode {
                 };
                 options = options.with_profile_base_host(value);
             }
-            "--carry-markers" => {
-                // PART 11 §10s. Markdown output only, and refused on any other
-                // target rather than silently ignored.
-                options.carry_markers = true;
-            }
             "--roundtrip" => {
                 // PART 10 §13. The target decides the carrier, so this is
                 // accepted for HTML and Markdown and refused elsewhere.
@@ -415,10 +410,6 @@ fn main() -> ExitCode {
     }
     if citation_mode_set && !extension_keys.iter().any(|key| key == "citations") {
         eprintln!("carve: --citation-mode requires --extension citations");
-        return ExitCode::FAILURE;
-    }
-    if options.carry_markers && format != OutputFormat::Markdown {
-        eprintln!("carve: --carry-markers requires --markdown");
         return ExitCode::FAILURE;
     }
     if options.roundtrip && !matches!(format, OutputFormat::Html | OutputFormat::Markdown) {
@@ -1707,8 +1698,7 @@ fn print_usage() {
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
          --markdown, --md            Markdown\n  \
-         --roundtrip                 add the PART 10 §13 preservation carriers\n  \
-         --carry-markers             carry an element-less container in a comment\n  \
+         --roundtrip                 add preservation carriers to HTML or Markdown\n  \
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n  \
          --carve                     canonical Carve source\n\n\
