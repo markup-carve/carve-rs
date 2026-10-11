@@ -2875,8 +2875,14 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
     // PART 12 §3: the author's own separator row, where the AST records one.
     // Its PRESENCE is the choice, so it is written whatever the header shape -
-    // a native `|=` head is what ABSENCE spells.
-    let needs_delimiter = node.separator_widths.is_some()
+    // a native `|=` head is what ABSENCE spells. An EMPTY entry list names no
+    // separator cell and so has no separator row to spell; only a hand-built
+    // tree can hold one.
+    let authored_widths = node
+        .separator_widths
+        .as_ref()
+        .filter(|widths| !widths.is_empty());
+    let needs_delimiter = authored_widths.is_some()
         || header_row
             && node.rows.first().is_some_and(|row| {
                 let first_span = row.cells.iter().position(|cell| cell.span.is_some());
@@ -2902,9 +2908,11 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // data cells - the row after it is what makes them headers.
             let mark_header = !(needs_delimiter && row_index == 0);
             // A written separator row carries the column alignment, so the
-            // promoted row does not spell it a second time per cell.
+            // promoted row does not spell it a second time - for the columns
+            // that row reaches. A cell past the last entry has no separator
+            // cell to carry it and keeps its own marker.
             let suppress_align =
-                row_index == 0 && needs_delimiter && node.separator_widths.is_some();
+                row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
             cells.push(render_table_cell(
                 session,
                 cell,
@@ -2926,16 +2934,17 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
-        let cells = node.rows[0].cells.len();
-        let sep = match &node.separator_widths {
-            // An entry count that disagrees with the row is spelled for the
-            // cells that EXIST and no further; a cell past the entries takes
-            // the default run.
-            Some(widths) => (0..cells)
-                .map(|index| {
-                    let width = widths.get(index).copied().unwrap_or(3).max(1) as usize;
-                    let dashes = "-".repeat(width);
-                    match node.rows[0].cells[index].align {
+        let sep = match authored_widths {
+            // ONE SEPARATOR CELL PER ENTRY, not per row cell. Filling the row's
+            // width instead made the writer a non-fixed-point: the corpus's
+            // ragged `| |x |` over `|---|` came back with a second entry the
+            // author never wrote, so `fmt(fmt(x))` moved the tree.
+            Some(widths) => widths
+                .iter()
+                .enumerate()
+                .map(|(index, width)| {
+                    let dashes = "-".repeat((*width).max(1) as usize);
+                    match node.rows[0].cells.get(index).and_then(|cell| cell.align) {
                         Some(TableAlign::Left) => format!(":{dashes}"),
                         Some(TableAlign::Right) => format!("{dashes}:"),
                         Some(TableAlign::Center) => format!(":{dashes}:"),
@@ -2944,7 +2953,7 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
                 })
                 .collect::<Vec<_>>()
                 .join("|"),
-            None => vec!["---"; cells].join("|"),
+            None => vec!["---"; node.rows[0].cells.len()].join("|"),
         };
         rows.insert(1, format!("|{sep}|"));
     }

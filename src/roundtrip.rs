@@ -26,6 +26,20 @@ pub(crate) const AUTOLINK: &str = "data-carve-autolink";
 pub(crate) const FOOTNOTE_LABEL: &str = "data-carve-footnote-label";
 /// Presence: the endnote came from an inline footnote (`<li>`).
 pub(crate) const INLINE_FOOTNOTE: &str = "data-carve-inline-footnote";
+/// The largest separator width this CARRIER may spell (PART 10 §13a,
+/// `CARVE-P10-016`).
+///
+/// The widths arrive in an attribute read off untrusted HTML and the Carve
+/// writer spells one `-` per unit, so six characters of attribute would buy a
+/// megabyte of separator row. A reader REFUSES the whole carrier past the
+/// bound rather than clamping to it, and a writer writes no carrier at all for
+/// a field above it: a clamp and a partial read both put a separator row on the
+/// page whose widths nobody wrote, where refusing leaves the table correct in
+/// its other spelling. The FIELD itself has no upper bound - a parse records
+/// what the author typed, and nothing amplifies there. 1000 is a round number
+/// pinned for cross-engine parity, not a bound derived from anything.
+pub(crate) const SEPARATOR_WIDTH_LIMIT: u32 = 1000;
+
 /// The authored separator-row widths, comma-joined (`<table>`).
 pub(crate) const COL_WIDTHS: &str = "data-carve-col-widths";
 /// The raw inline's format; the span holds its content (`<span>`).

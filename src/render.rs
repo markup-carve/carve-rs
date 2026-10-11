@@ -2293,10 +2293,17 @@ fn render_table(
     // PART 10 §13a: the authored separator row's dash runs, under roundtrip
     // export only. PRESENCE is the carried half - a `|=` header and a separator
     // row give the same `<table>` otherwise.
+    // A carrier a conforming reader will refuse is a round-trip promise the
+    // writer cannot keep, so an entry past the §13a bound writes no carrier.
     let widths_carrier = options
         .html_carriers()
-        .then(|| t.separator_widths.as_ref())
-        .flatten();
+        .then_some(t.separator_widths.as_ref())
+        .flatten()
+        .filter(|widths| {
+            widths
+                .iter()
+                .all(|w| *w <= crate::roundtrip::SEPARATOR_WIDTH_LIMIT)
+        });
     if let Some(widths) = widths_carrier {
         let joined = widths
             .iter()
@@ -5224,6 +5231,7 @@ mod owned_html_metadata_depth_tests {
                 columns: vec![],
                 rows: vec![],
                 row_groups: None,
+                separator_widths: None,
                 pos: None,
             };
             let node = match slot {

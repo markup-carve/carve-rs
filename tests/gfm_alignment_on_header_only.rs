@@ -5,18 +5,35 @@
 //! parsed to two different trees depending on which separator syntax the author
 //! used, and the writer then serialized those propagated values as per-cell
 //! markers nobody wrote (carve#352, corpus 09-tables-3).
+//!
+//! The two spellings no longer format alike: `table.separatorWidths` records
+//! which one the author wrote (carve#2894). What this file still pins is that
+//! the alignment does not reappear as a per-cell marker either way.
 
 const GFM: &str = "| Name | Age |\n|:-----|----:|\n| Alice | 28  |\n";
 const NATIVE: &str = "|=< Name |=> Age |\n| Alice | 28 |\n";
 
 #[test]
 fn formatting_does_not_invent_per_cell_markers() {
-    assert_eq!(carve::to_carve(GFM), NATIVE);
+    // The alignment stays on the separator row that carried it, so no body cell
+    // and no header cell grows a `<` or `>` nobody wrote.
+    assert_eq!(
+        carve::to_carve(GFM),
+        "| Name | Age |\n|:-----|----:|\n| Alice | 28 |\n"
+    );
+    assert!(!carve::to_carve(GFM).contains("|=<"));
+    assert!(!carve::to_carve(GFM).contains("|=>"));
 }
 
 #[test]
-fn the_two_separator_syntaxes_format_alike() {
-    assert_eq!(carve::to_carve(GFM), carve::to_carve(NATIVE));
+fn each_separator_syntax_formats_to_its_own_spelling() {
+    // The two used to format alike, because the writer normalized the delimiter
+    // row away. `table.separatorWidths` records which one the author wrote
+    // (carve#2894), so each keeps its own form - while the TREES still agree
+    // apart from that one field, and the HTML is identical either way.
+    assert_ne!(carve::to_carve(GFM), carve::to_carve(NATIVE));
+    assert_eq!(carve::to_carve(NATIVE), NATIVE);
+    assert_eq!(carve::to_html(&carve::to_carve(GFM)), carve::to_html(GFM));
 }
 
 #[test]

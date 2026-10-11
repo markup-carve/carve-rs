@@ -1988,17 +1988,30 @@ impl<'a> Importer<'a> {
         }
     }
 
-    /// The `<table data-carve-col-widths>` separator row, comma-joined. Every
-    /// entry has to be an integer of at least 1 (PART 12 §3); anything else is
-    /// not this carrier and stays the author's attribute.
+    /// The `<table data-carve-col-widths>` separator row, comma-joined.
+    ///
+    /// PART 10 §13a `CARVE-P10-016`: the WHOLE carrier is refused - no field at
+    /// all, so the table comes back in the `|=` form - where any entry is not a
+    /// run of decimal digits or exceeds
+    /// [`SEPARATOR_WIDTH_LIMIT`](crate::roundtrip::SEPARATOR_WIDTH_LIMIT).
+    /// Neither a partial read nor a clamp: both would put a separator row on
+    /// the page whose widths nobody wrote.
     fn reads_separator_widths(table: &Handle) -> Option<Vec<u32>> {
         let value = Self::carrier(table, crate::roundtrip::COL_WIDTHS)?;
-        if value.is_empty() {
-            return Some(Vec::new());
+        if value.trim().is_empty() {
+            // An empty value names no width, and a list of none has no
+            // separator row to spell.
+            return None;
         }
         value
             .split(',')
-            .map(|entry| entry.trim().parse::<u32>().ok().filter(|w| *w >= 1))
+            .map(|entry| {
+                let entry = entry.trim();
+                (!entry.is_empty() && entry.bytes().all(|b| b.is_ascii_digit()))
+                    .then(|| entry.parse::<u32>().ok())
+                    .flatten()
+                    .filter(|w| (1..=crate::roundtrip::SEPARATOR_WIDTH_LIMIT).contains(w))
+            })
             .collect()
     }
 

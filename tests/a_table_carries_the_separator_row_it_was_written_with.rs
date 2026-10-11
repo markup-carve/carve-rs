@@ -9,8 +9,8 @@
 
 use carve::ast::{BlockNode, Table};
 use carve::{
-    from_json, html_to_carve, parse, render_carve, to_html_with_options, to_json, HtmlImportMode,
-    HtmlImportOptions, Options,
+    from_json, from_prosemirror, html_to_carve, parse, render_carve, to_html_with_options, to_json,
+    to_prosemirror, HtmlImportMode, HtmlImportOptions, Options,
 };
 
 const ALIGNED: &str = "| a | b |\n|:-----|---:|\n| 1 | 2 |\n";
@@ -153,16 +153,37 @@ fn an_entry_count_that_disagrees_is_spelled_for_the_cells_that_exist() {
     doc.children = vec![BlockNode::Table(table.clone())];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "| a | b |\n|:---------|---:|\n| 1 | 2 |\n",
-        "a cell past the entries takes the default run"
+        "| a |> b |\n|:---------|\n| 1 | 2 |\n",
+        "one separator cell per entry, and a column past them keeps its own marker"
     );
     table.separator_widths = Some(vec![1, 1, 1, 1]);
     doc.children = vec![BlockNode::Table(table)];
     assert_eq!(
         render_carve(&doc).expect("the table spells"),
-        "| a | b |\n|:-|-:|\n| 1 | 2 |\n",
-        "and no further than the cells the row has"
+        "| a | b |\n|:-|-:|-|-|\n| 1 | 2 |\n",
+        "an entry past the row's cells has no alignment to take"
     );
+}
+
+#[test]
+fn spelling_one_cell_per_entry_keeps_the_writer_a_fixed_point() {
+    // Filling the ROW's width instead invented an entry the author never
+    // wrote, so the second format moved the tree.
+    for source in [
+        "| |x |\n|---|\n| y |\n",
+        "| h |\n|---|\n| |x |\n",
+        "| a | b |\n|---|\n| 1 | 2 |\n",
+        ALIGNED,
+    ] {
+        let once = spelled(source);
+        assert_eq!(spelled(&once), once, "not idempotent for {source:?}");
+        // The byte length moves with the spelling; the TREE must not.
+        assert_eq!(
+            table_of(&once),
+            table_of(source),
+            "the tree moved for {source:?}"
+        );
+    }
 }
 
 // ------------------------------------------------------- the HTML round trip
@@ -198,6 +219,129 @@ fn with_the_option_off_the_table_still_comes_back_as_the_native_form() {
     let html = exported(ALIGNED, false);
     assert!(!html.contains("col-widths"), "{html}");
     assert_eq!(imported(&html), "|=< a |=> b |\n| 1 | 2 |\n");
+}
+
+#[test]
+fn the_import_refuses_the_whole_carrier_rather_than_reading_part_of_it() {
+    // PART 10 §13a CARVE-P10-016: not a run of decimal digits, or past 1000,
+    // refuses the WHOLE carrier - no field, so the `|=` form. Neither a partial
+    // read nor a clamp: both would put a separator row on the page whose widths
+    // nobody wrote. The bound exists because the value arrives in an attribute
+    // off untrusted HTML and the writer spells one `-` per unit, so six
+    // characters would buy a megabyte of separator row. 1000 is pinned for
+    // cross-engine parity rather than derived.
+    for value in [
+        "x,2",
+        "2,x",
+        "-1,2",
+        "1.5",
+        "2,",
+        " ",
+        "1e3",
+        "1001",
+        "2,1001",
+        "4000",
+        "99999999999999999999",
+        "0,2",
+    ] {
+        let html = format!(
+            r#"<table data-carve-col-widths="{value}"><tr><th>a</th><th>b</th></tr></table>"#
+        );
+        let back = imported(&html);
+        assert_eq!(back, "|= a |= b |\n", "{value:?}");
+        assert!(!back.contains("col-widths"), "{value:?}");
+    }
+    // The bound itself still reads.
+    let at_limit = r#"<table data-carve-col-widths="1000,2"><tr><th>a</th><th>b</th></tr></table>"#;
+    assert_eq!(
+        imported(at_limit),
+        format!("| a | b |\n|{}|--|\n", "-".repeat(1000))
+    );
+}
+
+#[test]
+fn the_export_writes_no_carrier_for_a_field_a_reader_would_refuse() {
+    // A carrier a conforming reader refuses is a round-trip promise the writer
+    // cannot keep. The FIELD has no upper bound of its own: a parse records
+    // what the author typed, and nothing amplifies there.
+    let mut doc = parse(ALIGNED);
+    let mut table = table_of(ALIGNED);
+    table.separator_widths = Some(vec![1001, 3]);
+    doc.children = vec![BlockNode::Table(table.clone())];
+    let html = carve::render_html_with_options(&doc, &Options::default().with_roundtrip(true))
+        .expect("the table renders");
+    assert!(!html.contains("col-widths"), "{html}");
+    table.separator_widths = Some(vec![1000, 3]);
+    doc.children = vec![BlockNode::Table(table)];
+    let html = carve::render_html_with_options(&doc, &Options::default().with_roundtrip(true))
+        .expect("the table renders");
+    assert!(html.contains(r#"data-carve-col-widths="1000,3""#), "{html}");
+}
+
+#[test]
+fn the_entry_count_decides_the_cell_count_in_both_directions() {
+    // PART 11 §6h CARVE-P11-066: the cell count is the number of ENTRIES, and
+    // the header row does not enter it - neither padded out to the header's
+    // width nor truncated to it. The two directions are tested TOGETHER on
+    // purpose: where the separator is SHORTER than its header, padding and
+    // truncating give the same bytes, which is how carve-php (padding) and
+    // carve-js (truncating) each passed a suite that only covered that side.
+    //
+    // Asserted on the TREE, not on the line: a writer that pads or truncates
+    // still emits a plausible table, so byte equality alone cannot see it.
+    for (source, widths) in [
+        // separator LONGER than its header - the half that catches truncation
+        ("| a | b |\n|---|---|---|\n| 1 | 2 |\n", vec![3, 3, 3]),
+        ("| a |\n|---|---|\n| 1 |\n", vec![3, 3]),
+        // separator SHORTER than its header - the half that catches padding
+        ("| a | b |\n|---|\n| 1 | 2 |\n", vec![3]),
+        ("| a | b | c |\n|--|--|\n| 1 | 2 | 3 |\n", vec![2, 2]),
+    ] {
+        assert_eq!(
+            table_of(source).separator_widths,
+            Some(widths.clone()),
+            "the premise for {source:?}"
+        );
+        let once = spelled(source);
+        assert_eq!(
+            table_of(&once).separator_widths,
+            Some(widths),
+            "the re-parse disagrees for {source:?}; written as {once:?}"
+        );
+        assert_eq!(table_of(&once), table_of(source), "{source:?}");
+        assert_eq!(spelled(&once), once, "not idempotent for {source:?}");
+    }
+}
+
+#[test]
+fn an_entry_past_the_headers_last_cell_takes_no_alignment() {
+    // It has no cell to take one from, which falls straight out of the entry
+    // count deciding the row.
+    let source = "| a |\n|:---:|---|\n| 1 |\n";
+    assert_eq!(table_of(source).separator_widths, Some(vec![3, 3]));
+    assert_eq!(spelled(source), source);
+}
+
+// ------------------------------------------------- the ProseMirror bridge
+
+#[test]
+fn the_prosemirror_bridge_carries_the_authored_separator_row() {
+    // The bridge has no table slot of its own for it, so it rides
+    // `carveSeparatorWidths` the way an authored bullet rides
+    // `carveListMarker`. Without that the round trip rewrote 19 corpus tables
+    // into the `|=` form.
+    for source in [ALIGNED, "| a | b |\n|---|---|\n| 1 | 2 |\n"] {
+        let pm = to_prosemirror(&parse(source)).json;
+        let back = from_prosemirror(&pm).expect("the bridge reads its own output");
+        assert_eq!(
+            render_carve(&back).expect("it spells"),
+            source,
+            "{source:?}"
+        );
+    }
+    // A native header carries no attribute to come back with.
+    let pm = to_prosemirror(&parse("|= a |= b |\n")).json;
+    assert!(!pm.contains("carveSeparatorWidths"), "{pm}");
 }
 
 #[test]
