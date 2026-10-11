@@ -4,6 +4,7 @@ use carve::{html_to_carve, to_html_with_options, HtmlImportMode, HtmlImportOptio
 fn footnote_carriers_restore_labels_and_inline_bodies_in_every_mode() {
     for source in [
         "a[^label]\n\n[^label]: note\n",
+        "a[^a b]\n\n[^a b]: note\n",
         "a^[note]\n",
         "a^[*note*]\n",
     ] {
@@ -105,4 +106,26 @@ fn inline_carriers_with_multiple_references_fall_back_to_one_definition() {
     assert_eq!(result.value.matches("note").count(), 1, "{}", result.value);
     assert!(result.value.contains("[^label]: note"));
     assert!(!result.report.diagnostics.is_empty());
+}
+
+#[test]
+fn an_inline_carrier_on_a_note_containing_another_reference_reports_loss() {
+    let html = r##"<p><a href="#n1" role="doc-noteref">1</a></p><section role="doc-endnotes"><ol><li id="n1" data-carve-inline-footnote><p>see <a href="#n2" role="doc-noteref">2</a></p></li><li id="n2" data-carve-footnote-label="b"><p>two</p></li></ol></section>"##;
+    let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+    assert!(result.value.contains("see") && result.value.contains("two"));
+    assert!(!result.value.contains("^["), "{}", result.value);
+    assert!(!result.report.diagnostics.is_empty());
+}
+
+#[test]
+fn numeric_fallbacks_skip_labels_reserved_by_later_definitions() {
+    let html = to_html_with_options(
+        "a[^first] b[^1]\n\n[^first]: one\n\n[^1]: two\n",
+        &Options::default().with_roundtrip(true),
+    )
+    .replace(" data-carve-footnote-label=\"first\"", "");
+    let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
+    assert!(result.value.contains("a[^2] b[^1]"), "{}", result.value);
+    assert!(result.value.contains("[^2]: one") && result.value.contains("[^1]: two"));
+    assert!(result.report.diagnostics.is_empty());
 }

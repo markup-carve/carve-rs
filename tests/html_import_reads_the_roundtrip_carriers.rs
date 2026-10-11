@@ -81,10 +81,8 @@ fn a_footnote_label_carrier_restores_the_authored_label() {
 
 #[test]
 fn a_malformed_footnote_label_falls_back_to_the_ordinal() {
-    // A label has to be spellable inside `[^...]`. A value holding a space or a
-    // bracket would not reparse, and this serializer does not write one, so it
-    // is malformed input: the ordinal stands and the import does not fail.
-    for bad in ["a b", "a[b", "a]b", ""] {
+    // Empty keys and bracket delimiters cannot name a carried reference.
+    for bad in ["a[b", "a]b", "", " "] {
         let html = format!(
             r##"<p>a<a id="fnref1" href="#fn1" role="doc-noteref" data-carve-footnote-label="{bad}"><sup>1</sup></a></p>"##
         ) + r##"<section role="doc-endnotes"><ol><li id="fn1"><p>n</p></li></ol></section>"##;

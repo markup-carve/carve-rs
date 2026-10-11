@@ -6658,6 +6658,18 @@ impl<'a> Importer<'a> {
         Ok(vec![node])
     }
 
+    /// Recognize footnote pairs, record each reference site for `inline` to
+    /// read as a footnote reference, detach the note blocks, and return their
+    /// bodies keyed by valid carrier labels or numbered fallbacks.
+    /// Navigation ids identify pairs; carrier metadata supplies source labels.
+    ///
+    /// `heuristic` is the word-processor adapters' licence: with it a mutual
+    /// anchor pair alone binds. Without it - `generic` and the editor adapters -
+    /// only an anchor the producer MARKED with `role="doc-noteref"` opens a
+    /// pair, which is authored DPUB-ARIA semantics rather than a guess, so a
+    /// role-less document imports exactly as it did before. That is what lets
+    /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
+    /// it is what the shared fixtures are written over (carve-rs#1313).
     fn adapter_footnotes(
         &mut self,
         root: &Handle,
@@ -6690,11 +6702,13 @@ impl<'a> Importer<'a> {
             .map(|note| node_key(&note.block))
             .collect();
         let mut nested_reference_sites = HashSet::new();
+        let mut definitions_with_nested_notes = HashSet::new();
         for reference in definitions.iter().flat_map(|note| note.refs.iter()) {
             let mut parent = parent_handle(reference);
             while let Some(handle) = parent {
                 if definition_blocks.contains(&node_key(&handle)) {
                     nested_reference_sites.insert(node_key(reference));
+                    definitions_with_nested_notes.insert(node_key(&handle));
                     break;
                 }
                 parent = parent_handle(&handle);
@@ -6779,7 +6793,9 @@ impl<'a> Importer<'a> {
                     [BlockNode::Paragraph(paragraph)]
                         if paragraph.attrs.is_none()
                             && definition.refs.len() == 1
-                            && !nested_reference_sites.contains(&node_key(&definition.refs[0])) =>
+                            && !nested_reference_sites.contains(&node_key(&definition.refs[0]))
+                            && !definitions_with_nested_notes
+                                .contains(&node_key(&definition.block)) =>
                     {
                         Some(paragraph.children.clone())
                     }
