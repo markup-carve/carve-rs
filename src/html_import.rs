@@ -6787,8 +6787,17 @@ impl<'a> Importer<'a> {
         let mut seen: HashSet<usize> = HashSet::new();
         let mut detached: HashMap<usize, (Handle, HashSet<usize>)> = HashMap::new();
         let mut used_labels = HashSet::new();
+        let conflicting_carriers: HashSet<usize> = definitions
+            .iter()
+            .filter(|definition| {
+                Self::carrier(&definition.block, crate::roundtrip::FOOTNOTE_LABEL).is_some()
+                    && Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE).is_some()
+            })
+            .map(|definition| node_key(&definition.block))
+            .collect();
         let reserved_labels: HashSet<String> = definitions
             .iter()
+            .filter(|definition| !conflicting_carriers.contains(&node_key(&definition.block)))
             .flat_map(|definition| {
                 std::iter::once(&definition.block)
                     .chain(definition.refs.iter())
@@ -6802,8 +6811,19 @@ impl<'a> Importer<'a> {
             .collect();
 
         for (index, definition) in definitions.iter().enumerate() {
+            let conflicting = conflicting_carriers.contains(&node_key(&definition.block));
+            if conflicting {
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    "Dropped conflicting footnote label and inline footnote carriers".into(),
+                    HtmlImportSeverity::Warning,
+                    "footnote",
+                    &definition.block,
+                );
+            }
             let labels: HashSet<String> = std::iter::once(&definition.block)
                 .chain(definition.refs.iter())
+                .filter(|_| !conflicting)
                 .filter_map(|handle| Self::carrier(handle, crate::roundtrip::FOOTNOTE_LABEL))
                 .collect();
             let requested = labels.iter().next().filter(|label| {
@@ -6855,7 +6875,7 @@ impl<'a> Importer<'a> {
             let body: Vec<Handle> = definition.block.children.borrow().clone();
             let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
             let inline_marker = Self::carrier(&definition.block, crate::roundtrip::INLINE_FOOTNOTE);
-            let inline = if inline_marker.is_some() {
+            let inline = if !conflicting && inline_marker.is_some() {
                 match blocks.as_slice() {
                     [BlockNode::Paragraph(paragraph)]
                         if paragraph.attrs.is_none()
