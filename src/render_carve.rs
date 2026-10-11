@@ -54,6 +54,7 @@ struct CarveContext {
     /// separator instead of joining a `%`-leading content into a fence.
     in_term: bool,
     in_footnote_body: bool,
+    footnote_guard_types: Vec<(&'static str, String)>,
     escape_mode: EscapeMode,
     /// The unit the character being written now belongs to (PART 11 §2b).
     ///
@@ -1066,6 +1067,7 @@ fn render_with_escapes_once(
         paragraph_starts_after_caption_host: false,
         in_term: false,
         in_footnote_body: false,
+        footnote_guard_types: Vec::new(),
         escape_mode,
         escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
@@ -3224,16 +3226,22 @@ fn render_footnote_def_source(
         return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let previous_footnote_body = ctx.in_footnote_body;
+    let previous_guard_types = std::mem::take(&mut ctx.footnote_guard_types);
     ctx.in_footnote_body = true;
     let raw_body = render_blocks(session, blocks, ctx);
     ctx.in_footnote_body = previous_footnote_body;
-    if raw_body.lines().any(|line| {
+    let guard_types = std::mem::replace(&mut ctx.footnote_guard_types, previous_guard_types);
+    if let Some(rest) = raw_body.lines().find_map(|line| {
         line.trim_start_matches([' ', '\t'])
             .strip_prefix(sentinel(session, S_CODE_LINE).as_str())
-            .is_some_and(|rest| rest.starts_with('>'))
+            .filter(|rest| rest.starts_with('>'))
     }) {
+        let node_type = guard_types
+            .iter()
+            .find(|(_, line)| rest.starts_with(line.as_str()))
+            .map_or("footnote", |(kind, _)| *kind);
         crate::render_carve_error::record_unspellable(
-            "code",
+            node_type,
             "a block-marker continuation cannot stay inside a footnote paragraph",
         );
     }
@@ -5109,10 +5117,10 @@ fn code_span_fence(content: &str) -> String {
 fn guard_code_lines(
     session: &RenderSession,
     written: &str,
-    ctx: &CarveContext,
+    ctx: &mut CarveContext,
     node_type: &'static str,
 ) -> String {
-    if ctx.line_block_depth > 0 {
+    if ctx.line_block_depth > 0 || !written.contains('\n') {
         return written.to_owned();
     }
     static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -5129,6 +5137,9 @@ fn guard_code_lines(
                         "a block marker on a continuation line ends the definition term",
                     );
                     return line.to_owned();
+                }
+                if ctx.in_footnote_body && line.starts_with('>') {
+                    ctx.footnote_guard_types.push((node_type, line.to_owned()));
                 }
                 let kind = if ctx.in_footnote_body && line.starts_with('[') {
                     S_FOOTNOTE_CODE_LINE

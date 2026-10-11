@@ -1,6 +1,6 @@
 use super::verbatim_continuation_guards::html_tree;
 
-fn payloads(root: &serde_json::Value) -> Vec<serde_json::Value> {
+pub(super) fn payloads(root: &serde_json::Value) -> Vec<serde_json::Value> {
     let mut records = Vec::new();
     let mut stack = vec![(String::new(), root)];
     while let Some((path, node)) = stack.pop() {
@@ -53,6 +53,11 @@ fn footnote_containers_keep_paragraph_breaks_and_opaque_payloads() {
         let after: serde_json::Value =
             serde_json::from_str(&carve::to_json(&carve::parse(&written))).unwrap();
         assert_eq!(payloads(&before), payloads(&after), "{source:?}");
+        assert_eq!(
+            carve::render_carve(&carve::parse(&written)).unwrap(),
+            written,
+            "{source:?}"
+        );
         let report =
             carve::to_carve_with_report(source, carve::CheckedRenderOptions::default()).unwrap();
         assert_eq!(report.value, written, "{source:?}");
