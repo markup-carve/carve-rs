@@ -54,6 +54,7 @@ mod render_loss;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod roundtrip;
 mod sentinel_run;
 mod source_layout;
 mod source_patch;
@@ -313,6 +314,25 @@ pub fn to_html_with_report(
             &Options::default().with_positions(true),
         ))
         .expect("the parse cap sits below the render ceiling")
+    })
+}
+
+/// Render HTML under `options` and report what the render dropped.
+///
+/// [`to_html_with_report`] renders under the defaults, so it cannot reach a
+/// loss an option produces. Roundtrip export has one: a PART 10 §13a carrier
+/// displaces an authored attribute of its own name, and the drop is REPORTED
+/// rather than silent (ruling markup-carve/carve#2902 question 1).
+///
+/// A row carries a position only where `options` asked for one
+/// ([`Options::with_positions`]); every other field is filled either way.
+pub fn to_html_with_options_and_report(
+    source: &str,
+    options: &Options<'_>,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Html, checked_options, || {
+        to_html_with_options(source, options)
     })
 }
 

@@ -51,7 +51,7 @@ pub fn render_markdown_with_options(
         doc,
         options.smart_typography,
         options.heading_id_options(),
-        options.carry_markers,
+        options.markdown_carriers(),
     ))
 }
 

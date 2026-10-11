@@ -234,6 +234,11 @@ fn main() -> ExitCode {
                 // target rather than silently ignored.
                 options.carry_markers = true;
             }
+            "--roundtrip" => {
+                // PART 10 §13. The target decides the carrier, so this is
+                // accepted for HTML and Markdown and refused elsewhere.
+                options.roundtrip = true;
+            }
             "--html" => format = OutputFormat::Html,
             "--markdown" | "--md" => format = OutputFormat::Markdown,
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
@@ -414,6 +419,10 @@ fn main() -> ExitCode {
     }
     if options.carry_markers && format != OutputFormat::Markdown {
         eprintln!("carve: --carry-markers requires --markdown");
+        return ExitCode::FAILURE;
+    }
+    if options.roundtrip && !matches!(format, OutputFormat::Html | OutputFormat::Markdown) {
+        eprintln!("carve: --roundtrip requires --html or --markdown");
         return ExitCode::FAILURE;
     }
 
@@ -1698,6 +1707,7 @@ fn print_usage() {
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
          --markdown, --md            Markdown\n  \
+         --roundtrip                 add the PART 10 §13 preservation carriers\n  \
          --carry-markers             carry an element-less container in a comment\n  \
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n  \

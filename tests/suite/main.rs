@@ -7,6 +7,9 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../html_roundtrip_export_writes_the_named_carriers.rs"]
+mod html_roundtrip_export_writes_the_named_carriers;
+
 #[path = "../empty_nested_fence_separators.rs"]
 mod empty_nested_fence_separators;
 

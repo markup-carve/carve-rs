@@ -98,6 +98,11 @@ repeated. Passing an unknown key prints the accepted registry keys.
 `--tabs-mode` and `--citation-mode` configure their respective named extensions.
 `--no-sections` renders headings without section wrappers, while `--source-lines`
 emits `data-source-line` annotations.
+`--roundtrip` adds the PART 10 §13 preservation carriers and applies to
+`--html` and `--markdown`, refused on any other target: the target decides the
+carrier, so HTML gets the §13a attributes and Markdown the container comments
+(see [Roundtrip export](rendering.md#roundtrip-export)). It is an EXPORT option
+and selects no import mode.
 `--carry-markers` applies to `--markdown` alone and is refused on any other
 target. It brackets every container the Markdown target writes as its children
 alone with an HTML comment carrying the container's Carve opener, so an export

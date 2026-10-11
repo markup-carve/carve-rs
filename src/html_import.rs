@@ -1314,6 +1314,15 @@ impl<'a> Importer<'a> {
             _ => handle.children.borrow().iter().map(Self::text).collect(),
         }
     }
+    /// The element's children serialized, without its own tag.
+    ///
+    /// [`Self::html`] reconstructs the OPEN TAG, which a `data-carve-raw` span
+    /// must not carry back into its payload: the span is the carrier, not part
+    /// of the raw run the author wrote.
+    fn inner_html(handle: &Handle) -> String {
+        handle.children.borrow().iter().map(Self::html).collect()
+    }
+
     fn html(handle: &Handle) -> String {
         let mut bytes = Vec::new();
         let serializable = SerializableHandle::from(handle.clone());
@@ -1836,12 +1845,20 @@ impl<'a> Importer<'a> {
         if Self::is_consumed_attribute(handle, tag, name) {
             return None;
         }
-        if name == "data-djot-src" || name == "data-carve-src" {
-            // The round-trip provenance markers this engine WRITES.
-            // Reading one back as an ordinary attribute would let an
-            // import restate a source the document no longer has.
+        if let Some(canonical) = crate::roundtrip::canonical(name) {
+            // A PART 10 §13a CARRIER, which this engine writes under roundtrip
+            // export. `data-djot-*` is the deprecated spelling a released
+            // carve-php wrote and `canonical` answers for both.
+            //
+            // RULED on markup-carve/carve#2902 question 5: a reader consumes
+            // the inventory and NEVER writes a reserved name back out as an
+            // authored attribute, in any mode. Before the ruling carve-php's
+            // `safe` mode returned `<hr data-char="_">` as `{data-char=_}` plus
+            // `---`, so the carrier reappeared as content. Where the branch
+            // building the node consumed it, `is_consumed_attribute` has
+            // already answered and this is never reached.
             return Some(Refusal {
-                subject: format!("round-trip marker attribute {name}"),
+                subject: format!("round-trip carrier attribute {canonical}"),
                 reason: "",
                 severity: HtmlImportSeverity::Info,
                 live: false,
@@ -1923,6 +1940,86 @@ impl<'a> Importer<'a> {
                 | ("math", "display" | "alttext" | "xmlns")
         ) || (tag == "li" && name == "data-task-state" && Self::reads_task_state(handle))
             || (tag == "ol" && name == "data-delim" && Self::reads_delim(handle))
+            || Self::reads_carrier(handle, tag, name)
+    }
+
+    /// Whether the branch building this node READS the PART 10 §13a carrier
+    /// `name`, so the attribute policy neither keeps it nor reports it dropped.
+    ///
+    /// Consuming a carrier reconstructs syntax the AST can already express,
+    /// which is not a trust decision, so this is NOT mode-gated (ruling
+    /// markup-carve/carve#2902 question 5). A carrier this engine does not yet
+    /// reconstruct is not listed here: it falls through to `refusal`, which
+    /// reports it dropped rather than letting a reserved name back into the
+    /// document.
+    fn reads_carrier(handle: &Handle, tag: &str, name: &str) -> bool {
+        let Some(canonical) = crate::roundtrip::canonical(name) else {
+            return false;
+        };
+        match canonical {
+            crate::roundtrip::MARKER => tag == "ul" && Self::reads_bullet_char(handle).is_some(),
+            crate::roundtrip::CHAR => tag == "hr" && Self::reads_break_char(handle).is_some(),
+            crate::roundtrip::REF => {
+                matches!(tag, "a" | "img")
+                    && Self::attr(handle, name).is_some_and(|v| !v.is_empty())
+            }
+            crate::roundtrip::AUTOLINK => tag == "a" && Self::reads_autolink(handle),
+            crate::roundtrip::RAW => tag == "span" && Self::reads_raw_format(handle).is_some(),
+            crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
+            _ => false,
+        }
+    }
+
+    /// The `<ul data-marker>` bullet, where it names one PART 2 admits and is
+    /// not the default. Anything else is the author's attribute.
+    fn reads_bullet_char(ul: &Handle) -> Option<char> {
+        Self::carrier(ul, crate::roundtrip::MARKER)
+            .and_then(|v| single_char(&v))
+            .filter(|c| *c == '*')
+    }
+
+    /// The `<hr data-char>` break character, where it names one PART 2 admits
+    /// and is not the default `-`.
+    fn reads_break_char(hr: &Handle) -> Option<char> {
+        Self::carrier(hr, crate::roundtrip::CHAR)
+            .and_then(|v| single_char(&v))
+            .filter(|c| matches!(c, '*' | '_'))
+    }
+
+    /// Whether the anchor was authored as an autolink. A PRESENCE carrier, so
+    /// the value is not compared (§13a), but an anchor with no destination has
+    /// no autolink to be.
+    fn reads_autolink(a: &Handle) -> bool {
+        Self::carrier(a, crate::roundtrip::AUTOLINK).is_some()
+            && Self::attr(a, "href").is_some_and(|href| !href.is_empty())
+    }
+
+    /// The `<span data-carve-raw>` format, where the value spells one.
+    fn reads_raw_format(span: &Handle) -> Option<String> {
+        Self::carrier(span, crate::roundtrip::RAW)
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+    }
+
+    /// The one character a `<span data-carve-escaped>` escaped.
+    ///
+    /// ONE ESCAPE PER ELEMENT (ruling markup-carve/carve#2902 question 4): a
+    /// multi-character payload reassembled as `\a\b\c`, which is not valid
+    /// Carve, so a span holding a run is not this carrier and keeps its text.
+    fn reads_escaped(span: &Handle) -> Option<String> {
+        Self::carrier(span, crate::roundtrip::ESCAPED)?;
+        let text = Self::text(span);
+        single_char(&text).map(|c| c.to_string())
+    }
+
+    /// A carrier's value under either spelling, canonical first.
+    fn carrier(handle: &Handle, canonical: &str) -> Option<String> {
+        Self::attr(handle, canonical).or_else(|| {
+            let deprecated = canonical.replacen("data-carve-", "data-djot-", 1);
+            (deprecated != canonical)
+                .then(|| Self::attr(handle, &deprecated))
+                .flatten()
+        })
     }
 
     /// The CSS mapping: every declaration that reaches a slot, and one
@@ -2894,7 +2991,9 @@ impl<'a> Importer<'a> {
         }
         if tag == "hr" {
             return Ok(vec![BlockNode::ThematicBreak(ThematicBreak {
-                marker: None,
+                // PART 10 §13a `data-char`: without it a rendered `***` imports
+                // back as `---`, silently, because both render the same `<hr>`.
+                marker: Self::reads_break_char(h),
                 attrs,
                 pos: None,
             })]);
@@ -3116,7 +3215,9 @@ impl<'a> Importer<'a> {
                 bare_marker: false,
                 // PART 10 §12, the only place the delimiter survives a render.
                 delim: (ordered && Self::reads_delim(h)).then_some(')'),
-                bullet_char: None,
+                // PART 10 §13a `data-marker`: the bullet a `<ul>` was authored
+                // with, which the element itself does not spell.
+                bullet_char: (!ordered).then(|| Self::reads_bullet_char(h)).flatten(),
                 tight,
                 items,
                 pos: None,
@@ -6400,12 +6501,24 @@ impl<'a> Importer<'a> {
                     image_alt_content(h),
                 ));
             }
+            // PART 10 §13a `data-carve-autolink`: an autolink is its own node
+            // type, and `<a href>` alone cannot be told from `[text](url)`
+            // whose text happens to equal the destination.
+            "a" if Self::reads_autolink(h) => InlineNode::AutoLink(AutoLink {
+                attrs,
+                href: Self::attr(h, "href").unwrap_or_default(),
+                text: Self::text(h),
+                pos: None,
+            }),
             "a" => InlineNode::Link(Link {
                 attrs,
                 href: Self::attr(h, "href").unwrap_or_default(),
                 title: Self::attr(h, "title"),
                 children,
-                ref_label: None,
+                // PART 10 §13a `data-carve-ref`: the label the reference
+                // resolved by. Without it the destination is inlined at every
+                // use site and the definition line is gone.
+                ref_label: Self::carrier(h, crate::roundtrip::REF).filter(|v| !v.is_empty()),
                 raw_ref: None,
                 from_crossref: false,
                 from_heading_reference: false,
@@ -6416,7 +6529,8 @@ impl<'a> Importer<'a> {
                 src: Self::attr(h, "src").unwrap_or_default(),
                 alt: Self::attr(h, "alt").unwrap_or_default(),
                 title: Self::attr(h, "title"),
-                ref_label: None,
+                // PART 10 §13a `data-carve-ref`, as on the anchor above.
+                ref_label: Self::carrier(h, crate::roundtrip::REF).filter(|v| !v.is_empty()),
                 raw_ref: None,
                 pos: None,
             }),
@@ -6441,6 +6555,30 @@ impl<'a> Importer<'a> {
                     ));
                 }
                 InlineNode::hard_break()
+            }
+            // PART 10 §13a `data-carve-escaped`: the span holds ONE escaped
+            // character and its presence says the author wrote the backslash,
+            // so the import writes it back instead of letting the character
+            // reparse as markup.
+            "span" if Self::reads_escaped(h).is_some() => InlineNode::EscapedText(EscapedText {
+                value: Self::reads_escaped(h).unwrap_or_default(),
+                pos: None,
+            }),
+            // PART 10 §13a `data-carve-raw`: the span carries the format and
+            // holds the content, which is how a `=latex` run survives HTML.
+            "span" if Self::reads_raw_format(h).is_some() => {
+                let format = Self::reads_raw_format(h).unwrap_or_default();
+                let content = if format == "html" {
+                    Self::inner_html(h)
+                } else {
+                    Self::text(h)
+                };
+                InlineNode::RawInline(RawInline {
+                    format,
+                    content,
+                    injected: false,
+                    pos: None,
+                })
             }
             "span" if attrs.is_some() => InlineNode::Span(Span {
                 attrs,
@@ -7731,6 +7869,16 @@ fn image_alt_content(h: &Handle) -> Vec<InlineNode> {
     } else {
         vec![InlineNode::text(alt)]
     }
+}
+
+/// The single character `value` spells, or `None` for an empty or longer one.
+///
+/// A PART 10 §13a carrier whose row names one character holds exactly one, so
+/// a longer value is a MALFORMED carrier and not this engine's to reassemble.
+fn single_char(value: &str) -> Option<char> {
+    let mut chars = value.chars();
+    let first = chars.next()?;
+    chars.next().is_none().then_some(first)
 }
 
 fn names_no_destination(value: Option<&str>) -> bool {

@@ -175,6 +175,35 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
     });
 }
 
+/// One row per authored attribute a PART 10 §13a carrier displaced.
+///
+/// RULED on markup-carve/carve#2902 question 1: the carrier wins, the authored
+/// attribute is dropped, and the drop is REPORTED naming the attribute. Before
+/// the ruling carve-php emitted both, which is invalid HTML, with the
+/// precedence differing per carrier.
+pub(crate) fn record_carrier_collision(carrier: &str, authored: &str, pos: Option<&Pos>) {
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code
+            .entry("roundtrip-attribute-dropped")
+            .or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "roundtrip-attribute-dropped",
+                format: None,
+                target: c.target,
+                node_type: RawNodeType::Inline,
+                pos: pos.cloned(),
+                message: format!(
+                    "Dropped authored attribute {authored:?}: the roundtrip carrier {carrier:?} owns that name"
+                ),
+            });
+        }
+    });
+}
+
 pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();

@@ -236,6 +236,19 @@ fn render_html_pass(
     };
     let mut html =
         render_document_blocks(doc.children.as_slice(), options, &mut state, doc.source_len);
+    // PART 10 §13a: the document's abbreviation definitions, one per line, in a
+    // `<template>` the browser never renders. An expansion reaches HTML as an
+    // `<abbr title>` on each USE, so a document whose definitions were never
+    // used, or whose `<abbr>` the author overrode, has nowhere else to keep
+    // them. Appended before the endnotes section, matching carve-php.
+    if options.html_carriers() {
+        if let Some(template) = abbreviation_template(doc) {
+            if !html.is_empty() {
+                html.push('\n');
+            }
+            html.push_str(&template);
+        }
+    }
     let mut seen = html.matches(marker).count();
     let section = (!footnotes.is_empty())
         .then(|| render_footnotes_section(doc, footnotes, options, &mut state));
@@ -282,6 +295,30 @@ fn render_html_pass(
         occupied,
     };
     (pass, state.crossref_index)
+}
+
+/// The `<template>` holding every top-level `*[abbr]: expansion` definition, or
+/// `None` where the document has none.
+///
+/// TOP LEVEL ONLY, deliberately: a definition is a document-level construct and
+/// the expansion pass reads it as one, so walking containers would collect
+/// something that never contributed an expansion.
+fn abbreviation_template(doc: &Document) -> Option<String> {
+    let mut lines = Vec::new();
+    for block in &doc.children {
+        if let BlockNode::AbbreviationDef(def) = block {
+            lines.push(format!("*[{}]: {}", def.abbr, def.expansion));
+        }
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let mut out = String::from("<template");
+    write_bare_carrier(&mut out, crate::roundtrip::ABBREVIATIONS, &None, None);
+    out.push('>');
+    write_escaped_text(&mut out, &lines.join("\n"));
+    out.push_str("</template>");
+    Some(out)
 }
 
 /// The preferred marker for a `::: footnotes` placement block: what a document
@@ -1308,13 +1345,37 @@ fn render_footnotes_section(
         } else {
             None
         };
-        match li_source_line {
-            Some(line) => out.push_str(&format!(
-                "    <li id=\"fn{}\" data-source-line=\"{}\">",
-                num, line
-            )),
-            None => out.push_str(&format!("    <li id=\"fn{}\">", num)),
+        out.push_str(&format!("    <li id=\"fn{num}\""));
+        // PART 10 §13a: the authored label rides the endnote item as well as the
+        // reference, and a presence carrier says the endnote came from an
+        // INLINE footnote - which has no label and no definition line, so
+        // nothing else in the rendered document distinguishes it from a
+        // referenced one.
+        if options.html_carriers() {
+            if let Some(label) = &entry.label {
+                write_carrier(
+                    &mut out,
+                    crate::roundtrip::FOOTNOTE_LABEL,
+                    label,
+                    &None,
+                    None,
+                );
+            }
+            if entry.inline.is_some() {
+                write_carrier(
+                    &mut out,
+                    crate::roundtrip::INLINE_FOOTNOTE,
+                    "1",
+                    &None,
+                    None,
+                );
+            }
         }
+        // `data-source-line` is a render annotation and stays last.
+        if let Some(line) = li_source_line {
+            out.push_str(&format!(" data-source-line=\"{line}\""));
+        }
+        out.push('>');
         if let Some(inline) = &entry.inline {
             out.push('\n');
             out.push_str("      <p>");
@@ -1420,7 +1481,20 @@ fn render_section(
     };
     let section_id = next_heading_id(heading, state);
     indent(out, level);
-    out.push_str(&format!("<section id=\"{}\">\n", escape_attr(&section_id)));
+    write!(out, "<section id=\"{}\"", escape_attr(&section_id)).unwrap();
+    // PART 10 §13a: presence says the id was AUTHORED rather than generated, so
+    // an importer can put `{#id}` back instead of baking in a slug this render
+    // derived. It rides the `<section>` where PART 9 §13 wraps one.
+    if options.html_carriers() && heading_id_is_authored(heading) {
+        write_carrier(
+            out,
+            crate::roundtrip::EXPLICIT_ID,
+            "1",
+            &None,
+            heading.pos.as_ref(),
+        );
+    }
+    out.push_str(">\n");
     render_heading_without_section_id(out, heading, level + 1, options, state);
     let mut i = start + 1;
     while i < nodes.len() {
@@ -1555,12 +1629,33 @@ fn render_block(
         BlockNode::ExtensionCarrier(e) => render_extension_carrier(out, e, level, options, state),
         BlockNode::BlockImage(img) => {
             indent(out, level);
-            render_image(out, img);
+            render_image(out, img, options);
         }
         BlockNode::ThematicBreak(n) => {
             indent(out, level);
             out.push_str("<hr");
-            write_attrs(out, &n.attrs);
+            // PART 10 §13a: the authored break character, under roundtrip
+            // export only and only where it is not the default `-`.
+            let carried = options
+                .html_carriers()
+                .then(|| n.marker.filter(|c| *c != '-'))
+                .flatten();
+            match carried {
+                Some(marker) => {
+                    write_carrier(
+                        out,
+                        crate::roundtrip::CHAR,
+                        &marker.to_string(),
+                        &n.attrs,
+                        n.pos.as_ref(),
+                    );
+                    out.push_str(&render_attrs_without_keys(
+                        &n.attrs,
+                        &[crate::roundtrip::CHAR],
+                    ));
+                }
+                None => write_attrs(out, &n.attrs),
+            }
             out.push('>');
         }
     }
@@ -1605,16 +1700,33 @@ fn render_heading(
     // GENERATED id onto the node, so presence no longer distinguishes them - and
     // testing for it put the generated id in the authored run, ahead of
     // `data-source-line`, which section_wrapping.rs pins the other way round.
-    let authored_id = h.attrs.as_ref().is_some_and(|attrs| {
-        attrs.id.is_some() && attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
-    });
+    let authored_id = heading_id_is_authored(h);
     indent(out, level);
     write!(out, "<h{}", h.level).unwrap();
+    // PART 10 §13a: with no `<section>` to ride, the carrier rides the heading.
+    // Structural, so it leads the authored run (§1) - the authored id keeps its
+    // own slot inside that run and there is no position "after the id" to take.
+    let carried_explicit_id = options.html_carriers() && authored_id;
+    if carried_explicit_id {
+        write_carrier(
+            out,
+            crate::roundtrip::EXPLICIT_ID,
+            "1",
+            &h.attrs,
+            h.pos.as_ref(),
+        );
+    }
+    // The carrier owns the name, so an authored copy does not reach the element.
+    let own_attrs = if carried_explicit_id {
+        strip_keys(&h.attrs, &[crate::roundtrip::EXPLICIT_ID])
+    } else {
+        h.attrs.clone()
+    };
     if authored_id {
         // Render through the normal attribute walk so the id lands in its
         // authored slot. The resolved id is the authored one (an explicit
         // heading id wins verbatim), but write it back rather than assume so.
-        let mut attrs = h.attrs.clone();
+        let mut attrs = own_attrs;
         if let Some(attrs) = &mut attrs {
             attrs.id = Some(id.clone());
         }
@@ -1625,7 +1737,7 @@ fn render_heading(
         // not after. carve-rs stamps it as an ordinary key-value at parse time,
         // which would otherwise carry it along in the authored run and put the
         // id behind it (`tests/source_lines.rs` catches exactly that).
-        let mut authored = h.attrs.clone();
+        let mut authored = own_attrs;
         let stamp = authored.as_mut().and_then(take_source_line_attr);
         out.push_str(&render_attrs_without_id_for(
             &authored,
@@ -1662,6 +1774,17 @@ fn render_heading_without_section_id(
     out.push('>');
     render_inlines(out, &h.children, options, state);
     write!(out, "</h{}>", h.level).unwrap();
+}
+
+/// Whether the heading's id took a SLOT in an attribute block.
+///
+/// AUTHORED means exactly that, not merely that the node carries an id: since
+/// carve#750 the parse stamps a heading's GENERATED id onto the node, so
+/// presence no longer distinguishes them.
+fn heading_id_is_authored(h: &Heading) -> bool {
+    h.attrs.as_ref().is_some_and(|attrs| {
+        attrs.id.is_some() && attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+    })
 }
 
 fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
@@ -1913,14 +2036,39 @@ fn render_list(
             write!(out, " data-delim=\"{}\"", escape_attr(&delim.to_string())).unwrap();
         }
     }
+    // PART 10 §13a: the authored bullet, under roundtrip export only and only
+    // where it is not the default `-`. An ORDERED list's authored marker is its
+    // DELIMITER, which §12's `data-delim` already writes on every render, and
+    // §13a says this option "neither gates nor duplicates" a clause of its own -
+    // so `data-marker` rides the `<ul>` here and the `<ol>` keeps `data-delim`.
+    // carve-php writes `data-marker=")"` on an `<ol>` and no `data-delim` at
+    // all, which is its §12 gap rather than a second spelling to match.
+    let bullet_carrier = options
+        .html_carriers()
+        .then(|| l.bullet_char.filter(|c| *c != '-'))
+        .flatten();
+    if let Some(bullet) = bullet_carrier {
+        write_carrier(
+            out,
+            crate::roundtrip::MARKER,
+            &bullet.to_string(),
+            &l.attrs,
+            l.pos.as_ref(),
+        );
+    }
     // PART 19 §1: `task-list` is a mandatory base class. Every item has to be a
     // task, so an ingested mixed list never hides a plain item's bullet.
     let task_list =
         !l.ordered && !l.items.is_empty() && l.items.iter().all(|item| item.checked.is_some());
+    // The carrier owns the name, so an authored copy does not reach the element.
+    let authored = match bullet_carrier {
+        Some(_) => strip_keys(&l.attrs, &[crate::roundtrip::MARKER]),
+        None => l.attrs.clone(),
+    };
     if task_list {
-        out.push_str(&render_attrs_with_base_class(&l.attrs, "task-list"));
+        out.push_str(&render_attrs_with_base_class(&authored, "task-list"));
     } else {
-        write_attrs(out, &l.attrs);
+        write_attrs(out, &authored);
     }
     out.push_str(">\n");
     for (i, item) in l.items.iter().enumerate() {
@@ -3159,7 +3307,7 @@ fn render_figure_contents(
         match &*f.target {
             FigureTarget::Image(img) => {
                 indent(out, level + 1);
-                render_image(out, img);
+                render_image(out, img, options);
             }
             FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
             FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
@@ -3301,7 +3449,7 @@ fn render_extension_carrier(
     out.push_str("</div>");
 }
 
-fn render_image(out: &mut String, img: &Image) {
+fn render_image(out: &mut String, img: &Image, options: &Options<'_>) {
     if img.ref_label.is_some() && img.src.is_empty() {
         // Same PART 10 SS2 nbsp fold as the link literal above.
         write_escaped_text_nbsp(out, img.raw_ref.as_deref().unwrap_or_default());
@@ -3319,12 +3467,26 @@ fn render_image(out: &mut String, img: &Image) {
     if let Some(title) = &img.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
-    let blocked = if img.title.is_some() {
-        &["src", "title"][..]
+    // PART 10 §13a: the reference label the image resolved by. HTML spells only
+    // the resolved `src`, so without this a `![alt][lbl]` comes back inlined.
+    let mut blocked: Vec<&str> = if img.title.is_some() {
+        vec!["src", "title"]
     } else {
-        &["src"][..]
+        vec!["src"]
     };
-    out.push_str(&render_attrs_without_keys(&img.attrs, blocked));
+    if options.html_carriers() {
+        if let Some(label) = &img.ref_label {
+            write_carrier(
+                out,
+                crate::roundtrip::REF,
+                label,
+                &img.attrs,
+                img.pos.as_ref(),
+            );
+            blocked.push(crate::roundtrip::REF);
+        }
+    }
+    out.push_str(&render_attrs_without_keys(&img.attrs, &blocked));
     out.push('>');
 }
 
@@ -3579,7 +3741,20 @@ fn render_inline_after(
         }
         InlineNode::EscapedText(s) => {
             // The backslash is authoring syntax; the reader sees the character.
-            write_escaped_text_nbsp(out, &s.value);
+            // PART 10 §13a: under roundtrip export the character is wrapped in a
+            // span whose presence carrier says it was escaped, so an import puts
+            // the backslash back instead of letting the character reparse as
+            // markup. ONE ESCAPE PER ELEMENT, ruled on carve#2902 question 4: a
+            // multi-character value imported as `\a\b\c`, which is not Carve.
+            if options.html_carriers() {
+                out.push_str("<span");
+                write_bare_carrier(out, crate::roundtrip::ESCAPED, &None, s.pos.as_ref());
+                out.push('>');
+                write_escaped_text_nbsp(out, &s.value);
+                out.push_str("</span>");
+            } else {
+                write_escaped_text_nbsp(out, &s.value);
+            }
         }
         InlineNode::SmartPunctuation(s) => {
             // Source mode reproduces what the author typed; the glyph is a
@@ -3610,7 +3785,7 @@ fn render_inline_after(
             out.push_str("</code>");
         }
         InlineNode::Link(l) => render_link(out, l, options, state),
-        InlineNode::Image(img) => render_image(out, img),
+        InlineNode::Image(img) => render_image(out, img, options),
         InlineNode::Span(s) => {
             render_semantic_span(out, s, options, state);
         }
@@ -3676,7 +3851,23 @@ fn render_inline_after(
             }
         }
         InlineNode::RawInline(r) => {
-            if r.format.trim() == "html" {
+            let html = r.format.trim() == "html";
+            // PART 10 §13a: the span carries the raw inline's FORMAT and holds
+            // its content, which is the only way a `=latex` run survives a
+            // target that has no spelling for it. An `=html` run's content stays
+            // verbatim where raw HTML is allowed; every other format's content
+            // is escaped, matching carve-php under the same mode.
+            if options.html_carriers() {
+                out.push_str("<span");
+                write_carrier(out, crate::roundtrip::RAW, &r.format, &None, r.pos.as_ref());
+                out.push('>');
+                if html && options.allow_raw_html {
+                    out.push_str(&r.content);
+                } else {
+                    out.push_str(&escape_text(&r.content));
+                }
+                out.push_str("</span>");
+            } else if html {
                 // Escape instead of emitting when raw HTML is disabled.
                 if options.allow_raw_html {
                     out.push_str(&r.content);
@@ -3736,7 +3927,24 @@ fn render_inline_after(
                 ),
             );
             out.push('"');
-            write_attrs(out, &a.attrs);
+            // PART 10 §13a: presence says the link was authored as an autolink,
+            // which HTML's `<a href>` cannot tell from `[text](url)` where the
+            // text happens to equal the destination.
+            if options.html_carriers() {
+                write_carrier(
+                    out,
+                    crate::roundtrip::AUTOLINK,
+                    "1",
+                    &a.attrs,
+                    a.pos.as_ref(),
+                );
+                out.push_str(&render_attrs_without_keys(
+                    &a.attrs,
+                    &[crate::roundtrip::AUTOLINK],
+                ));
+            } else {
+                write_attrs(out, &a.attrs);
+            }
             out.push('>');
             write_escaped_text(out, display);
             out.push_str("</a>");
@@ -3924,7 +4132,24 @@ fn render_inline_after(
                 out.push_str("<a id=\"");
                 write_escaped_attr(out, ref_id);
                 write!(out, "\" href=\"#fn{number}\" role=\"doc-noteref\"").unwrap();
-                out.push_str(&render_attrs_without_id(&f.attrs));
+                // PART 10 §13a: the authored label, on the reference and on the
+                // endnote item. The rendered `1` is a position, and a document
+                // whose labels were `[^note]` comes back numbered without this.
+                if options.html_carriers() {
+                    if let Some(label) = &f.id {
+                        write_carrier(
+                            out,
+                            crate::roundtrip::FOOTNOTE_LABEL,
+                            label,
+                            &f.attrs,
+                            f.pos.as_ref(),
+                        );
+                    }
+                }
+                out.push_str(&render_attrs_without_id_and_keys(
+                    &f.attrs,
+                    &[crate::roundtrip::FOOTNOTE_LABEL],
+                ));
                 write!(out, "><sup>{number}</sup></a>").unwrap();
             } else if let Some(id) = &f.id {
                 write_escaped_text(out, &format!("[^{id}]"));
@@ -4171,12 +4396,19 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     if let Some(title) = &l.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
-    let blocked = if l.title.is_some() {
-        &["href", "title"][..]
+    // PART 10 §13a: the reference label the link resolved by.
+    let mut blocked: Vec<&str> = if l.title.is_some() {
+        vec!["href", "title"]
     } else {
-        &["href"][..]
+        vec!["href"]
     };
-    out.push_str(&render_attrs_without_keys(&l.attrs, blocked));
+    if options.html_carriers() {
+        if let Some(label) = &l.ref_label {
+            write_carrier(out, crate::roundtrip::REF, label, &l.attrs, l.pos.as_ref());
+            blocked.push(crate::roundtrip::REF);
+        }
+    }
+    out.push_str(&render_attrs_without_keys(&l.attrs, &blocked));
     out.push('>');
     state.link_depth += 1;
     // Render the label through the anchor-unwrapping view.
@@ -4520,6 +4752,70 @@ pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     out
 }
 
+/// Write one PART 10 §13a carrier, reporting an authored attribute of the same
+/// name as dropped.
+///
+/// RULED on markup-carve/carve#2902 question 1: THE CARRIER WINS and the
+/// authored attribute is dropped with a diagnostic naming it. Emitting both,
+/// which carve-php did with a precedence that differed per carrier, is invalid
+/// HTML. The caller passes the same name to [`render_attrs_without_keys`] (or
+/// its block-level twin), so the suppression and the report stay one decision.
+pub(crate) fn write_carrier(
+    out: &mut String,
+    name: &'static str,
+    value: &str,
+    attrs: &Option<Attrs>,
+    pos: Option<&Pos>,
+) {
+    out.push(' ');
+    out.push_str(name);
+    out.push_str("=\"");
+    write_escaped_attr(out, value);
+    out.push('"');
+    report_carrier_collision(name, attrs, pos);
+}
+
+/// Write a PRESENCE carrier bare, with no value at all.
+///
+/// §13a: "A writer writes the empty value or `1`". Measured against carve-php
+/// under roundtrip mode, two of the four presence carriers are written BARE
+/// (`<span data-djot-escaped>`, `<template data-djot-abbreviations>`) and the
+/// other three carry `="1"`, so the inventory's two spellings are both in use
+/// and byte-parity needs both here.
+pub(crate) fn write_bare_carrier(
+    out: &mut String,
+    name: &'static str,
+    attrs: &Option<Attrs>,
+    pos: Option<&Pos>,
+) {
+    out.push(' ');
+    out.push_str(name);
+    report_carrier_collision(name, attrs, pos);
+}
+
+fn report_carrier_collision(name: &'static str, attrs: &Option<Attrs>, pos: Option<&Pos>) {
+    if attrs_has_key(attrs, name) {
+        crate::render_loss::record_carrier_collision(name, name, pos);
+    }
+}
+
+/// The attribute set without the named keys, for a caller that has to hand the
+/// filtered set to a writer of its own rather than take a rendered string.
+pub(crate) fn strip_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> Option<Attrs> {
+    let a = attrs.as_ref()?;
+    let is_blocked = |k: &str| blocked.contains(&k.to_ascii_lowercase().as_str());
+    if !a.key_values.keys().any(|k| is_blocked(k)) {
+        return attrs.clone();
+    }
+    let mut filtered = a.clone();
+    filtered.key_values.retain(|k, _| !is_blocked(k));
+    filtered.order.retain(|slot| match slot {
+        AttrSlot::Key(k) => !is_blocked(k),
+        _ => true,
+    });
+    Some(filtered)
+}
+
 pub(crate) fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
     let Some(a) = attrs else {
         return String::new();
@@ -4678,13 +4974,15 @@ fn render_attrs_after_class_without_keys(attrs: &Option<Attrs>, blocked: &[&str]
     render_attrs_after_class(&filtered)
 }
 
-fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
+/// `render_attrs_without_id`, additionally dropping the named keys a §13a
+/// carrier has taken over on the same element.
+fn render_attrs_without_id_and_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
     let mut attrs = attrs.clone();
     if let Some(attrs) = &mut attrs {
         attrs.id = None;
         attrs.order.retain(|slot| !matches!(slot, AttrSlot::Id));
     }
-    render_attrs(&attrs)
+    render_attrs_without_keys(&attrs, blocked)
 }
 
 /// `render_attrs_without_id` for an element whose `align` may be a text alignment.
