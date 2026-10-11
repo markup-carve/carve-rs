@@ -2440,7 +2440,16 @@ fn term_folded_lines(
                     TermFenceHost {
                         content_col: col,
                         quote_depth: quotes,
-                        quote_columns: term_quote_columns.clone(),
+                        quote_columns: if strip_term_quote_prefixes(
+                            lines[index],
+                            &term_quote_columns,
+                        )
+                        .is_some()
+                        {
+                            term_quote_columns.clone()
+                        } else {
+                            term_quote_columns_for(lines[index], &columns)
+                        },
                         opener_offset: rest.as_ptr() as usize - lines[index].as_ptr() as usize,
                     },
                 );
@@ -2739,17 +2748,20 @@ fn term_quote_columns_for(mut line: &str, columns: &ContentColumns) -> Vec<usize
     floors
 }
 
-fn term_fence_ends_above(mut line: &str, open: FenceOpen, quote_columns: &[usize]) -> bool {
+fn strip_term_quote_prefixes<'a>(mut line: &'a str, quote_columns: &[usize]) -> Option<&'a str> {
     for &floor in quote_columns {
         if indent_columns(line) < floor {
-            return true;
+            return None;
         }
-        let Some(rest) = strip_prepass_blockquote_prefix(line) else {
-            return true;
-        };
-        line = rest;
+        line = strip_prepass_blockquote_prefix(line)?;
     }
-    let kept = line;
+    Some(line)
+}
+
+fn term_fence_ends_above(line: &str, open: FenceOpen, quote_columns: &[usize]) -> bool {
+    let Some(kept) = strip_term_quote_prefixes(line, quote_columns) else {
+        return true;
+    };
     !is_blank_line(kept) && indent_columns(kept) < open.content_col
 }
 

@@ -406,3 +406,24 @@ fn term_quote_hosts_allow_indentation_above_the_list_floor() {
         );
     }
 }
+
+#[test]
+fn a_fence_in_a_new_quote_uses_its_own_host_floor() {
+    for prefix in ["- > :: t\n> ", "- head\n  > :: t\n> ", "> - > :: t\n> > "] {
+        let quote = if prefix.starts_with(">") {
+            "> > "
+        } else {
+            "> "
+        };
+        for closer in ["", "```\n"] {
+            let source = format!("{prefix}```\n{quote}[r]: /u\n{quote}[^a]: note\n{quote}{closer}");
+            let doc = carve::parse(&source);
+            assert!(doc.footnote_defs.is_empty(), "{source:?}: {doc:?}");
+            let output = html(&source);
+            assert!(
+                output.contains("<pre><code>[r]: /u\n[^a]: note\n"),
+                "{source:?}: {output}"
+            );
+        }
+    }
+}
