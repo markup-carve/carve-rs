@@ -10,6 +10,9 @@
 #[path = "../multiline_inline_code.rs"]
 mod multiline_inline_code;
 
+#[path = "../an_emphasis_ending_in_an_escaped_space_keeps_its_braces.rs"]
+mod an_emphasis_ending_in_an_escaped_space_keeps_its_braces;
+
 #[path = "../attached_definition_boundaries.rs"]
 mod attached_definition_boundaries;
 

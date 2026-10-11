@@ -3920,12 +3920,12 @@ fn render_inline_body(
                     let inner = if conflicts('/') {
                         render_forced_emphasis("/", &content)
                     } else {
-                        render_emphasis("/", &content, '*', '*')
+                        render_emphasis(session, "/", &content, '*', '*')
                     };
                     if conflicts('*') {
                         render_forced_emphasis("*", &inner)
                     } else {
-                        render_emphasis("*", &inner, prev_char, next_char)
+                        render_emphasis(session, "*", &inner, prev_char, next_char)
                     }
                 } else if let Some(marker) = bare_delimiter(emphasis.kind) {
                     render_forced_emphasis(marker, &content)
@@ -3973,24 +3973,36 @@ fn render_inline_body(
                 }
             }
             let (delim, body) = match emphasis.kind {
-                EmphasisKind::Italic => ("/", render_emphasis("/", &content, prev_char, next_char)),
-                EmphasisKind::Strong => ("*", render_emphasis("*", &content, prev_char, next_char)),
-                EmphasisKind::Underline => {
-                    ("_", render_emphasis("_", &content, prev_char, next_char))
-                }
-                EmphasisKind::Strike => ("~", render_emphasis("~", &content, prev_char, next_char)),
+                EmphasisKind::Italic => (
+                    "/",
+                    render_emphasis(session, "/", &content, prev_char, next_char),
+                ),
+                EmphasisKind::Strong => (
+                    "*",
+                    render_emphasis(session, "*", &content, prev_char, next_char),
+                ),
+                EmphasisKind::Underline => (
+                    "_",
+                    render_emphasis(session, "_", &content, prev_char, next_char),
+                ),
+                EmphasisKind::Strike => (
+                    "~",
+                    render_emphasis(session, "~", &content, prev_char, next_char),
+                ),
                 EmphasisKind::Super => ("^", render_forced_emphasis("^", &content)),
                 EmphasisKind::Sub => (",", render_forced_emphasis(",", &content)),
-                EmphasisKind::Highlight => {
-                    ("=", render_emphasis("=", &content, prev_char, next_char))
-                }
+                EmphasisKind::Highlight => (
+                    "=",
+                    render_emphasis(session, "=", &content, prev_char, next_char),
+                ),
                 // `/*` needs content that hugs it: `/* x*/` reparses as an
                 // emphasis holding literal stars, so nest it instead.
                 EmphasisKind::BoldItalic if !hugs_its_delimiters(&content) => (
                     "",
                     render_emphasis(
+                        session,
                         "*",
-                        &render_emphasis("/", &content, '*', '*'),
+                        &render_emphasis(session, "/", &content, '*', '*'),
                         prev_char,
                         next_char,
                     ),
@@ -4853,7 +4865,13 @@ fn render_forced_emphasis(delim: &str, content: &str) -> String {
     format!("{{{delim}{content}{delim}}}")
 }
 
-fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char) -> String {
+fn render_emphasis(
+    session: &RenderSession,
+    delim: &str,
+    content: &str,
+    prev_char: char,
+    next_char: char,
+) -> String {
     // A leading `*` would form the combined bold-italic opener.
     let reads_as_bold_italic = delim == "/" && content.starts_with('*');
     let needs_forced = is_word_boundary(prev_char)
@@ -4861,6 +4879,7 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
         || reads_as_bold_italic
         || content.starts_with(delim)
         || content.ends_with(delim)
+        || content.ends_with(sentinel(session, S_ESCAPED_SPACE))
         // A bare opener may not be followed, nor a closer preceded, by `ws`
         // (CARVE-P3-013; space, tab, CR, LF). A trailing hard break also puts
         // the closer at the start of the next line (PART 11 §1a).
