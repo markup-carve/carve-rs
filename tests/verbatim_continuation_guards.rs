@@ -381,3 +381,67 @@ fn identical_guard_text_in_a_quote_does_not_steal_the_footnote_refusal_type() {
         }
     }
 }
+
+#[test]
+fn a_gap_definition_keeps_guard_types_in_output_order() {
+    let options = carve::Options::default().with_positions(true);
+    let mut template = carve::parse_with_options("- A\n\n  B\n", &options);
+    let carve::BlockNode::List(mut root) = template.children.remove(0) else {
+        panic!("expected list");
+    };
+    root.tight = true;
+    let mut outer = root.clone();
+    root.pos.as_mut().unwrap().start_line = 0;
+    outer.pos.as_mut().unwrap().start_line = 1;
+    for (list, first_line, last_line) in [(&mut root, 0, 5), (&mut outer, 2, 4)] {
+        for (index, line) in [(0, first_line), (1, last_line)] {
+            let carve::BlockNode::Paragraph(paragraph) = &mut list.items[0].children[index] else {
+                panic!("expected paragraph");
+            };
+            let pos = paragraph.pos.as_mut().unwrap();
+            pos.start_line = line;
+            pos.end_line = line;
+        }
+    }
+    let carve::BlockNode::Paragraph(tail) = &mut outer.items[0].children[1] else {
+        panic!("expected tail paragraph");
+    };
+    tail.children = vec![carve::InlineNode::Code(carve::Code {
+        value: "x\n> m".into(),
+        attrs: None,
+        pos: None,
+    })];
+    let mut inner_doc = carve::parse_with_options("> body\n", &options);
+    let carve::BlockNode::BlockQuote(mut inner) = inner_doc.children.remove(0) else {
+        panic!("expected quote");
+    };
+    inner.pos.as_mut().unwrap().start_line = 3;
+    let carve::BlockNode::Paragraph(paragraph) = &mut inner.children[0] else {
+        panic!("expected quoted paragraph");
+    };
+    paragraph.children = vec![carve::InlineNode::Math(carve::Math {
+        content: "x\n> m".into(),
+        attrs: None,
+        display: false,
+        label: None,
+        number: None,
+        pos: None,
+    })];
+    let mut doc = carve::parse("");
+    doc.children = vec![carve::BlockNode::List(root)];
+    doc.footnote_defs
+        .insert("outer".into(), vec![carve::BlockNode::List(outer)]);
+    doc.footnote_defs
+        .insert("inner".into(), vec![carve::BlockNode::BlockQuote(inner)]);
+    match carve::render_carve(&doc).expect_err("the code continuation cannot stay in the footnote")
+    {
+        carve::RenderCarveError::SourceUnspellable(error) => {
+            assert_eq!(error.node_type(), "code");
+            assert_eq!(
+                error.reason(),
+                "a block-marker continuation cannot stay inside a footnote paragraph"
+            );
+        }
+        other => panic!("unexpected refusal: {other}"),
+    }
+}
