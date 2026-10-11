@@ -230,14 +230,14 @@ pub(super) fn blocks(source: &str) -> String {
                 let owned = lines[..n]
                     .iter()
                     .rev()
-                    .take_while(|line| !line.trim().is_empty())
+                    .take_while(|line| !quoted(line).1.trim().is_empty())
                     .any(|line| {
                         let (parent_depth, parent_body) = quoted(line);
                         parent_depth == depth
                             && (marker.is_match(parent_body.trim_start())
                                 || heading.is_match(parent_body.trim_start()))
                     });
-                if owned {
+                if owned || depth < quote_paragraph_depth.unwrap_or(depth) {
                     result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
                     quote_paragraph_depth = None;
                 }

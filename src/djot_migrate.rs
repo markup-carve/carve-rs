@@ -346,7 +346,7 @@ fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, 
         return (0, Some(0), 0);
     }
     let enclosing =
-        cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+        cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     if let Some(item) = enclosing.find(prefix) {
         if prefix[item.end()..].starts_with('>') {
             prefix = &prefix[item.end()..];
@@ -359,9 +359,9 @@ fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, 
         depth += 1;
     }
     let marker =
-        cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+        cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let block =
-        cached_regex!(r"^(?:[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+)?[ \t]*$")
+        cached_regex!(r"^(?:[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)?[ \t]*$")
             .unwrap();
     (
         depth,
@@ -441,7 +441,7 @@ fn protect_rejected_comment_quotes(source: &str) -> String {
     let mask = mask_djot_attribute_source(source);
     let quote_pattern = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))+").unwrap();
     let enclosing =
-        cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
+        cached_regex!(r"^[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let mut edits = std::collections::BTreeMap::new();
     for (at, _) in source.match_indices("{%") {
         if mask.as_bytes()[at] != b'{' || read_djot_word_attributes(source, at).is_some() {
@@ -462,16 +462,20 @@ fn protect_rejected_comment_quotes(source: &str) -> String {
         }
         let from = source[..at].rfind('\n').map_or(0, |n| n + 1);
         let opening_prefix = &source[from..at];
-        let opening_prefix = enclosing
+        let enclosing_end = enclosing
             .find(opening_prefix)
             .filter(|m| opening_prefix[m.end()..].starts_with('>'))
-            .map_or(opening_prefix, |m| &opening_prefix[m.end()..]);
+            .map_or(0, |m| m.end());
+        let opening_prefix = &opening_prefix[enclosing_end..];
         let opening_quote = quote_pattern.find(opening_prefix).map(|m| m.as_str());
         let mut line = Some(first_end);
         while let Some(pos) = line {
             let Some(quote) = quote_pattern.find(&source[pos + 1..]) else {
                 break;
             };
+            if quote.as_str().len() - quote.as_str().trim_start().len() < enclosing_end {
+                break;
+            }
             if quote.as_str().bytes().filter(|&b| b == b'>').count() < context.0 {
                 edits.insert(pos + 1, format!("{}\n", quote.as_str().trim_end()));
                 break;
@@ -583,6 +587,18 @@ fn escape_invalid_djot_attributes(source: &str) -> (String, HashSet<String>) {
                 {
                     let mut inner = (at + 2).max(cursor);
                     while inner < source.len() && !matches!(source.as_bytes()[inner], b'%' | b'}') {
+                        if source.as_bytes()[inner] == b'\n' {
+                            let end = source[inner + 1..]
+                                .find('\n')
+                                .map_or(source.len(), |at| inner + 1 + at);
+                            let line = &source[inner + 1..end];
+                            if line[emphasis::structural_prefix_end(line)..]
+                                .trim()
+                                .is_empty()
+                            {
+                                break;
+                            }
+                        }
                         if source.as_bytes()[inner] == b'{' && mask.as_bytes()[inner] == b'{' {
                             output.push_str(&source[cursor..inner]);
                             output.push_str("\\{");
@@ -738,7 +754,7 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
     if context.1.is_none() {
         return true;
     }
-    let item_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdmIVXLCDM]+)\))[ \t]+").unwrap();
+    let item_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*(?:[-*+]|(?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))[.)]|\((?:[0-9]+|[A-Za-z]|(?:[ivxlcdm]+|[IVXLCDM]+))\))[ \t]+").unwrap();
     let quote_pattern = cached_regex!(r"^[ \t]*(?:>[ \t]*)+").unwrap();
     let leading_pattern = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
     let heading_pattern = cached_regex!(r"^#{1,6}(?:[ \t]|$)").unwrap();
@@ -768,6 +784,9 @@ fn scan_comment_paragraph(source: &str, start: usize, context: ParagraphContext)
             .trim()
             .is_empty()
         {
+            if lines.is_empty() {
+                break;
+            }
             let mut parent_end = from.checked_sub(1);
             while let Some(end) = parent_end {
                 let parent_from = source[..end].rfind('\n').map_or(0, |at| at + 1);
@@ -997,6 +1016,22 @@ fn read_djot_attributes_with_context(
                     .any(|(at, _)| blank_line_follows(bytes, i + at))
             {
                 return None;
+            }
+            let comment = &source[i..end];
+            if comment.contains('>') && comment.contains('\n') {
+                let (depth, _, _) =
+                    *context.get_or_insert_with(|| djot_attribute_context(source, start));
+                if depth > 0
+                    && comment[..comment.rfind('\n').unwrap_or(0)]
+                        .split('\n')
+                        .skip(1)
+                        .any(|raw| {
+                            djot_attribute_line(raw, depth)
+                                .is_some_and(|line| line.trim().is_empty())
+                        })
+                {
+                    return None;
+                }
             }
             i = if bytes[end] == b'%' { end + 1 } else { end };
             continue;
@@ -2632,7 +2667,7 @@ fn quoted_blank_line_follows(bytes: &[u8], index: usize, quoted: bool) -> bool {
         }
     }
 
-    k >= bytes.len() || bytes[k] == b'\n'
+    k >= bytes.len() || bytes[k] == b'\n' || (bytes[k] == b'\r' && bytes.get(k + 1) == Some(&b'\n'))
 }
 
 /// Replace every byte of code and every link destination with a space, so the

@@ -28,6 +28,7 @@ fn valid_comment_shapes_still_disappear() {
         "- a\n\n  b\n  {% x\n  y %} z\n",
         "> p\n>\n> a\n> {% x\n> y %} z\n",
         "Hi. there\n{% x\ny %} z\n",
+        "Iv. lead\n{% x\ny %} z\n",
         "a\n{% x\ny %} z\n",
         "- a\n  {% x\n  y %} z\n",
         "{% x %}\n",
@@ -96,4 +97,38 @@ fn shared_reference_fixtures_match_the_entire_html() {
             fixture["id"]
         );
     }
+}
+
+#[test]
+fn rejected_comments_preserve_later_blocks_and_quote_depth() {
+    for (source, expected) in [
+        (
+            "> > inner\n> {% c %\n> tail\n",
+            "> > inner\n>\n> \\{% c %\n> \\> tail\n",
+        ),
+        (
+            "para {% open\n\n# Title {#keep}\n",
+            "para \\{% open\n\n# Title \n",
+        ),
+        ("Done. > {% c %\n> next\n", "Done. > \\{% c %\n\\> next\n"),
+        (
+            "> text {% open\n>\n> next {#id}\n",
+            "> text \\{% open\n>\n> next \n",
+        ),
+        ("Iv. > {% c %\n> next\n", "Iv. > \\{% c %\n\\> next\n"),
+        ("did. > {% c %\n> next\n", "did. > \\{% c %\n> next\n"),
+    ] {
+        assert_eq!(djot_to_carve(source), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn closing_comment_lines_and_crlf_blank_paragraphs() {
+    assert!(!to_html(&djot_to_carve("> para {% a\n> %}\n")).contains("{%"));
+    let source = djot_to_carve("{% a\r\n\r\nb %}\n");
+    assert!(source.contains('a') && source.contains('b'), "{source}");
+    assert_eq!(
+        djot_to_carve("- > {% a\n > b %}\n"),
+        "- > \\{% a\n > b %}\n"
+    );
 }
