@@ -13,6 +13,9 @@ mod raw_payload_termination;
 #[path = "../an_explicit_heading_id_carrier_overrides_the_slug_heuristic.rs"]
 mod an_explicit_heading_id_carrier_overrides_the_slug_heuristic;
 
+#[path = "../markdown_unicode_marker_exhaustion.rs"]
+mod markdown_unicode_marker_exhaustion;
+
 #[path = "../source_unicode_marker_exhaustion.rs"]
 mod source_unicode_marker_exhaustion;
 
