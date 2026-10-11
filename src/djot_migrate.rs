@@ -437,6 +437,8 @@ fn protect_rejected_comment_quotes(source: &str) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let mask = mask_djot_attribute_source(source);
     let quote_pattern = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))+").unwrap();
+    let enclosing =
+        cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
     let mut edits = std::collections::BTreeMap::new();
     for (at, _) in source.match_indices("{%") {
         if mask.as_bytes()[at] != b'{' || read_djot_word_attributes(source, at).is_some() {
@@ -457,8 +459,6 @@ fn protect_rejected_comment_quotes(source: &str) -> String {
         }
         let from = source[..at].rfind('\n').map_or(0, |n| n + 1);
         let opening_prefix = &source[from..at];
-        let enclosing =
-            cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
         let opening_prefix = enclosing
             .find(opening_prefix)
             .filter(|m| opening_prefix[m.end()..].starts_with('>'))
