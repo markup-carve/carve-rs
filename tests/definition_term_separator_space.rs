@@ -179,6 +179,9 @@ fn definitions_inside_an_unclosed_fence_after_a_term_remain_payload() {
         "> :: t\n> ```\n> [r]: /u\n> [^a]: note\n",
         "- :: t\n  ```\n  [r]: /u\n  [^a]: note\n",
         "> - :: t\n>   ```\n>   [r]: /u\n>   [^a]: note\n",
+        "> > :: t\n> > ```\n> > [r]: /u\n> > [^a]: note\n",
+        "- > :: t\n  > ```\n  > [r]: /u\n  > [^a]: note\n",
+        "> - > :: t\n>   > ```\n>   > [r]: /u\n>   > [^a]: note\n",
     ] {
         let output = html(source);
         assert!(
@@ -247,6 +250,9 @@ fn a_closed_hosted_term_fence_releases_following_definitions() {
         "> :: t\n> ```\n> code\n> ```\n> use [^a]\n\n[^a]: note\n",
         "- :: t\n  ```\n  code\n  ```\n  use [^a]\n  [^a]: note\n",
         "> - :: t\n>   ```\n>   code\n>   ```\n>   use [^a]\n>   [^a]: note\n",
+        "> > :: t\n> > ```\n> > code\n> > ```\n\nuse [^a]\n\n[^a]: note\n",
+        "> > - :: t\n> >   ```\n> >   code\n> >   ```\n\nuse [^a]\n\n[^a]: note\n",
+        "- > :: t\n  > ```\n  > code\n  > ```\n\nuse [^a]\n\n[^a]: note\n",
     ] {
         let doc = carve::parse(source);
         assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
@@ -256,6 +262,28 @@ fn a_closed_hosted_term_fence_releases_following_definitions() {
             "{source:?}: {output}"
         );
         assert!(output.contains("doc-noteref"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn payload_markers_cannot_close_a_term_owned_fence() {
+    for (source, payload) in [
+        (
+            "> :: t\n> ```\n> > ```\n> [r]: /u\n> ```\n\nuse [^a]\n\n[^a]: note\n",
+            "&gt; ```\n[r]: /u\n",
+        ),
+        (
+            "- :: t\n  ```\n  - ```\n  [r]: /u\n  ```\n\nuse [^a]\n\n[^a]: note\n",
+            "- ```\n[r]: /u\n",
+        ),
+    ] {
+        let doc = carve::parse(source);
+        assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
+        let output = html(source);
+        assert!(
+            output.contains(&format!("<pre><code>{payload}</code></pre>")),
+            "{source:?}: {output}"
+        );
     }
 }
 
