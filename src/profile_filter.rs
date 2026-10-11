@@ -761,10 +761,7 @@ impl ProfileFilter<'_> {
         }
         if let BlockNode::RawBlock(raw) = node {
             if self.profile.is_type_allowed_on("code_block", true) {
-                let mut content = raw.content.clone();
-                if crate::ast::fenced_payload_needs_ending(&content) {
-                    content.push('\n');
-                }
+                let content = raw.content.clone();
                 return Ok(Some(BlockNode::CodeBlock(CodeBlock {
                     attrs: raw.attrs.clone(),
                     lang: Some(raw.format.clone()),
@@ -1024,7 +1021,7 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
             items.join("\n")
         }
         BlockNode::ThematicBreak(_) => "---".to_string(),
-        BlockNode::RawBlock(r) => r.content.clone(),
+        BlockNode::RawBlock(r) => r.target_content().to_owned(),
         BlockNode::Comment(_) => String::new(),
         BlockNode::BlockImage(img) => image_text(img),
         BlockNode::Paragraph(p) => p

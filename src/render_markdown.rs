@@ -588,7 +588,10 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             if raw.format == "html" {
                 // Escape, not emit: raw HTML in Markdown would be live again
                 // when the Markdown is rendered to HTML downstream.
-                format!("{}\n\n", escape_md_html(&strip_controls(&raw.content)))
+                format!(
+                    "{}\n\n",
+                    escape_md_html(&strip_controls(raw.target_content()))
+                )
             } else {
                 crate::render_loss::record_raw_drop(
                     &raw.format,

@@ -2434,25 +2434,12 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            // The payload's own lines, then the ending after its LAST line. An
-            // EMPTY payload has no line and writes none (carve-rs#2166).
-            //
-            // An all-blank payload carries its trailing ending IN `content`,
-            // which is how it says how many lines it has, so
-            // `protect_verbatim` is handed the payload WITHOUT that ending or it
-            // stages a line too many. Everything goes through the staging now: a
-            // blank line that bypassed it reached the pass that folds a run of
-            // blank lines, so two authored blank lines came back as one and three
-            // as one (carve-rs#2168). The code fence never had that bug because
-            // its payload was always staged.
+            // Stage the literal payload without its final ending, then write
+            // that ending before the closer. Empty payloads own no line.
             let payload = if raw.content.is_empty() {
                 String::new()
             } else {
-                let lines = raw
-                    .content
-                    .strip_suffix('\n')
-                    .filter(|_| !crate::ast::fenced_payload_needs_ending(&raw.content))
-                    .unwrap_or(&raw.content);
+                let lines = raw.content.strip_suffix('\n').unwrap_or(&raw.content);
                 format!("{}\n", protect_verbatim(session, lines))
             };
             with_block_attrs(
