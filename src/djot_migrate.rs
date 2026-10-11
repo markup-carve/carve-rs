@@ -342,6 +342,9 @@ fn strip_image_alt_attributes(label: &str) -> String {
 
 fn djot_attribute_context(source: &str, start: usize) -> (usize, Option<usize>, usize) {
     let mut prefix = &source[source[..start].rfind('\n').map_or(0, |p| p + 1)..start];
+    if prefix.is_empty() {
+        return (0, Some(0), 0);
+    }
     let enclosing =
         cached_regex!(r"^[ \t]*(?:[-*+]|[0-9A-Za-z]+[.)]|\([0-9A-Za-z]+\))[ \t]+").unwrap();
     if let Some(item) = enclosing.find(prefix) {
@@ -627,6 +630,7 @@ type ParagraphContext = (usize, Option<usize>, usize);
 struct ParagraphCache {
     source: (usize, usize),
     starts: HashMap<usize, (ParagraphContext, bool)>,
+    attributes: HashMap<usize, Option<(usize, String)>>,
 }
 
 thread_local! {
@@ -635,19 +639,33 @@ thread_local! {
 
 struct ParagraphCacheScope<'a> {
     previous: Option<ParagraphCache>,
+    installed: bool,
     _source: &'a str,
 }
 
 impl<'a> ParagraphCacheScope<'a> {
     fn new(source: &'a str) -> Self {
-        let previous = PARAGRAPH_CACHE.with(|slot| {
-            slot.replace(Some(ParagraphCache {
-                source: (source.as_ptr() as usize, source.len()),
-                starts: HashMap::new(),
-            }))
+        let (previous, installed) = PARAGRAPH_CACHE.with(|slot| {
+            let identity = (source.as_ptr() as usize, source.len());
+            if slot
+                .borrow()
+                .as_ref()
+                .is_some_and(|cache| cache.source == identity)
+            {
+                return (None, false);
+            }
+            (
+                slot.replace(Some(ParagraphCache {
+                    source: identity,
+                    starts: HashMap::new(),
+                    attributes: HashMap::new(),
+                })),
+                true,
+            )
         });
         Self {
             previous,
+            installed,
             _source: source,
         }
     }
@@ -655,6 +673,9 @@ impl<'a> ParagraphCacheScope<'a> {
 
 impl Drop for ParagraphCacheScope<'_> {
     fn drop(&mut self) {
+        if !self.installed {
+            return;
+        }
         PARAGRAPH_CACHE.with(|slot| {
             slot.replace(self.previous.take());
         });
@@ -682,8 +703,11 @@ fn cached_paragraph_start(
 
 fn comment_continues_paragraph(source: &str, start: usize) -> bool {
     let context = djot_attribute_context(source, start);
-    let result = scan_comment_paragraph(source, start);
     let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
+    if cached_paragraph_start(source, from, context) == Some(true) {
+        return true;
+    }
+    let result = scan_comment_paragraph(source, start);
     PARAGRAPH_CACHE.with(|slot| {
         if let Some(cache) = slot.borrow_mut().as_mut() {
             if cache.source == (source.as_ptr() as usize, source.len()) {
@@ -852,7 +876,37 @@ fn scan_comment_paragraph(source: &str, start: usize) -> bool {
 }
 
 fn read_djot_word_attributes(source: &str, start: usize) -> Option<(usize, String)> {
-    read_djot_attributes(source, start, false, false)
+    if source.as_bytes().get(start + 1) != Some(&b'%') {
+        return read_djot_attributes(source, start, false, false);
+    }
+    let identity = (source.as_ptr() as usize, source.len());
+    let cached = PARAGRAPH_CACHE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .filter(|cache| cache.source == identity)
+            .and_then(|cache| cache.attributes.get(&start).cloned())
+    });
+    if let Some(attributes) = cached {
+        return attributes;
+    }
+    let result = read_djot_attributes(source, start, false, false);
+    PARAGRAPH_CACHE.with(|slot| {
+        if let Some(cache) = slot
+            .borrow_mut()
+            .as_mut()
+            .filter(|cache| cache.source == identity)
+        {
+            let from = source[..start].rfind('\n').map_or(0, |at| at + 1);
+            if cache
+                .starts
+                .get(&from)
+                .is_some_and(|(_, paragraph)| *paragraph)
+            {
+                cache.attributes.insert(start, result.clone());
+            }
+        }
+    });
+    result
 }
 
 fn read_djot_attributes(
@@ -905,26 +959,26 @@ fn read_djot_attributes_with_context(
                 i += 1;
             }
         }
-        if bytes.get(i) == Some(&b'}')
-            && source[start..=i].contains('\n')
-            && (!parts.is_empty()
-                || !paragraph_context
-                || !comment_continues_paragraph(source, start))
-        {
+        if bytes.get(i) == Some(&b'}') && source[start..=i].contains('\n') {
             let (depth, block_indent, minimum) = djot_attribute_context(source, start);
-            for raw in source[start..=i].split('\n').skip(1) {
-                let line = if block_indent.is_some() {
-                    djot_attribute_line(raw, depth)?
-                } else {
-                    djot_attribute_line(raw, depth).unwrap_or(raw)
-                };
+            let invalid = source[start..=i].split('\n').skip(1).any(|raw| {
+                let stripped = djot_attribute_line(raw, depth);
+                if block_indent.is_some() && stripped.is_none() {
+                    return true;
+                }
+                let line = stripped.unwrap_or(raw);
                 let indent = line
                     .bytes()
                     .take_while(|b| matches!(b, b' ' | b'\t'))
                     .count();
-                if block_indent.is_some_and(|owner| indent < minimum || indent <= owner) {
-                    return None;
-                }
+                block_indent.is_some_and(|owner| indent < minimum || indent <= owner)
+            });
+            if invalid
+                && (!parts.is_empty()
+                    || !paragraph_context
+                    || !comment_continues_paragraph(source, start))
+            {
+                return None;
             }
         }
         if bytes.get(i) == Some(&b'}') {
@@ -3036,29 +3090,24 @@ fn mask_djot_opaque_with_comments(
             }
         }
         if bytes[at] == b'{' {
-            if read_djot_word_attributes(source, at).is_some()
+            let attrs = read_djot_word_attributes(source, at);
+            if attrs.is_some()
                 && bytes.get(at + 1) == Some(&b'%')
                 && last_brace.is_some_and(|end| at < end)
             {
-                let mut end = at + 2;
-                while end < bytes.len() && bytes[end] != b'}' && !bytes[end..].starts_with(b"%}") {
-                    end += 1;
-                }
-                if bytes.get(end) == Some(&b'%') {
-                    end += 1;
-                }
+                let end = source[at + 2..]
+                    .find('}')
+                    .map_or(bytes.len(), |offset| at + 2 + offset);
                 if bytes.get(end) == Some(&b'}') {
                     comments.push((at, end + 1));
-                    if !read_djot_word_attributes(source, at)
-                        .is_some_and(|(close, _)| close == end + 1)
-                    {
+                    if !attrs.as_ref().is_some_and(|(close, _)| *close == end + 1) {
                         blank_out(&mut mask, at, end + 1);
                     }
                     at = end + 1;
                     continue;
                 }
             }
-            if let Some((end, _)) = read_djot_word_attributes(source, at) {
+            if let Some((end, _)) = attrs {
                 for value in attribute_value.captures_iter(&source[at..end]) {
                     let value = value.get(1).unwrap();
                     if options.attribute_values {
