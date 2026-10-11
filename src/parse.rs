@@ -1357,7 +1357,7 @@ fn extract_footnote_defs(
     let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
     let closer_maxima = fence_closer_suffix_maxima(&lines);
-    let folded_into_term = term_folded_lines(&lines, &closer_maxima);
+    let folded_into_term = term_folded_lines(&lines, &closer_maxima, options);
     // Built on the first CONTAINER-scoped opener and never for a document that
     // has none, which is every document that only ever writes `%%%` at column 0.
     let mut container_closers: Option<ContainerCommentClosers> = None;
@@ -2273,6 +2273,17 @@ fn line_folds_into_an_open_paragraph(
     budget: &mut usize,
     unaffordable: &mut bool,
 ) -> bool {
+    paragraph_continuation_probe(body, line, options, budget, unaffordable, false)
+}
+
+fn paragraph_continuation_probe(
+    body: &[impl AsRef<str>],
+    line: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+    unaffordable: &mut bool,
+    collect_notes: bool,
+) -> bool {
     let run_start = body
         .iter()
         .rposition(|written| is_blank_line(written.as_ref()))
@@ -2319,14 +2330,21 @@ fn line_folds_into_an_open_paragraph(
     after.push('\n');
     after.push_str(line);
 
-    let before = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&before, options).0,
-        options,
-    ));
-    let after = open_frame(&probe_blocks_at_document_level(
-        &extract_link_defs(&after, options).0,
-        options,
-    ));
+    let _term_probe = ProbeGuard::enter();
+    let reduce = |source: String| {
+        let source = if collect_notes && source.contains("[^") {
+            extract_footnote_defs(&source, 1, false, false, options)
+                .0
+                .source
+        } else {
+            source
+        };
+        extract_link_defs(&source, options).0
+    };
+    let before = reduce(before);
+    let after = reduce(after);
+    let before = open_frame(&probe_blocks_at_document_level(&before, options));
+    let after = open_frame(&probe_blocks_at_document_level(&after, options));
     after.ends_in_paragraph && before.levels == after.levels
 }
 
@@ -2347,6 +2365,7 @@ struct TermFenceHost {
 fn term_folded_lines(
     lines: &[&str],
     closer_maxima: &(Vec<usize>, Vec<usize>),
+    options: &Options<'_>,
 ) -> TermLineOwnership {
     fn view_upto(raw: &str, limit: usize) -> (&str, usize, bool) {
         let mut view = raw;
@@ -2398,12 +2417,19 @@ fn term_folded_lines(
         at.get(at.partition_point(|&k| k <= index)).copied()
     };
     let mut ownership = TermLineOwnership::default();
+    let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
+    let mut marker_term_host: Option<(usize, usize)> = None;
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
+    let mut previous_non_blank = "";
     let mut index = 0;
     while index < lines.len() {
         columns.observe(lines[index], false);
+        let after_term = opens_definition_entry(previous_non_blank);
+        if !is_blank_line(lines[index]) {
+            previous_non_blank = lines[index];
+        }
         // A `>` past an open term's column is term text, not a deeper quote.
         if let Some((term_col, term_quotes)) = term {
             let (at_term, quotes, through_list) = view_upto(lines[index], term_quotes);
@@ -2426,11 +2452,22 @@ fn term_folded_lines(
         }
         if is_blank_line(view_line) {
             term = None;
+            marker_term_host = None;
             index += 1;
             continue;
         }
         let col = indent_columns(view_line);
         let rest = trim_ascii_start(view_line);
+        if marker_term_host.is_some_and(|(floor, depth)| {
+            depth != quotes
+                || (col < floor
+                    && !is_list_marker(rest)
+                    && (opens_block_for_term_lint(rest)
+                        || parse_standalone_attrs(rest).is_some()
+                        || rest.starts_with("%%")))
+        }) {
+            marker_term_host = None;
+        }
         let comment =
             detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
         if let Some((term_col, term_quotes)) = term {
@@ -2438,6 +2475,7 @@ fn term_folded_lines(
                 // A folded comment fence takes its body and closer with it.
                 let last = comment.unwrap_or(index);
                 ownership.folded.extend(index..=last);
+                previous_non_blank = lines[last];
                 index = last + 1;
                 continue;
             }
@@ -2483,20 +2521,52 @@ fn term_folded_lines(
         }
         // A fence's payload holds no term.
         if let Some(close) = comment {
+            previous_non_blank = lines[close];
             index = close + 1;
             continue;
         }
-        if let Some(mut open) = detect_fence_open(rest) {
-            let term_host = ownership.fence_openers.get(&index);
-            let term_quote_columns = term_host.map(|host| host.quote_columns.clone());
-            let term_fence_owned = term_host.is_some();
-            open.content_col = col;
+        let mut fence_line = view_line;
+        let mut fence_markers = 0;
+        while let Some(content) = detect_list_marker_full(fence_line)
+            .map(|marker| marker.content)
+            .or_else(|| {
+                after_term
+                    .then(|| strip_definition_marker(trim_ascii_start(fence_line)))
+                    .flatten()
+                    .map(|(body, _)| body)
+            })
+        {
+            fence_line = content;
+            fence_markers += 1;
+        }
+        let fence_rest = trim_ascii_start(fence_line);
+        if let Some(mut open) = detect_fence_open(fence_rest) {
+            open.content_col = view_line
+                [..fence_line.as_ptr() as usize - view_line.as_ptr() as usize]
+                .chars()
+                .count()
+                + indent_columns(fence_line);
             open.quoted = quotes > 0;
             let fence = prepass_fence_opens(lines, index, open, closer_maxima, &ownership);
             if !fence.opens {
                 index += 1;
                 continue;
             }
+            if fence_markers == 1 {
+                ownership.fence_openers.insert(
+                    index,
+                    TermFenceHost {
+                        content_col: open.content_col,
+                        quote_depth: quotes,
+                        quote_columns: term_quote_columns_for(lines[index], &columns),
+                        opener_offset: fence_rest.as_ptr() as usize
+                            - lines[index].as_ptr() as usize,
+                    },
+                );
+            }
+            let term_host = ownership.fence_openers.get(&index);
+            let term_quote_columns = term_host.map(|host| host.quote_columns.clone());
+            let term_fence_owned = term_host.is_some();
             index += 1;
             while index < lines.len() {
                 if (term_fence_owned
@@ -2532,6 +2602,9 @@ fn term_folded_lines(
                     kept
                 };
                 let closes = is_fence_close(close_line, open);
+                if !is_blank_line(lines[index]) {
+                    previous_non_blank = lines[index];
+                }
                 index += 1;
                 if closes {
                     break;
@@ -2541,8 +2614,49 @@ fn term_folded_lines(
         }
         // A term may follow list markers on its line; its column is then the
         // item's content column.
-        if let Some(term_col) = term_start_column(view_line) {
+        if let Some(term_col) = term_start_column(view_line).filter(|&term_col| {
+            if term_col != 0 && columns.reached_by_at(quotes, term_col) != term_col {
+                return false;
+            }
+            if !marker_line_may_be_lazy(lines[index]) {
+                return true;
+            }
+            if marker_term_host == Some((term_col, quotes))
+                || probing()
+                || index == 0
+                || is_blank_line(view(lines[index - 1]).0)
+            {
+                return true;
+            }
+            let above = lines[index - 1];
+            if detect_heading(above).is_some()
+                || detect_thematic_break(above)
+                || is_definition_list_start(above)
+                || is_line_comment_any_column(above)
+            {
+                return true;
+            }
+            if term_probe_budget == 0 {
+                return false;
+            }
+            let mut unaffordable = false;
+            let folds = paragraph_continuation_probe(
+                &lines[..index],
+                lines[index],
+                options,
+                &mut term_probe_budget,
+                &mut unaffordable,
+                true,
+            );
+            if unaffordable {
+                term_probe_budget = 0;
+            }
+            !(folds || unaffordable)
+        }) {
             term = Some((term_col, quotes));
+            if marker_line_may_be_lazy(lines[index]) {
+                marker_term_host = term;
+            }
             term_quote_columns = term_quote_columns_for(lines[index], &columns);
         }
         index += 1;
@@ -2845,7 +2959,7 @@ fn extract_link_defs_with_guard(
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
     let closer_maxima = fence_closer_suffix_maxima(&all_lines);
-    let folded_into_term = term_folded_lines(&all_lines, &closer_maxima);
+    let folded_into_term = term_folded_lines(&all_lines, &closer_maxima, options);
     // See the note in `extract_footnote_defs`: lazy, so a document with no
     // container-scoped comment fence pays nothing for it.
     let mut container_closers: Option<ContainerCommentClosers> = None;

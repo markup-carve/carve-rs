@@ -357,6 +357,9 @@ fn an_earlier_folded_or_host_ended_fence_does_not_hide_a_later_term() {
     for source in [
         "p\n~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
         "- a\n\n  ~~~\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
+        ":: a\n:  ```\n   code\n   ```\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
+        "- ```\n  code\n  ```\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
+        ": ```\n\n:: t\n```\n[r]: /u\n[^a]: note\n",
     ] {
         let output = html(source);
         assert!(output.contains("<dt>t</dt>"), "{source:?}: {output}");
@@ -462,4 +465,123 @@ fn indented_description_quotes_stay_literal_term_content() {
     let doc = carve::parse(source);
     assert!(doc.footnote_defs.is_empty(), "{doc:?}");
     assert!(html(source).contains("<pre><code>[^a]: note\n</code></pre>"));
+}
+
+#[test]
+fn indented_term_text_does_not_own_a_fence_past_a_paragraph_break() {
+    for indent in [" ", "  ", "    "] {
+        let source =
+            format!("{indent}:: t\n{indent}```\n\n{indent}- a\n{indent}  [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(
+            output.contains("role=\"doc-noteref\""),
+            "{source:?}: {output}"
+        );
+        assert!(!output.contains("<pre>"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn folded_list_marker_terms_do_not_own_a_later_fence() {
+    for (above, prefix, owns_fence) in [
+        ("p\n", "", false),
+        ("> p\n", "> ", false),
+        ("- p\n", "  ", true),
+    ] {
+        let source = format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert_eq!(
+            output.contains("role=\"doc-noteref\""),
+            !owns_fence,
+            "{source:?}: {output}"
+        );
+        assert_eq!(output.contains("<pre>"), owns_fence, "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn repeated_admitted_list_terms_keep_their_final_fence_payload() {
+    for count in [100, 1000] {
+        let source = "- :: t\n".repeat(count) + "  ```\n  [^a]: note\n\nsee [^a]\n";
+        let doc = carve::parse(&source);
+        assert!(
+            doc.footnote_defs.is_empty(),
+            "{count}: {:?}",
+            doc.footnote_defs
+        );
+        assert!(html(&source).contains("<pre><code>[^a]: note\n"), "{count}");
+    }
+}
+
+#[test]
+fn collected_definitions_allow_following_list_terms_to_own_fences() {
+    for prefix in ["", "> "] {
+        for above in [
+            "[r]: /u\n",
+            "[^a]: note\n",
+            "[^a]: note\n  body\n",
+            "[r]: /u\n- head\n",
+        ] {
+            let above = above
+                .lines()
+                .map(|line| format!("{prefix}{line}\n"))
+                .collect::<String>();
+            let source = format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
+            let output = html(&source);
+            assert!(
+                output.contains("<pre><code>[x]: /v\n"),
+                "{source:?}: {output}"
+            );
+            assert!(!output.contains('\u{e005}'), "{source:?}: {output}");
+        }
+    }
+    let source = "p\n  [r]: /u\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("<pre>"), "{output}");
+}
+
+#[test]
+fn description_bodies_preserve_their_admitted_list_term_host() {
+    for prefix in ["", "> "] {
+        let above = format!("{prefix}- :: a\n{prefix}  : desc a\n").repeat(100);
+        for continuation in [
+            "{prefix}    [x]: /v\n",
+            "{prefix}  ```\n{prefix}  [x]: /v\n",
+        ] {
+            let continuation = continuation.replace("{prefix}", prefix);
+            let source = format!("{above}{prefix}- :: t\n{continuation}");
+            let output = html(&source);
+            assert!(output.contains("[x]: /v"), "{source:?}: {output}");
+            assert!(!output.contains('\u{e005}'), "{source:?}: {output}");
+        }
+        let source = format!("{above}{prefix}\n{prefix}p\n{prefix}- :: t\n{prefix}  ```\n{prefix}\n{prefix}  - a\n{prefix}    [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(output.contains("role=\"doc-noteref\""), "{output}");
+        assert!(!output.contains("<pre>"), "{output}");
+        let source = format!("{above}{prefix}\n{prefix}- :: t\n{prefix}  ```\n{prefix}  [x]: /v\n");
+        assert!(html(&source).contains("<pre><code>[x]: /v\n"));
+    }
+}
+
+#[test]
+fn lazy_description_continuations_keep_the_admitted_list_host() {
+    for prefix in ["", "> "] {
+        let above = format!("{prefix}- :: a\n{prefix}  : desc a\n{prefix}p\n").repeat(100);
+        let source =
+            format!("{above}{prefix}- :: t\n{prefix}  ```\n{prefix}  [^a]: note\n\nsee [^a]\n");
+        assert!(carve::parse(&source).footnote_defs.is_empty(), "{source:?}");
+        assert!(html(&source).contains("<pre><code>[^a]: note\n"));
+    }
+}
+
+#[test]
+fn root_block_boundaries_release_and_readmit_list_term_hosts() {
+    let above = "- :: a\n  : desc\n# heading\n".repeat(100);
+    let source = above + "- :: t\n    [x]: /v\n";
+    assert!(html(&source).contains("[x]: /v"));
+    let source = "- :: a\n{.k}\np\n- :: t\n  ```\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("<pre>"), "{output}");
 }
