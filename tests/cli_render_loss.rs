@@ -200,3 +200,31 @@ fn the_helper_survives_a_child_that_exits_before_reading_stdin() {
     );
     write_input(&mut stdin, "text\n");
 }
+
+#[test]
+fn carrier_collision_report_names_the_attribute_and_accepts_the_canonical_code() {
+    let path = std::env::temp_dir().join(format!(
+        "carve-carrier-collision-{}.json",
+        std::process::id()
+    ));
+    let output = run_input(
+        &[
+            "--html",
+            "--roundtrip",
+            "--strict-losses",
+            "--allow-loss",
+            "carrier-attribute-dropped",
+            "--report-losses",
+            path.to_str().unwrap(),
+        ],
+        "{data-char=\"_\"}\n***\n",
+    );
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert_eq!(report["losses"][0]["code"], "carrier-attribute-dropped");
+    assert_eq!(report["losses"][0]["attribute"], "data-char");
+    assert!(report["losses"][0].get("format").is_none());
+    assert_eq!(report["losses"][0]["target"], "html");
+}

@@ -99,3 +99,7 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+[[test]]
+name = "html_carrier_contract"
+path = "tests/html_carrier_contract.rs"

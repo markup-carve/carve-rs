@@ -30,6 +30,7 @@ enum DefinitionAtLine {
 }
 
 struct CarveContext {
+    reference_targets: HashMap<String, (String, Option<String>)>,
     block_depth: usize,
     inline_depth: usize,
     emphasis_depth_peak: usize,
@@ -1053,6 +1054,17 @@ fn render_with_escapes_once(
 ) -> String {
     session.begin_pass();
     let mut ctx = CarveContext {
+        reference_targets: doc
+            .children
+            .iter()
+            .fold(HashMap::new(), |mut targets, node| {
+                if let BlockNode::LinkReferenceDefinition(def) = node {
+                    targets
+                        .entry(crate::parse::label_key(&def.label))
+                        .or_insert_with(|| (def.href.clone(), def.title.clone()));
+                }
+                targets
+            }),
         block_depth: 0,
         inline_depth: 0,
         emphasis_depth_peak: 0,
@@ -2436,7 +2448,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 &format!("{fence} figure\n{body}\n{fence}{caption}"),
             )
         }
-        BlockNode::BlockImage(image) => render_image(image),
+        BlockNode::BlockImage(image) => render_image(image, ctx),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
             // Stage the literal payload without its final ending, then write
@@ -3195,7 +3207,7 @@ fn formatted_children(node: &mut InlineNode) -> Option<&mut Vec<InlineNode>> {
 /// THE TARGET KEEPS ITS OWN ATTRIBUTES (ruling markup-carve/carve#1721).
 fn render_figure(session: &RenderSession, node: &Figure, ctx: &mut CarveContext) -> String {
     let target = match &*node.target {
-        FigureTarget::Image(image) => render_image(image),
+        FigureTarget::Image(image) => render_image(image, ctx),
         FigureTarget::Table(table) => render_block(session, &BlockNode::Table(table.clone()), ctx),
         FigureTarget::BlockQuote(quote) => {
             render_block(session, &BlockNode::BlockQuote(quote.clone()), ctx)
@@ -4164,6 +4176,7 @@ fn render_inline_body(
             image,
             render_inline_attrs(&image.attrs, ctx),
             ctx.table_cell_depth > 0,
+            ctx,
         ),
         InlineNode::Span(span) => {
             let attrs = render_inline_attrs(&span.attrs, ctx);
@@ -4813,6 +4826,17 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     }
     let text =
         escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
+    if let Some(label) = &node.ref_label {
+        if ctx.reference_targets.get(&crate::parse::label_key(label))
+            == Some(&(node.href.clone(), node.title.clone()))
+        {
+            return format!("[{text}][{label}]{}", render_inline_attrs(&node.attrs, ctx));
+        }
+        crate::render_carve_error::record_unspellable(
+            "link",
+            "reference label has no matching destination definition",
+        );
+    }
     let title = node
         .title
         .as_ref()
@@ -4874,11 +4898,16 @@ fn escape_note_reference_label(label: &str, ctx: &CarveContext) -> String {
     }
 }
 
-fn render_image(node: &Image) -> String {
-    render_image_with_attrs(node, render_attrs(&node.attrs), false)
+fn render_image(node: &Image, ctx: &CarveContext) -> String {
+    render_image_with_attrs(node, render_attrs(&node.attrs), false, ctx)
 }
 
-fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> String {
+fn render_image_with_attrs(
+    node: &Image,
+    attrs: String,
+    in_table: bool,
+    ctx: &CarveContext,
+) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
@@ -4889,6 +4918,20 @@ fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> Strin
     // `ref`/`raw_ref` and duplicated the destination (carve-rs#631).
     if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
+    }
+    if let Some(label) = &node.ref_label {
+        if ctx.reference_targets.get(&crate::parse::label_key(label))
+            == Some(&(node.src.clone(), node.title.clone()))
+        {
+            return format!(
+                "![{}][{label}]{attrs}",
+                escape_image_alt(&node.alt, in_table)
+            );
+        }
+        crate::render_carve_error::record_unspellable(
+            "image",
+            "reference label has no matching destination definition",
+        );
     }
     let title = node
         .title

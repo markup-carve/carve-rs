@@ -44,6 +44,7 @@ impl RawNodeType {
 pub struct RenderLoss {
     pub code: &'static str,
     pub format: Option<String>,
+    pub attribute: Option<String>,
     pub target: RenderTarget,
     pub node_type: RawNodeType,
     pub pos: Option<Pos>,
@@ -145,6 +146,7 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
                 code: "raw-format-dropped",
+                attribute: None,
                 format: Some(format.to_string()),
                 target: c.target,
                 node_type,
@@ -198,6 +200,7 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
                 code: "destination-denied",
+                attribute: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -220,11 +223,12 @@ pub(crate) fn record_carrier_collision(carrier: &str, authored: &str, pos: Optio
         let Some(c) = slot.as_mut() else { return };
         c.total += 1;
         *c.totals_by_code
-            .entry("roundtrip-attribute-dropped")
+            .entry("carrier-attribute-dropped")
             .or_default() += 1;
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
-                code: "roundtrip-attribute-dropped",
+                code: "carrier-attribute-dropped",
+                attribute: Some(authored.to_owned()),
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -246,6 +250,7 @@ pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
                 code: "ruby-flattened",
+                attribute: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -269,6 +274,7 @@ pub(crate) fn record_editorial_comment_flattened(pos: Option<&Pos>) {
         if c.losses.len() < c.max {
             c.losses.push(RenderLoss {
                 code: "editorial-comment-flattened",
+                attribute: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,

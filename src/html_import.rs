@@ -303,6 +303,8 @@ struct Importer<'a> {
     /// is an intermediate nobody publishes, and the tree `html_to_ast` returns
     /// carries no source-layout field at all.
     writing: bool,
+    reference_definitions: Vec<BlockNode>,
+    reference_definition_keys: HashMap<String, usize>,
     /// Every diagnostic, paired with the document position of the LOSING
     /// ELEMENT. The vector is built in construction order and sorted by that
     /// position on the way out, so a tie keeps the order the rows were built
@@ -371,6 +373,7 @@ struct Importer<'a> {
 /// See [`Importer::mark`].
 #[derive(Clone, Copy)]
 struct ImporterMark {
+    reference_definitions: usize,
     nodes: usize,
     diagnostics: usize,
     turned_away: Option<(usize, usize)>,
@@ -2059,6 +2062,59 @@ impl<'a> Importer<'a> {
     }
 
     /// A carrier's value under either spelling, canonical first.
+    fn reference_label(
+        &mut self,
+        h: &Handle,
+        href: &str,
+        title: Option<String>,
+        path: &str,
+    ) -> Option<String> {
+        let label = Self::carrier(h, crate::roundtrip::REF)?;
+        let parsed = crate::parse(&format!("[{label}]: /carrier-validation\n"));
+        let valid = matches!(parsed.children.as_slice(), [BlockNode::LinkReferenceDefinition(def)] if def.label == label);
+        if !valid {
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                "Dropped invalid reference carrier".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return None;
+        }
+        let key = crate::parse::label_key(&label);
+        if let Some(index) = self.reference_definition_keys.get(&key) {
+            if let BlockNode::LinkReferenceDefinition(def) = &self.reference_definitions[*index] {
+                if def.href != href || def.title != title {
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        "Dropped reference carrier conflicting with an earlier destination".into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                        h,
+                    );
+                    return None;
+                }
+                return Some(def.label.clone());
+            }
+        }
+        if !self.reference_definition_keys.contains_key(&key) {
+            self.reference_definition_keys
+                .insert(key, self.reference_definitions.len());
+            self.reference_definitions
+                .push(BlockNode::LinkReferenceDefinition(
+                    LinkReferenceDefinition {
+                        label: label.clone(),
+                        href: href.to_owned(),
+                        title,
+                        attrs: None,
+                        pos: None,
+                    },
+                ));
+        }
+        Some(label)
+    }
+
     fn carrier(handle: &Handle, canonical: &str) -> Option<String> {
         Self::attr(handle, canonical).or_else(|| {
             let deprecated = canonical.replacen("data-carve-", "data-djot-", 1);
@@ -2569,6 +2625,8 @@ impl<'a> Importer<'a> {
         let tag = Self::tag(handle);
         let is_block = tag.as_deref().is_some_and(|tag| {
             Self::is_block_tag(tag)
+                || (tag == "template"
+                    && Self::carrier(handle, crate::roundtrip::ABBREVIATIONS).is_some())
                 || (self.opts.mode == HtmlImportMode::Roundtrip
                     && ROUNDTRIP_RAW_BLOCK_TAGS.contains(&tag))
         });
@@ -2835,6 +2893,54 @@ impl<'a> Importer<'a> {
         self.enter(depth)?;
         let tag = Self::tag(h).unwrap();
         let attrs = self.attrs(h, path);
+        if tag == "template" && Self::carrier(h, crate::roundtrip::ABBREVIATIONS).is_some() {
+            self.charge_subtree(h, depth)?;
+            let payload = if let NodeData::Element {
+                template_contents, ..
+            } = &h.data
+            {
+                template_contents
+                    .borrow()
+                    .as_ref()
+                    .filter(|content| {
+                        content
+                            .children
+                            .borrow()
+                            .iter()
+                            .all(|child| matches!(child.data, NodeData::Text { .. }))
+                    })
+                    .map(Self::text)
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let mut parsed = crate::parse(&payload);
+            if !parsed.children.is_empty()
+                && parsed
+                    .children
+                    .iter()
+                    .all(|node| matches!(node, BlockNode::AbbreviationDef(_)))
+            {
+                return Ok(std::mem::take(&mut parsed.children)
+                    .into_iter()
+                    .map(|node| match node {
+                        BlockNode::AbbreviationDef(mut def) => {
+                            def.pos = None;
+                            BlockNode::AbbreviationDef(def)
+                        }
+                        _ => unreachable!(),
+                    })
+                    .collect());
+            }
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                "Dropped invalid abbreviation carrier".into(),
+                HtmlImportSeverity::Warning,
+                path,
+                h,
+            );
+            return Ok(Vec::new());
+        }
         let children = h.children.borrow();
         if tag == FOOTNOTE_PLACEMENT_TAG {
             return Ok(vec![BlockNode::Directive(Directive {
@@ -3806,6 +3912,7 @@ impl<'a> Importer<'a> {
     /// Where the walk's reportable state stands, for a measurement that rewinds.
     fn mark(&self) -> ImporterMark {
         ImporterMark {
+            reference_definitions: self.reference_definitions.len(),
             nodes: self.nodes,
             diagnostics: self.diagnostics.len(),
             turned_away: self.turned_away,
@@ -3819,6 +3926,8 @@ impl<'a> Importer<'a> {
 
     /// Undo everything a marked measurement recorded. See [`Importer::mark`].
     fn restore(&mut self, mark: ImporterMark) {
+        self.reference_definitions
+            .truncate(mark.reference_definitions);
         self.nodes = mark.nodes;
         self.diagnostics.truncate(mark.diagnostics);
         self.turned_away = mark.turned_away;
@@ -6585,7 +6694,12 @@ impl<'a> Importer<'a> {
                 // PART 10 §13a `data-carve-ref`: the label the reference
                 // resolved by. Without it the destination is inlined at every
                 // use site and the definition line is gone.
-                ref_label: Self::carrier(h, crate::roundtrip::REF).filter(|v| !v.is_empty()),
+                ref_label: self.reference_label(
+                    h,
+                    &Self::attr(h, "href").unwrap_or_default(),
+                    Self::attr(h, "title"),
+                    path,
+                ),
                 raw_ref: None,
                 from_crossref: false,
                 from_heading_reference: false,
@@ -6597,7 +6711,12 @@ impl<'a> Importer<'a> {
                 alt: Self::attr(h, "alt").unwrap_or_default(),
                 title: Self::attr(h, "title"),
                 // PART 10 §13a `data-carve-ref`, as on the anchor above.
-                ref_label: Self::carrier(h, crate::roundtrip::REF).filter(|v| !v.is_empty()),
+                ref_label: self.reference_label(
+                    h,
+                    &Self::attr(h, "src").unwrap_or_default(),
+                    Self::attr(h, "title"),
+                    path,
+                ),
                 raw_ref: None,
                 pos: None,
             }),
@@ -9222,6 +9341,8 @@ fn import(
 ) -> Result<HtmlImportResult<Document>, HtmlImportError> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut importer = Importer {
+        reference_definitions: Vec::new(),
+        reference_definition_keys: HashMap::new(),
         opts: options,
         writing,
         diagnostics: Vec::new(),
@@ -9403,6 +9524,7 @@ the image is written as a block";
             );
         }
     }
+    children.append(&mut importer.reference_definitions);
     let mut document = Document {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
