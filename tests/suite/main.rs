@@ -7,6 +7,9 @@
 //! A new `tests/*.rs` needs a line here; `registry::every_test_file_is_compiled`
 //! fails until it has one.
 
+#[path = "../multiline_inline_code.rs"]
+mod multiline_inline_code;
+
 #[path = "../attached_definition_boundaries.rs"]
 mod attached_definition_boundaries;
 
