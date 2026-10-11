@@ -377,3 +377,32 @@ fn intervening_blocks_end_term_ownership_before_a_later_paragraph_fence() {
         );
     }
 }
+
+#[test]
+fn term_fences_release_definitions_when_the_parent_list_ends() {
+    for source in [
+        "- > :: t\n  > ```\n  > code\n> [r]: /u\n> [^a]: note\n> use [^a]\n",
+        "> - > :: t\n>   > ```\n>   > code\n> > [r]: /u\n> > [^a]: note\n> > use [^a]\n",
+        "- head\n  > :: t\n  > ```\n> [r]: /u\n> [^a]: note\n> use [^a]\n",
+    ] {
+        let doc = carve::parse(source);
+        assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");
+        let output = html(source);
+        assert!(output.contains("doc-noteref"), "{source:?}: {output}");
+        assert!(!output.contains("<code>code\n[r]"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn term_quote_hosts_allow_indentation_above_the_list_floor() {
+    for source in [
+        "- > :: t\n   > ```\n  > [r]: /u\n",
+        "- head\n   > :: t\n  > ```\n  > [r]: /u\n",
+    ] {
+        let output = html(source);
+        assert!(
+            output.contains("<pre><code>[r]: /u\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+    }
+}
