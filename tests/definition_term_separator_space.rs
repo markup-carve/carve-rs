@@ -178,6 +178,24 @@ fn definitions_inside_an_unclosed_fence_after_a_term_remain_payload() {
         ":: a\n:: b\n```\n[r]: /u\n[^a]: note\n",
         "> :: t\n> ```\n> [r]: /u\n> [^a]: note\n",
         "- :: t\n  ```\n  [r]: /u\n  [^a]: note\n",
+        "> - :: t\n>   ```\n>   [r]: /u\n>   [^a]: note\n",
+    ] {
+        let output = html(source);
+        assert!(
+            output.contains("<pre><code>[r]: /u\n[^a]: note\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+        assert!(!output.contains("footnotes"), "{source:?}: {output}");
+    }
+}
+
+#[test]
+fn inline_term_continuations_do_not_expose_a_later_fences_definitions() {
+    for source in [
+        ":: t\n![a](b.png)\n```\n[r]: /u\n[^a]: note\n",
+        ":: t\n[@r]: /u\n```\n[r]: /u\n[^a]: note\n",
+        ":: t\n[r]:\n```\n[r]: /u\n[^a]: note\n",
+        "> :: t\nmore\n> ```\n> [r]: /u\n> [^a]: note\n",
     ] {
         let output = html(source);
         assert!(
@@ -227,6 +245,8 @@ fn a_closed_hosted_term_fence_releases_following_definitions() {
         ":: t\n```\ncode\n```\n\nuse [^a]\n\n[^a]: note\n",
         "- :: t\n  ```\n  code\n  ```\n\n  use [^a]\n\n  [^a]: note\n",
         "> :: t\n> ```\n> code\n> ```\n> use [^a]\n\n[^a]: note\n",
+        "- :: t\n  ```\n  code\n  ```\n  use [^a]\n  [^a]: note\n",
+        "> - :: t\n>   ```\n>   code\n>   ```\n>   use [^a]\n>   [^a]: note\n",
     ] {
         let doc = carve::parse(source);
         assert!(doc.footnote_defs.contains_key("a"), "{source:?}: {doc:?}");

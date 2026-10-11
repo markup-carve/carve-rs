@@ -1424,7 +1424,19 @@ fn extract_footnote_defs(
             } else {
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
-                if is_fence_close(fence_line, open) {
+                let close_kept = if open.quoted {
+                    strip_prepass_blockquote_prefix(lines[i]).unwrap_or(lines[i])
+                } else {
+                    lines[i]
+                };
+                let close_line = if !open.quoted && open.content_col == 0 {
+                    fence_line
+                } else if leading_ws(close_kept) >= open.content_col {
+                    &close_kept[open.content_col..]
+                } else {
+                    close_kept
+                };
+                if is_fence_close(close_line, open) {
                     in_fence = None;
                 }
                 i += 1;
@@ -2394,8 +2406,8 @@ fn term_folded_lines(
             if quotes == term_quotes && col == term_col && detect_fence_open(rest).is_some() {
                 ownership.fence_openers.insert(index);
             }
-            if quotes != term_quotes
-                || item_block_opener(rest)
+            if quotes > term_quotes
+                || (item_block_opener(rest) && detect_block_image(rest).is_none())
                 || is_colon_fence_opener_shape(rest)
                 || (rest.starts_with('{')
                     && standalone_attrs_block_len_iter(
@@ -2407,7 +2419,9 @@ fn term_folded_lines(
                 || is_list_marker(rest)
                 || rest.starts_with("%%")
                 || strip_definition_marker(rest).is_some()
-                || parse_link_def_line(rest).is_some()
+                || parse_link_def_line_with_value(rest).is_some_and(|(label, target, _)| {
+                    !label.starts_with('@') && !target.trim().is_empty()
+                })
             {
                 term = None;
             }
