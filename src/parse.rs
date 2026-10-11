@@ -19674,6 +19674,26 @@ fn parse_inline_context_with_pairs(
     };
     let _kinds = kinds;
     let bytes = text.as_bytes();
+    if options.extensions.is_empty()
+        && !bytes.is_empty()
+        && bytes.len() <= 64
+        && bytes.iter().all(u8::is_ascii_alphanumeric)
+    {
+        let mapped = positions
+            .and_then(|map| map.unmapped_prefix.as_ref())
+            .map_or(true, |prefix| {
+                prefix
+                    .get(base)
+                    .zip(prefix.get(base + bytes.len()))
+                    .is_some_and(|(start, end)| start == end)
+            });
+        return vec![InlineNode::Text(Text {
+            value: text.to_string(),
+            pos: mapped
+                .then(|| inline_pos(positions, base, base + bytes.len()))
+                .flatten(),
+        })];
+    }
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
     // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
@@ -24928,7 +24948,21 @@ fn parse_forced_emphasis(
         return None;
     }
     let content_start = i + 2;
-    let j = bounds.braced_closers(bytes).close(bytes, i, delim)?;
+    let word_close = if options.extensions.is_empty() {
+        let end = bytes[content_start..]
+            .iter()
+            .take(65)
+            .take_while(|byte| byte.is_ascii_alphanumeric())
+            .count();
+        (end > 0
+            && end <= 64
+            && bytes.get(content_start + end) == Some(&delim)
+            && bytes.get(content_start + end + 1) == Some(&b'}'))
+        .then_some(content_start + end)
+    } else {
+        None
+    };
+    let j = word_close.or_else(|| bounds.braced_closers(bytes).close(bytes, i, delim))?;
     if j == content_start {
         return None; // empty content: `+?` requires at least one byte
     }
