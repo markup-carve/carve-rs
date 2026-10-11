@@ -168,6 +168,7 @@ fn render_markdown_once(
         previous_list: None,
         carry_markers,
         carrier_depth: 0,
+        delimiter_ancestors: Vec::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -255,6 +256,7 @@ struct MarkdownContext {
     /// How many carried containers enclose the block being written, which is
     /// what decides the colon-fence width a marker payload carries.
     carrier_depth: usize,
+    delimiter_ancestors: Vec<&'static str>,
 }
 
 /// The marker payloads a container takes, or `None` when the mode is off or the
@@ -1566,12 +1568,11 @@ fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
     if ch == '~' {
         return core.starts_with('~') || live_run_at_end(core, '~') > 0;
     }
-    // Nestings of DIFFERENT strengths commute under PART 11's normalization
-    // list, so only a merge into a run of exactly two has to be avoided: that
-    // is one strong, not an emphasis inside an emphasis.
+    // A combined run of three preserves two different strengths under
+    // PART 11's normalization. Other merged widths collapse nested levels.
     let lead = core.chars().take_while(|c| *c == ch).count();
     let trail = live_run_at_end(core, ch);
-    (lead > 0 && delimiter.len() + lead == 2) || (trail > 0 && delimiter.len() + trail == 2)
+    (lead > 0 && delimiter.len() + lead != 3) || (trail > 0 && delimiter.len() + trail != 3)
 }
 
 /// The trailing run of `ch`, minus one where a backslash covers its last
@@ -1622,6 +1623,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
             break;
         }
     }
+    repair_nested_runs(nodes, &mut parts, &ctx.delimiter_ancestors);
     if nodes.len() > 1 {
         reflank_runs(nodes, &mut parts);
         unmerge_runs(nodes, &mut parts);
@@ -1741,6 +1743,42 @@ fn split_run(part: &str, delimiter: &str) -> Option<RunPiece> {
 /// That only ever makes a later run MORE able to flank, so the pass needs no
 /// second round; a run decided against an earlier neighbour can at worst take
 /// inline HTML it would not have needed.
+fn repair_nested_runs(nodes: &[InlineNode], parts: &mut [String], ancestors: &[&str]) {
+    let parent = ancestors.last().copied();
+    for i in 0..parts.len() {
+        let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
+            continue;
+        };
+        let Some(piece) = split_run(&parts[i], delimiter) else {
+            continue;
+        };
+        let repeated_strong = delimiter == "**" && ancestors.contains(&"**");
+        let mut steals_parent = false;
+        if let Some(parent) = parent {
+            let ch = delimiter.chars().next().unwrap();
+            if parent.starts_with(ch) {
+                let opening = delimiter.len() + piece.core.chars().take_while(|c| *c == ch).count();
+                if ch != '*' || rule_of_three_allows(parent.len(), opening) {
+                    let before = piece
+                        .lead
+                        .chars()
+                        .next_back()
+                        .or_else(|| neighbour_before(parts, i));
+                    let inside = piece.core.chars().find(|c| *c != ch);
+                    steals_parent =
+                        before.is_some_and(|c| !c.is_whitespace()) && flanks(before, inside);
+                }
+            }
+        }
+        if repeated_strong || steals_parent {
+            parts[i] = format!(
+                "{}{open_tag}{}{close_tag}{}",
+                piece.lead, piece.core, piece.trail
+            );
+        }
+    }
+}
+
 fn reflank_runs(nodes: &[InlineNode], parts: &mut [String]) {
     for i in 0..parts.len() {
         let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
@@ -1953,18 +1991,18 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // into `-&gt;` in source mode.
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => pad_outside(
-                render_inlines(&emphasis.children, ctx, depth + 1),
-                "*",
-                "<em>",
-                "</em>",
-            ),
-            EmphasisKind::Strong => pad_outside(
-                render_inlines(&emphasis.children, ctx, depth + 1),
-                "**",
-                "<strong>",
-                "</strong>",
-            ),
+            EmphasisKind::Italic => {
+                ctx.delimiter_ancestors.push("*");
+                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                ctx.delimiter_ancestors.pop();
+                pad_outside(body, "*", "<em>", "</em>")
+            }
+            EmphasisKind::Strong => {
+                ctx.delimiter_ancestors.push("**");
+                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                ctx.delimiter_ancestors.pop();
+                pad_outside(body, "**", "<strong>", "</strong>")
+            }
             EmphasisKind::Underline => {
                 format!(
                     "<u{}>{}</u>",
@@ -1983,12 +2021,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
-            EmphasisKind::Strike => pad_outside(
-                render_inlines(&emphasis.children, ctx, depth + 1),
-                "~~",
-                "<del>",
-                "</del>",
-            ),
+            EmphasisKind::Strike => {
+                ctx.delimiter_ancestors.push("~~");
+                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                ctx.delimiter_ancestors.pop();
+                pad_outside(body, "~~", "<del>", "</del>")
+            }
             EmphasisKind::Sub => {
                 format!(
                     "<sub{}>{}</sub>",
