@@ -18,8 +18,8 @@
 
 use carve::Options;
 
-fn markdown(source: &str, carry: bool) -> String {
-    carve::to_markdown_with_options(source, &Options::default().with_carry_markers(carry))
+fn markdown(source: &str, roundtrip: bool) -> String {
+    carve::to_markdown_with_options(source, &Options::default().with_roundtrip(roundtrip))
 }
 
 /// The set measured on this engine: a tab set and each panel, a code-group set,
