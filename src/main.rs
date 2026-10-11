@@ -1742,7 +1742,7 @@ fn print_usage() {
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          --strict-losses             refuse output when rendering loses content or structure\n  \
          --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
-         --allow-loss CODE          accept raw-format-dropped, ruby-flattened or\n                              \
+         --allow-loss CODE          accept raw-format-dropped, ruby-flattened,\n                              \
          editorial-comment-flattened or carrier-attribute-dropped\n  \
          --max-render-losses N       bound detailed losses (default 100)\n\n\
          --include-root DIR          containment root for {{ path }} includes.\n                              \

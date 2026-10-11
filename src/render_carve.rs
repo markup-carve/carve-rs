@@ -1059,9 +1059,10 @@ fn render_with_escapes_once(
             .iter()
             .fold(HashMap::new(), |mut targets, node| {
                 if let BlockNode::LinkReferenceDefinition(def) = node {
-                    targets
-                        .entry(crate::parse::label_key(&def.label))
-                        .or_insert_with(|| (def.href.clone(), def.title.clone()));
+                    targets.insert(
+                        crate::parse::label_key(&def.label),
+                        (def.href.clone(), def.title.clone()),
+                    );
                 }
                 targets
             }),
@@ -2129,6 +2130,17 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         // is there; a tree carrying the node arrived from somewhere else.
         BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::LinkReferenceDefinition(def) => {
+            if def.href.chars().any(char::is_whitespace)
+                || def
+                    .title
+                    .as_deref()
+                    .is_some_and(|value| value.contains(['\r', '\n']))
+            {
+                crate::render_carve_error::record_unspellable(
+                    "link_reference_definition",
+                    "definition fields have no single-line source spelling",
+                );
+            }
             // Unless a definition list already wrote it on its own description
             // line, where the author put it - writing it twice would define the
             // label twice (markup-carve/carve#805).
@@ -4827,14 +4839,15 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     let text =
         escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
     if let Some(label) = &node.ref_label {
-        if ctx.reference_targets.get(&crate::parse::label_key(label))
-            == Some(&(node.href.clone(), node.title.clone()))
+        if !((ctx.table_cell_depth > 0 && label.contains('|')) || label.contains('`'))
+            && ctx.reference_targets.get(&crate::parse::label_key(label))
+                == Some(&(node.href.clone(), node.title.clone()))
         {
             return format!("[{text}][{label}]{}", render_inline_attrs(&node.attrs, ctx));
         }
         crate::render_carve_error::record_unspellable(
             "link",
-            "reference label has no matching destination definition",
+            "reference fields have no faithful source spelling",
         );
     }
     let title = node
@@ -4920,8 +4933,9 @@ fn render_image_with_attrs(
         return node.raw_ref.clone().unwrap_or_default();
     }
     if let Some(label) = &node.ref_label {
-        if ctx.reference_targets.get(&crate::parse::label_key(label))
-            == Some(&(node.src.clone(), node.title.clone()))
+        if !((in_table && label.contains('|')) || label.contains('`'))
+            && ctx.reference_targets.get(&crate::parse::label_key(label))
+                == Some(&(node.src.clone(), node.title.clone()))
         {
             return format!(
                 "![{}][{label}]{attrs}",
@@ -4930,7 +4944,7 @@ fn render_image_with_attrs(
         }
         crate::render_carve_error::record_unspellable(
             "image",
-            "reference label has no matching destination definition",
+            "reference fields have no faithful source spelling",
         );
     }
     let title = node

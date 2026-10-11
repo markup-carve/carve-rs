@@ -303,7 +303,7 @@ struct Importer<'a> {
     /// is an intermediate nobody publishes, and the tree `html_to_ast` returns
     /// carries no source-layout field at all.
     writing: bool,
-    reference_definitions: Vec<BlockNode>,
+    carrier_definitions: Vec<BlockNode>,
     reference_definition_keys: HashMap<String, usize>,
     /// Every diagnostic, paired with the document position of the LOSING
     /// ELEMENT. The vector is built in construction order and sorted by that
@@ -373,7 +373,7 @@ struct Importer<'a> {
 /// See [`Importer::mark`].
 #[derive(Clone, Copy)]
 struct ImporterMark {
-    reference_definitions: usize,
+    carrier_definitions: usize,
     nodes: usize,
     diagnostics: usize,
     turned_away: Option<(usize, usize)>,
@@ -2082,9 +2082,27 @@ impl<'a> Importer<'a> {
             );
             return None;
         }
+        if self.writing
+            && ((self.cell_depth > 0 && label.contains('|'))
+                || label.contains('`')
+                || href.chars().any(char::is_whitespace)
+                || title
+                    .as_deref()
+                    .is_some_and(|value| value.contains(['\r', '\n'])))
+        {
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                "Dropped reference carrier whose fields have no faithful reference source spelling"
+                    .into(),
+                HtmlImportSeverity::Info,
+                path,
+                h,
+            );
+            return None;
+        }
         let key = crate::parse::label_key(&label);
         if let Some(index) = self.reference_definition_keys.get(&key) {
-            if let BlockNode::LinkReferenceDefinition(def) = &self.reference_definitions[*index] {
+            if let BlockNode::LinkReferenceDefinition(def) = &self.carrier_definitions[*index] {
                 if def.href != href || def.title != title {
                     self.diag(
                         HtmlImportDiagnosticCode::AttributeDropped,
@@ -2100,8 +2118,8 @@ impl<'a> Importer<'a> {
         }
         if !self.reference_definition_keys.contains_key(&key) {
             self.reference_definition_keys
-                .insert(key, self.reference_definitions.len());
-            self.reference_definitions
+                .insert(key, self.carrier_definitions.len());
+            self.carrier_definitions
                 .push(BlockNode::LinkReferenceDefinition(
                     LinkReferenceDefinition {
                         label: label.clone(),
@@ -2915,22 +2933,27 @@ impl<'a> Importer<'a> {
                 String::new()
             };
             let mut parsed = crate::parse(&payload);
-            if !parsed.children.is_empty()
+            if parsed.frontmatter_raw.is_none()
+                && parsed.frontmatter.is_empty()
+                && parsed.footnote_defs.is_empty()
+                && !parsed.children.is_empty()
                 && parsed
                     .children
                     .iter()
                     .all(|node| matches!(node, BlockNode::AbbreviationDef(_)))
             {
-                return Ok(std::mem::take(&mut parsed.children)
-                    .into_iter()
-                    .map(|node| match node {
-                        BlockNode::AbbreviationDef(mut def) => {
-                            def.pos = None;
-                            BlockNode::AbbreviationDef(def)
-                        }
-                        _ => unreachable!(),
-                    })
-                    .collect());
+                self.carrier_definitions.extend(
+                    std::mem::take(&mut parsed.children)
+                        .into_iter()
+                        .map(|node| match node {
+                            BlockNode::AbbreviationDef(mut def) => {
+                                def.pos = None;
+                                BlockNode::AbbreviationDef(def)
+                            }
+                            _ => unreachable!(),
+                        }),
+                );
+                return Ok(Vec::new());
             }
             self.diag(
                 HtmlImportDiagnosticCode::AttributeDropped,
@@ -3912,7 +3935,7 @@ impl<'a> Importer<'a> {
     /// Where the walk's reportable state stands, for a measurement that rewinds.
     fn mark(&self) -> ImporterMark {
         ImporterMark {
-            reference_definitions: self.reference_definitions.len(),
+            carrier_definitions: self.carrier_definitions.len(),
             nodes: self.nodes,
             diagnostics: self.diagnostics.len(),
             turned_away: self.turned_away,
@@ -3926,8 +3949,9 @@ impl<'a> Importer<'a> {
 
     /// Undo everything a marked measurement recorded. See [`Importer::mark`].
     fn restore(&mut self, mark: ImporterMark) {
-        self.reference_definitions
-            .truncate(mark.reference_definitions);
+        self.carrier_definitions.truncate(mark.carrier_definitions);
+        self.reference_definition_keys
+            .retain(|_, index| *index < mark.carrier_definitions);
         self.nodes = mark.nodes;
         self.diagnostics.truncate(mark.diagnostics);
         self.turned_away = mark.turned_away;
@@ -9341,7 +9365,7 @@ fn import(
 ) -> Result<HtmlImportResult<Document>, HtmlImportError> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut importer = Importer {
-        reference_definitions: Vec::new(),
+        carrier_definitions: Vec::new(),
         reference_definition_keys: HashMap::new(),
         opts: options,
         writing,
@@ -9524,7 +9548,7 @@ the image is written as a block";
             );
         }
     }
-    children.append(&mut importer.reference_definitions);
+    children.append(&mut importer.carrier_definitions);
     let mut document = Document {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,

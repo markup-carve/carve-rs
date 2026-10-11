@@ -203,8 +203,8 @@ not carried and not promised.
 
 The carrier wins and the authored attribute is dropped, because emitting both
 would be two attributes of one name. The drop is reported rather than silent:
-`to_html_with_options_and_report` returns a `roundtrip-attribute-dropped` row
-naming the attribute.
+`to_html_with_options_and_report` returns a `carrier-attribute-dropped` row
+with the displaced name in `attribute` and no `format`.
 
 ### Export is not an import mode
 

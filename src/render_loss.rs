@@ -217,7 +217,12 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
 /// attribute is dropped, and the drop is REPORTED naming the attribute. Before
 /// the ruling carve-php emitted both, which is invalid HTML, with the
 /// precedence differing per carrier.
-pub(crate) fn record_carrier_collision(carrier: &str, authored: &str, pos: Option<&Pos>) {
+pub(crate) fn record_carrier_collision(
+    carrier: &str,
+    authored: &str,
+    pos: Option<&Pos>,
+    node_type: RawNodeType,
+) {
     COLLECTOR.with(|slot| {
         let mut slot = slot.borrow_mut();
         let Some(c) = slot.as_mut() else { return };
@@ -231,7 +236,7 @@ pub(crate) fn record_carrier_collision(carrier: &str, authored: &str, pos: Optio
                 attribute: Some(authored.to_owned()),
                 format: None,
                 target: c.target,
-                node_type: RawNodeType::Inline,
+                node_type,
                 pos: pos.cloned(),
                 message: format!(
                     "Dropped authored attribute {authored:?}: the roundtrip carrier {carrier:?} owns that name"
