@@ -41,11 +41,11 @@ fn a_child_at_the_trailing_edge_only_is_enough() {
 }
 
 #[test]
-fn a_strong_inside_a_strong_keeps_its_runs() {
-    // Four asterisks read back as a strong inside a strong, so nothing moves.
+fn a_strong_inside_a_strong_keeps_both_levels() {
+    // CommonMark drops a Markdown strong whose AST parent is another strong.
     assert_eq!(
         from_html("<p><strong><strong>x</strong></strong></p>"),
-        "****x****\n"
+        "<strong>**x**</strong>\n"
     );
 }
 

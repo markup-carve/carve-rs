@@ -169,6 +169,7 @@ fn render_markdown_once(
         carry_markers,
         carrier_depth: 0,
         delimiter_ancestors: Vec::new(),
+        rendered_children: HashMap::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -257,6 +258,7 @@ struct MarkdownContext {
     /// what decides the colon-fence width a marker payload carries.
     carrier_depth: usize,
     delimiter_ancestors: Vec<&'static str>,
+    rendered_children: HashMap<usize, Vec<String>>,
 }
 
 /// The marker payloads a container takes, or `None` when the mode is off or the
@@ -1561,6 +1563,58 @@ fn pad_outside(inner: String, delimiter: &str, open_tag: &str, close_tag: &str) 
 /// left alone. They could not reach here in any case - `escape_text` escapes a
 /// literal asterisk, and `~` is deliberately not escaped because GFM reads
 /// `~x~` as strikethrough.
+fn pad_nested_outside(
+    body: String,
+    delimiter: &str,
+    open_tag: &str,
+    close_tag: &str,
+    node: &InlineNode,
+    ctx: &MarkdownContext,
+) -> String {
+    let core = body.trim();
+    let ch = delimiter.chars().next().unwrap();
+    let lead = core.chars().take_while(|c| *c == ch).count();
+    let mut invalid_edge = ch == '*' && lead > 0 && delimiter.len() + lead != 3;
+    if ch == '*' && live_run_at_end(core, ch) > 0 {
+        if let (InlineNode::Emphasis(emphasis), Some(parts)) = (
+            node,
+            ctx.rendered_children
+                .get(&(node as *const InlineNode as usize)),
+        ) {
+            if let Some(i) = parts.iter().rposition(|part| !part.is_empty()) {
+                if let Some((child_delimiter, _, _)) = delimiter_run(&emphasis.children[i]) {
+                    if child_delimiter.starts_with(ch) {
+                        invalid_edge |= child_delimiter == delimiter;
+                        if let Some(child) = split_run(&parts[i], child_delimiter) {
+                            let before = child
+                                .lead
+                                .chars()
+                                .next_back()
+                                .or_else(|| neighbour_before(parts, i));
+                            let inside = child.core.chars().find(|c| *c != ch);
+                            let closes = before.is_some_and(|c| !flank_space(flank_character(c)))
+                                && flanks(before, inside);
+                            let opening = child_delimiter.len()
+                                + child.core.chars().take_while(|c| *c == ch).count();
+                            let closing = delimiter.len() + live_run_at_end(core, ch);
+                            invalid_edge |= closes && !rule_of_three_allows(opening, closing);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if invalid_edge && !core.is_empty() {
+        let piece = RunPiece {
+            lead: body[..body.len() - body.trim_start().len()].to_string(),
+            core: core.to_string(),
+            trail: body[body.trim_end().len()..].to_string(),
+        };
+        return spell_nested_html(node, piece, open_tag, close_tag, ctx);
+    }
+    pad_outside(body, delimiter, open_tag, close_tag)
+}
+
 fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
     let Some(ch) = delimiter.chars().next() else {
         return false;
@@ -1568,11 +1622,10 @@ fn content_grows_the_run(core: &str, delimiter: &str) -> bool {
     if ch == '~' {
         return core.starts_with('~') || live_run_at_end(core, '~') > 0;
     }
-    // A combined run of three preserves two different strengths under
-    // PART 11's normalization. Other merged widths collapse nested levels.
+    // Two joined single markers form a strong and lose the nested italic.
     let lead = core.chars().take_while(|c| *c == ch).count();
     let trail = live_run_at_end(core, ch);
-    (lead > 0 && delimiter.len() + lead != 3) || (trail > 0 && delimiter.len() + trail != 3)
+    (lead > 0 && delimiter.len() + lead == 2) || (trail > 0 && delimiter.len() + trail == 2)
 }
 
 /// The trailing run of `ch`, minus one where a backslash covers its last
@@ -1596,6 +1649,15 @@ fn live_run_at_end(core: &str, ch: char) -> usize {
 }
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
+    render_recorded_inlines(nodes, ctx, depth, None)
+}
+
+fn render_recorded_inlines(
+    nodes: &[InlineNode],
+    ctx: &mut MarkdownContext,
+    depth: usize,
+    owner: Option<usize>,
+) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
@@ -1623,12 +1685,20 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
             break;
         }
     }
-    repair_nested_runs(nodes, &mut parts, &ctx.delimiter_ancestors);
+    repair_nested_runs(nodes, &mut parts, ctx, owner.is_some());
     if nodes.len() > 1 {
-        reflank_runs(nodes, &mut parts);
-        unmerge_runs(nodes, &mut parts);
+        reflank_runs(nodes, &mut parts, ctx);
+        unmerge_runs(nodes, &mut parts, ctx);
     }
-    parts.concat()
+    let result = parts.concat();
+    for child in nodes {
+        ctx.rendered_children
+            .remove(&(child as *const InlineNode as usize));
+    }
+    if let Some(owner) = owner {
+        ctx.rendered_children.insert(owner, parts);
+    }
+    result
 }
 
 /// The four inlines this writer spells with a delimiter run, and the inline-HTML
@@ -1743,7 +1813,69 @@ fn split_run(part: &str, delimiter: &str) -> Option<RunPiece> {
 /// That only ever makes a later run MORE able to flank, so the pass needs no
 /// second round; a run decided against an earlier neighbour can at worst take
 /// inline HTML it would not have needed.
-fn repair_nested_runs(nodes: &[InlineNode], parts: &mut [String], ancestors: &[&str]) {
+fn spell_nested_html(
+    node: &InlineNode,
+    piece: RunPiece,
+    open_tag: &str,
+    close_tag: &str,
+    ctx: &MarkdownContext,
+) -> String {
+    let mut core = piece.core;
+    let parent = ctx.delimiter_ancestors.last().copied();
+    if matches!(parent, Some("**" | "***")) {
+        if let (InlineNode::Emphasis(emphasis), Some(parts)) = (
+            node,
+            ctx.rendered_children
+                .get(&(node as *const InlineNode as usize)),
+        ) {
+            let body = parts.concat();
+            if body.trim() == core && parts.len() == emphasis.children.len() {
+                let repaired = parts
+                    .iter()
+                    .zip(&emphasis.children)
+                    .map(|(part, child)| {
+                        if let InlineNode::Emphasis(child) = child {
+                            if child.kind == EmphasisKind::Strong {
+                                if let Some(nested) = split_run(part, "**") {
+                                    return format!(
+                                        "{}<strong{}>{}</strong>{}",
+                                        nested.lead,
+                                        crate::render::render_attrs(&child.attrs),
+                                        nested.core,
+                                        nested.trail
+                                    );
+                                }
+                            }
+                        }
+                        part.clone()
+                    })
+                    .collect::<Vec<_>>()
+                    .concat();
+                let lead = body.len() - body.trim_start().len();
+                let trail = body.len() - body.trim_end().len();
+                core = repaired[lead..repaired.len() - trail].to_string();
+            }
+        }
+    }
+    let open_tag = if let InlineNode::Emphasis(emphasis) = node {
+        open_tag.replacen(
+            '>',
+            &format!("{}>", crate::render::render_attrs(&emphasis.attrs)),
+            1,
+        )
+    } else {
+        open_tag.to_string()
+    };
+    format!("{}{open_tag}{core}{close_tag}{}", piece.lead, piece.trail)
+}
+
+fn repair_nested_runs(
+    nodes: &[InlineNode],
+    parts: &mut [String],
+    ctx: &MarkdownContext,
+    direct_parent: bool,
+) {
+    let ancestors = &ctx.delimiter_ancestors;
     let parent = ancestors.last().copied();
     for i in 0..parts.len() {
         let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
@@ -1752,34 +1884,37 @@ fn repair_nested_runs(nodes: &[InlineNode], parts: &mut [String], ancestors: &[&
         let Some(piece) = split_run(&parts[i], delimiter) else {
             continue;
         };
-        let repeated_strong = delimiter == "**" && ancestors.contains(&"**");
-        let mut steals_parent = false;
-        if let Some(parent) = parent {
-            let ch = delimiter.chars().next().unwrap();
-            if parent.starts_with(ch) {
-                let opening = delimiter.len() + piece.core.chars().take_while(|c| *c == ch).count();
-                if ch != '*' || rule_of_three_allows(parent.len(), opening) {
-                    let before = piece
-                        .lead
-                        .chars()
-                        .next_back()
-                        .or_else(|| neighbour_before(parts, i));
-                    let inside = piece.core.chars().find(|c| *c != ch);
-                    steals_parent =
-                        before.is_some_and(|c| !c.is_whitespace()) && flanks(before, inside);
-                }
-            }
+        let edge_separated = direct_parent
+            && parent == Some(delimiter)
+            && ancestors.iter().filter(|run| Some(**run) == parent).count() == 1
+            && !ancestors.contains(&"***")
+            && (neighbour_before(parts, i).is_none() || neighbour_after(parts, i).is_none());
+        if edge_separated {
+            continue;
         }
-        if repeated_strong || steals_parent {
-            parts[i] = format!(
-                "{}{open_tag}{}{close_tag}{}",
-                piece.lead, piece.core, piece.trail
-            );
+        let ch = delimiter.chars().next().unwrap();
+        let before = piece
+            .lead
+            .chars()
+            .next_back()
+            .or_else(|| neighbour_before(parts, i));
+        let inside = piece.core.chars().find(|c| *c != ch);
+        let closes =
+            before.is_some_and(|c| !flank_space(flank_character(c))) && flanks(before, inside);
+        let opening = delimiter.len() + piece.core.chars().take_while(|c| *c == ch).count();
+        let repeated_strong =
+            delimiter == "**" && (parent == Some("**") || ancestors.contains(&"***"));
+        let steals = closes
+            && ancestors.iter().any(|run| {
+                run.starts_with(ch) && (ch == '~' || rule_of_three_allows(run.len(), opening))
+            });
+        if repeated_strong || steals {
+            parts[i] = spell_nested_html(&nodes[i], piece, open_tag, close_tag, ctx);
         }
     }
 }
 
-fn reflank_runs(nodes: &[InlineNode], parts: &mut [String]) {
+fn reflank_runs(nodes: &[InlineNode], parts: &mut [String], ctx: &MarkdownContext) {
     for i in 0..parts.len() {
         let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[i]) else {
             continue;
@@ -1802,10 +1937,7 @@ fn reflank_runs(nodes: &[InlineNode], parts: &mut [String]) {
         {
             continue;
         }
-        parts[i] = format!(
-            "{}{open_tag}{}{close_tag}{}",
-            piece.lead, piece.core, piece.trail
-        );
+        parts[i] = spell_nested_html(&nodes[i], piece, open_tag, close_tag, ctx);
     }
 }
 
@@ -1884,17 +2016,14 @@ fn leading_run(part: &str, ch: char) -> (usize, Option<char>) {
 }
 
 /// Re-spell one part as inline HTML, if it is a delimiter run at all.
-fn respell(nodes: &[InlineNode], parts: &mut [String], at: usize) -> bool {
+fn respell(nodes: &[InlineNode], parts: &mut [String], at: usize, ctx: &MarkdownContext) -> bool {
     let Some((delimiter, open_tag, close_tag)) = delimiter_run(&nodes[at]) else {
         return false;
     };
     let Some(piece) = split_run(&parts[at], delimiter) else {
         return false;
     };
-    parts[at] = format!(
-        "{}{open_tag}{}{close_tag}{}",
-        piece.lead, piece.core, piece.trail
-    );
+    parts[at] = spell_nested_html(&nodes[at], piece, open_tag, close_tag, ctx);
 
     true
 }
@@ -1915,7 +2044,7 @@ fn respell(nodes: &[InlineNode], parts: &mut [String], at: usize) -> bool {
 /// behind it is reached. Where that part is not a delimiter run at all - a text
 /// node opening with a literal tilde - the earlier part takes the inline HTML
 /// instead.
-fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String]) {
+fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String], ctx: &MarkdownContext) {
     let filled: Vec<usize> = (0..parts.len()).filter(|i| !parts[*i].is_empty()).collect();
     for pair in filled.windows(2) {
         let (left, right) = (pair[0], pair[1]);
@@ -1939,8 +2068,8 @@ fn unmerge_runs(nodes: &[InlineNode], parts: &mut [String]) {
         if merged_run_reads_back(ch, m, n, inner_left, inner_right) {
             continue;
         }
-        if !respell(nodes, parts, right) {
-            respell(nodes, parts, left);
+        if !respell(nodes, parts, right, ctx) {
+            respell(nodes, parts, left, ctx);
         }
     }
 }
@@ -1993,15 +2122,25 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 ctx.delimiter_ancestors.push("*");
-                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                let body = render_recorded_inlines(
+                    &emphasis.children,
+                    ctx,
+                    depth + 1,
+                    Some(node as *const InlineNode as usize),
+                );
                 ctx.delimiter_ancestors.pop();
-                pad_outside(body, "*", "<em>", "</em>")
+                pad_nested_outside(body, "*", "<em>", "</em>", node, ctx)
             }
             EmphasisKind::Strong => {
-                ctx.delimiter_ancestors.push("**");
-                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                ctx.delimiter_ancestors.push(if emphasis.children.len() == 1 && matches!(&emphasis.children[0], InlineNode::Emphasis(child) if child.kind == EmphasisKind::Italic) { "***" } else { "**" });
+                let body = render_recorded_inlines(
+                    &emphasis.children,
+                    ctx,
+                    depth + 1,
+                    Some(node as *const InlineNode as usize),
+                );
                 ctx.delimiter_ancestors.pop();
-                pad_outside(body, "**", "<strong>", "</strong>")
+                pad_nested_outside(body, "**", "<strong>", "</strong>", node, ctx)
             }
             EmphasisKind::Underline => {
                 format!(
@@ -2023,9 +2162,14 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             }
             EmphasisKind::Strike => {
                 ctx.delimiter_ancestors.push("~~");
-                let body = render_inlines(&emphasis.children, ctx, depth + 1);
+                let body = render_recorded_inlines(
+                    &emphasis.children,
+                    ctx,
+                    depth + 1,
+                    Some(node as *const InlineNode as usize),
+                );
                 ctx.delimiter_ancestors.pop();
-                pad_outside(body, "~~", "<del>", "</del>")
+                pad_nested_outside(body, "~~", "<del>", "</del>", node, ctx)
             }
             EmphasisKind::Sub => {
                 format!(
@@ -2048,12 +2192,17 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
-            EmphasisKind::BoldItalic => pad_outside(
-                render_inlines(&emphasis.children, ctx, depth + 1),
-                "***",
-                "<strong><em>",
-                "</em></strong>",
-            ),
+            EmphasisKind::BoldItalic => {
+                ctx.delimiter_ancestors.push("***");
+                let body = render_recorded_inlines(
+                    &emphasis.children,
+                    ctx,
+                    depth + 1,
+                    Some(node as *const InlineNode as usize),
+                );
+                ctx.delimiter_ancestors.pop();
+                pad_nested_outside(body, "***", "<strong><em>", "</em></strong>", node, ctx)
+            }
         },
         InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
@@ -2350,7 +2499,9 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
 
     // Render the label through the anchor-unwrapping view.
     let children = unwrap_nested_anchors(&node.children);
+    let ancestors = std::mem::take(&mut ctx.delimiter_ancestors);
     let text = render_inlines(children.as_ref(), ctx, depth);
+    ctx.delimiter_ancestors = ancestors;
     IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
 
     ctx.link_depth -= 1;
