@@ -1778,10 +1778,8 @@ fn render_blocks(session: &RenderSession, blocks: &[BlockNode], ctx: &mut CarveC
 
 fn hosts_caption(block: &BlockNode) -> bool {
     match block {
-        BlockNode::Table(_)
-        | BlockNode::CodeBlock(_)
-        | BlockNode::BlockQuote(_)
-        | BlockNode::BlockImage(_) => true,
+        BlockNode::BlockQuote(quote) => quote.fenced || !quote.children.is_empty(),
+        BlockNode::Table(_) | BlockNode::CodeBlock(_) | BlockNode::BlockImage(_) => true,
         // The group's closer hosts the caption slot (§4c). With the slot
         // already filled, a following `^ ` paragraph re-parses as a paragraph
         // either way and §4 asks for the minimal form - so only an

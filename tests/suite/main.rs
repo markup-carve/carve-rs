@@ -1856,3 +1856,5 @@ mod quotes_only_typography;
 
 #[path = "../a_closed_marker_line_fence_ends_its_host.rs"]
 mod a_closed_marker_line_fence_ends_its_host;
+#[path = "../a_literal_caption_marker_after_an_empty_quote_needs_no_escape.rs"]
+mod a_literal_caption_marker_after_an_empty_quote_needs_no_escape;
