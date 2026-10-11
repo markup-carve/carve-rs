@@ -8,6 +8,7 @@ mod session;
 use session::{CellScope, RenderSession};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 /// A definition the author wrote ON a definition list's description line.
 ///
@@ -321,7 +322,7 @@ pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSe
 fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
     // One render with the default sentinels. If the document turns out to
     // contain one of them itself, the counts disagree and the whole render is
-    // repeated with a character it does not contain (see SENTINEL_DEFAULTS). Only a
+    // repeated with a token absent from the staged text (see SENTINEL_DEFAULTS). Only a
     // document that actually holds a private-use sentinel pays for the second
     // pass, and nothing else changes: the retry runs the same code.
     let first = render_carve_once(session, doc);
@@ -337,7 +338,7 @@ fn render_carve_unguarded(session: &RenderSession, doc: &Document) -> String {
     let mut next = current;
     for i in 0..SENTINEL_COUNT {
         if seen[i] > inserted[i] {
-            next[i] = free_sentinel(&staged, &next);
+            next[i] = Rc::new(free_sentinel(&staged, &next));
         }
     }
     session.sentinels.with(|s| *s.borrow_mut() = next);
@@ -1912,7 +1913,7 @@ fn definition_at_line(
 /// block out of the item (markup-carve/carve-rs#1226). carve-js reached the
 /// same place, and moved the same marker into its own picked run, in
 /// markup-carve/carve-js#1289.
-fn marker_column(session: &RenderSession) -> String {
+fn marker_column(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_MARKER_COLUMN)
 }
 
@@ -2696,11 +2697,13 @@ fn render_list(session: &RenderSession, node: &List, ctx: &mut CarveContext) -> 
         // block opener opens nothing: a heading, a fence or a quote came back as
         // text of the marker line's paragraph.
         let continuation = " ".repeat(continuation_width);
+        let blank = verbatim_blank(session);
+        let column = marker_column(session);
         for line in lines {
-            if line.is_empty() || line == verbatim_blank(session) {
+            if line.is_empty() || line == *blank {
                 out.push_str(&line);
                 out.push('\n');
-            } else if let Some(rest) = line.strip_prefix(marker_column(session).as_str()) {
+            } else if let Some(rest) = line.strip_prefix(column.as_str()) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
                 out.push_str(&format!("{rest}\n"));
@@ -3655,7 +3658,7 @@ fn render_nodes_with_verbatim(
         ctx.rendered_verbatim_tail = false;
         let rendered = if layout_space {
             note_inserted(session, S_STAGED_SPACE);
-            staged_space(session)
+            staged_space(session).to_string()
         } else if verbatim.contains(&idx) {
             // The directive's own source, as the author wrote it: no escaping,
             // and no smart typography either, so a quoted path keeps its
@@ -4309,7 +4312,7 @@ fn render_inline_body(
             let body = escaped_space(session);
             let attrs = render_inline_attrs(&n.attrs, ctx);
             if attrs.is_empty() {
-                body
+                body.to_string()
             } else {
                 format!("[{body}]{attrs}")
             }
@@ -5593,7 +5596,7 @@ impl CarveContext {
     }
 }
 
-fn sentinel(session: &RenderSession, which: usize) -> String {
+fn sentinel(session: &RenderSession, which: usize) -> Rc<String> {
     session.sentinels.with(|s| s.borrow()[which].clone())
 }
 
@@ -5618,27 +5621,27 @@ fn note_seen(session: &RenderSession, which: usize, count: usize) {
     });
 }
 
-fn verbatim_blank(session: &RenderSession) -> String {
+fn verbatim_blank(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_BLANK)
 }
 
-fn thematic_guard(session: &RenderSession) -> String {
+fn thematic_guard(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_GUARD)
 }
 
-fn escaped_space(session: &RenderSession) -> String {
+fn escaped_space(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_ESCAPED_SPACE)
 }
 
-fn staged_space(session: &RenderSession) -> String {
+fn staged_space(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_STAGED_SPACE)
 }
 
-fn staged_tab(session: &RenderSession) -> String {
+fn staged_tab(session: &RenderSession) -> Rc<String> {
     sentinel(session, S_STAGED_TAB)
 }
 
-fn free_sentinel(text: &str, taken: &[String; SENTINEL_COUNT]) -> String {
+fn free_sentinel(text: &str, taken: &[Rc<String>; SENTINEL_COUNT]) -> String {
     let occupied: HashSet<char> = text.chars().collect();
     if let Some(marker) = ('\u{e020}'..='\u{f8ff}')
         .find(|c| !occupied.contains(c) && !taken.iter().any(|token| token.chars().eq([*c])))
@@ -5649,7 +5652,7 @@ fn free_sentinel(text: &str, taken: &[String; SENTINEL_COUNT]) -> String {
     let pattern =
         TOKEN.get_or_init(|| regex::Regex::new("\u{e009}m([0-9]{1,20})\u{e00a}").unwrap());
     let mut nonces = HashSet::new();
-    for candidate in std::iter::once(text).chain(taken.iter().map(String::as_str)) {
+    for candidate in std::iter::once(text).chain(taken.iter().map(|token| token.as_str())) {
         for captures in pattern.captures_iter(candidate) {
             if let Ok(nonce) = captures[1].parse::<usize>() {
                 nonces.insert(nonce);
@@ -5730,7 +5733,7 @@ fn normalize(session: &RenderSession, text: &str) -> String {
     session.staged.with(|c| c.borrow_mut().push_str(text));
     session.seen.with(|c| {
         let mut n = c.get();
-        n[S_ESCAPED_SPACE] += text.matches(&marker).count();
+        n[S_ESCAPED_SPACE] += text.matches(marker.as_str()).count();
         c.set(n);
     });
     // U+E010 marks an escaped space, and it resolves HERE rather than during
@@ -5742,20 +5745,16 @@ fn normalize(session: &RenderSession, text: &str) -> String {
     // document level. The list writer used to indent first and preserve the
     // expanded space as mid-paragraph content (carve-rs#855).
     let mut expanded = String::with_capacity(text.len());
-    let mut offset = 0;
-    while offset < text.len() {
-        if text[offset..].starts_with(&marker) {
-            offset += marker.len();
-            expanded.push('\\');
-            if !matches!(text.as_bytes().get(offset), None | Some(b'\n')) {
-                expanded.push(' ');
-            }
-        } else {
-            let ch = text[offset..].chars().next().unwrap();
-            expanded.push(ch);
-            offset += ch.len_utf8();
+    let mut cursor = 0;
+    for (offset, _) in text.match_indices(marker.as_str()) {
+        expanded.push_str(&text[cursor..offset]);
+        cursor = offset + marker.len();
+        expanded.push('\\');
+        if !matches!(text.as_bytes().get(cursor), None | Some(b'\n')) {
+            expanded.push(' ');
         }
     }
+    expanded.push_str(&text[cursor..]);
     let text = expanded;
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
@@ -5811,7 +5810,7 @@ fn normalize(session: &RenderSession, text: &str) -> String {
 /// blocks, frontmatter, and block comments reproduce their content byte-exact
 /// (carve-js issue 340). Sentinel-encode the vulnerable bytes before the
 /// content joins the document string; `normalize` restores them at the end.
-/// Markers are allocated from characters absent from the document.
+/// Retry markers are chosen against the staged document.
 fn protect_verbatim(session: &RenderSession, content: &str) -> String {
     let space = staged_space(session);
     let tab = staged_tab(session);
@@ -5819,7 +5818,7 @@ fn protect_verbatim(session: &RenderSession, content: &str) -> String {
     for line in content.split('\n') {
         if line.is_empty() {
             note_inserted(session, S_BLANK);
-            lines.push(verbatim_blank(session));
+            lines.push(verbatim_blank(session).to_string());
             continue;
         }
         let stripped = line.trim_end_matches([' ', '\t']);
@@ -5881,18 +5880,22 @@ fn guard_thematic_break_lines(session: &RenderSession, body: &str, in_line_block
 
 /// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
 fn restore_verbatim(session: &RenderSession, text: &str) -> String {
+    let footnote_code_line = sentinel(session, S_FOOTNOTE_CODE_LINE);
+    let code_line = sentinel(session, S_CODE_LINE);
+    let blank = verbatim_blank(session);
+    let guard = thematic_guard(session);
+    let space = staged_space(session);
+    let tab = staged_tab(session);
     let text = text
         .split('\n')
         .map(|line| {
-            if let Some((prefix, rest)) =
-                line.split_once(sentinel(session, S_FOOTNOTE_CODE_LINE).as_str())
-            {
+            if let Some((prefix, rest)) = line.split_once(footnote_code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) && rest.starts_with('[')
                 {
                     return format!("{prefix} {rest}");
                 }
             }
-            if let Some((prefix, rest)) = line.split_once(sentinel(session, S_CODE_LINE).as_str()) {
+            if let Some((prefix, rest)) = line.split_once(code_line.as_str()) {
                 if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) {
                     let guarded = if let Some(last_quote) = prefix.rfind('>') {
                         format!("{}  ", &prefix[..=last_quote])
@@ -5902,8 +5905,8 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
                     return format!("{guarded}{rest}");
                 }
             }
-            line.replace(sentinel(session, S_CODE_LINE).as_str(), "")
-                .replace(sentinel(session, S_FOOTNOTE_CODE_LINE).as_str(), "")
+            line.replace(code_line.as_str(), "")
+                .replace(footnote_code_line.as_str(), "")
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -5919,13 +5922,13 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             //
             // Drop the marker. A marker sitting next to real text is left alone,
             // which is the point.
-            let prefix = line.trim_end_matches(verbatim_blank(session).as_str());
+            let prefix = line.trim_end_matches(blank.as_str());
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
             {
                 return prefix.trim_end_matches([' ', '\t']).to_string();
             }
-            let line = match line.split_once(thematic_guard(session).as_str()) {
+            let line = match line.split_once(guard.as_str()) {
                 Some((prefix, rest)) if prefix.chars().all(|ch| matches!(ch, ' ' | '\t' | '>')) => {
                     format!("{prefix} {rest}")
                 }
@@ -5951,7 +5954,7 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
             // RESIDUE, stated rather than implied: an authored run of two or more,
             // or a single one at the start or end of a line, still collides. That
             // needs the insertion counts.
-            restore_staged_runs(session, &line)
+            restore_staged_runs(&line, &space, &tab)
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -5963,31 +5966,43 @@ fn restore_verbatim(session: &RenderSession, text: &str) -> String {
 /// A leading run is measured past the container prefix the host may have added
 /// before this runs (spaces, tabs, `>`), the same allowance the blank-line marker
 /// makes a few lines above.
-fn restore_staged_runs(session: &RenderSession, line: &str) -> String {
-    let space = staged_space(session);
-    let tab = staged_tab(session);
+fn restore_staged_runs(line: &str, space: &str, tab: &str) -> String {
     let prefix_end = line.len() - line.trim_start_matches([' ', '\t', '>']).len();
     let mut out = String::with_capacity(line.len());
     let mut offset = 0;
+    let mut spaces = line.match_indices(space).peekable();
+    let mut tabs = line.match_indices(tab).peekable();
     while offset < line.len() {
+        let next = match (spaces.peek(), tabs.peek()) {
+            (Some((a, _)), Some((b, _))) => (*a).min(*b),
+            (Some((a, _)), None) | (None, Some((a, _))) => *a,
+            (None, None) => {
+                out.push_str(&line[offset..]);
+                break;
+            }
+        };
+        out.push_str(&line[offset..next]);
+        offset = next;
         let start = offset;
         let mut run = Vec::new();
         loop {
-            if line[offset..].starts_with(&space) {
+            if line[offset..].starts_with(space) {
                 run.push(' ');
                 offset += space.len();
-            } else if line[offset..].starts_with(&tab) {
+            } else if line[offset..].starts_with(tab) {
                 run.push('\t');
                 offset += tab.len();
             } else {
                 break;
             }
         }
-        if run.is_empty() {
-            let ch = line[offset..].chars().next().unwrap();
-            out.push(ch);
-            offset += ch.len_utf8();
-        } else if start == prefix_end || offset == line.len() || run.len() >= 2 {
+        while spaces.peek().is_some_and(|(at, _)| *at < offset) {
+            spaces.next();
+        }
+        while tabs.peek().is_some_and(|(at, _)| *at < offset) {
+            tabs.next();
+        }
+        if start == prefix_end || offset == line.len() || run.len() >= 2 {
             out.extend(run);
         } else {
             out.push_str(&line[start..offset]);
