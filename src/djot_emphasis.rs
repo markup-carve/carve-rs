@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
+type DivHost = (usize, usize, usize, Option<usize>, usize, Option<usize>);
+
 #[derive(Clone)]
 struct Pair {
     start: usize,
@@ -628,11 +630,13 @@ fn process(
     let mut quote_depth = 0usize;
     let mut quote_paragraph_open = false;
     let mut quote_column = None;
-    let mut list_columns: Vec<(usize, usize)> = Vec::new();
+    let mut list_columns: Vec<(usize, usize, usize, usize)> = Vec::new();
     let mut quote_count = 0;
     let mut paragraph_open = false;
-    let mut div_fences: Vec<(usize, usize, usize, Option<usize>)> = Vec::new();
+    let mut paragraph_list_id = None;
+    let mut div_fences: Vec<DivHost> = Vec::new();
     let mut div_depth = 0usize;
+    let mut block_host_depth = 0usize;
     for at in 0..bytes.len() {
         if at == 0 || bytes[at - 1] == b'\n' {
             let end = source[at..]
@@ -654,15 +658,23 @@ fn process(
                             .get(cursor + 1)
                             .is_some_and(|byte| b" \t".contains(byte)))
                 {
-                    while list_columns
-                        .last()
-                        .is_some_and(|(column, _)| *column > cursor - at)
+                    loop {
+                        let prefix = list_columns
+                            .partition_point(|(_, scope, _, _)| *scope <= physical_quotes);
+                        if prefix == 0 || list_columns[prefix - 1].0 <= cursor - at {
+                            break;
+                        }
+                        list_columns.truncate(prefix - 1);
+                    }
+                    if paragraph_open
+                        && physical_quotes >= quote_count
+                        && list_columns.last().map(|entry| entry.2) == paragraph_list_id
                     {
-                        list_columns.pop();
+                        break;
                     }
                     physical_quote_column.get_or_insert(cursor - at);
+                    physical_depth += 1;
                     physical_quotes += 1;
-                    physical_depth += 1 + pending_lists;
                     pending_lists = 0;
                     cursor += 1;
                 } else if let Some(item) = item_prefix.find(&source[cursor..end]) {
@@ -671,20 +683,23 @@ fn process(
                         && physical_quotes == quote_count
                         && list_columns
                             .last()
-                            .map_or(true, |(column, _)| cursor - at >= *column)
+                            .map_or(true, |(_, _, _, marker_column)| {
+                                cursor - at > *marker_column
+                            })
                     {
                         literal_list_marker = true;
                         break;
                     }
-                    while list_columns
-                        .last()
-                        .is_some_and(|(column, _)| *column > cursor - at)
-                    {
+                    while list_columns.last().is_some_and(|(column, scope, _, _)| {
+                        *scope > physical_quotes || *column > cursor - at
+                    }) {
                         list_columns.pop();
                     }
                     pending_lists += 1;
+                    let marker_column = cursor - at;
+                    let marker_at = cursor;
                     cursor += item.end();
-                    list_columns.push((cursor - at, physical_quotes));
+                    list_columns.push((cursor - at, physical_quotes, marker_at, marker_column));
                     if bytes.get(cursor) == Some(&b'[')
                         && bytes
                             .get(cursor + 1)
@@ -719,14 +734,14 @@ fn process(
                     };
                 quote_column = physical_quote_column;
                 quote_paragraph_open = paragraph;
-            } else if !quote_paragraph_open || !paragraph {
+            } else if pending_lists > 0 || !quote_paragraph_open || !paragraph {
                 quote_depth = 0;
                 quote_column = None;
                 quote_count = 0;
                 quote_paragraph_open = false;
             }
             if !content.trim().is_empty() {
-                while list_columns.last().is_some_and(|(column, scope)| {
+                while list_columns.last().is_some_and(|(column, scope, _, _)| {
                     *scope > quote_count
                         || (*column > cursor - at && !(paragraph_open && paragraph))
                 }) {
@@ -734,12 +749,17 @@ fn process(
                 }
             }
             if !content.trim().is_empty() {
-                while div_fences.last().is_some_and(|(_, _, quote, column)| {
-                    quote_depth < *quote
-                        || (column.is_some_and(|column| cursor - at < column)
-                            && !(paragraph_open && paragraph))
-                }) {
-                    let (_, depth, _, _) = div_fences.pop().unwrap();
+                while div_fences
+                    .last()
+                    .is_some_and(|(_, _, quote, column, count, id)| {
+                        quote_depth < *quote
+                            || (*count > 0
+                                && list_columns.get(count - 1).map(|entry| entry.2) != *id)
+                            || (column.is_some_and(|column| cursor - at < column)
+                                && !(paragraph_open && paragraph))
+                    })
+                {
+                    let (_, depth, _, _, _, _) = div_fences.pop().unwrap();
                     div_depth -= depth;
                 }
             }
@@ -749,29 +769,33 @@ fn process(
                 if tail.is_empty()
                     && div_fences
                         .last()
-                        .is_some_and(|(width, _, _, _)| colon_width >= *width)
+                        .is_some_and(|(width, _, _, _, _, _)| colon_width >= *width)
                 {
-                    let (_, depth, _, _) = div_fences.pop().unwrap();
+                    let (_, depth, _, _, _, _) = div_fences.pop().unwrap();
                     div_depth -= depth;
                 } else {
-                    let depth = 1 + list_columns
-                        .iter()
-                        .filter(|(_, scope)| *scope == quote_count)
-                        .count();
+                    let depth = 1;
                     div_fences.push((
                         colon_width,
                         depth,
                         quote_depth,
-                        list_columns.last().map(|(column, _)| *column),
+                        list_columns.last().map(|(column, _, _, _)| *column),
+                        list_columns.len(),
+                        list_columns.last().map(|entry| entry.2),
                     ));
                     div_depth += depth;
                 }
             }
             paragraph_open = paragraph;
+            paragraph_list_id = list_columns.last().map(|entry| entry.2);
+            let quoted_lists =
+                list_columns.partition_point(|(_, scope, _, _)| *scope < quote_count);
+            let div_lists = div_fences.last().map_or(0, |fence| fence.4);
+            block_host_depth = quote_depth + div_depth + quoted_lists.max(div_lists);
         }
         host_depth += host_changes.get(&at).copied().unwrap_or(0);
         if let Some(&index) = starts.get(&at) {
-            pairs[index].host_depth = host_depth.max(0) as usize + quote_depth + div_depth;
+            pairs[index].host_depth = host_depth.max(0) as usize + block_host_depth;
         }
     }
     let renderer = Renderer {
