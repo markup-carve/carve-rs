@@ -1506,14 +1506,17 @@ fn extract_footnote_defs(
             // §10 I4, as `extract_link_defs_with_guard`: an unterminated fence
             // interrupts no open paragraph, so going opaque here hid every
             // definition below one from collection (carve-rs#2096).
-            let fence = prepass_fence_opens(&lines, i, open, &closer_maxima, &folded_into_term);
+            let fence =
+                prepass_fence_opens(&lines, i, open, &closer_maxima, &folded_into_term, &columns);
             if fence.opens {
+                open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);
-                term_fence_quotes = term_fence.map_or(0, |host| host.quote_depth);
+                term_fence_quotes =
+                    term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
-                    .unwrap_or_default();
-                term_fence_owned = term_fence.is_some();
+                    .unwrap_or(fence.quote_columns);
+                term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
             body.push(lines[i].to_string());
@@ -2491,7 +2494,8 @@ fn term_folded_lines(
             let term_fence_owned = term_host.is_some();
             open.content_col = col;
             open.quoted = quotes > 0;
-            let fence = prepass_fence_opens(lines, index, open, closer_maxima, &ownership);
+            let fence =
+                prepass_fence_opens(lines, index, open, closer_maxima, &ownership, &columns);
             if !fence.opens {
                 index += 1;
                 continue;
@@ -2624,7 +2628,12 @@ fn fence_closer_suffix_maxima(lines: &[&str]) -> (Vec<usize>, Vec<usize>) {
 /// And §24 C3 makes a `%%` comment close the paragraph AT ANY COLUMN, so the
 /// fence below it interrupts nothing - which is the whole condition the
 /// lookahead is guarding (carve-rs#2096).
-fn prepass_paragraph_open_above(lines: &[&str], index: usize) -> bool {
+fn prepass_paragraph_open_above(
+    lines: &[&str],
+    index: usize,
+    columns: &ContentColumns,
+    quote_columns: &[usize],
+) -> bool {
     if index == 0 {
         return false;
     }
@@ -2634,7 +2643,13 @@ fn prepass_paragraph_open_above(lines: &[&str], index: usize) -> bool {
     // open closed with that container and nothing here can interrupt it: a
     // column-0 fence under a note body's `   a` really opens, which is what the
     // block parser reads and what the sentinel guard pins.
-    !is_blank_line(above)
+    let after_term = index > 1 && opens_definition_entry(lines[index - 2]);
+    let above_prefix = strip_container_prefixes_at(above, columns, after_term);
+    let above_quotes = term_quote_columns_for(above_prefix.structural, columns);
+    // A paragraph outside a newly admitted quote cannot keep its fence inline.
+    // The strict prefix scan excludes an indented quote marker written as text.
+    above_quotes == quote_columns
+        && !is_blank_line(above)
         && indent_columns(above) <= indent_columns(lines[index])
         && !is_definition_placeholder(above)
         && !is_line_comment_any_column(above)
@@ -2705,17 +2720,23 @@ fn prepass_fence_opens(
     open: FenceOpen,
     maxima: &(Vec<usize>, Vec<usize>),
     terms: &TermLineOwnership,
+    columns: &ContentColumns,
 ) -> PrepassFence {
     let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
+    let after_term = index > 0 && opens_definition_entry(lines[index - 1]);
+    let prefix = strip_container_prefixes_at(lines[index], columns, after_term);
+    let quote_columns = term_quote_columns_for(prefix.structural, columns);
     PrepassFence {
         opens: closer_ahead
             || terms.fence_openers.contains_key(&index)
-            || !prepass_paragraph_open_above(lines, index),
+            || !prepass_paragraph_open_above(lines, index, columns, &quote_columns),
+        quote_columns,
         closer_ahead,
     }
 }
 
 struct PrepassFence {
+    quote_columns: Vec<usize>,
     opens: bool,
     closer_ahead: bool,
 }
@@ -2985,14 +3006,17 @@ fn extract_link_defs_with_guard(
                 open,
                 &closer_maxima,
                 &folded_into_term,
+                &columns,
             );
             if fence.opens {
+                open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);
-                term_fence_quotes = term_fence.map_or(0, |host| host.quote_depth);
+                term_fence_quotes =
+                    term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
-                    .unwrap_or_default();
-                term_fence_owned = term_fence.is_some();
+                    .unwrap_or(fence.quote_columns);
+                term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
             body.push(std::borrow::Cow::Borrowed(line));
