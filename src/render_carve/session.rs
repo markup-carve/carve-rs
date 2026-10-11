@@ -5,6 +5,7 @@ use super::{escape_window, Occurrence, SENTINEL_COUNT, SENTINEL_DEFAULTS};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Deref;
+use std::rc::Rc;
 
 /// Owned storage with closure access for short-lived interior borrows.
 pub(super) struct Slot<T>(T);
@@ -29,7 +30,7 @@ pub(super) struct RenderSession {
     pub(super) pass: PassState,
     pub(super) redundant_ids: Slot<RefCell<BTreeSet<String>>>,
     pub(super) hyphen_breaks_are_unsafe: Slot<Cell<bool>>,
-    pub(super) sentinels: Slot<Cell<[char; SENTINEL_COUNT]>>,
+    pub(super) sentinels: Slot<RefCell<[Rc<String>; SENTINEL_COUNT]>>,
     pub(super) inserted: Slot<Cell<[usize; SENTINEL_COUNT]>>,
     pub(super) seen: Slot<Cell<[usize; SENTINEL_COUNT]>>,
     pub(super) staged: Slot<RefCell<String>>,
@@ -51,7 +52,9 @@ impl RenderSession {
             },
             redundant_ids: Slot(RefCell::new(BTreeSet::new())),
             hyphen_breaks_are_unsafe: Slot(Cell::new(false)),
-            sentinels: Slot(Cell::new(SENTINEL_DEFAULTS)),
+            sentinels: Slot(RefCell::new(
+                SENTINEL_DEFAULTS.map(|marker| Rc::new(marker.to_string())),
+            )),
             inserted: Slot(Cell::new([0; SENTINEL_COUNT])),
             seen: Slot(Cell::new([0; SENTINEL_COUNT])),
             staged: Slot(RefCell::new(String::new())),
