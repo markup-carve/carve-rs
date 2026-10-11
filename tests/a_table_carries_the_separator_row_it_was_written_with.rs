@@ -467,3 +467,18 @@ fn invalid_runtime_width_lists_do_not_emit_an_html_carrier() {
         assert!(!html.contains("col-widths"));
     }
 }
+
+#[test]
+fn separator_alignment_and_vertical_alignment_survive_together() {
+    for (horizontal, separator) in [("<", ":---"), (">", "---:"), ("~", ":---:")] {
+        for vertical in ["^", "~", "v"] {
+            let source = format!("|{horizontal}{vertical} h |\n|{separator}|\n| b |\n");
+            let before = table_of(&source);
+            assert!(before.rows[0].cells[0].align.is_some(), "{source:?}");
+            assert!(before.rows[0].cells[0].valign.is_some(), "{source:?}");
+            let once = spelled(&source);
+            assert_eq!(table_of(&once), before, "{source:?} became {once:?}");
+            assert_eq!(spelled(&once), once);
+        }
+    }
+}
