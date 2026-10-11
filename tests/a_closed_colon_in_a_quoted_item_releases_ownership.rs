@@ -235,3 +235,43 @@ fn a_comment_closer_below_the_item_does_not_hide_its_code_fence() {
     let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
     assert_eq!(ast["children"][1]["type"], "list", "{ast}");
 }
+
+#[test]
+fn dedented_interrupters_end_stale_hosts_and_colon_scopes() {
+    for source in [
+        "> - item\n> # heading\n>   ::: box\n>   :::\n- tail\n",
+        "> - ::: box\n>   body\n> # heading\n>   :::\n- tail\n",
+    ] {
+        let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+        assert_eq!(
+            ast["children"].as_array().unwrap().len(),
+            1,
+            "{source}: {ast}"
+        );
+        assert!(carve::to_html(source).contains("- tail"), "{source}");
+    }
+}
+
+#[test]
+fn existing_fence_verdict_survives_hosted_opaque_shapes() {
+    for depth in 1..=2 {
+        let quote = "> ".repeat(depth);
+        for body in [
+            "- item\n{q}```\n{q}code\n{q}```\n- tail\n",
+            "- %%%\n{q}     %%%\n{q}  ```\n{q}  code\n{q}  ```\n- tail\n",
+            "- %%%\n{q}  ```\n{q}  code\n{q}  ```\n- tail\n{q}  %%%\n",
+            "- ::: |\n{q}  ```\n{q}  code\n{q}  ```\n- tail\n",
+        ] {
+            let source = format!("{quote}{}", body.replace("{q}", &quote));
+            let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(&source))).unwrap();
+            assert_eq!(ast["children"][1]["type"], "list", "{source}: {ast}");
+        }
+    }
+}
+
+#[test]
+fn a_future_comment_closer_after_a_host_dedent_does_not_mask_closed_colons() {
+    let source = "> - %%%\n>   ::: box\n>   :::\n- tail\n> after\n>   %%%\n";
+    let ast: Value = serde_json::from_str(&carve::to_json(&carve::parse(source))).unwrap();
+    assert_eq!(ast["children"][1]["type"], "list", "{ast}");
+}
