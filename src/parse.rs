@@ -1028,14 +1028,14 @@ struct ContentColumns {
 #[derive(Default)]
 struct ColumnFrame {
     cols: Vec<usize>,
-    first_list_col: Option<usize>,
+    first_list_col: Option<(usize, usize)>,
     /// The indent of the innermost OPEN definition list, set by its `:: ` term.
     def_list: Option<usize>,
 }
 
 impl ColumnFrame {
     fn pop_column(&mut self) {
-        if self.cols.pop() == self.first_list_col {
+        if self.cols.pop() == self.first_list_col.map(|(_, column)| column) {
             self.first_list_col = None;
         }
     }
@@ -1204,7 +1204,7 @@ impl ContentColumns {
             // as that item's block (carve#655).
             let mut offset = marker_width;
             frame.cols.push(offset);
-            frame.first_list_col.get_or_insert(offset);
+            frame.first_list_col.get_or_insert((marker_indent, offset));
             while let Some((nested_indent, nested_width)) =
                 detect_prepass_list_marker(&line[offset..])
             {
@@ -2433,7 +2433,7 @@ fn term_folded_lines(
     let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
-    let mut admitted_term_host: Option<(usize, usize)> = None;
+    let mut admitted_term_host: Option<(usize, usize, usize)> = None;
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut previous_non_blank = "";
@@ -2464,6 +2464,9 @@ fn term_folded_lines(
         if through_list {
             term = None;
         }
+        if admitted_term_host.is_some_and(|(_, _, depth)| depth != quotes) {
+            admitted_term_host = None;
+        }
         if is_blank_line(view_line) {
             term = None;
             index += 1;
@@ -2473,9 +2476,7 @@ fn term_folded_lines(
         let rest = trim_ascii_start(view_line);
         let comment =
             detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
-        if admitted_term_host
-            .is_some_and(|(floor, depth)| depth != quotes || (col < floor && !is_list_marker(rest)))
-        {
+        if admitted_term_host.is_some_and(|(_, floor, _)| col < floor && !is_list_marker(rest)) {
             admitted_term_host = None;
         }
         let mut admitted_term_fence = false;
@@ -2494,10 +2495,11 @@ fn term_folded_lines(
                 && term_start.is_some_and(|start| {
                     let marker_col = indent_columns(view(lines[start]).0);
                     if term_col == 0
-                        || admitted_term_host.is_some_and(|(floor, depth)| {
+                        || admitted_term_host.is_some_and(|(base, floor, depth)| {
                             depth == quotes
                                 && (marker_col >= floor
-                                    || is_list_marker(trim_ascii_start(view(lines[start]).0)))
+                                    || (marker_col == base
+                                        && is_list_marker(trim_ascii_start(view(lines[start]).0))))
                         })
                         || probing()
                         || start == 0
@@ -2657,19 +2659,24 @@ fn term_folded_lines(
             if admitted_term_fence
                 && term_start.is_some_and(|start| marker_line_may_be_lazy(lines[start]))
             {
-                let floor = columns
+                let (base, floor) = columns
                     .frames
                     .get(quotes)
                     .and_then(|frame| frame.first_list_col)
-                    .unwrap_or(open.content_col);
-                admitted_term_host = Some((floor, quotes));
+                    .unwrap_or((
+                        indent_columns(view(lines[term_start.unwrap()]).0),
+                        open.content_col,
+                    ));
+                admitted_term_host = Some((base, floor, quotes));
             }
             continue;
         }
         // A term may follow list markers on its line; its column is then the
         // item's content column.
         if let Some(term_col) = term_start_column(view_line).filter(|&term_col| {
-            term_col == 0 || columns.reached_by_at(quotes, term_col) == term_col
+            term_col == 0
+                || detect_list_marker_full(view_line).is_some()
+                || columns.reached_by_at(quotes, term_col) == term_col
         }) {
             term = Some((term_col, quotes));
             term_start = Some(index);

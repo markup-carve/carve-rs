@@ -684,3 +684,28 @@ fn nested_term_fences_keep_the_proved_outer_item_through_paragraphs() {
         assert!(carve::parse(&source).footnote_defs.is_empty());
     }
 }
+
+#[test]
+fn a_marker_between_item_columns_does_not_reuse_a_proved_term_host() {
+    for prefix in ["", "> "] {
+        let source = format!("{prefix}- :: a\n{prefix}  ```\n{prefix}  c\n{prefix}  ```\n{prefix}- para\n{prefix} - :: t\n{prefix}   ```\n{prefix}\n{prefix}   - y\n{prefix}     [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(
+            output.contains("role=\"doc-noteref\""),
+            "{source:?}: {output}"
+        );
+    }
+}
+
+#[test]
+fn a_bare_blank_releases_a_proved_quote_term_host() {
+    let source = "> - :: a\n>   ```\n>   c\n>   ```\n\n>   p\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn a_task_marker_term_keeps_its_folded_definition_shaped_text() {
+    let source = "- [ ] :: t\n       [r]: /u\n";
+    assert_eq!(html(source), "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <dl>\n      <dt>t\n     [r]: /u</dt>\n    </dl>\n  </li>\n</ul>");
+}
