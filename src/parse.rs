@@ -28876,8 +28876,7 @@ mod definition_gate_tests {
         let extension = Extension;
         for positions in [false, true] {
             for extended in [false, true] {
-                let mut options = Options::default();
-                options.positions = positions;
+                let mut options = Options::default().with_positions(positions);
                 if extended {
                     options.extensions.push(&extension);
                 }
@@ -28991,8 +28990,7 @@ mod definition_gate_tests {
         let source = "p [text]: literal\n\n::: |\nx\n:::\n";
         for positions in [false, true] {
             let extension = CountingExtension(Cell::new(0));
-            let mut options = Options::default();
-            options.positions = positions;
+            let mut options = Options::default().with_positions(positions);
             options.extensions.push(&extension);
             let full = extract_link_defs_with_guard_full(source, &options, None);
             let full_calls = extension.0.replace(0);
