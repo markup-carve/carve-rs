@@ -1912,3 +1912,6 @@ mod inline_fence_paragraph_resume;
 
 #[path = "../nested_description_code_payload.rs"]
 mod nested_description_code_payload;
+
+#[path = "../quoted_document_definition_boundary.rs"]
+mod quoted_document_definition_boundary;

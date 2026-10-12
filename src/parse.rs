@@ -2174,7 +2174,8 @@ fn extract_footnote_defs(
                 // level that prefix is empty, so an unindented placeholder
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
-                let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
+                let document_column =
+                    definition_at_quote_document_column(&replacement, stripped.bare);
                 replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(&if document_column {
                     document_definition_placeholder()
@@ -4035,7 +4036,8 @@ fn extract_link_defs_with_guard_full(
                 // level that prefix is empty, so an unindented placeholder
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
-                let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
+                let document_column =
+                    definition_at_quote_document_column(&replacement, stripped.bare);
                 replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(&if document_column {
                     document_definition_placeholder()
@@ -4570,6 +4572,22 @@ fn strip_container_prefixes_at<'a>(
         };
     }
     strip_container_prefixes(line, after_term)
+}
+
+// A quote-only prefix leaves the definition at its quote document root.
+fn definition_at_quote_document_column(mut prefix: &str, bare: &str) -> bool {
+    if leading_ws(bare) != 0 {
+        return false;
+    }
+    if prefix.is_empty() {
+        return true;
+    }
+    let mut quoted = false;
+    while let Some(rest) = strip_blockquote_prefix(trim_ascii_start(prefix)) {
+        prefix = rest;
+        quoted = true;
+    }
+    quoted && prefix.is_empty()
 }
 
 // A blank permits a below-column line to leave the item. A continuation at

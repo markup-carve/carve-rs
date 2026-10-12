@@ -1,0 +1,222 @@
+[
+  {
+    "id": "ghost-quote1-link",
+    "source": "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n- x\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n    <li>c\n- <code></code></li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "document-quote1-link",
+    "source": "> - a\n> [r]: /t\n> ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "item-quote1-link",
+    "source": "> - a\n>   [r]: /t\n>   ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <pre><code></code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "owned-quote1-link",
+    "source": "> - ```\n>   [r]: /t\n>   ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <pre><code>[r]: /t\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "paragraph-quote1-link",
+    "source": "> p\n> - ```\n> [r]: /t\n> ```\n",
+    "html": "<blockquote><p>p\n- <code>\n[r]: /t\n</code></p></blockquote>",
+    "nativeHtml": "<blockquote>\n  <p>p\n- <code></code></p>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "published-main-inline-code-preservation"
+  },
+  {
+    "id": "description-quote1-link",
+    "source": "> :: t\n> : [r]: /t\n> ```\n",
+    "html": "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd></dd>\n  </dl>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "ghost-quote1-note",
+    "source": "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [^a]: note\n> ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n- x\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n    <li>c\n- <code></code></li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "document-quote1-note",
+    "source": "> - a\n> [^a]: note\n> ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "item-quote1-note",
+    "source": "> - a\n>   [^a]: note\n>   ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a\n      <pre><code></code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "owned-quote1-note",
+    "source": "> - ```\n>   [^a]: note\n>   ```\n",
+    "html": "<blockquote>\n  <ul>\n    <li>\n      <pre><code>[^a]: note\n</code></pre>\n    </li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "paragraph-quote1-note",
+    "source": "> p\n> - ```\n> [^a]: note\n> ```\n",
+    "html": "<blockquote><p>p\n- <code>\n[^a]: note\n</code></p></blockquote>",
+    "nativeHtml": "<blockquote>\n  <p>p\n- <code></code></p>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "published-main-inline-code-preservation"
+  },
+  {
+    "id": "description-quote1-note",
+    "source": "> :: t\n> : [^a]: note\n> ```\n",
+    "html": "<blockquote>\n  <dl>\n    <dt>t</dt>\n    <dd></dd>\n  </dl>\n  <pre><code></code></pre>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "ghost-quote2-link",
+    "source": "> > - a\n> >  - x\n> >   - b\n> > - c\n> >  - ```\n> > [r]: /t\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- x\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n      <li>c\n- <code></code></li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "document-quote2-link",
+    "source": "> > - a\n> > [r]: /t\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "item-quote2-link",
+    "source": "> > - a\n> >   [r]: /t\n> >   ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "owned-quote2-link",
+    "source": "> > - ```\n> >   [r]: /t\n> >   ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>[r]: /t\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "paragraph-quote2-link",
+    "source": "> > p\n> > - ```\n> > [r]: /t\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote><p>p\n- <code>\n[r]: /t\n</code></p></blockquote>\n</blockquote>",
+    "nativeHtml": "<blockquote>\n  <blockquote>\n    <p>p\n- <code></code></p>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "published-main-inline-code-preservation"
+  },
+  {
+    "id": "description-quote2-link",
+    "source": "> > :: t\n> > : [r]: /t\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd></dd>\n    </dl>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "ghost-quote2-note",
+    "source": "> > - a\n> >  - x\n> >   - b\n> > - c\n> >  - ```\n> > [^a]: note\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- x\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n      <li>c\n- <code></code></li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "document-quote2-note",
+    "source": "> > - a\n> > [^a]: note\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "item-quote2-note",
+    "source": "> > - a\n> >   [^a]: note\n> >   ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <pre><code></code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "owned-quote2-note",
+    "source": "> > - ```\n> >   [^a]: note\n> >   ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>\n        <pre><code>[^a]: note\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "paragraph-quote2-note",
+    "source": "> > p\n> > - ```\n> > [^a]: note\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote><p>p\n- <code>\n[^a]: note\n</code></p></blockquote>\n</blockquote>",
+    "nativeHtml": "<blockquote>\n  <blockquote>\n    <p>p\n- <code></code></p>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "published-main-inline-code-preservation"
+  },
+  {
+    "id": "description-quote2-note",
+    "source": "> > :: t\n> > : [^a]: note\n> > ```\n",
+    "html": "<blockquote>\n  <blockquote>\n    <dl>\n      <dt>t</dt>\n      <dd></dd>\n    </dl>\n    <pre><code></code></pre>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "lazy-quote1-link",
+    "source": "> - a\n> [r]: /t\n> more\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <p>more</p>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "sibling-quote1-link",
+    "source": "> - a\n> [r]: /t\n> - b\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul>\n    <li>b</li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "outeritem-quote1-link",
+    "source": "- a\n  > - b\n  > [r]: /t\n  > ```\n",
+    "html": "<ul>\n  <li>a\n    <blockquote>\n      <ul>\n        <li>b</li>\n      </ul>\n      <pre><code></code></pre>\n    </blockquote>\n  </li>\n</ul>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "lazy-quote1-note",
+    "source": "> - a\n> [^a]: note\n> more\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <p>more</p>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "sibling-quote1-note",
+    "source": "> - a\n> [^a]: note\n> - b\n",
+    "html": "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul>\n    <li>b</li>\n  </ul>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "outeritem-quote1-note",
+    "source": "- a\n  > - b\n  > [^a]: note\n  > ```\n",
+    "html": "<ul>\n  <li>a\n    <blockquote>\n      <ul>\n        <li>b</li>\n      </ul>\n      <pre><code></code></pre>\n    </blockquote>\n  </li>\n</ul>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "lazy-quote2-link",
+    "source": "> > - a\n> > [r]: /t\n> > more\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>more</p>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "sibling-quote2-link",
+    "source": "> > - a\n> > [r]: /t\n> > - b\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <ul>\n      <li>b</li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "outeritem-quote2-link",
+    "source": "- a\n  > > - b\n  > > [r]: /t\n  > > ```\n",
+    "html": "<ul>\n  <li>a\n    <blockquote>\n      <blockquote>\n        <ul>\n          <li>b</li>\n        </ul>\n        <pre><code></code></pre>\n      </blockquote>\n    </blockquote>\n  </li>\n</ul>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "lazy-quote2-note",
+    "source": "> > - a\n> > [^a]: note\n> > more\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <p>more</p>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "sibling-quote2-note",
+    "source": "> > - a\n> > [^a]: note\n> > - b\n",
+    "html": "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n    </ul>\n    <ul>\n      <li>b</li>\n    </ul>\n  </blockquote>\n</blockquote>",
+    "basis": "native-2d473af"
+  },
+  {
+    "id": "outeritem-quote2-note",
+    "source": "- a\n  > > - b\n  > > [^a]: note\n  > > ```\n",
+    "html": "<ul>\n  <li>a\n    <blockquote>\n      <blockquote>\n        <ul>\n          <li>b</li>\n        </ul>\n        <pre><code></code></pre>\n      </blockquote>\n    </blockquote>\n  </li>\n</ul>",
+    "basis": "native-2d473af"
+  }
+]
