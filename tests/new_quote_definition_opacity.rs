@@ -140,3 +140,64 @@ fn inline_closers_restore_paragraphs_without_demoting_real_siblings() {
         assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
     }
 }
+
+#[test]
+fn folded_inline_fences_admit_lazy_text_and_keep_block_exits() {
+    let cases = [
+        ("> p\n> - ```\n>   x\nlazy\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>"),
+        ("> p\n> - ```\n>   x\n# heading\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<section id=\"heading\">\n  <h1>heading</h1>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</section>"),
+        ("> p\n> - ```\n>   x\n\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("> p\n> - ```\n>   x\n[r]: /u\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>"),
+        ("> > p\n> > - ```\n> >   x\nlazy\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n</blockquote>"),
+        ("> > p\n> > - ```\n> >   x\n# heading\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<section id=\"heading\">\n  <h1>heading</h1>\n  <blockquote>\n    <blockquote>\n      <pre><code>[^a]: note\n</code></pre>\n    </blockquote>\n  </blockquote>\n</section>"),
+        ("> > p\n> > - ```\n> >   x\n\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
+        ("> > p\n> > - ```\n> >   x\n[r]: /u\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>"),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn partial_quote_prefixes_preserve_definition_and_blank_exits() {
+    let cases = [
+        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n> [r]: /u\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n>\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[^a]: note\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n>\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n> lazy\n> > ```\n> > [^a]: note\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n> lazy\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
+    }
+}
+
+#[test]
+fn folded_inline_fences_keep_neighboring_block_boundaries() {
+    let cases = [
+        ("> p\n> - ```\n>   x\n- y\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx\n- y\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> p\n> - ```\n>   x\n:: t\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<dl>\n  <dt>t</dt>\n</dl>\n<blockquote>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> p\n> - ```\n>   x\n: body\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx\n: body\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> p\n> - ```\n>   x\n%% comment\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> p\n> - ```\n>   x\n%%%\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<blockquote>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> p\n> - ```\n>   x\n:::bad\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx\n:::bad\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> p\n> - ```\n>   x\n:::\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx</code></p></blockquote>\n<div>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n  <p>[x][r]</p>\n</div>"),
+        ("> p\n> - ```\n>   x\n> lazy\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> p\n> - ```\n>   x\n> # heading\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <h1 id=\"heading\">heading</h1>\n  <pre><code>[r]: /u\n</code></pre>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> p\n> - ```\n>   x\n   lazy\n> ```\n> [r]: /u\n\n[x][r]\n", "<blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n- y\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n- y\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n:: t\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<dl>\n  <dt>t</dt>\n</dl>\n<blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n: body\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n: body\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n%% comment\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n%%%\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<blockquote>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n:::bad\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n:::bad\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n:::\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n</blockquote>\n<div>\n  <blockquote>\n    <blockquote>\n      <pre><code>[r]: /u\n</code></pre>\n    </blockquote>\n  </blockquote>\n  <p>[x][r]</p>\n</div>"),
+        ("> > p\n> > - ```\n> >   x\n> lazy\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+        ("> > p\n> > - ```\n> >   x\n> # heading\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx</code></p></blockquote>\n  <h1 id=\"heading\">heading</h1>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+        ("> > p\n> > - ```\n> >   x\n   lazy\n> > ```\n> > [r]: /u\n\n[x][r]\n", "<blockquote>\n  <blockquote><p>p\n- <code>\nx\nlazy\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
+    }
+}

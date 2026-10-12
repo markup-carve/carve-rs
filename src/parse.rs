@@ -1494,10 +1494,17 @@ fn extract_footnote_defs(
             continue;
         }
         if let Some(open) = in_fence {
-            if (inline_marker_fence && is_blank_line(without_blockquote_prefixes(lines[i])))
-                || (term_fence_owned
-                    && term_fence_ends_above(lines[i], term_fence_floor, &term_fence_columns))
-                || prepass_fence_ends_above(lines[i], open, fence_closer_ahead)
+            if inline_fence_paragraph_ends(lines[i], open, inline_marker_paragraph.as_ref())
+                || !inline_fence_lazy_line(lines[i], inline_marker_paragraph.as_ref())
+                    && ((inline_marker_fence
+                        && is_blank_line(without_blockquote_prefixes(lines[i])))
+                        || (term_fence_owned
+                            && term_fence_ends_above(
+                                lines[i],
+                                term_fence_floor,
+                                &term_fence_columns,
+                            ))
+                        || prepass_fence_ends_above(lines[i], open, fence_closer_ahead))
             {
                 in_fence = None;
             } else {
@@ -2542,6 +2549,7 @@ struct PrepassParagraph {
 /// Lines folded into a term and fences that end one at its container column.
 #[derive(Default)]
 struct TermLineOwnership {
+    tracks_quote_context: bool,
     folded: std::collections::HashSet<usize>,
     fence_openers: HashMap<usize, TermFenceHost>,
     paragraph_quotes: std::cell::RefCell<HashMap<usize, Option<PrepassParagraph>>>,
@@ -2587,13 +2595,17 @@ fn term_folded_lines(
     fn view(raw: &str) -> (&str, usize, bool) {
         view_upto(raw, usize::MAX)
     }
+    let mut ownership = TermLineOwnership {
+        tracks_quote_context: lines.iter().any(|line| line.contains('>')),
+        ..TermLineOwnership::default()
+    };
     // Only a term folds anything, and the fence scans below are not free on a
     // document of unterminated openers, which nesting re-reads per level.
     if !lines
         .iter()
         .any(|raw| term_start_column(view(raw).0).is_some())
     {
-        return TermLineOwnership::default();
+        return ownership;
     }
     // Lines by the length of their leading `%` run, so finding the closer of a
     // comment fence opened on `index` stays linear over many unclosed openers.
@@ -2660,7 +2672,6 @@ fn term_folded_lines(
         }
         !(folds || unaffordable)
     };
-    let mut ownership = TermLineOwnership::default();
     let mut term_probe_budget = probe_budget_for(*prefix_costs.last().unwrap());
     let mut probe_root_start = 0;
     let mut reuse_probe_root = true;
@@ -2900,16 +2911,18 @@ fn term_folded_lines(
             let mut consumed_closer = false;
             index += 1;
             while index < lines.len() {
-                if (fence.inline_marker
-                    && term_host.is_none()
-                    && is_blank_line(view(lines[index]).0))
-                    || (term_fence_owned
-                        && term_fence_ends_above(
-                            lines[index],
-                            term_fence_floor,
-                            term_quote_columns.as_deref().unwrap_or(&[]),
-                        ))
-                    || prepass_fence_ends_above(lines[index], open, fence.closer_ahead)
+                if inline_fence_paragraph_ends(lines[index], open, inline_marker_paragraph.as_ref())
+                    || !inline_fence_lazy_line(lines[index], inline_marker_paragraph.as_ref())
+                        && ((fence.inline_marker
+                            && term_host.is_none()
+                            && is_blank_line(view(lines[index]).0))
+                            || (term_fence_owned
+                                && term_fence_ends_above(
+                                    lines[index],
+                                    term_fence_floor,
+                                    term_quote_columns.as_deref().unwrap_or(&[]),
+                                ))
+                            || prepass_fence_ends_above(lines[index], open, fence.closer_ahead))
                 {
                     if term_host.is_some() {
                         let (next, depth, _) = view(lines[index]);
@@ -3216,6 +3229,9 @@ fn remember_prepass_paragraph_line(
     prefix: &StrippedContainerLine<'_>,
     columns: &ContentColumns,
 ) {
+    if !terms.tracks_quote_context {
+        return;
+    }
     let mut contexts = terms.paragraph_quotes.borrow_mut();
     let mut paragraph = index
         .checked_sub(1)
@@ -3286,6 +3302,39 @@ fn remember_prepass_paragraph_line(
     contexts.insert(index, paragraph);
 }
 
+fn inline_fence_paragraph_ends(
+    line: &str,
+    open: FenceOpen,
+    paragraph: Option<&PrepassParagraph>,
+) -> bool {
+    let Some(paragraph) = paragraph else {
+        return false;
+    };
+    let Some(content) = strip_term_quote_prefixes(line, &paragraph.quote_columns) else {
+        return false;
+    };
+    let close_line = if leading_ws(content) >= open.content_col {
+        &content[open.content_col..]
+    } else {
+        content
+    };
+    !is_fence_close(close_line, open) && !ParaOpen::from_line(content, paragraph.absorption).get()
+}
+
+fn inline_fence_lazy_line(line: &str, paragraph: Option<&PrepassParagraph>) -> bool {
+    let Some(paragraph) = paragraph else {
+        return false;
+    };
+    let unquoted = without_blockquote_prefixes(line);
+    if strip_term_quote_prefixes(line, &paragraph.quote_columns).is_some()
+        || is_blank_line(unquoted)
+        || prepass_definition_line(unquoted)
+    {
+        return false;
+    }
+    ParaOpen::from_line(unquoted, paragraph.absorption).get()
+}
+
 fn previous_prepass_paragraph(terms: &TermLineOwnership, index: usize) -> Option<PrepassParagraph> {
     index.checked_sub(1).and_then(|previous| {
         terms
@@ -3298,7 +3347,9 @@ fn previous_prepass_paragraph(terms: &TermLineOwnership, index: usize) -> Option
 }
 
 fn end_prepass_paragraph_at(terms: &TermLineOwnership, index: usize) {
-    terms.paragraph_quotes.borrow_mut().insert(index, None);
+    if terms.tracks_quote_context {
+        terms.paragraph_quotes.borrow_mut().insert(index, None);
+    }
 }
 
 /// Is `line` a definition, in any of the three spellings?
@@ -3574,10 +3625,12 @@ fn extract_link_defs_with_guard_full(
             continue;
         }
         if let Some(open) = in_fence {
-            if (inline_marker_fence && is_blank_line(without_blockquote_prefixes(line)))
-                || (term_fence_owned
-                    && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
-                || prepass_fence_ends_above(line, open, fence_closer_ahead)
+            if inline_fence_paragraph_ends(line, open, inline_marker_paragraph.as_ref())
+                || !inline_fence_lazy_line(line, inline_marker_paragraph.as_ref())
+                    && ((inline_marker_fence && is_blank_line(without_blockquote_prefixes(line)))
+                        || (term_fence_owned
+                            && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
+                        || prepass_fence_ends_above(line, open, fence_closer_ahead))
             {
                 in_fence = None;
             } else {
