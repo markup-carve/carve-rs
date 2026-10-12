@@ -14893,6 +14893,9 @@ fn collect_indented_block_mapped_with_columns(
             || is_collected_definition_placeholder(content)
             || (content.starts_with("[^") && parse_footnote_def_line(content).is_some())
     });
+    let marker_is_definition_term =
+        marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
+    let mut marker_definition_has_description = !marker_is_definition_term;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -15344,9 +15347,23 @@ fn collect_indented_block_mapped_with_columns(
         let framed_comment_payload = comment_payload
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
-        if authored_code_base.is_none()
+        if marker_is_definition_term
             && fence.is_none()
             && !in_comment_span
+            && colon_open.is_empty()
+            && indent <= strip_cols
+        {
+            if is_definition_list_start(trim_ascii_start(line)) {
+                marker_definition_has_description = false;
+            } else if strip_description_prefix(trim_ascii_start(line)).is_some() {
+                marker_definition_has_description = true;
+            }
+        }
+        if authored_code_base.is_none()
+            && marker_definition_has_description
+            && fence.is_none()
+            && !in_comment_span
+            && colon_open.is_empty()
             && (stop_at_content_column_marker || marker_is_definition_lead)
             && nested_item_columns.is_empty()
             && indent > strip_cols

@@ -7,7 +7,7 @@ fn definition_and_note_list_leads_keep_authored_code() {
     ))
     .unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 276);
+    assert_eq!(cases.len(), 495);
     let whitespace = regex::Regex::new(r">\s+<").unwrap();
     let payload_pattern = regex::Regex::new(r"(?s)<pre><code[^>]*>(.*?)</code></pre>").unwrap();
     for case in cases {
