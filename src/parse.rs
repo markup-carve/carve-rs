@@ -2037,15 +2037,23 @@ fn extract_footnote_defs(
                 // Measure indentation inside the note's existing quote host.
                 // A further quote marker is note content and stays in the body.
                 let content = |raw| strip_quote_levels(raw, quote_depth);
-                let reaches_floor =
-                    |raw| content(raw).is_some_and(|line| indent_columns(line) >= note_floor);
+                let marker_note = detect_list_marker_full(inside)
+                    .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
+                let reaches_floor = |raw, first_continuation| {
+                    content(raw).is_some_and(|line| {
+                        indent_columns(line) >= note_floor
+                            && !(marker_note
+                                && first_continuation
+                                && detect_fence_open(trim_ascii_start(line)).is_some())
+                    })
+                };
                 let blank = |raw| content(raw).is_some_and(is_blank_line);
                 let body_resumes = {
                     let mut at = i;
                     while at < lines.len() && blank(lines[at]) {
                         at += 1;
                     }
-                    at < lines.len() && reaches_floor(lines[at])
+                    at < lines.len() && reaches_floor(lines[at], def_lines.len() == 1)
                 };
                 if body_resumes {
                     while i < lines.len() {
@@ -2056,7 +2064,9 @@ fn extract_footnote_defs(
                             while after < lines.len() && blank(lines[after]) {
                                 after += 1;
                             }
-                            if after < lines.len() && reaches_floor(lines[after]) {
+                            if after < lines.len()
+                                && reaches_floor(lines[after], def_lines.len() == 1)
+                            {
                                 while i < after {
                                     let raw = lines[i];
                                     let line = content(raw).expect("checked quote prefix");
@@ -2076,7 +2086,7 @@ fn extract_footnote_defs(
                             }
                             break;
                         }
-                        if indent_columns(line) < note_floor
+                        if !reaches_floor(raw, def_lines.len() == 1)
                             || parse_footnote_def_line(trim_ascii_start(line)).is_some()
                         {
                             break;
@@ -15335,14 +15345,23 @@ fn collect_indented_block_mapped_with_columns(
     // See `MappedSource::reached`.
     let mut reached: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
-    // Strip tab-authored code once, before a nested strip resets its tab stops.
-    let mut tab_code_base: Option<usize> = None;
+    // Strip authored code once before a nested strip changes its source columns.
+    let mut authored_code_base: Option<usize> = None;
     let mut colon_open: Vec<usize> = Vec::new();
     let marker_content = cur
         .pos
         .checked_sub(1)
         .and_then(|at| detect_list_marker_full(cur.lines.at(at)))
         .map(|marker| marker.content);
+    let marker_is_definition_lead = marker_content.is_some_and(|content| {
+        let content = trim_ascii_start(content);
+        is_definition_list_start(content)
+            || is_collected_definition_placeholder(content)
+            || (content.starts_with("[^") && parse_footnote_def_line(content).is_some())
+    });
+    let marker_is_definition_term =
+        marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
+    let mut marker_definition_has_description = !marker_is_definition_term;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -15410,7 +15429,7 @@ fn collect_indented_block_mapped_with_columns(
             // (PART 11 §7), so a line of spaces keeps that residue.
             if fence.is_some() && !folded_code_span {
                 let (residue, consumed, synthetic) =
-                    slice_columns_mapped(line, tab_code_base.unwrap_or(strip_cols), true);
+                    slice_columns_mapped(line, authored_code_base.unwrap_or(strip_cols), true);
                 lines.push(residue);
                 if cur.line_map.is_some() {
                     line_map.push(cur.source_line(cur.pos));
@@ -15794,24 +15813,41 @@ fn collect_indented_block_mapped_with_columns(
         let framed_comment_payload = comment_payload
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
-        if tab_code_base.is_none()
+        if marker_is_definition_term
             && fence.is_none()
             && !in_comment_span
-            && stop_at_content_column_marker
+            && colon_open.is_empty()
+            && indent <= strip_cols
+        {
+            if is_definition_list_start(trim_ascii_start(line)) {
+                marker_definition_has_description = false;
+            } else if strip_description_prefix(trim_ascii_start(line)).is_some() {
+                marker_definition_has_description = true;
+            }
+        }
+        if authored_code_base.is_none()
+            && marker_definition_has_description
+            && fence.is_none()
+            && !in_comment_span
+            && colon_open.is_empty()
+            && (stop_at_content_column_marker || marker_is_definition_lead)
             && nested_item_columns.is_empty()
             && indent > strip_cols
             && !folded_code_span
-            && line[..line.len() - trim_ascii_start(line).len()].contains('\t')
+            && (marker_is_definition_lead
+                || line[..line.len() - trim_ascii_start(line).len()].contains('\t'))
             && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
                 lines.is_empty()
                     || lines.last().is_some_and(|line| is_blank_line(line))
                     || list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
             })
         {
-            tab_code_base = Some(indent);
+            authored_code_base = Some(indent);
         }
         let stripped = match (in_comment_span, comment_fence_strip) {
-            _ if tab_code_base.is_some_and(|base| indent >= base) => tab_code_base.unwrap(),
+            _ if authored_code_base.is_some_and(|base| indent >= base) => {
+                authored_code_base.unwrap()
+            }
             _ if lazy_code_line || lazy_list_marker => indent,
             (true, Some(_)) if comment_payload => strip_cols.min(indent_columns(payload_line)),
             (true, Some(span_strip)) => span_strip.min(indent),
@@ -15913,7 +15949,7 @@ fn collect_indented_block_mapped_with_columns(
             }
             if fence.is_none() {
                 folded_code_span = false;
-                tab_code_base = None;
+                authored_code_base = None;
             }
         }
         track_collected_colon_fence(

@@ -1,0 +1,3551 @@
+[
+  {
+    "id": "authored-code-hosts-0",
+    "source": "- :: term\n  : payload\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-1",
+    "source": "- :: term\n  : payload\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-4",
+    "source": "- :: term\n  : payload\n      ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-6",
+    "source": "- :: term\n  : payload\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-8",
+    "source": "- :: term\n  : payload\n        ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-11",
+    "source": "- :: term\n  : payload\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-12",
+    "source": "- [^n]: note\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-13",
+    "source": "- [^n]: note\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-14",
+    "source": "- [^n]: note\n    ```\n    code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-15",
+    "source": "- [^n]: note\n    ```\n    code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-16",
+    "source": "- [^n]: note\n      ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-17",
+    "source": "- [^n]: note\n      ```\n      code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-18",
+    "source": "- [^n]: note\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-19",
+    "source": "- [^n]: note\n      ```\n      code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-20",
+    "source": "- [^n]: note\n        ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-21",
+    "source": "- [^n]: note\n        ```\n        code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-22",
+    "source": "- [^n]: note\n        ```\n        code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-23",
+    "source": "- [^n]: note\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-24",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-25",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-28",
+    "source": "> - :: term\n>   : payload\n>       ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-30",
+    "source": "> - :: term\n>   : payload\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-32",
+    "source": "> - :: term\n>   : payload\n>         ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-35",
+    "source": "> - :: term\n>   : payload\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-36",
+    "source": "> - [^n]: note\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-37",
+    "source": "> - [^n]: note\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-38",
+    "source": "> - [^n]: note\n>     ```\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-39",
+    "source": "> - [^n]: note\n>     ```\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-40",
+    "source": "> - [^n]: note\n>       ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-41",
+    "source": "> - [^n]: note\n>       ```\n>       code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-42",
+    "source": "> - [^n]: note\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-43",
+    "source": "> - [^n]: note\n>       ```\n>       code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-44",
+    "source": "> - [^n]: note\n>         ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-45",
+    "source": "> - [^n]: note\n>         ```\n>         code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-46",
+    "source": "> - [^n]: note\n>         ```\n>         code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-47",
+    "source": "> - [^n]: note\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-48",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-49",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-52",
+    "source": "> > - :: term\n> >   : payload\n> >       ```\n> >       code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-54",
+    "source": "> > - :: term\n> >   : payload\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-56",
+    "source": "> > - :: term\n> >   : payload\n> >         ```\n> >         code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-59",
+    "source": "> > - :: term\n> >   : payload\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-60",
+    "source": "> > - [^n]: note\n> >     ```\n> >     code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-61",
+    "source": "> > - [^n]: note\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-62",
+    "source": "> > - [^n]: note\n> >     ```\n> >     code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-63",
+    "source": "> > - [^n]: note\n> >     ```\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-64",
+    "source": "> > - [^n]: note\n> >       ```\n> >       code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-65",
+    "source": "> > - [^n]: note\n> >       ```\n> >       code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-66",
+    "source": "> > - [^n]: note\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-67",
+    "source": "> > - [^n]: note\n> >       ```\n> >       code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-68",
+    "source": "> > - [^n]: note\n> >         ```\n> >         code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-69",
+    "source": "> > - [^n]: note\n> >         ```\n> >         code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n  ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n  ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-70",
+    "source": "> > - [^n]: note\n> >         ```\n> >         code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n    ```\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n    ```\n"
+    ]
+  },
+  {
+    "id": "authored-code-hosts-71",
+    "source": "> > - [^n]: note\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-0",
+    "source": "- [^n]: text\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-1",
+    "source": "- [^n]: text\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-2",
+    "source": "- [^n]: text\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-3",
+    "source": "- [^n]: text\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-4",
+    "source": "- [^n]: text\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-5",
+    "source": "- [^n]: text\n        ```\n        code\n        ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-6",
+    "source": "- [^n]: - child\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-7",
+    "source": "- [^n]: - child\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-8",
+    "source": "- [^n]: - child\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-9",
+    "source": "- [^n]: - child\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-10",
+    "source": "- [^n]: - child\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-11",
+    "source": "- [^n]: - child\n        ```\n        code\n        ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-12",
+    "source": "- [^n]: > quoted\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-13",
+    "source": "- [^n]: > quoted\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-14",
+    "source": "- [^n]: > quoted\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-15",
+    "source": "- [^n]: > quoted\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-16",
+    "source": "- [^n]: > quoted\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-17",
+    "source": "- [^n]: > quoted\n        ```\n        code\n        ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-24",
+    "source": "> - [^n]: text\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-25",
+    "source": "> - [^n]: text\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-26",
+    "source": "> - [^n]: text\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-27",
+    "source": "> - [^n]: text\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-28",
+    "source": "> - [^n]: text\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-29",
+    "source": "> - [^n]: text\n>         ```\n>         code\n>         ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-30",
+    "source": "> - [^n]: - child\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-31",
+    "source": "> - [^n]: - child\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-32",
+    "source": "> - [^n]: - child\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-33",
+    "source": "> - [^n]: - child\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-34",
+    "source": "> - [^n]: - child\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-35",
+    "source": "> - [^n]: - child\n>         ```\n>         code\n>         ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-36",
+    "source": "> - [^n]: > quoted\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-37",
+    "source": "> - [^n]: > quoted\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-38",
+    "source": "> - [^n]: > quoted\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-39",
+    "source": "> - [^n]: > quoted\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-40",
+    "source": "> - [^n]: > quoted\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-41",
+    "source": "> - [^n]: > quoted\n>         ```\n>         code\n>         ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-48",
+    "source": "> > - [^n]: text\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-49",
+    "source": "> > - [^n]: text\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-50",
+    "source": "> > - [^n]: text\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-51",
+    "source": "> > - [^n]: text\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-52",
+    "source": "> > - [^n]: text\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-53",
+    "source": "> > - [^n]: text\n> >         ```\n> >         code\n> >         ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-54",
+    "source": "> > - [^n]: - child\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-55",
+    "source": "> > - [^n]: - child\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-56",
+    "source": "> > - [^n]: - child\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-57",
+    "source": "> > - [^n]: - child\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-58",
+    "source": "> > - [^n]: - child\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-59",
+    "source": "> > - [^n]: - child\n> >         ```\n> >         code\n> >         ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><ul><li>child</li></ul><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-60",
+    "source": "> > - [^n]: > quoted\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-61",
+    "source": "> > - [^n]: > quoted\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-62",
+    "source": "> > - [^n]: > quoted\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-63",
+    "source": "> > - [^n]: > quoted\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-64",
+    "source": "> > - [^n]: > quoted\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-descendant-65",
+    "source": "> > - [^n]: > quoted\n> >         ```\n> >         code\n> >         ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><blockquote><p>quoted</p></blockquote><p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-body-child-73",
+    "source": "- [^n]: text\n    - child\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-body-child-74",
+    "source": "- [^n]: text\n    - child\n        ```\n        code\n        ```\nafter [^n]\n",
+    "html": "<ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-body-child-82",
+    "source": "> - [^n]: text\n>     - child\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-body-child-83",
+    "source": "> - [^n]: text\n>     - child\n>         ```\n>         code\n>         ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-body-child-91",
+    "source": "> > - [^n]: text\n> >     - child\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-body-child-92",
+    "source": "> > - [^n]: text\n> >     - child\n> >         ```\n> >         code\n> >         ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text\n- child\n<code>\ncode\n</code><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "definition-deep-0",
+    "source": "- :: term\n  : desc\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-1",
+    "source": "- :: term\n  : desc\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-2",
+    "source": "- :: term\n  : desc\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-3",
+    "source": "- :: term\n  : desc\n    paragraph\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-4",
+    "source": "- :: term\n  : desc\n    paragraph\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-5",
+    "source": "- :: term\n  : desc\n    paragraph\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-6",
+    "source": "- :: term\n  : desc\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-7",
+    "source": "- :: term\n  : desc\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-8",
+    "source": "- :: term\n  : desc\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-9",
+    "source": "- :: term\n  : desc\n    paragraph\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-10",
+    "source": "- :: term\n  : desc\n    paragraph\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-11",
+    "source": "- :: term\n  : desc\n    paragraph\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-12",
+    "source": "- Term\n  : desc\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-13",
+    "source": "- Term\n  : desc\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-14",
+    "source": "- Term\n  : desc\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-15",
+    "source": "- Term\n  : desc\n    paragraph\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-16",
+    "source": "- Term\n  : desc\n    paragraph\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-17",
+    "source": "- Term\n  : desc\n    paragraph\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-18",
+    "source": "- Term\n  : desc\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-19",
+    "source": "- Term\n  : desc\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-20",
+    "source": "- Term\n  : desc\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-21",
+    "source": "- Term\n  : desc\n    paragraph\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-22",
+    "source": "- Term\n  : desc\n    paragraph\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-23",
+    "source": "- Term\n  : desc\n    paragraph\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>Term\n: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-24",
+    "source": "- [r]: /url\n  : desc\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-25",
+    "source": "- [r]: /url\n  : desc\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-26",
+    "source": "- [r]: /url\n  : desc\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-27",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-28",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-29",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-30",
+    "source": "- [r]: /url\n  : desc\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-31",
+    "source": "- [r]: /url\n  : desc\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-32",
+    "source": "- [r]: /url\n  : desc\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>: desc\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-33",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-34",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-35",
+    "source": "- [r]: /url\n  : desc\n    paragraph\n\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>: desc\nparagraph\n    <pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-36",
+    "source": "- [^n]: \n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-37",
+    "source": "- [^n]: \n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-38",
+    "source": "- [^n]: \n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-39",
+    "source": "- [^n]: text\n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-40",
+    "source": "- [^n]: text\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-41",
+    "source": "- [^n]: text\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-42",
+    "source": "-  [^n]: \n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-43",
+    "source": "-  [^n]: \n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-44",
+    "source": "-  [^n]: \n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-45",
+    "source": "-  [^n]: text\n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-46",
+    "source": "-  [^n]: text\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-47",
+    "source": "-  [^n]: text\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-48",
+    "source": "-    [^n]: \n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-49",
+    "source": "-    [^n]: \n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-50",
+    "source": "-    [^n]: \n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li>[^n]:\n    <pre><code>code\n</code></pre></li></ul><p>after [^n]</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-51",
+    "source": "-    [^n]: text\n  ```\n  code\n  ```\nafter [^n]\n",
+    "html": "<ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-52",
+    "source": "-    [^n]: text\n    ```\n    code\n    ```\nafter [^n]\n",
+    "html": "<ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-53",
+    "source": "-    [^n]: text\n      ```\n      code\n      ```\nafter [^n]\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-54",
+    "source": "> - :: term\n>   : desc\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-55",
+    "source": "> - :: term\n>   : desc\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-56",
+    "source": "> - :: term\n>   : desc\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-57",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-58",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-59",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-60",
+    "source": "> - :: term\n>   : desc\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-61",
+    "source": "> - :: term\n>   : desc\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-62",
+    "source": "> - :: term\n>   : desc\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-63",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-64",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-65",
+    "source": "> - :: term\n>   : desc\n>     paragraph\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-66",
+    "source": "> - Term\n>   : desc\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-67",
+    "source": "> - Term\n>   : desc\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-68",
+    "source": "> - Term\n>   : desc\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-69",
+    "source": "> - Term\n>   : desc\n>     paragraph\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-70",
+    "source": "> - Term\n>   : desc\n>     paragraph\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-71",
+    "source": "> - Term\n>   : desc\n>     paragraph\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-72",
+    "source": "> - Term\n>   : desc\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-73",
+    "source": "> - Term\n>   : desc\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-74",
+    "source": "> - Term\n>   : desc\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-75",
+    "source": "> - Term\n>   : desc\n>     paragraph\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-76",
+    "source": "> - Term\n>   : desc\n>     paragraph\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-77",
+    "source": "> - Term\n>   : desc\n>     paragraph\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>Term\n: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-78",
+    "source": "> - [r]: /url\n>   : desc\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-79",
+    "source": "> - [r]: /url\n>   : desc\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-80",
+    "source": "> - [r]: /url\n>   : desc\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-81",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-82",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-83",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-84",
+    "source": "> - [r]: /url\n>   : desc\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-85",
+    "source": "> - [r]: /url\n>   : desc\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-86",
+    "source": "> - [r]: /url\n>   : desc\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-87",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n> \n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-88",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n> \n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-89",
+    "source": "> - [r]: /url\n>   : desc\n>     paragraph\n> \n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>: desc\nparagraph\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-90",
+    "source": "> - [^n]: \n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-91",
+    "source": "> - [^n]: \n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-92",
+    "source": "> - [^n]: \n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-93",
+    "source": "> - [^n]: text\n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-94",
+    "source": "> - [^n]: text\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-95",
+    "source": "> - [^n]: text\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-96",
+    "source": "> -  [^n]: \n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-97",
+    "source": "> -  [^n]: \n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-98",
+    "source": "> -  [^n]: \n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-99",
+    "source": "> -  [^n]: text\n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-100",
+    "source": "> -  [^n]: text\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-101",
+    "source": "> -  [^n]: text\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-102",
+    "source": "> -    [^n]: \n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-103",
+    "source": "> -    [^n]: \n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-104",
+    "source": "> -    [^n]: \n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li>[^n]:\n      <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-105",
+    "source": "> -    [^n]: text\n>   ```\n>   code\n>   ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-106",
+    "source": "> -    [^n]: text\n>     ```\n>     code\n>     ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-107",
+    "source": "> -    [^n]: text\n>       ```\n>       code\n>       ```\n> after [^n]\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-108",
+    "source": "> > - :: term\n> >   : desc\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-109",
+    "source": "> > - :: term\n> >   : desc\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-110",
+    "source": "> > - :: term\n> >   : desc\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-111",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-112",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-113",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-114",
+    "source": "> > - :: term\n> >   : desc\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-115",
+    "source": "> > - :: term\n> >   : desc\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-116",
+    "source": "> > - :: term\n> >   : desc\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-117",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-118",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-119",
+    "source": "> > - :: term\n> >   : desc\n> >     paragraph\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc\nparagraph</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-120",
+    "source": "> > - Term\n> >   : desc\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-121",
+    "source": "> > - Term\n> >   : desc\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-122",
+    "source": "> > - Term\n> >   : desc\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-123",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-124",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-125",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-126",
+    "source": "> > - Term\n> >   : desc\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-127",
+    "source": "> > - Term\n> >   : desc\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-128",
+    "source": "> > - Term\n> >   : desc\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-129",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-130",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-131",
+    "source": "> > - Term\n> >   : desc\n> >     paragraph\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>Term\n: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-132",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-133",
+    "source": "> > - [r]: /url\n> >   : desc\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-134",
+    "source": "> > - [r]: /url\n> >   : desc\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-135",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-136",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-137",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-138",
+    "source": "> > - [r]: /url\n> >   : desc\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-139",
+    "source": "> > - [r]: /url\n> >   : desc\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-140",
+    "source": "> > - [r]: /url\n> >   : desc\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-141",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> > \n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-142",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> > \n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "definition-deep-143",
+    "source": "> > - [r]: /url\n> >   : desc\n> >     paragraph\n> > \n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>: desc\nparagraph\n        <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-144",
+    "source": "> > - [^n]: \n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-145",
+    "source": "> > - [^n]: \n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-146",
+    "source": "> > - [^n]: \n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-147",
+    "source": "> > - [^n]: text\n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-148",
+    "source": "> > - [^n]: text\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-149",
+    "source": "> > - [^n]: text\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-150",
+    "source": "> > -  [^n]: \n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-151",
+    "source": "> > -  [^n]: \n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-152",
+    "source": "> > -  [^n]: \n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-153",
+    "source": "> > -  [^n]: text\n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-154",
+    "source": "> > -  [^n]: text\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-155",
+    "source": "> > -  [^n]: text\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-156",
+    "source": "> > -    [^n]: \n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-157",
+    "source": "> > -    [^n]: \n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n<code>\ncode\n</code>\nafter [^n]</li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-158",
+    "source": "> > -    [^n]: \n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li>[^n]:\n        <pre><code>code\n</code></pre></li></ul><p>after [^n]</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "note-empty-159",
+    "source": "> > -    [^n]: text\n> >   ```\n> >   code\n> >   ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-160",
+    "source": "> > -    [^n]: text\n> >     ```\n> >     code\n> >     ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li></li></ul><p><code>\ncode\n</code>\nafter <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": []
+  },
+  {
+    "id": "note-empty-161",
+    "source": "> > -    [^n]: text\n> >       ```\n> >       code\n> >       ```\n> > after [^n]\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul><p>after <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p></blockquote></blockquote><section role=\"doc-endnotes\" aria-label=\"Footnotes\"><hr><ol><li id=\"fn1\"><p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p></li></ol></section>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-tab-0",
+    "source": "- :: term\n\t~~~\n\tcode\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-1",
+    "source": "- :: term\n\t~~~\n\tcode\n\t~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-2",
+    "source": "- :: term\n\t\t~~~\n\t\tcode\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  \t~~~\n  \tcode\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-3",
+    "source": "- :: term\n\t\t~~~\n\t\tcode\n\t\t~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  \t~~~\n  \tcode\n  \t~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-4",
+    "source": "- :: term\n \t~~~\n \tcode\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-5",
+    "source": "- :: term\n \t~~~\n \tcode\n \t~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-6",
+    "source": "- :: term\n  \t~~~\n  \tcode\nafter\n",
+    "html": "<ul><li><dl><dt>term\n\t~~~\n\tcode\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-7",
+    "source": "- :: term\n  \t~~~\n  \tcode\n  \t~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n\t~~~\n\tcode\n\t~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-8",
+    "source": "- :: term\n   \t~~~\n   \tcode\nafter\n",
+    "html": "<ul><li><dl><dt>term\n \t~~~\n \tcode\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-9",
+    "source": "- :: term\n   \t~~~\n   \tcode\n   \t~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n \t~~~\n \tcode\n \t~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-10",
+    "source": "- :: term\n  `a\n  : b`\n\n      ~~~\n      code\n      ~~~\n",
+    "html": "<ul><li><dl><dt>term\n<code>a</code></dt><dd>b<code></code></dd></dl><pre><code>code\n</code></pre></li></ul>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-opacity-11",
+    "source": "- :: term\n  ::: box\n  : faux\n    ```\n    code\n    ```\n  :::\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>: faux\n<code>\ncode\n</code></p></div></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-12",
+    "source": "- [^n]: note\n  :: term\n\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-tab-13",
+    "source": "> - :: term\n> \t~~~\n> \tcode\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-14",
+    "source": "> - :: term\n> \t~~~\n> \tcode\n> \t~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-15",
+    "source": "> - :: term\n> \t\t~~~\n> \t\tcode\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  \t~~~\n  \tcode\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-16",
+    "source": "> - :: term\n> \t\t~~~\n> \t\tcode\n> \t\t~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  \t~~~\n  \tcode\n  \t~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-17",
+    "source": "> - :: term\n>  \t~~~\n>  \tcode\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-18",
+    "source": "> - :: term\n>  \t~~~\n>  \tcode\n>  \t~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-19",
+    "source": "> - :: term\n>   \t~~~\n>   \tcode\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n\t~~~\n\tcode\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-20",
+    "source": "> - :: term\n>   \t~~~\n>   \tcode\n>   \t~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n\t~~~\n\tcode\n\t~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-21",
+    "source": "> - :: term\n>    \t~~~\n>    \tcode\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n \t~~~\n \tcode\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-22",
+    "source": "> - :: term\n>    \t~~~\n>    \tcode\n>    \t~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n \t~~~\n \tcode\n \t~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-23",
+    "source": "> - :: term\n>   `a\n>   : b`\n> \n>       ~~~\n>       code\n>       ~~~\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n<code>a</code></dt><dd>b<code></code></dd></dl><pre><code>code\n</code></pre></li></ul></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-opacity-24",
+    "source": "> - :: term\n>   ::: box\n>   : faux\n>     ```\n>     code\n>     ```\n>   :::\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>: faux\n<code>\ncode\n</code></p></div></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-25",
+    "source": "> - [^n]: note\n>   :: term\n> \n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-tab-26",
+    "source": "> > - :: term\n> > \t~~~\n> > \tcode\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-27",
+    "source": "> > - :: term\n> > \t~~~\n> > \tcode\n> > \t~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-28",
+    "source": "> > - :: term\n> > \t\t~~~\n> > \t\tcode\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  \t~~~\n  \tcode\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-29",
+    "source": "> > - :: term\n> > \t\t~~~\n> > \t\tcode\n> > \t\t~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  \t~~~\n  \tcode\n  \t~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-30",
+    "source": "> > - :: term\n> >  \t~~~\n> >  \tcode\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-31",
+    "source": "> > - :: term\n> >  \t~~~\n> >  \tcode\n> >  \t~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-32",
+    "source": "> > - :: term\n> >   \t~~~\n> >   \tcode\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n\t~~~\n\tcode\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-33",
+    "source": "> > - :: term\n> >   \t~~~\n> >   \tcode\n> >   \t~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n\t~~~\n\tcode\n\t~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-34",
+    "source": "> > - :: term\n> >    \t~~~\n> >    \tcode\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n \t~~~\n \tcode\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-tab-35",
+    "source": "> > - :: term\n> >    \t~~~\n> >    \tcode\n> >    \t~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n \t~~~\n \tcode\n \t~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-36",
+    "source": "> > - :: term\n> >   `a\n> >   : b`\n> > \n> >       ~~~\n> >       code\n> >       ~~~\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n<code>a</code></dt><dd>b<code></code></dd></dl><pre><code>code\n</code></pre></li></ul></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "term-opacity-37",
+    "source": "> > - :: term\n> >   ::: box\n> >   : faux\n> >     ```\n> >     code\n> >     ```\n> >   :::\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>: faux\n<code>\ncode\n</code></p></div></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "term-opacity-38",
+    "source": "> > - [^n]: note\n> >   :: term\n> > \n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-1",
+    "source": "- :: term\n  ```\n  code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-3",
+    "source": "- :: term\n  ~~~\n  code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-5",
+    "source": "- :: term\n  ```php\n  code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-7",
+    "source": "- :: term\n  ~~~js\n  code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-8",
+    "source": "- :: term\n    ```\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  <code>\n  code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-9",
+    "source": "- :: term\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-10",
+    "source": "- :: term\n    ~~~\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-11",
+    "source": "- :: term\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-12",
+    "source": "- :: term\n    ```php\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  <code>php\n  code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-13",
+    "source": "- :: term\n    ```php\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-14",
+    "source": "- :: term\n    ~~~js\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~js\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-15",
+    "source": "- :: term\n    ~~~js\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-16",
+    "source": "- :: term\n      ```\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    <code>\n    code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-17",
+    "source": "- :: term\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-18",
+    "source": "- :: term\n      ~~~\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    ~~~\n    code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-19",
+    "source": "- :: term\n      ~~~\n      code\n      ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-20",
+    "source": "- :: term\n      ```php\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    <code>php\n    code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-21",
+    "source": "- :: term\n      ```php\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-22",
+    "source": "- :: term\n      ~~~js\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    ~~~js\n    code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-23",
+    "source": "- :: term\n      ~~~js\n      code\n      ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-24",
+    "source": "- :: term\n        ```\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      <code>\n      code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-25",
+    "source": "- :: term\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-26",
+    "source": "- :: term\n        ~~~\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      ~~~\n      code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-27",
+    "source": "- :: term\n        ~~~\n        code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-28",
+    "source": "- :: term\n        ```php\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      <code>php\n      code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-29",
+    "source": "- :: term\n        ```php\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-30",
+    "source": "- :: term\n        ~~~js\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      ~~~js\n      code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-31",
+    "source": "- :: term\n        ~~~js\n        code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-33",
+    "source": "- :: term\n  : first\n  :: second\n  ```\n  code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-35",
+    "source": "- :: term\n  : first\n  :: second\n  ~~~\n  code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-37",
+    "source": "- :: term\n  : first\n  :: second\n  ```php\n  code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-39",
+    "source": "- :: term\n  : first\n  :: second\n  ~~~js\n  code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-40",
+    "source": "- :: term\n  : first\n  :: second\n    ```\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-41",
+    "source": "- :: term\n  : first\n  :: second\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-42",
+    "source": "- :: term\n  : first\n  :: second\n    ~~~\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-43",
+    "source": "- :: term\n  : first\n  :: second\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-44",
+    "source": "- :: term\n  : first\n  :: second\n    ```php\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-45",
+    "source": "- :: term\n  : first\n  :: second\n    ```php\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-46",
+    "source": "- :: term\n  : first\n  :: second\n    ~~~js\n    code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-47",
+    "source": "- :: term\n  : first\n  :: second\n    ~~~js\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-48",
+    "source": "- :: term\n  : first\n  :: second\n      ```\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-49",
+    "source": "- :: term\n  : first\n  :: second\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-50",
+    "source": "- :: term\n  : first\n  :: second\n      ~~~\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-51",
+    "source": "- :: term\n  : first\n  :: second\n      ~~~\n      code\n      ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-52",
+    "source": "- :: term\n  : first\n  :: second\n      ```php\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-53",
+    "source": "- :: term\n  : first\n  :: second\n      ```php\n      code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-54",
+    "source": "- :: term\n  : first\n  :: second\n      ~~~js\n      code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-55",
+    "source": "- :: term\n  : first\n  :: second\n      ~~~js\n      code\n      ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-56",
+    "source": "- :: term\n  : first\n  :: second\n        ```\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-57",
+    "source": "- :: term\n  : first\n  :: second\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-58",
+    "source": "- :: term\n  : first\n  :: second\n        ~~~\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-59",
+    "source": "- :: term\n  : first\n  :: second\n        ~~~\n        code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-60",
+    "source": "- :: term\n  : first\n  :: second\n        ```php\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\nafter</code></dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-61",
+    "source": "- :: term\n  : first\n  :: second\n        ```php\n        code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-62",
+    "source": "- :: term\n  : first\n  :: second\n        ~~~js\n        code\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-63",
+    "source": "- :: term\n  : first\n  :: second\n        ~~~js\n        code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-65",
+    "source": "> - :: term\n>   ```\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-67",
+    "source": "> - :: term\n>   ~~~\n>   code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-69",
+    "source": "> - :: term\n>   ```php\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-71",
+    "source": "> - :: term\n>   ~~~js\n>   code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-72",
+    "source": "> - :: term\n>     ```\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  <code>\n  code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-73",
+    "source": "> - :: term\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-74",
+    "source": "> - :: term\n>     ~~~\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-75",
+    "source": "> - :: term\n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-76",
+    "source": "> - :: term\n>     ```php\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  <code>php\n  code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-77",
+    "source": "> - :: term\n>     ```php\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-78",
+    "source": "> - :: term\n>     ~~~js\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~js\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-79",
+    "source": "> - :: term\n>     ~~~js\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-80",
+    "source": "> - :: term\n>       ```\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    <code>\n    code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-81",
+    "source": "> - :: term\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-82",
+    "source": "> - :: term\n>       ~~~\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    ~~~\n    code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-83",
+    "source": "> - :: term\n>       ~~~\n>       code\n>       ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-84",
+    "source": "> - :: term\n>       ```php\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    <code>php\n    code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-85",
+    "source": "> - :: term\n>       ```php\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-86",
+    "source": "> - :: term\n>       ~~~js\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    ~~~js\n    code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-87",
+    "source": "> - :: term\n>       ~~~js\n>       code\n>       ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-88",
+    "source": "> - :: term\n>         ```\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      <code>\n      code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-89",
+    "source": "> - :: term\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-90",
+    "source": "> - :: term\n>         ~~~\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      ~~~\n      code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-91",
+    "source": "> - :: term\n>         ~~~\n>         code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-92",
+    "source": "> - :: term\n>         ```php\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      <code>php\n      code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-93",
+    "source": "> - :: term\n>         ```php\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-94",
+    "source": "> - :: term\n>         ~~~js\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      ~~~js\n      code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-95",
+    "source": "> - :: term\n>         ~~~js\n>         code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-97",
+    "source": "> - :: term\n>   : first\n>   :: second\n>   ```\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-99",
+    "source": "> - :: term\n>   : first\n>   :: second\n>   ~~~\n>   code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-101",
+    "source": "> - :: term\n>   : first\n>   :: second\n>   ```php\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-103",
+    "source": "> - :: term\n>   : first\n>   :: second\n>   ~~~js\n>   code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-104",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ```\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-105",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-106",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ~~~\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-107",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-108",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ```php\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-109",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ```php\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-110",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ~~~js\n>     code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-111",
+    "source": "> - :: term\n>   : first\n>   :: second\n>     ~~~js\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-112",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ```\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-113",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-114",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ~~~\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-115",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ~~~\n>       code\n>       ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-116",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ```php\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-117",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ```php\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-118",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ~~~js\n>       code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-119",
+    "source": "> - :: term\n>   : first\n>   :: second\n>       ~~~js\n>       code\n>       ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-120",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ```\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-121",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-122",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ~~~\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-123",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ~~~\n>         code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-124",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ```php\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\nafter</code></dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-125",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ```php\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-126",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ~~~js\n>         code\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-127",
+    "source": "> - :: term\n>   : first\n>   :: second\n>         ~~~js\n>         code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-129",
+    "source": "> > - :: term\n> >   ```\n> >   code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-131",
+    "source": "> > - :: term\n> >   ~~~\n> >   code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-133",
+    "source": "> > - :: term\n> >   ```php\n> >   code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-135",
+    "source": "> > - :: term\n> >   ~~~js\n> >   code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-136",
+    "source": "> > - :: term\n> >     ```\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  <code>\n  code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-137",
+    "source": "> > - :: term\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-138",
+    "source": "> > - :: term\n> >     ~~~\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-139",
+    "source": "> > - :: term\n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-140",
+    "source": "> > - :: term\n> >     ```php\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  <code>php\n  code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-141",
+    "source": "> > - :: term\n> >     ```php\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-142",
+    "source": "> > - :: term\n> >     ~~~js\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~js\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-143",
+    "source": "> > - :: term\n> >     ~~~js\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-144",
+    "source": "> > - :: term\n> >       ```\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    <code>\n    code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-145",
+    "source": "> > - :: term\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-146",
+    "source": "> > - :: term\n> >       ~~~\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    ~~~\n    code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-147",
+    "source": "> > - :: term\n> >       ~~~\n> >       code\n> >       ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-148",
+    "source": "> > - :: term\n> >       ```php\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    <code>php\n    code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-149",
+    "source": "> > - :: term\n> >       ```php\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-150",
+    "source": "> > - :: term\n> >       ~~~js\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    ~~~js\n    code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-151",
+    "source": "> > - :: term\n> >       ~~~js\n> >       code\n> >       ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-152",
+    "source": "> > - :: term\n> >         ```\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      <code>\n      code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-153",
+    "source": "> > - :: term\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-154",
+    "source": "> > - :: term\n> >         ~~~\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      ~~~\n      code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-155",
+    "source": "> > - :: term\n> >         ~~~\n> >         code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-156",
+    "source": "> > - :: term\n> >         ```php\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      <code>php\n      code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-157",
+    "source": "> > - :: term\n> >         ```php\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-158",
+    "source": "> > - :: term\n> >         ~~~js\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      ~~~js\n      code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-159",
+    "source": "> > - :: term\n> >         ~~~js\n> >         code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-161",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >   ```\n> >   code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-163",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >   ~~~\n> >   code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-165",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >   ```php\n> >   code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-php\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-167",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >   ~~~js\n> >   code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second</dt></dl><pre><code class=\"language-js\">code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "bare-term-code-168",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ```\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-169",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-170",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ~~~\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-171",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-172",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ```php\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-173",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ```php\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  <code>php\n  code\n  </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-174",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ~~~js\n> >     code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-175",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >     ~~~js\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n  ~~~js\n  code\n  ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-176",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ```\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-177",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ```\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-178",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ~~~\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-179",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ~~~\n> >       code\n> >       ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-180",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ```php\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-181",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ```php\n> >       code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    <code>php\n    code\n    </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-182",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ~~~js\n> >       code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-183",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >       ~~~js\n> >       code\n> >       ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n    ~~~js\n    code\n    ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-184",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ```\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-185",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ```\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-186",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ~~~\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-187",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ~~~\n> >         code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-188",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ```php\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\nafter</code></dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-189",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ```php\n> >         code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      <code>php\n      code\n      </code>\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-190",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ~~~js\n> >         code\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "bare-term-code-191",
+    "source": "> > - :: term\n> >   : first\n> >   :: second\n> >         ~~~js\n> >         code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>first</dd><dt>second\n      ~~~js\n      code\n      ~~~\nafter</dt></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-0",
+    "source": "- :: term\n  : desc\n\n        ```\n        deep\n        ```\n      ```\n        shallow payload\n      ```\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>deep\n</code></pre><pre><code>  shallow payload\n</code></pre></li></ul>",
+    "codePayloads": [
+      "deep\n",
+      "  shallow payload\n"
+    ]
+  },
+  {
+    "id": "final-static-review-1",
+    "source": "- :: outer\n  : desc\n\n  ::: note\n  :: inner\n      ```\n      code\n      ```\n  :::\n",
+    "html": "<ul><li><dl><dt>outer</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><dl><dt>inner\n    <code>\n    code\n    </code></dt></dl></aside></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-2",
+    "source": "-   [^a]: note\n        ```\n        code\n        ```\n",
+    "html": "<ul><li><pre><code>code\n</code></pre></li></ul>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "final-static-review-3",
+    "source": "- :: term\n  : desc\n\n  ::: note\n  : faux\n      ```\n      code\n      ```\n  :::\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>: faux\n<code>\ncode\n</code></p></aside></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-4",
+    "source": "> - :: term\n>   : desc\n> \n>         ```\n>         deep\n>         ```\n>       ```\n>         shallow payload\n>       ```\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>deep\n</code></pre><pre><code>  shallow payload\n</code></pre></li></ul></blockquote>",
+    "codePayloads": [
+      "deep\n",
+      "  shallow payload\n"
+    ]
+  },
+  {
+    "id": "final-static-review-5",
+    "source": "> - :: outer\n>   : desc\n> \n>   ::: note\n>   :: inner\n>       ```\n>       code\n>       ```\n>   :::\n",
+    "html": "<blockquote><ul><li><dl><dt>outer</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><dl><dt>inner\n    <code>\n    code\n    </code></dt></dl></aside></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-6",
+    "source": "> -   [^a]: note\n>         ```\n>         code\n>         ```\n",
+    "html": "<blockquote><ul><li><pre><code>code\n</code></pre></li></ul></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "final-static-review-7",
+    "source": "> - :: term\n>   : desc\n> \n>   ::: note\n>   : faux\n>       ```\n>       code\n>       ```\n>   :::\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>: faux\n<code>\ncode\n</code></p></aside></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-8",
+    "source": "> > - :: term\n> >   : desc\n> > \n> >         ```\n> >         deep\n> >         ```\n> >       ```\n> >         shallow payload\n> >       ```\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><pre><code>deep\n</code></pre><pre><code>  shallow payload\n</code></pre></li></ul></blockquote></blockquote>",
+    "codePayloads": [
+      "deep\n",
+      "  shallow payload\n"
+    ]
+  },
+  {
+    "id": "final-static-review-9",
+    "source": "> > - :: outer\n> >   : desc\n> > \n> >   ::: note\n> >   :: inner\n> >       ```\n> >       code\n> >       ```\n> >   :::\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>outer</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><dl><dt>inner\n    <code>\n    code\n    </code></dt></dl></aside></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "final-static-review-10",
+    "source": "> > -   [^a]: note\n> >         ```\n> >         code\n> >         ```\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>code\n</code></pre></li></ul></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "final-static-review-11",
+    "source": "> > - :: term\n> >   : desc\n> > \n> >   ::: note\n> >   : faux\n> >       ```\n> >       code\n> >       ```\n> >   :::\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>: faux\n<code>\ncode\n</code></p></aside></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  }
+]
