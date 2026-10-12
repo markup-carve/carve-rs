@@ -3324,6 +3324,7 @@ fn remember_prepass_paragraph_line(
         })
         .unwrap_or(prefix.bare);
     if is_blank_line(raw)
+        || (trim_ascii(raw) == "+" && attaches_flush_left(Some(0), Some(&raw)))
         || is_definition_placeholder(raw)
         || prepass_definition_line(raw)
         || trim_ascii_start(rest).starts_with("%%")

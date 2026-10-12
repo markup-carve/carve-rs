@@ -525,3 +525,20 @@ fn literal_angle_text_does_not_hide_real_root_item_columns() {
         );
     }
 }
+
+#[test]
+fn flush_left_attachment_ends_the_inherited_quote_paragraph() {
+    let cases = [
+("> a\n+\n- inner\n  [r]: /url\n\nSee [r][]\n","<blockquote>\n  <p>a</p>\n  <ul>\n    <li>inner</li>\n  </ul>\n</blockquote>\n<p>See <a href=\"/url\">r</a></p>"),
+("> a\n+\n- inner\n  [^n]: note\n\nSee [^n]\n","<blockquote>\n  <p>a</p>\n  <ul>\n    <li>inner</li>\n  </ul>\n</blockquote>\n<p>See <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"),
+("> a\n> +\n> - inner\n>   [r]: /url\n\nSee [r][]\n","<blockquote><p>a\n+\n- inner\n[r]: /url</p></blockquote>\n<p>See [r][]</p>"),
+("> a\n  +\n- inner\n  [r]: /url\n\nSee [r][]\n","<blockquote><p>a\n+\n- inner\n[r]: /url</p></blockquote>\n<p>See [r][]</p>"),
+];
+    for (source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{source}"
+        );
+    }
+}
