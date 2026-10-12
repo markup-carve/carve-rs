@@ -2022,6 +2022,7 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize, options: &Op
             label,
             &c.attrs,
             c.pos.as_ref(),
+            crate::render_loss::RawNodeType::Block,
         );
     }
     let attrs = if label.is_some() {
