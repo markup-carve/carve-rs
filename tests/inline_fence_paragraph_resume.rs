@@ -6,7 +6,10 @@ fn fixtures() -> Value {
 }
 
 fn normalized(html: &str) -> String {
-    html.split_whitespace().collect::<Vec<_>>().join(" ")
+    regex::Regex::new(r">\s+<")
+        .unwrap()
+        .replace_all(html.trim(), "><")
+        .into_owned()
 }
 
 #[test]
