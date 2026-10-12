@@ -15279,8 +15279,8 @@ fn collect_trailing_lazy_through_framed(
         // A block-shaped band line is retained text (PART 1 S4). One kept column
         // does not say so to a term, which a list marker ends at any indent and
         // which publishes the column as a leading space. The frame does.
-        let framed = indent > list_base
-            && (frame_band_lines || dedent_below_column(line, indent) != indent);
+        let framed =
+            indent > list_base && (frame_band_lines || dedent_below_column(line, indent) != indent);
         let take = if framed {
             indent
         } else {
@@ -15292,13 +15292,12 @@ fn collect_trailing_lazy_through_framed(
         // text on the re-parse, and a flush line has none: the fence shape then
         // opened a block one level in, where the fold had just made it the
         // paragraph's text. The description-body twin frames it the same way.
-        let sliced = if framed
-            || (indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some())
-        {
-            format!("{LAZY}{sliced}")
-        } else {
-            sliced
-        };
+        let sliced =
+            if framed || (indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some()) {
+                format!("{LAZY}{sliced}")
+            } else {
+                sliced
+            };
         let source_line = cur.source_line(cur.pos);
         let source_col = cur.source_col(cur.pos).map(|col| col + consumed as isize);
         if let Some(buffered) = &mut buffered {
