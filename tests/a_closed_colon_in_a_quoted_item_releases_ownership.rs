@@ -546,3 +546,19 @@ fn quoted_literal_comment_handoff_matches_native() {
         }
     }
 }
+
+#[test]
+fn folded_fence_paragraphs_keep_the_quoted_item_claim() {
+    let rows: Value =
+        serde_json::from_str(include_str!("fixtures/folded_fence_claim_controls.json")).unwrap();
+    let whitespace = regex::Regex::new(r">\s+<").unwrap();
+    for row in rows.as_array().unwrap() {
+        let source = row["source"].as_str().unwrap();
+        assert_eq!(
+            whitespace.replace_all(&carve::to_html(source), "><").trim(),
+            row["html"].as_str().unwrap(),
+            "{}\n{source}",
+            row["id"]
+        );
+    }
+}

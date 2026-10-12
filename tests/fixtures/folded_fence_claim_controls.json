@@ -1,0 +1,102 @@
+[
+  {
+    "id": "claim-control-1-inline-unclosed",
+    "source": "> - prose\n>   ```\nlazy\n",
+    "html": "<blockquote><ul><li>prose\n<code>\nlazy</code></li></ul></blockquote>"
+  },
+  {
+    "id": "claim-control-1-inline-blank",
+    "source": "> - prose\n>   ```\n> \nlazy\n",
+    "html": "<blockquote><ul><li>prose\n<code></code></li></ul></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-1-closed-code",
+    "source": "> - prose\n>   ```\n>   x\n>   ```\nlazy\n",
+    "html": "<blockquote><ul><li>prose\n      <pre><code>x\n</code></pre></li></ul></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-1-marker-code",
+    "source": "> - ```\n>   x\n>   ```\nlazy\n",
+    "html": "<blockquote><ul><li><pre><code>x\n</code></pre></li></ul></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-2-inline-unclosed",
+    "source": "> > - prose\n> >   ```\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>prose\n<code>\nlazy</code></li></ul></blockquote></blockquote>"
+  },
+  {
+    "id": "claim-control-2-inline-blank",
+    "source": "> > - prose\n> >   ```\n> > \nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>prose\n<code></code></li></ul></blockquote></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-2-closed-code",
+    "source": "> > - prose\n> >   ```\n> >   x\n> >   ```\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>prose\n        <pre><code>x\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-2-marker-code",
+    "source": "> > - ```\n> >   x\n> >   ```\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li><pre><code>x\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-1-blank-then-code",
+    "source": "> - prose\n>   more\n> \n>   ```\n>   code\nlazy\n",
+    "html": "<blockquote><ul><li>prose\nmore\n      <pre><code>code\n</code></pre></li></ul></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "claim-control-2-blank-then-code",
+    "source": "> > - prose\n> >   more\n> > \n> >   ```\n> >   code\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>prose\nmore\n        <pre><code>code\n</code></pre></li></ul></blockquote></blockquote><p>lazy</p>"
+  },
+  {
+    "id": "shifted-unclosed-1-```",
+    "source": "> - a\n>     ::: |\n>     ```\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-1-~~~",
+    "source": "> - a\n>     ::: |\n>     ~~~\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p>~~~</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-1-%%%",
+    "source": "> - a\n>     ::: |\n>     %%%\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p></p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-```",
+    "source": "> > - a\n> >     ::: |\n> >     ```\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-~~~",
+    "source": "> > - a\n> >     ::: |\n> >     ~~~\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p>~~~</p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "id": "shifted-unclosed-2-%%%",
+    "source": "> > - a\n> >     ::: |\n> >     %%%\n> >   :::\n> >   :::bad\n> >   :::\n- tail\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p></p></div>\n        :::bad\n:::\n- tail\n      </li></ul></blockquote></blockquote>"
+  },
+  {
+    "id": "later-sibling-code-1-```",
+    "source": "> - a\n>     ::: |\n>     ```\n>   :::\n> - sibling\n>   ```\n>   para\nlazy\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n<code>\npara\nlazy</code></li></ul></blockquote>"
+  },
+  {
+    "id": "later-sibling-code-1-~~~",
+    "source": "> - a\n>     ::: |\n>     ~~~\n>   :::\n> - sibling\n>   ~~~\n>   para\nlazy\n",
+    "html": "<blockquote><ul><li>a\n      <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n~~~\npara\nlazy</li></ul></blockquote>"
+  },
+  {
+    "id": "later-sibling-code-2-```",
+    "source": "> > - a\n> >     ::: |\n> >     ```\n> >   :::\n> > - sibling\n> >   ```\n> >   para\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p><code></code></p></div></li><li>sibling\n<code>\npara\nlazy</code></li></ul></blockquote></blockquote>"
+  },
+  {
+    "id": "later-sibling-code-2-~~~",
+    "source": "> > - a\n> >     ::: |\n> >     ~~~\n> >   :::\n> > - sibling\n> >   ~~~\n> >   para\nlazy\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <div class=\"line-block\"><p>~~~</p></div></li><li>sibling\n~~~\npara\nlazy</li></ul></blockquote></blockquote>"
+  }
+]

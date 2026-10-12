@@ -194,3 +194,24 @@ fn an_item_answers_s4_for_itself_rather_than_with_the_previous_item_s_answer() {
     let control = both_paths("- t\n- t2\n%% c\ntail\n");
     assert!(control.contains("<li>t2\n    tail\n  </li>"), "{control}");
 }
+
+#[test]
+fn a_closed_marker_line_colon_container_no_longer_reads_as_open() {
+    // The closer of a container opened on the marker line used to be counted as
+    // an anonymous opener, so a band line under a later paragraph left the item.
+    // Rows are the executable spec's output at markup-carve/carve 2d473af7.
+    let rows: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/marker_line_colon_closer_ownership.json"
+    ))
+    .unwrap();
+    let whitespace = regex::Regex::new(r">\s+<").unwrap();
+    for row in rows.as_array().unwrap() {
+        let source = row["source"].as_str().unwrap();
+        assert_eq!(
+            whitespace.replace_all(&both_paths(source), "><").trim(),
+            row["html"].as_str().unwrap(),
+            "{}\n{source}",
+            row["id"]
+        );
+    }
+}

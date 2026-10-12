@@ -1,0 +1,167 @@
+[
+  {
+    "id": "closed-empty-literal-malformed-run",
+    "source": "- ::: |\n  %%%\n  :::\n  :::bad\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p></p></div>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-literal-malformed-run",
+    "source": "- ::: |\n  plain\n  :::\n  :::bad\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-literal-prose",
+    "source": "- ::: |\n  plain\n  :::\n  para\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div>\n    para\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-box-malformed-run",
+    "source": "- ::: box\n  plain\n  :::\n  :::bad\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>plain</p></div>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-literal-blank-then-run",
+    "source": "- ::: |\n  plain\n  :::\n\n  :::bad\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div><p>:::bad\nc</p></li><li><p>tail</p></li></ul>"
+  },
+  {
+    "id": "closed-literal-two-line-paragraph",
+    "source": "- ::: |\n  plain\n  :::\n  :::bad\n  d\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div>\n    :::bad\nd\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-literal-two-colon-text",
+    "source": "- ::: |\n  plain\n  :::\n  ::bad\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div>\n    ::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-box-nested-container",
+    "source": "- ::: box\n  ::: in\n  a\n  :::\n  :::\n  b\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><div class=\"in\"><p>a</p></div></div>\n    b\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "closed-wide-box-nested-container",
+    "source": "- :::: box\n  ::: in\n  a\n  :::\n  ::::\n  b\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><div class=\"in\"><p>a</p></div></div>\n    b\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "nested-item-band-above-outer-column",
+    "source": "- x\n  - ::: box\n    a\n    :::\n    b\n   c\n- tail\n",
+    "html": "<ul><li>x\n    <ul><li><div class=\"box\"><p>a</p></div>\n        b\nc\n      </li></ul></li><li>tail</li></ul>"
+  },
+  {
+    "id": "ordered-item-band",
+    "source": "1. ::: box\n   a\n   :::\n   b\n  c\n2. tail\n",
+    "html": "<ol><li><div class=\"box\"><p>a</p></div>\n    b\nc\n  </li><li>tail</li></ol>"
+  },
+  {
+    "id": "quoted-item-band",
+    "source": "> - ::: box\n>   a\n>   :::\n>   b\n>  c\n> - tail\n",
+    "html": "<blockquote><ul><li><div class=\"box\"><p>a</p></div>\n      b\nc\n    </li><li>tail</li></ul></blockquote>"
+  },
+  {
+    "id": "later-container-paragraph-takes-band",
+    "source": "- ::: box\n  a\n  :::\n  ::: two\n  b\n c\n  :::\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div><div class=\"two\"><p>b\nc</p></div></li><li>tail</li></ul>"
+  },
+  {
+    "id": "band-colon-run-is-text",
+    "source": "- ::: box\n  a\n  :::\n  b\n :::\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n:::\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-closed-box-no-paragraph",
+    "source": "- ::: box\n  a\n  :::\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-closed-box-then-heading",
+    "source": "- ::: box\n  a\n  :::\n  # h\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div><h1 id=\"h\">h</h1></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-open-box-paragraph",
+    "source": "- ::: box\n  a\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a\nc</p></div></li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-open-box-band-then-closer",
+    "source": "- ::: box\n  a\n c\n  :::\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a\nc</p></div></li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-open-literal-band-then-closer",
+    "source": "- ::: |\n  a\n c\n  :::\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>a<br>\nc</p></div></li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-open-box-blank-band",
+    "source": "- ::: box\n  a\n\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-closed-box-blank-band",
+    "source": "- ::: box\n  a\n  :::\n  b\n\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n  </li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-closed-box-then-code",
+    "source": "- ::: box\n  a\n  :::\n  ```\n  x\n  ```\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div><pre><code>x\n</code></pre></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-band-comment",
+    "source": "- ::: box\n  a\n  :::\n  b\n %% c\n d\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n    d\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-band-marker",
+    "source": "- ::: box\n  a\n  :::\n  b\n - c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><p>a</p></div>\n    b\n- c\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-malformed-run-then-bare-run",
+    "source": "- ::: |\n  y\n  :::\n  :::bad\n  :::\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n:::\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-flush-left-tail",
+    "source": "- ::: |\n  y\n  :::\n  :::bad\n  :::\nc\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>y</p></div>\n    :::bad\n:::\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-quoted-unprefixed-tail",
+    "source": "> - ::: |\n>   y\n>   :::\n>   :::bad\n>   :::\n- tail\n",
+    "html": "<blockquote><ul><li><div class=\"line-block\"><p>y</p></div>\n      :::bad\n:::\n- tail\n    </li></ul></blockquote>"
+  },
+  {
+    "id": "control-ordered-literal-code-then-heading",
+    "source": "1. ::: |\n   ```\n   x\n   ```\n   :::\n  # c\n1. tail\n",
+    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><p># c\n1. tail</p>"
+  },
+  {
+    "id": "control-literal-code-no-paragraph",
+    "source": "- ::: |\n  ```\n  x\n  ```\n  :::\n c\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-box-code-no-paragraph",
+    "source": "- ::: box\n  ```\n  x\n  ```\n  :::\n c\n- tail\n",
+    "html": "<ul><li><div class=\"box\"><pre><code>x\n</code></pre></div></li></ul><p>c\n- tail</p>"
+  },
+  {
+    "id": "control-flush-left-after-malformed-run",
+    "source": "- ::: |\n  plain\n  :::\n  :::bad\nc\n- tail\n",
+    "html": "<ul><li><div class=\"line-block\"><p>plain</p></div>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-marker-line-code",
+    "source": "- ```\n  plain\n  ```\n  :::bad\n c\n- tail\n",
+    "html": "<ul><li><pre><code>plain\n</code></pre>\n    :::bad\nc\n  </li><li>tail</li></ul>"
+  },
+  {
+    "id": "control-unclosed-literal-code-then-band-heading",
+    "source": "1. ::: |\n   ```\n   x\n   ```\n  # c\n1. tail\n",
+    "html": "<ol><li><div class=\"line-block\"><p><code>\nx\n</code></p></div></li></ol><p># c\n1. tail</p>"
+  }
+]

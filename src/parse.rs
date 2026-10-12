@@ -4998,6 +4998,8 @@ struct LineCursor<'a> {
     future_quoted_comments: RefCell<Option<FutureQuotedComments>>,
     /// Last consumed comment closer and the column of its opener.
     closed_comment_location: Option<(usize, usize)>,
+    /// The last collected item body closed its marker-line colon container.
+    marker_colon_closed: bool,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
     list_code_closers: Option<Box<ListCodeClosers>>,
 }
@@ -5034,6 +5036,7 @@ impl<'a> LineCursor<'a> {
             comment_closer_last_index: None,
             future_quoted_comments: RefCell::new(None),
             closed_comment_location: None,
+            marker_colon_closed: false,
             code_closer_last_index: None,
             list_code_closers: None,
         }
@@ -13273,12 +13276,14 @@ fn parse_list(
             } else {
                 base_indent
             };
+            cur.marker_colon_closed = false;
             stream.append(collect_indented_block_mapped_after_fence(
                 cur,
                 body_floor,
                 content_col,
                 &mut item_open_fence,
             ));
+            let marker_colon_closed = cur.marker_colon_closed;
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             let marker_line_was_the_whole_block = cur.pos == before_block;
@@ -13299,11 +13304,14 @@ fn parse_list(
                 // band line to this fold instead of collecting it blind, and the
                 // fold is the thing that asks S4's question - so it has to be
                 // able to see a line the raised floor left behind (#2120).
-                let (lazy_column, list_base) = if marker_block_leaves_content_open {
-                    (0, 0)
-                } else {
-                    (content_col.saturating_sub(1), base_indent)
-                };
+                // A marker-line colon container that has closed stops the
+                // collector at a band line, so the fold has to reach it.
+                let (lazy_column, list_base) =
+                    if marker_block_leaves_content_open && !marker_colon_closed {
+                        (0, 0)
+                    } else {
+                        (content_col.saturating_sub(1), base_indent)
+                    };
                 fold_lazy_run_and_resume_in_band(
                     cur,
                     &mut stream,
@@ -15454,6 +15462,19 @@ fn collect_indented_block_mapped_with_columns(
     });
     let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
     let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
+    // A colon opener on this item's own marker line is a line the walk never
+    // sees, so its closer would read as an anonymous opener below.
+    let mut marker_colon = cur
+        .pos
+        .checked_sub(1)
+        .and_then(|at| detect_list_marker_full(cur.lines.at(at)))
+        .filter(|marker| marker.indent == parent_indent)
+        .and_then(|marker| {
+            let mut seed = Vec::new();
+            track_collected_colon_fence(&mut seed, marker.content, true);
+            seed.pop()
+        });
+    let mut marker_colon_closed = false;
     let mut definition_ended_paragraph = false;
     let mut closed_code_leaf = false;
     // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
@@ -15757,6 +15778,9 @@ fn collect_indented_block_mapped_with_columns(
             break;
         }
         if !colon_open.is_empty() && indent < strip_cols {
+            break;
+        }
+        if marker_colon_closed && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
         if let Some(open) = nested_fence {
@@ -16138,11 +16162,22 @@ fn collect_indented_block_mapped_with_columns(
                 authored_code_base = None;
             }
         }
-        track_collected_colon_fence(
-            &mut colon_open,
-            &sliced,
-            indent >= strip_cols && !opaque_here,
-        );
+        if indent == strip_cols
+            && !opaque_here
+            && colon_open.is_empty()
+            && marker_colon.is_some()
+            && exact_colon_fence_len(&sliced) == marker_colon
+        {
+            marker_colon = None;
+            marker_colon_closed = true;
+            cur.marker_colon_closed = true;
+        } else {
+            track_collected_colon_fence(
+                &mut colon_open,
+                &sliced,
+                indent >= strip_cols && !opaque_here,
+            );
+        }
         lines.push(sliced);
         if building_maps {
             line_map.push(cur.source_line(cur.pos));
