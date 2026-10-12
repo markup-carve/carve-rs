@@ -2638,6 +2638,15 @@ fn term_folded_lines(
                     }
                     break;
                 }
+                if !term_fence_owned {
+                    let (body, depth, _) = view(lines[index]);
+                    if admitted_term_host.is_some_and(|(_, floor, host_depth)| {
+                        depth != host_depth
+                            || (!is_blank_line(lines[index]) && indent_columns(body) < floor)
+                    }) {
+                        admitted_term_host = None;
+                    }
+                }
                 let kept = strip_prepass_quote_levels(lines[index], quotes).unwrap_or(lines[index]);
                 let close_line = if leading_ws(kept) >= open.content_col {
                     &kept[open.content_col..]
@@ -2657,7 +2666,8 @@ fn term_folded_lines(
             // column through sibling markers and in-item continuations, but
             // discard it on every non-marker line below that column.
             if admitted_term_fence
-                && term_start.is_some_and(|start| marker_line_may_be_lazy(lines[start]))
+                && term_start
+                    .is_some_and(|start| detect_list_marker_full(view(lines[start]).0).is_some())
             {
                 let (base, floor) = columns
                     .frames

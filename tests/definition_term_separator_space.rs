@@ -709,3 +709,29 @@ fn a_task_marker_term_keeps_its_folded_definition_shaped_text() {
     let source = "- [ ] :: t\n       [r]: /u\n";
     assert_eq!(html(source), "<ul class=\"task-list\">\n  <li><input type=\"checkbox\" disabled> \n    <dl>\n      <dt>t\n     [r]: /u</dt>\n    </dl>\n  </li>\n</ul>");
 }
+
+#[test]
+fn an_outer_list_marker_does_not_prove_a_host_inside_its_quote() {
+    for lead in ["", "- > p\n  > - x\n"] {
+        let source = format!("{lead}- > :: t\n  > ```\n  > c\n  > ```\n  > p\n  > - :: u\n  >   ```\n  >\n  >   - y\n  >     [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(
+            output.contains("role=\"doc-noteref\""),
+            "{source:?}: {output}"
+        );
+    }
+}
+
+#[test]
+fn an_unowned_fence_scan_releases_a_host_after_a_dedent() {
+    let source = "- :: a\n  ```\n  c\n  ```\n\n  ~~~\np\n~~~\n- :: t\n  ```\n\n  - y\n    [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn a_bare_blank_during_an_unowned_fence_scan_releases_its_quote_host() {
+    let source = "> - :: a\n>   ```\n>   c\n>   ```\n>\n>   ~~~\n\n>   p\n>   ~~~\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
