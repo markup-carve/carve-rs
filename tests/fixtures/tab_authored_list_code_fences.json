@@ -2280,5 +2280,395 @@
       "one\n",
       "two\n"
     ]
+  },
+  {
+    "id": "tab-state-boundaries-0",
+    "source": "- a\n  \t```\n  \tone\n      ```\n  \ttwo\n\t```\n        ~~~\n        three\n  \t~~~\n        four\n        ~~~\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n\t~~~\nfour\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n\t~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-1",
+    "source": "- a\n  \t```\n  \tone\n  \t```\n  \ttwo\n\t```\n        ~~~\n        three\n  \t~~~\n        four\n        ~~~\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>one\n</code></pre>\n    two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ul>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-2",
+    "source": "1. a\n  \t```\n  \tone\n      ```\n  \ttwo\n\t```\n        ~~~\n        three\n  \t~~~\n        four\n        ~~~\nafter\n",
+    "html": "<ol><li>a\n    <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n ~~~\nfour\n</code></pre></li></ol><p>after</p>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n ~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-3",
+    "source": "1. a\n  \t```\n  \tone\n  \t```\n  \ttwo\n\t```\n        ~~~\n        three\n  \t~~~\n        four\n        ~~~\nafter\n",
+    "html": "<ol><li>a\n    <pre><code>one\n</code></pre>\n    two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ol>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-4",
+    "source": "> - a\n>   \t```\n>   \tone\n>       ```\n>   \ttwo\n> \t```\n>         ~~~\n>         three\n>   \t~~~\n>         four\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n\t~~~\nfour\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n\t~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-5",
+    "source": "> - a\n>   \t```\n>   \tone\n>   \t```\n>   \ttwo\n> \t```\n>         ~~~\n>         three\n>   \t~~~\n>         four\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>one\n</code></pre>\n      two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ul></blockquote>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-6",
+    "source": "> 1. a\n>   \t```\n>   \tone\n>       ```\n>   \ttwo\n> \t```\n>         ~~~\n>         three\n>   \t~~~\n>         four\n>         ~~~\n> after\n",
+    "html": "<blockquote><ol><li>a\n      <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n ~~~\nfour\n</code></pre></li></ol><p>after</p></blockquote>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n ~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-7",
+    "source": "> 1. a\n>   \t```\n>   \tone\n>   \t```\n>   \ttwo\n> \t```\n>         ~~~\n>         three\n>   \t~~~\n>         four\n>         ~~~\n> after\n",
+    "html": "<blockquote><ol><li>a\n      <pre><code>one\n</code></pre>\n      two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ol></blockquote>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-8",
+    "source": "> > - a\n> >   \t```\n> >   \tone\n> >       ```\n> >   \ttwo\n> > \t```\n> >         ~~~\n> >         three\n> >   \t~~~\n> >         four\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n\t~~~\nfour\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n\t~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-9",
+    "source": "> > - a\n> >   \t```\n> >   \tone\n> >   \t```\n> >   \ttwo\n> > \t```\n> >         ~~~\n> >         three\n> >   \t~~~\n> >         four\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>one\n</code></pre>\n        two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ul></blockquote></blockquote>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-10",
+    "source": "> > 1. a\n> >   \t```\n> >   \tone\n> >       ```\n> >   \ttwo\n> > \t```\n> >         ~~~\n> >         three\n> >   \t~~~\n> >         four\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ol><li>a\n        <pre><code>one\n  ```\ntwo\n</code></pre><pre><code>three\n ~~~\nfour\n</code></pre></li></ol><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "one\n  ```\ntwo\n",
+      "three\n ~~~\nfour\n"
+    ]
+  },
+  {
+    "id": "tab-state-boundaries-11",
+    "source": "> > 1. a\n> >   \t```\n> >   \tone\n> >   \t```\n> >   \ttwo\n> > \t```\n> >         ~~~\n> >         three\n> >   \t~~~\n> >         four\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ol><li>a\n        <pre><code>one\n</code></pre>\n        two\n<code>\n~~~\nthree\n~~~\nfour\n~~~\nafter</code></li></ol></blockquote></blockquote>",
+    "codePayloads": [
+      "one\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-0",
+    "source": "- a\n\t\t```\n\t \n\tcode\n\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-1",
+    "source": "- a\n\t\t```\n     \n\tcode\n\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-2",
+    "source": "- a\n\t\t```\n\t\t \n\tcode\n\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code> \n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-3",
+    "source": "- a\n\t\t```\n\t\t\t\t\n\tcode\n\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-4",
+    "source": "- a\n  \t\t```\n\t \n\tcode\n  \t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-5",
+    "source": "- a\n  \t\t```\n     \n\tcode\n  \t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-6",
+    "source": "- a\n  \t\t```\n\t\t \n\tcode\n  \t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code> \n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-7",
+    "source": "- a\n  \t\t```\n\t\t\t\t\n\tcode\n  \t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-8",
+    "source": "- a\n\t\t\t```\n\t \n\tcode\n\t\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-9",
+    "source": "- a\n\t\t\t```\n     \n\tcode\n\t\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-10",
+    "source": "- a\n\t\t\t```\n\t\t \n\tcode\n\t\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-11",
+    "source": "- a\n\t\t\t```\n\t\t\t\t\n\tcode\n\t\t\t```\nafter\n",
+    "html": "<ul><li>a\n    <pre><code>\t\n  code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-12",
+    "source": "> - a\n> \t\t```\n> \t \n> \tcode\n> \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-13",
+    "source": "> - a\n> \t\t```\n>      \n> \tcode\n> \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-14",
+    "source": "> - a\n> \t\t```\n> \t\t \n> \tcode\n> \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code> \n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-15",
+    "source": "> - a\n> \t\t```\n> \t\t\t\t\n> \tcode\n> \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-16",
+    "source": "> - a\n>   \t\t```\n> \t \n> \tcode\n>   \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-17",
+    "source": "> - a\n>   \t\t```\n>      \n> \tcode\n>   \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-18",
+    "source": "> - a\n>   \t\t```\n> \t\t \n> \tcode\n>   \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code> \n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-19",
+    "source": "> - a\n>   \t\t```\n> \t\t\t\t\n> \tcode\n>   \t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-20",
+    "source": "> - a\n> \t\t\t```\n> \t \n> \tcode\n> \t\t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-21",
+    "source": "> - a\n> \t\t\t```\n>      \n> \tcode\n> \t\t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-22",
+    "source": "> - a\n> \t\t\t```\n> \t\t \n> \tcode\n> \t\t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-23",
+    "source": "> - a\n> \t\t\t```\n> \t\t\t\t\n> \tcode\n> \t\t\t```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\t\n  code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-24",
+    "source": "> > - a\n> > \t\t```\n> > \t \n> > \tcode\n> > \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-25",
+    "source": "> > - a\n> > \t\t```\n> >      \n> > \tcode\n> > \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-26",
+    "source": "> > - a\n> > \t\t```\n> > \t\t \n> > \tcode\n> > \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code> \n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-27",
+    "source": "> > - a\n> > \t\t```\n> > \t\t\t\t\n> > \tcode\n> > \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-28",
+    "source": "> > - a\n> >   \t\t```\n> > \t \n> > \tcode\n> >   \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-29",
+    "source": "> > - a\n> >   \t\t```\n> >      \n> > \tcode\n> >   \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-30",
+    "source": "> > - a\n> >   \t\t```\n> > \t\t \n> > \tcode\n> >   \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code> \n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      " \n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-31",
+    "source": "> > - a\n> >   \t\t```\n> > \t\t\t\t\n> > \tcode\n> >   \t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\t\t\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\t\t\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-32",
+    "source": "> > - a\n> > \t\t\t```\n> > \t \n> > \tcode\n> > \t\t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-33",
+    "source": "> > - a\n> > \t\t\t```\n> >      \n> > \tcode\n> > \t\t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-34",
+    "source": "> > - a\n> > \t\t\t```\n> > \t\t \n> > \tcode\n> > \t\t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\n  code\n"
+    ]
+  },
+  {
+    "id": "tab-blank-under-base-35",
+    "source": "> > - a\n> > \t\t\t```\n> > \t\t\t\t\n> > \tcode\n> > \t\t\t```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li>a\n        <pre><code>\t\n  code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "\t\n  code\n"
+    ]
   }
 ]

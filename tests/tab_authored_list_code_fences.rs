@@ -5,7 +5,7 @@ fn tab_authored_list_code_fences_preserve_payload_and_closers() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/tab_authored_list_code_fences.json")).unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 287);
+    assert_eq!(cases.len(), 335);
     let whitespace = regex::Regex::new(r">\s+<").unwrap();
     let payload_pattern = regex::Regex::new(r"(?s)<pre><code[^>]*>(.*?)</code></pre>").unwrap();
     for case in cases {
