@@ -1,0 +1,98 @@
+[
+  {
+    "source": "> > a\n> {.foo}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo\n>   .bar}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo\">\n<p>c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo\n>   .bar}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo bar\">\n<p>c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo\">\n<blockquote>\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo\n>   .bar}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo bar\">\n<blockquote>\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo\n>   .bar}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<blockquote class=\"foo\">\n<p>c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo\n>   .bar}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<blockquote class=\"foo bar\">\n<p>c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<blockquote class=\"foo\">\n<blockquote>\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> {.foo\n>   .bar}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<blockquote class=\"foo bar\">\n<blockquote>\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo\n> >   .bar}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo\n> >   .bar}\n> > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo\">\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo\n> >   .bar}\n> > > c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote class=\"foo bar\">\n<p>c</p>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo}\nc",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo\">c</p>\n"
+  },
+  {
+    "source": "> > > a\n> > {.foo}\n> {.bar}\n> c",
+    "html": "<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> {.foo}\nc",
+    "html": "<blockquote>\n</blockquote>\n<p class=\"foo\">c</p>\n"
+  },
+  {
+    "source": "> > {.foo}\n> c",
+    "html": "<blockquote>\n<blockquote>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > {.foo}\n> {.bar}\n> c",
+    "html": "<blockquote>\n<blockquote>\n</blockquote>\n<p class=\"foo bar\">c</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.foo}\n>\n> c",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"foo\">c</p>\n</blockquote>\n"
+  }
+]

@@ -60,6 +60,25 @@ pub(super) fn blocks(source: &str) -> String {
         .collect();
     let masks: Vec<_> = mask.split('\n').collect();
     let lines: Vec<_> = source.split('\n').collect();
+    let mut following_quote_depths = Vec::new();
+    if source.contains('{') && source.contains('>') {
+        following_quote_depths.resize(lines.len(), None);
+        let mut following_depth = None;
+        for (n, line) in lines.iter().enumerate().rev() {
+            let (depth, body) = quoted(line);
+            let body = body.trim();
+            if body.is_empty() {
+                continue;
+            }
+            if body.starts_with('{')
+                && read_djot_word_attributes(body, 0).is_some_and(|(end, _)| end == body.len())
+            {
+                following_quote_depths[n] = following_depth;
+            } else {
+                following_depth = Some(depth);
+            }
+        }
+    }
     let rows = djot_table_rows(source, &mask);
     let fence_mask = mask_djot_fences(source, None, &rows, true);
     let fence_masks: Vec<_> = fence_mask.split('\n').collect();
@@ -83,7 +102,16 @@ pub(super) fn blocks(source: &str) -> String {
     let mut in_heading = false;
     let mut in_quote = false;
     let mut quote_paragraph_depth = None;
+    let mut quote_attribute_depth = None;
     for (n, raw) in lines.iter().enumerate() {
+        if let Some(attribute_depth) = quote_attribute_depth {
+            let (row_depth, row_body) = quoted(raw);
+            if row_body.trim().is_empty() && attribute_depth == row_depth {
+                previous_blank = true;
+                continue;
+            }
+            quote_attribute_depth = None;
+        }
         let (indent, indent_bytes) = leading_indent(raw);
         let text = &raw[indent_bytes..];
         let visible = masks[n].get(indent_bytes..).unwrap_or("");
@@ -242,6 +270,34 @@ pub(super) fn blocks(source: &str) -> String {
                     quote_paragraph_depth = None;
                 }
             }
+            let standalone_attributes = block_body.starts_with('{')
+                && read_djot_word_attributes(block_body, 0)
+                    .is_some_and(|(end, _)| end == block_body.trim_end().len());
+            let attribute_only =
+                standalone_attributes && quote_paragraph_depth.map_or(true, |held| depth < held);
+            let attribute_depth = if attribute_only {
+                following_quote_depths[n].map_or(depth, |next| depth.min(next))
+            } else {
+                depth
+            };
+            if attribute_only
+                && (attribute_depth < depth
+                    || quote_paragraph_depth.is_some_and(|held| depth < held))
+            {
+                if attribute_depth < depth && quote_paragraph_depth.is_none() {
+                    result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
+                }
+                result.push(
+                    format!(
+                        "{}{}",
+                        " ".repeat(target_indent),
+                        "> ".repeat(attribute_depth)
+                    )
+                    .trim_end()
+                    .to_owned(),
+                );
+                quote_paragraph_depth = None;
+            }
             if let Some(held) =
                 quote_paragraph_depth.filter(|&held| depth > held && !body.trim().is_empty())
             {
@@ -271,18 +327,24 @@ pub(super) fn blocks(source: &str) -> String {
                 result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
                 quote_paragraph_depth = None;
             }
-            let attribute_only = quote_paragraph_depth.is_none()
-                && block_body.starts_with('{')
-                && read_djot_word_attributes(block_body, 0)
-                    .is_some_and(|(end, _)| end == block_body.trim_end().len());
             quote_paragraph_depth = (!body.trim().is_empty()
                 && !attribute_only
                 && !heading.is_match(block_body)
                 && !marker.is_match(block_body)
                 && !block_body.starts_with(":::"))
             .then_some(depth.max(quote_paragraph_depth.unwrap_or(depth)));
-            result.push(display.clone());
-            in_quote = true;
+            result.push(if attribute_depth < depth {
+                format!(
+                    "{}{}{}",
+                    " ".repeat(target_indent),
+                    "> ".repeat(attribute_depth),
+                    body
+                )
+            } else {
+                display.clone()
+            });
+            in_quote = attribute_depth > 0;
+            quote_attribute_depth = attribute_only.then_some(attribute_depth);
             paragraph = false;
             previous_blank = body.trim().is_empty();
             continue;
@@ -1610,6 +1672,25 @@ mod tests {
             let html = crate::to_html(&value);
             let joined = html.lines().map(str::trim).collect::<String>();
             assert_eq!(joined, expected, "{source:?}: {value:?}");
+        }
+    }
+
+    #[test]
+    fn djot_shallower_attributes_close_the_previous_quote_paragraph() {
+        let controls: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/djot-quote-attribute-boundaries.json"
+        ))
+        .unwrap();
+        for control in controls.as_array().unwrap() {
+            let source = control["source"].as_str().unwrap();
+            let expected = control["html"].as_str().unwrap();
+            let value = migrate_djot(source).value;
+            let html = crate::to_html(&value);
+            assert_eq!(
+                html.lines().map(str::trim).collect::<String>(),
+                expected.lines().map(str::trim).collect::<String>(),
+                "{source:?}: {value:?}"
+            );
         }
     }
 
