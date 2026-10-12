@@ -176,7 +176,7 @@ pub(crate) fn markdown_to_carve_with_losses(
     let lift = crate::carrier_markers::lift_carrier_markers(markdown);
     let mut code_lines = Vec::new();
     let (mut document, mut losses, notices) =
-        markdown_to_ast_with_code_lines(&lift.source, Some(&mut code_lines))?;
+        markdown_to_ast_with_code_lines(&lift.source, Some(&mut code_lines), Some(&lift.token))?;
     if lift.damaged {
         losses.push(MarkdownImportLoss {
             message: CARRIER_MARKERS_DAMAGED.to_owned(),
@@ -584,12 +584,13 @@ fn leading_frontmatter_block(markdown: &str) -> Option<LeadingBlock> {
 fn markdown_to_ast_with_losses(
     markdown: &str,
 ) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
-    markdown_to_ast_with_code_lines(markdown, None)
+    markdown_to_ast_with_code_lines(markdown, None, None)
 }
 
 fn markdown_to_ast_with_code_lines(
     markdown: &str,
     code_lines: Option<&mut Vec<Option<usize>>>,
+    carrier_token: Option<&str>,
 ) -> Result<(Document, Vec<MarkdownImportLoss>, Vec<FrontmatterNotice>), crate::RenderCarveError> {
     let without_nuls = if markdown.contains('\0') {
         Cow::Owned(markdown.replace('\0', "\u{fffd}"))
@@ -621,6 +622,7 @@ fn markdown_to_ast_with_code_lines(
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_MATH);
     // THE GATE (markup-carve/carve#2799). Metadata blocks stay OFF when the
     // leading `---` block is not mapping-shaped, so pulldown-cmark reads it as
     // CommonMark does - a thematic break and a setext heading - instead of
@@ -638,6 +640,9 @@ fn markdown_to_ast_with_code_lines(
     let headings = normalize_heading_closers(&without_nuls, options);
     let source = normalize_table_email_autolinks(&headings, options);
     let mut builder = Builder {
+        carrier_token: carrier_token
+            .filter(|token| !token.is_empty())
+            .map(str::to_owned),
         track_code_lines: code_lines.is_some(),
         ..Builder::default()
     };
@@ -1296,6 +1301,7 @@ fn levels_added(frame: &Frame) -> (usize, usize) {
 
 #[derive(Default)]
 struct Builder {
+    carrier_token: Option<String>,
     frames: Vec<Frame>,
     /// Block and inline nesting the open frames account for, held against
     /// [`MAX_IMPORT_LEVELS`]. Maintained by `push_frame` / `pop_frame` alone, so
@@ -1324,6 +1330,17 @@ struct Builder {
 }
 
 impl Builder {
+    fn carrier_placeholder(&self, html: &str) -> Option<(String, bool)> {
+        let content = html.trim().strip_prefix("<!-- ")?.strip_suffix(" -->")?;
+        let math = content.ends_with(" math");
+        let content = content.strip_suffix(" math").unwrap_or(content);
+        let index = content
+            .strip_prefix(self.carrier_token.as_deref()?)?
+            .strip_suffix('Z')?;
+        index.parse::<usize>().ok()?;
+        Some((content.to_owned(), math))
+    }
+
     fn native_code(&mut self, value: String, line: usize) {
         if self.track_code_lines
             && !self
@@ -1370,11 +1387,22 @@ impl Builder {
     }
 
     fn push(&mut self, event: Event<'_>, source: &str, empty_title: bool) {
+        let display_math = matches!(&event, Event::DisplayMath(_));
         match event {
             Event::Start(tag) => self.start(tag, source, empty_title),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
             Event::Code(code) => self.native_code(code.to_string(), self.current_line),
+            Event::InlineMath(content) | Event::DisplayMath(content) => {
+                self.inline(InlineNode::Math(Math {
+                    attrs: None,
+                    display: display_math,
+                    content: content.to_string(),
+                    label: None,
+                    number: None,
+                    pos: None,
+                }));
+            }
             // A soft break is a newline the author wrote inside a paragraph;
             // Carve keeps it, so the writer can re-wrap at the same place.
             Event::SoftBreak => self.inline(InlineNode::soft_break()),
@@ -1398,7 +1426,13 @@ impl Builder {
                 };
                 self.raw_html(value)
             }
-            Event::InlineHtml(html) => self.inline_html(&html),
+            Event::InlineHtml(html) => {
+                if let Some((token, _)) = self.carrier_placeholder(&html) {
+                    self.text(&token);
+                } else {
+                    self.inline_html(&html);
+                }
+            }
             Event::FootnoteReference(label) => {
                 let label = label.to_string();
                 let next = self.footnote_numbers.len() + 1;
@@ -1420,7 +1454,6 @@ impl Builder {
                     *slot = Some(checked);
                 }
             }
-            _ => {}
         }
     }
 
@@ -1946,6 +1979,25 @@ impl Builder {
             // footnote definition - instead of landing at the top of the
             // document ahead of the container it was written inside.
             Frame::RawHtml(content) => {
+                if let Some((token, math)) = self.carrier_placeholder(&content) {
+                    // A math target must not merge with its attribute or caption placeholders.
+                    let block = if math {
+                        BlockNode::Comment(Comment {
+                            content: token,
+                            block: false,
+                            delimited: false,
+                            pos: None,
+                        })
+                    } else {
+                        BlockNode::Paragraph(Paragraph {
+                            children: vec![InlineNode::text(token)],
+                            at_content_column: true,
+                            ..Default::default()
+                        })
+                    };
+                    self.block(block);
+                    return;
+                }
                 let content = content.trim_end_matches('\n').to_string();
                 // carve-js renders a block-level HTML element inline only when it
                 // is a tight item's SOLE content (right after the marker, nothing

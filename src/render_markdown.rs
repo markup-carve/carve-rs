@@ -195,6 +195,7 @@ fn render_markdown_once(
         previous_list: None,
         roundtrip,
         carrier_depth: 0,
+        definition_depth: 0,
         delimiter_ancestors: Vec::new(),
         rendered_children: HashMap::new(),
     };
@@ -284,6 +285,7 @@ struct MarkdownContext {
     /// How many carried containers enclose the block being written, which is
     /// what decides the colon-fence width a marker payload carries.
     carrier_depth: usize,
+    definition_depth: usize,
     delimiter_ancestors: Vec<&'static str>,
     rendered_children: HashMap<usize, Vec<String>>,
 }
@@ -291,7 +293,7 @@ struct MarkdownContext {
 /// The marker payloads a container takes, or `None` when the mode is off or the
 /// container is not element-less on this target.
 fn carrier_markers(node: &BlockNode, ctx: &MarkdownContext) -> Option<CarrierMarkers> {
-    if !ctx.roundtrip {
+    if !ctx.roundtrip || ctx.single_line_depth > 0 {
         return None;
     }
     spell_carrier_markers(node, ctx.carrier_depth)
@@ -384,7 +386,14 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) 
 /// written into (PART 11 §10o). A wrapper this target writes transparently
 /// leaves the answer to its children.
 fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
-    let out = render_block_kind(node, ctx, depth);
+    let mut out = render_block_kind(node, ctx, depth);
+    if ctx.roundtrip && ctx.single_line_depth == 0 && !out.is_empty() {
+        if let Some(attributes) = dropped_attribute_line(node)
+            .filter(|_| !matches!(node, BlockNode::DefinitionList(_)) || ctx.definition_depth == 0)
+        {
+            out = format!("{}\n{out}", carrier_line(&attributes));
+        }
+    }
     let transparent = matches!(
         node,
         BlockNode::List(_)
@@ -401,6 +410,65 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         ctx.previous_list = None;
     }
     out
+}
+
+fn dropped_attribute_line(node: &BlockNode) -> Option<String> {
+    let attrs = match node {
+        BlockNode::Heading(n) => {
+            let mut attrs = n.attrs.clone();
+            if let Some(attrs) = &mut attrs {
+                if !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id)) {
+                    attrs.id = None;
+                }
+            }
+            return nonempty_attributes(&attrs);
+        }
+        BlockNode::Paragraph(n) => &n.attrs,
+        BlockNode::BlockQuote(n) => &n.attrs,
+        BlockNode::List(n) => &n.attrs,
+        BlockNode::DefinitionList(n) => &n.attrs,
+        BlockNode::Table(n) => &n.attrs,
+        BlockNode::CodeBlock(n) => {
+            let mut attrs = n.attrs.clone();
+            if let (Some(title), Some(attrs)) = (&n.title, &mut attrs) {
+                if attrs.key_values.get("title") == Some(title) {
+                    attrs.key_values.remove("title");
+                    attrs
+                        .order
+                        .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "title"));
+                }
+            }
+            return nonempty_attributes(&attrs);
+        }
+        BlockNode::ThematicBreak(n) => &n.attrs,
+        BlockNode::Figure(n) => &n.attrs,
+        BlockNode::BlockImage(n) => &n.attrs,
+        _ => return None,
+    };
+    nonempty_attributes(attrs)
+}
+
+fn nonempty_attributes(attrs: &Option<Attrs>) -> Option<String> {
+    let line = crate::render_carve::render_attrs(attrs);
+    (!line.is_empty()).then_some(line)
+}
+
+fn inline_carrier(prefix: &str, nodes: &[InlineNode]) -> String {
+    let mut doc = crate::parse::parse("");
+    doc.children.push(BlockNode::Paragraph(Paragraph {
+        children: nodes.to_vec(),
+        ..Paragraph::default()
+    }));
+    let text = crate::render_carve::render_carve(&doc).expect("carrier inline source");
+    carrier_line(&format!("{prefix} {}", text.trim_end()))
+}
+
+fn caption_carrier(nodes: &[InlineNode], ctx: &MarkdownContext) -> String {
+    if ctx.roundtrip && ctx.single_line_depth == 0 {
+        format!("{}\n", inline_carrier("^", nodes))
+    } else {
+        String::new()
+    }
 }
 
 fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
@@ -573,7 +641,11 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             };
             carried(markers.as_ref(), body)
         }
-        BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
+        BlockNode::LineBlock(lb) => {
+            let markers = carrier_markers(node, ctx);
+            let body = carried_children(&lb.children, markers.as_ref(), ctx, depth + 1);
+            carried(markers.as_ref(), body)
+        }
         BlockNode::Directive(d) => {
             let title = d
                 .title
@@ -1073,9 +1145,15 @@ fn render_definition_list(
         crate::render_depth::record("markdown");
         return String::new();
     }
+    let carried = ctx.roundtrip && ctx.single_line_depth == 0 && ctx.definition_depth == 0;
+    ctx.definition_depth += 1;
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
+            if carried {
+                out.push_str(&inline_carrier("::", term));
+                out.push('\n');
+            }
             let term = render_wrapped_inlines(term, ctx, "**", "<strong>", "</strong>");
             if !term.is_empty() {
                 ctx.previous_list = None;
@@ -1084,9 +1162,18 @@ fn render_definition_list(
             }
         }
         for definition in &item.definitions {
+            if carried {
+                out.push_str(&carrier_line(":"));
+                out.push('\n');
+            }
             out.push_str(&render_blocks(definition, ctx, depth + 1));
         }
     }
+    if carried {
+        out.push_str(&carrier_line(""));
+        out.push_str("\n\n");
+    }
+    ctx.definition_depth -= 1;
     out
 }
 
@@ -1340,6 +1427,7 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         let text = text.trim();
         if !text.is_empty() {
             out.push('\n');
+            out.push_str(&caption_carrier(caption, ctx));
             out.push_str(text);
             out.push('\n');
         }
@@ -1452,7 +1540,10 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
             BlockNode::Figure(figure) => {
                 let target = render_figure_target(figure, ctx, depth);
                 let caption = render_wrapped_inlines(&figure.caption, ctx, "*", "<em>", "</em>");
-                out.push_str(&format!("{target}\n\n{caption}\n\n"));
+                out.push_str(&format!(
+                    "{target}\n\n{}{caption}\n\n",
+                    caption_carrier(&figure.caption, ctx)
+                ));
             }
             other => out.push_str(&render_block(other, ctx, depth)),
         }
@@ -1461,10 +1552,9 @@ fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usi
         ctx.carrier_depth -= 1;
     }
     out = carried(markers.as_ref(), out);
-    // The group's own caption sits OUTSIDE the container in Carve too - the slot
-    // hangs on the closing fence - so its fallback follows the closer and is NOT
-    // restored by the round trip (markup-carve/carve#2851).
+    // The group's caption slot follows the closing fence in Carve.
     if let Some(caption) = &node.caption {
+        out.push_str(&caption_carrier(caption, ctx));
         let caption = render_wrapped_inlines(caption, ctx, "**", "<strong>", "</strong>");
         out.push_str(&caption);
         out.push_str("\n\n");
@@ -1485,7 +1575,8 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     // End with the block separator so a following block is not glued to the
     // caption (matching every other block renderer and carve-php).
     format!(
-        "{target}{sep}{}\n\n",
+        "{target}{sep}{}{}\n\n",
+        caption_carrier(&node.caption, ctx),
         render_block_inlines(&node.caption, ctx)
     )
 }

@@ -1894,3 +1894,6 @@ mod markdown_nested_emphasis;
 
 #[path = "../markdown_footnote_continuation.rs"]
 mod markdown_footnote_continuation;
+
+#[path = "../roundtrip_carriers_2.rs"]
+mod roundtrip_carriers_2;
