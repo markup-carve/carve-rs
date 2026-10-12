@@ -13357,6 +13357,7 @@ fn parse_list(
         }
         if marker_content_starts_block(marker.content, cur, content_col)
             || marker_content_is_attr_block(marker.content, cur, content_col)
+            || marker_content_is_captioned_equation(marker.content, cur, content_col, options)
         {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
@@ -13914,6 +13915,33 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         return true;
     }
     false
+}
+
+/// Whether a list marker's content is a display-math line with a caption in its
+/// slot (PART 9 §4). The lead-paragraph scanner has no caption slot and would
+/// fold the caption line in as text, so the block parser takes the item.
+fn marker_content_is_captioned_equation(
+    content: &str,
+    cur: &LineCursor<'_>,
+    content_col: usize,
+    options: &Options<'_>,
+) -> bool {
+    if !content.starts_with("$$`") {
+        return false;
+    }
+    let caption_at = match cur.lines.line(cur.pos) {
+        Some(next) if is_blank_line(next) => cur.pos + 1,
+        _ => cur.pos,
+    };
+    let captioned = cur.lines.line(caption_at).is_some_and(|line| {
+        indent_columns(line) == content_col
+            && caption_content(&slice_columns(line, content_col, false)).is_some()
+    });
+    if !captioned {
+        return false;
+    }
+    let inline = parse_inline_with_options(content, options);
+    inline.len() == 1 && matches!(&inline[0], InlineNode::Math(m) if m.display)
 }
 
 /// Whether a valid standalone attribute block starts in a list marker's

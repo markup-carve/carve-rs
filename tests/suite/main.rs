@@ -977,6 +977,8 @@ mod derived_display_text_clones_the_nodes;
 mod description_column_closes_overindented_code_fences;
 #[path = "../description_fence_paragraph_boundary.rs"]
 mod description_fence_paragraph_boundary;
+#[path = "../display_math_on_a_marker_line_takes_its_caption.rs"]
+mod display_math_on_a_marker_line_takes_its_caption;
 
 #[path = "../destination_parens.rs"]
 mod destination_parens;
