@@ -1,6 +1,11 @@
 use crate::ast::Pos;
 use std::num::NonZeroUsize;
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static MAPPED_SOURCE_SCAN_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct MarkerTail {
     pub(super) content_offset: NonZeroUsize,
@@ -167,6 +172,8 @@ impl MappedSource {
     /// Lines in `source`, counted the way `rebase_overindented_blocks` counts
     /// them so `reached` can be kept exactly as long.
     fn line_count(&self) -> usize {
+        #[cfg(test)]
+        MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(work.get() + self.source.len()));
         if self.source.is_empty() {
             0
         } else {
@@ -200,12 +207,35 @@ impl MappedSource {
         self.pad_reached();
     }
 
+    pub(super) fn append_many(&mut self, pieces: Vec<MappedSource>) {
+        self.pad_reached();
+        for mut other in pieces {
+            if other.source.is_empty() {
+                continue;
+            }
+            other
+                .reached
+                .resize(other.source.matches('\n').count() + 1, false);
+            if !self.source.is_empty() {
+                self.source.push('\n');
+            } else {
+                self.item_marker_at_start = other.item_marker_at_start;
+                self.marker_tail = other.marker_tail;
+            }
+            self.source.push_str(&other.source);
+            self.line_map.extend(other.line_map);
+            self.col_map.extend(other.col_map);
+            self.reached.extend(other.reached);
+        }
+    }
+
     pub(super) fn append(&mut self, other: MappedSource) {
         if other.source.is_empty() {
             return;
         }
+        let lines = other.line_count();
         let mut other_reached = other.reached;
-        other_reached.resize(other.source.matches('\n').count() + 1, false);
+        other_reached.resize(lines, false);
         self.pad_reached();
         if !self.source.is_empty() {
             self.source.push('\n');
@@ -289,5 +319,59 @@ pub(super) fn remap_source(source: String, original: &MappedSource) -> MappedSou
         reached: Vec::new(),
         sublists_carry_authored_base: false,
         source,
+    }
+}
+
+#[cfg(test)]
+mod batch_append_tests {
+    use super::*;
+
+    #[test]
+    fn batching_preserves_line_origins_columns_reach_and_marker_flags() {
+        for initial in ["", "prefix", "prefix\n"] {
+            let mut expected = MappedSource::new_line_at(initial.into(), Some(4), Some(2));
+            expected.authored_base_at_start = true;
+            expected.sublists_carry_authored_base = true;
+            let mut actual = expected.clone();
+            let pieces: Vec<_> = ["", "marker", "body\n", "tail"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, text)| {
+                    let mut piece = MappedSource::new_line_at(
+                        text.into(),
+                        Some(8 + index),
+                        Some(index as isize),
+                    );
+                    piece.item_marker_at_start = true;
+                    piece.marker_tail = Some(MarkerTail {
+                        content_offset: NonZeroUsize::new(1).unwrap(),
+                        column: index,
+                    });
+                    piece.reached = vec![index % 2 == 0];
+                    piece
+                })
+                .collect();
+            for piece in pieces.clone() {
+                expected.append(piece);
+            }
+            actual.append_many(pieces);
+            assert_eq!(actual.source, expected.source);
+            assert_eq!(actual.line_map, expected.line_map);
+            assert_eq!(actual.col_map, expected.col_map);
+            assert_eq!(actual.reached, expected.reached);
+            assert_eq!(actual.item_marker_at_start, expected.item_marker_at_start);
+            assert_eq!(
+                actual.authored_base_at_start,
+                expected.authored_base_at_start
+            );
+            assert_eq!(
+                actual.sublists_carry_authored_base,
+                expected.sublists_carry_authored_base
+            );
+            assert_eq!(
+                actual.marker_tail.map(|x| (x.content_offset, x.column)),
+                expected.marker_tail.map(|x| (x.content_offset, x.column))
+            );
+        }
     }
 }
