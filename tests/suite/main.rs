@@ -1917,3 +1917,6 @@ mod nested_description_code_payload;
 mod pending_term_code_lazy_tails;
 #[path = "../quoted_document_definition_boundary.rs"]
 mod quoted_document_definition_boundary;
+
+#[path = "../continued_marker_note_code_floor.rs"]
+mod continued_marker_note_code_floor;

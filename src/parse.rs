@@ -1425,6 +1425,7 @@ fn extract_footnote_defs(
     // already uses for every other block.
     let mut def_positions: BTreeMap<String, Pos> = BTreeMap::new();
     let mut note_link_defs: BTreeMap<String, LinkDef> = BTreeMap::new();
+    let mut body_opacity_candidates: Option<bool> = None;
     // Fence state for the note-body walk below, declared per definition since a
     // fence cannot span two notes.
     let mut in_fence: Option<FenceOpen> = None;
@@ -2055,21 +2056,49 @@ fn extract_footnote_defs(
                 let content = |raw| strip_quote_levels(raw, quote_depth);
                 let marker_note = detect_list_marker_full(inside)
                     .is_some_and(|marker| parse_footnote_def_line(marker.content).is_some());
-                let reaches_floor = |raw, first_continuation| {
-                    content(raw).is_some_and(|line| {
-                        indent_columns(line) >= note_floor
-                            && !(marker_note
-                                && first_continuation
-                                && detect_fence_open(trim_ascii_start(line)).is_some())
-                    })
+                let track_note_opacity = marker_note
+                    && *body_opacity_candidates
+                        .get_or_insert_with(|| source.contains("%%%") || source.contains("~~~"));
+                let mut note_opacity = BodyCommentState::new();
+                let mut note_has_inline_code = first.contains('`');
+                let comment_closes = |at, width, cache: &mut Option<ContainerCommentClosers>| {
+                    let index = cache.get_or_insert_with(|| ContainerCommentClosers::build(&lines));
+                    index.closes_in_note(&lines, at, quote_depth, note_floor, width)
                 };
+                if track_note_opacity {
+                    note_opacity.observe(first);
+                }
+                if note_opacity
+                    .comment
+                    .is_some_and(|width| !comment_closes(i - 1, width, &mut container_closers))
+                {
+                    note_opacity.comment = None;
+                }
+                let reaches_floor =
+                    |raw, first_continuation, opaque_comment: bool, inline_code: bool| {
+                        content(raw).is_some_and(|line| {
+                            indent_columns(line) >= note_floor
+                                && !(marker_note
+                                    && (first_continuation
+                                        || (!opaque_comment
+                                            && !inline_code
+                                            && indent_columns(line) == note_floor))
+                                    && detect_fence_open(trim_ascii_start(line)).is_some())
+                        })
+                    };
                 let blank = |raw| content(raw).is_some_and(is_blank_line);
                 let body_resumes = {
                     let mut at = i;
                     while at < lines.len() && blank(lines[at]) {
                         at += 1;
                     }
-                    at < lines.len() && reaches_floor(lines[at], def_lines.len() == 1)
+                    at < lines.len()
+                        && reaches_floor(
+                            lines[at],
+                            def_lines.len() == 1,
+                            note_opacity.comment.is_some(),
+                            note_has_inline_code || note_opacity.code.is_some(),
+                        )
                 };
                 if body_resumes {
                     while i < lines.len() {
@@ -2081,7 +2110,12 @@ fn extract_footnote_defs(
                                 after += 1;
                             }
                             if after < lines.len()
-                                && reaches_floor(lines[after], def_lines.len() == 1)
+                                && reaches_floor(
+                                    lines[after],
+                                    def_lines.len() == 1,
+                                    note_opacity.comment.is_some(),
+                                    note_has_inline_code || note_opacity.code.is_some(),
+                                )
                             {
                                 while i < after {
                                     let raw = lines[i];
@@ -2089,6 +2123,9 @@ fn extract_footnote_defs(
                                     let prefix = raw.chars().count() - line.chars().count();
                                     let (residue, consumed, synthetic) =
                                         slice_columns_mapped(line, note_floor, true);
+                                    if track_note_opacity {
+                                        note_opacity.observe(&residue);
+                                    }
                                     def_lines.push(residue);
                                     def_line_map.push(Some(first_source_line + i));
                                     if positions {
@@ -2102,8 +2139,12 @@ fn extract_footnote_defs(
                             }
                             break;
                         }
-                        if !reaches_floor(raw, def_lines.len() == 1)
-                            || parse_footnote_def_line(trim_ascii_start(line)).is_some()
+                        if !reaches_floor(
+                            raw,
+                            def_lines.len() == 1,
+                            note_opacity.comment.is_some(),
+                            note_has_inline_code || note_opacity.code.is_some(),
+                        ) || parse_footnote_def_line(trim_ascii_start(line)).is_some()
                         {
                             break;
                         }
@@ -2111,6 +2152,20 @@ fn extract_footnote_defs(
                         if positions {
                             let prefix = raw.chars().count() - line.chars().count();
                             def_col_map.push(stripped_col(Some(prefix as isize), line, &dedented));
+                        }
+                        let was_comment = note_opacity.comment.is_some();
+                        if !was_comment {
+                            note_has_inline_code |= dedented.contains('`');
+                        }
+                        if track_note_opacity {
+                            note_opacity.observe(&dedented);
+                        }
+                        if !was_comment
+                            && note_opacity.comment.is_some_and(|width| {
+                                !comment_closes(i, width, &mut container_closers)
+                            })
+                        {
+                            note_opacity.comment = None;
                         }
                         def_lines.push(dedented);
                         def_line_map.push(Some(first_source_line + i));
@@ -8384,45 +8439,63 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
 /// carried rather than assumed (markup-carve/carve#2505). A CLOSER is read from
 /// the line as written either way: a marker line starts a fresh item rather than
 /// closing the block already open.
-fn body_open_comment_run<S: AsRef<str>>(body_lines: impl IntoIterator<Item = S>) -> Option<usize> {
-    let mut code: Option<FenceOpen> = None;
-    let mut comment: Option<usize> = None;
-    let mut at_block_start = true;
-    for raw in body_lines {
-        let line = trim_ascii_start(strip_lazy(raw.as_ref()));
-        if let Some(open) = code {
-            if is_fence_close(line, open) {
-                code = None;
-                at_block_start = true;
-            }
-            continue;
+struct BodyCommentState {
+    code: Option<FenceOpen>,
+    comment: Option<usize>,
+    at_block_start: bool,
+}
+
+impl BodyCommentState {
+    fn new() -> Self {
+        Self {
+            code: None,
+            comment: None,
+            at_block_start: true,
         }
-        if let Some(run) = comment {
-            if is_comment_fence_close(line, run) {
-                comment = None;
-                at_block_start = true;
+    }
+
+    fn observe(&mut self, raw: &str) {
+        let line = trim_ascii_start(strip_lazy(raw));
+        if let Some(open) = self.code {
+            if is_fence_close(line, open) {
+                self.code = None;
+                self.at_block_start = true;
             }
-            continue;
+            return;
+        }
+        if let Some(run) = self.comment {
+            if is_comment_fence_close(line, run) {
+                self.comment = None;
+                self.at_block_start = true;
+            }
+            return;
         }
         if line.is_empty() {
-            at_block_start = true;
-            continue;
+            self.at_block_start = true;
+            return;
         }
-        let opener = if at_block_start {
+        let opener = if self.at_block_start {
             trim_ascii_start(innermost_marker_content(line))
         } else {
             line
         };
-        at_block_start = false;
+        self.at_block_start = false;
         if let Some(open) = detect_fence_open(opener) {
-            code = Some(open);
-            continue;
+            self.code = Some(open);
+            return;
         }
         if let Some(open) = detect_comment_fence_line(opener) {
-            comment = Some(open.fence_len);
+            self.comment = Some(open.fence_len);
         }
     }
-    comment
+}
+
+fn body_open_comment_run<S: AsRef<str>>(body_lines: impl IntoIterator<Item = S>) -> Option<usize> {
+    let mut state = BodyCommentState::new();
+    for raw in body_lines {
+        state.observe(raw.as_ref());
+    }
+    state.comment
 }
 
 /// Is `line` the closer of a comment span the collected lines still hold?
@@ -8647,6 +8720,7 @@ struct ContainerCommentClosers {
     by_width: HashMap<(usize, usize), Vec<usize>>,
     /// column -> (query point the answer was computed from, the answer).
     dedents: HashMap<usize, (usize, usize)>,
+    note_dedents: HashMap<(usize, usize), (usize, usize)>,
     /// (query point the answer was computed from, the answer), for the blank
     /// line that ends a quote. One entry rather than a map because the question
     /// carries no column.
@@ -8679,6 +8753,7 @@ impl ContainerCommentClosers {
         Self {
             by_width,
             dedents: HashMap::new(),
+            note_dedents: HashMap::new(),
             blank: None,
         }
     }
@@ -8720,6 +8795,39 @@ impl ContainerCommentClosers {
             return false;
         }
         quote_col == 0 || closer < self.first_dedent(lines, open_at, quote_col)
+    }
+
+    fn closes_in_note(
+        &mut self,
+        lines: &[&str],
+        open_at: usize,
+        depth: usize,
+        floor: usize,
+        fence_len: usize,
+    ) -> bool {
+        let Some(closer) = self.next_closer(open_at, fence_len, depth) else {
+            return false;
+        };
+        let key = (depth, floor);
+        let boundary = match self.note_dedents.get(&key) {
+            Some(&(from, at)) if from <= open_at && open_at < at => at,
+            _ => {
+                let mut boundary = lines.len();
+                for (offset, raw) in lines[open_at + 1..].iter().enumerate() {
+                    #[cfg(test)]
+                    CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
+                    if strip_quote_levels(raw, depth).map_or(true, |line| {
+                        !is_blank_line(line) && indent_columns(line) < floor
+                    }) {
+                        boundary = open_at + 1 + offset;
+                        break;
+                    }
+                }
+                self.note_dedents.insert(key, (open_at, boundary));
+                boundary
+            }
+        };
+        closer < boundary
     }
 
     fn next_closer(&self, open_at: usize, fence_len: usize, depth: usize) -> Option<usize> {
@@ -30053,5 +30161,65 @@ mod quoted_prepass_work_tests {
                 assert_eq!(columns.current().cols, [2, 4]);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod marker_note_comment_bounds {
+    use super::*;
+
+    #[test]
+    fn note_comment_queries_reuse_the_content_boundary() {
+        for depth in 0..=2 {
+            for count in [128, 512, 2048] {
+                let prefix = "> ".repeat(depth);
+                let owned = vec![format!("{prefix}    %%%"); count];
+                let lines: Vec<_> = owned.iter().map(String::as_str).collect();
+                let mut index = ContainerCommentClosers::build(&lines);
+                CONTAINER_DEDENT_STEPS.with(|counter| counter.set(0));
+                for at in 0..count - 1 {
+                    assert!(index.closes_in_note(&lines, at, depth, 4, 3));
+                }
+                assert!(CONTAINER_DEDENT_STEPS.with(Cell::get) <= count as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn a_note_comment_cannot_close_after_its_content_scope() {
+        for depth in 0..=2 {
+            let prefix = "> ".repeat(depth);
+            for middle in [format!("{prefix}- sibling"), "outside".to_string()] {
+                let owned = [
+                    format!("{prefix}    %%%"),
+                    middle,
+                    format!("{prefix}    %%%"),
+                ];
+                let lines: Vec<_> = owned.iter().map(String::as_str).collect();
+                let mut index = ContainerCommentClosers::build(&lines);
+                assert!(!index.closes_in_note(&lines, 0, depth, 4, 3));
+            }
+            let owned = [
+                format!("{prefix}    %%%"),
+                format!("{prefix}    body"),
+                format!("{prefix}    %%%"),
+            ];
+            let lines: Vec<_> = owned.iter().map(String::as_str).collect();
+            assert!(ContainerCommentClosers::build(&lines).closes_in_note(&lines, 0, depth, 4, 3));
+        }
+    }
+
+    #[test]
+    fn unmatched_comment_widths_do_not_scan_note_suffixes() {
+        let owned: Vec<_> = (3..259)
+            .map(|width| format!("    {}", "%".repeat(width)))
+            .collect();
+        let lines: Vec<_> = owned.iter().map(String::as_str).collect();
+        let mut index = ContainerCommentClosers::build(&lines);
+        CONTAINER_DEDENT_STEPS.with(|counter| counter.set(0));
+        for (at, width) in (3..259).enumerate() {
+            assert!(!index.closes_in_note(&lines, at, 0, 4, width));
+        }
+        assert_eq!(CONTAINER_DEDENT_STEPS.with(Cell::get), 0);
     }
 }
