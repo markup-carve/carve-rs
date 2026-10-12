@@ -107,3 +107,7 @@ path = "tests/shared_roundtrip_export_acceptance.rs"
 [[test]]
 name = "html_carrier_contract"
 path = "tests/html_carrier_contract.rs"
+
+[[test]]
+name = "markdown_roundtrip_phase_one"
+path = "tests/markdown_roundtrip_phase_one.rs"

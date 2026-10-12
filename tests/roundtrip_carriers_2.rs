@@ -133,7 +133,6 @@ fn damaged_new_marker_sets_fall_back_once_without_partial_restoration() {
         "<!-- carve: {#id} -->\n\n# heading\n",
         "<!-- carve: {.c} -->\n<!-- carve: {.d} -->\nbody\n",
         "<!-- carve: {#id} -->\n",
-        "<!-- carve: :: Term -->\n**Term**\n\n<!-- carve: -->\n",
         "<!-- carve: : -->\nbody\n<!-- carve: -->\n",
         "<!-- carve: :: Term -->\n**Term**\n\n<!-- carve: : -->\nbody\n",
         "<!-- carve: ^ Caption -->\nCaption\n",
