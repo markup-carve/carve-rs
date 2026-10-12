@@ -567,10 +567,10 @@ fn shared_acceptance_cases_have_distinct_ids_and_assertions() {
     let fixtures = fixtures();
     let mut ids = std::collections::HashSet::new();
     for (key, minimum) in [
-        ("exportImport", 23),
+        ("exportImport", 24),
         ("importNegative", 8),
         ("collisionExport", 3),
-        ("markdownExportImport", 2),
+        ("markdownExportImport", 8),
     ] {
         assert!(required_rows(&fixtures, key).len() >= minimum, "{key}");
         for row in required_rows(&fixtures, key) {
