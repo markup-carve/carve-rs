@@ -1905,3 +1905,5 @@ mod tab_authored_list_code_fences;
 
 #[path = "../authored_definition_note_code_hosts.rs"]
 mod authored_definition_note_code_hosts;
+#[path = "../inline_fence_paragraph_resume.rs"]
+mod inline_fence_paragraph_resume;

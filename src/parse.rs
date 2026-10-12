@@ -11615,6 +11615,7 @@ fn parse_list(
     // blank in the item is interior to it and loosens nothing (§17; the
     // reference tracks the span apart from whether the fence opened).
     let mut item_unopened_fence_span = false;
+    let mut item_rejected_fence_owner = false;
     // Did the item just built carry a BARE `+` lead - an empty first-block item
     // waiting for a document-column-0 block (§17 L3, markup-carve/carve#1436)?
     // Such an item leaves no open paragraph, so a line below its content column
@@ -11779,27 +11780,73 @@ fn parse_list(
                         &mut item_open_fence,
                     );
                     nested.authored_base_at_start |= authored_overindented_opener;
-                    if item_open_fence.is_none()
-                        || cur.peek().is_some_and(|line| line.starts_with(LAZY))
+                    let collected_tail_blank = item_open_fence.is_some()
+                        && cur.pos > 0
+                        && is_blank_line(cur.lines.at(cur.pos - 1));
+                    if item_open_fence.is_some() {
+                        let mut admitted = nested.clone();
+                        rebase_overindented_blocks(&mut admitted, false, options);
+                        if body_ends_with_open_paragraph(&admitted.source, options) {
+                            item_open_fence = None;
+                            item_rejected_fence_owner = true;
+                        }
+                    }
+                    let latest_owner = Cell::new(None);
+                    if item_rejected_fence_owner {
+                        let mut admitted = nested.clone();
+                        rebase_overindented_blocks(&mut admitted, false, options);
+                        latest_owner.set(Some(
+                            body_ends_with_code_block(&admitted.source, options)
+                                || collected_body_takes_the_lazy_line(
+                                    &admitted.source,
+                                    last_consumed_line_below_column(cur, content_col),
+                                    options,
+                                ),
+                        ));
+                    }
+                    if !collected_tail_blank
+                        && (item_open_fence.is_none()
+                            || cur.peek().is_some_and(|line| line.starts_with(LAZY)))
                     {
                         fold_lazy_run_and_resume_in_band(
                             cur,
                             &mut nested,
                             content_col,
-                            content_col.saturating_sub(1),
-                            base_indent,
+                            (content_col.saturating_sub(1), base_indent),
+                            item_rejected_fence_owner,
                             |src, below| {
+                                if let Some(open) = latest_owner.get() {
+                                    return open;
+                                }
                                 let mut rebased = src.clone();
                                 rebase_overindented_blocks(&mut rebased, false, options);
                                 collected_body_takes_the_lazy_line(&rebased.source, below, options)
                             },
                             |cur| {
-                                collect_item_continuation_block_mapped(
+                                let resumed = collect_item_continuation_block_mapped(
                                     cur,
                                     base_indent,
                                     content_col,
                                     &mut item_open_fence,
-                                )
+                                );
+                                if latest_owner.get().is_some() {
+                                    let mut admitted = resumed.clone();
+                                    rebase_overindented_blocks(&mut admitted, false, options);
+                                    let paragraph =
+                                        body_ends_with_open_paragraph(&admitted.source, options);
+                                    if paragraph {
+                                        item_open_fence = None;
+                                    }
+                                    latest_owner.set(Some(
+                                        paragraph
+                                            || (item_open_fence.is_none()
+                                                && body_ends_with_code_block(
+                                                    &admitted.source,
+                                                    options,
+                                                )),
+                                    ));
+                                }
+                                resumed
                             },
                         );
                     }
@@ -11829,7 +11876,9 @@ fn parse_list(
                         last_consumed_line_below_column(cur, content_col),
                         options,
                     );
-                    item_paragraph_open = nested_leaves_paragraph_open;
+                    item_paragraph_open = nested_leaves_paragraph_open
+                        || (item_rejected_fence_owner
+                            && body_ends_with_code_block(&nested.source, options));
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -11903,9 +11952,10 @@ fn parse_list(
                         )
                     });
                     if !renders_nothing {
-                        pending_blank = item_open_fence.is_some()
-                            && cur.pos > 0
-                            && is_blank_line(cur.lines.at(cur.pos - 1));
+                        pending_blank = collected_tail_blank
+                            || (item_open_fence.is_some()
+                                && cur.pos > 0
+                                && is_blank_line(cur.lines.at(cur.pos - 1)));
                         if pending_blank {
                             blank_run = cur
                                 .lines
@@ -11917,7 +11967,7 @@ fn parse_list(
                         }
                     }
                     place_item_chunk(deferred, last_item, nested_children, carried);
-                    if !nested_leaves_paragraph_open
+                    if !item_paragraph_open
                         && cur.peek().is_some_and(|line| {
                             let indent = indent_columns(line);
                             indent > base_indent && indent < content_col
@@ -12155,6 +12205,7 @@ fn parse_list(
         // A new item carries none of the previous item's fence state.
         item_open_fence = None;
         item_unopened_fence_span = false;
+        item_rejected_fence_owner = false;
         let item_source_line = cur.source_line(cur.pos);
         let item_at = cur.pos;
         cur.consume();
@@ -12712,8 +12763,8 @@ fn parse_list(
                     cur,
                     &mut stream,
                     content_col,
-                    lazy_column,
-                    list_base,
+                    (lazy_column, list_base),
+                    false,
                     |src, _below| {
                         if swallowed_blank_separator || literal_comment_handoff {
                             return false;
@@ -12885,6 +12936,10 @@ fn parse_list(
                 {
                     break;
                 }
+                if detect_fence_open(over_indented).is_some() {
+                    item_unopened_fence_span = true;
+                    item_rejected_fence_owner = true;
+                }
                 // Fully strip ordinary prose's indent and fold it into the lead
                 // paragraph (inline-parsed, so residual indent never leaks).
                 // A sibling/nesting marker above the content column was already
@@ -12956,6 +13011,7 @@ fn parse_list(
                 track_collected_fence(&mut item_open_fence, &dedented, true, indent);
             } else {
                 item_unopened_fence_span = true;
+                item_rejected_fence_owner = true;
             }
             suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(&dedented);
             para_lines.push(dedented);
@@ -13657,6 +13713,16 @@ fn trailing_marker_line_content(body: &str) -> Option<String> {
     Some(marker.content.to_string())
 }
 
+fn body_ends_with_code_block(body: &str, options: &Options<'_>) -> bool {
+    if body.lines().any(is_collected_definition_placeholder) {
+        return false;
+    }
+    matches!(
+        probe_blocks(body, options).last(),
+        Some(BlockNode::CodeBlock(_) | BlockNode::RawBlock(_))
+    )
+}
+
 /// PART 1 S4's one question, asked of a container's WHOLE body: does the last
 /// block leave a paragraph open?
 ///
@@ -14350,18 +14416,21 @@ fn fold_lazy_run_and_resume(
     open: impl FnMut(&MappedSource, bool) -> bool,
     resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
-    fold_lazy_run_and_resume_in_band(cur, nested, content_col, 0, 0, open, resume);
+    fold_lazy_run_and_resume_in_band(cur, nested, content_col, (0, 0), false, open, resume);
 }
 
 fn fold_lazy_run_and_resume_in_band(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
     content_col: usize,
-    lazy_column: usize,
-    list_base: usize,
+    lazy_scope: (usize, usize),
+    frame_band_lines: bool,
     mut open: impl FnMut(&MappedSource, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
+    let (lazy_column, list_base) = lazy_scope;
+    let mut pending_chunks = Vec::new();
+    let mut staged = LineBuffer::default().into_source();
     loop {
         // A COMMENT BELOW THE CONTENT COLUMN ENDS NOTHING. §10 I5's first
         // exception keeps it invisible and paragraph-closing at any column, and
@@ -14385,7 +14454,12 @@ fn fold_lazy_run_and_resume_in_band(
                 break;
             }
             let line = cur.peek().unwrap();
-            nested.push_newline_at(
+            let destination = if frame_band_lines {
+                &mut staged
+            } else {
+                &mut *nested
+            };
+            destination.push_newline_at(
                 trim_ascii_start(line).to_string(),
                 cur.source_line(cur.pos),
                 cur.source_col(cur.pos)
@@ -14396,9 +14470,28 @@ fn fold_lazy_run_and_resume_in_band(
             // below would stop the fold here - and the container is still open,
             // which is the whole point of the exception. Resume against the
             // sub-list's own column exactly as the plain lazy path does.
-            collect_trailing_lazy_through(cur, nested, lazy_column, list_base);
+            collect_trailing_lazy_through_framed(
+                cur,
+                if frame_band_lines {
+                    &mut staged
+                } else {
+                    &mut *nested
+                },
+                lazy_column,
+                list_base,
+                frame_band_lines,
+            );
             let before_resume = cur.pos;
-            nested.append(resume(cur));
+            let resumed = resume(cur);
+            if frame_band_lines {
+                pending_chunks.push(std::mem::replace(
+                    &mut staged,
+                    LineBuffer::default().into_source(),
+                ));
+                pending_chunks.push(resumed);
+            } else {
+                nested.append(resumed);
+            }
             let next_is_comment = cur
                 .peek()
                 .map(str::to_string)
@@ -14430,15 +14523,38 @@ fn fold_lazy_run_and_resume_in_band(
             break;
         }
         let before = cur.pos;
-        collect_trailing_lazy_through(cur, nested, lazy_column, list_base);
+        collect_trailing_lazy_through_framed(
+            cur,
+            if frame_band_lines {
+                &mut staged
+            } else {
+                &mut *nested
+            },
+            lazy_column,
+            list_base,
+            frame_band_lines,
+        );
         if cur.pos == before {
             break;
         }
         let before_resume = cur.pos;
-        nested.append(resume(cur));
+        let resumed = resume(cur);
+        if frame_band_lines {
+            pending_chunks.push(std::mem::replace(
+                &mut staged,
+                LineBuffer::default().into_source(),
+            ));
+            pending_chunks.push(resumed);
+        } else {
+            nested.append(resumed);
+        }
         if cur.pos == before_resume {
             break;
         }
+    }
+    if frame_band_lines {
+        pending_chunks.push(staged);
+        nested.append_many(pending_chunks);
     }
 }
 
@@ -14462,6 +14578,17 @@ fn collect_trailing_lazy_through(
     base_indent: usize,
     list_base: usize,
 ) {
+    collect_trailing_lazy_through_framed(cur, nested, base_indent, list_base, false);
+}
+
+fn collect_trailing_lazy_through_framed(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    base_indent: usize,
+    list_base: usize,
+    frame_band_lines: bool,
+) {
+    let mut buffered = frame_band_lines.then(LineBuffer::default);
     while let Some(line) = cur.peek() {
         if is_blank_line(line)
             || indent_columns(line) > base_indent
@@ -14488,24 +14615,35 @@ fn collect_trailing_lazy_through(
         // already spends one to say so - the two collectors have to agree, or
         // the same line parses differently depending on which one took it.
         let indent = indent_columns(line);
-        let take = dedent_below_column(line, indent);
+        let take = if frame_band_lines && indent > list_base {
+            indent
+        } else {
+            dedent_below_column(line, indent)
+        };
         let (sliced, consumed, _) = slice_columns_mapped(line, take, true);
         // A FENCE AT COLUMN 0 HAS NO COLUMN TO SPEND, so it gets the sentinel
         // instead (carve-rs#2313). One column is what keeps a block-shaped line
         // text on the re-parse, and a flush line has none: the fence shape then
         // opened a block one level in, where the fold had just made it the
         // paragraph's text. The description-body twin frames it the same way.
-        let sliced = if indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some() {
+        let sliced = if (frame_band_lines && indent > list_base)
+            || (indent == 0 && detect_fence_open(trim_ascii_start(line)).is_some())
+        {
             format!("{LAZY}{sliced}")
         } else {
             sliced
         };
-        nested.push_newline_at(
-            sliced,
-            cur.source_line(cur.pos),
-            cur.source_col(cur.pos).map(|col| col + consumed as isize),
-        );
+        let source_line = cur.source_line(cur.pos);
+        let source_col = cur.source_col(cur.pos).map(|col| col + consumed as isize);
+        if let Some(buffered) = &mut buffered {
+            buffered.push_at(sliced, source_line, source_col);
+        } else {
+            nested.push_newline_at(sliced, source_line, source_col);
+        }
         cur.consume();
+    }
+    if let Some(buffered) = buffered {
+        nested.append(buffered.into_source());
     }
 }
 
@@ -27989,6 +28127,36 @@ mod wrapped_attrs_work_tests {
 #[cfg(test)]
 mod shared_colon_work_tests {
     use super::*;
+
+    #[test]
+    fn rejected_fence_carry_scans_only_new_chunks() {
+        for positions in [false, true] {
+            for count in [64, 256, 1024] {
+                let source = format!(
+                    "- a\n    ~~~\n{}",
+                    "  ````\n  code\n  ````\nafter\n".repeat(count)
+                );
+                source_map::MAPPED_SOURCE_SCAN_BYTES.with(|work| work.set(0));
+                CODE_INDEX_LINES.with(|work| work.set(0));
+                let html = crate::to_html_with_options(
+                    &source,
+                    &Options {
+                        positions,
+                        ..Options::default()
+                    },
+                );
+                assert_eq!(html.matches("<pre>").count(), count);
+                assert_eq!(html.matches("after").count(), count);
+                assert!(
+                    source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get) <= source.len() * 64,
+                    "count={count}, positions={positions}, scan={}, bytes={}",
+                    source_map::MAPPED_SOURCE_SCAN_BYTES.with(Cell::get),
+                    source.len()
+                );
+                assert!(CODE_INDEX_LINES.with(Cell::get) <= source.lines().count() * 64);
+            }
+        }
+    }
 
     #[test]
     fn quoted_anonymous_body_comments_share_their_index() {
