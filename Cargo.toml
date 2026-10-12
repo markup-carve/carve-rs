@@ -99,3 +99,7 @@ debug = "line-tables-only"
 
 [profile.test]
 debug = "line-tables-only"
+
+[[test]]
+name = "shared_roundtrip_export_acceptance"
+path = "tests/shared_roundtrip_export_acceptance.rs"
