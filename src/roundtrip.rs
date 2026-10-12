@@ -49,13 +49,24 @@ pub(crate) const COL_WIDTHS: &str = "data-carve-col-widths";
 pub(crate) const RAW: &str = "data-carve-raw";
 /// Presence; the span holds the escaped character (`<span>`).
 pub(crate) const ESCAPED: &str = "data-carve-escaped";
-/// The construct's Carve source verbatim (`<pre>`, a container).
+/// `section`: the wrapper is the one a generated heading id gets (`<section>`).
+pub(crate) const EXT: &str = "data-carve-ext";
+/// The value [`EXT`] carries on a generated section wrapper, the only one the
+/// core writes.
+pub(crate) const EXT_SECTION: &str = "section";
+/// The authored id's index in the heading's `attrs.order`, omitted at 0
+/// (`<section>`, beside [`EXPLICIT_ID`]).
+pub(crate) const ID_SLOT: &str = "data-carve-id-slot";
+/// `true` on a tight list whose item paragraph keeps its `<p>` (`<ul>`, `<ol>`).
+pub(crate) const TIGHT: &str = "data-carve-tight";
+/// Reserved without a row: no writer emits it, every importer consumes it, and
+/// roundtrip export drops an authored one.
 pub(crate) const SRC: &str = "data-carve-src";
 /// The document's abbreviation definitions, one per line (`<template>`).
 pub(crate) const ABBREVIATIONS: &str = "data-carve-abbreviations";
 
 /// Every name a reader consumes: the §13a inventory plus [`SRC`], which no writer emits.
-pub(crate) const CARRIERS: [&str; 13] = [
+pub(crate) const CARRIERS: [&str; 16] = [
     MARKER,
     CHAR,
     EXPLICIT_ID,
@@ -67,6 +78,9 @@ pub(crate) const CARRIERS: [&str; 13] = [
     LABEL,
     RAW,
     ESCAPED,
+    EXT,
+    ID_SLOT,
+    TIGHT,
     SRC,
     ABBREVIATIONS,
 ];

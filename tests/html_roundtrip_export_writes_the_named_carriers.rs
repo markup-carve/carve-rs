@@ -63,6 +63,26 @@ fn turning_it_off_explicitly_is_the_default_bytes() {
     );
 }
 
+#[test]
+fn the_streaming_path_declines_a_roundtrip_export() {
+    // The borrowed-layout path writes its own `<section>` and knows no carrier,
+    // so under the option it hands over to the tree renderer.
+    let roundtrip = Options::default().with_roundtrip(true);
+    for source in ["# Generated\n", "plain\n"] {
+        let mut streamed = String::new();
+        let outcome =
+            carve::try_render_html_streaming(source, &roundtrip, |chunk| streamed.push_str(chunk));
+        assert_eq!(outcome, carve::StreamOutcome::NeedsAst, "{source}");
+        assert!(streamed.is_empty(), "{source}");
+        // The control: the same source streams with the option off.
+        let outcome = carve::try_render_html_streaming(source, &Options::default(), |chunk| {
+            streamed.push_str(chunk)
+        });
+        assert_eq!(outcome, carve::StreamOutcome::Complete, "{source}");
+        assert_eq!(streamed, to_html(source), "{source}");
+    }
+}
+
 // ---------------------------------------------------------------- the inventory
 
 #[test]
@@ -95,6 +115,78 @@ fn an_authored_heading_id_says_it_was_authored() {
     );
     // A GENERATED id carries nothing: the carrier is what tells them apart.
     assert!(!rt("# Generated\n").contains("data-carve-explicit-id"));
+}
+
+#[test]
+fn a_generated_section_wrapper_says_it_was_generated() {
+    let html = rt("# Generated\n");
+    assert!(
+        html.contains(r#"<section id="Generated" data-carve-ext="section">"#),
+        "{html}"
+    );
+    // An authored id carries the other carrier, never both.
+    assert!(!rt("{#chosen}\n# Explicit\n").contains("data-carve-ext"));
+    // No wrapper, nothing to mark.
+    let flat = to_html_with_options(
+        "# Generated\n",
+        &Options::default().with_roundtrip(true).with_sections(false),
+    );
+    assert!(!flat.contains("data-carve-ext"), "{flat}");
+    assert!(!to_html("# Generated\n").contains("data-carve-ext"));
+}
+
+#[test]
+fn an_authored_id_past_the_first_slot_carries_its_slot() {
+    for (source, section) in [
+        (
+            "{.c #mine}\n# H\n",
+            r#"<section id="mine" data-carve-explicit-id="1" data-carve-id-slot="1">"#,
+        ),
+        (
+            "{.c k=v #mine}\n# H\n",
+            r#"<section id="mine" data-carve-explicit-id="1" data-carve-id-slot="2">"#,
+        ),
+        // 0 is where a reader puts the id anyway, so it is not written.
+        (
+            "{#mine .c}\n# H\n",
+            r#"<section id="mine" data-carve-explicit-id="1">"#,
+        ),
+    ] {
+        let html = rt(source);
+        assert!(html.contains(section), "{source}: {html}");
+        assert!(!to_html(source).contains("data-carve-id-slot"));
+        // Load-bearing: without the slot the id comes back leading.
+        assert_eq!(safe(&html), source);
+        if section.contains("data-carve-id-slot") {
+            let stripped = html
+                .replace(r#" data-carve-id-slot="1""#, "")
+                .replace(r#" data-carve-id-slot="2""#, "");
+            assert_ne!(safe(&stripped), source, "{source}");
+        }
+    }
+}
+
+#[test]
+fn a_tight_list_whose_paragraph_keeps_its_p_says_it_is_tight() {
+    for (source, opener) in [
+        ("- {.x}\n  a\n- b\n", r#"<ul data-carve-tight="true">"#),
+        (
+            "* {.x}\n  a\n* b\n",
+            r#"<ul data-marker="*" data-carve-tight="true">"#,
+        ),
+        ("1. {.x}\n   a\n2. b\n", r#"<ol data-carve-tight="true">"#),
+    ] {
+        let html = rt(source);
+        assert!(html.contains(opener), "{source}: {html}");
+        assert!(!to_html(source).contains("data-carve-tight"));
+        // Load-bearing: the `<p>` alone reads back as a loose list.
+        assert_eq!(safe(&html), source);
+        assert_ne!(safe(&to_html(source)), source, "{source}");
+    }
+    // Written nowhere else: a tight list with bare items, and a loose one.
+    for source in ["- a\n- b\n", "- a\n\n- b\n", "- {.x}\n  a\n\n- b\n"] {
+        assert!(!rt(source).contains("data-carve-tight"), "{source}");
+    }
 }
 
 #[test]
@@ -166,6 +258,51 @@ fn a_raw_inline_carries_its_format_and_holds_its_content() {
         "{html}"
     );
     assert!(!to_html("x `a<b`{=latex} z\n").contains("a&lt;b"));
+}
+
+fn roundtrip_losses(source: &str) -> carve::RenderResult<String> {
+    to_html_with_options_and_report(
+        source,
+        &Options::default().with_roundtrip(true),
+        CheckedRenderOptions::default(),
+    )
+    .expect("a dropped raw format is not an abort")
+}
+
+/// The carrier restores the node on import; the target still did not write the
+/// format, so the row is reported with the option on (markup-carve/carve#2902
+/// ruling 7, extended to the inline form).
+#[test]
+fn a_carried_raw_inline_still_reports_its_dropped_format() {
+    let report = roundtrip_losses("a `\\x`{=tex} b\n");
+    assert_eq!(
+        report.value,
+        r#"<p>a <span data-carve-raw="tex">\x</span> b</p>"#
+    );
+    assert_eq!(report.total_losses, 1, "{:?}", report.losses);
+    let row = &report.losses[0];
+    assert_eq!(row.code, "raw-format-dropped");
+    assert_eq!(row.format.as_deref(), Some("tex"));
+    assert_eq!(row.node_type, carve::RawNodeType::Inline);
+
+    // Raw HTML is written or escaped, never dropped, so it owes no row.
+    let html = roundtrip_losses("a `<b>`{=html} b\n");
+    assert!(
+        html.value.contains(r#"data-carve-raw="html""#),
+        "{}",
+        html.value
+    );
+    assert_eq!(html.total_losses, 0, "{:?}", html.losses);
+}
+
+#[test]
+fn a_raw_block_under_roundtrip_reports_its_dropped_format() {
+    let report = roundtrip_losses("a\n\n```=tex\n\\x\n```\n\nb\n");
+    assert_eq!(report.total_losses, 1, "{:?}", report.losses);
+    let row = &report.losses[0];
+    assert_eq!(row.code, "raw-format-dropped");
+    assert_eq!(row.format.as_deref(), Some("tex"));
+    assert_eq!(row.node_type, carve::RawNodeType::Block);
 }
 
 #[test]
@@ -241,6 +378,89 @@ fn a_marker_collision_on_a_list_drops_the_authored_copy() {
     let html = rt("{data-marker=\"#\"}\n* a\n");
     assert_eq!(html.matches("data-marker").count(), 1, "{html}");
     assert!(html.contains(r#"data-marker="*""#), "{html}");
+}
+
+#[test]
+fn a_tight_collision_on_a_list_drops_the_authored_copy() {
+    let source = "{data-carve-tight=no}\n- {.x}\n  a\n- b\n";
+    let report = roundtrip_losses(source);
+    assert_eq!(report.value.matches("data-carve-tight").count(), 1);
+    assert!(report.value.contains(r#"<ul data-carve-tight="true">"#));
+    let rows: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == "carrier-attribute-dropped")
+        .collect();
+    assert_eq!(rows.len(), 1, "{:?}", report.losses);
+    assert_eq!(rows[0].attribute.as_deref(), Some("data-carve-tight"));
+}
+
+#[test]
+fn an_authored_reserved_source_name_is_dropped_under_roundtrip_only() {
+    // §13a reserves `data-carve-src` without a row: no writer emits it and
+    // every importer consumes it, so passing it through would lose it silently
+    // on the way back. One row per element that carried it.
+    for (source, node_type) in [
+        ("{data-carve-src=Z}\ntext\n", "block"),
+        ("{data-carve-src=Z}\n# H\n", "block"),
+        ("{#i data-carve-src=Z}\n# H\n", "block"),
+        ("{data-carve-src=Z}\n- a\n", "block"),
+        ("- {data-carve-src=Z}\n  a\n- b\n", "block"),
+        ("{data-carve-src=Z}\n| a |\n|---|\n| b |\n", "block"),
+        ("{data-carve-src=Z}\n```js\nx\n```\n", "block"),
+        ("{data-carve-src=Z}\n::: note\nx\n:::\n", "block"),
+        ("{data-carve-src=Z}\n> q\n", "block"),
+        ("{data-carve-src=Z}\n***\n", "block"),
+        ("{DATA-CARVE-SRC=Z}\ntext\n", "block"),
+        ("[t]{data-carve-src=Z}\n", "inline"),
+        ("[l](/u){data-carve-src=Z}\n", "inline"),
+        ("![i](/i){data-carve-src=Z} tail\n", "inline"),
+    ] {
+        let report = roundtrip_losses(source);
+        assert!(
+            !report.value.to_ascii_lowercase().contains("data-carve-src"),
+            "{source}: {}",
+            report.value
+        );
+        let rows: Vec<_> = report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == "carrier-attribute-dropped")
+            .collect();
+        assert_eq!(rows.len(), 1, "{source}: {:?}", report.losses);
+        assert!(rows[0]
+            .attribute
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case("data-carve-src")));
+        assert!(rows[0].format.is_none());
+        assert_eq!(rows[0].node_type.as_str(), node_type, "{source}");
+
+        // Default export keeps the author's attribute and reports nothing.
+        let ordinary = to_html_with_options_and_report(
+            source,
+            &Options::default(),
+            CheckedRenderOptions::default(),
+        )
+        .unwrap();
+        assert!(
+            ordinary.value.contains("=\"Z\""),
+            "{source}: {}",
+            ordinary.value
+        );
+        assert!(
+            ordinary.losses.is_empty(),
+            "{source}: {:?}",
+            ordinary.losses
+        );
+        assert_eq!(ordinary.value, to_html(source));
+    }
+}
+
+#[test]
+fn another_reserved_looking_name_is_still_the_authors() {
+    // §13a reserves a SET, not the prefix.
+    let html = rt("{data-carve-source=Z}\ntext\n");
+    assert_eq!(html, r#"<p data-carve-source="Z">text</p>"#);
 }
 
 // ---------------------------------------------------------------- import
@@ -351,12 +571,10 @@ fn a_malformed_carrier_is_not_this_engines_to_reassemble() {
 
 #[test]
 fn contradictory_metadata_does_not_build_two_nodes() {
-    // An anchor claiming to be both an autolink and a reference: the autolink
-    // is its own NODE TYPE, so it wins the element and the reference label has
-    // nowhere to go rather than producing a link beside it.
+    // PART 10 §13d: an anchor claiming to be both an autolink and a reference
+    // restores neither and imports as the inline link it is without them.
     let out = safe(r#"<p><a href="/u" data-carve-autolink="1" data-carve-ref="lbl">/u</a></p>"#);
-    assert_eq!(out, "</u>\n");
-    assert!(!out.contains("lbl"), "{out}");
+    assert_eq!(out, "[/u](/u)\n");
 }
 
 #[test]

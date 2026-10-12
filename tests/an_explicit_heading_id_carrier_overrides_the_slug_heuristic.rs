@@ -12,7 +12,11 @@ fn options(mode: HtmlImportMode) -> HtmlImportOptions {
 
 #[test]
 fn an_equal_slug_authored_id_survives_a_carrier_export_and_import() {
-    for source in ["{#H}\n# H\n", "{#H .k}\n# H\n", "{.k #H}\n# H\n"] {
+    for (source, order) in [
+        ("{#H}\n# H\n", serde_json::json!(["#id"])),
+        ("{#H .k}\n# H\n", serde_json::json!(["#id", ".class"])),
+        ("{.k #H}\n# H\n", serde_json::json!([".class", "#id"])),
+    ] {
         let html = to_html_with_options(source, &Options::default().with_roundtrip(true));
         assert!(html.contains("data-carve-explicit-id=\"1\""));
         let imported = html_to_carve(&html, &options(HtmlImportMode::Roundtrip)).unwrap();
@@ -27,7 +31,8 @@ fn an_equal_slug_authored_id_survives_a_carrier_export_and_import() {
         let json: serde_json::Value =
             serde_json::from_str(&carve::ast_json::to_json(&ast)).unwrap();
         assert_eq!(json["children"][0]["attrs"]["id"], "H");
-        assert!(json["children"][0]["attrs"].get("order").is_none());
+        // The carrier records that the id took an authored slot, and where.
+        assert_eq!(json["children"][0]["attrs"]["order"], order, "{source}");
     }
 }
 
@@ -39,7 +44,7 @@ fn presence_is_authoritative_on_direct_and_hoisted_headings_in_every_mode() {
         HtmlImportMode::Roundtrip,
     ] {
         for name in ["data-carve-explicit-id", "data-djot-explicit-id"] {
-            for value in ["1", "", "false"] {
+            for value in ["1", "", "false", "0"] {
                 for html in [
                     format!("<h1 id=\"H\" {name}=\"{value}\">H</h1>"),
                     format!("<section id=\"H\" {name}=\"{value}\"><h1>H</h1></section>"),

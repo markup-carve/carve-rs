@@ -977,6 +977,8 @@ mod derived_display_text_clones_the_nodes;
 mod description_column_closes_overindented_code_fences;
 #[path = "../description_fence_paragraph_boundary.rs"]
 mod description_fence_paragraph_boundary;
+#[path = "../display_math_on_a_marker_line_takes_its_caption.rs"]
+mod display_math_on_a_marker_line_takes_its_caption;
 
 #[path = "../destination_parens.rs"]
 mod destination_parens;
@@ -1901,6 +1903,14 @@ mod new_quote_definition_opacity;
 
 #[path = "../roundtrip_carriers_2.rs"]
 mod roundtrip_carriers_2;
+
+#[path = "../markdown_import_dollar_text_stays_text.rs"]
+mod markdown_import_dollar_text_stays_text;
+
+#[path = "../a_band_line_under_a_definition_term_is_term_text.rs"]
+mod a_band_line_under_a_definition_term_is_term_text;
+#[path = "../a_band_line_with_no_open_paragraph_ends_the_list.rs"]
+mod a_band_line_with_no_open_paragraph_ends_the_list;
 
 #[path = "../tab_authored_list_code_fences.rs"]
 mod tab_authored_list_code_fences;

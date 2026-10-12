@@ -67,12 +67,12 @@
   {
     "name": "control 13",
     "source": "- a\n  - b\n    ```\n    :::\n    ```\n tail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>:::\n</code></pre>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <pre><code>:::\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "name": "control 14",
     "source": "- a\n  - b\n    ```\n    :::\n tail\n",
-    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code></code>\n        <div>\n\n        </div>\n      </li>\n    </ul>\n    tail\n  </li>\n</ul>"
+    "html": "<ul>\n  <li>a\n    <ul>\n      <li>b\n<code></code>\n        <div>\n\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>tail</p>"
   },
   {
     "name": "control 15",

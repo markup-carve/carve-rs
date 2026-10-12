@@ -228,6 +228,9 @@ assert_eq!(back.value, source);
 | `data-marker` | `<ul>` | the authored bullet, only where it is not `-` |
 | `data-char` | `<hr>` | the authored break character, only where it is not `-` |
 | `data-carve-explicit-id` | `<section>`, `<h1>`-`<h6>` | presence: the id was authored |
+| `data-carve-id-slot` | `<section>` | the authored id's index among the heading's attributes, beside `data-carve-explicit-id`; omitted at 0 |
+| `data-carve-ext` | `<section>` | `section`: the wrapper's id is generated |
+| `data-carve-tight` | `<ul>`, `<ol>` | `true`: the list is tight although an item's paragraph keeps its `<p>` for its own attributes |
 | `data-carve-ref` | `<a>`, `<img>` | the reference label it resolved by |
 | `data-carve-autolink` | `<a>` | presence: authored as an autolink |
 | `data-carve-footnote-label` | `<a>`, `<li>` | the authored footnote label |
@@ -243,6 +246,25 @@ which the HTML importer still reads as a deprecated alias so their exports keep
 round-tripping. A reader CONSUMES these names and never writes one back out as
 an authored attribute, in any import mode.
 
+The importer validates each value before it rebuilds anything. An id slot is a
+run of decimal digits, and one past the heading's last attribute places the id
+last. `data-carve-tight` reads `true` or `false`, either one taken over what the
+items' `<p>` elements imply. On a section, `data-carve-ext` reads `section`
+only. Any other value is not a carrier: it is dropped with an
+`attribute-dropped` row and nothing is rebuilt from it.
+
+Where the explicit-id carrier is read, the imported heading's `attrs.order`
+records the id's slot. An import records no attribute order otherwise.
+
+Two carriers on one element that contradict each other restore neither meaning.
+`data-carve-autolink` beside a valid `data-carve-ref` imports as an inline link,
+`data-carve-ext="section"` beside `data-carve-explicit-id` as an unmarked
+section, and `data-carve-escaped` beside `data-carve-raw` as a plain span. The
+pair is reported as one `attribute-dropped` warning, and neither name comes back
+as an authored attribute. A footnote endnote carrying both
+`data-carve-footnote-label` and `data-carve-inline-footnote` follows the same
+rule.
+
 An ordered list's authored marker is its delimiter, which PART 10 §12's
 `data-delim` writes on every render, so `data-marker` rides the `<ul>` alone
 here. A task list's `task-list` class and its items' `data-task-state` are §11's
@@ -255,12 +277,19 @@ Recovery of the named distinctions, not byte-identical source.
 - Raw BLOCKS are not carried and not promised. A raw block whose format the
   target cannot write is dropped with the option on as it is with it off, and
   the `raw-format-dropped` row is reported in both cases.
+- A carried raw inline is still reported. `data-carve-raw` lets an import
+  recover the node, but the target did not write the format, so a raw inline
+  in a format other than HTML reports `raw-format-dropped` with the option on
+  as it does with it off.
 - The reference form is not recovered. `[r][]` and `[r][r]` both write
   `data-carve-ref="r"`, so an import returns one spelling for both.
 - Verbatim source is not carried. Fence length, fence character and opener
   padding are not in the tree, and `data-carve-src` is not written. The importer
   still consumes that name, in both spellings, so it never comes back as an
   authored attribute.
+- A generated section id is told apart only where the wrapper carries
+  `data-carve-ext="section"`. An unmarked wrapper is compared against the
+  default slug, as before.
 
 ### An authored attribute of a carrier's own name
 
@@ -268,6 +297,10 @@ The carrier wins and the authored attribute is dropped, because emitting both
 would be two attributes of one name. The drop is reported rather than silent:
 `to_html_with_options_and_report` returns a `carrier-attribute-dropped` row
 with the displaced name in `attribute` and no `format`.
+
+`data-carve-src` is reserved without a carrier. Every importer consumes the
+name, so roundtrip export drops an authored one from any element and reports the
+same row, with no `pos`. Default export passes it through untouched.
 
 ### Export is not an import mode
 

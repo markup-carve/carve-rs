@@ -27,4 +27,5 @@ A validation pass discards output before any callback runs. A second pass writes
 directly to the bounded output buffer, without assembling the complete HTML
 string. Source line indexes and reference definitions still use memory
 proportional to the input. The borrowed layout subset is conservative;
-unsupported syntax and rendering options return `NeedsAst`.
+unsupported syntax and rendering options return `NeedsAst`. Roundtrip export
+is one of those options: the AST renderer writes its carriers.

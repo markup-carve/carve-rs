@@ -381,7 +381,7 @@ fn marker_placeholders_preserve_breaks_and_list_equation_figures() {
         ("{.x}\n---\n", "{.x}\n---\n"),
         ("{.x}\n***\n", "{.x}\n---\n"),
         ("- {.x}\n  $$`x`\n  ^ Cap\n", "- {.x}\n  $$`x`\n  ^ Cap\n"),
-        ("- $$`x`\n  ^ Cap\n", "- $$`x`\n  \\^ Cap\n"),
+        ("- $$`x`\n  ^ Cap\n", "- $$`x`\n  ^ Cap\n"),
     ] {
         let exported =
             carve::to_markdown_with_options(source, &Options::default().with_roundtrip(true));
