@@ -5,7 +5,7 @@ fn pending_definition_terms_keep_unclosed_code_tails() {
     let cases: Value =
         serde_json::from_str(include_str!("fixtures/pending_term_code_lazy_tails.json")).unwrap();
     let cases = cases.as_array().unwrap();
-    assert_eq!(cases.len(), 831);
+    assert_eq!(cases.len(), 2148);
     let whitespace = regex::Regex::new(r">\s+<").unwrap();
     let payload_pattern = regex::Regex::new(r"(?s)<pre><code[^>]*>(.*?)</code></pre>").unwrap();
     for case in cases {
