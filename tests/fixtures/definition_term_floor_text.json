@@ -1408,5 +1408,185 @@
     "id": "term-wrapped-attribute-nested-item-True-term",
     "source": "- outer\n  - lead\n  \n    :: term\n    floor text\n    {.a\n    .b}\n       :: next\n",
     "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>term\nfloor text</dt></dl><dl class=\"a b\"><dt>next</dt></dl></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-1-4-False",
+    "source": "- lead\n\n  :: a\n  : d\n  :: b\n  {.x}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-1-4-True",
+    "source": "- lead\n\n  :: a\n  : d\n  :: b\n  {.x}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-1-7-False",
+    "source": "- lead\n\n  :: a\n  : d\n  :: b\n  {.x\n  .y}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-1-7-True",
+    "source": "- lead\n\n  :: a\n  : d\n  :: b\n  {.x\n  .y}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-2-4-False",
+    "source": "- lead\n\n  :: a\n  :  d\n  :: b\n  {.x}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-2-4-True",
+    "source": "- lead\n\n  :: a\n  :  d\n  :: b\n  {.x}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-2-7-False",
+    "source": "- lead\n\n  :: a\n  :  d\n  :: b\n  {.x\n  .y}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-2-7-True",
+    "source": "- lead\n\n  :: a\n  :  d\n  :: b\n  {.x\n  .y}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-3-4-False",
+    "source": "- lead\n\n  :: a\n  :   d\n  :: b\n  {.x}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-3-4-True",
+    "source": "- lead\n\n  :: a\n  :   d\n  :: b\n  {.x}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-3-7-False",
+    "source": "- lead\n\n  :: a\n  :   d\n  :: b\n  {.x\n  .y}\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-item-3-7-True",
+    "source": "- lead\n\n  :: a\n  :   d\n  :: b\n  {.x\n  .y}\n\n     # heading\n",
+    "html": "<ul><li>lead\n    <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-1-4-False",
+    "source": "> - lead\n> \n>   :: a\n>   : d\n>   :: b\n>   {.x}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-1-4-True",
+    "source": "> - lead\n> \n>   :: a\n>   : d\n>   :: b\n>   {.x}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-1-7-False",
+    "source": "> - lead\n> \n>   :: a\n>   : d\n>   :: b\n>   {.x\n>   .y}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-1-7-True",
+    "source": "> - lead\n> \n>   :: a\n>   : d\n>   :: b\n>   {.x\n>   .y}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-2-4-False",
+    "source": "> - lead\n> \n>   :: a\n>   :  d\n>   :: b\n>   {.x}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-2-4-True",
+    "source": "> - lead\n> \n>   :: a\n>   :  d\n>   :: b\n>   {.x}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-2-7-False",
+    "source": "> - lead\n> \n>   :: a\n>   :  d\n>   :: b\n>   {.x\n>   .y}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-2-7-True",
+    "source": "> - lead\n> \n>   :: a\n>   :  d\n>   :: b\n>   {.x\n>   .y}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-3-4-False",
+    "source": "> - lead\n> \n>   :: a\n>   :   d\n>   :: b\n>   {.x}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-3-4-True",
+    "source": "> - lead\n> \n>   :: a\n>   :   d\n>   :: b\n>   {.x}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-3-7-False",
+    "source": "> - lead\n> \n>   :: a\n>   :   d\n>   :: b\n>   {.x\n>   .y}\n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-quoted-item-3-7-True",
+    "source": "> - lead\n> \n>   :: a\n>   :   d\n>   :: b\n>   {.x\n>   .y}\n> \n>      # heading\n",
+    "html": "<blockquote><ul><li>lead\n      <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-1-4-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    : d\n    :: b\n    {.x}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-1-4-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    : d\n    :: b\n    {.x}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-1-7-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    : d\n    :: b\n    {.x\n    .y}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-1-7-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    : d\n    :: b\n    {.x\n    .y}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-2-4-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :  d\n    :: b\n    {.x}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-2-4-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :  d\n    :: b\n    {.x}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-2-7-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :  d\n    :: b\n    {.x\n    .y}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-2-7-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :  d\n    :: b\n    {.x\n    .y}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-3-4-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :   d\n    :: b\n    {.x}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-3-4-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :   d\n    :: b\n    {.x}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-3-7-False",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :   d\n    :: b\n    {.x\n    .y}\n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "attribute-after-later-term-nested-item-3-7-True",
+    "source": "- outer\n  - lead\n  \n    :: a\n    :   d\n    :: b\n    {.x\n    .y}\n  \n       # heading\n",
+    "html": "<ul><li>outer\n    <ul><li>lead\n        <dl><dt>a</dt><dd>d</dd><dt>b</dt></dl><h1 class=\"x y\" id=\"heading\">heading</h1></li></ul></li></ul>"
   }
 ]

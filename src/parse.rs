@@ -7682,15 +7682,16 @@ fn definition_entry_end(
             j += 1;
             continue;
         }
-        if term_open && column == base && local.starts_with('{') {
+        if term_open
+            && column == base
+            && local.starts_with('{')
+            && !trim_ascii_end(&local).ends_with('}')
+        {
             if let Some(count) = standalone_attrs_block_len_iter(
                 std::iter::once(local.as_str())
                     .chain(lines[j + 1..].iter().map(|line| line.as_ref())),
             ) {
-                term_open = false;
-                end = j + count - 1;
-                j += count;
-                continue;
+                return j + count - 1;
             }
         }
         if term_open && column > base {
