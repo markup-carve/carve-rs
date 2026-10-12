@@ -108,6 +108,7 @@ fn reserved(name: &str) -> bool {
             "escaped",
             "abbreviations",
             "col-widths",
+            "label",
         ]
         .iter()
         .any(|suffix| {
