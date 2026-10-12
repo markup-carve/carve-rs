@@ -2383,13 +2383,28 @@ fn paragraph_continuation_probe(
         } else {
             source
         };
-        extract_link_defs(&source, options).0
+        reduce_frame_probe_links(source, options)
     };
     let before = reduce(before);
-    let after = reduce(after);
     let before = open_frame(&probe_blocks_at_document_level(&before, options));
+    if !before.ends_in_paragraph {
+        return false;
+    }
+    let after = reduce(after);
     let after = open_frame(&probe_blocks_at_document_level(&after, options));
     after.ends_in_paragraph && before.levels == after.levels
+}
+
+fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
+    if !source.contains("]: ") && !source.contains('\r') {
+        let mut source = source;
+        if !source.is_empty() && !source.ends_with('\n') {
+            source.push('\n');
+        }
+        source
+    } else {
+        extract_link_defs(&source, options).0
+    }
 }
 
 /// Lines folded into a term and fences that end one at its container column.
@@ -2460,11 +2475,20 @@ fn term_folded_lines(
         let at = runs.get(&fence_len)?;
         at.get(at.partition_point(|&k| k <= index)).copied()
     };
+    let mut prefix_costs = Vec::with_capacity(lines.len() + 1);
+    prefix_costs.push(0usize);
+    for line in lines {
+        prefix_costs.push(prefix_costs.last().unwrap().saturating_add(line.len() + 1));
+    }
     let marker_admitted = |start: usize, budget: &mut usize| {
         if probing() || start == 0 || is_blank_line(view(lines[start - 1]).0) {
             return true;
         }
-        if *budget == 0 {
+        if *budget
+            < prefix_costs[start]
+                .saturating_mul(2)
+                .saturating_add(lines[start].len())
+        {
             return false;
         }
         let mut unaffordable = false;
@@ -2479,7 +2503,7 @@ fn term_folded_lines(
         !(folds || unaffordable)
     };
     let mut ownership = TermLineOwnership::default();
-    let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
+    let mut term_probe_budget = probe_budget_for(*prefix_costs.last().unwrap());
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
     let mut admitted_term_host: Option<(usize, usize, usize)> = None;
@@ -28565,6 +28589,40 @@ mod hosted_inline_fence_lookup_work {
             }
             assert!(LITERAL_CODE_LINES.with(Cell::get) > 0);
             assert!(LITERAL_CODE_LINES.with(Cell::get) <= count);
+        }
+    }
+}
+
+#[cfg(test)]
+mod frame_probe_tests {
+    use super::*;
+
+    #[test]
+    fn definition_free_probe_reduction_retains_existing_normalization() {
+        let options = Options::default();
+        for source in [
+            "",
+            "p",
+            "p\n- :: t\n  ```\n  x",
+            "\u{feff}p",
+            "p\r\nq",
+            "p\r",
+            "p\n",
+            "p\n\n",
+            " p \t\n q",
+            "p [text]",
+            "- [x] task",
+            "[r]: /u\np",
+            "p\rinside",
+            "[r]: <b>{=html}",
+            "[r]:\t/u",
+            "> - [r]: /u",
+        ] {
+            assert_eq!(
+                reduce_frame_probe_links(source.to_owned(), &options),
+                extract_link_defs(source, &options).0,
+                "{source:?}"
+            );
         }
     }
 }
