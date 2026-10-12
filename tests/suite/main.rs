@@ -1910,7 +1910,7 @@ mod authored_definition_note_code_hosts;
 #[path = "../inline_fence_paragraph_resume.rs"]
 mod inline_fence_paragraph_resume;
 
-#[path = "../pending_term_code_lazy_tails.rs"]
-mod pending_term_code_lazy_tails;
 #[path = "../nested_description_code_payload.rs"]
 mod nested_description_code_payload;
+#[path = "../pending_term_code_lazy_tails.rs"]
+mod pending_term_code_lazy_tails;

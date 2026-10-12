@@ -15959,7 +15959,7 @@ fn collect_indented_block_mapped_with_columns(
                             ),
                         )
                         .is_some_and(|count| {
-                            cur.lines.line(cur.pos + count).is_none_or(|next| {
+                            cur.lines.line(cur.pos + count).map_or(true, |next| {
                                 is_blank_line(next)
                                     || detect_fence_open(trim_ascii_start(next)).is_some()
                                     || interrupts_lazy_continuation_as_container(
