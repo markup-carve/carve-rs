@@ -30,7 +30,7 @@ enum DefinitionAtLine {
 }
 
 struct CarveContext {
-    reference_targets: HashMap<String, (String, Option<String>)>,
+    reference_targets: HashMap<String, (String, Option<String>, Option<Attrs>)>,
     block_depth: usize,
     inline_depth: usize,
     emphasis_depth_peak: usize,
@@ -1047,6 +1047,61 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
     }
 }
 
+fn reference_target_matches(
+    target: Option<&(String, Option<String>, Option<Attrs>)>,
+    href: &str,
+    title: &Option<String>,
+    attrs: &Option<Attrs>,
+) -> bool {
+    let Some((target_href, target_title, inherited)) = target else {
+        return false;
+    };
+    if target_href != href || target_title != title {
+        return false;
+    }
+    let Some(inherited) = inherited else {
+        return true;
+    };
+    let empty = Attrs::default();
+    let own = attrs.as_ref().unwrap_or(&empty);
+    let classes_match = own.classes.starts_with(&inherited.classes);
+    (inherited.id.is_none() || inherited.id == own.id)
+        && classes_match
+        && inherited
+            .key_values
+            .iter()
+            .all(|(key, value)| own.key_values.get(key) == Some(value))
+}
+
+fn reference_source_attrs(
+    attrs: &Option<Attrs>,
+    target: Option<&(String, Option<String>, Option<Attrs>)>,
+) -> Option<Attrs> {
+    let mut result = attrs.clone();
+    if let (Some(own), Some((_, _, Some(inherited)))) = (&mut result, target) {
+        own.classes.drain(..inherited.classes.len());
+    }
+    result
+}
+
+fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>, Option<Attrs>)> {
+    doc.children
+        .iter()
+        .filter_map(|node| match node {
+            BlockNode::LinkReferenceDefinition(def)
+                if !def.href.is_empty()
+                    && crate::parse::reference_label_has_definition_spelling(&def.label) =>
+            {
+                Some((
+                    crate::parse::label_key(&def.label),
+                    (def.href.clone(), def.title.clone(), def.attrs.clone()),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn render_with_escapes_once(
     session: &RenderSession,
     doc: &Document,
@@ -1054,18 +1109,7 @@ fn render_with_escapes_once(
 ) -> String {
     session.begin_pass();
     let mut ctx = CarveContext {
-        reference_targets: doc
-            .children
-            .iter()
-            .fold(HashMap::new(), |mut targets, node| {
-                if let BlockNode::LinkReferenceDefinition(def) = node {
-                    targets.insert(
-                        crate::parse::label_key(&def.label),
-                        (def.href.clone(), def.title.clone()),
-                    );
-                }
-                targets
-            }),
+        reference_targets: reference_targets(doc),
         block_depth: 0,
         inline_depth: 0,
         emphasis_depth_peak: 0,
@@ -4841,10 +4885,18 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     if let Some(label) = &node.ref_label {
         if !(ctx.table_cell_depth > 0 && label.contains('|'))
             && crate::parse::reference_label_has_source_spelling(label)
-            && ctx.reference_targets.get(&crate::parse::label_key(label))
-                == Some(&(node.href.clone(), node.title.clone()))
+            && reference_target_matches(
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+                &node.href,
+                &node.title,
+                &node.attrs,
+            )
         {
-            return format!("[{text}][{label}]{}", render_inline_attrs(&node.attrs, ctx));
+            let attrs = reference_source_attrs(
+                &node.attrs,
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+            );
+            return format!("[{text}][{label}]{}", render_inline_attrs(&attrs, ctx));
         }
         crate::render_carve_error::record_unspellable(
             "link",
@@ -4936,9 +4988,21 @@ fn render_image_with_attrs(
     if let Some(label) = &node.ref_label {
         if !(in_table && label.contains('|'))
             && crate::parse::reference_label_has_source_spelling(label)
-            && ctx.reference_targets.get(&crate::parse::label_key(label))
-                == Some(&(node.src.clone(), node.title.clone()))
+            && reference_target_matches(
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+                &node.src,
+                &node.title,
+                &node.attrs,
+            )
         {
+            let attrs = render_attrs_with_markers(
+                &reference_source_attrs(
+                    &node.attrs,
+                    ctx.reference_targets.get(&crate::parse::label_key(label)),
+                ),
+                &ctx.open_kinds,
+                ctx.attribute_bracket_depth > 0,
+            );
             return format!(
                 "![{}][{label}]{attrs}",
                 escape_image_alt(&node.alt, in_table)

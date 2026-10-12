@@ -2069,8 +2069,7 @@ impl<'a> Importer<'a> {
         path: &str,
     ) -> Option<String> {
         let label = Self::carrier(h, crate::roundtrip::REF)?;
-        let parsed = crate::parse(&format!("[{label}]: /carrier-validation\n"));
-        let valid = matches!(parsed.children.as_slice(), [BlockNode::LinkReferenceDefinition(def)] if def.label == label);
+        let valid = crate::parse::reference_label_has_definition_spelling(&label);
         if !valid {
             self.diag(
                 HtmlImportDiagnosticCode::AttributeDropped,

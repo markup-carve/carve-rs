@@ -213,3 +213,13 @@ mode decides reconstruction and raw-HTML preservation of INPUT, and finding a
 carrier in a document is not a reason to trust that document. Enabling export
 never enables a trusted import, never widens an importer's mode and never
 relaxes a destination check.
+
+## Carve reference source
+
+The source writer retains a reference label when its definition matches the
+link or image destination and title at document level. Parsed nested definitions
+are hoisted to that level by the reader. If a reference has no matching
+definition or its fields cannot be spelled faithfully, `render_carve` returns `SourceUnspellable` rather than
+silently writing an inline link. AST decoding still accepts the reference.
+This follows the field-loss rule in spec PART 11 section 1d and the reference
+fields in PART 12 section 3.

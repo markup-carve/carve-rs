@@ -1,4 +1,6 @@
-use carve::{html_to_ast, html_to_carve, parse, to_json, HtmlImportMode, HtmlImportOptions};
+use carve::{
+    html_to_ast, html_to_carve, parse, to_html, to_json, HtmlImportMode, HtmlImportOptions,
+};
 use serde_json::Value;
 
 fn nodes<'a>(value: &'a Value, kind: &str, out: &mut Vec<&'a Value>) {
@@ -443,4 +445,200 @@ fn reference_source_recovery_preserves_destinations_across_carrier_contexts() {
         }
     }
     assert_eq!(checked, 216);
+}
+
+#[test]
+fn manual_ast_references_refuse_noncanonical_or_missing_definitions() {
+    for image in [false, true] {
+        let node = if image {
+            serde_json::json!({"type":"image","src":"/u","alt":"t","ref":"x"})
+        } else {
+            serde_json::json!({"type":"link","href":"/u","ref":"x","children":[{"type":"text","value":"t"}]})
+        };
+        for definition in [None, Some("/other")] {
+            let mut children =
+                vec![serde_json::json!({"type":"paragraph","children":[node.clone()]})];
+            if let Some(href) = definition {
+                children.push(
+                    serde_json::json!({"type":"link_reference_definition","label":"x","href":href}),
+                );
+            }
+            let document = carve::from_json(
+                &serde_json::json!({"type":"document","srcByteLength":0,"children":children})
+                    .to_string(),
+            )
+            .unwrap();
+            assert!(matches!(
+                carve::render_carve(&document),
+                Err(carve::RenderCarveError::SourceUnspellable(_))
+            ));
+        }
+        let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},{"type":"block_quote","children":[{"type":"link_reference_definition","label":"x","href":"/u"}]}]}).to_string()).unwrap();
+        assert!(matches!(
+            carve::render_carve(&document),
+            Err(carve::RenderCarveError::SourceUnspellable(_))
+        ));
+    }
+}
+
+#[test]
+fn manual_ast_references_refuse_invalid_definition_labels_and_flattened_definitions() {
+    for image in [false, true] {
+        for label in ["^n", "", "a\nb", "x"] {
+            let node = if image {
+                serde_json::json!({"type":"image","src":"/u","alt":"t","ref":label})
+            } else {
+                serde_json::json!({"type":"link","href":"/u","ref":label,"children":[{"type":"text","value":"t"}]})
+            };
+            let definition =
+                serde_json::json!({"type":"link_reference_definition","label":label,"href":"/u"});
+            let definition = if label == "x" {
+                serde_json::json!({"type":"table","rows":[{"type":"table_row","cells":[{"type":"table_cell","header":false,"blocks":[definition]}]}]})
+            } else {
+                definition
+            };
+            let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
+            assert!(
+                matches!(
+                    carve::render_carve(&document),
+                    Err(carve::RenderCarveError::SourceUnspellable(_))
+                ),
+                "{label:?} {image}"
+            );
+        }
+    }
+}
+
+#[test]
+fn reference_definition_validation_and_note_precedence_match_the_reader() {
+    for image in [false, true] {
+        for (label, href, definition_label, with_note, refuses) in [
+            ("a b", "/u", "a\nb", false, true),
+            ("x", "/outer", "x", true, false),
+            ("x", "/note", "x", true, true),
+        ] {
+            let node = if image {
+                serde_json::json!({"type":"image","src":href,"alt":"t","ref":label})
+            } else {
+                serde_json::json!({"type":"link","href":href,"ref":label,"children":[{"type":"text","value":"t"}]})
+            };
+            let mut wire = serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},{"type":"link_reference_definition","label":definition_label,"href":if with_note { "/outer" } else { "/u" }}]});
+            if with_note {
+                wire["children"].as_array_mut().unwrap().push(serde_json::json!({"type":"footnote","label":"n","children":[{"type":"link_reference_definition","label":"x","href":"/note"}]}));
+            }
+            let document = carve::from_json(&wire.to_string()).unwrap();
+            let result = carve::render_carve(&document);
+            if refuses {
+                assert!(matches!(
+                    result,
+                    Err(carve::RenderCarveError::SourceUnspellable(_))
+                ));
+            } else {
+                let source = result.unwrap();
+                let value: Value = serde_json::from_str(&to_json(&parse(&source))).unwrap();
+                let mut found = Vec::new();
+                nodes(&value, if image { "image" } else { "link" }, &mut found);
+                if image {
+                    nodes(&value, "block_image", &mut found);
+                }
+                assert_eq!(found[0][if image { "src" } else { "href" }], href);
+            }
+        }
+    }
+}
+
+#[test]
+fn references_refuse_literal_definitions_and_unrepresented_inherited_attributes() {
+    for image in [false, true] {
+        for kind in ["literal", "attrs", "empty"] {
+            let href = if kind == "empty" { "" } else { "/u" };
+            let node = if image {
+                serde_json::json!({"type":"image","src":href,"alt":"t","ref":"x"})
+            } else {
+                serde_json::json!({"type":"link","href":href,"ref":"x","children":[{"type":"text","value":"t"}]})
+            };
+            let mut definition =
+                serde_json::json!({"type":"link_reference_definition","label":"x","href":href});
+            if kind == "attrs" {
+                definition["attrs"] = serde_json::json!({"classes":["c"]});
+            }
+            if kind == "literal" {
+                definition = serde_json::json!({"type":"line_block","children":[definition]});
+            }
+            let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
+            assert!(
+                matches!(
+                    carve::render_carve(&document),
+                    Err(carve::RenderCarveError::SourceUnspellable(_))
+                ),
+                "{image} {kind}"
+            );
+        }
+    }
+}
+
+#[test]
+fn note_marker_line_definitions_refuse_and_inherited_classes_are_written_once() {
+    for image in [false, true] {
+        for note in [true, false] {
+            let mut node = if image {
+                serde_json::json!({"type":"image","src":"/u","alt":"t","ref":"x"})
+            } else {
+                serde_json::json!({"type":"link","href":"/u","ref":"x","children":[{"type":"text","value":"t"}]})
+            };
+            let mut definition =
+                serde_json::json!({"type":"link_reference_definition","label":"x","href":"/u"});
+            if note {
+                definition =
+                    serde_json::json!({"type":"footnote","label":"n","children":[definition]});
+            } else {
+                node["attrs"] = serde_json::json!({"classes":["c"]});
+                definition["attrs"] = serde_json::json!({"classes":["c"]});
+            }
+            let document = carve::from_json(&serde_json::json!({"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[node]},definition]}).to_string()).unwrap();
+            let result = carve::render_carve(&document);
+            if note {
+                assert!(matches!(
+                    result,
+                    Err(carve::RenderCarveError::SourceUnspellable(_))
+                ));
+            } else {
+                let source = result.unwrap();
+                let value: Value = serde_json::from_str(&to_json(&parse(&source))).unwrap();
+                let mut found = Vec::new();
+                nodes(&value, if image { "image" } else { "link" }, &mut found);
+                if image {
+                    nodes(&value, "block_image", &mut found);
+                }
+                assert_eq!(found[0]["attrs"]["classes"], serde_json::json!(["c"]));
+            }
+        }
+    }
+}
+
+#[test]
+fn parsed_nested_and_note_references_keep_raw_spelling_and_duplicate_precedence() {
+    for (source, href) in [
+        ("> [x]: /u\n\n[t][x]\n", "/u"),
+        ("[^n]: note\n\n  [x]: /u\n\n[t][x]\n\n[^n]\n", "/u"),
+        ("::: box\n[x]: /u\n:::\n\n[t][x]\n", "/u"),
+        ("[x]: /a\n[x]: /b\n\n[t][x]\n", "/b"),
+        ("- [x]: /u\n\n[t][x]\n", "/u"),
+    ] {
+        let document = parse(source);
+        let before: Value = serde_json::from_str(&to_json(&document)).unwrap();
+        let mut links = Vec::new();
+        nodes(&before, "link", &mut links);
+        assert_eq!(links.len(), 1, "{source}");
+        assert_eq!(links[0]["href"], href, "{source}");
+        assert!(links[0]["rawRef"].is_string(), "{source} {before}");
+        let formatted = carve::render_carve(&document).unwrap();
+        let restored = parse(&formatted);
+        assert_eq!(to_html(source), to_html(&formatted), "{source} {formatted}");
+        let after: Value = serde_json::from_str(&to_json(&restored)).unwrap();
+        let mut links_after = Vec::new();
+        nodes(&after, "link", &mut links_after);
+        assert_eq!(links_after[0]["href"], href);
+        assert_eq!(links_after[0]["rawRef"], links[0]["rawRef"]);
+    }
 }
