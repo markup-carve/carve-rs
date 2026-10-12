@@ -7315,6 +7315,14 @@ fn rebase_overindented_blocks(
             continue;
         }
         if nested_columns.last().is_some_and(|column| base >= *column) {
+            // A descendant's line can leave a paragraph or a term open for a
+            // band marker below it, which S4 retains as its text.
+            if include_sublists
+                && (line_starts_paragraph(&local_at_base)
+                    || is_definition_list_start(&local_at_base))
+            {
+                paragraph_open = true;
+            }
             block_at_minimum = false;
             i += 1;
             continue;
@@ -12713,7 +12721,8 @@ fn parse_list(
             // fence closes (markup-carve/carve#950).
             if (item_open_fence.is_some()
                 || last_item_bare_continuation
-                || last_item_marker_attr_only)
+                || last_item_marker_attr_only
+                || !item_paragraph_open)
                 && marker.indent < content_col
             {
                 break;
@@ -12725,9 +12734,19 @@ fn parse_list(
                 // ends below this item's column. A fresh chunk must not reclaim it.
                 let mut stopped_fence = None;
                 let mut nested_columns = Vec::new();
+                // A line in this item's band is left for the fold, which takes
+                // it only into an open paragraph (CARVE-P0-009).
+                let band_line_ends_the_chunk = sub_indent >= content_col
+                    && a_band_line_ends_the_chunk(cur, base_indent, content_col)
+                    && !chunk_keeps_its_band_line(cur, content_col);
+                let (floor, lazy_scope) = if band_line_ends_the_chunk {
+                    (content_col - 1, (content_col - 1, base_indent))
+                } else {
+                    (base_indent, (0, 0))
+                };
                 let mut nested = collect_indented_block_mapped_with_columns(
                     cur,
-                    base_indent,
+                    floor,
                     content_col,
                     false,
                     &mut stopped_fence,
@@ -12735,10 +12754,12 @@ fn parse_list(
                     &mut nested_columns,
                 );
                 if stopped_fence.is_none() {
-                    fold_lazy_run_and_resume(
+                    fold_lazy_run_and_resume_in_band(
                         cur,
                         &mut nested,
                         content_col,
+                        lazy_scope,
+                        false,
                         |src, below| {
                             collected_body_takes_the_lazy_line(&src.source, below, options)
                         },
@@ -12784,6 +12805,14 @@ fn parse_list(
                         !is_blank_line(line)
                             && detect_list_marker_full(line).is_none()
                             && indent_columns(line) < content_col
+                    })
+                {
+                    break;
+                }
+                if band_line_ends_the_chunk
+                    && cur.peek().is_some_and(|line| {
+                        let indent = indent_columns(line);
+                        !is_blank_line(line) && indent > base_indent && indent < content_col
                     })
                 {
                     break;
@@ -13393,6 +13422,9 @@ fn parse_list(
                 &mut item_open_fence,
             ));
             let marker_colon_closed = cur.marker_colon_closed;
+            let marker_colon_open = !marker_colon_closed
+                && colon_fences_left_open(marker.content) > 0
+                && detect_line_block_open(marker.content).is_none();
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines.at(cur.pos - 1));
             let marker_line_was_the_whole_block = cur.pos == before_block;
@@ -13415,12 +13447,14 @@ fn parse_list(
                 // able to see a line the raised floor left behind (#2120).
                 // A marker-line colon container that has closed stops the
                 // collector at a band line, so the fold has to reach it.
-                let (lazy_column, list_base) =
-                    if marker_block_leaves_content_open && !marker_colon_closed {
-                        (0, 0)
-                    } else {
-                        (content_col.saturating_sub(1), base_indent)
-                    };
+                let (lazy_column, list_base) = if marker_block_leaves_content_open
+                    && !marker_colon_closed
+                    && !marker_colon_open
+                {
+                    (0, 0)
+                } else {
+                    (content_col.saturating_sub(1), base_indent)
+                };
                 fold_lazy_run_and_resume_in_band(
                     cur,
                     &mut stream,
@@ -15374,6 +15408,29 @@ fn a_band_line_ends_the_chunk(cur: &LineCursor, base_indent: usize, content_col:
     false
 }
 
+/// Two chunks whose band line stays with the collector: one ending at a lone
+/// `+`, which is text of the innermost item (§17 L3), and one ending at the
+/// closer of a code fence opened on a marker line, where the line after it is
+/// still read as the outer item's.
+fn chunk_keeps_its_band_line(cur: &LineCursor, content_col: usize) -> bool {
+    let mut open: Option<FenceOpen> = None;
+    let mut closed_last = false;
+    for line in cur.lines.range(cur.pos..cur.lines.len()) {
+        if is_blank_line(line) || indent_columns(line) < content_col {
+            return closed_last || trim_ascii(line) == "+";
+        }
+        let local = trim_ascii_start(line);
+        closed_last = open.is_some_and(|fence| is_fence_close(local, fence));
+        if closed_last {
+            open = None;
+        } else if open.is_none() {
+            open = detect_list_marker_full(local)
+                .and_then(|marker| detect_fence_open(innermost_marker_content(marker.content)));
+        }
+    }
+    false
+}
+
 /// Does the chunk about to be collected leave something open for a band line to
 /// continue?
 ///
@@ -15918,6 +15975,15 @@ fn collect_indented_block_mapped_with_columns(
             break;
         }
         if !colon_open.is_empty() && indent < strip_cols {
+            break;
+        }
+        if marker_colon.is_some()
+            && !literal_marker_body
+            && fence.is_none()
+            && indent < strip_cols
+            && !is_line_comment_any_column(line)
+            && detect_comment_fence_line_any_column(line).is_none()
+        {
             break;
         }
         if marker_colon_closed && indent < strip_cols && !fence_owns_flush_left {

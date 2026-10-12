@@ -1909,6 +1909,8 @@ mod markdown_import_dollar_text_stays_text;
 
 #[path = "../a_band_line_under_a_definition_term_is_term_text.rs"]
 mod a_band_line_under_a_definition_term_is_term_text;
+#[path = "../a_band_line_with_no_open_paragraph_ends_the_list.rs"]
+mod a_band_line_with_no_open_paragraph_ends_the_list;
 
 #[path = "../tab_authored_list_code_fences.rs"]
 mod tab_authored_list_code_fences;
