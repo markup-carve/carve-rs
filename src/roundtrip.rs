@@ -54,7 +54,7 @@ pub(crate) const SRC: &str = "data-carve-src";
 /// The document's abbreviation definitions, one per line (`<template>`).
 pub(crate) const ABBREVIATIONS: &str = "data-carve-abbreviations";
 
-/// Every §13a name in inventory order, canonically spelled.
+/// Every name a reader consumes: the §13a inventory plus [`SRC`], which no writer emits.
 pub(crate) const CARRIERS: [&str; 13] = [
     MARKER,
     CHAR,
