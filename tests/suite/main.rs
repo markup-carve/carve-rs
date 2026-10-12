@@ -1899,3 +1899,6 @@ mod markdown_footnote_continuation;
 
 #[path = "../roundtrip_carriers_2.rs"]
 mod roundtrip_carriers_2;
+
+#[path = "../tab_authored_list_code_fences.rs"]
+mod tab_authored_list_code_fences;
