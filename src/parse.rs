@@ -15839,6 +15839,14 @@ fn collect_indented_block_mapped_with_columns(
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
         if marker_is_definition_term
+            && marker_term_paragraph_open
+            && fence.is_none()
+            && colon_open.is_empty()
+            && (in_comment_span || is_line_comment_any_column(line))
+        {
+            marker_term_paragraph_open = false;
+        }
+        if marker_is_definition_term
             && fence.is_none()
             && !in_comment_span
             && colon_open.is_empty()
@@ -15880,7 +15888,25 @@ fn collect_indented_block_mapped_with_columns(
                     ) && interrupts_lazy_continuation_as_container(
                         cur,
                         trim_ascii_start(line),
-                    )))
+                    ))
+                    || (cur.invisible_arms
+                        && indent == strip_cols
+                        && trim_ascii_start(line).starts_with('{')
+                        && standalone_attrs_block_len_iter(
+                            std::iter::once(trim_ascii_start(line)).chain(
+                                (cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+                            ),
+                        )
+                        .is_some_and(|count| {
+                            cur.lines.line(cur.pos + count).is_none_or(|next| {
+                                is_blank_line(next)
+                                    || detect_fence_open(trim_ascii_start(next)).is_some()
+                                    || interrupts_lazy_continuation_as_container(
+                                        cur,
+                                        trim_ascii_start(next),
+                                    )
+                            })
+                        })))
             {
                 marker_term_paragraph_open = false;
             }
