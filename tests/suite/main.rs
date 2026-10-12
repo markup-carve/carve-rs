@@ -1905,6 +1905,9 @@ mod roundtrip_carriers_2;
 #[path = "../markdown_import_dollar_text_stays_text.rs"]
 mod markdown_import_dollar_text_stays_text;
 
+#[path = "../a_band_line_under_a_definition_term_is_term_text.rs"]
+mod a_band_line_under_a_definition_term_is_term_text;
+
 #[path = "../tab_authored_list_code_fences.rs"]
 mod tab_authored_list_code_fences;
 
