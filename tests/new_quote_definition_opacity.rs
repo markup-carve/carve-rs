@@ -20,7 +20,7 @@ fn a_fence_tests_paragraph_ownership_in_its_admitted_quote() {
         ("review-lazy-marker-paragraph", "> p\n- # h\n> ```\n> [^a]: note\n", "<blockquote><p>p\n- # h\n<code></code></p></blockquote>", 1),
         ("review-host-boundary-0", "> > p\n>   > # h\n> > ```\n> > [^a]: note\n", "<blockquote>\n  <blockquote><p>p\n&gt; # h\n<code></code></p></blockquote>\n</blockquote>", 1),
         ("review-host-boundary-1", "p\n> ```\n> [^a]: note\n\n:: u\n~~~\n[r]: /u\n\n[x][r]\n", "<p>p</p>\n<blockquote>\n  <pre><code>[^a]: note\n</code></pre>\n</blockquote>\n<dl>\n  <dt>u</dt>\n</dl>\n<pre><code>[r]: /u\n\n[x][r]\n</code></pre>", 0),
-        ("review-quoted-payload-0", "> - a\n>     ```\n>   [r]: /u\n>     ```\n", "<blockquote>\n  <ul>\n    <li>a\n<code>\n[r]: /u\n</code></li>\n  </ul>\n</blockquote>", 0),
+        ("review-quoted-payload-0", "> - a\n>     ```\n>   [r]: /u\n>     ```\n", "<blockquote>\n  <ul>\n    <li>a\n      <pre><code>[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>", 0),
         ("review-quoted-payload-1", "> :::note\n> :::\n> ```\n> [^a]: n\n", "<blockquote><p>:::note\n:::\n<code></code></p></blockquote>", 1),
     ];
     for (name, source, expected, notes) in cases {
