@@ -30,6 +30,7 @@ enum DefinitionAtLine {
 }
 
 struct CarveContext {
+    reference_targets: HashMap<String, (String, Option<String>, Option<Attrs>)>,
     block_depth: usize,
     inline_depth: usize,
     emphasis_depth_peak: usize,
@@ -1046,6 +1047,61 @@ fn render_with_escapes(session: &RenderSession, doc: &Document, escape_mode: Esc
     }
 }
 
+fn reference_target_matches(
+    target: Option<&(String, Option<String>, Option<Attrs>)>,
+    href: &str,
+    title: &Option<String>,
+    attrs: &Option<Attrs>,
+) -> bool {
+    let Some((target_href, target_title, inherited)) = target else {
+        return false;
+    };
+    if target_href != href || target_title != title {
+        return false;
+    }
+    let Some(inherited) = inherited else {
+        return true;
+    };
+    let empty = Attrs::default();
+    let own = attrs.as_ref().unwrap_or(&empty);
+    let classes_match = own.classes.starts_with(&inherited.classes);
+    (inherited.id.is_none() || inherited.id == own.id)
+        && classes_match
+        && inherited
+            .key_values
+            .iter()
+            .all(|(key, value)| own.key_values.get(key) == Some(value))
+}
+
+fn reference_source_attrs(
+    attrs: &Option<Attrs>,
+    target: Option<&(String, Option<String>, Option<Attrs>)>,
+) -> Option<Attrs> {
+    let mut result = attrs.clone();
+    if let (Some(own), Some((_, _, Some(inherited)))) = (&mut result, target) {
+        own.classes.drain(..inherited.classes.len());
+    }
+    result
+}
+
+fn reference_targets(doc: &Document) -> HashMap<String, (String, Option<String>, Option<Attrs>)> {
+    doc.children
+        .iter()
+        .filter_map(|node| match node {
+            BlockNode::LinkReferenceDefinition(def)
+                if !def.href.is_empty()
+                    && crate::parse::reference_label_has_definition_spelling(&def.label) =>
+            {
+                Some((
+                    crate::parse::label_key(&def.label),
+                    (def.href.clone(), def.title.clone(), def.attrs.clone()),
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn render_with_escapes_once(
     session: &RenderSession,
     doc: &Document,
@@ -1053,6 +1109,7 @@ fn render_with_escapes_once(
 ) -> String {
     session.begin_pass();
     let mut ctx = CarveContext {
+        reference_targets: reference_targets(doc),
         block_depth: 0,
         inline_depth: 0,
         emphasis_depth_peak: 0,
@@ -2117,6 +2174,17 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
         // is there; a tree carrying the node arrived from somewhere else.
         BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::LinkReferenceDefinition(def) => {
+            if def.href.chars().any(char::is_whitespace)
+                || def
+                    .title
+                    .as_deref()
+                    .is_some_and(|value| value.contains(['\r', '\n']))
+            {
+                crate::render_carve_error::record_unspellable(
+                    "link_reference_definition",
+                    "definition fields have no single-line source spelling",
+                );
+            }
             // Unless a definition list already wrote it on its own description
             // line, where the author put it - writing it twice would define the
             // label twice (markup-carve/carve#805).
@@ -2436,7 +2504,7 @@ fn render_block_body(session: &RenderSession, node: &BlockNode, ctx: &mut CarveC
                 &format!("{fence} figure\n{body}\n{fence}{caption}"),
             )
         }
-        BlockNode::BlockImage(image) => render_image(image),
+        BlockNode::BlockImage(image) => render_image(image, ctx),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
             // Stage the literal payload without its final ending, then write
@@ -3195,7 +3263,7 @@ fn formatted_children(node: &mut InlineNode) -> Option<&mut Vec<InlineNode>> {
 /// THE TARGET KEEPS ITS OWN ATTRIBUTES (ruling markup-carve/carve#1721).
 fn render_figure(session: &RenderSession, node: &Figure, ctx: &mut CarveContext) -> String {
     let target = match &*node.target {
-        FigureTarget::Image(image) => render_image(image),
+        FigureTarget::Image(image) => render_image(image, ctx),
         FigureTarget::Table(table) => render_block(session, &BlockNode::Table(table.clone()), ctx),
         FigureTarget::BlockQuote(quote) => {
             render_block(session, &BlockNode::BlockQuote(quote.clone()), ctx)
@@ -4164,6 +4232,7 @@ fn render_inline_body(
             image,
             render_inline_attrs(&image.attrs, ctx),
             ctx.table_cell_depth > 0,
+            ctx,
         ),
         InlineNode::Span(span) => {
             let attrs = render_inline_attrs(&span.attrs, ctx);
@@ -4813,6 +4882,27 @@ fn render_link(session: &RenderSession, node: &Link, ctx: &mut CarveContext) -> 
     }
     let text =
         escape_note_reference_label(&render_bracketed_content(session, &node.children, ctx), ctx);
+    if let Some(label) = &node.ref_label {
+        if !(ctx.table_cell_depth > 0 && label.contains('|'))
+            && crate::parse::reference_label_has_source_spelling(label)
+            && reference_target_matches(
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+                &node.href,
+                &node.title,
+                &node.attrs,
+            )
+        {
+            let attrs = reference_source_attrs(
+                &node.attrs,
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+            );
+            return format!("[{text}][{label}]{}", render_inline_attrs(&attrs, ctx));
+        }
+        crate::render_carve_error::record_unspellable(
+            "link",
+            "reference fields have no faithful source spelling",
+        );
+    }
     let title = node
         .title
         .as_ref()
@@ -4874,11 +4964,16 @@ fn escape_note_reference_label(label: &str, ctx: &CarveContext) -> String {
     }
 }
 
-fn render_image(node: &Image) -> String {
-    render_image_with_attrs(node, render_attrs(&node.attrs), false)
+fn render_image(node: &Image, ctx: &CarveContext) -> String {
+    render_image_with_attrs(node, render_attrs(&node.attrs), false, ctx)
 }
 
-fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> String {
+fn render_image_with_attrs(
+    node: &Image,
+    attrs: String,
+    in_table: bool,
+    ctx: &CarveContext,
+) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
@@ -4889,6 +4984,34 @@ fn render_image_with_attrs(node: &Image, attrs: String, in_table: bool) -> Strin
     // `ref`/`raw_ref` and duplicated the destination (carve-rs#631).
     if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
+    }
+    if let Some(label) = &node.ref_label {
+        if !(in_table && label.contains('|'))
+            && crate::parse::reference_label_has_source_spelling(label)
+            && reference_target_matches(
+                ctx.reference_targets.get(&crate::parse::label_key(label)),
+                &node.src,
+                &node.title,
+                &node.attrs,
+            )
+        {
+            let attrs = render_attrs_with_markers(
+                &reference_source_attrs(
+                    &node.attrs,
+                    ctx.reference_targets.get(&crate::parse::label_key(label)),
+                ),
+                &ctx.open_kinds,
+                ctx.attribute_bracket_depth > 0,
+            );
+            return format!(
+                "![{}][{label}]{attrs}",
+                escape_image_alt(&node.alt, in_table)
+            );
+        }
+        crate::render_carve_error::record_unspellable(
+            "image",
+            "reference fields have no faithful source spelling",
+        );
     }
     let title = node
         .title
@@ -6753,7 +6876,45 @@ const QUOTE_IN_QUOTED_TITLE: &str = "a double quote has no spelling inside a quo
 /// value or a link title writes one too), and a line break writes an opener
 /// that no longer reads as one.
 pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
-    let probe = Document {
+    use crate::include_walk::{visit_inline_children, SubtreeVisitor};
+    struct ProbeReferences {
+        definitions: Vec<BlockNode>,
+    }
+    impl SubtreeVisitor for ProbeReferences {
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                let reference = match inline {
+                    InlineNode::Link(link) => link
+                        .ref_label
+                        .as_ref()
+                        .map(|label| (label.clone(), link.href.clone(), link.title.clone())),
+                    InlineNode::Image(image) => image
+                        .ref_label
+                        .as_ref()
+                        .map(|label| (label.clone(), image.src.clone(), image.title.clone())),
+                    _ => None,
+                };
+                if let Some((label, href, title)) = reference {
+                    self.definitions.push(BlockNode::LinkReferenceDefinition(
+                        LinkReferenceDefinition {
+                            attrs: None,
+                            label,
+                            href,
+                            title,
+                            pos: None,
+                        },
+                    ));
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let mut probe_title = title.to_vec();
+    let mut references = ProbeReferences {
+        definitions: Vec::new(),
+    };
+    references.inlines(&mut probe_title);
+    let mut probe = Document {
         frontmatter: Default::default(),
         frontmatter_raw: None,
         footnote_defs: Default::default(),
@@ -6761,7 +6922,7 @@ pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
         children: vec![BlockNode::Admonition(Admonition {
             attrs: None,
             kind: "note".into(),
-            title: Some(title.to_vec()),
+            title: Some(probe_title),
             label: None,
             children: vec![BlockNode::Paragraph(Paragraph {
                 attrs: None,
@@ -6775,11 +6936,17 @@ pub(crate) fn quoted_title_is_spellable(title: &[InlineNode]) -> bool {
         source_len: 0,
         ingest_payload_len: 0,
     };
+    probe.children.extend(references.definitions);
     match render_carve(&probe) {
-        Ok(source) => matches!(
-            crate::parse::parse(&source).children.as_slice(),
-            [BlockNode::Admonition(admonition)] if admonition.title.is_some()
-        ),
+        Ok(source) => {
+            let parsed = crate::parse::parse(&source);
+            matches!(parsed.children.first(), Some(BlockNode::Admonition(admonition)) if admonition.title.is_some())
+                && parsed
+                    .children
+                    .iter()
+                    .skip(1)
+                    .all(|node| matches!(node, BlockNode::LinkReferenceDefinition(_)))
+        }
         Err(crate::RenderCarveError::SourceUnspellable(error)) => {
             error.reason() != QUOTE_IN_QUOTED_TITLE
         }

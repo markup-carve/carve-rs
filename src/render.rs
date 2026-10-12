@@ -351,7 +351,13 @@ fn abbreviation_template(doc: &Document) -> Option<String> {
         return None;
     }
     let mut out = String::from("<template");
-    write_bare_carrier(&mut out, crate::roundtrip::ABBREVIATIONS, &None, None);
+    write_bare_carrier(
+        &mut out,
+        crate::roundtrip::ABBREVIATIONS,
+        &None,
+        None,
+        crate::render_loss::RawNodeType::Block,
+    );
     out.push('>');
     write_escaped_text(&mut out, &lines.join("\n"));
     out.push_str("</template>");
@@ -1393,6 +1399,7 @@ fn render_footnotes_section(
                     label,
                     &None,
                     None,
+                    crate::render_loss::RawNodeType::Block,
                 );
             }
             if entry.inline.is_some() {
@@ -1402,6 +1409,7 @@ fn render_footnotes_section(
                     "1",
                     &None,
                     None,
+                    crate::render_loss::RawNodeType::Block,
                 );
             }
         }
@@ -1526,6 +1534,7 @@ fn render_section(
             "1",
             &None,
             heading.pos.as_ref(),
+            crate::render_loss::RawNodeType::Block,
         );
     }
     out.push_str(">\n");
@@ -1663,7 +1672,7 @@ fn render_block(
         BlockNode::ExtensionCarrier(e) => render_extension_carrier(out, e, level, options, state),
         BlockNode::BlockImage(img) => {
             indent(out, level);
-            render_image(out, img, options);
+            render_image(out, img, options, crate::render_loss::RawNodeType::Block);
         }
         BlockNode::ThematicBreak(n) => {
             indent(out, level);
@@ -1682,6 +1691,7 @@ fn render_block(
                         &marker.to_string(),
                         &n.attrs,
                         n.pos.as_ref(),
+                        crate::render_loss::RawNodeType::Block,
                     );
                     out.push_str(&render_attrs_without_keys(
                         &n.attrs,
@@ -1748,6 +1758,7 @@ fn render_heading(
             "1",
             &h.attrs,
             h.pos.as_ref(),
+            crate::render_loss::RawNodeType::Block,
         );
     }
     // The carrier owns the name, so an authored copy does not reach the element.
@@ -2084,6 +2095,7 @@ fn render_list(
             &bullet.to_string(),
             &l.attrs,
             l.pos.as_ref(),
+            crate::render_loss::RawNodeType::Block,
         );
     }
     // PART 19 §1: `task-list` is a mandatory base class. Every item has to be a
@@ -2347,6 +2359,7 @@ fn render_table(
             &joined,
             &t.attrs,
             t.pos.as_ref(),
+            crate::render_loss::RawNodeType::Block,
         );
     }
     let mut table_attrs = t.attrs.clone();
@@ -3370,7 +3383,7 @@ fn render_figure_contents(
         match &*f.target {
             FigureTarget::Image(img) => {
                 indent(out, level + 1);
-                render_image(out, img, options);
+                render_image(out, img, options, crate::render_loss::RawNodeType::Block);
             }
             FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
             FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
@@ -3512,7 +3525,12 @@ fn render_extension_carrier(
     out.push_str("</div>");
 }
 
-fn render_image(out: &mut String, img: &Image, options: &Options<'_>) {
+fn render_image(
+    out: &mut String,
+    img: &Image,
+    options: &Options<'_>,
+    node_type: crate::render_loss::RawNodeType,
+) {
     if img.ref_label.is_some() && img.src.is_empty() {
         // Same PART 10 SS2 nbsp fold as the link literal above.
         write_escaped_text_nbsp(out, img.raw_ref.as_deref().unwrap_or_default());
@@ -3545,6 +3563,7 @@ fn render_image(out: &mut String, img: &Image, options: &Options<'_>) {
                 label,
                 &img.attrs,
                 img.pos.as_ref(),
+                node_type,
             );
             blocked.push(crate::roundtrip::REF);
         }
@@ -3811,7 +3830,13 @@ fn render_inline_after(
             // multi-character value imported as `\a\b\c`, which is not Carve.
             if options.html_carriers() {
                 out.push_str("<span");
-                write_bare_carrier(out, crate::roundtrip::ESCAPED, &None, s.pos.as_ref());
+                write_bare_carrier(
+                    out,
+                    crate::roundtrip::ESCAPED,
+                    &None,
+                    s.pos.as_ref(),
+                    crate::render_loss::RawNodeType::Inline,
+                );
                 out.push('>');
                 write_escaped_text_nbsp(out, &s.value);
                 out.push_str("</span>");
@@ -3848,7 +3873,9 @@ fn render_inline_after(
             out.push_str("</code>");
         }
         InlineNode::Link(l) => render_link(out, l, options, state),
-        InlineNode::Image(img) => render_image(out, img, options),
+        InlineNode::Image(img) => {
+            render_image(out, img, options, crate::render_loss::RawNodeType::Inline)
+        }
         InlineNode::Span(s) => {
             render_semantic_span(out, s, options, state);
         }
@@ -3920,7 +3947,14 @@ fn render_inline_after(
             // bidi controls through escape_text.
             if options.html_carriers() {
                 out.push_str("<span");
-                write_carrier(out, crate::roundtrip::RAW, &r.format, &None, r.pos.as_ref());
+                write_carrier(
+                    out,
+                    crate::roundtrip::RAW,
+                    &r.format,
+                    &None,
+                    r.pos.as_ref(),
+                    crate::render_loss::RawNodeType::Inline,
+                );
                 out.push('>');
                 if html && options.allow_raw_html {
                     write_escaped_text_inner(out, &r.content);
@@ -3998,6 +4032,7 @@ fn render_inline_after(
                     "1",
                     &a.attrs,
                     a.pos.as_ref(),
+                    crate::render_loss::RawNodeType::Inline,
                 );
                 out.push_str(&render_attrs_without_keys(
                     &a.attrs,
@@ -4204,6 +4239,7 @@ fn render_inline_after(
                             label,
                             &f.attrs,
                             f.pos.as_ref(),
+                            crate::render_loss::RawNodeType::Inline,
                         );
                     }
                 }
@@ -4465,7 +4501,14 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     };
     if options.html_carriers() {
         if let Some(label) = &l.ref_label {
-            write_carrier(out, crate::roundtrip::REF, label, &l.attrs, l.pos.as_ref());
+            write_carrier(
+                out,
+                crate::roundtrip::REF,
+                label,
+                &l.attrs,
+                l.pos.as_ref(),
+                crate::render_loss::RawNodeType::Inline,
+            );
             blocked.push(crate::roundtrip::REF);
         }
     }
@@ -4827,13 +4870,14 @@ pub(crate) fn write_carrier(
     value: &str,
     attrs: &Option<Attrs>,
     pos: Option<&Pos>,
+    node_type: crate::render_loss::RawNodeType,
 ) {
     out.push(' ');
     out.push_str(name);
     out.push_str("=\"");
     write_escaped_attr(out, value);
     out.push('"');
-    report_carrier_collision(name, attrs, pos);
+    report_carrier_collision(name, attrs, pos, node_type);
 }
 
 /// Write a PRESENCE carrier bare, with no value at all.
@@ -4848,15 +4892,21 @@ pub(crate) fn write_bare_carrier(
     name: &'static str,
     attrs: &Option<Attrs>,
     pos: Option<&Pos>,
+    node_type: crate::render_loss::RawNodeType,
 ) {
     out.push(' ');
     out.push_str(name);
-    report_carrier_collision(name, attrs, pos);
+    report_carrier_collision(name, attrs, pos, node_type);
 }
 
-fn report_carrier_collision(name: &'static str, attrs: &Option<Attrs>, pos: Option<&Pos>) {
+fn report_carrier_collision(
+    name: &'static str,
+    attrs: &Option<Attrs>,
+    pos: Option<&Pos>,
+    node_type: crate::render_loss::RawNodeType,
+) {
     if attrs_has_key(attrs, name) {
-        crate::render_loss::record_carrier_collision(name, name, pos);
+        crate::render_loss::record_carrier_collision(name, name, pos, node_type);
     }
 }
 
