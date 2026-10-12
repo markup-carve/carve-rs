@@ -1431,6 +1431,8 @@ fn extract_footnote_defs(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut description_fence = false;
+    let mut description_blank = false;
     let mut inline_marker_fence = false;
     let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
@@ -1518,6 +1520,9 @@ fn extract_footnote_defs(
         }
         if let Some(open) = in_fence {
             if inline_fence_paragraph_ends(lines[i], open, inline_marker_paragraph.as_ref())
+                || (description_fence
+                    && description_blank
+                    && description_fence_leaves_after_blank(lines[i], open, &term_fence_columns))
                 || !inline_fence_lazy_line(lines[i], inline_marker_paragraph.as_ref())
                     && ((inline_marker_fence
                         && is_blank_line(without_blockquote_prefixes(lines[i])))
@@ -1547,7 +1552,10 @@ fn extract_footnote_defs(
                 } else {
                     close_kept
                 };
-                if is_fence_close(close_line, open) {
+                description_blank = description_fence && is_blank_line(close_kept);
+                if (!description_fence || leading_ws(close_kept) >= open.content_col)
+                    && is_fence_close(close_line, open)
+                {
                     if inline_marker_fence {
                         folded_into_term
                             .paragraph_quotes
@@ -1613,6 +1621,9 @@ fn extract_footnote_defs(
         }
 
         if let Some(mut open) = detect_fence_open(fence_line) {
+            if stripped.description {
+                open.content_col = description_fence_content_column(lines[i], &stripped, &columns);
+            }
             if let Some(host) = term_fence {
                 open.content_col = host.content_col;
                 open.quoted = host.quote_depth > 0;
@@ -1643,8 +1654,13 @@ fn extract_footnote_defs(
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
                     .unwrap_or(fence.quote_columns);
-                term_fence_floor =
-                    term_fence.map_or(fence.host_content_col, |host| host.content_col);
+                description_fence = stripped.description && term_fence.is_none();
+                description_blank = false;
+                term_fence_floor = if description_fence {
+                    0
+                } else {
+                    term_fence.map_or(fence.host_content_col, |host| host.content_col)
+                };
                 term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
@@ -3678,6 +3694,8 @@ fn extract_link_defs_with_guard_full(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut description_fence = false;
+    let mut description_blank = false;
     let mut inline_marker_fence = false;
     let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
@@ -3758,6 +3776,9 @@ fn extract_link_defs_with_guard_full(
         }
         if let Some(open) = in_fence {
             if inline_fence_paragraph_ends(line, open, inline_marker_paragraph.as_ref())
+                || (description_fence
+                    && description_blank
+                    && description_fence_leaves_after_blank(line, open, &term_fence_columns))
                 || !inline_fence_lazy_line(line, inline_marker_paragraph.as_ref())
                     && ((inline_marker_fence && is_blank_line(without_blockquote_prefixes(line)))
                         || (term_fence_owned
@@ -3786,7 +3807,10 @@ fn extract_link_defs_with_guard_full(
                 } else {
                     close_kept
                 };
-                if is_fence_close(close_line, open) {
+                description_blank = description_fence && is_blank_line(close_kept);
+                if (!description_fence || leading_ws(close_kept) >= open.content_col)
+                    && is_fence_close(close_line, open)
+                {
                     if inline_marker_fence {
                         folded_into_term
                             .paragraph_quotes
@@ -3807,7 +3831,10 @@ fn extract_link_defs_with_guard_full(
         let fence_line = if let Some(host) = term_fence {
             authored_fence_col = host.content_col;
             &line[host.opener_offset..]
-        } else if content_col == 0 {
+        } else if content_col == 0 || stripped.description {
+            if stripped.description {
+                authored_fence_col = description_fence_content_column(line, &stripped, &columns);
+            }
             stripped.bare
         } else {
             opener_kept = strip_container_prefixes_keep_indent(line);
@@ -3894,8 +3921,13 @@ fn extract_link_defs_with_guard_full(
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
                     .unwrap_or(fence.quote_columns);
-                term_fence_floor =
-                    term_fence.map_or(fence.host_content_col, |host| host.content_col);
+                description_fence = stripped.description && term_fence.is_none();
+                description_blank = false;
+                term_fence_floor = if description_fence {
+                    0
+                } else {
+                    term_fence.map_or(fence.host_content_col, |host| host.content_col)
+                };
                 term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
@@ -4223,6 +4255,8 @@ struct StrippedContainerLine<'a> {
     structural: &'a str,
     bare: &'a str,
     needs_empty_list_content: bool,
+    // The canonical stripper consumed an admitted description marker.
+    description: bool,
 }
 
 impl StrippedContainerLine<'_> {
@@ -4431,6 +4465,7 @@ fn strip_description_prefix(line: &str) -> Option<&str> {
 fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContainerLine<'_> {
     let original = line;
     let mut needs_empty_list_content = false;
+    let mut description = false;
     loop {
         let before = line;
         while let Some(rest) = strip_blockquote_prefix(line) {
@@ -4450,6 +4485,7 @@ fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContain
         if after_term {
             if let Some(content) = strip_description_prefix(line) {
                 line = content;
+                description = true;
                 // The entry must survive the line's removal as an EMPTY
                 // description, the same way an item does when its only content
                 // was a definition - otherwise the marker is left behind as a
@@ -4473,6 +4509,7 @@ fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContain
         structural: &original[..structural_len],
         bare: line,
         needs_empty_list_content,
+        description,
     }
 }
 
@@ -4529,9 +4566,33 @@ fn strip_container_prefixes_at<'a>(
             structural: &line[..structural_len],
             bare: inner.bare,
             needs_empty_list_content: inner.needs_empty_list_content,
+            description: inner.description,
         };
     }
     strip_container_prefixes(line, after_term)
+}
+
+// A blank permits a below-column line to leave the item. A continuation at
+// the authored column remains opaque CODE, including its definitions.
+fn description_fence_leaves_after_blank(
+    line: &str,
+    open: FenceOpen,
+    quote_columns: &[usize],
+) -> bool {
+    strip_term_quote_prefixes(line, quote_columns).is_some_and(|content| {
+        !is_blank_line(content) && indent_columns(content) < open.content_col
+    })
+}
+
+fn description_fence_content_column(
+    raw: &str,
+    prefix: &StrippedContainerLine<'_>,
+    columns: &ContentColumns,
+) -> usize {
+    let quote_columns = term_quote_columns_for(prefix.structural, columns);
+    let owned = strip_term_quote_prefixes(raw, &quote_columns).unwrap_or(raw);
+    let before = prefix.bare.as_ptr() as usize - owned.as_ptr() as usize;
+    owned[..before].chars().count() + leading_ws(prefix.bare)
 }
 
 fn strip_container_prefixes_keep_indent(mut line: &str) -> String {

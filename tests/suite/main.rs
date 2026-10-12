@@ -1909,3 +1909,6 @@ mod tab_authored_list_code_fences;
 mod authored_definition_note_code_hosts;
 #[path = "../inline_fence_paragraph_resume.rs"]
 mod inline_fence_paragraph_resume;
+
+#[path = "../nested_description_code_payload.rs"]
+mod nested_description_code_payload;
