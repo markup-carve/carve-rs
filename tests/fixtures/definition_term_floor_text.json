@@ -1123,5 +1123,240 @@
     "id": "term-comment-state-95",
     "source": "> > - :: term\n> >     %%%\n> >     hidden\n> >     %%%\n> >   %%%\n> > hidden\n> >   %%%\n> >       ```\n> >       code\n> >       ```\n> > after\n",
     "html": "<blockquote><blockquote><ul><li><dl><dt>term\n</dt></dl></li></ul><p>hidden</p><p><code>\ncode\n</code>\nafter</p></blockquote></blockquote>"
+  },
+  {
+    "id": "review-root-%% c-> q",
+    "source": "- :: term\n  %% c\n   > q\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>q\nafter</p></blockquote></li></ul>"
+  },
+  {
+    "id": "review-root-%% c-```",
+    "source": "- :: term\n  %% c\n   ```\n   body\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "review-root-%%%-```",
+    "source": "- :: term\n  %%%\n   ```\n   body\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "review-quote-%% c-> q",
+    "source": "> - :: term\n>   %% c\n>    > q\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>q\nafter</p></blockquote></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%% c-```",
+    "source": "> - :: term\n>   %% c\n>    ```\n>    body\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "review-quote-%%%-```",
+    "source": "> - :: term\n>   %%%\n>    ```\n>    body\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "review-list-%% c-> q",
+    "source": "- outer\n  - :: term\n    %% c\n     > q\n  after\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><blockquote><p>q\nafter</p></blockquote></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%% c-```",
+    "source": "- outer\n  - :: term\n    %% c\n     ```\n     body\n     ```\n  after\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul>\n    after\n  </li></ul>"
+  },
+  {
+    "id": "review-list-%%%-```",
+    "source": "- outer\n  - :: term\n    %%%\n     ```\n     body\n     ```\n  after\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul>\n    after\n  </li></ul>"
+  },
+  {
+    "id": "review-dd-%% c-# heading",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     # heading\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p># heading\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-> q",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     > q\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>&gt; q\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-| a |",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     | a |\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>| a |\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-::: box",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     ::: box\n     body\n     :::\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>::: box\nbody\n:::\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-```",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     ```\n     body\n     ```\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p><code>\nbody\n</code>\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-# heading",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     # heading\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p># heading\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-> q",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     > q\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>&gt; q\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-| a |",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     | a |\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>| a |\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-::: box",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     ::: box\n     body\n     :::\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>::: box\nbody\n:::\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-```",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     ```\n     body\n     ```\n  after\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p><code>\nbody\n</code>\nafter</p></dd></dl>"
+  },
+  {
+    "id": "review-root-%% c-# heading-no-tail",
+    "source": "- :: term\n  %% c\n   # heading\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul>"
+  },
+  {
+    "id": "review-root-%% c-> q-no-tail",
+    "source": "- :: term\n  %% c\n   > q\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><blockquote><p>q</p></blockquote></li></ul>"
+  },
+  {
+    "id": "review-root-%% c-| a |-no-tail",
+    "source": "- :: term\n  %% c\n   | a |\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul>"
+  },
+  {
+    "id": "review-root-%% c-::: box-no-tail",
+    "source": "- :: term\n  %% c\n   ::: box\n   body\n   :::\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>body</p></div></li></ul>"
+  },
+  {
+    "id": "review-root-%% c-```-no-tail",
+    "source": "- :: term\n  %% c\n   ```\n   body\n   ```\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul>"
+  },
+  {
+    "id": "review-root-%%%-```-no-tail",
+    "source": "- :: term\n  %%%\n   ```\n   body\n   ```\n",
+    "html": "<ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul>"
+  },
+  {
+    "id": "review-quote-%% c-# heading-no-tail",
+    "source": "> - :: term\n>   %% c\n>    # heading\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%% c-> q-no-tail",
+    "source": "> - :: term\n>   %% c\n>    > q\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><blockquote><p>q</p></blockquote></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%% c-| a |-no-tail",
+    "source": "> - :: term\n>   %% c\n>    | a |\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%% c-::: box-no-tail",
+    "source": "> - :: term\n>   %% c\n>    ::: box\n>    body\n>    :::\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>body</p></div></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%% c-```-no-tail",
+    "source": "> - :: term\n>   %% c\n>    ```\n>    body\n>    ```\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul></blockquote>"
+  },
+  {
+    "id": "review-quote-%%%-```-no-tail",
+    "source": "> - :: term\n>   %%%\n>    ```\n>    body\n>    ```\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul></blockquote>"
+  },
+  {
+    "id": "review-list-%% c-# heading-no-tail",
+    "source": "- outer\n  - :: term\n    %% c\n     # heading\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><h1 id=\"heading\">heading</h1></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%% c-> q-no-tail",
+    "source": "- outer\n  - :: term\n    %% c\n     > q\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><blockquote><p>q</p></blockquote></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%% c-| a |-no-tail",
+    "source": "- outer\n  - :: term\n    %% c\n     | a |\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><table><tbody><tr><td>a</td></tr></tbody></table></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%% c-::: box-no-tail",
+    "source": "- outer\n  - :: term\n    %% c\n     ::: box\n     body\n     :::\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><div class=\"box\"><p>body</p></div></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%% c-```-no-tail",
+    "source": "- outer\n  - :: term\n    %% c\n     ```\n     body\n     ```\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul></li></ul>"
+  },
+  {
+    "id": "review-list-%%%-```-no-tail",
+    "source": "- outer\n  - :: term\n    %%%\n     ```\n     body\n     ```\n",
+    "html": "<ul><li>outer\n    <ul><li><dl><dt>term</dt></dl><pre><code>body\n</code></pre></li></ul></li></ul>"
+  },
+  {
+    "id": "review-dd-%% c-# heading-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     # heading\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p># heading</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-> q-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     > q\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>&gt; q</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-| a |-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     | a |\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>| a |</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-::: box-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     ::: box\n     body\n     :::\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>::: box\nbody\n:::</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%% c-```-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %% c\n     ```\n     body\n     ```\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p><code>\nbody\n</code></p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-# heading-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     # heading\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p># heading</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-> q-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     > q\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>&gt; q</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-| a |-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     | a |\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>| a |</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-::: box-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     ::: box\n     body\n     :::\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p>::: box\nbody\n:::</p></dd></dl>"
+  },
+  {
+    "id": "review-dd-%%%-```-no-tail",
+    "source": ":: outer\n: description\n  - :: term\n    %%%\n     ```\n     body\n     ```\n",
+    "html": "<dl><dt>outer</dt><dd><p>description\n- :: term</p><p><code>\nbody\n</code></p></dd></dl>"
   }
 ]

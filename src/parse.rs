@@ -7702,6 +7702,9 @@ fn definition_entry_end(
             }
         }
         if description_column.is_none() && column == base && !item_block_opener(&local) {
+            if local.starts_with("%%") || is_list_marker(&local) {
+                term_open = false;
+            }
             end = j;
             j += 1;
             continue;
@@ -16175,7 +16178,9 @@ fn collect_indented_block_mapped_with_columns(
             && fence.is_none()
             && colon_open.is_empty()
             && indent <= strip_cols
-            && (in_comment_span || is_line_comment_any_column(line))
+            && (in_comment_span
+                || is_line_comment_any_column(line)
+                || detect_comment_fence_line_any_column(line).is_some())
         {
             marker_term_open = false;
         }
