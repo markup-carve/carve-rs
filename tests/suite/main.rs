@@ -1930,3 +1930,6 @@ mod quoted_document_definition_boundary;
 
 #[path = "../continued_marker_note_code_floor.rs"]
 mod continued_marker_note_code_floor;
+
+#[path = "../definition_term_floor_text.rs"]
+mod definition_term_floor_text;

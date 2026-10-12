@@ -7701,12 +7701,12 @@ fn definition_entry_end(
                 continue;
             }
         }
-        term_open = false;
         if description_column.is_none() && column == base && !item_block_opener(&local) {
             end = j;
             j += 1;
             continue;
         }
+        term_open = false;
         if description_column.is_some_and(|content| column >= content) {
             end = j;
             j += 1;
@@ -15651,6 +15651,8 @@ fn collect_indented_block_mapped_with_columns(
     let mut term_code_closer_checked = false;
     let mut term_code_start = 0;
     let mut marker_term_paragraph_open = marker_is_definition_term;
+    // Track term ownership separately from paragraph retention across deeper comments.
+    let mut marker_term_open = marker_is_definition_term;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -15721,6 +15723,9 @@ fn collect_indented_block_mapped_with_columns(
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            if comment_fence.is_none() && fence.is_none() {
+                marker_term_open = false;
+            }
             marker_term_paragraph_open = false;
             if term_code_lazy_tail && fence.is_some() {
                 term_code_tail_can_resume = true;
@@ -16165,6 +16170,16 @@ fn collect_indented_block_mapped_with_columns(
             marker_term_paragraph_open = false;
         }
         if marker_is_definition_term
+            && marker_term_open
+            && !was_in_comment_span
+            && fence.is_none()
+            && colon_open.is_empty()
+            && indent <= strip_cols
+            && (in_comment_span || is_line_comment_any_column(line))
+        {
+            marker_term_open = false;
+        }
+        if marker_is_definition_term
             && fence.is_none()
             && !in_comment_span
             && colon_open.is_empty()
@@ -16173,10 +16188,12 @@ fn collect_indented_block_mapped_with_columns(
             if is_definition_list_start(trim_ascii_start(line)) {
                 marker_definition_has_description = false;
                 marker_term_paragraph_open = true;
+                marker_term_open = true;
             } else if strip_description_prefix(trim_ascii_start(line)).is_some() {
                 marker_definition_has_description = true;
                 marker_term_paragraph_open = false;
-            } else if marker_term_paragraph_open
+                marker_term_open = false;
+            } else if marker_term_open
                 && detect_fence_open(trim_ascii_start(line)).is_none()
                 && ((matches!(
                     trim_ascii_start(line).as_bytes().first(),
@@ -16227,10 +16244,11 @@ fn collect_indented_block_mapped_with_columns(
                         })))
             {
                 marker_term_paragraph_open = false;
+                marker_term_open = false;
             }
         }
         if authored_code_base.is_none()
-            && marker_definition_has_description
+            && (marker_definition_has_description || !marker_term_open)
             && fence.is_none()
             && !in_comment_span
             && colon_open.is_empty()
@@ -16241,9 +16259,10 @@ fn collect_indented_block_mapped_with_columns(
             && (marker_is_definition_lead
                 || line[..line.len() - trim_ascii_start(line).len()].contains('\t'))
             && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
-                lines.is_empty()
-                    || lines.last().is_some_and(|line| is_blank_line(line))
-                    || list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
+                (marker_definition_has_description || !collected_body_ends_in_a_quote_fold(&lines))
+                    && (lines.is_empty()
+                        || lines.last().is_some_and(|line| is_blank_line(line))
+                        || list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent))
             })
         {
             authored_code_base = Some(indent);
