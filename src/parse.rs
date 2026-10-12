@@ -1343,6 +1343,7 @@ fn extract_footnote_defs(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content, so a definition-shaped line inside
@@ -1398,6 +1399,7 @@ fn extract_footnote_defs(
         // by the parser and collected by nobody (#1500).
         let after_term = opens_definition_entry(previous_non_blank);
         let stripped = strip_container_prefixes_at(lines[i], &columns, after_term);
+        remember_prepass_paragraph_line(&folded_into_term, i, lines[i], &stripped, &columns);
         if !is_blank_line(lines[i]) {
             previous_non_blank = lines[i];
         }
@@ -1422,11 +1424,13 @@ fn extract_footnote_defs(
             continue;
         }
         if let Some(open) = in_fence {
-            if (term_fence_owned && term_fence_ends_above(lines[i], open, &term_fence_columns))
+            if (term_fence_owned
+                && term_fence_ends_above(lines[i], term_fence_floor, &term_fence_columns))
                 || prepass_fence_ends_above(lines[i], open, fence_closer_ahead)
             {
                 in_fence = None;
             } else {
+                end_prepass_paragraph_at(&folded_into_term, i);
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
                 let close_kept = if term_fence_quotes > 0 {
@@ -1449,6 +1453,7 @@ fn extract_footnote_defs(
             }
         }
         if let Some(open) = in_comment_fence {
+            end_prepass_paragraph_at(&folded_into_term, i);
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
             // at (PART 9 §24 C3, markup-carve/carve#629), so testing the strict
@@ -1487,6 +1492,7 @@ fn extract_footnote_defs(
                 &comment_fence_closers,
                 &mut container_closers,
             ) {
+                end_prepass_paragraph_at(&folded_into_term, i);
                 in_comment_fence = Some(OpenCommentFence {
                     fence_len: open.fence_len,
                     quote_depth: scope.quote_depth(),
@@ -1506,16 +1512,25 @@ fn extract_footnote_defs(
             // §10 I4, as `extract_link_defs_with_guard`: an unterminated fence
             // interrupts no open paragraph, so going opaque here hid every
             // definition below one from collection (carve-rs#2096).
-            let fence =
-                prepass_fence_opens(&lines, i, open, &closer_maxima, &folded_into_term, &columns);
+            let fence = prepass_fence_opens(
+                &lines,
+                i,
+                open,
+                &closer_maxima,
+                &folded_into_term,
+                &columns,
+                after_term,
+            );
             if fence.opens {
-                open.quoted |= !fence.quote_columns.is_empty();
+                end_prepass_paragraph_at(&folded_into_term, i);
                 in_fence = Some(open);
                 term_fence_quotes =
                     term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
                     .unwrap_or(fence.quote_columns);
+                term_fence_floor =
+                    term_fence.map_or(fence.host_content_col, |host| host.content_col);
                 term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
@@ -2333,11 +2348,18 @@ fn line_folds_into_an_open_paragraph(
     after.ends_in_paragraph && before.levels == after.levels
 }
 
+#[derive(Clone)]
+struct PrepassParagraph {
+    quote_columns: std::rc::Rc<[usize]>,
+    absorption: bool,
+}
+
 /// Lines folded into a term and fences that end one at its container column.
 #[derive(Default)]
 struct TermLineOwnership {
     folded: std::collections::HashSet<usize>,
     fence_openers: HashMap<usize, TermFenceHost>,
+    paragraph_quotes: std::cell::RefCell<HashMap<usize, Option<PrepassParagraph>>>,
 }
 
 struct TermFenceHost {
@@ -2347,10 +2369,7 @@ struct TermFenceHost {
     opener_offset: usize,
 }
 
-fn term_folded_lines(
-    lines: &[&str],
-    closer_maxima: &(Vec<usize>, Vec<usize>),
-) -> TermLineOwnership {
+fn term_folded_lines(lines: &[&str], closer_maxima: &PrepassFenceClosers) -> TermLineOwnership {
     fn view_upto(raw: &str, limit: usize) -> (&str, usize, bool) {
         let mut view = raw;
         let mut quotes = 0usize;
@@ -2405,8 +2424,15 @@ fn term_folded_lines(
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut index = 0;
+    let mut previous_non_blank = "";
     while index < lines.len() {
         columns.observe(lines[index], false);
+        let after_term = opens_definition_entry(previous_non_blank);
+        if !is_blank_line(lines[index]) {
+            previous_non_blank = lines[index];
+        }
+        let prefix = strip_container_prefixes_at(lines[index], &columns, after_term);
+        remember_prepass_paragraph_line(&ownership, index, lines[index], &prefix, &columns);
         // A `>` past an open term's column is term text, not a deeper quote.
         if let Some((term_col, term_quotes)) = term {
             let (at_term, quotes, through_list) = view_upto(lines[index], term_quotes);
@@ -2485,27 +2511,44 @@ fn term_folded_lines(
         }
         // A fence's payload holds no term.
         if let Some(close) = comment {
+            for opaque in index..=close {
+                end_prepass_paragraph_at(&ownership, opaque);
+            }
             index = close + 1;
             continue;
         }
         if let Some(mut open) = detect_fence_open(rest) {
             let term_host = ownership.fence_openers.get(&index);
-            let term_quote_columns = term_host.map(|host| host.quote_columns.clone());
-            let term_fence_owned = term_host.is_some();
+            let mut term_quote_columns = term_host.map(|host| host.quote_columns.clone());
+            let mut term_fence_owned = term_host.is_some();
             open.content_col = col;
             open.quoted = quotes > 0;
-            let fence =
-                prepass_fence_opens(lines, index, open, closer_maxima, &ownership, &columns);
+            let fence = prepass_fence_opens(
+                lines,
+                index,
+                open,
+                closer_maxima,
+                &ownership,
+                &columns,
+                after_term,
+            );
             if !fence.opens {
                 index += 1;
                 continue;
             }
+            let term_fence_floor =
+                term_host.map_or(fence.host_content_col, |host| host.content_col);
+            if term_quote_columns.is_none() && !fence.quote_columns.is_empty() {
+                term_quote_columns = Some(fence.quote_columns.clone());
+                term_fence_owned = true;
+            }
+            end_prepass_paragraph_at(&ownership, index);
             index += 1;
             while index < lines.len() {
                 if (term_fence_owned
                     && term_fence_ends_above(
                         lines[index],
-                        open,
+                        term_fence_floor,
                         term_quote_columns.as_deref().unwrap_or(&[]),
                     ))
                     || prepass_fence_ends_above(lines[index], open, fence.closer_ahead)
@@ -2528,6 +2571,7 @@ fn term_folded_lines(
                     }
                     break;
                 }
+                end_prepass_paragraph_at(&ownership, index);
                 let kept = strip_prepass_quote_levels(lines[index], quotes).unwrap_or(lines[index]);
                 let close_line = if leading_ws(kept) >= open.content_col {
                     &kept[open.content_col..]
@@ -2550,6 +2594,7 @@ fn term_folded_lines(
         }
         index += 1;
     }
+    ownership.paragraph_quotes.borrow_mut().clear();
     ownership
 }
 
@@ -2578,13 +2623,38 @@ fn term_start_column(line: &str) -> Option<usize> {
     }
 }
 
-/// Suffix maxima of the closing fence run a definition pre-pass can still meet
-/// at or after each line, as `(backtick, tilde)`.
+/// Closing runs indexed by normalized column and character.
 ///
-/// `[i]` bounds every opener above `i` in O(1), so the exact scan runs only
-/// where a compatible closer really exists. Without it, N unterminated marker
-/// lines each scanned the remaining N lines (`perf_regressions`).
-fn fence_closer_suffix_maxima(lines: &[&str]) -> (Vec<usize>, Vec<usize>) {
+/// The global maxima retain the prepass admission gate; each column bucket
+/// stores suffix widths so quote exits cannot make later openers rescan payload.
+struct PrepassFenceClosers {
+    maxima: (Vec<usize>, Vec<usize>),
+    by_column: HashMap<(bool, u8, usize), Vec<(usize, usize)>>,
+}
+
+impl PrepassFenceClosers {
+    fn closes_after(&self, index: usize, open: FenceOpen) -> bool {
+        let suffix_max = if open.fence_char == b'`' {
+            self.maxima.0[index + 1]
+        } else {
+            self.maxima.1[index + 1]
+        };
+        if suffix_max < open.fence_len {
+            return false;
+        }
+        [0, open.content_col].into_iter().any(|column| {
+            self.by_column
+                .get(&(open.quoted, open.fence_char, column))
+                .is_some_and(|runs| {
+                    let next = runs.partition_point(|&(at, _)| at <= index);
+                    runs.get(next)
+                        .is_some_and(|&(_, width)| width >= open.fence_len)
+                })
+        })
+    }
+}
+
+fn fence_closer_suffix_maxima(lines: &[&str]) -> PrepassFenceClosers {
     let mut backtick = vec![0usize; lines.len() + 1];
     let mut tilde = vec![0usize; lines.len() + 1];
     for index in (0..lines.len()).rev() {
@@ -2618,7 +2688,49 @@ fn fence_closer_suffix_maxima(lines: &[&str]) -> (Vec<usize>, Vec<usize>) {
             tilde[index] = tilde[index].max(run);
         }
     }
-    (backtick, tilde)
+    let mut by_column: HashMap<(bool, u8, usize), Vec<(usize, usize)>> = HashMap::new();
+    if backtick[0] > 0 || tilde[0] > 0 {
+        for (index, &line) in lines.iter().enumerate() {
+            for quoted in [false, true] {
+                let line = if quoted {
+                    strip_prepass_blockquote_prefix(line).unwrap_or(line)
+                } else {
+                    line
+                };
+                let kept = strip_container_prefixes_keep_indent(line);
+                let column = leading_ws(&kept);
+                let candidate = &kept[column..];
+                let Some(&character @ (b'`' | b'~')) = candidate.as_bytes().first() else {
+                    continue;
+                };
+                let width = candidate
+                    .bytes()
+                    .take_while(|&byte| byte == character)
+                    .count();
+                if width >= 3
+                    && candidate[width..]
+                        .bytes()
+                        .all(|byte| byte == b' ' || byte == b'\t')
+                {
+                    by_column
+                        .entry((quoted, character, column))
+                        .or_default()
+                        .push((index, width));
+                }
+            }
+        }
+    }
+    for runs in by_column.values_mut() {
+        let mut maximum = 0;
+        for (_, width) in runs.iter_mut().rev() {
+            maximum = maximum.max(*width);
+            *width = maximum;
+        }
+    }
+    PrepassFenceClosers {
+        maxima: (backtick, tilde),
+        by_column,
+    }
 }
 
 /// Does the line above `index` leave a paragraph open for §10 I4 to ask about?
@@ -2631,8 +2743,8 @@ fn fence_closer_suffix_maxima(lines: &[&str]) -> (Vec<usize>, Vec<usize>) {
 fn prepass_paragraph_open_above(
     lines: &[&str],
     index: usize,
-    columns: &ContentColumns,
     quote_columns: &[usize],
+    terms: &TermLineOwnership,
 ) -> bool {
     if index == 0 {
         return false;
@@ -2643,17 +2755,99 @@ fn prepass_paragraph_open_above(
     // open closed with that container and nothing here can interrupt it: a
     // column-0 fence under a note body's `   a` really opens, which is what the
     // block parser reads and what the sentinel guard pins.
-    let after_term = index > 1 && opens_definition_entry(lines[index - 2]);
-    let above_prefix = strip_container_prefixes_at(above, columns, after_term);
-    let above_quotes = term_quote_columns_for(above_prefix.structural, columns);
-    // A paragraph outside a newly admitted quote cannot keep its fence inline.
-    // The strict prefix scan excludes an indented quote marker written as text.
-    above_quotes == quote_columns
+    let paragraph_quotes = terms.paragraph_quotes.borrow();
+    let same_quote_paragraph = quote_columns.is_empty()
+        || paragraph_quotes
+            .get(&(index - 1))
+            .and_then(Option::as_ref)
+            .is_some_and(|host| host.quote_columns.starts_with(quote_columns));
+    same_quote_paragraph
         && !is_blank_line(above)
         && indent_columns(above) <= indent_columns(lines[index])
         && !is_definition_placeholder(above)
         && !is_line_comment_any_column(above)
         && !prepass_definition_line(above)
+}
+
+fn remember_prepass_paragraph_line(
+    terms: &TermLineOwnership,
+    index: usize,
+    raw: &str,
+    prefix: &StrippedContainerLine<'_>,
+    columns: &ContentColumns,
+) {
+    let mut contexts = terms.paragraph_quotes.borrow_mut();
+    let mut paragraph = index
+        .checked_sub(1)
+        .and_then(|above| contexts.get(&above))
+        .cloned()
+        .flatten();
+    let description_prefix;
+    let prefix = if columns
+        .frames
+        .get(
+            prefix
+                .structural
+                .bytes()
+                .filter(|byte| *byte == b'>')
+                .count(),
+        )
+        .is_some_and(|frame| frame.def_list.is_some())
+        && strip_definition_marker(trim_ascii_start(prefix.bare)).is_some()
+    {
+        description_prefix = strip_container_prefixes_at(raw, columns, true);
+        &description_prefix
+    } else {
+        prefix
+    };
+    let quotes = term_quote_columns_for(prefix.structural, columns);
+    let same_host = paragraph
+        .as_ref()
+        .is_some_and(|host| host.quote_columns.starts_with(&quotes));
+    let rest = paragraph
+        .as_ref()
+        .filter(|_| same_host)
+        .map(|host| {
+            strip_term_quote_prefixes(raw, &host.quote_columns[..quotes.len()]).unwrap_or(raw)
+        })
+        .unwrap_or(prefix.bare);
+    if is_blank_line(raw)
+        || is_definition_placeholder(raw)
+        || prepass_definition_line(raw)
+        || trim_ascii_start(rest).starts_with("%%")
+    {
+        paragraph = None;
+    } else if !quotes.is_empty()
+        || paragraph
+            .as_ref()
+            .is_some_and(|host| !host.quote_columns.is_empty())
+    {
+        let inherited = same_host && paragraph.as_ref().is_some_and(|host| host.absorption);
+        let mut admission = ParaOpen::from_line(rest, inherited);
+        if admission.get() {
+            let quote_columns = if same_host {
+                paragraph.as_ref().unwrap().quote_columns.clone()
+            } else {
+                std::rc::Rc::from(quotes)
+            };
+            paragraph = Some(PrepassParagraph {
+                quote_columns,
+                absorption: admission.absorption(),
+            });
+        } else {
+            paragraph = None;
+        }
+    } else {
+        paragraph = Some(PrepassParagraph {
+            quote_columns: std::rc::Rc::from(quotes),
+            absorption: false,
+        });
+    }
+    contexts.insert(index, paragraph);
+}
+
+fn end_prepass_paragraph_at(terms: &TermLineOwnership, index: usize) {
+    terms.paragraph_quotes.borrow_mut().insert(index, None);
 }
 
 /// Is `line` a definition, in any of the three spellings?
@@ -2675,35 +2869,15 @@ fn prepass_definition_line(line: &str) -> bool {
 
 /// Is there a line below `index` that closes `open`?
 ///
-/// The suffix maximum answers no in O(1); the scan runs only where a compatible
-/// run really exists.
+/// The suffix maximum rejects absent runs; column buckets answer compatible
+/// runs without scanning the remaining source.
 fn prepass_fence_closer_ahead(
-    lines: &[&str],
+    _lines: &[&str],
     index: usize,
     open: FenceOpen,
-    maxima: &(Vec<usize>, Vec<usize>),
+    maxima: &PrepassFenceClosers,
 ) -> bool {
-    let suffix_max = if open.fence_char == b'`' {
-        maxima.0[index + 1]
-    } else {
-        maxima.1[index + 1]
-    };
-    suffix_max >= open.fence_len
-        && lines[index + 1..].iter().any(|candidate| {
-            let kept = if open.quoted {
-                strip_prepass_blockquote_prefix(candidate).unwrap_or(candidate)
-            } else {
-                candidate
-            };
-            let kept = strip_container_prefixes_keep_indent(kept);
-            let indent = leading_ws(&kept);
-            let candidate = if indent >= open.content_col {
-                &kept[open.content_col..]
-            } else {
-                kept.as_str()
-            };
-            is_fence_close(candidate, open)
-        })
+    maxima.closes_after(index, open)
 }
 
 /// Whether a fence opener on `lines[index]` really opens a fence for a
@@ -2718,25 +2892,37 @@ fn prepass_fence_opens(
     lines: &[&str],
     index: usize,
     open: FenceOpen,
-    maxima: &(Vec<usize>, Vec<usize>),
+    maxima: &PrepassFenceClosers,
     terms: &TermLineOwnership,
     columns: &ContentColumns,
+    after_term: bool,
 ) -> PrepassFence {
     let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
-    let after_term = index > 0 && opens_definition_entry(lines[index - 1]);
     let prefix = strip_container_prefixes_at(lines[index], columns, after_term);
     let quote_columns = term_quote_columns_for(prefix.structural, columns);
     PrepassFence {
         opens: closer_ahead
             || terms.fence_openers.contains_key(&index)
-            || !prepass_paragraph_open_above(lines, index, columns, &quote_columns),
+            || !prepass_paragraph_open_above(lines, index, &quote_columns, terms),
         quote_columns,
+        host_content_col: columns.reached_by(indent_columns(prefix.bare)).max(
+            if prefix
+                .structural
+                .chars()
+                .any(|character| !matches!(character, '>' | ' ' | '\t'))
+            {
+                columns.current().cols.last().copied().unwrap_or(0)
+            } else {
+                0
+            },
+        ),
         closer_ahead,
     }
 }
 
 struct PrepassFence {
     quote_columns: Vec<usize>,
+    host_content_col: usize,
     opens: bool,
     closer_ahead: bool,
 }
@@ -2791,11 +2977,11 @@ fn strip_term_quote_prefixes<'a>(mut line: &'a str, quote_columns: &[usize]) -> 
     Some(line)
 }
 
-fn term_fence_ends_above(line: &str, open: FenceOpen, quote_columns: &[usize]) -> bool {
+fn term_fence_ends_above(line: &str, content_col: usize, quote_columns: &[usize]) -> bool {
     let Some(kept) = strip_term_quote_prefixes(line, quote_columns) else {
         return true;
     };
-    !is_blank_line(kept) && indent_columns(kept) < open.content_col
+    !is_blank_line(kept) && indent_columns(kept) < content_col
 }
 
 fn extract_link_defs(source: &str, options: &Options<'_>) -> (String, BTreeMap<String, LinkDef>) {
@@ -2829,6 +3015,7 @@ fn extract_link_defs_with_guard(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
@@ -2892,6 +3079,7 @@ fn extract_link_defs_with_guard(
         // blank lines does not make this pre-pass quadratic.
         let after_term = opens_definition_entry(previous_non_blank);
         let stripped = strip_container_prefixes_at(line, &columns, after_term);
+        remember_prepass_paragraph_line(&folded_into_term, line_index, line, &stripped, &columns);
         if !is_blank_line(line) {
             previous_non_blank = line;
         }
@@ -2901,11 +3089,13 @@ fn extract_link_defs_with_guard(
             continue;
         }
         if let Some(open) = in_fence {
-            if (term_fence_owned && term_fence_ends_above(line, open, &term_fence_columns))
+            if (term_fence_owned
+                && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
                 || prepass_fence_ends_above(line, open, fence_closer_ahead)
             {
                 in_fence = None;
             } else {
+                end_prepass_paragraph_at(&folded_into_term, line_index);
                 body.push(std::borrow::Cow::Borrowed(line));
                 // CLOSER: strip a blockquote prefix only when the fence was opened
                 // quoted, and NEVER a list marker. A fence closer is a continuation
@@ -2960,6 +3150,7 @@ fn extract_link_defs_with_guard(
         // Top-level and unindented only - see the note in extract_footnote_defs
         // for why a nested opener is refused rather than guessed at.
         if let Some(open) = in_comment_fence {
+            end_prepass_paragraph_at(&folded_into_term, line_index);
             // ANY column, at the opener's quote depth - see the note in
             // `extract_footnote_defs`.
             if closes_open_comment_fence(line, open) {
@@ -2989,6 +3180,7 @@ fn extract_link_defs_with_guard(
                 &comment_closers,
                 &mut container_closers,
             ) {
+                end_prepass_paragraph_at(&folded_into_term, line_index);
                 in_comment_fence = Some(OpenCommentFence {
                     fence_len: open.fence_len,
                     quote_depth: scope.quote_depth(),
@@ -3007,8 +3199,10 @@ fn extract_link_defs_with_guard(
                 &closer_maxima,
                 &folded_into_term,
                 &columns,
+                after_term,
             );
             if fence.opens {
+                end_prepass_paragraph_at(&folded_into_term, line_index);
                 open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);
                 term_fence_quotes =
@@ -3016,6 +3210,8 @@ fn extract_link_defs_with_guard(
                 term_fence_columns = term_fence
                     .map(|host| host.quote_columns.clone())
                     .unwrap_or(fence.quote_columns);
+                term_fence_floor =
+                    term_fence.map_or(fence.host_content_col, |host| host.content_col);
                 term_fence_owned = term_fence.is_some() || !term_fence_columns.is_empty();
                 fence_closer_ahead = fence.closer_ahead;
             }
@@ -26385,7 +26581,11 @@ mod quote_prefix_calls {
     //! machine: every figure quoted below reproduces byte-identically across
     //! runs and loads.
 
-    use super::QUOTE_PREFIX_CALLS;
+    use super::{
+        detect_fence_open, fence_closer_suffix_maxima, is_fence_close, leading_ws,
+        strip_container_prefixes_keep_indent, strip_prepass_blockquote_prefix, FenceOpen,
+        QUOTE_PREFIX_CALLS,
+    };
     #[test]
     fn repeated_unclosed_quoted_fences_have_linear_work() {
         for definitions in [false, true] {
@@ -26399,6 +26599,87 @@ mod quote_prefix_calls {
             }
             assert!(measurements[3] <= measurements[0] * 12,
                 "eight times the input must use at most twelve times the prefix work: {measurements:?}");
+        }
+    }
+
+    #[test]
+    fn prepass_closer_index_preserves_columns_and_run_widths() {
+        let lines = [
+            "payload",
+            "> ```",
+            "  ~~~~",
+            " > `````",
+            "> - ```",
+            "- ~~~",
+            "``` info",
+            "> > ~~~~~",
+            "```` tail",
+            "  ```\t",
+        ];
+        let closers = fence_closer_suffix_maxima(&lines);
+        for index in 0..lines.len() {
+            for quoted in [false, true] {
+                for content_col in 0..=6 {
+                    for fence_char in [b'`', b'~'] {
+                        for fence_len in 3..=6 {
+                            let open = FenceOpen {
+                                fence_char,
+                                fence_len,
+                                content_col,
+                                quoted,
+                                ..detect_fence_open("```").unwrap()
+                            };
+                            let suffix = if fence_char == b'`' {
+                                closers.maxima.0[index + 1]
+                            } else {
+                                closers.maxima.1[index + 1]
+                            };
+                            let expected = suffix >= fence_len
+                                && lines[index + 1..].iter().any(|&line| {
+                                    let line = if quoted {
+                                        strip_prepass_blockquote_prefix(line).unwrap_or(line)
+                                    } else {
+                                        line
+                                    };
+                                    let kept = strip_container_prefixes_keep_indent(line);
+                                    let candidate = if leading_ws(&kept) >= content_col {
+                                        &kept[content_col..]
+                                    } else {
+                                        &kept
+                                    };
+                                    is_fence_close(candidate, open)
+                                });
+                            assert_eq!(closers.closes_after(index, open), expected,
+                                "index={index}, quoted={quoted}, column={content_col}, character={fence_char}, width={fence_len}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn lazy_quote_fence_admission_has_linear_prefix_work() {
+        for shape in 0..4 {
+            let measurements: Vec<_> = [128, 256, 512, 1024]
+                .into_iter()
+                .map(|n| {
+                    let source = match shape {
+                        0 => format!("> p\n{}> ```\n> [r]: /target\n", "lazy\n".repeat(n)),
+                        1 => "> p\nlazy\n> ```\n> [r]: /target\n\n".repeat(n),
+                        2 => format!(
+                            "> ```a\n{}> ```\nlazy\n> ~~~\n> [r]: /target\n",
+                            "> ```x\n".repeat(n)
+                        ),
+                        _ => format!("{}> ```\n", "> ```a\nlazy\n".repeat(n)),
+                    };
+                    calls_for(source)
+                })
+                .collect();
+            assert!(
+                measurements[3] <= measurements[0] * 12,
+                "lazy quote admission repeats prefix work: {measurements:?}"
+            );
         }
     }
 
