@@ -457,7 +457,9 @@ fn shared_export_collisions_report_the_dropped_authored_attribute() {
         assert!(result
             .losses
             .iter()
-            .any(|row| row.code == "carrier-attribute-dropped" && row.attribute.as_deref() == Some(name.as_str()) && row.format.is_none()));
+            .any(|row| row.code == "carrier-attribute-dropped"
+                && row.attribute.as_deref() == Some(name.as_str())
+                && row.format.is_none()));
     }
 }
 
