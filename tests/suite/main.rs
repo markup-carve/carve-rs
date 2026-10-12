@@ -1896,6 +1896,8 @@ mod markdown_nested_emphasis;
 mod list_code_fence_floor;
 #[path = "../markdown_footnote_continuation.rs"]
 mod markdown_footnote_continuation;
+#[path = "../new_quote_definition_opacity.rs"]
+mod new_quote_definition_opacity;
 
 #[path = "../roundtrip_carriers_2.rs"]
 mod roundtrip_carriers_2;
