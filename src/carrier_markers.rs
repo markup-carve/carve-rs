@@ -741,11 +741,17 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
             } else {
                 ""
             };
-            out.push(format!(
-                "{}<!-- {token}{}Z{math} -->",
-                found.host,
-                slots.len()
-            ));
+            if carrier_fence_width(&found.payload) > 0 {
+                // Fence placeholders share the body's paragraph so list hosts
+                // retain their content column without extra block separators.
+                out.push(format!("{}{token}{}Z", found.host, slots.len()));
+            } else {
+                out.push(format!(
+                    "{}<!-- {token}{}Z{math} -->",
+                    found.host,
+                    slots.len()
+                ));
+            }
             let closer = carrier_is_closer(&found.payload);
             drop_bold = if closer {
                 0
