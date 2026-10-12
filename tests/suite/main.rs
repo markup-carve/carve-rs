@@ -1892,6 +1892,8 @@ mod markdown_image_alt_text;
 #[path = "../markdown_nested_emphasis.rs"]
 mod markdown_nested_emphasis;
 
+#[path = "../list_code_fence_floor.rs"]
+mod list_code_fence_floor;
 #[path = "../markdown_footnote_continuation.rs"]
 mod markdown_footnote_continuation;
 
