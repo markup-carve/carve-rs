@@ -23,9 +23,7 @@
 //! inject.
 
 use crate::ast::{AttrSlot, Attrs, BlockNode, CodeBlock, Document, FigureTarget, RawBlock};
-use crate::escape::{
-    escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
-};
+use crate::escape::{escape_attr, escape_text, sanitize_attr_value};
 use crate::extension::{BeforeRenderContext, CarveExtension, DiagramRendererRef};
 
 /// How a [`FencedRender`] instance places the block body.
@@ -523,7 +521,7 @@ fn ensure_class_slot(attrs: &mut Attrs) {
 fn render_attrs(attrs: &Attrs) -> String {
     let mut out = String::new();
     let push_kv = |out: &mut String, key: &str, value: &str| {
-        if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
+        if crate::render::writes_authored_key(key) {
             out.push_str(&format!(
                 " {}=\"{}\"",
                 escape_attr(key),

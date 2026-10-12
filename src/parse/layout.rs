@@ -315,6 +315,8 @@ fn try_layout_into(
     if !options.extensions.is_empty()
         || options.profile.is_some()
         || options.source_lines
+        // The carriers of PART 10 §13a are the tree renderer's to write.
+        || options.html_carriers()
         || !options.sections
         || options.mode != crate::Mode::Interactive
         || options.smart_typography != crate::extension::SmartTypographyMode::Glyph
