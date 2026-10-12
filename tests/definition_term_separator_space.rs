@@ -782,3 +782,81 @@ fn a_marker_left_of_a_proved_item_releases_its_term_host() {
     let output = html(source);
     assert!(output.contains("role=\"doc-noteref\""), "{output}");
 }
+
+#[test]
+fn repeated_root_terms_keep_reference_payload_after_the_probe_budget_boundary() {
+    for (count, prefix) in [
+        (25, ""),
+        (200, ""),
+        (200, "```\nx\n```\n\n"),
+        (200, "::: box\nx\n:::\n\n"),
+        (200, "::: box\n::: inner\nx\n:::\n:::\n\n"),
+    ] {
+        let source = prefix.to_string()
+            + &(0..count)
+                .map(|index| format!("# h\n- :: t\n  ``` x\n  [r{index}]: /u\n"))
+                .collect::<String>();
+        let output = html(&source);
+        assert_eq!(
+            output.matches("<pre><code class=\"language-x\">").count(),
+            count
+        );
+        for index in 0..count {
+            assert!(
+                output.contains(&format!("[r{index}]: /u")),
+                "missing {index}"
+            );
+        }
+        assert!(!output.contains('\u{e005}'));
+    }
+}
+
+#[test]
+fn repeated_root_terms_keep_note_payload_after_the_probe_budget_boundary() {
+    for count in [25, 200] {
+        let source = (0..count)
+            .map(|index| format!("# h\n- :: t\n  ``` x\n  [^n{index}]: note\n"))
+            .collect::<String>();
+        let doc = carve::parse(&source);
+        assert!(doc.footnote_defs.is_empty());
+        let output = carve::render_html(&doc).unwrap();
+        assert_eq!(
+            output.matches("<pre><code class=\"language-x\">").count(),
+            count
+        );
+        for index in 0..count {
+            assert!(
+                output.contains(&format!("[^n{index}]: note")),
+                "missing {index}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_folded_marker_fence_with_a_flush_closer_cannot_hide_later_definitions() {
+    for quoted in [false, true] {
+        for term_first in [false, true] {
+            for definition in ["[r]: /u", "[^a]: note"] {
+                let body = format!("p\n- ```\n  x\n```\n\n{definition}\n\nsee [^a]\n\n");
+                let source = if term_first {
+                    format!(":: t\n\n{body}")
+                } else {
+                    format!("{body}:: t\n")
+                };
+                let source = if quoted {
+                    source.lines().map(|line| format!("> {line}\n")).collect()
+                } else {
+                    source
+                };
+                let doc = carve::parse(&source);
+                let output = carve::render_html(&doc).unwrap();
+                assert!(!output.contains(definition), "{source:?}: {output}");
+                if definition.starts_with("[^") {
+                    assert_eq!(doc.footnote_defs.len(), 1, "{source:?}: {output}");
+                    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+                }
+            }
+        }
+    }
+}

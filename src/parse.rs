@@ -414,10 +414,37 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
 /// as an ordinary paragraph and answers every question about the line after it
 /// the wrong way.
 fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    probe_blocks_at_document_level_with_start(source, options).0
+}
+
+#[derive(Default)]
+struct ProbeRootBoundary {
+    start: Option<usize>,
+    closed_initial_container_end: Option<usize>,
+}
+
+fn probe_blocks_at_document_level_with_start(
+    source: &str,
+    options: &Options<'_>,
+) -> (Vec<BlockNode>, ProbeRootBoundary) {
     let _recording = definition_regions::RecordingPause::enter();
     let _probing = ProbeGuard::enter();
     let _source_ending = SourceEndingGuard::fragment();
-    parse_blocks_with_options_at_level(source, options, true)
+    let mut root_start = ProbeRootBoundary::default();
+    let blocks = drained(options, |pending| {
+        let (blocks, start) = parse_blocks_with_options_at_level_into_reached_with_start(
+            source,
+            &[],
+            None,
+            options,
+            true,
+            false,
+            pending,
+        );
+        root_start = start;
+        blocks
+    });
+    (blocks, root_start)
 }
 
 /// RAII guard that marks the current thread as parsing a figure group's body,
@@ -2325,6 +2352,27 @@ fn paragraph_continuation_probe(
     unaffordable: &mut bool,
     collect_notes: bool,
 ) -> bool {
+    paragraph_continuation_probe_with_start(
+        body,
+        line,
+        options,
+        budget,
+        unaffordable,
+        collect_notes,
+        false,
+    )
+    .0
+}
+
+fn paragraph_continuation_probe_with_start(
+    body: &[impl AsRef<str>],
+    line: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+    unaffordable: &mut bool,
+    collect_notes: bool,
+    capture_root: bool,
+) -> (bool, ProbeRootBoundary) {
     let run_start = if collect_notes {
         0
     } else {
@@ -2334,7 +2382,7 @@ fn paragraph_continuation_probe(
     };
     let run = &body[run_start..];
     if run.is_empty() {
-        return false;
+        return (false, ProbeRootBoundary::default());
     }
     // What the two probes will PARSE, which is the run twice over plus the
     // candidate line - so the price is the work rather than the question.
@@ -2358,7 +2406,7 @@ fn paragraph_continuation_probe(
     // markup-carve/carve#1881.
     if *budget < cost {
         *unaffordable = true;
-        return false;
+        return (false, ProbeRootBoundary::default());
     }
     *budget -= cost;
 
@@ -2371,6 +2419,7 @@ fn paragraph_continuation_probe(
     }
     let mut after = String::with_capacity(before.len() + line.len() + 1);
     after.push_str(&before);
+    let raw_before_len = before.len();
     after.push('\n');
     after.push_str(line);
 
@@ -2386,13 +2435,34 @@ fn paragraph_continuation_probe(
         reduce_frame_probe_links(source, options)
     };
     let before = reduce(before);
-    let before = open_frame(&probe_blocks_at_document_level(&before, options));
+    let unchanged = before == after[..raw_before_len]
+        || before.strip_suffix('\n') == Some(&after[..raw_before_len]);
+    let (before, root_start) = if capture_root && unchanged && options.extensions.is_empty() {
+        let (blocks, root_start) = probe_blocks_at_document_level_with_start(&before, options);
+        (
+            open_frame(&blocks),
+            ProbeRootBoundary {
+                start: root_start.start.map(|start| run_start + start),
+                closed_initial_container_end: root_start
+                    .closed_initial_container_end
+                    .map(|end| run_start + end),
+            },
+        )
+    } else {
+        (
+            open_frame(&probe_blocks_at_document_level(&before, options)),
+            ProbeRootBoundary::default(),
+        )
+    };
     if !before.ends_in_paragraph {
-        return false;
+        return (false, root_start);
     }
     let after = reduce(after);
     let after = open_frame(&probe_blocks_at_document_level(&after, options));
-    after.ends_in_paragraph && before.levels == after.levels
+    (
+        after.ends_in_paragraph && before.levels == after.levels,
+        root_start,
+    )
 }
 
 fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
@@ -2480,30 +2550,59 @@ fn term_folded_lines(
     for line in lines {
         prefix_costs.push(prefix_costs.last().unwrap().saturating_add(line.len() + 1));
     }
-    let marker_admitted = |start: usize, budget: &mut usize| {
+    let marker_admitted = |start: usize,
+                           budget: &mut usize,
+                           root_start: &mut usize,
+                           reuse_root: &mut bool,
+                           last_unproved_delimiter: Option<usize>,
+                           unresolved_code_delimiter: bool| {
         if probing() || start == 0 || is_blank_line(view(lines[start - 1]).0) {
             return true;
         }
+        let run_start = if *reuse_root && options.extensions.is_empty() && *root_start < start {
+            *root_start
+        } else {
+            0
+        };
         if *budget
             < prefix_costs[start]
+                .saturating_sub(prefix_costs[run_start])
                 .saturating_mul(2)
                 .saturating_add(lines[start].len())
         {
             return false;
         }
         let mut unaffordable = false;
-        let folds = paragraph_continuation_probe(
-            &lines[..start],
+        let (folds, proved_start) = paragraph_continuation_probe_with_start(
+            &lines[run_start..start],
             lines[start],
             options,
             budget,
             &mut unaffordable,
             true,
+            true,
         );
+        if run_start == 0
+            && !unresolved_code_delimiter
+            && proved_start
+                .closed_initial_container_end
+                .is_some_and(|end| last_unproved_delimiter.is_some_and(|delimiter| delimiter < end))
+        {
+            *reuse_root = true;
+        }
+        if let Some(proved_start) = proved_start.start.map(|proved| run_start + proved) {
+            if proved_start >= *root_start && proved_start < start {
+                *root_start = proved_start;
+            }
+        }
         !(folds || unaffordable)
     };
     let mut ownership = TermLineOwnership::default();
     let mut term_probe_budget = probe_budget_for(*prefix_costs.last().unwrap());
+    let mut probe_root_start = 0;
+    let mut reuse_probe_root = true;
+    let mut last_unproved_delimiter = None;
+    let mut unresolved_code_delimiter = false;
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
     let mut admitted_term_host: Option<(usize, usize, usize)> = None;
@@ -2592,7 +2691,14 @@ fn term_folded_lines(
                     {
                         return true;
                     }
-                    marker_admitted(start, &mut term_probe_budget)
+                    marker_admitted(
+                        start,
+                        &mut term_probe_budget,
+                        &mut probe_root_start,
+                        &mut reuse_probe_root,
+                        last_unproved_delimiter,
+                        unresolved_code_delimiter,
+                    )
                 })
             {
                 admitted_term_fence = true;
@@ -2656,6 +2762,15 @@ fn term_folded_lines(
             fence_markers += 1;
         }
         let fence_rest = trim_ascii_start(fence_line);
+        let reusable_before_fence = reuse_probe_root;
+        // An unproved delimiter may acquire a closer in a later prefix.
+        if (detect_fence_open(fence_rest).is_some() && !admitted_term_fence)
+            || is_colon_fence_opener_shape(rest)
+        {
+            reuse_probe_root = false;
+            probe_root_start = 0;
+            last_unproved_delimiter = Some(index);
+        }
         if let Some(mut open) = detect_fence_open(fence_rest) {
             open.content_col = view_line
                 [..fence_line.as_ptr() as usize - view_line.as_ptr() as usize]
@@ -2665,10 +2780,21 @@ fn term_folded_lines(
             open.quoted = quotes > 0;
             let fence = prepass_fence_opens(lines, index, open, closer_maxima, &ownership);
             if !fence.opens {
+                unresolved_code_delimiter = true;
                 index += 1;
                 continue;
             }
-            if fence_markers == 1 {
+            if fence_markers == 1
+                && (admitted_term_fence
+                    || marker_admitted(
+                        index,
+                        &mut term_probe_budget,
+                        &mut probe_root_start,
+                        &mut reuse_probe_root,
+                        last_unproved_delimiter,
+                        unresolved_code_delimiter,
+                    ))
+            {
                 ownership.fence_openers.insert(
                     index,
                     TermFenceHost {
@@ -2683,6 +2809,7 @@ fn term_folded_lines(
             let term_host = ownership.fence_openers.get(&index);
             let term_quote_columns = term_host.map(|host| host.quote_columns.clone());
             let term_fence_owned = term_host.is_some();
+            let mut consumed_closer = false;
             index += 1;
             while index < lines.len() {
                 if (term_fence_owned
@@ -2748,8 +2875,15 @@ fn term_folded_lines(
                 }
                 index += 1;
                 if closes {
+                    consumed_closer = true;
                     break;
                 }
+            }
+            if reusable_before_fence && consumed_closer {
+                reuse_probe_root = true;
+            }
+            if !admitted_term_fence && !consumed_closer {
+                unresolved_code_delimiter = true;
             }
             // A proved term fence establishes an actual item host. Keep its
             // column through sibling markers and in-item continuations, but
@@ -2773,7 +2907,14 @@ fn term_folded_lines(
                             base == marker_col
                                 || (term_quote_columns_for(lines[outer_start], &columns)
                                     == term_quote_columns.clone().unwrap_or_default()
-                                    && marker_admitted(outer_start, &mut term_probe_budget))
+                                    && marker_admitted(
+                                        outer_start,
+                                        &mut term_probe_budget,
+                                        &mut probe_root_start,
+                                        &mut reuse_probe_root,
+                                        last_unproved_delimiter,
+                                        unresolved_code_delimiter,
+                                    ))
                         })
                         .map_or(own_host, |(host, _)| host);
                     admitted_term_host = Some((base, floor, quotes));
@@ -4031,6 +4172,27 @@ fn parse_blocks_with_options_at_level_into_reached(
     in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
+    parse_blocks_with_options_at_level_into_reached_with_start(
+        source,
+        reached,
+        marker_tail,
+        options,
+        at_document_level,
+        in_item_body,
+        pending,
+    )
+    .0
+}
+
+fn parse_blocks_with_options_at_level_into_reached_with_start(
+    source: &str,
+    reached: &[bool],
+    marker_tail: Option<MarkerTail>,
+    options: &Options<'_>,
+    at_document_level: bool,
+    in_item_body: bool,
+    pending: &mut Vec<PendingBody>,
+) -> (Vec<BlockNode>, ProbeRootBoundary) {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
@@ -4058,7 +4220,14 @@ fn parse_blocks_with_options_at_level_into_reached(
     cursor.in_item_body = in_item_body;
     cursor.reached = Some(reached);
     cursor.marker_tail = marker_tail;
-    parse_blocks(&mut cursor, options, pending)
+    let blocks = parse_blocks(&mut cursor, options, pending);
+    (
+        blocks,
+        ProbeRootBoundary {
+            start: cursor.last_block_start,
+            closed_initial_container_end: cursor.closed_initial_container_end,
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -4199,6 +4368,8 @@ struct LineCursor<'a> {
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<isize>]>,
     pos: usize,
+    last_block_start: Option<usize>,
+    closed_initial_container_end: Option<usize>,
     at_document_level: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
     in_item_body: bool,
@@ -4260,6 +4431,8 @@ impl<'a> LineCursor<'a> {
             line_map,
             col_map,
             pos: 0,
+            last_block_start: None,
+            closed_initial_container_end: None,
             at_document_level: false,
             in_item_body: false,
             invisible_arms: true,
@@ -7119,11 +7292,13 @@ fn parse_blocks(
         // top level. It was not: this loop had the arm and the single-block
         // parser did not, so a `+`-attached `%% c` fell through to a paragraph
         // wrapping an INLINE comment (carve-rs#678).
+        let comment_start = cur.pos;
         match take_comment_block(cur, options) {
             CommentBlock::NotAComment => {}
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
                 out.push(*node);
+                cur.last_block_start = Some(comment_start);
                 continue;
             }
         }
@@ -7162,6 +7337,7 @@ fn parse_blocks(
                 cur,
                 options,
             );
+            cur.last_block_start = Some(start_line);
             // `append_parsed_block` pushes exactly one node, so the container
             // just emitted is the last one - and stays there, because this loop
             // never removes or reorders what it has pushed.
@@ -18088,6 +18264,9 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
     // caption slot hanging on the CLOSING fence, this kind only.
     if is_bare_figure_open(&open) && !IN_FIGURE_GROUP.with(Cell::get) {
         let (inner, closed) = collect_shared_colon_body(cur, open.fence_len);
+        if span_start == 0 && closed {
+            cur.closed_initial_container_end = Some(cur.pos);
+        }
         // The slot hangs on the closer. A group left open at end of input
         // closed there without one, so there is no line for a caption to
         // attach to (§4c).
@@ -18110,6 +18289,9 @@ fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode
         );
     }
     let (inner, closed) = collect_shared_colon_body(cur, open.fence_len);
+    if span_start == 0 && closed {
+        cur.closed_initial_container_end = Some(cur.pos);
+    }
     // The span covers the opening fence through the closing one.
     let pos = container_span(cur, span_start, closed, options);
     let title_anchor = open.title_col.and_then(|col| {
