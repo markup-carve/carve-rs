@@ -5420,7 +5420,7 @@ fn refuse_attributes_on_sigil(attrs: &Option<Attrs>, node_type: &'static str) {
     }
 }
 
-fn render_attrs(attrs: &Option<Attrs>) -> String {
+pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     render_attrs_with_markers(attrs, &[], false)
 }
 

@@ -1978,11 +1978,25 @@ impl<'a> Importer<'a> {
                 tag == "span" && Self::reads_raw_format(handle, mode).is_some()
             }
             crate::roundtrip::ESCAPED => tag == "span" && Self::reads_escaped(handle).is_some(),
+            crate::roundtrip::LABEL => tag == "pre" && Self::reads_code_label(handle).is_some(),
             crate::roundtrip::COL_WIDTHS => {
                 tag == "table" && Self::reads_separator_widths(handle).is_some()
             }
             _ => false,
         }
+    }
+
+    fn reads_code_label(pre: &Handle) -> Option<String> {
+        if !pre
+            .children
+            .borrow()
+            .iter()
+            .any(|child| Self::tag(child).as_deref() == Some("code"))
+        {
+            return None;
+        }
+        Self::carrier(pre, crate::roundtrip::LABEL)
+            .filter(|label| !label.is_empty() && !label.contains([']', '\r', '\n']))
     }
 
     /// The `<table data-carve-col-widths>` separator row, comma-joined.
@@ -3159,7 +3173,7 @@ impl<'a> Importer<'a> {
                 attrs,
                 lang,
                 title: None,
-                label: None,
+                label: Self::reads_code_label(h),
                 content,
                 pos: None,
             })]);
