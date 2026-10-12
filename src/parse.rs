@@ -15981,6 +15981,7 @@ fn collect_indented_block_mapped_with_columns(
             && !literal_marker_body
             && fence.is_none()
             && indent < strip_cols
+            && trim_ascii(line) != "+"
             && !is_line_comment_any_column(line)
             && detect_comment_fence_line_any_column(line).is_none()
         {

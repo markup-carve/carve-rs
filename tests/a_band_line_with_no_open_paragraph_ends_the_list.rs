@@ -6,7 +6,7 @@
 //! Each `NN.html` under `tests/fixtures/band-line-with-no-open-paragraph/` is
 //! the executable spec's output for `NN.crv` (`scripts/spec` at
 //! markup-carve/carve a61aa4d). Rows 29 and up are controls that already
-//! matched.
+//! matched; 40 and 41 keep a lone `+` in an open container paragraph.
 
 use carve::{to_html, to_html_with_options, Options};
 use std::path::Path;
@@ -33,5 +33,5 @@ fn the_fixtures_match_the_executable_spec() {
         seen += 1;
     }
     assert!(failed.is_empty(), "{}", failed.join("\n\n"));
-    assert_eq!(seen, 39);
+    assert_eq!(seen, 41);
 }
