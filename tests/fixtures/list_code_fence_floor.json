@@ -1,0 +1,417 @@
+[
+  {
+    "id": "floor-code-4-0-0",
+    "source": "- term\n  : payload\n    ```\n    code\n```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-4-0-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n> ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-4-2-0",
+    "source": "- term\n  : payload\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-4-2-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-code-4-4-0",
+    "source": "- term\n  : payload\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-4-4-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-code-4-6-0",
+    "source": "- term\n  : payload\n    ```\n    code\n      ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-4-6-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-4-8-0",
+    "source": "- term\n  : payload\n    ```\n    code\n        ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-4-8-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-6-0-0",
+    "source": "- term\n  : payload\n      ```\n      code\n```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-6-0-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n> ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-6-2-0",
+    "source": "- term\n  : payload\n      ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-6-2-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-code-6-4-0",
+    "source": "- term\n  : payload\n      ```\n      code\n    ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-6-4-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-6-6-0",
+    "source": "- term\n  : payload\n      ```\n      code\n      ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-6-6-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-code-6-8-0",
+    "source": "- term\n  : payload\n      ```\n      code\n        ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-6-8-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-8-0-0",
+    "source": "- term\n  : payload\n        ```\n        code\n```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-8-0-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n> ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-8-2-0",
+    "source": "- term\n  : payload\n        ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-8-2-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-code-8-4-0",
+    "source": "- term\n  : payload\n        ```\n        code\n    ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-8-4-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-8-6-0",
+    "source": "- term\n  : payload\n        ```\n        code\n      ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul>"
+  },
+  {
+    "id": "floor-code-8-6-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n<code>\ncode\n</code>\nafter</li></ul></blockquote>"
+  },
+  {
+    "id": "floor-code-8-8-0",
+    "source": "- term\n  : payload\n        ```\n        code\n        ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-code-8-8-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-0-0",
+    "source": "- term\n  : payload\n    ```\ncode\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-4-0-1",
+    "source": "> - term\n>   : payload\n>     ```\n> code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-1-0",
+    "source": "- term\n  : payload\n    ```\n code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-4-1-1",
+    "source": "> - term\n>   : payload\n>     ```\n>  code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-2-0",
+    "source": "- term\n  : payload\n    ```\n  code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-4-2-1",
+    "source": "> - term\n>   : payload\n>     ```\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-3-0",
+    "source": "- term\n  : payload\n    ```\n   code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code> code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-4-3-1",
+    "source": "> - term\n>   : payload\n>     ```\n>    code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code> code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-4-0",
+    "source": "- term\n  : payload\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-4-4-1",
+    "source": "> - term\n>   : payload\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-6-0",
+    "source": "- term\n  : payload\n    ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>  code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-4-6-1",
+    "source": "> - term\n>   : payload\n>     ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>  code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-4-8-0",
+    "source": "- term\n  : payload\n    ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>    code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-4-8-1",
+    "source": "> - term\n>   : payload\n>     ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>    code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-0-0",
+    "source": "- term\n  : payload\n      ```\ncode\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-6-0-1",
+    "source": "> - term\n>   : payload\n>       ```\n> code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-1-0",
+    "source": "- term\n  : payload\n      ```\n code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-6-1-1",
+    "source": "> - term\n>   : payload\n>       ```\n>  code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-2-0",
+    "source": "- term\n  : payload\n      ```\n  code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-6-2-1",
+    "source": "> - term\n>   : payload\n>       ```\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-3-0",
+    "source": "- term\n  : payload\n      ```\n   code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code> code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-6-3-1",
+    "source": "> - term\n>   : payload\n>       ```\n>    code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code> code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-4-0",
+    "source": "- term\n  : payload\n      ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>  code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-6-4-1",
+    "source": "> - term\n>   : payload\n>       ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>  code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-6-0",
+    "source": "- term\n  : payload\n      ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-6-6-1",
+    "source": "> - term\n>   : payload\n>       ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-6-8-0",
+    "source": "- term\n  : payload\n      ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>  code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-6-8-1",
+    "source": "> - term\n>   : payload\n>       ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>  code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-0-0",
+    "source": "- term\n  : payload\n        ```\ncode\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-8-0-1",
+    "source": "> - term\n>   : payload\n>         ```\n> code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-1-0",
+    "source": "- term\n  : payload\n        ```\n code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p>"
+  },
+  {
+    "id": "floor-body-8-1-1",
+    "source": "> - term\n>   : payload\n>         ```\n>  code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code></code></pre></li></ul><p>code\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-2-0",
+    "source": "- term\n  : payload\n        ```\n  code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-8-2-1",
+    "source": "> - term\n>   : payload\n>         ```\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-3-0",
+    "source": "- term\n  : payload\n        ```\n   code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code> code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-8-3-1",
+    "source": "> - term\n>   : payload\n>         ```\n>    code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code> code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-4-0",
+    "source": "- term\n  : payload\n        ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>  code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-8-4-1",
+    "source": "> - term\n>   : payload\n>         ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>  code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-6-0",
+    "source": "- term\n  : payload\n        ```\n      code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>    code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-8-6-1",
+    "source": "> - term\n>   : payload\n>         ```\n>       code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>    code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "floor-body-8-8-0",
+    "source": "- term\n  : payload\n        ```\n        code\n  ```\nafter\n",
+    "html": "<ul><li>term\n: payload\n    <pre><code>code\n</code></pre></li></ul><p>after</p>"
+  },
+  {
+    "id": "floor-body-8-8-1",
+    "source": "> - term\n>   : payload\n>         ```\n>         code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>term\n: payload\n      <pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "item-boundary-0",
+    "source": "> - a\n>     ```\n> - sibling\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li><li>sibling\n<code>\nafter</code></li></ul></blockquote>"
+  },
+  {
+    "id": "item-boundary-1",
+    "source": "> - a\n>     ```\n>\n> - sibling\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><p>a\n<code></code></p></li><li><p>sibling\n<code>\nafter</code></p></li></ul></blockquote>"
+  },
+  {
+    "id": "item-boundary-2",
+    "source": "> - a\n>     ```\n>   - child\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>- child\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "item-boundary-3",
+    "source": "> - a\n>     ```\n>\n>   - child\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\n- child\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "item-boundary-4",
+    "source": "> - a\n>     ```\n> 1. sibling\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><ol><li>sibling\n<code>\nafter</code></li></ol></blockquote>"
+  },
+  {
+    "id": "item-boundary-5",
+    "source": "> - a\n>     ```\n>\n> 1. sibling\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><ol><li>sibling\n<code>\nafter</code></li></ol></blockquote>"
+  },
+  {
+    "id": "item-boundary-6",
+    "source": "> - a\n>     ```\n> - [ ] task\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><ul class=\"task-list\"><li><input type=\"checkbox\" disabled aria-label=\"task after\"> task\n<code>\nafter</code></li></ul></blockquote>"
+  },
+  {
+    "id": "item-boundary-7",
+    "source": "> - a\n>     ```\n>\n> - [ ] task\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><ul class=\"task-list\"><li><input type=\"checkbox\" disabled aria-label=\"task after\"> task\n<code>\nafter</code></li></ul></blockquote>"
+  },
+  {
+    "id": "blank-boundary-8",
+    "source": "> - a\n>     ```\n>\n> outside\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><p>outside\n<code>\nafter</code></p></blockquote>"
+  },
+  {
+    "id": "blank-boundary-9",
+    "source": "> - a\n>     ```\n>\n>   code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n      <pre><code>\ncode\n</code></pre></li></ul><p>after</p></blockquote>"
+  },
+  {
+    "id": "blank-boundary-10",
+    "source": "> - a\n>     ```\n>\n>  # heading\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li>a\n<code></code></li></ul><p># heading\n<code>\nafter</code></p></blockquote>"
+  }
+]

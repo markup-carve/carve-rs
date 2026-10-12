@@ -1618,7 +1618,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // All fifteen new documents round trip strictly; the lossy count stays fixed.
     // Spec 700adbe3 adds 321-delimited-comments-9, -10, -11 and -12.
     // All four round-trip strictly; the reported-lossy set is unchanged.
-    const STRICT: usize = 1771;
+    // Spec fefeb53 adds the three category 555 raw-payload documents.
+    // All three round-trip strictly; the reported-lossy set is unchanged.
+    const STRICT: usize = 1774;
     const LOSSY: usize = 548;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);

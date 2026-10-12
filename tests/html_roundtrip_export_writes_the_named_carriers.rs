@@ -211,8 +211,10 @@ fn a_carrier_wins_a_collision_and_the_authored_attribute_is_reported() {
     let row = report
         .losses
         .iter()
-        .find(|loss| loss.code == "roundtrip-attribute-dropped")
+        .find(|loss| loss.code == "carrier-attribute-dropped")
         .unwrap_or_else(|| panic!("{:?}", report.losses));
+    assert_eq!(row.attribute.as_deref(), Some("data-char"));
+    assert!(row.format.is_none());
     assert!(row.message.contains("data-char"), "{}", row.message);
 }
 
