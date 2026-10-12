@@ -806,6 +806,8 @@ const IMPLEMENTED: &[&str] = &[
     // renders byte for byte on this build with no engine work.
     "a-description-body-whose-own-block-is-a-fence-keeps-no-line-below-its-column",
     "a-below-column-line-continues-a-paragraph-only-where-one-is-open",
+    // Published raw-content contract, carve#2911: all three HTML goldens match.
+    "an-unterminated-raw-fence-keeps-literal-payload-termination",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

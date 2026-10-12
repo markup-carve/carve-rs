@@ -9,10 +9,25 @@ Building the crate, what a binding that pins this engine has to know, and the de
 git clone https://github.com/markup-carve/carve-rs
 cd carve-rs
 git submodule update --init   # pulls the spec corpus
-cargo test
+cargo test --locked
 ```
 
 The spec corpus lives in `tests/spec/` as a git submodule of [`markup-carve/carve`](https://github.com/markup-carve/carve). Running `cargo test` without initializing the submodule will fail with a clear error message.
+
+## Focused conformance checks
+
+These commands check the pinned corpus and shared roundtrip export inventory:
+
+```bash
+cargo test --locked --test suite corpus::
+cargo test --locked --test shared_roundtrip_export_acceptance
+```
+
+The shared acceptance test compiles the published fixtures from
+`tests/spec/resources/`. It checks export, import, diagnostics, reserved attributes,
+and the separate footnote carrier recovery matrix. Follow
+[CONTRIBUTING.md](../CONTRIBUTING.md#running-the-tests) for the full nextest and
+doctest commands used by CI.
 
 ## For bindings that pin this engine
 
@@ -37,7 +52,7 @@ binding should use and for what the guard cannot see.
   `pulldown-cmark` for the Markdown importer, `regex`, `unicode-normalization`
   for heading-id NFC, and `serde` / `serde_json` for AST JSON, patches and the
   ProseMirror bridge.
-- **Conformance via corpus**: every supported construct has a `.crv` / `.html` pair in the upstream spec. The Rust output must match the JS reference byte-for-byte (after trimming).
+- **Conformance via corpus**: every supported construct has a `.crv` / `.html` pair in the upstream spec. The Rust output must match the pinned corpus HTML byte-for-byte (after trimming).
 
 See `src/parse.rs` for the parser and `src/render.rs` for the renderer. The AST in `src/ast.rs` mirrors the shape of [`carve-js`'s `ast.ts`](https://github.com/markup-carve/carve-js/blob/main/src/ast.ts).
 
