@@ -29,8 +29,9 @@ fn rewrite_terminator(payload: &str, unescape: bool) -> String {
     let mut at = 0;
     while at < bytes.len() {
         if bytes[at] != b'-' || bytes.get(at + 1) != Some(&b'-') {
-            out.push(bytes[at] as char);
-            at += 1;
+            let ch = payload[at..].chars().next().unwrap();
+            out.push(ch);
+            at += ch.len_utf8();
             continue;
         }
         let mut end = at + 2;
@@ -57,6 +58,9 @@ fn rewrite_terminator(payload: &str, unescape: bool) -> String {
 
 /// Write a payload into a marker line.
 pub(crate) fn carrier_line(payload: &str) -> String {
+    if payload.is_empty() {
+        return "<!-- carve: -->".to_owned();
+    }
     format!(
         "{CARRIER_PREFIX}{}{CARRIER_SUFFIX}",
         escape_carrier_payload(payload)
@@ -65,6 +69,9 @@ pub(crate) fn carrier_line(payload: &str) -> String {
 
 /// The payload a marker line carries, or `None` when the line is not one.
 pub(crate) fn carrier_payload(line: &str) -> Option<String> {
+    if line == "<!-- carve: -->" {
+        return Some(String::new());
+    }
     let inner = line
         .strip_prefix(CARRIER_PREFIX)?
         .strip_suffix(CARRIER_SUFFIX)?;
@@ -110,6 +117,22 @@ pub(crate) struct CarrierMarkers {
 /// container costs one fence line instead of a second render of its subtree, and
 /// the fence runs are then widened to the depth the Markdown writer is at.
 pub(crate) fn spell_carrier_markers(node: &BlockNode, depth: usize) -> Option<CarrierMarkers> {
+    if let BlockNode::Div(div) = node {
+        if div.label.is_none() && div.attrs.as_ref().is_some_and(|attrs| attrs.classes.iter().any(|class| class == "hardbreaks"))
+            && div.children.iter().all(|child| !matches!(child, BlockNode::Paragraph(p) if p.children.iter().any(|inline| matches!(inline, crate::ast::InlineNode::SoftBreak(_))))) {
+            // The AST records a hard-break block as a div with a structural class.
+            let mut attrs = div.attrs.clone();
+            if let Some(attrs) = &mut attrs {
+                if let Some(index) = attrs.classes.iter().position(|class| class == "hardbreaks") { attrs.classes.remove(index); }
+            }
+            let prelude = crate::render_carve::render_attrs(&attrs);
+            return Some(CarrierMarkers {
+                prelude: if prelude.is_empty() { Vec::new() } else { vec![prelude] },
+                opener: format!("{} \\", ":".repeat(3 + depth)),
+                closer: ":".repeat(3 + depth),
+            });
+        }
+    }
     let bodyless = without_children(node)?;
     let document = Document {
         frontmatter: Default::default(),
@@ -172,11 +195,14 @@ fn without_children(node: &BlockNode) -> Option<BlockNode> {
         BlockNode::FigureGroup(group) => {
             let mut bare = group.clone();
             bare.children = Vec::new();
-            // The group's own caption sits OUTSIDE the container in Carve - the
-            // slot hangs on the closing fence - so it is not part of the opener
-            // and is not restored by the round trip (markup-carve/carve#2851).
+            // The caption marker belongs below the closer, outside the opener payload.
             bare.caption = None;
             BlockNode::FigureGroup(bare)
+        }
+        BlockNode::LineBlock(line) => {
+            let mut bare = line.clone();
+            bare.children.clear();
+            BlockNode::LineBlock(bare)
         }
         _ => return None,
     })
@@ -212,28 +238,427 @@ fn carrier_fallback_lines(payload: &str) -> usize {
 /// nothing left open.
 fn carrier_set_balances(payloads: &[String]) -> bool {
     let mut open: Vec<usize> = Vec::new();
-    let mut prelude = false;
     for payload in payloads {
         let width = carrier_fence_width(payload);
         if width == 0 {
-            // An attribute line belongs to the opener on the next marker.
-            prelude = true;
-            continue;
-        }
-        if carrier_is_closer(payload) {
-            if prelude || open.pop() != Some(width) {
+            if !(payload.is_empty()
+                || payload == ":"
+                || payload.starts_with(":: ")
+                || payload.starts_with("^ ")
+                || (payload.starts_with('{') && payload.ends_with('}')))
+            {
                 return false;
             }
             continue;
         }
-        prelude = false;
+        if carrier_is_closer(payload) {
+            if open.pop() != Some(width) {
+                return false;
+            }
+            continue;
+        }
         if open.last().is_some_and(|outer| width <= *outer) {
             return false;
         }
         open.push(width);
     }
+    open.is_empty()
+}
 
-    !prelude && open.is_empty()
+struct MarkdownBlock {
+    range: std::ops::Range<usize>,
+    parent: Vec<usize>,
+    paragraph: bool,
+    captionable: bool,
+    host: bool,
+    caption_units: usize,
+    other_inline: bool,
+    math: Option<String>,
+}
+
+fn markdown_blocks(markdown: &str) -> Vec<MarkdownBlock> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let mut blocks = Vec::new();
+    let mut stack: Vec<(bool, Option<usize>, Option<usize>)> = Vec::new();
+    let mut hosts = Vec::new();
+    let mut image_depth = 0usize;
+    let mut image_stack = Vec::new();
+    for (event, range) in Parser::new_ext(markdown, markdown_options()).into_offset_iter() {
+        // Tight items omit paragraph events, but their inline runs still own captions.
+        if let Some((_, index, Some(item))) = stack.last_mut() {
+            let inline = matches!(
+                &event,
+                Event::Text(_)
+                    | Event::Code(_)
+                    | Event::InlineMath(_)
+                    | Event::DisplayMath(_)
+                    | Event::InlineHtml(_)
+                    | Event::SoftBreak
+                    | Event::HardBreak
+                    | Event::FootnoteReference(_)
+                    | Event::Start(
+                        Tag::Emphasis
+                            | Tag::Strong
+                            | Tag::Strikethrough
+                            | Tag::Link { .. }
+                            | Tag::Image { .. }
+                    )
+            );
+            if inline && *index == Some(*item) {
+                *index = Some(blocks.len());
+                blocks.push(MarkdownBlock {
+                    range: range.clone(),
+                    parent: hosts.clone(),
+                    paragraph: true,
+                    captionable: false,
+                    host: false,
+                    caption_units: 0,
+                    other_inline: false,
+                    math: None,
+                });
+            } else if !inline {
+                *index = Some(*item);
+            }
+        }
+        if let Some(index) = stack
+            .iter()
+            .rev()
+            .find_map(|(_, index, item)| item.filter(|item| *index != Some(*item)).and(*index))
+        {
+            blocks[index].range.end = range.end;
+        }
+        match event {
+            Event::Start(tag) => {
+                let image = matches!(tag, Tag::Image { .. });
+                image_stack.push(image);
+                image_depth += usize::from(image);
+                let host = matches!(
+                    tag,
+                    Tag::BlockQuote(_) | Tag::Item | Tag::FootnoteDefinition(_)
+                );
+                let block = matches!(
+                    tag,
+                    Tag::Paragraph
+                        | Tag::Heading { .. }
+                        | Tag::CodeBlock(_)
+                        | Tag::BlockQuote(_)
+                        | Tag::List(_)
+                        | Tag::Table(_)
+                        | Tag::Item
+                        | Tag::FootnoteDefinition(_)
+                );
+                let index = block.then(|| {
+                    let index = blocks.len();
+                    blocks.push(MarkdownBlock {
+                        range: range.clone(),
+                        parent: hosts.clone(),
+                        host,
+                        caption_units: 0,
+                        other_inline: false,
+                        math: None,
+                        paragraph: matches!(tag, Tag::Paragraph),
+                        captionable: matches!(
+                            tag,
+                            Tag::BlockQuote(_) | Tag::CodeBlock(_) | Tag::Table(_)
+                        ),
+                    });
+                    index
+                });
+                if image_depth == 0
+                    && matches!(
+                        tag,
+                        Tag::Emphasis | Tag::Strong | Tag::Strikethrough | Tag::Link { .. }
+                    )
+                {
+                    if let Some(index) = stack.iter().rev().find_map(|(_, index, _)| *index) {
+                        blocks[index].other_inline = true;
+                    }
+                }
+                if matches!(tag, Tag::Image { .. }) {
+                    if let Some(index) = stack.iter().rev().find_map(|(_, index, _)| *index) {
+                        blocks[index].captionable = true;
+                        blocks[index].caption_units += 1;
+                    }
+                }
+                if host {
+                    hosts.push(range.start);
+                }
+                stack.push((
+                    host,
+                    index,
+                    matches!(tag, Tag::Item).then_some(index).flatten(),
+                ));
+            }
+            Event::End(_) => {
+                if image_stack.pop() == Some(true) {
+                    image_depth -= 1;
+                }
+                if let Some((host, _, _)) = stack.pop() {
+                    if host {
+                        hosts.pop();
+                    }
+                }
+            }
+            Event::Rule => blocks.push(MarkdownBlock {
+                range,
+                parent: hosts.clone(),
+                paragraph: false,
+                captionable: false,
+                host: false,
+                caption_units: 0,
+                other_inline: false,
+                math: None,
+            }),
+            Event::DisplayMath(content) => {
+                if let Some(index) = stack.iter().rev().find_map(|(_, index, _)| *index) {
+                    blocks[index].captionable = true;
+                    blocks[index].caption_units += 1;
+                    blocks[index].math = Some(content.to_string());
+                }
+            }
+            Event::Text(text) => {
+                if !text.trim().is_empty() && image_depth == 0 {
+                    if let Some(index) = stack.iter().rev().find_map(|(_, index, _)| *index) {
+                        blocks[index].other_inline = true;
+                    }
+                }
+            }
+            Event::Code(_)
+            | Event::InlineMath(_)
+            | Event::InlineHtml(_)
+            | Event::SoftBreak
+            | Event::HardBreak
+                if image_depth == 0 =>
+            {
+                if let Some(index) = stack.iter().rev().find_map(|(_, index, _)| *index) {
+                    blocks[index].other_inline = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    for block in &mut blocks {
+        if block.paragraph {
+            block.captionable =
+                block.captionable && block.caption_units == 1 && !block.other_inline;
+        }
+    }
+    blocks
+}
+
+fn markdown_options() -> pulldown_cmark::Options {
+    use pulldown_cmark::Options;
+    Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_MATH
+}
+
+fn marker_parent(marker: &FoundMarker, blocks: &[MarkdownBlock]) -> Vec<usize> {
+    blocks
+        .iter()
+        .filter(|block| block.host && block.range.contains(&marker.offset))
+        .max_by_key(|block| block.parent.len())
+        .map(|block| {
+            let mut parent = block.parent.clone();
+            parent.push(block.range.start);
+            parent
+        })
+        .unwrap_or_default()
+}
+
+struct ValidatedMarkers {
+    dropped: Vec<bool>,
+    math: Vec<FoundMarker>,
+}
+
+fn math_source(content: &str) -> Option<String> {
+    let html = format!(
+        "<pre><code>{}</code></pre>",
+        content.replace('<', "&lt;").replace('>', "&gt;")
+    );
+    let imported = crate::html_import::html_to_ast(&html, &Default::default())
+        .ok()?
+        .value;
+    let BlockNode::CodeBlock(code) = imported.children.first()? else {
+        return None;
+    };
+    let mut doc = crate::parse::parse("");
+    doc.children
+        .push(BlockNode::Paragraph(crate::ast::Paragraph {
+            children: vec![crate::ast::InlineNode::Math(crate::ast::Math {
+                attrs: None,
+                display: true,
+                content: code.content.clone(),
+                label: None,
+                number: None,
+                pos: None,
+            })],
+            ..Default::default()
+        }));
+    crate::render_carve::render_carve(&doc)
+        .ok()
+        .map(|source| source.trim_end().to_owned())
+}
+
+fn validate_markers(
+    markdown: &str,
+    lines: &[&str],
+    markers: &[FoundMarker],
+) -> Option<ValidatedMarkers> {
+    let blocks = markdown_blocks(markdown);
+    let mut dropped = vec![false; lines.len()];
+    let mut math = Vec::new();
+    let mut fences: Vec<(usize, String)> = Vec::new();
+    let mut definitions: std::collections::BTreeMap<(Vec<usize>, usize), bool> = Default::default();
+    let mut starts = Vec::new();
+    let mut offset = 0;
+    for line in lines {
+        starts.push(offset);
+        offset += line.len() + 1;
+    }
+    for (index, marker) in markers.iter().enumerate() {
+        let payload = &marker.payload;
+        let parent = marker_parent(marker, &blocks);
+        let next_marker = markers.get(index + 1);
+        let next = blocks
+            .iter()
+            .filter(|block| block.range.start >= marker.end && block.parent == parent)
+            .min_by_key(|block| block.range.start);
+        let directly_below = next.filter(|block| {
+            let line = starts.partition_point(|start| *start <= block.range.start) - 1;
+            line == marker.line + 1
+                && next_marker.map_or(true, |next| next.offset > block.range.start)
+        });
+        if payload.starts_with('{') {
+            let container_prelude = next_marker.is_some_and(|next| {
+                next.line == marker.line + 1
+                    && marker_parent(next, &blocks) == parent
+                    && (carrier_fence_width(&next.payload) > 0 || next.payload.starts_with(":: "))
+                    && !carrier_is_closer(&next.payload)
+            });
+            if !container_prelude && directly_below.is_none() {
+                return None;
+            }
+            let parsed = crate::parse::parse(&format!("{payload}\nx\n"));
+            if !matches!(parsed.children.first(), Some(BlockNode::Paragraph(p)) if p.attrs.is_some())
+            {
+                return None;
+            }
+        } else if payload.starts_with(":: ") || payload.starts_with("^ ") {
+            let paragraph = directly_below.filter(|block| block.paragraph)?;
+            let first = starts.partition_point(|start| *start <= paragraph.range.start) - 1;
+            let last = starts.partition_point(|start| *start < paragraph.range.end);
+            if markers.iter().any(|other| {
+                other.offset >= paragraph.range.start && other.offset < paragraph.range.end
+            }) {
+                return None;
+            }
+            for drop in &mut dropped[first..last] {
+                *drop = true;
+            }
+            if payload.starts_with(":: ") {
+                if !matches!(
+                    crate::parse::parse(&format!("{payload}\n: x\n"))
+                        .children
+                        .first(),
+                    Some(BlockNode::DefinitionList(_))
+                ) {
+                    return None;
+                }
+                let key = (parent, fences.len());
+                if definitions.get(&key) == Some(&false)
+                    && !markers
+                        .get(index.wrapping_sub(1))
+                        .is_some_and(|m| m.payload.starts_with(":: "))
+                {
+                    return None;
+                }
+                definitions.insert(key, false);
+            } else {
+                if !matches!(
+                    crate::parse::parse(&format!("```\nx\n```\n{payload}\n"))
+                        .children
+                        .first(),
+                    Some(BlockNode::Figure(_))
+                ) {
+                    return None;
+                }
+                let prior_marker = index.checked_sub(1).and_then(|i| markers.get(i));
+                let group = prior_marker.is_some_and(|prior| {
+                    carrier_is_closer(&prior.payload)
+                        && marker_parent(prior, &blocks) == parent
+                        && prior.line < marker.line
+                        && lines[prior.line + 1..marker.line]
+                            .iter()
+                            .all(|line| strip_host_prefix(line, &marker.host).is_empty())
+                });
+                let prior = blocks
+                    .iter()
+                    .filter(|block| block.range.end <= marker.offset && block.parent == parent)
+                    .filter(|block| {
+                        !dropped[starts.partition_point(|start| *start <= block.range.start) - 1]
+                    })
+                    .max_by_key(|block| block.range.end);
+                if !group
+                    && !prior.is_some_and(|block| {
+                        block.captionable
+                            && !markers.iter().any(|other| {
+                                other.offset >= block.range.end && other.offset < marker.offset
+                            })
+                            && markdown[block.range.end..marker.offset]
+                                .lines()
+                                .all(|line| strip_host_prefix(line, &marker.host).trim().is_empty())
+                    })
+                {
+                    return None;
+                }
+                if let Some(block) = prior.filter(|block| block.math.is_some()) {
+                    let line = starts.partition_point(|start| *start <= block.range.start) - 1;
+                    let last = starts.partition_point(|start| *start < block.range.end);
+                    for drop in &mut dropped[line + 1..last] {
+                        *drop = true;
+                    }
+                    math.push(FoundMarker {
+                        line,
+                        host: lines[line][..block.range.start - starts[line]].to_owned(),
+                        payload: math_source(block.math.as_deref()?)?,
+                        offset: block.range.start,
+                        end: block.range.end,
+                    });
+                }
+            }
+        } else if payload == ":" {
+            let entry = definitions.get_mut(&(parent, fences.len()))?;
+            if directly_below.is_none()
+                && !next_marker.is_some_and(|next| {
+                    next.line == marker.line + 1
+                        && !carrier_is_closer(&next.payload)
+                        && carrier_fence_width(&next.payload) > 0
+                })
+            {
+                return None;
+            }
+            *entry = true;
+        } else if payload.is_empty() {
+            if definitions.remove(&(parent, fences.len())) != Some(true) {
+                return None;
+            }
+        } else if carrier_is_closer(payload) {
+            let (_, opener) = fences.pop()?;
+            if next_marker.is_some_and(|next| next.payload.starts_with("^ "))
+                && opener.trim_start_matches(':').split_whitespace().next() != Some("figure")
+            {
+                return None;
+            }
+        } else {
+            fences.push((carrier_fence_width(payload), payload.clone()));
+        }
+    }
+    definitions
+        .is_empty()
+        .then_some(ValidatedMarkers { dropped, math })
 }
 
 /// Every carrier marker lifted out of a Markdown source, leaving a placeholder.
@@ -241,7 +666,7 @@ pub(crate) struct CarrierLift {
     pub(crate) source: String,
     /// Each lifted payload and whether it is a bare closer, in marker order.
     slots: Vec<(String, bool)>,
-    token: String,
+    pub(crate) token: String,
     /// A set that does not balance records no structure, so nothing is lifted
     /// and the reader is told.
     pub(crate) damaged: bool,
@@ -277,15 +702,20 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
         markdown.to_owned()
     };
     let lines: Vec<&str> = normalized.split('\n').collect();
-    let payloads = parsed_carrier_markers(&normalized, &lines);
+    let mut payloads = parsed_carrier_markers(&normalized, &lines);
     if payloads.is_empty() {
         return none(markdown, false);
     }
     let only: Vec<String> = payloads.iter().map(|found| found.payload.clone()).collect();
-    if !carrier_set_balances(&only) {
+    let dropped = validate_markers(&normalized, &lines, &payloads);
+    if !carrier_set_balances(&only) || dropped.is_none() {
         return none(markdown, true);
     }
 
+    let validated = dropped.unwrap();
+    let dropped = validated.dropped;
+    payloads.extend(validated.math);
+    payloads.sort_by_key(|marker| marker.line);
     let mut token = String::from("CARVECARRIER");
     while normalized.contains(&token) {
         token.push('X');
@@ -297,13 +727,31 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
     let mut host = String::new();
     let mut next = 0;
     for (at, line) in lines.iter().enumerate() {
+        if dropped[at] {
+            continue;
+        }
         if next < payloads.len() && payloads[next].line == at {
             let found = &payloads[next];
             next += 1;
             // The placeholder keeps the host prefix the marker line carried, so
             // a marker inside a list item or a block quote stays in that host
             // when the lifted source is parsed.
-            out.push(format!("{}{token}{}Z", found.host, slots.len()));
+            let math = if found.payload.starts_with("$$") {
+                " math"
+            } else {
+                ""
+            };
+            if carrier_fence_width(&found.payload) > 0 {
+                // Fence placeholders share the body's paragraph so list hosts
+                // retain their content column without extra block separators.
+                out.push(format!("{}{token}{}Z", found.host, slots.len()));
+            } else {
+                out.push(format!(
+                    "{}<!-- {token}{}Z{math} -->",
+                    found.host,
+                    slots.len()
+                ));
+            }
             let closer = carrier_is_closer(&found.payload);
             drop_bold = if closer {
                 0
@@ -345,6 +793,8 @@ struct FoundMarker {
     /// indentation included.
     host: String,
     payload: String,
+    offset: usize,
+    end: usize,
 }
 
 /// Every carrier marker a parse of `markdown` reports as an HTML BLOCK.
@@ -352,7 +802,7 @@ struct FoundMarker {
 /// Reading only HTML blocks is what makes the verbatim cases free: a marker in
 /// a code block arrives as code text instead, so it is never a candidate.
 fn parsed_carrier_markers(markdown: &str, lines: &[&str]) -> Vec<FoundMarker> {
-    use pulldown_cmark::{Event, Options, Parser};
+    use pulldown_cmark::{Event, Parser};
     let mut line_starts = Vec::with_capacity(lines.len());
     let mut offset = 0;
     for line in lines {
@@ -361,11 +811,7 @@ fn parsed_carrier_markers(markdown: &str, lines: &[&str]) -> Vec<FoundMarker> {
     }
     // The options the import itself parses with, minus the metadata gate: a
     // frontmatter block holds no HTML block either way.
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_TABLES);
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    options.insert(Options::ENABLE_TASKLISTS);
-    options.insert(Options::ENABLE_FOOTNOTES);
+    let options = markdown_options();
     let mut found = Vec::new();
     let take = |at: usize, text: &str| {
         let line = line_starts.partition_point(|start| *start <= at) - 1;
@@ -374,6 +820,8 @@ fn parsed_carrier_markers(markdown: &str, lines: &[&str]) -> Vec<FoundMarker> {
             line,
             host: host.to_owned(),
             payload,
+            offset: at,
+            end: at + text.len(),
         })
     };
     for (event, range) in Parser::new_ext(markdown, options).into_offset_iter() {
@@ -447,7 +895,7 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
                 .and_then(|index| lift.slots.get(index));
             match slot {
                 Some((payload, closer)) => RestoredLine {
-                    lead: lead.to_owned(),
+                    lead: lead.strip_suffix("%% ").unwrap_or(lead).to_owned(),
                     text: payload.clone(),
                     kind: Some(*closer),
                 },
@@ -465,12 +913,58 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
         })
         .collect();
 
-    separate_carrier_lines(&items).join("\n")
+    restore_definition_lines(&separate_carrier_lines(&items)).join("\n")
+}
+
+fn restore_definition_lines(lines: &[RestoredLine]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut definition_host: Option<String> = None;
+    let mut first = false;
+    for line in lines {
+        let marker = line.kind.is_some();
+        if marker && line.text.starts_with(":: ") {
+            definition_host = None;
+            if out.last().is_some_and(|line| line.trim().is_empty()) {
+                out.pop();
+            }
+        }
+        if marker && line.text == ":" {
+            definition_host = Some(line.lead.clone());
+            first = true;
+            if out.last().is_some_and(|line| line.trim().is_empty()) {
+                out.pop();
+            }
+            continue;
+        }
+        if marker && line.text.is_empty() {
+            definition_host = None;
+            continue;
+        }
+        if let Some(def_host) = &definition_host {
+            if first && line.blank() {
+                continue;
+            }
+            let spelled = line.spelled();
+            let content = spelled.strip_prefix(def_host).unwrap_or(&spelled);
+            if first {
+                out.push(format!("{def_host}: {content}"));
+                first = false;
+            } else if line.blank() {
+                out.push(def_host.trim_end_matches([' ', '\t']).to_owned());
+            } else {
+                out.push(format!("{def_host}  {content}"));
+            }
+        } else {
+            out.push(line.spelled());
+        }
+    }
+    out
 }
 
 /// A line of the written Carve on the way back: its host prefix, the rest, and
 /// which kind of marker produced it, if any. `Some(false)` is an opener or the
 /// attribute line travelling with it, `Some(true)` a bare closer.
+#[derive(Clone)]
 struct RestoredLine {
     lead: String,
     text: String,
@@ -499,7 +993,7 @@ fn blanked_lead(lead: &str) -> String {
 /// Give every restored marker line the blank lines the canonical writer puts
 /// around it: a container's opener and closer hug its body, and what follows a
 /// closer is a block of its own.
-fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<String> {
+fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<RestoredLine> {
     // A CLOSER STANDS AT ITS OPENER'S COLUMN. Where a container opens a list
     // item and its body begins with a list, the closer's placeholder is a lazy
     // continuation of that inner item's paragraph, so the written Carve puts it
@@ -555,8 +1049,10 @@ fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<String> {
         // share the marker's HOST to be inside it: a `>` line next to a marker
         // standing at column 0 belongs to a block quote of its own.
         let inside = below
-            .filter(|item| item.kind == Some(true))
-            .or_else(|| above.filter(|item| item.kind == Some(false)))
+            .filter(|item| item.kind == Some(true) || item.text.starts_with("^ "))
+            .or_else(|| {
+                above.filter(|item| item.kind == Some(false) && !item.text.starts_with("^ "))
+            })
             .filter(|marker| {
                 items[at..end]
                     .iter()
@@ -570,7 +1066,7 @@ fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<String> {
         at = end;
     }
 
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<RestoredLine> = Vec::new();
     let mut last: Option<&RestoredLine> = None;
     for (index, item) in items.iter().enumerate() {
         if hugged[index] {
@@ -582,11 +1078,16 @@ fn separate_carrier_lines(items: &[RestoredLine]) -> Vec<String> {
         // there would turn a tight list loose.
         if last.is_some_and(|prior| prior.kind == Some(true) && item.lead.len() >= prior.lead.len())
             && item.kind != Some(true)
+            && !item.text.starts_with("^ ")
             && !item.text.is_empty()
         {
-            out.push(item.lead.trim_end().to_owned());
+            out.push(RestoredLine {
+                lead: item.lead.trim_end().to_owned(),
+                text: String::new(),
+                kind: None,
+            });
         }
-        out.push(item.spelled());
+        out.push(item.clone());
         last = Some(item);
     }
 

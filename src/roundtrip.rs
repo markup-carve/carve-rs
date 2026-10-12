@@ -40,6 +40,9 @@ pub(crate) const INLINE_FOOTNOTE: &str = "data-carve-inline-footnote";
 /// pinned for cross-engine parity, not a bound derived from anything.
 pub(crate) const SEPARATOR_WIDTH_LIMIT: u64 = 1000;
 
+/// The authored fence label (`<pre>`).
+pub(crate) const LABEL: &str = "data-carve-label";
+
 /// The authored separator-row widths, comma-joined (`<table>`).
 pub(crate) const COL_WIDTHS: &str = "data-carve-col-widths";
 /// The raw inline's format; the span holds its content (`<span>`).
@@ -52,7 +55,7 @@ pub(crate) const SRC: &str = "data-carve-src";
 pub(crate) const ABBREVIATIONS: &str = "data-carve-abbreviations";
 
 /// Every §13a name in inventory order, canonically spelled.
-pub(crate) const CARRIERS: [&str; 12] = [
+pub(crate) const CARRIERS: [&str; 13] = [
     MARKER,
     CHAR,
     EXPLICIT_ID,
@@ -61,6 +64,7 @@ pub(crate) const CARRIERS: [&str; 12] = [
     FOOTNOTE_LABEL,
     INLINE_FOOTNOTE,
     COL_WIDTHS,
+    LABEL,
     RAW,
     ESCAPED,
     SRC,
