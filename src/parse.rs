@@ -2420,6 +2420,7 @@ fn term_folded_lines(
     let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
+    let mut owned_fence_exit = None;
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut previous_non_blank = "";
@@ -2474,6 +2475,7 @@ fn term_folded_lines(
                 && term_start.is_some_and(|start| {
                     if !marker_line_may_be_lazy(lines[start])
                         || probing()
+                        || owned_fence_exit == Some(start)
                         || start == 0
                         || is_blank_line(view(lines[start - 1]).0)
                     {
@@ -2491,9 +2493,6 @@ fn term_folded_lines(
                         &mut unaffordable,
                         true,
                     );
-                    if unaffordable {
-                        term_probe_budget = 0;
-                    }
                     !(folds || unaffordable)
                 })
             {
@@ -2627,6 +2626,10 @@ fn term_folded_lines(
                     break;
                 }
             }
+            // A marker immediately after an owned code block starts a new
+            // item. This boundary cannot carry an open paragraph, and using it
+            // avoids probing the same list prefix for each successive fence.
+            owned_fence_exit = term_fence_owned.then_some(index);
             continue;
         }
         // A term may follow list markers on its line; its column is then the

@@ -603,3 +603,33 @@ fn nonparagraph_item_blocks_release_a_following_root_paragraph() {
         }
     }
 }
+
+#[test]
+fn successive_term_fences_do_not_repeat_the_list_prefix_probe() {
+    for count in [600, 1000] {
+        for note in [false, true] {
+            let prefix = "- x\n".repeat(count);
+            let payload = |label: &str| {
+                if note {
+                    format!("[^{label}]: note")
+                } else {
+                    format!("[{label}]: /u")
+                }
+            };
+            let source = format!(
+                "{prefix}- :: a\n  ````\n  {}\n- :: b\n  ```\n  {}\n- :: c\n  ~~~\n  {}\n",
+                payload("r1"),
+                payload("r2"),
+                payload("r3")
+            );
+            let output = html(&source);
+            for label in ["r1", "r2", "r3"] {
+                assert!(
+                    output.contains(&format!("<pre><code>{}\n</code></pre>", payload(label))),
+                    "{count}/{note}: {output}"
+                );
+            }
+            assert!(carve::parse(&source).footnote_defs.is_empty());
+        }
+    }
+}
