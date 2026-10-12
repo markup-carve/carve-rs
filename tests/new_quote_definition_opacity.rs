@@ -201,3 +201,310 @@ fn folded_inline_fences_keep_neighboring_block_boundaries() {
         assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
     }
 }
+
+#[test]
+fn quoted_item_witness_and_owned_absorption_match_native() {
+    let cases = [
+        (
+            "item-witness-1-0",
+            "> - a\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-1",
+            "> - a\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-2",
+            "> - a\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-3",
+            "> - a\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-4",
+            "> - a\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-5",
+            "> p\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-6",
+            "> p\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-7",
+            "> p\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-8",
+            "> p\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-9",
+            "> p\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-10",
+            "> p\n> - a\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-11",
+            "> p\n> - a\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-12",
+            "> p\n> - a\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-13",
+            "> p\n> - a\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-14",
+            "> p\n> - a\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <p>p\n- a\n- <code>\nx</code></p>\n  <p>~~~\n<code>\n[r]: /u</code></p>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-15",
+            "> - a\n> lazy\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-16",
+            "> - a\n> lazy\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-1-17",
+            "> - a\n> lazy\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-18",
+            "> - a\n> lazy\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-1-19",
+            "> - a\n> lazy\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <ul>\n    <li>a\nlazy\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "owned-absorption-1-true",
+            "> p\n> - ```\n>   x\n> :::bad\n> :::\n> ```\n> [r]: /u\n\n[x][r]\n",
+            "<blockquote><p>p\n- <code>\nx\n:::bad\n:::\n</code></p></blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "owned-absorption-1-false",
+            "> p\n> - ```\n>   x\n:::bad\n:::\n> ```\n> [r]: /u\n\n[x][r]\n",
+            "<blockquote><p>p\n- <code>\nx\n:::bad</code></p></blockquote>\n<div>\n  <blockquote>\n    <pre><code>[r]: /u\n</code></pre>\n  </blockquote>\n  <p>[x][r]</p>\n</div>",
+        ),
+        (
+            "item-witness-2-22",
+            "> > - a\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-23",
+            "> > - a\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-24",
+            "> > - a\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-25",
+            "> > - a\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-26",
+            "> > - a\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-27",
+            "> > p\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-28",
+            "> > p\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-29",
+            "> > p\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-30",
+            "> > p\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-31",
+            "> > p\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-32",
+            "> > p\n> > - a\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-33",
+            "> > p\n> > - a\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-34",
+            "> > p\n> > - a\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-35",
+            "> > p\n> > - a\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-36",
+            "> > p\n> > - a\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <p>p\n- a\n- <code>\nx</code></p>\n    <p>~~~\n<code>\n[r]: /u</code></p>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-37",
+            "> > - a\n> > lazy\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-38",
+            "> > - a\n> > lazy\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>",
+        ),
+        (
+            "item-witness-2-39",
+            "> > - a\n> > lazy\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-40",
+            "> > - a\n> > lazy\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "item-witness-2-41",
+            "> > - a\n> > lazy\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nlazy\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "owned-absorption-2-true",
+            "> > p\n> > - ```\n> >   x\n> > :::bad\n> > :::\n> > ```\n> > [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n:::bad\n:::\n</code></p></blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>",
+        ),
+        (
+            "owned-absorption-2-false",
+            "> > p\n> > - ```\n> >   x\n:::bad\n:::\n> > ```\n> > [r]: /u\n\n[x][r]\n",
+            "<blockquote>\n  <blockquote><p>p\n- <code>\nx\n:::bad</code></p></blockquote>\n</blockquote>\n<div>\n  <blockquote>\n    <blockquote>\n      <pre><code>[r]: /u\n</code></pre>\n    </blockquote>\n  </blockquote>\n  <p>[x][r]</p>\n</div>",
+        ),
+    ];
+    for (name, source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn nested_item_paragraphs_refresh_their_actual_marker_witness() {
+    let cases = [
+("nested-item-1-0","> - a\n>   - b\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-1-1","> - a\n>   - b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n- <code>\nx</code></li>\n      </ul>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-1-2","> - a\n>   - b\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b</li>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-1-3","> - a\n>   - b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n- <code>\nx</code>\n          <pre><code>```\n[r]: /u\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-1-4","> - a\n>   - b\n>     - ```\n>       x\n> \n>       ~~~\n>       ```\n>       [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-1-5","> - a\n>   - b\n>      - ```\n>        x\n> \n>        ~~~\n>        ```\n>        [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-1-6","> - a\n>   - b\n>       - ```\n>         x\n> \n>         ~~~\n>         ```\n>         [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n      <ul>\n        <li>b\n          <ul>\n            <li>\n              <pre><code>x\n\n~~~\n</code></pre>\n            </li>\n          </ul>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-2-0","> > - a\n> >   - b\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-2-1","> > - a\n> >   - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n- <code>\nx</code></li>\n        </ul>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-2-2","> > - a\n> >   - b\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-2-3","> > - a\n> >   - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n- <code>\nx</code>\n            <pre><code>```\n[r]: /u\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+("nested-item-2-4","> > - a\n> >   - b\n> >     - ```\n> >       x\n> > \n> >       ~~~\n> >       ```\n> >       [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-2-5","> > - a\n> >   - b\n> >      - ```\n> >        x\n> > \n> >        ~~~\n> >        ```\n> >        [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("nested-item-2-6","> > - a\n> >   - b\n> >       - ```\n> >         x\n> > \n> >         ~~~\n> >         ```\n> >         [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n        <ul>\n          <li>b\n            <ul>\n              <li>\n                <pre><code>x\n\n~~~\n</code></pre>\n              </li>\n            </ul>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+];
+    for (name, source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn lazy_item_markers_preserve_the_owned_paragraph_witness() {
+    let cases = [
+("lazy-witness-0","> - a\n- b\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-1","> - a\n- b\n>  - ```\n>    x\n> \n>    ~~~\n>    ```\n>    [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n- <code>\nx</code>\n      <pre><code>```\n[r]: /u\n</code></pre>\n    </li>\n  </ul>\n</blockquote>\n<p>[x][r]</p>"),
+("lazy-witness-2","> - a\n- b\n>   - ```\n>     x\n> \n>     ~~~\n>     ```\n>     [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-3","> - a\n- b\n>    - ```\n>      x\n> \n>      ~~~\n>      ```\n>      [r]: /u\n\n[x][r]\n","<blockquote>\n  <ul>\n    <li>a\n- b\n      <ul>\n        <li>\n          <pre><code>x\n\n~~~\n</code></pre>\n        </li>\n      </ul>\n    </li>\n  </ul>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-4","> > - a\n> - b\n> > - ```\n> >   x\n> > \n> >   ~~~\n> >   ```\n> >   [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b</li>\n      <li>\n        <pre><code>x\n\n~~~\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-5","> > - a\n> - b\n> >  - ```\n> >    x\n> > \n> >    ~~~\n> >    ```\n> >    [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n- <code>\nx</code>\n        <pre><code>```\n[r]: /u\n</code></pre>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p>[x][r]</p>"),
+("lazy-witness-6","> > - a\n> - b\n> >   - ```\n> >     x\n> > \n> >     ~~~\n> >     ```\n> >     [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+("lazy-witness-7","> > - a\n> - b\n> >    - ```\n> >      x\n> > \n> >      ~~~\n> >      ```\n> >      [r]: /u\n\n[x][r]\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n        <ul>\n          <li>\n            <pre><code>x\n\n~~~\n</code></pre>\n          </li>\n        </ul>\n      </li>\n    </ul>\n  </blockquote>\n</blockquote>\n<p><a href=\"/u\">x</a></p>"),
+];
+    for (name, source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn folded_markers_preserve_frames_and_real_quote_exits() {
+    let cases = [
+("frame-preservation-0",":: term\n> ```\nlazy\n> - x\n> ```\n> [r]: /t\n","<dl>\n  <dt>term</dt>\n</dl>\n<blockquote>\n  <pre><code></code></pre>\n</blockquote>\n<p>lazy</p>\n<blockquote>\n  <ul>\n    <li>x\n<code></code></li>\n  </ul>\n</blockquote>"),
+("frame-preservation-2","> > - a\n> - b\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\n- b\n- <code></code></li>\n    </ul>\n  </blockquote>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-3",">   - a\n> - ```\n> [r]: /t\n> ```\n","<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n  <ul>\n    <li>\n      <pre><code></code></pre>\n    </li>\n  </ul>\n  <pre><code></code></pre>\n</blockquote>"),
+("frame-preservation-4","> p\n> ```\n> ```a\n> [r]: /t\n","<blockquote><p>p\n<code>\n</code>a</p></blockquote>"),
+];
+    for (name, source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn folded_marker_definition_collection_preserves_preceding_items() {
+    let source = "> - a\n>  - x\n>   - b\n> - c\n>  - ```\n> [r]: /t\n> ```\n\n[x][r]\n";
+    let html = render_html(&parse(source)).unwrap();
+    assert!(html.starts_with("<blockquote>\n  <ul>\n    <li>a\n- x\n      <ul>\n        <li>b</li>\n      </ul>\n    </li>\n"));
+    assert!(!html.contains("[r]: /t"));
+    assert!(html.ends_with("<p><a href=\"/t\">x</a></p>"));
+}

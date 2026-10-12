@@ -1055,6 +1055,7 @@ struct ContentColumns {
 #[derive(Default)]
 struct ColumnFrame {
     cols: Vec<usize>,
+    list_columns: Vec<(usize, usize)>,
     first_list_col: Option<(usize, usize)>,
     first_list_start: Option<usize>,
     /// The indent of the innermost OPEN definition list, set by its `:: ` term.
@@ -1063,7 +1064,17 @@ struct ColumnFrame {
 
 impl ColumnFrame {
     fn pop_column(&mut self) {
-        if self.cols.pop() == self.first_list_col.map(|(_, column)| column) {
+        let popped = self.cols.pop();
+        if let Some(column) = popped {
+            if self
+                .list_columns
+                .last()
+                .is_some_and(|(_, floor)| *floor == column)
+            {
+                self.list_columns.pop();
+            }
+        }
+        if popped == self.first_list_col.map(|(_, column)| column) {
             self.first_list_col = None;
             self.first_list_start = None;
         }
@@ -1259,6 +1270,9 @@ impl ContentColumns {
             // as that item's block (carve#655).
             let mut offset = marker_width;
             frame.cols.push(offset);
+            if level > 0 {
+                frame.list_columns.push((marker_indent, offset));
+            }
             if frame.first_list_col.is_none() {
                 frame.first_list_start = line_index;
             }
@@ -1269,8 +1283,14 @@ impl ContentColumns {
                 if nested_indent != 0 {
                     break;
                 }
+                let marker_column = offset;
                 offset += nested_width;
                 self.frames[level].cols.push(offset);
+                if level > 0 {
+                    self.frames[level]
+                        .list_columns
+                        .push((marker_column, offset));
+                }
             }
         } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
             let frame = &mut self.frames[level];
@@ -1457,7 +1477,10 @@ fn extract_footnote_defs(
         // taking the innermost one (carve-rs#1054).
         columns.observe(
             lines[i],
-            in_fence.is_some() || verse_lines[i].is_body() || in_comment_fence.is_some(),
+            in_fence.is_some()
+                || verse_lines[i].is_body()
+                || in_comment_fence.is_some()
+                || prepass_quote_line_is_folded(&folded_into_term, i, lines[i]),
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -1508,6 +1531,7 @@ fn extract_footnote_defs(
             {
                 in_fence = None;
             } else {
+                advance_inline_paragraph(lines[i], inline_marker_paragraph.as_mut());
                 end_prepass_paragraph_at(&folded_into_term, i);
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
@@ -2542,8 +2566,28 @@ fn source_may_contain_link_definition(source: &str) -> bool {
 
 #[derive(Clone)]
 struct PrepassParagraph {
+    list_columns: std::rc::Rc<[(usize, usize)]>,
     quote_columns: std::rc::Rc<[usize]>,
     absorption: bool,
+}
+
+impl PrepassParagraph {
+    fn folds_marker(&self, content: &str) -> bool {
+        let column = indent_columns(content);
+        self.list_columns.is_empty()
+            || (self
+                .list_columns
+                .first()
+                .is_some_and(|(marker, _)| column >= *marker)
+                && self
+                    .list_columns
+                    .last()
+                    .is_some_and(|(_, floor)| column < *floor)
+                && self
+                    .list_columns
+                    .binary_search_by_key(&column, |(marker, _)| *marker)
+                    .is_err())
+    }
 }
 
 /// Lines folded into a term and fences that end one at its container column.
@@ -2686,7 +2730,11 @@ fn term_folded_lines(
     let mut previous_non_blank = "";
     let mut index = 0;
     while index < lines.len() {
-        columns.observe_indexed(lines[index], false, Some(index));
+        columns.observe_indexed(
+            lines[index],
+            prepass_quote_line_is_folded(&ownership, index, lines[index]),
+            Some(index),
+        );
         if admitted_term_host.is_some()
             && strip_term_quote_prefixes(lines[index], &admitted_host_quote_columns).is_none()
         {
@@ -2894,7 +2942,7 @@ fn term_folded_lines(
                 );
             }
             let term_host = ownership.fence_openers.get(&index);
-            let inline_marker_paragraph = if fence.inline_marker && term_host.is_none() {
+            let mut inline_marker_paragraph = if fence.inline_marker && term_host.is_none() {
                 previous_prepass_paragraph(&ownership, index)
             } else {
                 None
@@ -2968,6 +3016,7 @@ fn term_folded_lines(
                         admitted_term_host = None;
                     }
                 }
+                advance_inline_paragraph(lines[index], inline_marker_paragraph.as_mut());
                 let kept = strip_prepass_quote_levels(lines[index], quotes).unwrap_or(lines[index]);
                 let close_line = if leading_ws(kept) >= open.content_col {
                     &kept[open.content_col..]
@@ -3278,15 +3327,35 @@ fn remember_prepass_paragraph_line(
             .as_ref()
             .is_some_and(|host| !host.quote_columns.is_empty())
     {
-        let inherited = same_host && paragraph.as_ref().is_some_and(|host| host.absorption);
-        let mut admission = ParaOpen::from_line(rest, inherited);
+        let starts_item = same_host
+            && paragraph.as_ref().is_some_and(|host| {
+                strip_term_quote_prefixes(raw, &host.quote_columns).is_some()
+                    && is_list_marker(trim_ascii_start(rest))
+                    && !host.list_columns.is_empty()
+                    && !host.folds_marker(rest)
+            });
+        let inherited =
+            same_host && !starts_item && paragraph.as_ref().is_some_and(|host| host.absorption);
+        let mut admission =
+            ParaOpen::from_line(if starts_item { prefix.bare } else { rest }, inherited);
         if admission.get() {
             let quote_columns = if same_host {
                 paragraph.as_ref().unwrap().quote_columns.clone()
             } else {
                 std::rc::Rc::from(quotes)
             };
+            let list_columns = if same_host && !starts_item {
+                paragraph.as_ref().unwrap().list_columns.clone()
+            } else {
+                std::rc::Rc::from(
+                    columns
+                        .frames
+                        .get(quote_columns.len())
+                        .map_or(&[][..], |frame| frame.list_columns.as_slice()),
+                )
+            };
             paragraph = Some(PrepassParagraph {
+                list_columns,
                 quote_columns,
                 absorption: admission.absorption(),
             });
@@ -3295,11 +3364,37 @@ fn remember_prepass_paragraph_line(
         }
     } else {
         paragraph = Some(PrepassParagraph {
+            list_columns: std::rc::Rc::from([]),
             quote_columns: std::rc::Rc::from(quotes),
             absorption: false,
         });
     }
     contexts.insert(index, paragraph);
+}
+
+fn prepass_quote_line_is_folded(terms: &TermLineOwnership, index: usize, line: &str) -> bool {
+    if !terms.tracks_quote_context {
+        return false;
+    }
+    let Some(paragraph) = previous_prepass_paragraph(terms, index) else {
+        return false;
+    };
+    if inline_fence_lazy_line(line, Some(&paragraph)) {
+        return true;
+    }
+    strip_term_quote_prefixes(line, &paragraph.quote_columns).is_some_and(|content| {
+        is_list_marker(trim_ascii_start(content))
+            && paragraph.folds_marker(content)
+            && ParaOpen::from_line(content, paragraph.absorption).get()
+    })
+}
+
+fn advance_inline_paragraph(line: &str, paragraph: Option<&mut PrepassParagraph>) {
+    if let Some(paragraph) = paragraph {
+        if let Some(content) = strip_term_quote_prefixes(line, &paragraph.quote_columns) {
+            paragraph.absorption = ParaOpen::from_line(content, paragraph.absorption).absorption();
+        }
+    }
 }
 
 fn inline_fence_paragraph_ends(
@@ -3318,7 +3413,13 @@ fn inline_fence_paragraph_ends(
     } else {
         content
     };
-    !is_fence_close(close_line, open) && !ParaOpen::from_line(content, paragraph.absorption).get()
+    !is_fence_close(close_line, open)
+        && ((prepass_definition_line(content)
+            && paragraph
+                .list_columns
+                .last()
+                .is_some_and(|(_, floor)| indent_columns(content) < *floor))
+            || !ParaOpen::from_line(content, paragraph.absorption).get())
 }
 
 fn inline_fence_lazy_line(line: &str, paragraph: Option<&PrepassParagraph>) -> bool {
@@ -3403,17 +3504,24 @@ fn prepass_fence_opens(
     let prefix = strip_container_prefixes_at(lines[index], columns, after_term);
     let quote_columns = term_quote_columns_for(prefix.structural, columns);
     let paragraph_above = prepass_paragraph_open_above(lines, index, &quote_columns, terms);
+    let item_paragraph = previous_prepass_paragraph(terms, index);
     let inline_marker_fence = closer_ahead
         && !terms.fence_openers.contains_key(&index)
         && !quote_columns.is_empty()
         && paragraph_above
         && index.checked_sub(1).is_some_and(|above| {
-            strip_term_quote_prefixes(lines[above], &quote_columns)
-                .zip(strip_term_quote_prefixes(lines[index], &quote_columns))
-                .is_some_and(|(previous, current)| {
-                    is_list_marker(trim_ascii_start(current))
-                        && indent_columns(previous) <= indent_columns(current)
-                })
+            strip_term_quote_prefixes(lines[index], &quote_columns).is_some_and(|current| {
+                let previous =
+                    strip_term_quote_prefixes(lines[above], &quote_columns).unwrap_or(lines[above]);
+                is_list_marker(trim_ascii_start(current))
+                    && item_paragraph
+                        .as_ref()
+                        .map_or(true, |paragraph| paragraph.folds_marker(current))
+                    && (item_paragraph
+                        .as_ref()
+                        .is_some_and(|paragraph| !paragraph.list_columns.is_empty())
+                        || indent_columns(previous) <= indent_columns(current))
+            })
         });
     PrepassFence {
         opens: closer_ahead || terms.fence_openers.contains_key(&index) || !paragraph_above,
@@ -3605,7 +3713,10 @@ fn extract_link_defs_with_guard_full(
         // in and reads it as text.
         let content_col = columns.observe(
             line,
-            in_fence.is_some() || verse_lines[line_index].is_body() || in_comment_fence.is_some(),
+            in_fence.is_some()
+                || verse_lines[line_index].is_body()
+                || in_comment_fence.is_some()
+                || prepass_quote_line_is_folded(&folded_into_term, line_index, line),
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
@@ -3647,6 +3758,7 @@ fn extract_link_defs_with_guard_full(
                 } else {
                     line
                 };
+                advance_inline_paragraph(line, inline_marker_paragraph.as_mut());
                 let close_indent = leading_ws(close_kept);
                 let close_line = if close_indent >= open.content_col {
                     &close_kept[open.content_col..]
