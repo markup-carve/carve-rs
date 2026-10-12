@@ -1411,6 +1411,7 @@ fn extract_footnote_defs(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut inline_marker_fence = false;
     let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
@@ -1492,8 +1493,9 @@ fn extract_footnote_defs(
             continue;
         }
         if let Some(open) = in_fence {
-            if (term_fence_owned
-                && term_fence_ends_above(lines[i], term_fence_floor, &term_fence_columns))
+            if (inline_marker_fence && is_blank_line(without_blockquote_prefixes(lines[i])))
+                || (term_fence_owned
+                    && term_fence_ends_above(lines[i], term_fence_floor, &term_fence_columns))
                 || prepass_fence_ends_above(lines[i], open, fence_closer_ahead)
             {
                 in_fence = None;
@@ -1592,6 +1594,7 @@ fn extract_footnote_defs(
             if fence.opens {
                 end_prepass_paragraph_at(&folded_into_term, i);
                 in_fence = Some(open);
+                inline_marker_fence = fence.inline_marker;
                 term_fence_quotes =
                     term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
@@ -2879,15 +2882,16 @@ fn term_folded_lines(
             let mut consumed_closer = false;
             index += 1;
             while index < lines.len() {
-                if (term_fence_owned
-                    && term_fence_ends_above(
-                        lines[index],
-                        term_fence_floor,
-                        term_quote_columns.as_deref().unwrap_or(&[]),
-                    ))
+                if (fence.inline_marker && is_blank_line(view(lines[index]).0))
+                    || (term_fence_owned
+                        && term_fence_ends_above(
+                            lines[index],
+                            term_fence_floor,
+                            term_quote_columns.as_deref().unwrap_or(&[]),
+                        ))
                     || prepass_fence_ends_above(lines[index], open, fence.closer_ahead)
                 {
-                    if term_fence_owned {
+                    if term_host.is_some() {
                         let (next, depth, _) = view(lines[index]);
                         let next = trim_ascii_start(next);
                         if detect_fence_open(next).is_some() {
@@ -3310,23 +3314,39 @@ fn prepass_fence_opens(
     let closer_ahead = prepass_fence_closer_ahead(lines, index, open, maxima);
     let prefix = strip_container_prefixes_at(lines[index], columns, after_term);
     let quote_columns = term_quote_columns_for(prefix.structural, columns);
+    let paragraph_above = prepass_paragraph_open_above(lines, index, &quote_columns, terms);
+    let inline_marker_fence = closer_ahead
+        && !terms.fence_openers.contains_key(&index)
+        && !quote_columns.is_empty()
+        && paragraph_above
+        && index.checked_sub(1).is_some_and(|above| {
+            strip_term_quote_prefixes(lines[above], &quote_columns)
+                .zip(strip_term_quote_prefixes(lines[index], &quote_columns))
+                .is_some_and(|(previous, current)| {
+                    is_list_marker(trim_ascii_start(current))
+                        && indent_columns(previous) <= indent_columns(current)
+                })
+        });
     PrepassFence {
-        opens: closer_ahead
-            || terms.fence_openers.contains_key(&index)
-            || !prepass_paragraph_open_above(lines, index, &quote_columns, terms),
+        opens: closer_ahead || terms.fence_openers.contains_key(&index) || !paragraph_above,
         quote_columns,
-        host_content_col: columns.reached_by(indent_columns(prefix.bare)).max(
-            if prefix
-                .structural
-                .chars()
-                .any(|character| !matches!(character, '>' | ' ' | '\t'))
-            {
-                columns.current().cols.last().copied().unwrap_or(0)
-            } else {
-                0
-            },
-        ),
+        host_content_col: if inline_marker_fence {
+            0
+        } else {
+            columns.reached_by(indent_columns(prefix.bare)).max(
+                if prefix
+                    .structural
+                    .chars()
+                    .any(|character| !matches!(character, '>' | ' ' | '\t'))
+                {
+                    columns.current().cols.last().copied().unwrap_or(0)
+                } else {
+                    0
+                },
+            )
+        },
         closer_ahead,
+        inline_marker: inline_marker_fence,
     }
 }
 
@@ -3335,6 +3355,7 @@ struct PrepassFence {
     host_content_col: usize,
     opens: bool,
     closer_ahead: bool,
+    inline_marker: bool,
 }
 
 /// Does an open fence END above `line` because the line leaves its container?
@@ -3440,6 +3461,7 @@ fn extract_link_defs_with_guard_full(
     let mut term_fence_quotes = 0;
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
+    let mut inline_marker_fence = false;
     let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
@@ -3514,8 +3536,9 @@ fn extract_link_defs_with_guard_full(
             continue;
         }
         if let Some(open) = in_fence {
-            if (term_fence_owned
-                && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
+            if (inline_marker_fence && is_blank_line(without_blockquote_prefixes(line)))
+                || (term_fence_owned
+                    && term_fence_ends_above(line, term_fence_floor, &term_fence_columns))
                 || prepass_fence_ends_above(line, open, fence_closer_ahead)
             {
                 in_fence = None;
@@ -3630,6 +3653,7 @@ fn extract_link_defs_with_guard_full(
                 end_prepass_paragraph_at(&folded_into_term, line_index);
                 open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);
+                inline_marker_fence = fence.inline_marker;
                 term_fence_quotes =
                     term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence

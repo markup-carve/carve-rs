@@ -84,3 +84,48 @@ fn quote_host_transitions_keep_folding_and_definition_boundaries() {
         assert_eq!(render_html(&doc).unwrap(), expected, "{name}");
     }
 }
+
+#[test]
+fn a_folded_inline_fence_keeps_payload_literal_and_releases_later_definitions() {
+    let cases = [
+        ("p\n- ```\n  x\n```\n\n[r]: /u\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\nx\n</code></p>\n<p>see [r] and [^a]</p>\n<dl>\n  <dt>t</dt>\n</dl>", 0),
+        ("p\n- ```\n  [r]: /u\n```\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\n[r]: /u\n</code></p>\n<p>see [r] and [^a]</p>\n<dl>\n  <dt>t</dt>\n</dl>", 0),
+        ("p\n- ```\n  x\n```\n\n[^a]: note\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\nx\n</code></p>\n<p>see [r] and <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<dl>\n  <dt>t</dt>\n</dl>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>", 1),
+        ("p\n- ```\n  [^a]: note\n```\n\nsee [r] and [^a]\n\n:: t\n", "<p>p\n- <code>\n[^a]: note\n</code></p>\n<p>see [r] and [^a]</p>\n<dl>\n  <dt>t</dt>\n</dl>", 0),
+        ("> p\n> - ```\n>   x\n> ```\n> \n> [r]: /u\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\nx\n</code></p>\n  <p>see [r] and [^a]</p>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>", 0),
+        ("> p\n> - ```\n>   [r]: /u\n> ```\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\n[r]: /u\n</code></p>\n  <p>see [r] and [^a]</p>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>", 0),
+        ("> p\n> - ```\n>   x\n> ```\n> \n> [^a]: note\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\nx\n</code></p>\n  <p>see [r] and <a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>", 1),
+        ("> p\n> - ```\n>   [^a]: note\n> ```\n> \n> see [r] and [^a]\n> \n> :: t\n", "<blockquote>\n  <p>p\n- <code>\n[^a]: note\n</code></p>\n  <p>see [r] and [^a]</p>\n  <dl>\n    <dt>t</dt>\n  </dl>\n</blockquote>", 0),
+    ];
+    for (source, expected, notes) in cases {
+        let doc = parse(source);
+        assert_eq!(render_html(&doc).unwrap(), expected, "{source:?}");
+        assert_eq!(doc.footnote_defs.len(), notes, "{source:?}");
+        let without_term = source.replace("> :: t\n", "").replace(":: t\n", "");
+        let without_term_html = expected
+            .replace("\n  <dl>\n    <dt>t</dt>\n  </dl>", "")
+            .replace("\n<dl>\n  <dt>t</dt>\n</dl>", "");
+        let doc = parse(&without_term);
+        assert_eq!(
+            render_html(&doc).unwrap(),
+            without_term_html,
+            "{without_term:?}"
+        );
+        assert_eq!(doc.footnote_defs.len(), notes, "{without_term:?}");
+    }
+}
+
+#[test]
+fn sibling_items_and_blanks_keep_their_real_fence_boundaries() {
+    let cases = [
+        ("> - a\n>   prose\n> - ```\n>   [r]: /u\n>   ```\n> \n> see [r]\n", "<blockquote>\n  <ul>\n    <li>a\nprose</li>\n    <li>\n      <pre><code>[r]: /u\n</code></pre>\n    </li>\n  </ul>\n  <p>see [r]</p>\n</blockquote>"),
+        ("> p\n> - ```\n>   x\n> \n> ```\n> [r]: /u\n> \n> see [r]\n", "<blockquote>\n  <p>p\n- <code>\nx</code></p>\n  <pre><code>[r]: /u\n\nsee [r]\n</code></pre>\n</blockquote>"),
+        ("> > - a\n> >   prose\n> > - ```\n> >   [r]: /u\n> >   ```\n> > \n> > see [r]\n", "<blockquote>\n  <blockquote>\n    <ul>\n      <li>a\nprose</li>\n      <li>\n        <pre><code>[r]: /u\n</code></pre>\n      </li>\n    </ul>\n    <p>see [r]</p>\n  </blockquote>\n</blockquote>"),
+        ("> > p\n> > - ```\n> >   x\n> > \n> > ```\n> > [r]: /u\n> > \n> > see [r]\n", "<blockquote>\n  <blockquote>\n    <p>p\n- <code>\nx</code></p>\n    <pre><code>[r]: /u\n\nsee [r]\n</code></pre>\n  </blockquote>\n</blockquote>"),
+    ];
+    for (source, expected) in cases {
+        let doc = parse(source);
+        assert_eq!(render_html(&doc).unwrap(), expected, "{source:?}");
+        assert!(doc.footnote_defs.is_empty(), "{source:?}");
+    }
+}
