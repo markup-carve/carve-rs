@@ -3547,5 +3547,2189 @@
     "source": "> > - :: term\n> >   : desc\n> > \n> >   ::: note\n> >   : faux\n> >       ```\n> >       code\n> >       ```\n> >   :::\n",
     "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>desc</dd></dl><aside class=\"admonition note\" aria-label=\"Note\"><p>: faux\n<code>\ncode\n</code></p></aside></li></ul></blockquote></blockquote>",
     "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-2",
+    "source": "- :: term\n  : payload\n    ```\n    code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-3",
+    "source": "- :: term\n  : payload\n    ```\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-5",
+    "source": "- :: term\n  : payload\n      ```\n      code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-7",
+    "source": "- :: term\n  : payload\n      ```\n      code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-9",
+    "source": "- :: term\n  : payload\n        ```\n        code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-10",
+    "source": "- :: term\n  : payload\n        ```\n        code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-26",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-27",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-29",
+    "source": "> - :: term\n>   : payload\n>       ```\n>       code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-31",
+    "source": "> - :: term\n>   : payload\n>       ```\n>       code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-33",
+    "source": "> - :: term\n>   : payload\n>         ```\n>         code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-34",
+    "source": "> - :: term\n>   : payload\n>         ```\n>         code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-50",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-51",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-53",
+    "source": "> > - :: term\n> >   : payload\n> >       ```\n> >       code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-55",
+    "source": "> > - :: term\n> >   : payload\n> >       ```\n> >       code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-57",
+    "source": "> > - :: term\n> >   : payload\n> >         ```\n> >         code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "authored-code-hosts-58",
+    "source": "> > - :: term\n> >   : payload\n> >         ```\n> >         code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-1",
+    "source": "- :: term\n  : payload\n    ```\n    code\n  ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-2",
+    "source": "- :: term\n  : payload\n    ```\n    code\n  ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-3",
+    "source": "- :: term\n  : payload\n    ```\n    code\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-4",
+    "source": "- :: term\n  : payload\n    ```\n    code\n   ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-5",
+    "source": "- :: term\n  : payload\n    ```\n    code\n   ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-7",
+    "source": "- :: term\n  : payload\n    ```\n    code\n    ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-8",
+    "source": "- :: term\n  : payload\n    ```\n    code\n    ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-9",
+    "source": "- :: term\n  : payload\n    ```\n    code\n     ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-10",
+    "source": "- :: term\n  : payload\n    ```\n    code\n     ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-11",
+    "source": "- :: term\n  : payload\n    ```\n    code\n     ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-13",
+    "source": "- :: term\n  : payload\n    ```\n    code\n      ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-14",
+    "source": "- :: term\n  : payload\n    ```\n    code\n      ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-16",
+    "source": "- :: term\n  : payload\n    ```\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-17",
+    "source": "- :: term\n  : payload\n    ```\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-18",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-19",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n  ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-20",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n  ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-21",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n   ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-22",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n   ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-23",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n   ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-24",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-25",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n    ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-26",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n    ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-27",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n     ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-28",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n     ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-29",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n     ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-30",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n      ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-31",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n      ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-32",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n      ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-33",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-34",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n        ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-35",
+    "source": "- :: term\n  : payload\n    ~~~\n    code\n        ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-39",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-40",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n   ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-41",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n   ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-45",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n     ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-46",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n     ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-47",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n     ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-48",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-49",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n      ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-50",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n      ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-51",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-52",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-53",
+    "source": "- :: term\n  : payload\n    ``` raw=html\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-54",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-55",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n  ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-56",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n  ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-60",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-61",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n    ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-62",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n    ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-69",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-70",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-71",
+    "source": "- :: term\n  :  payload\n    ```\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-72",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-73",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n  ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-74",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n  ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-78",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-79",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n    ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-80",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n    ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-87",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-88",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n        ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-89",
+    "source": "- :: term\n  :  payload\n    ~~~\n    code\n        ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-93",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-94",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n   ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-95",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n   ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-99",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n     ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-100",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n     ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-101",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n     ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-102",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-103",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n      ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-104",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n      ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-105",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-106",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-107",
+    "source": "- :: term\n  :  payload\n    ``` raw=html\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-108",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n  ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-109",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n  ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-110",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n  ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-114",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n    ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-115",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n    ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-116",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n    ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-123",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-124",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-125",
+    "source": "- :: term\n  :   payload\n    ```\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-126",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n  ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-127",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n  ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-128",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n  ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-132",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n    ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-133",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n    ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-134",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n    ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-141",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n        ~~~\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-142",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n        ~~~\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-143",
+    "source": "- :: term\n  :   payload\n    ~~~\n    code\n        ~~~\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-147",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n   ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-148",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n   ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-149",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n   ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-153",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n     ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-154",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n     ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-155",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n     ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-156",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n      ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-157",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n      ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-158",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n      ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-159",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n        ```\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-160",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n        ```\n%% hidden\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n    after\n  </li></ul>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-161",
+    "source": "- :: term\n  :   payload\n    ``` raw=html\n    code\n        ```\n{#tail}\nafter\n",
+    "html": "<ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-163",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>   ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-164",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>   ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-165",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-166",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>    ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-167",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>    ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-169",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>     ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-170",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>     ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-171",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>      ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-172",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>      ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-173",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>      ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-175",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>       ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-176",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>       ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-178",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-179",
+    "source": "> - :: term\n>   : payload\n>     ```\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-180",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-181",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>   ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-182",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>   ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-183",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>    ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-184",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>    ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-185",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>    ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-186",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-187",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>     ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-188",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>     ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-189",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>      ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-190",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>      ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-191",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>      ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-192",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>       ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-193",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>       ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-194",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>       ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-195",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-196",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>         ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-197",
+    "source": "> - :: term\n>   : payload\n>     ~~~\n>     code\n>         ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-201",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-202",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>    ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-203",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>    ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-207",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>      ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-208",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>      ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-209",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>      ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-210",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-211",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>       ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-212",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>       ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-213",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-214",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-215",
+    "source": "> - :: term\n>   : payload\n>     ``` raw=html\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-216",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-217",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>   ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-218",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>   ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-222",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-223",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>     ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-224",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>     ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-231",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-232",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-233",
+    "source": "> - :: term\n>   :  payload\n>     ```\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-234",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-235",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>   ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-236",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>   ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-240",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-241",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>     ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-242",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>     ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-249",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-250",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>         ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-251",
+    "source": "> - :: term\n>   :  payload\n>     ~~~\n>     code\n>         ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-255",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-256",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>    ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-257",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>    ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-261",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>      ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-262",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>      ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-263",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>      ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-264",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-265",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>       ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-266",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>       ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-267",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-268",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-269",
+    "source": "> - :: term\n>   :  payload\n>     ``` raw=html\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-270",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>   ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-271",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>   ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-272",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>   ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-276",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>     ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-277",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>     ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-278",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>     ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-285",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-286",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-287",
+    "source": "> - :: term\n>   :   payload\n>     ```\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-288",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>   ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-289",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>   ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-290",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>   ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-294",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>     ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-295",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>     ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-296",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>     ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-303",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>         ~~~\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-304",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>         ~~~\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-305",
+    "source": "> - :: term\n>   :   payload\n>     ~~~\n>     code\n>         ~~~\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-309",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>    ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-310",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>    ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-311",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>    ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-315",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>      ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-316",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>      ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-317",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>      ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-318",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>       ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-319",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>       ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-320",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>       ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-321",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>         ```\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-322",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>         ```\n> %% hidden\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n      after\n    </li></ul></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-323",
+    "source": "> - :: term\n>   :   payload\n>     ``` raw=html\n>     code\n>         ```\n> {#tail}\n> after\n",
+    "html": "<blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-325",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >   ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-326",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >   ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-327",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >    ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-328",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >    ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-329",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >    ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-331",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >     ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-332",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >     ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-333",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >      ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-334",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >      ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-335",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >      ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-337",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >       ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-338",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >       ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-340",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-341",
+    "source": "> > - :: term\n> >   : payload\n> >     ```\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-342",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-343",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-344",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-345",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >    ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-346",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >    ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-347",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >    ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-348",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-349",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-350",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-351",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >      ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-352",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >      ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-353",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >      ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-354",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >       ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-355",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >       ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-356",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >       ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-357",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-358",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-359",
+    "source": "> > - :: term\n> >   : payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-363",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-364",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-365",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-369",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-370",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-371",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-372",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-373",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-374",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-375",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-376",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-377",
+    "source": "> > - :: term\n> >   : payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-378",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-379",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >   ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-380",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >   ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-384",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-385",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >     ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-386",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >     ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-393",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-394",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-395",
+    "source": "> > - :: term\n> >   :  payload\n> >     ```\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-396",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-397",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-398",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-402",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-403",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-404",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-411",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-412",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-413",
+    "source": "> > - :: term\n> >   :  payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-417",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-418",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-419",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-423",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-424",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-425",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-426",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-427",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-428",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-429",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-430",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-431",
+    "source": "> > - :: term\n> >   :  payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-432",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >   ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-433",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >   ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-434",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >   ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-438",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >     ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-439",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >     ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-440",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >     ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-447",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-448",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-449",
+    "source": "> > - :: term\n> >   :   payload\n> >     ```\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code>\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-450",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-451",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-452",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >   ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-456",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-457",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p>after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-458",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >     ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload</dd></dl><pre><code>code\n</code></pre></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": [
+      "code\n"
+    ]
+  },
+  {
+    "id": "dd-closer-review-465",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-466",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-467",
+    "source": "> > - :: term\n> >   :   payload\n> >     ~~~\n> >     code\n> >         ~~~\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n~~~\ncode\n~~~</dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-471",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-472",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-473",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >    ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-477",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-478",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-479",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >      ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-480",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-481",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-482",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >       ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-483",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code>\nafter</dd></dl></li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-484",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > %% hidden\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl>\n        after\n      </li></ul></blockquote></blockquote>",
+    "codePayloads": []
+  },
+  {
+    "id": "dd-closer-review-485",
+    "source": "> > - :: term\n> >   :   payload\n> >     ``` raw=html\n> >     code\n> >         ```\n> > {#tail}\n> > after\n",
+    "html": "<blockquote><blockquote><ul><li><dl><dt>term</dt><dd>payload\n<code> raw=html\ncode\n</code></dd></dl></li></ul><p id=\"tail\">after</p></blockquote></blockquote>",
+    "codePayloads": []
   }
 ]
