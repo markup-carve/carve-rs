@@ -15442,6 +15442,7 @@ fn collect_indented_block_mapped_with_columns(
         marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
     let mut marker_definition_has_description = !marker_is_definition_term;
     let mut term_code_lazy_tail = false;
+    let mut term_code_tail_can_resume = false;
     let mut term_code_closer_checked = false;
     let mut term_code_start = 0;
     let mut marker_term_paragraph_open = marker_is_definition_term;
@@ -15503,6 +15504,9 @@ fn collect_indented_block_mapped_with_columns(
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             marker_term_paragraph_open = false;
+            if term_code_lazy_tail && fence.is_some() {
+                term_code_tail_can_resume = true;
+            }
             term_code_lazy_tail = false;
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
             // collector: the lookahead below asks whether the ITEM continues,
@@ -15600,6 +15604,10 @@ fn collect_indented_block_mapped_with_columns(
             continue;
         }
         let indent = indent_columns(line);
+        if term_code_tail_can_resume {
+            term_code_lazy_tail = indent >= strip_cols && fence.is_some();
+            term_code_tail_can_resume = false;
+        }
         // A LAZY-framed line has NO column (PART 0), so under an OPEN fence it is
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
