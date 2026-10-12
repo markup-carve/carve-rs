@@ -2499,9 +2499,9 @@ fn paragraph_continuation_probe_with_start(
 }
 
 fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
-    if !source.contains('\r')
-        && (!source.contains("]: ")
-            || (options.extensions.is_empty() && !source_may_contain_link_definition(&source)))
+    if options.extensions.is_empty()
+        && !source.contains('\r')
+        && !source_may_contain_link_definition(&source)
     {
         let mut source = source;
         if !source.is_empty() && !source.ends_with('\n') {
@@ -2519,6 +2519,7 @@ fn source_may_contain_link_definition(source: &str) -> bool {
     }
     source
         .lines()
+        .rev()
         .filter(|line| line.contains("]: "))
         .any(|line| {
             let mut rest = trim_ascii_start(line);
@@ -3477,8 +3478,8 @@ fn extract_link_defs_with_guard(
     guard: Option<&mut usize>,
 ) -> (String, BTreeMap<String, LinkDef>) {
     if options.extensions.is_empty()
-        && !source.contains('\r')
         && !source_may_contain_link_definition(source)
+        && !source.contains('\r')
     {
         let lines: Vec<_> = source.lines().collect();
         return (joined_source(&lines), BTreeMap::new());
@@ -29265,6 +29266,10 @@ mod definition_gate_tests {
                     " p \t\n q",
                     "p [text]: literal",
                     "[r]: /u",
+                    "[r]:\t/u\n\n[r][]",
+                    "[r]:/u\n\n[r][]",
+                    "[r]:\n  /u\n\n[r][]",
+                    "\u{feff}[r]: /u\n\n[r][]",
                     "[r]: /u \"title\" {.c}",
                     "[r]: /u junk",
                     "[@r]: /u",
@@ -29362,20 +29367,24 @@ mod definition_gate_tests {
 
     #[test]
     fn definition_gate_retains_extension_matcher_calls() {
-        let source = "p [text]: literal\n\n::: |\nx\n:::\n";
-        for positions in [false, true] {
-            let extension = CountingExtension(Cell::new(0));
-            let mut options = Options::default().with_positions(positions);
-            options.extensions.push(&extension);
-            let full = extract_link_defs_with_guard_full(source, &options, None);
-            let full_calls = extension.0.replace(0);
-            assert!(full_calls > 0);
-            let probe = reduce_frame_probe_links(source.to_owned(), &options);
-            assert_eq!(probe, full.0);
-            assert_eq!(extension.0.replace(0), full_calls);
-            let fast = extract_link_defs(source, &options);
-            assert_eq!(fast.0, full.0);
-            assert_eq!(extension.0.get(), full_calls);
+        for (source, has_matcher_work) in [
+            ("p [text]: literal\n\n::: |\nx\n:::\n", true),
+            ("p\n\n::: |\nx\n:::\n", false),
+        ] {
+            for positions in [false, true] {
+                let extension = CountingExtension(Cell::new(0));
+                let mut options = Options::default().with_positions(positions);
+                options.extensions.push(&extension);
+                let full = extract_link_defs_with_guard_full(source, &options, None);
+                let full_calls = extension.0.replace(0);
+                assert_eq!(full_calls > 0, has_matcher_work);
+                let probe = reduce_frame_probe_links(source.to_owned(), &options);
+                assert_eq!(probe, full.0);
+                assert_eq!(extension.0.replace(0), full_calls);
+                let fast = extract_link_defs(source, &options);
+                assert_eq!(fast.0, full.0);
+                assert_eq!(extension.0.get(), full_calls);
+            }
         }
     }
 
