@@ -1028,8 +1028,17 @@ struct ContentColumns {
 #[derive(Default)]
 struct ColumnFrame {
     cols: Vec<usize>,
+    first_list_col: Option<usize>,
     /// The indent of the innermost OPEN definition list, set by its `:: ` term.
     def_list: Option<usize>,
+}
+
+impl ColumnFrame {
+    fn pop_column(&mut self) {
+        if self.cols.pop() == self.first_list_col {
+            self.first_list_col = None;
+        }
+    }
 }
 
 impl ContentColumns {
@@ -1168,7 +1177,7 @@ impl ContentColumns {
             // `:  ` line below it opens a body.
             let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > term_indent) {
-                frame.cols.pop();
+                frame.pop_column();
             }
             frame.def_list = Some(term_indent);
         } else if let Some((body_indent, marker_width)) =
@@ -1179,13 +1188,13 @@ impl ContentColumns {
             // slices the continuation lines it takes.
             let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > body_indent) {
-                frame.cols.pop();
+                frame.pop_column();
             }
             frame.cols.push(body_indent + marker_width);
         } else if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
-            let cols = &mut self.frames[level].cols;
-            while cols.last().is_some_and(|col| *col > marker_indent) {
-                cols.pop();
+            let frame = &mut self.frames[level];
+            while frame.cols.last().is_some_and(|col| *col > marker_indent) {
+                frame.pop_column();
             }
             // One line can open SEVERAL items: `- - a` opens an outer item
             // whose content is another item, so BOTH content columns are
@@ -1194,7 +1203,8 @@ impl ContentColumns {
             // registered nothing here while carve-js and carve-php read it
             // as that item's block (carve#655).
             let mut offset = marker_width;
-            cols.push(offset);
+            frame.cols.push(offset);
+            frame.first_list_col.get_or_insert(offset);
             while let Some((nested_indent, nested_width)) =
                 detect_prepass_list_marker(&line[offset..])
             {
@@ -1207,7 +1217,7 @@ impl ContentColumns {
         } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
             let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > indent) {
-                frame.cols.pop();
+                frame.pop_column();
             }
             // A line that dedents to or past the term's own column has left the
             // definition list, so the next `:  ` line down there opens no body
@@ -2284,10 +2294,13 @@ fn paragraph_continuation_probe(
     unaffordable: &mut bool,
     collect_notes: bool,
 ) -> bool {
-    let run_start = body
-        .iter()
-        .rposition(|written| is_blank_line(written.as_ref()))
-        .map_or(0, |blank| blank + 1);
+    let run_start = if collect_notes {
+        0
+    } else {
+        body.iter()
+            .rposition(|written| is_blank_line(written.as_ref()))
+            .map_or(0, |blank| blank + 1)
+    };
     let run = &body[run_start..];
     if run.is_empty() {
         return false;
@@ -2420,7 +2433,7 @@ fn term_folded_lines(
     let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
-    let mut owned_fence_exit = None;
+    let mut admitted_term_host: Option<(usize, usize)> = None;
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut previous_non_blank = "";
@@ -2460,6 +2473,12 @@ fn term_folded_lines(
         let rest = trim_ascii_start(view_line);
         let comment =
             detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
+        if admitted_term_host
+            .is_some_and(|(floor, depth)| depth != quotes || (col < floor && !is_list_marker(rest)))
+        {
+            admitted_term_host = None;
+        }
+        let mut admitted_term_fence = false;
         if let Some((term_col, term_quotes)) = term {
             if quotes == term_quotes && col > term_col && !is_list_marker(rest) {
                 // A folded comment fence takes its body and closer with it.
@@ -2473,9 +2492,14 @@ fn term_folded_lines(
                 && col == term_col
                 && detect_fence_open(rest).is_some()
                 && term_start.is_some_and(|start| {
-                    if !marker_line_may_be_lazy(lines[start])
+                    let marker_col = indent_columns(view(lines[start]).0);
+                    if term_col == 0
+                        || admitted_term_host.is_some_and(|(floor, depth)| {
+                            depth == quotes
+                                && (marker_col >= floor
+                                    || is_list_marker(trim_ascii_start(view(lines[start]).0)))
+                        })
                         || probing()
-                        || owned_fence_exit == Some(start)
                         || start == 0
                         || is_blank_line(view(lines[start - 1]).0)
                     {
@@ -2496,6 +2520,7 @@ fn term_folded_lines(
                     !(folds || unaffordable)
                 })
             {
+                admitted_term_fence = true;
                 ownership.fence_openers.insert(
                     index,
                     TermFenceHost {
@@ -2626,10 +2651,19 @@ fn term_folded_lines(
                     break;
                 }
             }
-            // A marker immediately after an owned code block starts a new
-            // item. This boundary cannot carry an open paragraph, and using it
-            // avoids probing the same list prefix for each successive fence.
-            owned_fence_exit = term_fence_owned.then_some(index);
+            // A proved term fence establishes an actual item host. Keep its
+            // column through sibling markers and in-item continuations, but
+            // discard it on every non-marker line below that column.
+            if admitted_term_fence
+                && term_start.is_some_and(|start| marker_line_may_be_lazy(lines[start]))
+            {
+                let floor = columns
+                    .frames
+                    .get(quotes)
+                    .and_then(|frame| frame.first_list_col)
+                    .unwrap_or(open.content_col);
+                admitted_term_host = Some((floor, quotes));
+            }
             continue;
         }
         // A term may follow list markers on its line; its column is then the

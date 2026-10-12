@@ -617,7 +617,7 @@ fn successive_term_fences_do_not_repeat_the_list_prefix_probe() {
                 }
             };
             let source = format!(
-                "{prefix}- :: a\n  ````\n  {}\n- :: b\n  ```\n  {}\n- :: c\n  ~~~\n  {}\n",
+                "{prefix}- :: a\n  ````\n  {}\n- y\n- :: b\n  ```\n  {}\n- y\n- :: c\n  ~~~\n  {}\n",
                 payload("r1"),
                 payload("r2"),
                 payload("r3")
@@ -631,5 +631,56 @@ fn successive_term_fences_do_not_repeat_the_list_prefix_probe() {
             }
             assert!(carve::parse(&source).footnote_defs.is_empty());
         }
+    }
+}
+
+#[test]
+fn folded_generic_fence_does_not_admit_a_following_marker_term() {
+    let source = "p\n- ```\n  x\n  ```\n- :: t\n  ~~~\n\n  - a\n    [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+    assert!(!output.contains("<pre>"), "{output}");
+}
+
+#[test]
+fn a_folded_marker_does_not_admit_an_indented_bare_term_fence() {
+    for prefix in ["", "> "] {
+        for first in ["- x", "- :: a"] {
+            let source = format!("{prefix}p\n{prefix}{first}\n{prefix}  :: t\n{prefix}  ```\n{prefix}\n{prefix}  - y\n{prefix}    [^a]: note\n\nsee [^a]\n");
+            let output = html(&source);
+            assert!(
+                output.contains("role=\"doc-noteref\""),
+                "{source:?}: {output}"
+            );
+            assert!(!output.contains("<pre>"), "{source:?}: {output}");
+        }
+    }
+}
+
+#[test]
+fn blank_code_payload_keeps_the_following_term_fence_opaque() {
+    for prefix in ["", "> "] {
+        for payload in ["[r]: /u", "[^r]: note"] {
+            let source = format!("{prefix}- :: a\n{prefix}  ```\n{prefix}\n{prefix}  payload\n{prefix}- :: b\n{prefix}  ~~~\n{prefix}  {payload}\n");
+            let output = html(&source);
+            assert!(
+                output.contains(&format!("<pre><code>{payload}\n</code></pre>")),
+                "{source:?}: {output}"
+            );
+            assert!(carve::parse(&source).footnote_defs.is_empty());
+        }
+    }
+}
+
+#[test]
+fn nested_term_fences_keep_the_proved_outer_item_through_paragraphs() {
+    for prefix in ["", "> "] {
+        let source = format!("{prefix}- x\n{prefix}  - :: a\n{prefix}    ```\n{prefix}    c\n{prefix}    ```\n{prefix}  p\n{prefix}  - :: t\n{prefix}    ```\n{prefix}\n{prefix}    - a\n{prefix}      [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(
+            !output.contains("role=\"doc-noteref\""),
+            "{source:?}: {output}"
+        );
+        assert!(carve::parse(&source).footnote_defs.is_empty());
     }
 }
