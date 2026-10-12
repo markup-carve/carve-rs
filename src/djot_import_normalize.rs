@@ -271,7 +271,12 @@ pub(super) fn blocks(source: &str) -> String {
                 result.push(raw[..raw.len() - body.len()].trim_end().to_owned());
                 quote_paragraph_depth = None;
             }
+            let attribute_only = quote_paragraph_depth.is_none()
+                && block_body.starts_with('{')
+                && read_djot_word_attributes(block_body, 0)
+                    .is_some_and(|(end, _)| end == block_body.trim_end().len());
             quote_paragraph_depth = (!body.trim().is_empty()
+                && !attribute_only
                 && !heading.is_match(block_body)
                 && !marker.is_match(block_body)
                 && !block_body.starts_with(":::"))
@@ -1578,6 +1583,33 @@ mod tests {
                 crate::to_html(expected),
                 "{source:?}"
             );
+        }
+    }
+
+    #[test]
+    fn djot_quote_attribute_lines_do_not_start_a_paragraph() {
+        for (source, expected) in [
+            (
+                "> {.foo}\n> > {.bar}\n> > nested\n",
+                "<blockquote><blockquote class=\"foo\"><p class=\"bar\">nested</p></blockquote></blockquote>",
+            ),
+            (
+                "> {.foo}\n> > nested\n",
+                "<blockquote><blockquote class=\"foo\"><p>nested</p></blockquote></blockquote>",
+            ),
+            (
+                "> {.foo}\n> {.bar}\n> > nested\n",
+                "<blockquote><blockquote class=\"foo bar\"><p>nested</p></blockquote></blockquote>",
+            ),
+            (
+                "> a\n>\n> {.foo}\n> > b\n",
+                "<blockquote><p>a</p><blockquote class=\"foo\"><p>b</p></blockquote></blockquote>",
+            ),
+        ] {
+            let value = migrate_djot(source).value;
+            let html = crate::to_html(&value);
+            let joined = html.lines().map(str::trim).collect::<String>();
+            assert_eq!(joined, expected, "{source:?}: {value:?}");
         }
     }
 
