@@ -636,7 +636,6 @@ fn markdown_to_ast_with_code_lines(
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_MATH);
     // THE GATE (markup-carve/carve#2799). Metadata blocks stay OFF when the
     // leading `---` block is not mapping-shaped, so pulldown-cmark reads it as
     // CommonMark does - a thematic break and a setext heading - instead of
@@ -1459,22 +1458,11 @@ impl Builder {
     }
 
     fn push(&mut self, event: Event<'_>, source: &str, empty_title: bool) {
-        let display_math = matches!(&event, Event::DisplayMath(_));
         match event {
             Event::Start(tag) => self.start(tag, source, empty_title),
             Event::End(tag) => self.end(tag),
             Event::Text(text) => self.text(&text),
             Event::Code(code) => self.native_code(code.to_string(), self.current_line),
-            Event::InlineMath(content) | Event::DisplayMath(content) => {
-                self.inline(InlineNode::Math(Math {
-                    attrs: None,
-                    display: display_math,
-                    content: content.to_string(),
-                    label: None,
-                    number: None,
-                    pos: None,
-                }));
-            }
             // A soft break is a newline the author wrote inside a paragraph;
             // Carve keeps it, so the writer can re-wrap at the same place.
             Event::SoftBreak => self.inline(InlineNode::soft_break()),
@@ -1526,6 +1514,7 @@ impl Builder {
                     *slot = Some(checked);
                 }
             }
+            _ => {}
         }
     }
 

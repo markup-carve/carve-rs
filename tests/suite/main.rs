@@ -1902,6 +1902,9 @@ mod new_quote_definition_opacity;
 #[path = "../roundtrip_carriers_2.rs"]
 mod roundtrip_carriers_2;
 
+#[path = "../markdown_import_dollar_text_stays_text.rs"]
+mod markdown_import_dollar_text_stays_text;
+
 #[path = "../tab_authored_list_code_fences.rs"]
 mod tab_authored_list_code_fences;
 
