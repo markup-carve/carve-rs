@@ -1800,7 +1800,7 @@ impl Builder {
                 pending, children, ..
             }) = self.frames.last_mut()
             {
-                flush_inline_run(pending, children);
+                flush_inline_run(pending, children, self.needs_email_walk);
             }
             self.html_code_depth = 0;
         }
@@ -1960,6 +1960,20 @@ impl Builder {
         let Some(mut frame) = self.pop_frame() else {
             return;
         };
+        if self.needs_email_walk {
+            let inside_link = self
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, Frame::Link { .. }));
+            match &mut frame {
+                Frame::Paragraph(children)
+                | Frame::Heading(_, children)
+                | Frame::TableCell(children) => {
+                    crate::markdown_gfm_autolinks::link_email_inlines(children, inside_link);
+                }
+                _ => {}
+            }
+        }
         match &mut frame {
             Frame::Paragraph(children)
             | Frame::Heading(_, children)
@@ -2026,7 +2040,7 @@ impl Builder {
                 mut pending,
             } => {
                 self.html_code_depth = 0;
-                flush_inline_run(&mut pending, &mut children);
+                flush_inline_run(&mut pending, &mut children, self.needs_email_walk);
                 let item = ListItem {
                     attrs: None,
                     checked,
@@ -2121,6 +2135,13 @@ impl Builder {
                 self.current_line = line;
                 self.raw_inline(open);
                 self.current_line = closing_line;
+                if self.needs_email_walk {
+                    let inside_link = self
+                        .frames
+                        .iter()
+                        .any(|frame| matches!(frame, Frame::Link { .. }));
+                    crate::markdown_gfm_autolinks::link_email_inlines(&mut children, inside_link);
+                }
                 preserve_code_text(&mut children);
                 for child in children {
                     self.inline(child);
@@ -2308,7 +2329,32 @@ impl Builder {
     }
 
     fn protected_empty_destination(&mut self, children: Vec<InlineNode>) {
-        if !children.is_empty() {
+        let has_previous = match self.frames.last() {
+            Some(Frame::Paragraph(previous))
+            | Some(Frame::Heading(_, previous))
+            | Some(Frame::Emphasis(_, previous))
+            | Some(Frame::TableCell(previous))
+            | Some(Frame::HtmlEmphasis {
+                children: previous, ..
+            })
+            | Some(Frame::HtmlCode {
+                children: previous, ..
+            })
+            | Some(Frame::HtmlInsert {
+                children: previous, ..
+            })
+            | Some(Frame::HtmlDelete {
+                children: previous, ..
+            })
+            | Some(Frame::Link {
+                children: previous, ..
+            })
+            | Some(Frame::ListItem {
+                pending: previous, ..
+            }) => !previous.is_empty(),
+            _ => false,
+        };
+        if !children.is_empty() || has_previous {
             self.needs_email_walk = true;
             self.inline(InlineNode::Span(Span {
                 attrs: None,
@@ -2336,32 +2382,36 @@ impl Builder {
                 mut children,
                 ..
             }) => {
-                if native
-                    && self.needs_email_walk
-                    && !self
+                if self.needs_email_walk {
+                    let inside_link = self
                         .frames
                         .iter()
-                        .any(|frame| matches!(frame, Frame::Link { .. }))
-                {
-                    crate::markdown_gfm_autolinks::link_email_inlines(&mut children);
+                        .any(|frame| matches!(frame, Frame::Link { .. }));
+                    crate::markdown_gfm_autolinks::link_email_inlines(&mut children, inside_link);
                 }
                 let mut content = String::new();
-                let plain = children.iter().all(|child| match child {
-                    InlineNode::Text(text) => {
-                        content.push_str(&text.value);
-                        true
-                    }
-                    InlineNode::SoftBreak(_) => {
-                        content.push('\n');
-                        true
-                    }
-                    InlineNode::RawInline(raw)
-                        if raw.format == "html" && raw.content == "<!---->" =>
-                    {
-                        true
-                    }
-                    _ => false,
-                });
+                fn append_plain_code(children: &[InlineNode], content: &mut String) -> bool {
+                    children.iter().all(|child| match child {
+                        InlineNode::Text(text) => {
+                            content.push_str(&text.value);
+                            true
+                        }
+                        InlineNode::SoftBreak(_) => {
+                            content.push('\n');
+                            true
+                        }
+                        InlineNode::RawInline(raw)
+                            if raw.format == "html" && raw.content == "<!---->" =>
+                        {
+                            true
+                        }
+                        InlineNode::Span(span) if span.injected && span.attrs.is_none() => {
+                            append_plain_code(&span.children, content)
+                        }
+                        _ => false,
+                    })
+                }
+                let plain = append_plain_code(&children, &mut content);
                 if plain && native {
                     self.native_code(content.replace("\r\n", "\n").replace('\r', "\n"), line);
                 } else {
@@ -2431,7 +2481,7 @@ impl Builder {
                 if !pending.is_empty() {
                     self.html_code_depth = 0;
                 }
-                flush_inline_run(pending, children);
+                flush_inline_run(pending, children, self.needs_email_walk);
                 children.push(node);
             }
             Some(Frame::BlockQuote(children)) | Some(Frame::FootnoteDef { children, .. }) => {
@@ -2554,9 +2604,16 @@ impl Builder {
 /// arrives with nothing to collect it into. The content still needs a
 /// paragraph; what it does not need is one per node, which is what wrapping
 /// each arriving node separately produced (markup-carve/carve-rs#969).
-fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>) {
+fn flush_inline_run(
+    pending: &mut Vec<InlineNode>,
+    children: &mut Vec<BlockNode>,
+    needs_email_walk: bool,
+) {
     if pending.is_empty() {
         return;
+    }
+    if needs_email_walk {
+        crate::markdown_gfm_autolinks::link_email_inlines(pending, false);
     }
     preserve_code_text_at_depth(pending, 0);
     children.push(BlockNode::Paragraph(Paragraph {

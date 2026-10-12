@@ -209,7 +209,7 @@ fn raw_html_end(
         return end.map(|end| end + 1);
     }
     static TAG: OnceLock<Regex> = OnceLock::new();
-    let tag = TAG.get_or_init(|| Regex::new(r#"^</?[A-Za-z][A-Za-z0-9-]*(?:[ \t\r\n]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t\r\n]*=[ \t\r\n]*(?:"[^"]*"|'[^']*'|[^ \t\r\n"'=<>`]+))?)*[ \t\r\n]*/?>"#).unwrap());
+    let tag = TAG.get_or_init(|| Regex::new(r#"^(?:</[A-Za-z][A-Za-z0-9-]*[ \t\r\n]*>|<[A-Za-z][A-Za-z0-9-]*(?:[ \t\r\n]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t\r\n]*=[ \t\r\n]*(?:"[^"]*"|'[^']*'|[^ \t\r\n"'=<>`]+))?)*[ \t\r\n]*/?>)"#).unwrap());
     if let Some(tag) = tag.find(tail) {
         return Some(at + tag.end());
     }
@@ -718,6 +718,7 @@ fn text(node: &InlineNode) -> Option<&str> {
 }
 struct Emails {
     link_depth: usize,
+    keep_spans: bool,
 }
 impl SubtreeVisitor for Emails {
     fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
@@ -765,7 +766,9 @@ impl SubtreeVisitor for Emails {
                     self.link_depth -= 1;
                 }
                 match node {
-                    InlineNode::Span(span) if span.injected && span.attrs.is_none() => {
+                    InlineNode::Span(span)
+                        if span.injected && span.attrs.is_none() && !self.keep_spans =>
+                    {
                         nodes.extend(span.children);
                     }
                     node => nodes.push(node),
@@ -775,15 +778,21 @@ impl SubtreeVisitor for Emails {
     }
 }
 pub(crate) fn link_email_text(document: &mut crate::ast::Document) {
-    let mut visitor = Emails { link_depth: 0 };
+    let mut visitor = Emails {
+        link_depth: 0,
+        keep_spans: false,
+    };
     visitor.blocks(&mut document.children);
     for blocks in document.footnote_defs.values_mut() {
         visitor.blocks(blocks);
     }
 }
 
-pub(crate) fn link_email_inlines(nodes: &mut Vec<InlineNode>) {
-    let mut visitor = Emails { link_depth: 0 };
+pub(crate) fn link_email_inlines(nodes: &mut Vec<InlineNode>, inside_link: bool) {
+    let mut visitor = Emails {
+        link_depth: usize::from(inside_link),
+        keep_spans: true,
+    };
     visitor.inlines(nodes);
 }
 
@@ -928,10 +937,109 @@ mod tests {
                 crate::render_html(&parsed).unwrap(),
                 crate::render_html(&crate::parse(&formatted)).unwrap(),
             ] {
-                assert_eq!(expected, html_shape(&actual), "{source:?}");
+                assert_eq!(expected, html_shape(&actual), "{source:?}: {actual}");
             }
         }
     }
+    #[test]
+    fn escaped_raw_code_comment_guards_stabilize_after_export_normalization() {
+        let mut source = "<code class=\"x\">a<!---->\n<!---->b</code>".to_owned();
+        let mut counts = Vec::new();
+        for _ in 0..4 {
+            let document = crate::markdown_import::try_markdown_to_ast(&source).unwrap();
+            source = crate::render_markdown(&document).unwrap();
+            counts.push(source.matches("<!---->").count());
+        }
+        assert!(
+            counts[1..].windows(2).all(|pair| pair[0] == pair[1]),
+            "{counts:?}: {source}"
+        );
+    }
+
+    #[test]
+    fn tight_item_flush_keeps_email_links_before_nested_blocks() {
+        for source in ["- *<code>a* x@y.zz\n  - b\n", "- *<code>a* x@y.zz\n  ***\n"] {
+            let document = crate::markdown_import::try_markdown_to_ast(source).unwrap();
+            let written = crate::markdown_import::try_markdown_to_carve(source).unwrap();
+            let formatted = crate::render_carve(&crate::parse(&written)).unwrap();
+            for actual in [
+                crate::render_html(&document).unwrap(),
+                crate::render_html(&crate::parse(&written)).unwrap(),
+                crate::render_html(&crate::parse(&formatted)).unwrap(),
+            ] {
+                assert_eq!(
+                    actual.matches("mailto:x@y.zz").count(),
+                    1,
+                    "{source:?}: {actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn html_code_closed_by_markdown_containers_keeps_following_email_links() {
+        for (source, expected) in [
+            (
+                "*<code>a* x@y.zz",
+                "<p><em><code>a</em> <a href=\"mailto:x@y.zz\">x@y.zz</a></p>",
+            ),
+            (
+                "[<code>a](u) x@y.zz",
+                "<p><a href=\"u\"><code>a</a> <a href=\"mailto:x@y.zz\">x@y.zz</a></p>",
+            ),
+            (
+                "**<code>a** x@y.zz",
+                "<p><strong><code>a</strong> <a href=\"mailto:x@y.zz\">x@y.zz</a></p>",
+            ),
+        ] {
+            let document = crate::markdown_import::try_markdown_to_ast(source).unwrap();
+            let written = crate::markdown_import::try_markdown_to_carve(source).unwrap();
+            for actual in [
+                crate::render_html(&document).unwrap(),
+                crate::render_html(&crate::parse(&written)).unwrap(),
+            ] {
+                assert_eq!(expected, actual.trim_end_matches('\n'), "{source:?}");
+            }
+        }
+        let source = "<code>*x</code>* a@b[]().cd";
+        let written = crate::markdown_import::try_markdown_to_carve(source).unwrap();
+        let html = crate::render_html(&crate::parse(&written)).unwrap();
+        assert!(!html.contains("mailto:"), "{html}");
+        assert!(html.contains("a@b.cd"), "{html}");
+    }
+
+    #[test]
+    fn unclosed_html_code_keeps_native_email_linking() {
+        let source = "<code>a@b.cd";
+        let expected = "<p><code><a href=\"mailto:a@b.cd\">a@b.cd</a></p>";
+        let document = crate::markdown_import::try_markdown_to_ast(source).unwrap();
+        let written = crate::markdown_import::try_markdown_to_carve(source).unwrap();
+        for actual in [
+            crate::render_html(&document).unwrap(),
+            crate::render_html(&crate::parse(&written)).unwrap(),
+        ] {
+            assert_eq!(expected, actual.trim_end_matches('\n'));
+        }
+    }
+
+    #[test]
+    fn empty_destination_boundaries_do_not_join_neighboring_email_text() {
+        for source in ["a@b[]().cd", "a@b![]().cd"] {
+            let document = crate::markdown_import::try_markdown_to_ast(source).unwrap();
+            let html = crate::render_html(&document).unwrap();
+            assert!(!html.contains("mailto:"), "{source:?}: {html}");
+            assert!(html.contains("a@b.cd"), "{source:?}: {html}");
+        }
+        let result = crate::migrate_markdown("[<code>![x]()</code>](u)");
+        assert!(!result
+            .report
+            .diagnostics
+            .iter()
+            .any(|row| row.message.contains("raw HTML")));
+        let html = crate::render_html(&crate::parse(&result.value)).unwrap();
+        assert!(html.contains("<code>x</code>"), "{html}");
+    }
+
     #[test]
     fn empty_destinations_keep_heading_and_table_normalization() {
         for source in ["# []()\n", "# ![]()\n"] {

@@ -10414,5 +10414,17 @@
   {
     "source": "[<code>a@b.cd</code>](u)\n",
     "html": "<p><a href=\"u\"><code>a@b.cd</code></a></p>\n"
+  },
+  {
+    "source": "<code class=\"x\">a@b.cd</code>",
+    "html": "<p><code class=\"x\"><a href=\"mailto:a@b.cd\">a@b.cd</a></code></p>\n"
+  },
+  {
+    "source": "<code class=\"x\">a<!---->@b.cd</code>",
+    "html": "<p><code class=\"x\">a<!---->@b.cd</code></p>\n"
+  },
+  {
+    "source": "</a href=\"http://x.y\">",
+    "html": "<p>&lt;/a href=&quot;<a href=\"http://x.y%22%3E\">http://x.y&quot;&gt;</a></p>\n"
   }
 ]
