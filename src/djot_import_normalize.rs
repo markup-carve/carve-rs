@@ -64,19 +64,26 @@ pub(super) fn blocks(source: &str) -> String {
     if source.contains('{') && source.contains('>') {
         following_quote_depths.resize(lines.len(), None);
         let mut following_depth = None;
+        let mut following_source_depth = None;
         for (n, line) in lines.iter().enumerate().rev() {
             let (depth, body) = quoted(line);
             let body = body.trim();
-            if body.is_empty() {
-                continue;
-            }
-            if body.starts_with('{')
-                && read_djot_word_attributes(body, 0).is_some_and(|(end, _)| end == body.len())
-            {
-                following_quote_depths[n] = following_depth;
+            let attributes = body.starts_with('{')
+                && read_djot_word_attributes(body, 0).is_some_and(|(end, _)| end == body.len());
+            if body.is_empty() || attributes {
+                let target = if following_source_depth.is_some_and(|next| next > depth) {
+                    Some(depth)
+                } else {
+                    following_depth
+                };
+                if attributes {
+                    following_quote_depths[n] = target;
+                }
+                following_depth = target;
             } else {
                 following_depth = Some(depth);
             }
+            following_source_depth = Some(depth);
         }
     }
     let rows = djot_table_rows(source, &mask);
@@ -103,7 +110,17 @@ pub(super) fn blocks(source: &str) -> String {
     let mut in_quote = false;
     let mut quote_paragraph_depth = None;
     let mut quote_attribute_depth = None;
+    let mut moved_quote_attributes = None;
     for (n, raw) in lines.iter().enumerate() {
+        let prior_move = moved_quote_attributes.take();
+        if let Some((from, to)) = prior_move {
+            let (row_depth, row_body) = quoted(raw);
+            if row_body.trim().is_empty() && row_depth > 0 && row_depth <= from && row_depth >= to {
+                moved_quote_attributes = Some((row_depth, to));
+                previous_blank = true;
+                continue;
+            }
+        }
         if let Some(attribute_depth) = quote_attribute_depth {
             let (row_depth, row_body) = quoted(raw);
             if row_body.trim().is_empty() && attribute_depth == row_depth {
@@ -280,7 +297,10 @@ pub(super) fn blocks(source: &str) -> String {
             } else {
                 depth
             };
+            let continued_move =
+                prior_move.is_some_and(|(from, to)| depth <= from && attribute_depth == to);
             if attribute_only
+                && !continued_move
                 && (attribute_depth < depth
                     || quote_paragraph_depth.is_some_and(|held| depth < held))
             {
@@ -345,6 +365,8 @@ pub(super) fn blocks(source: &str) -> String {
             });
             in_quote = attribute_depth > 0;
             quote_attribute_depth = attribute_only.then_some(attribute_depth);
+            moved_quote_attributes =
+                (attribute_only && attribute_depth < depth).then_some((depth, attribute_depth));
             paragraph = false;
             previous_blank = body.trim().is_empty();
             continue;
