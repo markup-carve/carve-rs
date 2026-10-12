@@ -2466,7 +2466,10 @@ fn paragraph_continuation_probe_with_start(
 }
 
 fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
-    if !source.contains("]: ") && !source.contains('\r') {
+    if !source.contains('\r')
+        && (!source.contains("]: ")
+            || (options.extensions.is_empty() && !source_may_contain_link_definition(&source)))
+    {
         let mut source = source;
         if !source.is_empty() && !source.ends_with('\n') {
             source.push('\n');
@@ -2475,6 +2478,25 @@ fn reduce_frame_probe_links(source: String, options: &Options<'_>) -> String {
     } else {
         extract_link_defs(&source, options).0
     }
+}
+
+fn source_may_contain_link_definition(source: &str) -> bool {
+    if !source.contains("]: ") {
+        return false;
+    }
+    source
+        .lines()
+        .filter(|line| line.contains("]: "))
+        .any(|line| {
+            let mut rest = trim_ascii_start(line);
+            loop {
+                let next = trim_ascii_start(strip_container_prefixes(rest, true).bare);
+                if next.len() == rest.len() {
+                    return parse_link_def_line_with_value(next).is_some();
+                }
+                rest = next;
+            }
+        })
 }
 
 /// Lines folded into a term and fences that end one at its container column.
@@ -3188,6 +3210,21 @@ fn extract_link_defs_guarded(
 }
 
 fn extract_link_defs_with_guard(
+    source: &str,
+    options: &Options<'_>,
+    guard: Option<&mut usize>,
+) -> (String, BTreeMap<String, LinkDef>) {
+    if options.extensions.is_empty()
+        && !source.contains('\r')
+        && !source_may_contain_link_definition(source)
+    {
+        let lines: Vec<_> = source.lines().collect();
+        return (joined_source(&lines), BTreeMap::new());
+    }
+    extract_link_defs_with_guard_full(source, options, guard)
+}
+
+fn extract_link_defs_with_guard_full(
     source: &str,
     options: &Options<'_>,
     mut guard: Option<&mut usize>,
@@ -26841,7 +26878,7 @@ mod container_comment_dedent_steps {
             out.push_str(&"%".repeat(3 + i));
             out.push('\n');
         }
-        out.push_str("\n[r][]\n");
+        out.push_str("\n[r]: /u\n\n[r][]\n");
         let lines = out.lines().count() as u64;
         (out, lines)
     }
@@ -26902,7 +26939,7 @@ mod container_comment_dedent_steps {
             out.push_str(&"%".repeat(3 + i));
             out.push('\n');
         }
-        out.push_str("\n[r][]\n");
+        out.push_str("\n[r]: /u\n\n[r][]\n");
         let lines = out.lines().count() as u64;
         (out, lines)
     }
@@ -28827,5 +28864,193 @@ mod frame_probe_tests {
                 "{source:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod definition_gate_tests {
+    use super::*;
+
+    #[test]
+    fn global_gate_preserves_source_maps_and_guard_budget() {
+        let extension = Extension;
+        for positions in [false, true] {
+            for extended in [false, true] {
+                let mut options = Options::default();
+                options.positions = positions;
+                if extended {
+                    options.extensions.push(&extension);
+                }
+                for source in [
+                    "",
+                    "p",
+                    "p\n",
+                    "p\n\n",
+                    "p\r\nq",
+                    "\u{feff}p",
+                    " p \t\n q",
+                    "p [text]: literal",
+                    "[r]: /u",
+                    "[r]: /u \"title\" {.c}",
+                    "[r]: /u junk",
+                    "[@r]: /u",
+                    "[]: /u",
+                    "- [r]: /u",
+                    "> - [r]: /u",
+                    "  > - : [r]: /u",
+                    ":: t\n: [r]: /u",
+                    ":: t\n: - [r]: /u",
+                    "- a\n  > [r]: /u",
+                    "- a\n  [r]: /u",
+                    "- a\n   [r]: /u",
+                    "- a\n\t[r]: /u",
+                    "> - a\n>   [r]: /u",
+                    "- - x\n   [r]: /u",
+                    "1. a\n   [r]: /u",
+                    "-{.c} [r]: /u",
+                    ". [r]: /u",
+                    "- [x]  - [r]: /u",
+                    "- [x] [r]: /u",
+                    "- [x] p [r]: /u",
+                    "p\n- :: t\n  ```\n  x",
+                    "para\n  - :: t\n    ```",
+                    "```\n[r]: /u\n```",
+                    "> ```\n> [r]: /u\n> ```",
+                    "%%%\n[r]: /u\n%%%",
+                    "::: |\n[r]: /u\n:::",
+                    "- x\n  %%% o\n  filler\n%%%\n\n[r][]\n",
+                ] {
+                    let mut fast_budget = 1_000_000;
+                    let mut full_budget = fast_budget;
+                    let fast =
+                        extract_link_defs_with_guard(source, &options, Some(&mut fast_budget));
+                    let full =
+                        extract_link_defs_with_guard_full(source, &options, Some(&mut full_budget));
+                    assert!(
+                        full.1.is_empty() || source_may_contain_link_definition(source),
+                        "{source:?}"
+                    );
+                    assert_eq!(fast.0, full.0, "{source:?}");
+                    let projection = |map: &BTreeMap<String, LinkDef>| {
+                        map.iter()
+                            .map(|(label, def)| {
+                                (
+                                    label.clone(),
+                                    def.raw_label.clone(),
+                                    def.href.clone(),
+                                    def.title.clone(),
+                                    def.line,
+                                    format!("{:?}", def.attrs),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    assert_eq!(projection(&fast.1), projection(&full.1), "{source:?}");
+                    assert_eq!(fast_budget, full_budget, "{source:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn definition_free_gate_preserves_source_without_scanning_container_bounds() {
+        let source = "- x\n  %%% o\n  filler\n%%%\n\n[r][]\n";
+        std::thread::spawn(move || {
+            let options = Options::default();
+            CONTAINER_DEDENT_STEPS.with(|counter| counter.set(0));
+            let fast = extract_link_defs(source, &options);
+            assert_eq!(CONTAINER_DEDENT_STEPS.with(Cell::get), 0);
+            assert!(fast.1.is_empty());
+            let full = extract_link_defs_with_guard_full(source, &options, None);
+            assert!(CONTAINER_DEDENT_STEPS.with(Cell::get) > 0);
+            assert_eq!(fast.0, full.0);
+            assert!(full.1.is_empty());
+        })
+        .join()
+        .unwrap();
+    }
+
+    struct CountingExtension(Cell<usize>);
+    impl crate::extension::CarveExtension for CountingExtension {
+        fn name(&self) -> &'static str {
+            "definition-gate-callback-control"
+        }
+        fn match_block(
+            &self,
+            _lines: &[&str],
+            _start: usize,
+            _context: &crate::extension::MatcherContext<'_>,
+        ) -> Option<crate::extension::BlockMatch> {
+            self.0.set(self.0.get() + 1);
+            None
+        }
+    }
+
+    #[test]
+    fn definition_gate_retains_extension_matcher_calls() {
+        let source = "p [text]: literal\n\n::: |\nx\n:::\n";
+        for positions in [false, true] {
+            let extension = CountingExtension(Cell::new(0));
+            let mut options = Options::default();
+            options.positions = positions;
+            options.extensions.push(&extension);
+            let full = extract_link_defs_with_guard_full(source, &options, None);
+            let full_calls = extension.0.replace(0);
+            assert!(full_calls > 0);
+            let probe = reduce_frame_probe_links(source.to_owned(), &options);
+            assert_eq!(probe, full.0);
+            assert_eq!(extension.0.replace(0), full_calls);
+            let fast = extract_link_defs(source, &options);
+            assert_eq!(fast.0, full.0);
+            assert_eq!(extension.0.get(), full_calls);
+        }
+    }
+
+    struct Extension;
+    impl crate::extension::CarveExtension for Extension {
+        fn name(&self) -> &'static str {
+            "global-definition-gate-control"
+        }
+    }
+
+    #[test]
+    fn canonical_prefix_gate_preserves_probe_reduction() {
+        let options = Options::default();
+        for source in [
+            "p [text]: literal",
+            "p [text]: literal\n- :: t\n  ```\n  x",
+            "[r]: /u",
+            " [r]: /u",
+            "- [r]: /u",
+            "> - [r]: /u",
+            "  > - : [r]: /u",
+            ">  >   - [r]: /u",
+            ":: t\n: [r]: /u",
+            ":: t\n: - [r]: /u",
+            "- a\n  > [r]: /u",
+            "- a\n  > - [r]: /u",
+            "[r]: /u \"title\" {.c}",
+            "[r]: /u junk",
+            "[@r]: /u",
+            "[]: /u",
+            "\u{feff}[r]: /u",
+            "p\r\n[r]: /u",
+            "p\r",
+            "",
+            "p\n",
+            "p\n\n",
+            "[r]: /u\n",
+            "\t[r]: /u",
+            "- [x] [r]: /u",
+            "- [x] p [r]: /u",
+        ] {
+            assert_eq!(
+                reduce_frame_probe_links(source.to_owned(), &options),
+                extract_link_defs(source, &options).0,
+                "{source:?}"
+            );
+        }
+        assert!(!source_may_contain_link_definition("p [text]: literal"));
+        assert!(source_may_contain_link_definition("  > - : [r]: /u"));
     }
 }
