@@ -11768,6 +11768,14 @@ fn parse_list(
                         &mut item_open_fence,
                     );
                     nested.authored_base_at_start |= authored_overindented_opener;
+                    if item_open_fence.is_some() {
+                        let mut admitted = nested.clone();
+                        rebase_overindented_blocks(&mut admitted, false, options);
+                        if body_ends_with_open_paragraph(&admitted.source, options) {
+                            item_open_fence = None;
+                            item_unopened_fence_span = true;
+                        }
+                    }
                     if item_open_fence.is_none()
                         || cur.peek().is_some_and(|line| line.starts_with(LAZY))
                     {
@@ -11780,7 +11788,13 @@ fn parse_list(
                             |src, below| {
                                 let mut rebased = src.clone();
                                 rebase_overindented_blocks(&mut rebased, false, options);
-                                collected_body_takes_the_lazy_line(&rebased.source, below, options)
+                                (item_unopened_fence_span
+                                    && body_ends_with_code_block(&rebased.source, options))
+                                    || collected_body_takes_the_lazy_line(
+                                        &rebased.source,
+                                        below,
+                                        options,
+                                    )
                             },
                             |cur| {
                                 collect_item_continuation_block_mapped(
@@ -11818,7 +11832,9 @@ fn parse_list(
                         last_consumed_line_below_column(cur, content_col),
                         options,
                     );
-                    item_paragraph_open = nested_leaves_paragraph_open;
+                    item_paragraph_open = nested_leaves_paragraph_open
+                        || (item_unopened_fence_span
+                            && body_ends_with_code_block(&nested.source, options));
                     let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
@@ -11906,7 +11922,7 @@ fn parse_list(
                         }
                     }
                     place_item_chunk(deferred, last_item, nested_children, carried);
-                    if !nested_leaves_paragraph_open
+                    if !item_paragraph_open
                         && cur.peek().is_some_and(|line| {
                             let indent = indent_columns(line);
                             indent > base_indent && indent < content_col
@@ -12874,6 +12890,9 @@ fn parse_list(
                 {
                     break;
                 }
+                if detect_fence_open(over_indented).is_some() {
+                    item_unopened_fence_span = true;
+                }
                 // Fully strip ordinary prose's indent and fold it into the lead
                 // paragraph (inline-parsed, so residual indent never leaks).
                 // A sibling/nesting marker above the content column was already
@@ -13644,6 +13663,16 @@ fn trailing_marker_line_content(body: &str) -> Option<String> {
     let last = body.lines().rev().find(|line| !is_blank_line(line))?;
     let marker = detect_list_marker_full(last)?;
     Some(marker.content.to_string())
+}
+
+fn body_ends_with_code_block(body: &str, options: &Options<'_>) -> bool {
+    if body.lines().any(is_collected_definition_placeholder) {
+        return false;
+    }
+    matches!(
+        probe_blocks(body, options).last(),
+        Some(BlockNode::CodeBlock(_) | BlockNode::RawBlock(_))
+    )
 }
 
 /// PART 1 S4's one question, asked of a container's WHOLE body: does the last
