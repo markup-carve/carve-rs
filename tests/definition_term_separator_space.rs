@@ -735,3 +735,50 @@ fn a_bare_blank_during_an_unowned_fence_scan_releases_its_quote_host() {
     let output = html(source);
     assert!(output.contains("role=\"doc-noteref\""), "{output}");
 }
+
+#[test]
+fn a_different_quote_at_the_same_depth_releases_a_proved_term_host() {
+    let source = "- > - :: a\n  >   ```\n  >   c\n  >   ```\n>   p\n> - :: t\n>   ```\n>\n>   - y\n>     [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn a_band_marker_inside_a_nested_item_does_not_reuse_its_outer_host() {
+    let source = "- x\n  - :: a\n    ```\n    c\n    ```\n  - para\n   - :: t\n     ```\n\n     - y\n       [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn a_prepass_only_list_column_cannot_prove_an_outer_item_host() {
+    let source = "p\n- x\n\n  - :: a\n    ```\n    c\n    ```\n  q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn sibling_marker_width_changes_update_the_proved_content_column() {
+    let source = "- :: a\n  ```\n  c\n  ```\n1. :: t\n   ~~~\n   c\n   ~~~\n  p\n- :: u\n  ```\n\n  - y\n    [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}
+
+#[test]
+fn an_expired_outer_item_cannot_prove_a_later_nested_term_host() {
+    for first_block in ["  # h\n", "  ```\n  c\n  ```\n"] {
+        let source = format!("- x\n{first_block}p\n\n  - :: a\n    ```\n    c\n    ```\n  q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n");
+        let output = html(&source);
+        assert!(
+            output.contains("role=\"doc-noteref\""),
+            "{source:?}: {output}"
+        );
+    }
+}
+
+#[test]
+fn a_marker_left_of_a_proved_item_releases_its_term_host() {
+    let source = "  - :: a\n    ```\n    c\n    ```\n1. q\n  - :: t\n    ```\n\n    - y\n      [^a]: note\n\nsee [^a]\n";
+    let output = html(source);
+    assert!(output.contains("role=\"doc-noteref\""), "{output}");
+}

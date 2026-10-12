@@ -1029,6 +1029,7 @@ struct ContentColumns {
 struct ColumnFrame {
     cols: Vec<usize>,
     first_list_col: Option<(usize, usize)>,
+    first_list_start: Option<usize>,
     /// The indent of the innermost OPEN definition list, set by its `:: ` term.
     def_list: Option<usize>,
 }
@@ -1037,6 +1038,7 @@ impl ColumnFrame {
     fn pop_column(&mut self) {
         if self.cols.pop() == self.first_list_col.map(|(_, column)| column) {
             self.first_list_col = None;
+            self.first_list_start = None;
         }
     }
 }
@@ -1063,6 +1065,15 @@ impl ContentColumns {
     /// content column read as lazy text - while the same body with one
     /// container peeled off (`> - - x`) registered (carve-rs#1096).
     fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
+        self.observe_indexed(raw_line, opaque, None)
+    }
+
+    fn observe_indexed(
+        &mut self,
+        raw_line: &str,
+        opaque: bool,
+        line_index: Option<usize>,
+    ) -> usize {
         let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
         self.prev_blank = trim_ascii(bare).is_empty();
@@ -1090,7 +1101,7 @@ impl ContentColumns {
                 self.frames.truncate(1);
             }
             let level = self.frames.len() - 1;
-            self.observe_segment(level, bare, was_prev_blank);
+            self.observe_segment(level, bare, was_prev_blank, line_index);
             return self.current().cols.last().copied().unwrap_or(0);
         }
         let mut rest = raw_line;
@@ -1103,7 +1114,7 @@ impl ContentColumns {
             while self.frames.len() <= level {
                 self.frames.push(ColumnFrame::default());
             }
-            self.observe_segment(level, rest, was_prev_blank);
+            self.observe_segment(level, rest, was_prev_blank, line_index);
             let Some(offset) = self.next_quote_offset(level, rest) else {
                 break;
             };
@@ -1154,11 +1165,28 @@ impl ContentColumns {
     /// Record ONE container level's own markers. `line` is the raw line with
     /// every prefix up to and including this level's quote markers removed, so
     /// its columns are measured inside that container.
-    fn observe_segment(&mut self, level: usize, line: &str, was_prev_blank: bool) {
+    fn observe_segment(
+        &mut self,
+        level: usize,
+        line: &str,
+        was_prev_blank: bool,
+        line_index: Option<usize>,
+    ) {
         // Ownership is measured in visual columns. A leading tab reaches
         // column four and must not close a definition body at column three.
         let indent = indent_columns(line);
         let raw_trimmed = trim_ascii(line);
+        if line_index.is_some()
+            && !raw_trimmed.is_empty()
+            && self.frames[level]
+                .first_list_col
+                .is_some_and(|(base, floor)| {
+                    indent < base || (indent < floor && !is_list_marker(raw_trimmed))
+                })
+        {
+            self.frames[level].first_list_col = None;
+            self.frames[level].first_list_start = None;
+        }
         let starts_block = is_heading_marker_line(raw_trimmed)
             || standalone_attrs_block_len(&[raw_trimmed]).is_some()
             || raw_trimmed.starts_with('>')
@@ -1204,6 +1232,9 @@ impl ContentColumns {
             // as that item's block (carve#655).
             let mut offset = marker_width;
             frame.cols.push(offset);
+            if frame.first_list_col.is_none() {
+                frame.first_list_start = line_index;
+            }
             frame.first_list_col.get_or_insert((marker_indent, offset));
             while let Some((nested_indent, nested_width)) =
                 detect_prepass_list_marker(&line[offset..])
@@ -2429,17 +2460,41 @@ fn term_folded_lines(
         let at = runs.get(&fence_len)?;
         at.get(at.partition_point(|&k| k <= index)).copied()
     };
+    let marker_admitted = |start: usize, budget: &mut usize| {
+        if probing() || start == 0 || is_blank_line(view(lines[start - 1]).0) {
+            return true;
+        }
+        if *budget == 0 {
+            return false;
+        }
+        let mut unaffordable = false;
+        let folds = paragraph_continuation_probe(
+            &lines[..start],
+            lines[start],
+            options,
+            budget,
+            &mut unaffordable,
+            true,
+        );
+        !(folds || unaffordable)
+    };
     let mut ownership = TermLineOwnership::default();
     let mut term_probe_budget = probe_budget_for(lines.iter().map(|line| line.len() + 1).sum());
     let mut term: Option<(usize, usize)> = None;
     let mut term_start = None;
     let mut admitted_term_host: Option<(usize, usize, usize)> = None;
+    let mut admitted_host_quote_columns = Vec::new();
     let mut term_quote_columns = Vec::new();
     let mut columns = ContentColumns::new();
     let mut previous_non_blank = "";
     let mut index = 0;
     while index < lines.len() {
-        columns.observe(lines[index], false);
+        columns.observe_indexed(lines[index], false, Some(index));
+        if admitted_term_host.is_some()
+            && strip_term_quote_prefixes(lines[index], &admitted_host_quote_columns).is_none()
+        {
+            admitted_term_host = None;
+        }
         let after_term = opens_definition_entry(previous_non_blank);
         if !is_blank_line(lines[index]) {
             previous_non_blank = lines[index];
@@ -2474,9 +2529,18 @@ fn term_folded_lines(
         }
         let col = indent_columns(view_line);
         let rest = trim_ascii_start(view_line);
+        if let Some((base, _, depth)) =
+            admitted_term_host.filter(|&(base, _, depth)| depth == quotes && col == base)
+        {
+            if let Some((_, floor)) = detect_prepass_list_marker(view_line) {
+                admitted_term_host = Some((base, floor, depth));
+            }
+        }
         let comment =
             detect_comment_fence_line(rest).and_then(|open| comment_closer(index, open.fence_len));
-        if admitted_term_host.is_some_and(|(_, floor, _)| col < floor && !is_list_marker(rest)) {
+        if admitted_term_host
+            .is_some_and(|(base, floor, _)| col < base || (col < floor && !is_list_marker(rest)))
+        {
             admitted_term_host = None;
         }
         let mut admitted_term_fence = false;
@@ -2497,29 +2561,14 @@ fn term_folded_lines(
                     if term_col == 0
                         || admitted_term_host.is_some_and(|(base, floor, depth)| {
                             depth == quotes
-                                && (marker_col >= floor
+                                && (marker_col == floor
                                     || (marker_col == base
                                         && is_list_marker(trim_ascii_start(view(lines[start]).0))))
                         })
-                        || probing()
-                        || start == 0
-                        || is_blank_line(view(lines[start - 1]).0)
                     {
                         return true;
                     }
-                    if term_probe_budget == 0 {
-                        return false;
-                    }
-                    let mut unaffordable = false;
-                    let folds = paragraph_continuation_probe(
-                        &lines[..start],
-                        lines[start],
-                        options,
-                        &mut term_probe_budget,
-                        &mut unaffordable,
-                        true,
-                    );
-                    !(folds || unaffordable)
+                    marker_admitted(start, &mut term_probe_budget)
                 })
             {
                 admitted_term_fence = true;
@@ -2640,8 +2689,24 @@ fn term_folded_lines(
                 }
                 if !term_fence_owned {
                     let (body, depth, _) = view(lines[index]);
+                    for (frame_depth, frame) in columns.frames.iter_mut().enumerate() {
+                        if frame_depth > depth
+                            || (frame_depth == depth
+                                && !is_blank_line(body)
+                                && frame.first_list_col.is_some_and(|(base, floor)| {
+                                    let col = indent_columns(body);
+                                    col < base
+                                        || (col < floor && !is_list_marker(trim_ascii_start(body)))
+                                }))
+                        {
+                            frame.first_list_col = None;
+                            frame.first_list_start = None;
+                        }
+                    }
                     if admitted_term_host.is_some_and(|(_, floor, host_depth)| {
                         depth != host_depth
+                            || strip_term_quote_prefixes(lines[index], &admitted_host_quote_columns)
+                                .is_none()
                             || (!is_blank_line(lines[index]) && indent_columns(body) < floor)
                     }) {
                         admitted_term_host = None;
@@ -2669,15 +2734,27 @@ fn term_folded_lines(
                 && term_start
                     .is_some_and(|start| detect_list_marker_full(view(lines[start]).0).is_some())
             {
-                let (base, floor) = columns
-                    .frames
-                    .get(quotes)
-                    .and_then(|frame| frame.first_list_col)
-                    .unwrap_or((
-                        indent_columns(view(lines[term_start.unwrap()]).0),
-                        open.content_col,
-                    ));
-                admitted_term_host = Some((base, floor, quotes));
+                let start = term_start.unwrap();
+                let marker_col = indent_columns(view(lines[start]).0);
+                if !admitted_term_host.is_some_and(|(base, floor, depth)| {
+                    depth == quotes && (marker_col == base || marker_col == floor)
+                }) {
+                    let own_host = (marker_col, open.content_col);
+                    let outer = columns
+                        .frames
+                        .get(quotes)
+                        .and_then(|frame| Some((frame.first_list_col?, frame.first_list_start?)));
+                    let (base, floor) = outer
+                        .filter(|&((base, _), outer_start)| {
+                            base == marker_col
+                                || (term_quote_columns_for(lines[outer_start], &columns)
+                                    == term_quote_columns.clone().unwrap_or_default()
+                                    && marker_admitted(outer_start, &mut term_probe_budget))
+                        })
+                        .map_or(own_host, |(host, _)| host);
+                    admitted_term_host = Some((base, floor, quotes));
+                    admitted_host_quote_columns = term_quote_columns.clone().unwrap_or_default();
+                }
             }
             continue;
         }
@@ -14431,6 +14508,7 @@ fn collect_indented_block_mapped_with_columns(
     let mut comment_fence = marker_comment.map(|open| (open.fence_len, strip_cols));
     let mut comment_fence_strip = comment_fence.map(|_| strip_cols);
     let mut definition_ended_paragraph = false;
+    let mut closed_code_leaf = false;
     // A COMMENT FENCE WITH NO CLOSER OPENS NO SPAN AND LEAVES NO PARAGRAPH.
     // PART 9 SS28 degrades it to a line comment, so a frame one level in ends at
     // a line an ancestor claimed (markup-carve/carve-rs#1512) while the OUTERMOST
@@ -14682,7 +14760,7 @@ fn collect_indented_block_mapped_with_columns(
         {
             break;
         }
-        if definition_ended_paragraph && indent < strip_cols {
+        if (definition_ended_paragraph || closed_code_leaf) && indent < strip_cols {
             break;
         }
         // ONLY FOR A LINE AN ANCESTOR ALREADY CLAIMED. PART 9 SS28's degradation
@@ -14961,7 +15039,16 @@ fn collect_indented_block_mapped_with_columns(
                 folded_code_paragraph_open = line_starts_paragraph(paragraph_line)
                     || detect_fence_open(paragraph_line).is_some();
             }
+            let was_in_code = fence.is_some();
             track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            if was_in_code && fence.is_none() {
+                closed_code_leaf = true;
+            } else if !was_in_code
+                && !is_line_comment_any_column(line)
+                && !is_collected_definition_placeholder(&sliced)
+            {
+                closed_code_leaf = false;
+            }
             if fence.is_none() {
                 folded_code_span = false;
             }
