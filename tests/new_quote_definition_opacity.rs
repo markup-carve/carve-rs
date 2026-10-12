@@ -508,3 +508,20 @@ fn folded_marker_definition_collection_preserves_preceding_items() {
     assert!(!html.contains("[r]: /t"));
     assert!(html.ends_with("<p><a href=\"/t\">x</a></p>"));
 }
+
+#[test]
+fn literal_angle_text_does_not_hide_real_root_item_columns() {
+    let cases = [
+("root-columns-0","- a\n- - b\n\n    [r]: /x\n\nx > [y][r]\n","<ul>\n  <li>a</li>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n<p>x &gt; <a href=\"/x\">y</a></p>"),
+("root-columns-1","- a\n\n  - b\n    c\n- d\n> q\n","<ul>\n  <li>a\n    <ul>\n      <li>b\nc</li>\n    </ul>\n  </li>\n  <li>d</li>\n</ul>\n<blockquote><p>q</p></blockquote>"),
+("root-columns-2",":: t\n\n- a\n- - b\n\n    [r]: /x\n\nx > [y][r]\n","<dl>\n  <dt>t</dt>\n</dl>\n<ul>\n  <li>a</li>\n  <li>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>\n<p>x &gt; <a href=\"/x\">y</a></p>"),
+("root-columns-3","- a\n- - ```\n    [r]: /x\n    ```\n\nx > [y][r]\n","<ul>\n  <li>a</li>\n  <li>\n    <ul>\n      <li>\n        <pre><code>[r]: /x\n</code></pre>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>x &gt; [y][r]</p>"),
+];
+    for (name, source, expected) in cases {
+        assert_eq!(
+            render_html(&parse(source)).unwrap().trim(),
+            expected,
+            "{name}"
+        );
+    }
+}

@@ -3306,6 +3306,13 @@ fn remember_prepass_paragraph_line(
         prefix
     };
     let quotes = term_quote_columns_for(prefix.structural, columns);
+    if quotes.is_empty()
+        && paragraph
+            .as_ref()
+            .map_or(true, |host| host.quote_columns.is_empty())
+    {
+        return;
+    }
     let same_host = paragraph
         .as_ref()
         .is_some_and(|host| host.quote_columns.starts_with(&quotes));
@@ -3379,6 +3386,9 @@ fn prepass_quote_line_is_folded(terms: &TermLineOwnership, index: usize, line: &
     let Some(paragraph) = previous_prepass_paragraph(terms, index) else {
         return false;
     };
+    if paragraph.quote_columns.is_empty() {
+        return false;
+    }
     if inline_fence_lazy_line(line, Some(&paragraph)) {
         return true;
     }
@@ -29767,5 +29777,49 @@ mod definition_gate_tests {
         }
         assert!(!source_may_contain_link_definition("p [text]: literal"));
         assert!(source_may_contain_link_definition("  > - : [r]: /u"));
+    }
+}
+
+#[cfg(test)]
+mod quoted_prepass_work_tests {
+    use super::*;
+
+    #[test]
+    fn literal_angle_text_keeps_root_columns_and_needs_no_quote_memo() {
+        let lines = [
+            ":: t",
+            "",
+            "- a",
+            "- - b",
+            "",
+            "    [r]: /x",
+            "",
+            "x > [y][r]",
+        ];
+        let maxima = fence_closer_suffix_maxima(&lines);
+        let ownership = term_folded_lines(&lines, &maxima, &Options::default());
+        assert!(ownership.tracks_quote_context);
+        let mut columns = ContentColumns::new();
+        let mut previous_non_blank = "";
+        for (index, line) in lines.iter().enumerate() {
+            assert!(!prepass_quote_line_is_folded(&ownership, index, line));
+            columns.observe(line, false);
+            let prefix = strip_container_prefixes_at(
+                line,
+                &columns,
+                opens_definition_entry(previous_non_blank),
+            );
+            remember_prepass_paragraph_line(&ownership, index, line, &prefix, &columns);
+            assert!(
+                ownership.paragraph_quotes.borrow().is_empty(),
+                "line {index}"
+            );
+            if !is_blank_line(line) {
+                previous_non_blank = line;
+            }
+            if index == 3 {
+                assert_eq!(columns.current().cols, [2, 4]);
+            }
+        }
     }
 }
