@@ -345,6 +345,24 @@ fn contradicting_carriers_restore_neither_meaning_with_one_warning() {
 }
 
 #[test]
+fn a_carrier_on_the_wrong_element_contradicts_nothing() {
+    for mode in MODES {
+        // `data-carve-ext` rides a `<section>`; on a heading it is dropped and
+        // the explicit-id carrier beside it stands.
+        let heading = r#"<h1 id="H" data-carve-explicit-id="1" data-carve-ext="section">H</h1>"#;
+        assert_eq!(import_in(heading, mode).value, "{#H}\n# H\n", "{mode:?}");
+        assert_eq!(dropped(heading, mode, HtmlImportSeverity::Warning), 0);
+        assert_eq!(dropped(heading, mode, HtmlImportSeverity::Info), 1);
+        // An autolink carrier means nothing on an image, so its label stands.
+        let image =
+            r#"<p>a <img src="/i" alt="i" href="/u" data-carve-autolink data-carve-ref="r"></p>"#;
+        let source = import_in(image, mode).value;
+        assert!(source.contains("![i][r]"), "{mode:?}: {source}");
+        assert_eq!(dropped(image, mode, HtmlImportSeverity::Warning), 0);
+    }
+}
+
+#[test]
 fn an_invalid_value_contradicts_nothing() {
     // §13e comes first: an invalid value is not a carrier, so the valid one
     // beside it keeps its meaning and the invalid one is reported.

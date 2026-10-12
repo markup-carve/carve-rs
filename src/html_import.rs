@@ -2049,9 +2049,12 @@ impl<'a> Importer<'a> {
         );
     }
 
-    fn carries_generated_section(section: &Handle) -> bool {
-        Self::carrier(section, crate::roundtrip::EXT).as_deref()
-            == Some(crate::roundtrip::EXT_SECTION)
+    /// On a `<section>` only: anywhere else the name is no carrier and must not
+    /// contradict the explicit-id carrier a heading can hold.
+    fn carries_generated_section(handle: &Handle) -> bool {
+        Self::tag(handle).as_deref() == Some("section")
+            && Self::carrier(handle, crate::roundtrip::EXT).as_deref()
+                == Some(crate::roundtrip::EXT_SECTION)
     }
 
     /// Whether the wrapper says its id is generated. Any other value belongs to
@@ -2195,7 +2198,7 @@ impl<'a> Importer<'a> {
         path: &str,
     ) -> Option<String> {
         let label = Self::carrier(h, crate::roundtrip::REF)?;
-        if Self::carries_autolink(h) {
+        if Self::tag(h).as_deref() == Some("a") && Self::carries_autolink(h) {
             // §13d: it contradicts the autolink carrier, and `attrs` reported the pair.
             return None;
         }
