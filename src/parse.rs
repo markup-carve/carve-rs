@@ -15441,6 +15441,10 @@ fn collect_indented_block_mapped_with_columns(
     let marker_is_definition_term =
         marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
     let mut marker_definition_has_description = !marker_is_definition_term;
+    let mut term_code_lazy_tail = false;
+    let mut term_code_closer_checked = false;
+    let mut term_code_start = 0;
+    let mut marker_term_paragraph_open = marker_is_definition_term;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -15498,6 +15502,8 @@ fn collect_indented_block_mapped_with_columns(
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            marker_term_paragraph_open = false;
+            term_code_lazy_tail = false;
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
             // collector: the lookahead below asks whether the ITEM continues,
             // which is the wrong question while a fence is running. The plain
@@ -15598,9 +15604,28 @@ fn collect_indented_block_mapped_with_columns(
         // the fence's own verbatim body wherever it sits - a fence's content is
         // not re-scanned (carve#1958). This is how a flush-left body folded into
         // a nested item-lead fence reaches it (carve-rs#1547/#1559).
+        if indent < strip_cols && term_code_lazy_tail && !term_code_closer_checked {
+            if let Some(open) = *fence {
+                term_code_lazy_tail = !list_code_fence_closer_ahead_from(
+                    cur,
+                    open,
+                    strip_cols,
+                    parent_indent,
+                    term_code_start,
+                );
+                term_code_closer_checked = true;
+            }
+        }
         let fence_owns_flush_left = ((fence.is_some()
             || (comment_fence.is_some() && !literal_marker_body))
             && line.starts_with(LAZY))
+            || (indent < strip_cols
+                && term_code_lazy_tail
+                && fence.is_some()
+                && !is_definition_placeholder(trim_ascii_start(line))
+                && !is_list_marker(line)
+                && (is_line_comment_any_column(line)
+                    || !interrupts_lazy_continuation_as_container(cur, line)))
             || (folded_code_span
                 && folded_code_paragraph_open
                 && (!is_list_marker(line) || indent > parent_indent)
@@ -15893,6 +15918,14 @@ fn collect_indented_block_mapped_with_columns(
             && (line.starts_with(LAZY)
                 || comment_fence_strip.is_some_and(|strip| strip < strip_cols));
         if marker_is_definition_term
+            && marker_term_paragraph_open
+            && fence.is_none()
+            && colon_open.is_empty()
+            && (in_comment_span || is_line_comment_any_column(line))
+        {
+            marker_term_paragraph_open = false;
+        }
+        if marker_is_definition_term
             && fence.is_none()
             && !in_comment_span
             && colon_open.is_empty()
@@ -15900,8 +15933,61 @@ fn collect_indented_block_mapped_with_columns(
         {
             if is_definition_list_start(trim_ascii_start(line)) {
                 marker_definition_has_description = false;
+                marker_term_paragraph_open = true;
             } else if strip_description_prefix(trim_ascii_start(line)).is_some() {
                 marker_definition_has_description = true;
+                marker_term_paragraph_open = false;
+            } else if marker_term_paragraph_open
+                && detect_fence_open(trim_ascii_start(line)).is_none()
+                && ((matches!(
+                    trim_ascii_start(line).as_bytes().first(),
+                    Some(
+                        b'-' | b'*' | b'.' | b'0'
+                            ..=b'9'
+                                | b'i'
+                                | b'I'
+                                | b'v'
+                                | b'V'
+                                | b'x'
+                                | b'X'
+                                | b'l'
+                                | b'L'
+                                | b'c'
+                                | b'C'
+                                | b'd'
+                                | b'D'
+                                | b'm'
+                                | b'M'
+                    )
+                ) || matches!(trim_ascii_start(line).as_bytes().get(1), Some(b'.' | b')')))
+                    && is_list_marker(line)
+                    || (matches!(
+                        trim_ascii_start(line).as_bytes().first(),
+                        Some(b'#' | b'>' | b':' | b'|' | b'%' | b'{' | b'*' | b'-' | b'_' | b'^')
+                    ) && interrupts_lazy_continuation_as_container(
+                        cur,
+                        trim_ascii_start(line),
+                    ))
+                    || (cur.invisible_arms
+                        && indent == strip_cols
+                        && trim_ascii_start(line).starts_with('{')
+                        && standalone_attrs_block_len_iter(
+                            std::iter::once(trim_ascii_start(line)).chain(
+                                (cur.pos + 1..cur.lines.len()).map_while(|i| cur.lines.line(i)),
+                            ),
+                        )
+                        .is_some_and(|count| {
+                            cur.lines.line(cur.pos + count).map_or(true, |next| {
+                                is_blank_line(next)
+                                    || detect_fence_open(trim_ascii_start(next)).is_some()
+                                    || interrupts_lazy_continuation_as_container(
+                                        cur,
+                                        trim_ascii_start(next),
+                                    )
+                            })
+                        })))
+            {
+                marker_term_paragraph_open = false;
             }
         }
         if authored_code_base.is_none()
@@ -16018,7 +16104,20 @@ fn collect_indented_block_mapped_with_columns(
             }
             let was_in_code = fence.is_some();
             track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            if marker_is_definition_term && !was_in_code && fence.is_some() {
+                term_code_lazy_tail = marker_term_paragraph_open
+                    && !marker_definition_has_description
+                    && indent == strip_cols;
+                if term_code_lazy_tail {
+                    term_code_start = cur.pos;
+                    term_code_closer_checked = false;
+                }
+                marker_term_paragraph_open = false;
+            }
             if was_in_code && fence.is_none() {
+                if marker_is_definition_term {
+                    term_code_lazy_tail = false;
+                }
                 closed_code_leaf = true;
             } else if !was_in_code
                 && !is_line_comment_any_column(line)
@@ -16355,7 +16454,18 @@ fn list_code_fence_closer_ahead(
     floor: usize,
     base: usize,
 ) -> bool {
+    list_code_fence_closer_ahead_from(cur, open, floor, base, cur.pos)
+}
+
+fn list_code_fence_closer_ahead_from(
+    cur: &mut LineCursor<'_>,
+    open: FenceOpen,
+    floor: usize,
+    base: usize,
+    from: usize,
+) -> bool {
     let lines = cur.lines;
+    let column = indent_columns(lines.at(from));
     let lookup = cur.list_code_closers.get_or_insert_with(|| {
         let mut lookup = ListCodeClosers::default();
         let mut after_blank = false;
@@ -16393,8 +16503,6 @@ fn list_code_fence_closer_ahead(
         }
         Box::new(lookup)
     });
-    let from = cur.pos;
-    let column = indent_columns(lines.at(from));
     let end = lookup
         .markers
         .next(from, usize::MAX - base)
