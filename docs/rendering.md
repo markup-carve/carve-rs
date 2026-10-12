@@ -78,16 +78,18 @@ the ids the option actually produced.
 
 A container the Markdown target writes as its children alone - a tab set, an
 admonition, a named div, a columns block, a disclosure, a spoiler, a composite
-figure group - leaves nothing in the file that says it was there, so an import
-cannot return it however good it gets. PART 11 §10s (CARVE-P11-063) defines an
-opt-in mode that brackets each one with an HTML comment holding the container's
-Carve opener and closer verbatim, and the import reverses it.
+figure group, a line block, a hard-break block - leaves nothing in the file that
+says it was there, so an import cannot return it however good it gets. PART 11
+§10s (CARVE-P11-063) defines an opt-in mode that brackets each one with an HTML
+comment holding the container's Carve opener and closer verbatim, and the import
+reverses it.
 
-`Options::with_roundtrip(true)` or `--roundtrip` enables the container comments
-for Markdown output. The same option enables preservation attributes for HTML
-output. It is off by default. A Markdown renderer with raw HTML turned off
-shows the comments as text. Enabling it adds comment lines without moving the
-existing output.
+`Options::with_roundtrip(true)` (the public `roundtrip: true` field) or
+`--roundtrip` enables the container comments for Markdown output. The same
+option enables preservation attributes for HTML output, and no other setting
+switches either target's carriers. It is off by default. A Markdown renderer
+with raw HTML turned off shows the comments as text. Enabling it adds comment
+lines without moving the existing output.
 
 ```rust
 use carve::{markdown_to_carve, to_markdown_with_options, Options};
@@ -108,22 +110,73 @@ container is two Carve lines and so takes two markers: PART 4 is strict that an
 opener line carries no inline `{...}` attributes, so the attributes travel on the
 line above and that line takes a marker of its own.
 
+A container inside a list item or a block quote takes its markers at the host's
+content column or behind its `>`, and the import restores it in that host. A
+composite figure group's caption line takes a marker of its own directly after
+the closer's, and the import replaces the caption's rendered paragraph with it.
+
+### Attribute lines, definition lists and captions
+
+PART 11 §10t (CARVE-P11-067) carries three things that are not containers, with
+the same marker, escape and damaged-set rule.
+
+- An attribute line this target drops: a heading's authored `#id` or the
+  attributes of a paragraph, block quote, list or table take one marker directly
+  above the block. A generated heading id takes none.
+- A definition list: each term takes a marker holding its term line, each
+  definition a `:` marker above its first block, and one marker with an empty
+  payload closes the list. Only the outermost definition list is carried.
+- A caption: a block quote's, table's, image's, code listing's or equation's
+  `^` line takes a marker directly above the paragraph this target writes for it.
+
+Input:
+
+```carve
+{#start}
+# Roundtrip Test
+
+:: Carve
+: A markup language.
+
+> Stay hungry.
+^ Steve Jobs
+```
+
+Output with `--markdown --roundtrip`:
+
+```markdown
+<!-- carve: {#start} -->
+# Roundtrip Test
+
+<!-- carve: :: Carve -->
+**Carve**
+
+<!-- carve: : -->
+A markup language.
+
+<!-- carve: -->
+
+> Stay hungry.
+
+<!-- carve: ^ Steve Jobs -->
+Steve Jobs
+```
+
+Attributes on a list item's marker line and on an inline construct are not
+carried.
+
 ### What is not carried
 
 - **A container this target already spells.** An attributes-only opener is read as
   a paragraph and a list table is written as a pipe table, so neither is
   element-less and neither takes a marker.
-- **A container inside a host that prefixes its lines.** In a list item, a block
-  quote or a table cell the comment would land at the host's content column or
-  behind its `>`, where the import does not read it, so writing one would look
-  like a carry and not be. The container degrades there exactly as it does with
-  the mode off. Reading a prefixed marker is an owed follow-up.
-- **A composite figure group's own caption.** The caption slot hangs outside the
-  closing fence, so its Markdown fallback follows the closer and the round trip
-  does not restore it.
-- **A marker-shaped line inside a fenced code block.** A code block's payload is
-  verbatim content, so a page documenting this mode holds marker-shaped lines that
-  record no container. They are left exactly as written.
+- **A container inside a table cell.** This target flattens a cell to one line,
+  so there is no line for a marker to stand on.
+- **A definition list nested in a definition.** It degrades inside the outer
+  list, which is carried.
+- **A marker-shaped line in verbatim content.** A fenced or indented code
+  block's payload is verbatim, so a page documenting this mode holds
+  marker-shaped lines that record nothing. They are left exactly as written.
 
 ### The escape
 
@@ -134,10 +187,11 @@ reader already has.
 
 ### A damaged set is never guessed
 
-A marker deleted, two reordered or a set left unbalanced imports as ordinary
-Markdown, comments and all, with exactly one `carrier-markers-damaged` row on the
-migration report at `degraded` fidelity and `fallback` confidence. No container is
-partially reconstructed.
+A marker deleted, two reordered, a set left unbalanced or a marker separated
+from the block it stands above imports as ordinary Markdown, comments and all,
+with exactly one `carrier-markers-damaged` row on the migration report at
+`degraded` fidelity and `fallback` confidence. Nothing is partially
+reconstructed.
 
 ## Roundtrip export
 
@@ -147,10 +201,10 @@ and a direct one the same `<a href>`: once a render has collapsed those, no
 import can tell them apart. PART 10 §13 (CARVE-P10-015) defines one opt-in that
 adds the carriers §13a names and changes nothing else.
 
-`Options::with_roundtrip` turns it on, `--roundtrip` does on the CLI, and the
-TARGET decides the carrier: HTML writes the §13a attributes, Markdown writes the
-container carrier comments [Carrying a container through
-Markdown](#carrying-a-container-through-markdown) already describes. It is OFF
+`Options::with_roundtrip(true)` turns it on (the field is `roundtrip: true`),
+`--roundtrip` does on the CLI, and the TARGET decides the carrier: HTML writes
+the §13a attributes, Markdown writes the carrier comments [Carrying a container
+through Markdown](#carrying-a-container-through-markdown) describes. It is OFF
 by default, and enabling it neither removes nor reorders an attribute the
 default bytes carry.
 
@@ -178,8 +232,11 @@ assert_eq!(back.value, source);
 | `data-carve-autolink` | `<a>` | presence: authored as an autolink |
 | `data-carve-footnote-label` | `<a>`, `<li>` | the authored footnote label |
 | `data-carve-inline-footnote` | `<li>` | presence: the endnote was an inline footnote |
+| `data-carve-col-widths` | `<table>` | the separator row's dash widths, comma-joined; absent for a table with no separator row or a width outside 1-1000 |
+| `data-carve-label` | `<pre>` | the code block's authored label, the text between the fence label's brackets |
 | `data-carve-raw` | `<span>` | the raw inline's format; the span holds its content as escaped text |
 | `data-carve-escaped` | `<span>` | presence; the span holds the one escaped character |
+| `data-carve-abbreviations` | `<template>` | presence; the template holds the document's top-level abbreviation definitions as escaped text, one `*[ABBR]: expansion` per line |
 
 The prefix is `data-carve-`. Released carve-php versions wrote `data-djot-*`,
 which the HTML importer still reads as a deprecated alias so their exports keep
@@ -193,11 +250,17 @@ and are written with or without this option.
 
 ### What it guarantees
 
-Recovery of the named distinctions, not byte-identical source. Two inventory
-rows are not written by this engine: `data-carve-col-widths` holds a table's
-separator-row widths and `data-carve-src` a construct's verbatim source, and the
-parser retains neither, so there is nothing behind them to carry. Raw BLOCKS are
-not carried and not promised.
+Recovery of the named distinctions, not byte-identical source.
+
+- Raw BLOCKS are not carried and not promised. A raw block whose format the
+  target cannot write is dropped with the option on as it is with it off, and
+  the `raw-format-dropped` row is reported in both cases.
+- The reference form is not recovered. `[r][]` and `[r][r]` both write
+  `data-carve-ref="r"`, so an import returns one spelling for both.
+- Verbatim source is not carried. Fence length, fence character and opener
+  padding are not in the tree, and `data-carve-src` is not written. The importer
+  still consumes that name, in both spellings, so it never comes back as an
+  authored attribute.
 
 ### An authored attribute of a carrier's own name
 
