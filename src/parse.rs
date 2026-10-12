@@ -3774,7 +3774,7 @@ struct LineCursor<'a> {
     /// Last consumed comment closer and the column of its opener.
     closed_comment_location: Option<(usize, usize)>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
-    list_code_closers: Option<ListCodeClosers>,
+    list_code_closers: Option<Box<ListCodeClosers>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -12194,8 +12194,9 @@ fn parse_list(
                 // still lazy paragraph text.
                 let over_indented = trim_ascii_start(next);
                 if item_block_opener(over_indented)
-                    && !detect_fence_open(over_indented)
-                        .is_some_and(|open| !list_code_fence_closer_ahead(cur, open, content_col))
+                    && !detect_fence_open(over_indented).is_some_and(|open| {
+                        !list_code_fence_closer_ahead(cur, open, content_col, base_indent)
+                    })
                 {
                     break;
                 }
@@ -14919,14 +14920,35 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 #[derive(Default)]
 struct ListCodeClosers {
     columns: HashMap<(u8, usize), LiteralCodeColumn>,
+    markers: LiteralCodeColumn,
+    after_blank: LiteralCodeColumn,
 }
 
-fn list_code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen, floor: usize) -> bool {
+fn list_code_fence_closer_ahead(
+    cur: &mut LineCursor<'_>,
+    open: FenceOpen,
+    floor: usize,
+    base: usize,
+) -> bool {
     let lines = cur.lines;
     let lookup = cur.list_code_closers.get_or_insert_with(|| {
         let mut lookup = ListCodeClosers::default();
+        let mut after_blank = false;
         for index in 0..lines.len() {
             let line = lines.at(index);
+            if is_blank_line(line) {
+                after_blank = true;
+
+                continue;
+            }
+            let column = indent_columns(line);
+            if after_blank {
+                lookup.after_blank.push(index, usize::MAX - column);
+                after_blank = false;
+            }
+            if detect_list_marker_full_at(line, column).is_some() {
+                lookup.markers.push(index, usize::MAX - column);
+            }
             let bytes = trim_ascii_start(line).as_bytes();
             let Some(&character @ (b'`' | b'~')) = bytes.first() else {
                 continue;
@@ -14939,21 +14961,32 @@ fn list_code_fence_closer_ahead(cur: &mut LineCursor<'_>, open: FenceOpen, floor
             {
                 lookup
                     .columns
-                    .entry((character, indent_columns(line)))
+                    .entry((character, column))
                     .or_default()
                     .push(index, width);
             }
         }
-        lookup
+        Box::new(lookup)
     });
     let from = cur.pos;
     let column = indent_columns(lines.at(from));
+    let end = lookup
+        .markers
+        .next(from, usize::MAX - base)
+        .into_iter()
+        .chain(
+            floor
+                .checked_sub(1)
+                .and_then(|column| lookup.after_blank.next(from, usize::MAX - column)),
+        )
+        .min()
+        .unwrap_or(lines.len());
     [column, floor].into_iter().any(|column| {
         lookup
             .columns
             .get(&(open.fence_char, column))
             .and_then(|closers| closers.next(from, open.fence_len))
-            .is_some()
+            .is_some_and(|closer| closer < end)
     })
 }
 
