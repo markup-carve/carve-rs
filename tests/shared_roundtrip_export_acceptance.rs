@@ -29,7 +29,13 @@ fn ast(source: &str) -> Value {
     serde_json::from_str(&to_json(&parse(source))).unwrap()
 }
 fn field<'a>(node: &'a Value, path: &str) -> Option<&'a Value> {
-    path.split('.').try_fold(node, |value, key| value.get(key))
+    path.split('.').try_fold(node, |value, key| {
+        if let Some(array) = value.as_array() {
+            key.parse::<usize>().ok().and_then(|index| array.get(index))
+        } else {
+            value.get(key)
+        }
+    })
 }
 fn nodes<'a>(value: &'a Value, out: &mut Vec<&'a Value>) {
     match value {
@@ -477,7 +483,11 @@ fn shared_markdown_container_carriers_restore_ast_fields() {
     let fixtures = fixtures();
     for fixture in required_rows(&fixtures, "markdownExportImport") {
         let source = text(fixture, "source");
-        assert!(projection(&ast(&source), &fixture["expectedNodes"]));
+        assert!(
+            projection(&ast(&source), &fixture["expectedNodes"]),
+            "{}",
+            fixture["id"]
+        );
         let ordinary = to_markdown_with_options(&source, &Options::default());
         assert_eq!(
             to_markdown_with_options(&source, &Options::default().with_roundtrip(false)),
