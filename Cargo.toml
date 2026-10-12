@@ -103,3 +103,7 @@ debug = "line-tables-only"
 [[test]]
 name = "shared_roundtrip_export_acceptance"
 path = "tests/shared_roundtrip_export_acceptance.rs"
+
+[[test]]
+name = "html_carrier_contract"
+path = "tests/html_carrier_contract.rs"
