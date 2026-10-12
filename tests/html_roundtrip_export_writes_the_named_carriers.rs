@@ -168,6 +168,51 @@ fn a_raw_inline_carries_its_format_and_holds_its_content() {
     assert!(!to_html("x `a<b`{=latex} z\n").contains("a&lt;b"));
 }
 
+fn roundtrip_losses(source: &str) -> carve::RenderResult<String> {
+    to_html_with_options_and_report(
+        source,
+        &Options::default().with_roundtrip(true),
+        CheckedRenderOptions::default(),
+    )
+    .expect("a dropped raw format is not an abort")
+}
+
+/// The carrier restores the node on import; the target still did not write the
+/// format, so the row is reported with the option on (markup-carve/carve#2902
+/// ruling 7, extended to the inline form).
+#[test]
+fn a_carried_raw_inline_still_reports_its_dropped_format() {
+    let report = roundtrip_losses("a `\\x`{=tex} b\n");
+    assert_eq!(
+        report.value,
+        r#"<p>a <span data-carve-raw="tex">\x</span> b</p>"#
+    );
+    assert_eq!(report.total_losses, 1, "{:?}", report.losses);
+    let row = &report.losses[0];
+    assert_eq!(row.code, "raw-format-dropped");
+    assert_eq!(row.format.as_deref(), Some("tex"));
+    assert_eq!(row.node_type, carve::RawNodeType::Inline);
+
+    // Raw HTML is written or escaped, never dropped, so it owes no row.
+    let html = roundtrip_losses("a `<b>`{=html} b\n");
+    assert!(
+        html.value.contains(r#"data-carve-raw="html""#),
+        "{}",
+        html.value
+    );
+    assert_eq!(html.total_losses, 0, "{:?}", html.losses);
+}
+
+#[test]
+fn a_raw_block_under_roundtrip_reports_its_dropped_format() {
+    let report = roundtrip_losses("a\n\n```=tex\n\\x\n```\n\nb\n");
+    assert_eq!(report.total_losses, 1, "{:?}", report.losses);
+    let row = &report.losses[0];
+    assert_eq!(row.code, "raw-format-dropped");
+    assert_eq!(row.format.as_deref(), Some("tex"));
+    assert_eq!(row.node_type, carve::RawNodeType::Block);
+}
+
 #[test]
 fn an_escaped_character_is_carried_bare_and_one_at_a_time() {
     // The presence carrier is written BARE, which is what carve-php writes and

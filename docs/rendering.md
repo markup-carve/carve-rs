@@ -255,6 +255,10 @@ Recovery of the named distinctions, not byte-identical source.
 - Raw BLOCKS are not carried and not promised. A raw block whose format the
   target cannot write is dropped with the option on as it is with it off, and
   the `raw-format-dropped` row is reported in both cases.
+- A carried raw inline is still reported. `data-carve-raw` lets an import
+  recover the node, but the target did not write the format, so a raw inline
+  in a format other than HTML reports `raw-format-dropped` with the option on
+  as it does with it off.
 - The reference form is not recovered. `[r][]` and `[r][r]` both write
   `data-carve-ref="r"`, so an import returns one spelling for both.
 - Verbatim source is not carried. Fence length, fence character and opener

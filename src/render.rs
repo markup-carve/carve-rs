@@ -3983,6 +3983,15 @@ fn render_inline_after(
             // its payload bytes; the ordinary disabled-raw path still strips
             // bidi controls through escape_text.
             if options.html_carriers() {
+                // The carrier restores the node; the target still did not write
+                // the format, so the row is owed in both modes.
+                if !html {
+                    crate::render_loss::record_raw_drop(
+                        &r.format,
+                        crate::RawNodeType::Inline,
+                        r.pos.clone(),
+                    );
+                }
                 out.push_str("<span");
                 write_carrier(
                     out,
