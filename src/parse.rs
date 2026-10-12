@@ -14896,6 +14896,8 @@ fn collect_indented_block_mapped_with_columns(
     let marker_is_definition_term =
         marker_content.is_some_and(|content| is_definition_list_start(trim_ascii_start(content)));
     let mut marker_definition_has_description = !marker_is_definition_term;
+    let mut term_code_lazy_tail = false;
+    let mut marker_term_paragraph_open = marker_is_definition_term;
     let marker_comment = marker_content
         .and_then(detect_comment_fence_line)
         .filter(|open| cur.has_comment_closer_after(cur.pos, open.fence_len));
@@ -14953,6 +14955,8 @@ fn collect_indented_block_mapped_with_columns(
     let mut nested_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            marker_term_paragraph_open = false;
+            term_code_lazy_tail = false;
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
             // collector: the lookahead below asks whether the ITEM continues,
             // which is the wrong question while a fence is running. The plain
@@ -15056,6 +15060,12 @@ fn collect_indented_block_mapped_with_columns(
         let fence_owns_flush_left = ((fence.is_some()
             || (comment_fence.is_some() && !literal_marker_body))
             && line.starts_with(LAZY))
+            || (term_code_lazy_tail
+                && fence.is_some()
+                && !is_definition_placeholder(trim_ascii_start(line))
+                && !is_list_marker(line)
+                && (is_line_comment_any_column(line)
+                    || !interrupts_lazy_continuation_as_container(cur, line)))
             || (folded_code_span
                 && folded_code_paragraph_open
                 && (!is_list_marker(line) || indent > parent_indent)
@@ -15355,8 +15365,16 @@ fn collect_indented_block_mapped_with_columns(
         {
             if is_definition_list_start(trim_ascii_start(line)) {
                 marker_definition_has_description = false;
+                marker_term_paragraph_open = true;
             } else if strip_description_prefix(trim_ascii_start(line)).is_some() {
                 marker_definition_has_description = true;
+                marker_term_paragraph_open = false;
+            } else if marker_term_paragraph_open
+                && detect_fence_open(trim_ascii_start(line)).is_none()
+                && (is_list_marker(line)
+                    || interrupts_lazy_continuation_as_container(cur, trim_ascii_start(line)))
+            {
+                marker_term_paragraph_open = false;
             }
         }
         if authored_code_base.is_none()
@@ -15473,7 +15491,17 @@ fn collect_indented_block_mapped_with_columns(
             }
             let was_in_code = fence.is_some();
             track_collected_fence(fence, fence_line, indent >= strip_cols, indent);
+            if !was_in_code && fence.is_some() {
+                term_code_lazy_tail = marker_term_paragraph_open
+                    && !marker_definition_has_description
+                    && indent == strip_cols
+                    && fence.is_some_and(|open| {
+                        !list_code_fence_closer_ahead(cur, open, strip_cols, parent_indent)
+                    });
+                marker_term_paragraph_open = false;
+            }
             if was_in_code && fence.is_none() {
+                term_code_lazy_tail = false;
                 closed_code_leaf = true;
             } else if !was_in_code
                 && !is_line_comment_any_column(line)
