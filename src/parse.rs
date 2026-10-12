@@ -1412,6 +1412,7 @@ fn extract_footnote_defs(
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
     let mut inline_marker_fence = false;
+    let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
@@ -1516,6 +1517,12 @@ fn extract_footnote_defs(
                     close_kept
                 };
                 if is_fence_close(close_line, open) {
+                    if inline_marker_fence {
+                        folded_into_term
+                            .paragraph_quotes
+                            .borrow_mut()
+                            .insert(i, inline_marker_paragraph.clone());
+                    }
                     in_fence = None;
                 }
                 i += 1;
@@ -1595,6 +1602,11 @@ fn extract_footnote_defs(
                 end_prepass_paragraph_at(&folded_into_term, i);
                 in_fence = Some(open);
                 inline_marker_fence = fence.inline_marker;
+                inline_marker_paragraph = if fence.inline_marker {
+                    previous_prepass_paragraph(&folded_into_term, i)
+                } else {
+                    None
+                };
                 term_fence_quotes =
                     term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
@@ -2870,6 +2882,11 @@ fn term_folded_lines(
                 );
             }
             let term_host = ownership.fence_openers.get(&index);
+            let inline_marker_paragraph = if fence.inline_marker && term_host.is_none() {
+                previous_prepass_paragraph(&ownership, index)
+            } else {
+                None
+            };
             let mut term_quote_columns = term_host.map(|host| host.quote_columns.clone());
             let mut term_fence_owned = term_host.is_some();
             let term_fence_floor =
@@ -2882,7 +2899,9 @@ fn term_folded_lines(
             let mut consumed_closer = false;
             index += 1;
             while index < lines.len() {
-                if (fence.inline_marker && is_blank_line(view(lines[index]).0))
+                if (fence.inline_marker
+                    && term_host.is_none()
+                    && is_blank_line(view(lines[index]).0))
                     || (term_fence_owned
                         && term_fence_ends_above(
                             lines[index],
@@ -2947,6 +2966,12 @@ fn term_folded_lines(
                 }
                 index += 1;
                 if closes {
+                    if fence.inline_marker && term_host.is_none() {
+                        ownership
+                            .paragraph_quotes
+                            .borrow_mut()
+                            .insert(index - 1, inline_marker_paragraph.clone());
+                    }
                     consumed_closer = true;
                     break;
                 }
@@ -3260,6 +3285,17 @@ fn remember_prepass_paragraph_line(
     contexts.insert(index, paragraph);
 }
 
+fn previous_prepass_paragraph(terms: &TermLineOwnership, index: usize) -> Option<PrepassParagraph> {
+    index.checked_sub(1).and_then(|previous| {
+        terms
+            .paragraph_quotes
+            .borrow()
+            .get(&previous)
+            .cloned()
+            .flatten()
+    })
+}
+
 fn end_prepass_paragraph_at(terms: &TermLineOwnership, index: usize) {
     terms.paragraph_quotes.borrow_mut().insert(index, None);
 }
@@ -3462,6 +3498,7 @@ fn extract_link_defs_with_guard_full(
     let mut term_fence_columns = Vec::new();
     let mut term_fence_owned = false;
     let mut inline_marker_fence = false;
+    let mut inline_marker_paragraph = None;
     let mut term_fence_floor = 0;
     // Whether that fence has a closer, which decides whether a dedent ends it.
     let mut fence_closer_ahead = false;
@@ -3563,6 +3600,12 @@ fn extract_link_defs_with_guard_full(
                     close_kept
                 };
                 if is_fence_close(close_line, open) {
+                    if inline_marker_fence {
+                        folded_into_term
+                            .paragraph_quotes
+                            .borrow_mut()
+                            .insert(line_index, inline_marker_paragraph.clone());
+                    }
                     in_fence = None;
                 }
                 continue;
@@ -3654,6 +3697,11 @@ fn extract_link_defs_with_guard_full(
                 open.quoted |= !fence.quote_columns.is_empty();
                 in_fence = Some(open);
                 inline_marker_fence = fence.inline_marker;
+                inline_marker_paragraph = if fence.inline_marker {
+                    previous_prepass_paragraph(&folded_into_term, line_index)
+                } else {
+                    None
+                };
                 term_fence_quotes =
                     term_fence.map_or(fence.quote_columns.len(), |host| host.quote_depth);
                 term_fence_columns = term_fence
@@ -27272,7 +27320,7 @@ mod quote_prefix_calls {
         for index in 0..lines.len() {
             for quoted in [false, true] {
                 for content_col in 0..=6 {
-                    for fence_char in [b'`', b'~'] {
+                    for fence_char in *b"`~" {
                         for fence_len in 3..=6 {
                             let open = FenceOpen {
                                 fence_char,

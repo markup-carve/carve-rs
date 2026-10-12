@@ -129,3 +129,14 @@ fn sibling_items_and_blanks_keep_their_real_fence_boundaries() {
         assert!(doc.footnote_defs.is_empty(), "{source:?}");
     }
 }
+
+#[test]
+fn inline_closers_restore_paragraphs_without_demoting_real_siblings() {
+    let cases = [
+        ("> p\n> - ```\n>   x\n> ```\n> ~~~\n> \n> [r]: /u\n> \n> see [r]\n", "<blockquote>\n  <p>p\n- <code>\nx\n</code>\n~~~</p>\n  <p>see [r]</p>\n</blockquote>"),
+        ("> - a\n> - ```\n>   x\n> \n>   ~~~\n>   ```\n>   :: t\n>   ```\n>   [r]: /u\n> \n> [x][r]\n", "<blockquote>\n  <ul>\n    <li>a</li>\n    <li>\n      <pre><code>x\n\n~~~\n</code></pre>\n      <dl>\n        <dt>t</dt>\n      </dl>\n      <pre><code>[r]: /u\n\n</code></pre>\n    </li>\n  </ul>\n  <p>[x][r]</p>\n</blockquote>"),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(render_html(&parse(source)).unwrap(), expected, "{source:?}");
+    }
+}
