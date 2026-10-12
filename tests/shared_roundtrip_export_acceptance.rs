@@ -76,7 +76,9 @@ fn import_projection(tree: &Value, fixture: &Value) -> bool {
         false
     } else {
         assert!(
-            fixture["fallbackNodes"].is_array(),
+            fixture["fallbackNodes"]
+                .as_array()
+                .is_some_and(|rows| !rows.is_empty()),
             "{}: {tree}",
             fixture["id"]
         );
@@ -297,9 +299,10 @@ fn shared_export_inventory_restores_approved_ast_fields() {
                             && Some(name.as_str()) == host["attribute"].as_str()));
                 }
                 for forbidden in required_rows(fixture, "forbiddenExportAttributes") {
-                    assert!(attributes
-                        .iter()
-                        .all(|(_, name, _)| Some(name.as_str()) != forbidden.as_str()));
+                    assert!(attributes.iter().all(|(_, name, _)| name
+                        != forbidden
+                            .as_str()
+                            .expect("forbidden attribute must be a string")));
                 }
                 if let Some(expected) = fixture["ordinaryAttributes"].as_object() {
                     for (name, value) in expected {
@@ -338,6 +341,11 @@ fn shared_export_inventory_restores_approved_ast_fields() {
                     let options = mode(name.as_str().unwrap());
                     let imported = import_ast(&exported, &options);
                     let declined = import_projection(&imported, fixture);
+                    if text(fixture, "id").starts_with("raw-") {
+                        let expected_decline = text(fixture, "id").starts_with("raw-html-")
+                            && name.as_str().unwrap() != "roundtrip";
+                        assert_eq!(declined, expected_decline, "{} {name}", fixture["id"]);
+                    }
                     no_reserved(&imported);
                     let legacy = import_ast(&deprecated_html(&exported), &options);
                     assert_eq!(import_projection(&legacy, fixture), declined);
@@ -459,7 +467,8 @@ fn shared_export_collisions_report_the_dropped_authored_attribute() {
             .iter()
             .any(|row| row.code == "carrier-attribute-dropped"
                 && row.attribute.as_deref() == Some(name.as_str())
-                && row.format.is_none()));
+                && row.format.is_none()
+                && row.target.as_str() == "html"));
     }
 }
 
@@ -500,6 +509,7 @@ fn shared_footnote_recovery_remains_a_complete_separate_resource() {
         "spec/resources/footnote-carrier-recovery-fixtures.json"
     ))
     .unwrap();
+    assert_eq!(paired.as_array().unwrap().len(), 24);
     for fixture in paired.as_array().unwrap() {
         let options = mode(fixture["mode"].as_str().unwrap());
         let html = text(fixture, "html");
@@ -546,13 +556,14 @@ fn shared_task_hooks_are_ordinary_output() {
 fn shared_acceptance_cases_have_distinct_ids_and_assertions() {
     let fixtures = fixtures();
     let mut ids = std::collections::HashSet::new();
-    for key in [
-        "exportImport",
-        "importNegative",
-        "collisionExport",
-        "markdownExportImport",
+    for (key, minimum) in [
+        ("exportImport", 23),
+        ("importNegative", 8),
+        ("collisionExport", 3),
+        ("markdownExportImport", 2),
     ] {
-        for row in rows(&fixtures, key) {
+        assert!(required_rows(&fixtures, key).len() >= minimum, "{key}");
+        for row in required_rows(&fixtures, key) {
             assert!(ids.insert(text(row, "id")));
             assert!(row["source"].is_string() || row["html"].is_string());
             assert!(
