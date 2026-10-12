@@ -10198,5 +10198,221 @@
   {
     "source": "[x](http://a.b \"http://c.d\")",
     "html": "<p><a href=\"http://a.b\" title=\"http://c.d\">x</a></p>\n"
+  },
+  {
+    "source": "[a]( http://example.com )",
+    "html": "<p><a href=\"http://example.com\">a</a></p>\n"
+  },
+  {
+    "source": "[b](http://example.com  \"two spaces\")",
+    "html": "<p><a href=\"http://example.com\" title=\"two spaces\">b</a></p>\n"
+  },
+  {
+    "source": "[c](http://example.com (paren title))",
+    "html": "<p><a href=\"http://example.com\" title=\"paren title\">c</a></p>\n"
+  },
+  {
+    "source": "[d](http://example.com/long\n\"title on next line\")",
+    "html": "<p><a href=\"http://example.com/long\" title=\"title on next line\">d</a></p>\n"
+  },
+  {
+    "source": "\\``http://example.com`",
+    "html": "<p>`<code>http://example.com</code></p>\n"
+  },
+  {
+    "source": "<a title=\"a>b\" href=\"http://example.com\">x</a>",
+    "html": "<p><a title=\"a>b\" href=\"http://example.com\">x</a></p>\n"
+  },
+  {
+    "source": "a <?php echo \"http://example.com\"; ?> b",
+    "html": "<p>a <?php echo \"http://example.com\"; ?> b</p>\n"
+  },
+  {
+    "source": "a <!DOCTYPE html SYSTEM \"http://www.w3.org/TR/html4/strict.dtd\"> b",
+    "html": "<p>a <!DOCTYPE html SYSTEM \"http://www.w3.org/TR/html4/strict.dtd\"> b</p>\n"
+  },
+  {
+    "source": "> See http://example.com/some/long/path for\n> details `multi\n> line` end",
+    "html": "<blockquote>\n<p>See <a href=\"http://example.com/some/long/path\">http://example.com/some/long/path</a> for\ndetails <code>multi line</code> end</p>\n</blockquote>\n"
+  },
+  {
+    "source": "a\\@b.test",
+    "html": "<p><a href=\"mailto:a@b.test\">a@b.test</a></p>\n"
+  },
+  {
+    "source": "| a | b |\n|---|---|\n| http://a.b/x\\|y | z |\n",
+    "html": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"http://a.b/x%7Cy\">http://a.b/x|y</a></td>\n<td>z</td>\n</tr>\n</tbody>\n</table>\n"
+  },
+  {
+    "source": "> a\n>www.example.com\n",
+    "html": "<blockquote>\n<p>a\n<a href=\"http://www.example.com\">www.example.com</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> <a\n> href=\"http://a.b/x_y\">t</a>\n",
+    "html": "<blockquote>\n<p><a\nhref=\"http://a.b/x_y\">t</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "> [t](\n> http://x.y/a_b)\n",
+    "html": "<blockquote>\n<p><a href=\"http://x.y/a_b\">t</a></p>\n</blockquote>\n"
+  },
+  {
+    "source": "[a [b](c) d](http://e.f)\n",
+    "html": "<p>[a <a href=\"c\">b</a> d](<a href=\"http://e.f\">http://e.f</a>)</p>\n"
+  },
+  {
+    "source": "http://a.b/]*.*\n",
+    "html": "<p><a href=\"http://a.b/%5D\">http://a.b/]</a><em>.</em></p>\n"
+  },
+  {
+    "source": "a@b\\.test\n",
+    "html": "<p><a href=\"mailto:a@b.test\">a@b.test</a></p>\n"
+  },
+  {
+    "source": "a@b.cd http://x.y\n",
+    "html": "<p><a href=\"mailto:a@b.cd\">a@b.cd</a> <a href=\"http://x.y\">http://x.y</a></p>\n"
+  },
+  {
+    "source": "```\na",
+    "html": "<pre><code>a\n</code></pre>\n"
+  },
+  {
+    "source": "    a",
+    "html": "<pre><code>a\n</code></pre>\n"
+  },
+  {
+    "source": "http://a.b/\u000bnext\n",
+    "html": "<p><a href=\"http://a.b/%0Bnext\">http://a.b/\u000bnext</a></p>\n"
+  },
+  {
+    "source": "a\u000bwww.example.com\n",
+    "html": "<p>a\u000bwww.example.com</p>\n"
+  },
+  {
+    "source": "[a \\![b](c) d](http://e.f)\n",
+    "html": "<p>[a !<a href=\"c\">b</a> d](<a href=\"http://e.f\">http://e.f</a>)</p>\n"
+  },
+  {
+    "source": "http://a.b/\fnext\n",
+    "html": "<p><a href=\"http://a.b/%0Cnext\">http://a.b/\fnext</a></p>\n"
+  },
+  {
+    "source": "a\fwww.example.com\n",
+    "html": "<p>a\fwww.example.com</p>\n"
+  },
+  {
+    "source": "http://\u000ba.b\n",
+    "html": "<p><a href=\"http://%0Ba.b\">http://\u000ba.b</a></p>\n"
+  },
+  {
+    "source": "www.a.b\u000bc_d\n",
+    "html": "<p>www.a.b\u000bc_d</p>\n"
+  },
+  {
+    "source": "www.a_b.c\u000bd.e.f\n",
+    "html": "<p><a href=\"http://www.a_b.c%0Bd.e.f\">www.a_b.c\u000bd.e.f</a></p>\n"
+  },
+  {
+    "source": "http://﻿a.b\n",
+    "html": "<p><a href=\"http://%EF%BB%BFa.b\">http://﻿a.b</a></p>\n"
+  },
+  {
+    "source": "http:// a.b\n",
+    "html": "<p><a href=\"http://%E2%80%A8a.b\">http:// a.b</a></p>\n"
+  },
+  {
+    "source": "http:// a.b\n",
+    "html": "<p><a href=\"http://%E2%80%A9a.b\">http:// a.b</a></p>\n"
+  },
+  {
+    "source": "Look!https://example.com/x\n",
+    "html": "<p>Look!<a href=\"https://example.com/x\">https://example.com/x</a></p>\n"
+  },
+  {
+    "source": "\\http://a.b/c\n",
+    "html": "<p>\\<a href=\"http://a.b/c\">http://a.b/c</a></p>\n"
+  },
+  {
+    "source": "x^http://a.b\n",
+    "html": "<p>x^<a href=\"http://a.b\">http://a.b</a></p>\n"
+  },
+  {
+    "source": "[x]http://a.b\n",
+    "html": "<p>[x]<a href=\"http://a.b\">http://a.b</a></p>\n"
+  },
+  {
+    "source": "[foo]http://a.b\n\n[foo]: /z\n",
+    "html": "<p><a href=\"/z\">foo</a><a href=\"http://a.b\">http://a.b</a></p>\n"
+  },
+  {
+    "source": "<code>a@example.test</code>\n",
+    "html": "<p><code><a href=\"mailto:a@example.test\">a@example.test</a></code></p>\n"
+  },
+  {
+    "source": "[a [b](c) http://e.f d]\n",
+    "html": "<p>[a <a href=\"c\">b</a> http://e.f d]</p>\n"
+  },
+  {
+    "source": "|http://a.b/c|d\n|---|\n",
+    "html": "<p>|<a href=\"http://a.b/c%7Cd\">http://a.b/c|d</a>\n|---|</p>\n"
+  },
+  {
+    "source": "see http://a.b/?p=$1 and www.example.com\n",
+    "html": "<p>see <a href=\"http://a.b/?p=$1\">http://a.b/?p=$1</a> and <a href=\"http://www.example.com\">www.example.com</a></p>\n"
+  },
+  {
+    "source": "http://a.b/$x$\n",
+    "html": "<p><a href=\"http://a.b/$x$\">http://a.b/$x$</a></p>\n"
+  },
+  {
+    "source": "http://a.b/\\<\n",
+    "html": "<p><a href=\"http://a.b/%5C\">http://a.b/\\</a>&lt;</p>\n"
+  },
+  {
+    "source": "<code>a<!---->@b.test</code>\n",
+    "html": "<p><code>a<!---->@b.test</code></p>\n"
+  },
+  {
+    "source": "<code>h<!---->ttps://example.test</code>\n",
+    "html": "<p><code>h<!---->ttps://example.test</code></p>\n"
+  },
+  {
+    "source": "<code>w<!---->ww.example.test</code>\n",
+    "html": "<p><code>w<!---->ww.example.test</code></p>\n"
+  },
+  {
+    "source": "[a [foo] b](http://x.y)\n\n[foo]: /u\n",
+    "html": "<p>[a <a href=\"/u\">foo</a> b](<a href=\"http://x.y\">http://x.y</a>)</p>\n"
+  },
+  {
+    "source": "[a [foo][] b](http://x.y)\n\n[foo]: /u\n",
+    "html": "<p>[a <a href=\"/u\">foo</a> b](<a href=\"http://x.y\">http://x.y</a>)</p>\n"
+  },
+  {
+    "source": "[a [x][foo] b](http://x.y)\n\n[foo]: /u\n",
+    "html": "<p>[a <a href=\"/u\">x</a> b](<a href=\"http://x.y\">http://x.y</a>)</p>\n"
+  },
+  {
+    "source": "[a ![foo] b](http://x.y)\n\n[foo]: /u\n",
+    "html": "<p><a href=\"http://x.y\">a <img src=\"/u\" alt=\"foo\" /> b</a></p>\n"
+  },
+  {
+    "source": "1.  > a\n    >www.x.y\n",
+    "html": "<ol>\n<li>\n<blockquote>\n<p>a\n<a href=\"http://www.x.y\">www.x.y</a></p>\n</blockquote>\n</li>\n</ol>\n"
+  },
+  {
+    "source": "- > > a\n  > >www.x.y\n",
+    "html": "<ul>\n<li>\n<blockquote>\n<blockquote>\n<p>a\n<a href=\"http://www.x.y\">www.x.y</a></p>\n</blockquote>\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "> a\n    >www.x.y\n",
+    "html": "<blockquote>\n<p>a\n&gt;www.x.y</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n     >www.x.y\n",
+    "html": "<blockquote>\n<p>a\n&gt;www.x.y</p>\n</blockquote>\n"
+  },
+  {
+    "source": "[<code>a@b.cd</code>](u)\n",
+    "html": "<p><a href=\"u\"><code>a@b.cd</code></a></p>\n"
   }
 ]

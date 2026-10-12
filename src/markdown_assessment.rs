@@ -12,31 +12,40 @@ pub(crate) struct Assessment {
     pub complete: bool,
 }
 
-fn append_bare_link<'a>(events: &mut Vec<Event<'a>>, label: &str, prefix: &str) {
-    events.push(Event::Start(Tag::Link {
-        link_type: LinkType::Autolink,
-        dest_url: crate::markdown_import::markdown_destination(&format!("{prefix}{label}"), false)
+fn bare_link_events<'a>(label: &str, prefix: &str) -> [Event<'a>; 3] {
+    [
+        Event::Start(Tag::Link {
+            link_type: LinkType::Autolink,
+            dest_url: crate::markdown_import::markdown_destination(
+                &format!("{prefix}{label}"),
+                false,
+            )
             .into(),
-        title: "".into(),
-        id: "".into(),
-    }));
-    events.push(Event::Text(label.to_owned().into()));
-    events.push(Event::End(TagEnd::Link));
+            title: "".into(),
+            id: "".into(),
+        }),
+        Event::Text(label.to_owned().into()),
+        Event::End(TagEnd::Link),
+    ]
 }
 
-fn email_events(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+fn email_events<'a>(
+    events: Vec<(Event<'a>, usize)>,
+    line_starts: &[usize],
+    diagnostics: &mut Vec<MigrationDiagnostic>,
+) -> Vec<Event<'a>> {
     use crate::markdown_gfm_autolinks::{bare_links, Mode};
     let mut result = Vec::new();
     let mut input = events.into_iter().peekable();
     let mut opaque = 0usize;
-    while let Some(event) = input.next() {
+    while let Some((event, origin)) = input.next() {
         if opaque == 0 {
             if let Event::Text(first) = &event {
                 let mut text = first.to_string();
                 let mut original = vec![event];
-                while let Some(Event::Text(next)) = input.peek() {
+                while let Some((Event::Text(next), _)) = input.peek() {
                     text.push_str(next);
-                    original.push(input.next().unwrap());
+                    original.push(input.next().unwrap().0);
                 }
                 let links = bare_links(&text, Mode::Email);
                 if links.is_empty() {
@@ -48,7 +57,13 @@ fn email_events(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
                     if cursor < link.start {
                         result.push(Event::Text(text[cursor..link.start].to_owned().into()));
                     }
-                    append_bare_link(&mut result, &text[link.start..link.end], link.prefix);
+                    result.extend(bare_link_events(&text[link.start..link.end], link.prefix));
+                    diagnostics.push(diagnostic(
+                        "bare-autolink",
+                        line_starts,
+                        origin + link.start,
+                        MigrationFidelity::Normalized,
+                    ));
                     cursor = link.end;
                 }
                 if cursor < text.len() {
@@ -331,7 +346,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut bare_url_at = 0;
     let parser = Parser::new_ext(parser_source, options);
     let mut diagnostics = Vec::new();
-    let mut complete = true;
+    let mut complete = prepared_urls.as_ref().map_or(true, |prepared| prepared.2);
     let mut definition_spans = Vec::new();
     for (_, definition) in parser.reference_definitions().iter() {
         definition_spans.push(definition.span.clone());
@@ -349,6 +364,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
     let mut authored_ordered_delimiters = Vec::new();
     let mut link_depth = 0usize;
     let mut code_depth = 0usize;
+    let mut code_needs_ending = false;
     let mut html_block = false;
     let mut html_fragments = 0usize;
     static REWRITE: OnceLock<regex::Regex> = OnceLock::new();
@@ -357,6 +373,26 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         let mut paren_list = false;
         if !matches!(event, Event::Start(_) | Event::End(_)) {
             content_spans.push(range.clone());
+        }
+        if matches!(&event, Event::Text(_)) && code_depth == 0 {
+            let input = &source[range.clone()];
+            if range.start > 0
+                && parser_source[..range.start]
+                    .bytes()
+                    .rev()
+                    .take_while(|byte| *byte == b'\\')
+                    .count()
+                    % 2
+                    == 1
+                && input.starts_with(|character: char| character.is_ascii_punctuation())
+            {
+                diagnostics.push(diagnostic(
+                    "escape",
+                    &line_starts,
+                    range.start - 1,
+                    Normalized,
+                ));
+            }
         }
         if matches!(&event, Event::Text(_)) && link_depth == 0 && code_depth == 0 {
             while bare_urls
@@ -375,9 +411,16 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     .filter(|link| link.start >= cursor && link.end <= range.end)
                 {
                     if cursor < link.start {
-                        events.push(Event::Text(source[cursor..link.start].into()));
+                        events.push((Event::Text(source[cursor..link.start].into()), cursor));
                     }
-                    append_bare_link(&mut events, &source[link.start..link.end], link.prefix);
+                    let label = if link.table {
+                        std::borrow::Cow::Owned(source[link.start..link.end].replace("\\|", "|"))
+                    } else {
+                        std::borrow::Cow::Borrowed(&source[link.start..link.end])
+                    };
+                    events.extend(
+                        bare_link_events(&label, link.prefix).map(|event| (event, link.start)),
+                    );
                     diagnostics.push(diagnostic(
                         "bare-autolink",
                         &line_starts,
@@ -388,7 +431,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     bare_url_at += 1;
                 }
                 if cursor < range.end {
-                    events.push(Event::Text(source[cursor..range.end].into()));
+                    events.push((Event::Text(source[cursor..range.end].into()), cursor));
                 }
                 continue;
             }
@@ -446,6 +489,7 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     Tag::Item => Some(("list-item", Preserved)),
                     Tag::CodeBlock(kind) => {
                         code_depth += 1;
+                        code_needs_ending = false;
                         Some((
                             if matches!(kind, CodeBlockKind::Indented) {
                                 "indented-code"
@@ -508,44 +552,20 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                 link_depth = link_depth.saturating_sub(1);
             }
             Event::End(TagEnd::CodeBlock) => {
+                if code_needs_ending {
+                    events.push((Event::Text("\n".into()), range.start));
+                }
+                code_needs_ending = false;
                 code_depth = code_depth.saturating_sub(1);
+            }
+            Event::Text(text) if code_depth > 0 => {
+                if !text.is_empty() {
+                    code_needs_ending = !text.ends_with('\n');
+                }
             }
             Event::Text(text) if code_depth == 0 => {
                 let input = &source[range.clone()];
-                if range.start > 0
-                    && source[..range.start]
-                        .bytes()
-                        .rev()
-                        .take_while(|byte| *byte == b'\\')
-                        .count()
-                        % 2
-                        == 1
-                    && input.starts_with(|character: char| character.is_ascii_punctuation())
-                {
-                    diagnostics.push(diagnostic(
-                        "escape",
-                        &line_starts,
-                        range.start - 1,
-                        Normalized,
-                    ));
-                }
-                if link_depth == 0 {
-                    if text.as_ref() == input {
-                        for link in crate::markdown_gfm_autolinks::bare_links(
-                            input,
-                            crate::markdown_gfm_autolinks::Mode::All,
-                        ) {
-                            diagnostics.push(diagnostic(
-                                "bare-autolink",
-                                &line_starts,
-                                range.start + link.start,
-                                Normalized,
-                            ));
-                        }
-                    } else if text.contains('@') {
-                        complete = false;
-                    }
-                }
+
                 for matched in rewrite.find_iter(input) {
                     if text.as_ref() == input {
                         continue;
@@ -617,15 +637,15 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                             Dropped,
                         ));
                     }
-                    events.push(Event::Text(source[range.clone()].into()));
+                    events.push((Event::Text(source[range.clone()].into()), range.start));
                     let separator: String = source[range.end..]
                         .chars()
                         .take_while(|character| matches!(character, ' ' | '\t'))
                         .collect();
                     if !separator.is_empty() {
-                        events.push(Event::Text(separator.into()));
+                        events.push((Event::Text(separator.into()), range.end));
                     } else if source[range.end..].starts_with('\n') {
-                        events.push(Event::SoftBreak);
+                        events.push((Event::SoftBreak, range.end));
                     }
                     continue;
                 }
@@ -635,8 +655,8 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
                     range.start,
                     Preserved,
                 ));
-                events.push(event);
-                events.push(Event::Text(" ".into()));
+                events.push((event, range.start));
+                events.push((Event::Text(" ".into()), range.end));
                 continue;
             }
             Event::FootnoteReference(_) | Event::InlineMath(_) | Event::DisplayMath(_) => {
@@ -647,9 +667,12 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
         if let Some((construct, fidelity)) = assessment {
             diagnostics.push(diagnostic(construct, &line_starts, range.start, fidelity));
         }
-        events.push(event);
+        events.push((event, range.start));
         if paren_list {
-            events.push(Event::Html(format!("<!--{expected_list_marker}-->").into()));
+            events.push((
+                Event::Html(format!("<!--{expected_list_marker}-->").into()),
+                range.start,
+            ));
         }
     }
     let mut coverage_changes = vec![0_i32; line_starts.len() + 1];
@@ -688,9 +711,10 @@ pub(crate) fn assess(source: &str, value: &str) -> Assessment {
             complete = false;
         }
     }
+    let events = email_events(events, &line_starts, &mut diagnostics);
     if complete {
         let mut expected = String::new();
-        pulldown_cmark::html::push_html(&mut expected, email_events(events).into_iter());
+        pulldown_cmark::html::push_html(&mut expected, events.into_iter());
         expected = expected
             .replace(
                 "<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\n",

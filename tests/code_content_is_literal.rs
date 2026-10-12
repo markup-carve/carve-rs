@@ -132,8 +132,13 @@ fn payload_from_doc(doc: &carve::Document) -> &str {
 }
 
 #[test]
-fn markdown_import_keeps_the_payload_break() {
-    for (source, expected) in [("```\na\n```", "a\n"), ("    a\n", "a\n"), ("```\na", "a")] {
+fn markdown_import_normalizes_the_native_payload_break() {
+    for (source, expected) in [
+        ("```\na\n```", "a\n"),
+        ("    a\n", "a\n"),
+        ("```\na", "a\n"),
+        ("    a", "a\n"),
+    ] {
         let doc = carve::markdown_to_ast(source);
         assert_eq!(payload_from_doc(&doc), expected, "{source:?}");
     }

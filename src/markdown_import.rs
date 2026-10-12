@@ -680,6 +680,15 @@ fn markdown_to_ast_with_code_lines(
     let mut table_autolink = false;
     let mut text_end = None;
     let prepared_urls = crate::markdown_gfm_autolinks::prepare_urls(&source, options);
+    if prepared_urls.as_ref().is_some_and(|prepared| !prepared.2) {
+        builder.losses.push(MarkdownImportLoss {
+            message:
+                "Could not place GFM bare autolinks safely; retained the original Markdown parse"
+                    .into(),
+            line: None,
+            kind: MarkdownLossKind::Unspellable,
+        });
+    }
     let parser_source = prepared_urls
         .as_ref()
         .map_or(source.as_ref(), |prepared| prepared.0.as_str());
@@ -882,10 +891,12 @@ fn markdown_to_ast_with_code_lines(
                     if cursor < link.start {
                         builder.text(&source[cursor..link.start]);
                     }
-                    builder.inline(literal_bare_link(
-                        &source[link.start..link.end],
-                        link.prefix,
-                    ));
+                    let label = if link.table {
+                        std::borrow::Cow::Owned(source[link.start..link.end].replace("\\|", "|"))
+                    } else {
+                        std::borrow::Cow::Borrowed(&source[link.start..link.end])
+                    };
+                    builder.inline(literal_bare_link(&label, link.prefix));
                     cursor = link.end;
                     bare_url_at += 1;
                 }
@@ -906,8 +917,11 @@ fn markdown_to_ast_with_code_lines(
     if builder.over_depth {
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
+    let needs_email_walk = builder.needs_email_walk;
     let (mut document, losses, locations) = builder.finish();
-    crate::markdown_gfm_autolinks::link_email_text(&mut document);
+    if needs_email_walk {
+        crate::markdown_gfm_autolinks::link_email_text(&mut document);
+    }
     if let Some(code_lines) = code_lines {
         *code_lines = locations;
     }
@@ -1382,6 +1396,7 @@ struct Builder {
     current_line: usize,
     /// HTML code tags still open in the current inline run.
     html_code_depth: usize,
+    needs_email_walk: bool,
     track_code_lines: bool,
     code_lines: BTreeMap<Option<String>, Vec<Option<usize>>>,
 }
@@ -1546,6 +1561,7 @@ impl Builder {
                     text.value.push('\n');
                 }
             }
+            self.raw_inline(value.to_owned());
             return;
         }
         let Some(tag) = html_tag(value) else {
@@ -1737,6 +1753,7 @@ impl Builder {
     /// Text lands in whatever is open: a code block collects it verbatim, an
     /// image's alt is a plain string on the node, everything else takes a node.
     fn text(&mut self, value: &str) {
+        self.needs_email_walk |= value.contains('@');
         let inside_html_code = self.html_code_depth > 0;
         match self.frames.last_mut() {
             Some(Frame::CodeBlock { content, .. }) | Some(Frame::Metadata(content)) => {
@@ -2123,34 +2140,28 @@ impl Builder {
                 children,
                 pos: None,
             })),
-            // Carve has no spelling for an empty destination, so the link is its
-            // content and the image its alt (docs/html-import-contract.md).
             Frame::Link {
                 href,
                 title,
                 children,
-            } if is_empty_destination(&href) => match title {
-                Some(title) => self.inline(titled_span(title, children)),
-                None => {
-                    for child in children {
-                        self.inline(child);
-                    }
-                }
-            },
+            } if is_empty_destination(&href) => {
+                let children = match title {
+                    Some(title) => vec![titled_span(title, children)],
+                    None => children,
+                };
+                self.protected_empty_destination(children);
+            }
             Frame::Image { src, title, alt } if is_empty_destination(&src) => {
-                let content = if alt.is_empty() {
+                let children = if alt.is_empty() {
                     Vec::new()
                 } else {
                     vec![InlineNode::text(alt)]
                 };
-                match title {
-                    Some(title) => self.inline(titled_span(title, content)),
-                    None => {
-                        for child in content {
-                            self.inline(child);
-                        }
-                    }
-                }
+                let children = match title {
+                    Some(title) => vec![titled_span(title, children)],
+                    None => children,
+                };
+                self.protected_empty_destination(children);
             }
             Frame::Link {
                 href,
@@ -2296,6 +2307,18 @@ impl Builder {
         }
     }
 
+    fn protected_empty_destination(&mut self, children: Vec<InlineNode>) {
+        if !children.is_empty() {
+            self.needs_email_walk = true;
+            self.inline(InlineNode::Span(Span {
+                attrs: None,
+                children,
+                injected: true,
+                pos: None,
+            }));
+        }
+    }
+
     fn close_matched_html(&mut self) {
         match self.pop_frame() {
             Some(Frame::HtmlEmphasis { kind, children, .. }) => {
@@ -2310,9 +2333,18 @@ impl Builder {
                 line,
                 open,
                 native,
-                children,
+                mut children,
                 ..
             }) => {
+                if native
+                    && self.needs_email_walk
+                    && !self
+                        .frames
+                        .iter()
+                        .any(|frame| matches!(frame, Frame::Link { .. }))
+                {
+                    crate::markdown_gfm_autolinks::link_email_inlines(&mut children);
+                }
                 let mut content = String::new();
                 let plain = children.iter().all(|child| match child {
                     InlineNode::Text(text) => {
@@ -2321,6 +2353,11 @@ impl Builder {
                     }
                     InlineNode::SoftBreak(_) => {
                         content.push('\n');
+                        true
+                    }
+                    InlineNode::RawInline(raw)
+                        if raw.format == "html" && raw.content == "<!---->" =>
+                    {
                         true
                     }
                     _ => false,
