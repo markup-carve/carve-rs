@@ -2486,6 +2486,7 @@ fn source_may_contain_link_definition(source: &str) -> bool {
     }
     source
         .lines()
+        .rev()
         .filter(|line| line.contains("]: "))
         .any(|line| {
             let mut rest = trim_ascii_start(line);

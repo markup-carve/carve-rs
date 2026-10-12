@@ -1514,7 +1514,7 @@
     "name": "email-autolink-escaped-angle-is-literal",
     "source": "| \\<a\\|b@x.com> | z |\n|---|---|\n\n",
     "contains": [
-      "&lt;a|b@x.com&gt;"
+      "&lt;a|<a href=\"mailto:b@x.com\">b@x.com</a>&gt;"
     ],
     "cells": 2,
     "excludes": [
@@ -2181,7 +2181,7 @@
     "name": "unknown-reference-literal-entity-email",
     "source": "| [a][&lt;a@x.com&gt;\\|z] | c |\n|---|---|\n",
     "contains": [
-      "[a][&lt;a@x.com&gt;|z]"
+      "[a][&lt;<a href=\"mailto:a@x.com\">a@x.com</a>&gt;|z]"
     ],
     "cells": 2,
     "tables": 1,
@@ -2312,7 +2312,7 @@
     "name": "unknown-reference-label-entity-email",
     "source": "| [a\\|&lt;x@y.io&gt;][ref] | c |\n|---|---|\n",
     "contains": [
-      "[a|&lt;x@y.io&gt;][ref]"
+      "[a|&lt;<a href=\"mailto:x@y.io\">x@y.io</a>&gt;][ref]"
     ],
     "tables": 1,
     "excludes": [

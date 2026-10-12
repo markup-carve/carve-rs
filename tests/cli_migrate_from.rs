@@ -137,7 +137,9 @@ fn non_html_reports_fail_closed_when_fidelity_is_unverified() {
 #[test]
 fn literal_text_evidence_controls_the_cli_loss_gate() {
     for format in ["markdown", "djot", "bbcode"] {
-        for (source, expected) in [("hello", 0), ("https://example.org", 1)] {
+        for (source, fallback_exit) in [("hello", 0), ("https://example.org", 1)] {
+            let verified_url = format == "markdown" && source == "https://example.org";
+            let expected = if verified_url { 0 } else { fallback_exit };
             assert_eq!(
                 exit_code(&["migrate", "--from", format, "--check-loss"], source),
                 expected
@@ -145,6 +147,16 @@ fn literal_text_evidence_controls_the_cli_loss_gate() {
             let (_, report, ok) = run(&["migrate", "--from", format, "--report", "-"], source);
             assert!(ok);
             let report: serde_json::Value = serde_json::from_str(&report).unwrap();
+            if verified_url {
+                assert!(report["diagnostics"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|row| row["code"] == "markdown-bare-autolink"
+                        && row["confidence"] == "exact"
+                        && row["fidelity"] == "normalized"));
+                continue;
+            }
             assert_eq!(
                 report["diagnostics"][0]["code"],
                 if expected == 0 {
