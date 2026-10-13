@@ -895,6 +895,7 @@ pub(crate) struct CarrierLift {
     /// and the reader is told.
     pub(crate) damaged: bool,
     pub(crate) dropped: Vec<(usize, String)>,
+    marker_newline_token: String,
 }
 
 /// Lift every carrier marker line out of the source, leaving a placeholder.
@@ -919,6 +920,7 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
         styles: Vec::new(),
         damaged,
         dropped: Vec::new(),
+        marker_newline_token: String::new(),
     };
     if !markdown.contains(CARRIER_STEM) {
         return none(markdown, false);
@@ -928,6 +930,11 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
     } else {
         markdown.to_owned()
     };
+    let mut marker_newline_token = String::from("CARVEMARKERBREAK");
+    while normalized.contains(&marker_newline_token) {
+        marker_newline_token.push('X');
+    }
+    let normalized = join_spanned_markers(&normalized, &marker_newline_token);
     let lines: Vec<&str> = normalized.split('\n').collect();
     if style_in_empty_footnote(&lines) {
         return none(markdown, true);
@@ -1166,7 +1173,44 @@ pub(crate) fn lift_carrier_markers(markdown: &str) -> CarrierLift {
         styles,
         damaged: false,
         dropped: notices,
+        marker_newline_token,
     }
+}
+
+fn join_spanned_markers(source: &str, token: &str) -> String {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut out = Vec::with_capacity(lines.len());
+    let mut at = 0;
+    while at < lines.len() {
+        let line = lines[at];
+        let body = line.trim_start_matches([' ', '\t', '>']);
+        if body.starts_with(CARRIER_STEM) && !body.contains("-->") {
+            let mut end = at + 1;
+            while end < lines.len()
+                && end - at <= 64
+                && !lines[end].trim().is_empty()
+                && !lines[end].contains("-->")
+            {
+                end += 1;
+            }
+            if end < lines.len() && end - at <= 64 && !lines[end].trim().is_empty() {
+                let host = &line[..line.len() - body.len()];
+                let mut joined = line.to_owned();
+                for continuation in &lines[at + 1..=end] {
+                    joined.push_str(token);
+                    joined.push_str(continuation.strip_prefix(host).unwrap_or(continuation));
+                }
+                if carrier_payload_at(joined.strip_prefix(host).unwrap_or(&joined)).is_some() {
+                    out.push(joined);
+                    at = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(line.to_owned());
+        at += 1;
+    }
+    out.join("\n")
 }
 
 /// A carrier marker the parse reported as block content.
@@ -1303,7 +1347,11 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
     }
     let carve = source_with_definitions.as_str();
     if lift.slots.is_empty() {
-        return carve.to_owned();
+        return if lift.marker_newline_token.is_empty() {
+            carve.to_owned()
+        } else {
+            carve.replace(&lift.marker_newline_token, "\n")
+        };
     }
     let items: Vec<RestoredLine> = carve
         .split('\n')
@@ -1355,7 +1403,12 @@ pub(crate) fn restore_carrier_markers(carve: &str, lift: &CarrierLift) -> String
     let separated = separate_carrier_lines(&items);
     let continued = restore_container_continuations(&separated);
     let restored = restore_list_styles(&restore_fence_markers(&continued));
-    restore_definition_lines(&restored).join("\n")
+    let restored = restore_definition_lines(&restored).join("\n");
+    if lift.marker_newline_token.is_empty() {
+        restored
+    } else {
+        restored.replace(&lift.marker_newline_token, "\n")
+    }
 }
 
 pub(crate) fn restore_nested_list_styles(carve: &str, lift: &CarrierLift) -> Option<String> {

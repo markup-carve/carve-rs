@@ -219,6 +219,7 @@ fn markdown_to_carve_with_carriers(
     let finish = |value: String,
                   mut losses: Vec<MarkdownImportLoss>,
                   notices: Vec<FrontmatterNotice>| {
+        let value = restore_markdown_abbreviations(value, markdown);
         let source = crate::carrier_markers::restore_carrier_markers(&value, &lift);
         let source = crate::carrier_markers::restore_nested_list_styles(&source, &lift);
         let (restored, dropped) = source
@@ -333,6 +334,146 @@ fn markdown_to_carve_with_carriers(
         }
         Err(error) => Err(error),
     }
+}
+
+fn restore_markdown_abbreviations(mut value: String, markdown: &str) -> String {
+    let mut definitions = BTreeMap::new();
+    let mut may_define = true;
+    for line in markdown.lines() {
+        let Some(rest) = line.strip_prefix("*[") else {
+            may_define = line.trim().is_empty();
+            continue;
+        };
+        if !may_define {
+            continue;
+        }
+        let Some((term, expansion)) = rest.split_once("]: ") else {
+            may_define = false;
+            continue;
+        };
+        if term.is_empty()
+            || !term.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            || expansion.is_empty()
+        {
+            may_define = false;
+            continue;
+        }
+        let expansion = expansion
+            .trim_start_matches(' ')
+            .trim_end_matches([' ', '\t']);
+        let escaped = format!("\\*[{term}]: {expansion}");
+        if let Some(at) = value.find(&escaped) {
+            value.replace_range(at..at + escaped.len(), &format!("*[{term}]: {expansion}"));
+            definitions
+                .entry(term.to_owned())
+                .or_insert_with(|| expansion.to_owned());
+            may_define = true;
+        } else {
+            may_define = false;
+        }
+    }
+    for (term, expansion) in definitions {
+        let html = format!("`<abbr title=\"{expansion}\">`{{=html}}{term}`</abbr>`{{=html}}");
+        value = value.replace(&html, &term);
+        let pattern = format!(
+            "{}([^\"]*){}{}{}",
+            regex::escape("`<abbr title=\""),
+            regex::escape("\">`{=html}"),
+            regex::escape(&term),
+            regex::escape("`</abbr>`{=html}")
+        );
+        if let Ok(pattern) = regex::Regex::new(&pattern) {
+            value = pattern
+                .replace_all(&value, |captures: &regex::Captures<'_>| {
+                    format!("`<abbr title=\"{}\">{term}</abbr>`{{=html}}", &captures[1])
+                })
+                .into_owned();
+        }
+    }
+    value
+}
+
+fn normalize_imported_reference_links(document: &mut Document) {
+    use crate::include_walk::{visit_block_children, visit_inline_children, SubtreeVisitor};
+    struct Normalize {
+        definitions: BTreeMap<String, LinkReferenceDefinition>,
+        preserved: BTreeSet<String>,
+    }
+    impl SubtreeVisitor for Normalize {
+        fn blocks(&mut self, blocks: &mut Vec<BlockNode>) {
+            for block in blocks {
+                visit_block_children(block, self);
+            }
+        }
+        fn inlines(&mut self, inlines: &mut Vec<InlineNode>) {
+            for inline in inlines {
+                if let InlineNode::Link(link) = inline {
+                    if let (Some(label), Some(raw)) = (&link.ref_label, &link.raw_ref) {
+                        if let Some(definition) = self
+                            .definitions
+                            .get(&crate::parse::label_key(label).to_uppercase())
+                        {
+                            let canonical = &definition.label;
+                            let text = raw
+                                .strip_prefix('[')
+                                .and_then(|raw| raw.split_once(']'))
+                                .map(|(text, _)| text);
+                            let plain = text.is_some_and(|text| {
+                                matches!(link.children.as_slice(), [InlineNode::Text(child)] if child.value == text)
+                            });
+                            let explicit = raw.contains("][") || raw.ends_with("[]");
+                            if !canonical.contains('|')
+                                && !text.is_some_and(|text| text.contains('|'))
+                                && link.href == definition.href
+                                && link.title == definition.title
+                                && plain
+                                && explicit
+                            {
+                                let text = text.unwrap();
+                                link.raw_ref = Some(if text == canonical {
+                                    format!("[{canonical}][]")
+                                } else {
+                                    format!("[{text}][{canonical}]")
+                                });
+                                link.ref_label = Some(canonical.clone());
+                                self.preserved
+                                    .insert(crate::parse::label_key(canonical).to_uppercase());
+                            } else {
+                                link.ref_label = None;
+                                link.raw_ref = None;
+                            }
+                        } else {
+                            link.ref_label = None;
+                            link.raw_ref = None;
+                        }
+                    }
+                }
+                visit_inline_children(inline, self);
+            }
+        }
+    }
+    let labels = document
+        .children
+        .iter()
+        .filter_map(|block| {
+            let BlockNode::LinkReferenceDefinition(def) = block else {
+                return None;
+            };
+            Some((
+                crate::parse::label_key(&def.label).to_uppercase(),
+                def.clone(),
+            ))
+        })
+        .collect();
+    let mut normalize = Normalize {
+        definitions: labels,
+        preserved: BTreeSet::new(),
+    };
+    normalize.blocks(&mut document.children);
+    document.children.retain(|block| {
+        !matches!(block, BlockNode::LinkReferenceDefinition(def)
+            if !normalize.preserved.contains(&crate::parse::label_key(&def.label).to_uppercase()))
+    });
 }
 
 fn preserve_html_code_for_writing(
@@ -759,7 +900,23 @@ fn markdown_to_ast_with_code_lines(
     let mut parser =
         Parser::new_with_broken_link_callback(&strikes.text, options, Some(&mut reference))
             .into_offset_iter();
+    let mut used_reference_ids = BTreeSet::new();
     while let Some((mut event, range)) = parser.next() {
+        if let Event::Start(Tag::Link { id, link_type, .. }) = &event {
+            if !id.is_empty()
+                && matches!(
+                    link_type,
+                    LinkType::Reference
+                        | LinkType::ReferenceUnknown
+                        | LinkType::Collapsed
+                        | LinkType::CollapsedUnknown
+                        | LinkType::Shortcut
+                        | LinkType::ShortcutUnknown
+                )
+            {
+                used_reference_ids.insert(id.to_string());
+            }
+        }
         if strikes.synthetic_comment(&event, &range) {
             continue;
         }
@@ -989,8 +1146,37 @@ fn markdown_to_ast_with_code_lines(
     if builder.over_depth {
         return Err(crate::RenderDepthError::new("carve", crate::MAX_RENDER_DEPTH).into());
     }
+    let mut used_definitions = BTreeMap::new();
+    for id in &used_reference_ids {
+        let Some(def) = parser.reference_definitions().get(id.as_str()) else {
+            continue;
+        };
+        let label = source
+            .get(def.span.clone())
+            .and_then(|line| line.strip_prefix('['))
+            .and_then(|line| line.split_once("]:"))
+            .map_or(id.as_str(), |(label, _)| label);
+        if def.dest.is_empty() || !crate::parse::reference_label_has_definition_spelling(label) {
+            continue;
+        }
+        used_definitions
+            .entry(def.span.start)
+            .or_insert_with(|| LinkReferenceDefinition {
+                label: label.to_owned(),
+                href: markdown_destination(&def.dest, false),
+                title: def.title.as_ref().map(ToString::to_string),
+                attrs: None,
+                pos: None,
+            });
+    }
     let needs_email_walk = builder.needs_email_walk;
     let (mut document, losses, locations) = builder.finish();
+    document.children.extend(
+        used_definitions
+            .into_values()
+            .map(BlockNode::LinkReferenceDefinition),
+    );
+    normalize_imported_reference_links(&mut document);
     if needs_email_walk {
         crate::markdown_gfm_autolinks::link_email_text(&mut document);
     }
@@ -1386,6 +1572,8 @@ enum Frame {
         href: String,
         title: Option<String>,
         children: Vec<InlineNode>,
+        ref_label: Option<String>,
+        raw_ref: Option<String>,
     },
     Image {
         src: String,
@@ -1914,12 +2102,30 @@ impl Builder {
                 dest_url,
                 title,
                 link_type,
-                ..
+                id,
             } => Frame::Link {
                 href: markdown_destination(&dest_url, link_type == LinkType::Email),
                 title: (!title.is_empty() || (empty_title && !is_empty_destination(&dest_url)))
                     .then(|| title.to_string()),
                 children: Vec::new(),
+                ref_label: (!id.is_empty()
+                    && matches!(
+                        link_type,
+                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                    ))
+                .then(|| id.to_string()),
+                raw_ref: (!id.is_empty()
+                    && matches!(
+                        link_type,
+                        LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut
+                    ))
+                .then(|| {
+                    if link_type == LinkType::Collapsed {
+                        format!("[{id}][]")
+                    } else {
+                        source.to_owned()
+                    }
+                }),
             },
             Tag::Image {
                 dest_url, title, ..
@@ -2227,6 +2433,7 @@ impl Builder {
                 href,
                 title,
                 children,
+                ..
             } if is_empty_destination(&href) => {
                 let children = match title {
                     Some(title) => vec![titled_span(title, children)],
@@ -2250,13 +2457,15 @@ impl Builder {
                 href,
                 title,
                 children,
+                ref_label,
+                raw_ref,
             } => self.inline(InlineNode::Link(Link {
                 attrs: None,
                 href,
                 title,
                 children,
-                ref_label: None,
-                raw_ref: None,
+                ref_label,
+                raw_ref,
                 from_crossref: false,
                 from_heading_reference: false,
                 pos: None,

@@ -7169,34 +7169,52 @@ fn rebased_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize 
     end
 }
 
-/// Last line owned by a rebased code fence.
-/// For each line, whether a fence opened above it is still open past it, read
-/// as the item collector reads it: a fence-shaped line inside a nested line
-/// block counts, and only its own column closes it.
+/// For each line, whether a fence opened above it is still open there, so the
+/// line is that fence's body or closer. A nested line block's payload opens
+/// nothing, so a fence-shaped line in it is skipped.
 fn fences_open_before(lines: &[Cow<'_, str>]) -> Vec<bool> {
     let mut open: Option<(FenceOpen, usize)> = None;
+    let mut line_block: Option<(usize, usize)> = None;
     let mut out = Vec::with_capacity(lines.len());
     for line in lines {
         let column = indent_columns(line);
         let local = trim_ascii_start(line);
+        if let Some((width, at)) = line_block {
+            if is_blank_line(line) || column >= at {
+                out.push(false);
+                if column == at && exact_colon_fence_len(local) == Some(width) {
+                    line_block = None;
+                }
+                continue;
+            }
+            line_block = None;
+        }
         match open {
             Some((fence, base)) => {
+                out.push(true);
                 if column == base && is_fence_close(local, fence) {
                     open = None;
-                    out.push(false);
-                } else {
-                    out.push(true);
                 }
             }
             None => {
                 out.push(false);
-                open = detect_fence_open(local).map(|fence| (fence, column));
+                line_block = detect_line_block_open(local)
+                    .map(|width| (width, column))
+                    .or_else(|| {
+                        let marker = detect_list_marker_full_at(line, column)?;
+                        let width = detect_line_block_open(marker.content)?;
+                        Some((width, marker_content_col_at(line, column)?))
+                    });
+                if line_block.is_none() {
+                    open = detect_fence_open(local).map(|fence| (fence, column));
+                }
             }
         }
     }
     out
 }
 
+/// Last line owned by a rebased code fence.
 fn rebased_code_fence_end(
     lines: &[Cow<'_, str>],
     start: usize,
@@ -7979,17 +7997,20 @@ fn rebase_body_blocks(
                                 // land on the box's column as its closer.
                                 let unclosed = code.is_some_and(|open| {
                                     end == i || !is_fence_close(trim_ascii_start(&lines[end]), open)
-                                }) && fences_before
+                                }) && !fences_before
                                     .get_or_init(|| fences_open_before(&authored))
                                     .get(i)
                                     .copied()
                                     .unwrap_or(false);
                                 for (at, line) in lines.iter_mut().enumerate().take(end + 1).skip(i)
                                 {
+                                    // A run on the box's own column closes the box.
+                                    let on_base = indent_columns(line) > 0;
                                     let (residue, consumed, synthetic) =
                                         slice_columns_mapped(line, base, true);
                                     let framed = unclosed
                                         && at > i
+                                        && on_base
                                         && exact_colon_fence_len(&residue).is_some();
                                     *line = Cow::Owned(if framed {
                                         format!("{LAZY}{residue}")
@@ -17688,7 +17709,30 @@ fn collect_indented_block_mapped_with_columns(
                             literal_code_closes_cursor(cur, floor, column, open)
                         }))
             });
-            if may_track_code {
+            // An unclosed run below a descendant's open paragraph is lazy text
+            // there, not a fence of this body (CARVE-P0-014).
+            let lazy_in_descendant = fence.is_none()
+                && indent == strip_cols
+                && nested_item_columns
+                    .last()
+                    .is_some_and(|&(_, column)| indent < column)
+                && cur.pos > 0
+                && line_starts_paragraph(innermost_marker_content(trim_ascii_start(
+                    cur.lines.at(cur.pos - 1),
+                )))
+                && detect_fence_open(trim_ascii_start(line)).is_some_and(|open| {
+                    !cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                        || !item_body_fence_has_closer(
+                            cur.lines.range(cur.pos + 1..cur.lines.len()),
+                            open,
+                            strip_cols,
+                            |line, _| {
+                                detect_list_marker_full(line)
+                                    .is_some_and(|marker| marker.indent <= parent_indent)
+                            },
+                        )
+                });
+            if may_track_code && !lazy_in_descendant {
                 let tracked = if literal_colon.is_some() {
                     trim_ascii_start(fence_line)
                 } else {

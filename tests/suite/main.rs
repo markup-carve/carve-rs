@@ -729,6 +729,8 @@ mod an_ordered_task_item_keeps_its_label;
 mod an_over_indented_unterminated_fence_folds;
 #[path = "../an_unattached_block_attribute_is_reported.rs"]
 mod an_unattached_block_attribute_is_reported;
+#[path = "../an_unclosed_fence_below_a_nested_child_is_lazy_text.rs"]
+mod an_unclosed_fence_below_a_nested_child_is_lazy_text;
 #[path = "../an_unclosed_fence_owns_the_colon_runs_it_carries.rs"]
 mod an_unclosed_fence_owns_the_colon_runs_it_carries;
 #[path = "../an_unclosed_run_at_a_forced_closer_drops_the_break.rs"]

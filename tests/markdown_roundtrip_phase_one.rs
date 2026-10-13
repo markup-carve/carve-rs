@@ -255,7 +255,7 @@ fn unused_markdown_reference_fields_do_not_become_visible_text() {
 }
 
 #[test]
-fn a_definition_a_link_consumed_writes_no_line() {
+fn a_definition_a_link_consumed_retains_reference_source() {
     let imported = migrate_markdown("[ref]: https://example.org \"Title\"\n\nSee [ref].");
     assert_eq!(
         imported.value,
@@ -265,6 +265,37 @@ fn a_definition_a_link_consumed_writes_no_line() {
     let imported = migrate_markdown("[ref]: /u\n[unused]: /v\n\nSee [REF][] and ![x][ref].\n");
     assert_eq!(
         imported.value,
-        "See [REF](/u) and ![x](/u).\n\n[unused]: /v\n"
+        "See [REF][ref] and ![x](/u).\n\n[ref]: /u\n\n[unused]: /v\n"
     );
+}
+
+#[test]
+fn imported_references_keep_links_when_labels_differ_in_case() {
+    let source = "See [x][FOO] and [foo].\n\n[foo]: /u\n";
+    let imported = migrate_markdown(source);
+    assert_eq!(
+        carve::to_html(&imported.value),
+        "<p>See <a href=\"/u\">x</a> and <a href=\"/u\">foo</a>.</p>"
+    );
+    assert!(imported.value.contains("[x][foo]"), "{}", imported.value);
+}
+
+#[test]
+fn imported_abbreviations_do_not_nest_explicit_html() {
+    let source = "*[HTML]: HyperText\n\n<abbr title=\"Other\">HTML</abbr>\n";
+    let imported = migrate_markdown(source);
+    assert_eq!(
+        carve::to_html(&imported.value),
+        "<p><abbr title=\"Other\">HTML</abbr></p>"
+    );
+    let continuation = migrate_markdown("Text\n*[HTML]: HyperText\n");
+    assert!(!continuation.value.contains("\n*[HTML]: HyperText"));
+}
+
+#[test]
+fn a_dropped_spanned_marker_keeps_its_lines() {
+    let source = "<!-- carve: {.a\n#b} -->\n";
+    let imported = migrate_markdown(source);
+    assert!(!imported.value.contains("CARVEMARKERBREAK"));
+    assert!(imported.value.contains("<!-- carve: {.a\n#b} -->"));
 }

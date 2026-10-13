@@ -1618,7 +1618,9 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Spec 46b3d3f7 adds section 589's 36 documents (CARVE-P9-082): 34 round
     // trip strictly, and 589-18 and 589-19, which hold an escaped pipe, report
     // existing losses.
-    const STRICT: usize = 1898;
+    // Spec 0af1cf1a adds 581-8, 581-9 and 581-10. All three round trip
+    // strictly once a colon run past the box's column stays code.
+    const STRICT: usize = 1901;
     const LOSSY: usize = 580;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);

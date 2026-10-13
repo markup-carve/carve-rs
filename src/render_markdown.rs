@@ -214,8 +214,14 @@ fn render_markdown_once(
     }
 
     let referenced_links = referenced_link_labels(doc);
+    let native_references = if roundtrip {
+        native_reference_definitions(doc)
+    } else {
+        HashMap::new()
+    };
     let mut ctx = MarkdownContext {
         referenced_links,
+        native_references,
         suppress_automatic_abbreviation: false,
         heading_slugs,
         list_depth: 0,
@@ -335,8 +341,35 @@ pub(crate) fn referenced_link_labels(doc: &Document) -> HashSet<String> {
     labels.0
 }
 
+fn native_reference_definitions(
+    doc: &Document,
+) -> HashMap<String, crate::ast::LinkReferenceDefinition> {
+    let mut groups: HashMap<String, Vec<&crate::ast::LinkReferenceDefinition>> = HashMap::new();
+    for block in &doc.children {
+        if let BlockNode::LinkReferenceDefinition(def) = block {
+            groups
+                .entry(crate::parse::label_key(&def.label).to_uppercase())
+                .or_default()
+                .push(def);
+        }
+    }
+    groups
+        .into_values()
+        .filter_map(|group| {
+            let def = *group.first()?;
+            let label = &def.label;
+            (group.len() == 1
+                && label.chars().any(|ch| !ch.is_whitespace())
+                && label.len() <= 999
+                && !label.contains(['[', ']', '\\', '\n', '\r']))
+            .then(|| (crate::parse::label_key(label), def.clone()))
+        })
+        .collect()
+}
+
 struct MarkdownContext {
     referenced_links: HashSet<String>,
+    native_references: HashMap<String, crate::ast::LinkReferenceDefinition>,
     /// Set while rendering a span that carries an authored `abbr`.
     ///
     /// PART 9 section 10 and carve#1127: the authored value OUTRANKS automatic
@@ -573,9 +606,10 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
     match node {
         // Renders nothing, same as carve-js and carve-php on this target.
         BlockNode::LinkReferenceDefinition(definition) => {
-            if ctx
-                .referenced_links
-                .contains(&crate::parse::label_key(&definition.label))
+            if !ctx.roundtrip
+                && ctx
+                    .referenced_links
+                    .contains(&crate::parse::label_key(&definition.label))
             {
                 return String::new();
             }
@@ -3056,6 +3090,27 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
     IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
 
     ctx.link_depth -= 1;
+    if ctx.roundtrip
+        && node.attrs.is_none()
+        && ctx.single_line_depth == 0
+        && !fragment_id(&node.href).is_some_and(|id| ctx.heading_slugs.contains_key(id))
+    {
+        if let Some(label) = &node.ref_label {
+            if let Some(def) = ctx.native_references.get(&crate::parse::label_key(label)) {
+                if def.href == node.href && def.title == node.title {
+                    if node
+                        .raw_ref
+                        .as_deref()
+                        .is_some_and(|raw| raw.ends_with("[]"))
+                        && text == def.label
+                    {
+                        return format!("[{text}][]");
+                    }
+                    return format!("[{text}][{}]", def.label);
+                }
+            }
+        }
+    }
     // A fragment naming a heading is written as that heading's GFM slug, which
     // needs no encoding; any other fragment is still the author's destination
     // (PART 11 sections 11 and 11a).
