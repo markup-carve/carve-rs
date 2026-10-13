@@ -20111,10 +20111,11 @@ fn cell_wrap_at(offset: usize) -> Option<CellWrap> {
         if wraps.is_empty() {
             return None;
         }
+        // Ascending by construction: each join is pushed at the text's growing length.
         wraps
-            .iter()
-            .find(|(at, _)| *at == offset)
-            .map(|(_, wrap)| wrap.clone())
+            .binary_search_by_key(&offset, |(at, _)| *at)
+            .ok()
+            .map(|index| wraps[index].1.clone())
     })
 }
 
