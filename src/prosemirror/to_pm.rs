@@ -497,8 +497,9 @@ impl Renderer {
         let mut rows = Vec::new();
         for row in &table.rows {
             if row.continuation_lines.is_some() {
-                // The bridge's rows have no `+` lines to hold them.
-                self.degrade("table_row.continuationLines");
+                // A `+` line with no content leaves no marker, and its loss is
+                // the same boundary the schema map declares for `cell_wrap`.
+                self.degrade("cell_wrap");
             }
             let cells = row
                 .cells

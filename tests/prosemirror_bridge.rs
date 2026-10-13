@@ -249,6 +249,27 @@ fn nested_inline_elements_become_marks_on_text() {
 }
 
 #[test]
+fn a_continuation_row_is_a_stated_loss() {
+    const REASON: &str = "the editor does not retain a table cell's continuation-row boundary";
+    for source in ["| a | b |\n+ c | d |\n", "| a | b |\n+ | |\n"] {
+        let report = to_prosemirror(&parse(source));
+        assert_eq!(
+            report.degraded.get("cell_wrap").map(String::as_str),
+            Some(REASON),
+            "{source:?}"
+        );
+        assert_eq!(
+            report.degraded.len(),
+            1,
+            "{source:?}: {:?}",
+            report.degraded
+        );
+    }
+    let control = to_prosemirror(&parse("| a | b |\n| c | d |\n"));
+    assert!(control.degraded.is_empty() && control.dropped.is_empty());
+}
+
+#[test]
 fn soft_break_survives_as_text_and_is_reported() {
     let (value, report) = pm("left\nright");
     assert_eq!(
