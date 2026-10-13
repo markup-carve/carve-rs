@@ -79,10 +79,7 @@ const SOURCE_LOSSY: &[(&str, &[&str])] = &[
     ),
     (
         "carve-rs#2642: a fence that leaves a closed nested item is still misread",
-        &[
-            "581-a-fence-that-leaves-a-closed-nested-item-opens-in-the-host-it-lands-in-3.crv",
-            "581-a-fence-that-leaves-a-closed-nested-item-opens-in-the-host-it-lands-in-4.crv",
-        ],
+        &["581-a-fence-that-leaves-a-closed-nested-item-opens-in-the-host-it-lands-in-4.crv"],
     ),
 ];
 

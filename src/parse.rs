@@ -7133,6 +7133,33 @@ fn rebased_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize 
 }
 
 /// Last line owned by a rebased code fence.
+/// For each line, whether a fence opened above it is still open past it, read
+/// as the item collector reads it: a fence-shaped line inside a nested line
+/// block counts, and only its own column closes it.
+fn fences_open_before(lines: &[Cow<'_, str>]) -> Vec<bool> {
+    let mut open: Option<(FenceOpen, usize)> = None;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        let column = indent_columns(line);
+        let local = trim_ascii_start(line);
+        match open {
+            Some((fence, base)) => {
+                if column == base && is_fence_close(local, fence) {
+                    open = None;
+                    out.push(false);
+                } else {
+                    out.push(true);
+                }
+            }
+            None => {
+                out.push(false);
+                open = detect_fence_open(local).map(|fence| (fence, column));
+            }
+        }
+    }
+    out
+}
+
 fn rebased_code_fence_end(
     lines: &[Cow<'_, str>],
     start: usize,
@@ -7465,6 +7492,9 @@ fn rebase_body_blocks(
     // Each edit ends before the next iteration, so future columns stay indexed.
     let code_columns = std::cell::OnceCell::new();
     let quote_lines = std::cell::OnceCell::new();
+    // Read on the authored lines: ownership is settled before any rebase here.
+    let authored: Vec<Cow<'_, str>> = lines.clone();
+    let fences_before = std::cell::OnceCell::new();
     let mut i = 0usize;
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut nested_list_marker_bases: Vec<Option<usize>> = Vec::new();
@@ -7907,11 +7937,28 @@ fn rebase_body_blocks(
                                     width,
                                 );
                             } else {
+                                // An unclosed fence owns its body to the box's end
+                                // (CARVE-P0-014), so a colon run in it must not
+                                // land on the box's column as its closer.
+                                let unclosed = code.is_some_and(|open| {
+                                    end == i || !is_fence_close(trim_ascii_start(&lines[end]), open)
+                                }) && fences_before
+                                    .get_or_init(|| fences_open_before(&authored))
+                                    .get(i)
+                                    .copied()
+                                    .unwrap_or(false);
                                 for (at, line) in lines.iter_mut().enumerate().take(end + 1).skip(i)
                                 {
                                     let (residue, consumed, synthetic) =
                                         slice_columns_mapped(line, base, true);
-                                    *line = Cow::Owned(residue);
+                                    let framed = unclosed
+                                        && at > i
+                                        && exact_colon_fence_len(&residue).is_some();
+                                    *line = Cow::Owned(if framed {
+                                        format!("{LAZY}{residue}")
+                                    } else {
+                                        residue
+                                    });
                                     if let Some(Some(col)) = source.col_map.get_mut(at) {
                                         *col += consumed as isize - synthetic as isize;
                                     }
@@ -7922,6 +7969,36 @@ fn rebase_body_blocks(
                             i = end + 1;
                             continue;
                         }
+                    }
+                    // A nested line block is opaque: its verse lines open
+                    // nothing, and its closer leaves no paragraph open.
+                    let nested_line_block = detect_line_block_open(trim_ascii_start(&lines[i]))
+                        .filter(|_| base > 0 && owned_by_item)
+                        .map(|width| (width, base, false))
+                        .or_else(|| {
+                            let marker = detect_list_marker_full_at(&lines[i], base)?;
+                            let width = detect_line_block_open(marker.content)?;
+                            Some((width, marker_content_col_at(&lines[i], base)?, true))
+                        });
+                    if let Some((width, column, item)) = nested_line_block {
+                        if item {
+                            body_items.push(column);
+                        }
+                        i += 1;
+                        while i < lines.len() {
+                            let line = &lines[i];
+                            if !is_blank_line(line) && indent_columns(line) < column {
+                                break;
+                            }
+                            i += 1;
+                            if indent_columns(line) == column
+                                && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
+                            {
+                                break;
+                            }
+                        }
+                        body_paragraph = false;
+                        continue;
                     }
                     if let Some(open) = detect_fence_open(trim_ascii_start(&lines[i]))
                         .filter(|_| base == 0 || owned_by_item)
@@ -7981,7 +8058,13 @@ fn rebase_body_blocks(
                         }
                     }
                     let line = &lines[i];
-                    if is_blank_line(line) || is_line_comment_any_column(line) {
+                    // A bare colon run closes a nested container, which ends
+                    // its paragraph too (CARVE-P0-014: an unclosed fence below
+                    // then has nothing to interrupt).
+                    if is_blank_line(line)
+                        || is_line_comment_any_column(line)
+                        || (base > 0 && exact_colon_fence_len(trim_ascii_start(line)).is_some())
+                    {
                         body_paragraph = false;
                     } else if detect_fence_open(trim_ascii_start(line)).is_some()
                         || !item_block_opener(trim_ascii_start(line))
@@ -19499,7 +19582,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             ));
             last_cont_at = Some(cont_at);
         }
-        let (mut row, mut inputs) = parse_table_row(
+        let (mut row, inputs) = parse_table_row(
             line,
             &conts,
             options,
@@ -19523,16 +19606,10 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos.end_column = end.end_column;
             pos.end_offset = end.end_offset;
         }
-        join_continuations_under_rowspans(
-            &mut rows,
-            &mut row_inputs,
-            &mut row,
-            &mut inputs,
-            options,
-        );
         rows.push(row);
         row_inputs.push(inputs);
     }
+    join_marker_continuations(&mut rows, &mut row_inputs, options);
     // The caption FIRST, then the span: a caption is one of the table's
     // children and sits after the last row, so a span taken before it is
     // consumed stops short and leaves the caption's inlines outside their own
@@ -19794,39 +19871,51 @@ fn reparse_table_cell(cell: &mut TableCell, input: &CellInput, options: &Options
     };
 }
 
-/// A continuation fragment under a `^` cell joins the cell that owns the
-/// rowspan (PART 5 T6), found by following the carets up the column.
-fn join_continuations_under_rowspans(
+/// T6 under a span: a continuation fragment on a `^` or `<` marker joins the
+/// cell the T5 walk resolves that marker into, in row-major order. A blocked
+/// marker renders empty and keeps none of it.
+fn join_marker_continuations(
     rows: &mut [TableRow],
     row_inputs: &mut [Vec<CellInput>],
-    row: &mut TableRow,
-    inputs: &mut [CellInput],
     options: &Options<'_>,
 ) {
-    for idx in 0..row.cells.len() {
-        if row.cells[idx].span != Some(TableCellSpan::Rowspan) || inputs[idx].extra.is_empty() {
+    let mut dirty: Vec<(usize, usize)> = Vec::new();
+    for (r, row) in rows.iter().enumerate() {
+        for (c, cell) in row.cells.iter().enumerate() {
+            if cell.span.is_some() && !row_inputs[r][c].extra.is_empty() {
+                dirty.push((r, c));
+            }
+        }
+    }
+    if dirty.is_empty() {
+        return;
+    }
+    let widths: Vec<usize> = rows.iter().map(|row| row.cells.len()).collect();
+    let mut absorbed: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    crate::table_spans::resolve_span_grid_absorbing(
+        &widths,
+        |r, c| rows[r].cells[c].span,
+        |origin, marker| absorbed.push((origin, marker)),
+    );
+    for (origin, marker) in absorbed {
+        if rows[origin.0].cells[origin.1].span.is_some() {
             continue;
         }
-        let mut above = rows.len();
-        while above > 0
-            && rows[above - 1]
-                .cells
-                .get(idx)
-                .is_some_and(|cell| cell.span == Some(TableCellSpan::Rowspan))
-        {
-            above -= 1;
-        }
-        let Some(origin) = above.checked_sub(1).filter(|&r| idx < rows[r].cells.len()) else {
+        let moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
+        if moved.is_empty() {
             continue;
-        };
-        let moved = std::mem::take(&mut inputs[idx].extra);
-        row_inputs[origin][idx].extra.extend(moved);
-        reparse_table_cell(
-            &mut rows[origin].cells[idx],
-            &row_inputs[origin][idx],
-            options,
-        );
-        reparse_table_cell(&mut row.cells[idx], &inputs[idx], options);
+        }
+        row_inputs[origin.0][origin.1].extra.extend(moved);
+        if !dirty.contains(&origin) {
+            dirty.push(origin);
+        }
+    }
+    for (r, c) in dirty {
+        if rows[r].cells[c].span.is_some() {
+            // The marker itself renders empty, whether or not its text moved.
+            row_inputs[r][c].extra.clear();
+        }
+        reparse_table_cell(&mut rows[r].cells[c], &row_inputs[r][c], options);
     }
 }
 

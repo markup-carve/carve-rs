@@ -725,6 +725,8 @@ mod an_ordered_task_item_keeps_its_label;
 mod an_over_indented_unterminated_fence_folds;
 #[path = "../an_unattached_block_attribute_is_reported.rs"]
 mod an_unattached_block_attribute_is_reported;
+#[path = "../an_unclosed_fence_owns_the_colon_runs_it_carries.rs"]
+mod an_unclosed_fence_owns_the_colon_runs_it_carries;
 #[path = "../an_unclosed_run_at_a_forced_closer_drops_the_break.rs"]
 mod an_unclosed_run_at_a_forced_closer_drops_the_break;
 #[path = "../an_unclosed_verbatim_run_strips_at_a_forced_closer.rs"]
@@ -2065,3 +2067,6 @@ mod wave7_2609;
 
 #[path = "../wave7_description_openers.rs"]
 mod wave7_description_openers;
+
+#[path = "../a_continuation_on_a_span_marker_joins_its_origin.rs"]
+mod a_continuation_on_a_span_marker_joins_its_origin;
