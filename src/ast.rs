@@ -471,6 +471,7 @@ fn drain_inline(pending: &mut Vec<DropWork>, inline: &mut InlineNode) {
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}
@@ -703,6 +704,8 @@ pub struct TableRow {
     pub cells: Vec<TableCell>,
     /// Row-level attributes from a `{...}` block glued to the closing pipe.
     pub attrs: Option<Attrs>,
+    /// The number of `+` continuation lines the row has, absent when none.
+    pub continuation_lines: Option<usize>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -1214,6 +1217,9 @@ pub enum InlineNode {
     Footnote(Footnote),
     NonBreakingSpace(NonBreakingSpace),
     SoftBreak(Break),
+    /// Where a `+` continuation row joins content onto a table cell
+    /// (CARVE-P12-069). Renders as one space.
+    CellWrap(CellWrap),
     HardBreak(Break),
     CriticInsert(CriticInsert),
     CriticDelete(CriticDelete),
@@ -1258,6 +1264,7 @@ impl InlineNode {
             Self::Footnote(n) => n.pos.as_ref(),
             Self::NonBreakingSpace(n) => n.pos.as_ref(),
             Self::SoftBreak(n) | Self::HardBreak(n) => n.pos.as_ref(),
+            Self::CellWrap(n) => n.pos.as_ref(),
             Self::CriticInsert(n) => n.pos.as_ref(),
             Self::CriticDelete(n) => n.pos.as_ref(),
             Self::CriticSubstitute(n) => n.pos.as_ref(),
@@ -1347,6 +1354,16 @@ pub struct Code {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonBreakingSpace {
     pub attrs: Option<Attrs>,
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CellWrap {
+    /// The row's continuation line this part came from, counted from 1.
+    pub line: usize,
+    /// Rows down from the cell to the row holding that line, when the cell
+    /// spans down to it.
+    pub row: Option<usize>,
     pub pos: Option<Pos>,
 }
 

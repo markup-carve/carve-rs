@@ -5438,6 +5438,7 @@ impl<'a> Importer<'a> {
                 // The `<tr>`'s own attributes, which `TableRow::attrs` has a
                 // slot for and the writer spells on the closing pipe.
                 attrs: row_attrs.get(r).cloned().flatten(),
+                continuation_lines: None,
                 pos: None,
             });
             carried = carried

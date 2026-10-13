@@ -334,6 +334,7 @@ impl ProfileFilter<'_> {
                                 table.rows[r] = TableRow {
                                     cells: vec![text_cell(&text)],
                                     attrs: None,
+                                    continuation_lines: None,
                                     pos: None,
                                 };
                                 r += 1;
@@ -1114,7 +1115,7 @@ fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String 
         InlineNode::RawInline(r) => r.content.clone(),
         InlineNode::LiteralInline(l) => l.content.clone(),
         InlineNode::NonBreakingSpace(_) => "\u{00a0}".to_string(),
-        InlineNode::SoftBreak(_) => " ".to_string(),
+        InlineNode::SoftBreak(_) | InlineNode::CellWrap(_) => " ".to_string(),
         InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::Image(img) => image_text(img),
         InlineNode::Mention(m) => format!("@{}", m.user),
@@ -1400,6 +1401,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::Ruby(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CriticComment(_) => false,

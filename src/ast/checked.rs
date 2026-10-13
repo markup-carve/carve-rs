@@ -237,6 +237,7 @@ fn inline_children<'a>(pending: &mut Vec<Work<'a>>, node: &'a InlineNode, depth:
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}

@@ -94,6 +94,8 @@ mod a_bare_marker_does_not_close_inside_a_braced_inline;
 mod a_bare_opener_the_writer_would_refuse_takes_braces;
 #[path = "../a_below_column_colon_fence_run_folds.rs"]
 mod a_below_column_colon_fence_run_folds;
+#[path = "../a_below_column_comment_after_a_marker_line_opener_ends_the_item.rs"]
+mod a_below_column_comment_after_a_marker_line_opener_ends_the_item;
 #[path = "../a_below_column_comment_ends_no_item.rs"]
 mod a_below_column_comment_ends_no_item;
 #[path = "../a_below_column_marker_after_a_lazy_line_folds.rs"]
@@ -478,6 +480,8 @@ mod a_raw_kept_element_reports_its_descendants_attributes;
 mod a_raw_span_ending_a_line_in_whitespace_is_degraded;
 #[path = "../roundtrip_import_consumes_an_invalid_span_carrier.rs"]
 mod roundtrip_import_consumes_an_invalid_span_carrier;
+#[path = "../table_continuation_lines_are_cell_wrap_markers.rs"]
+mod table_continuation_lines_are_cell_wrap_markers;
 
 #[path = "../a_block_past_a_box_column_in_a_list_item_opens.rs"]
 mod a_block_past_a_box_column_in_a_list_item_opens;

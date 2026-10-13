@@ -1518,6 +1518,7 @@ fn list_table_as_table(node: &Admonition) -> Option<Table> {
         rows.push(TableRow {
             cells,
             attrs: None,
+            continuation_lines: None,
             pos: None,
         });
     }
@@ -2941,6 +2942,7 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
         }
         InlineNode::NonBreakingSpace(_) => "\u{00a0}".to_string(),
         InlineNode::SoftBreak(_) => "\n".to_string(),
+        InlineNode::CellWrap(_) => " ".to_string(),
         // A BACKSLASH, not two trailing spaces (PART 11 section 9). Both mean
         // `<br />` to a CommonMark reader, but trailing whitespace is removed by
         // editors that strip on save, by `git apply --whitespace=fix` and by CI

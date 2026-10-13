@@ -455,7 +455,7 @@ fn text_metrics(ast: &Value) -> HashMap<String, (usize, usize)> {
                 if let Some(kind) = object.get("type").and_then(Value::as_str) {
                     pending.push((path.clone(), value, Some(cursor)));
                     cursor += match kind {
-                        "soft_break" | "hard_break" | "non_breaking_space" => 1,
+                        "soft_break" | "cell_wrap" | "hard_break" | "non_breaking_space" => 1,
                         _ => ["value", "content", "text", "alt"]
                             .iter()
                             .find_map(|key| object.get(*key).and_then(Value::as_str))

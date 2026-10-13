@@ -252,6 +252,7 @@ pub(crate) fn visit_inline_children<V: SubtreeVisitor>(node: &mut InlineNode, v:
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}
@@ -317,6 +318,7 @@ pub(crate) fn inline_pos_slot(node: &mut InlineNode) -> &mut Option<Pos> {
         InlineNode::Footnote(n) => &mut n.pos,
         InlineNode::NonBreakingSpace(n) => &mut n.pos,
         InlineNode::SoftBreak(n) => &mut n.pos,
+        InlineNode::CellWrap(n) => &mut n.pos,
         InlineNode::HardBreak(n) => &mut n.pos,
         InlineNode::CriticInsert(n) => &mut n.pos,
         InlineNode::CriticDelete(n) => &mut n.pos,
@@ -384,6 +386,7 @@ fn inline_attrs_slot(node: &mut InlineNode) -> Option<&mut Option<Attrs>> {
         InlineNode::Footnote(n) => Some(&mut n.attrs),
         InlineNode::NonBreakingSpace(n) => Some(&mut n.attrs),
         InlineNode::SoftBreak(_) => None,
+        InlineNode::CellWrap(_) => None,
         InlineNode::HardBreak(_) => None,
         InlineNode::CriticInsert(n) => Some(&mut n.attrs),
         InlineNode::CriticDelete(n) => Some(&mut n.attrs),

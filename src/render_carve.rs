@@ -1413,6 +1413,7 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_) => {}
     }
@@ -2990,6 +2991,15 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
                 }
             });
 
+    // CARVE-P12-069: each `cell_wrap` puts the part after it on its row's
+    // continuation line, one slot per cell.
+    let mut continuations: Vec<Vec<Vec<String>>> = node
+        .rows
+        .iter()
+        .map(|row| {
+            vec![vec![" ".to_string(); row.cells.len()]; row.continuation_lines.unwrap_or(0)]
+        })
+        .collect();
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
         for (cell_index, cell) in row.cells.iter().enumerate() {
@@ -3003,13 +3013,14 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // cell to carry it and keeps its own marker.
             let suppress_align =
                 row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
-            cells.push(render_table_cell(
-                session,
-                cell,
-                ctx,
-                mark_header,
-                suppress_align,
-            ));
+            let rendered = render_table_cell(session, cell, ctx, mark_header, suppress_align);
+            match place_cell_wraps(&rendered, row_index, cell_index, &mut continuations) {
+                Ok(own) => cells.push(own),
+                Err(reason) => {
+                    crate::render_carve_error::record_unspellable("table_row", reason);
+                    cells.push(rendered);
+                }
+            }
         }
         ctx.cell_not_last = false;
         // A row of empty cells is written as a row, one slot per cell
@@ -3021,6 +3032,9 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             );
         }
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
+        for line in &continuations[row_index] {
+            rows.push(format!("+{}|", line.join("|")));
+        }
     }
     if needs_delimiter {
         let sep = match authored_widths {
@@ -3034,7 +3048,8 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             },
             None => format!("|{}|", vec!["---"; node.rows[0].cells.len()].join("|")),
         };
-        rows.insert(1, sep);
+        let head_lines = node.rows[0].continuation_lines.unwrap_or(0);
+        rows.insert(1 + head_lines, sep);
     }
     if let Some(row) = node
         .caption
@@ -3065,6 +3080,57 @@ fn pad_cell(prefix: &str, content: &str) -> String {
     } else {
         format!("{prefix} {content} ")
     }
+}
+
+/// Splits a rendered cell at its `cell_wrap` sentinels: the part before the
+/// first stays on the standard row, each later part fills the next free slot
+/// at or after the cell's column on the continuation line it names.
+fn place_cell_wraps(
+    rendered: &str,
+    row_index: usize,
+    cell_index: usize,
+    continuations: &mut [Vec<Vec<String>>],
+) -> Result<String, &'static str> {
+    let Some(first) = rendered.find('\u{2}') else {
+        return Ok(rendered.to_string());
+    };
+    let own = format!("{} ", &rendered[..first]);
+    let mut rest = &rendered[first..];
+    while let Some(tail) = rest.strip_prefix('\u{2}') {
+        let close = tail
+            .find('\u{3}')
+            .ok_or("cell_wrap sentinel is not closed")?;
+        let (row, line) = tail[..close]
+            .split_once(',')
+            .and_then(|(row, line)| Some((row.parse::<usize>().ok()?, line.parse::<usize>().ok()?)))
+            .ok_or("cell_wrap sentinel is malformed")?;
+        let body = &tail[close + 1..];
+        let next = body.find('\u{2}');
+        let part = &body[..next.unwrap_or(body.len())];
+        let part = if next.is_none() {
+            part.strip_suffix(' ').unwrap_or(part)
+        } else {
+            part
+        };
+        let slots = line
+            .checked_sub(1)
+            .and_then(|line| continuations.get_mut(row_index + row)?.get_mut(line))
+            .filter(|slots| cell_index < slots.len())
+            .ok_or("cell_wrap points outside its continuation row")?;
+        let slot = (cell_index..slots.len())
+            .find(|&index| slots[index] == " ")
+            .ok_or("cell_wrap has no free continuation cell")?;
+        slots[slot] = pad_cell("", part);
+        rest = &body[part.len()..];
+        rest = rest
+            .strip_prefix(' ')
+            .filter(|_| next.is_none())
+            .unwrap_or(rest);
+        if next.is_none() {
+            break;
+        }
+    }
+    Ok(own)
 }
 
 fn render_table_row(cells: &[String], attrs: &str) -> String {
@@ -4436,6 +4502,10 @@ fn render_inline_body(
                 "\n".to_string()
             }
         }
+        InlineNode::CellWrap(n) if ctx.table_cell_depth > 0 => {
+            format!("\u{2}{},{}\u{3}", n.row.unwrap_or(0), n.line)
+        }
+        InlineNode::CellWrap(_) => " ".to_string(),
         InlineNode::HardBreak(_) => {
             // A cell is one line, so its break flattens to one space (PART 11
             // §1b, ruling markup-carve/carve#2067).

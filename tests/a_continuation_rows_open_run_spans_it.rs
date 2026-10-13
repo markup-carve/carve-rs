@@ -172,25 +172,28 @@ fn the_rows_closing_pipe_still_closes_the_row() {
     );
 }
 
-/// The merged value is ONE text node in `parse()` itself, and it carries no
-/// span: the two halves are separated by a delimiter and a newline the value
-/// does not contain, so a span across them would not select its own text.
-/// Absent beats wrong (PART 12 section 4).
+/// The join is a `cell_wrap` (CARVE-P12-069), so each half is its own run
+/// and keeps the span of the line it came from.
 #[test]
-fn a_value_joined_across_the_gap_carries_no_span() {
+fn a_value_joined_across_the_gap_keeps_a_span_per_line() {
     let cells = first_row_cells("| x | A long description |\n+     | that continues     |\n");
-    match &cells[1].children[0] {
-        InlineNode::Text(t) => {
-            assert_eq!(t.value, "A long description that continues");
-            assert!(
-                t.pos.is_none(),
-                "a joined value cannot be placed: {:?}",
-                t.pos
-            );
-        }
-        other => panic!("expected one merged text node, got {other:?}"),
-    }
-    assert_eq!(cells[1].children.len(), 1, "the cell holds one run");
+    let shape: Vec<(String, Option<usize>)> = cells[1]
+        .children
+        .iter()
+        .map(|node| match node {
+            InlineNode::Text(t) => (t.value.clone(), t.pos.as_ref().map(|pos| pos.start_line)),
+            InlineNode::CellWrap(w) => (format!("wrap {}", w.line), None),
+            other => panic!("unexpected inline {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            ("A long description".to_string(), Some(1)),
+            ("wrap 1".to_string(), None),
+            ("that continues".to_string(), Some(2)),
+        ]
+    );
 }
 
 /// A node that lies WHOLLY INSIDE one fragment keeps its own position, and the
