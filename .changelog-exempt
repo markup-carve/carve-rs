@@ -27,3 +27,7 @@
 2292: footnote, quote and table extent scans extracted from list-body rebasing. No behavior moved.
 2296: the Unicode eligibility check #2280 added to the layout fast path is a hand-written scan instead of a regex. Same accepted inputs, same output; it keeps the regex engine out of the rendering-only wasm, a size #2280 grew in this same unreleased window.
 2334: test-only. The deep-ladder cost is counted instead of timed; every added line sits inside the `#[cfg(test)]` `nested_list_indent_work` module, the same family as #2324. No parser output moved.
+2435: follow-up to #2433 in the same unreleased window; the escaped fenced payload it fixes never shipped, and #2433's entry covers the import.
+2545: docs only; documents the roundtrip carriers #2471 and #2526 already describe.
+2552: reverts a regression #2526 introduced in this unreleased window (dollar math on Markdown import); no release ever read dollars as math.
+2685: fixes a timing regression #2679 introduced in this unreleased window (cell wrap lookup); no release had it.
