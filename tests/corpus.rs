@@ -921,23 +921,7 @@ const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 /// Empty again. Its three entries were corpus 519's first three documents, and
 /// carve-rs#2170 made them match, so the `assert_ne!` in `check_pair` is what
 /// removed them.
-const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[(
-    "581-a-fence-that-leaves-a-closed-nested-item-opens-in-the-host-it-lands-in-4",
-    "carve-rs#2642",
-    r#"<blockquote>
-  <ul>
-    <li>a
-      <ul>
-        <li>child</li>
-      </ul>
-      <code></code>
-      <code>
-~~~</code>
-    </li>
-  </ul>
-</blockquote>
-<p>after</p>"#,
-)];
+const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

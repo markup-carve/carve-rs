@@ -25,3 +25,12 @@ fn a_fence_below_a_closed_note_still_lets_the_box_close() {
         "{html}"
     );
 }
+
+#[test]
+fn a_run_at_the_childs_column_does_not_close_a_fence_that_left_it() {
+    let html = compact("- a\n    - child\n    ```\n\n      ```\nafter\n");
+    assert!(
+        html.contains("<li>child<code></code><pre><code></code></pre></li>"),
+        "{html}"
+    );
+}

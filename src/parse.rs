@@ -14548,9 +14548,12 @@ fn parse_list(
             }
             if indent < content_col {
                 // A closed run at an ancestor's column interrupts this child.
+                // Its host is the ancestor, so only a closer at a column that
+                // host reaches counts; the child's content column does not
+                // (CARVE-P0-014).
                 if indent == base_indent
                     && detect_fence_open(trim_ascii_start(next)).is_some_and(|open| {
-                        list_code_fence_closer_ahead(cur, open, content_col, base_indent)
+                        list_code_fence_closer_ahead(cur, open, base_indent, base_indent)
                     })
                 {
                     break;

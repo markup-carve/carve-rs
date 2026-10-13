@@ -272,12 +272,6 @@ fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
 
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     for (slug, source) in corpus_sources() {
-        // carve-rs#2642: a fence that leaves a closed nested item is still
-        // misread, and the misreading does not survive formatting.
-        if slug.starts_with("581-a-fence-that-leaves-a-closed-nested-item-") && slug.ends_with("-4")
-        {
-            continue;
-        }
         let formatted = carve::to_carve(&source);
         // UNCONDITIONALLY, over every document. This assertion used to be
         // skipped whenever the formatted output CONTAINED one of three literal
