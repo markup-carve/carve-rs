@@ -7133,6 +7133,33 @@ fn rebased_list_end(lines: &[Cow<'_, str>], start: usize, base: usize) -> usize 
 }
 
 /// Last line owned by a rebased code fence.
+/// For each line, whether a fence opened above it is still open past it, read
+/// as the item collector reads it: a fence-shaped line inside a nested line
+/// block counts, and only its own column closes it.
+fn fences_open_before(lines: &[Cow<'_, str>]) -> Vec<bool> {
+    let mut open: Option<(FenceOpen, usize)> = None;
+    let mut out = Vec::with_capacity(lines.len());
+    for line in lines {
+        let column = indent_columns(line);
+        let local = trim_ascii_start(line);
+        match open {
+            Some((fence, base)) => {
+                if column == base && is_fence_close(local, fence) {
+                    open = None;
+                    out.push(false);
+                } else {
+                    out.push(true);
+                }
+            }
+            None => {
+                out.push(false);
+                open = detect_fence_open(local).map(|fence| (fence, column));
+            }
+        }
+    }
+    out
+}
+
 fn rebased_code_fence_end(
     lines: &[Cow<'_, str>],
     start: usize,
@@ -7465,6 +7492,9 @@ fn rebase_body_blocks(
     // Each edit ends before the next iteration, so future columns stay indexed.
     let code_columns = std::cell::OnceCell::new();
     let quote_lines = std::cell::OnceCell::new();
+    // Read on the authored lines: ownership is settled before any rebase here.
+    let authored: Vec<Cow<'_, str>> = lines.clone();
+    let fences_before = std::cell::OnceCell::new();
     let mut i = 0usize;
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut nested_list_marker_bases: Vec<Option<usize>> = Vec::new();
@@ -7907,11 +7937,28 @@ fn rebase_body_blocks(
                                     width,
                                 );
                             } else {
+                                // An unclosed fence owns its body to the box's end
+                                // (CARVE-P0-014), so a colon run in it must not
+                                // land on the box's column as its closer.
+                                let unclosed = code.is_some_and(|open| {
+                                    end == i || !is_fence_close(trim_ascii_start(&lines[end]), open)
+                                }) && fences_before
+                                    .get_or_init(|| fences_open_before(&authored))
+                                    .get(i)
+                                    .copied()
+                                    .unwrap_or(false);
                                 for (at, line) in lines.iter_mut().enumerate().take(end + 1).skip(i)
                                 {
                                     let (residue, consumed, synthetic) =
                                         slice_columns_mapped(line, base, true);
-                                    *line = Cow::Owned(residue);
+                                    let framed = unclosed
+                                        && at > i
+                                        && exact_colon_fence_len(&residue).is_some();
+                                    *line = Cow::Owned(if framed {
+                                        format!("{LAZY}{residue}")
+                                    } else {
+                                        residue
+                                    });
                                     if let Some(Some(col)) = source.col_map.get_mut(at) {
                                         *col += consumed as isize - synthetic as isize;
                                     }
@@ -7922,6 +7969,36 @@ fn rebase_body_blocks(
                             i = end + 1;
                             continue;
                         }
+                    }
+                    // A nested line block is opaque: its verse lines open
+                    // nothing, and its closer leaves no paragraph open.
+                    let nested_line_block = detect_line_block_open(trim_ascii_start(&lines[i]))
+                        .filter(|_| base > 0 && owned_by_item)
+                        .map(|width| (width, base, false))
+                        .or_else(|| {
+                            let marker = detect_list_marker_full_at(&lines[i], base)?;
+                            let width = detect_line_block_open(marker.content)?;
+                            Some((width, marker_content_col_at(&lines[i], base)?, true))
+                        });
+                    if let Some((width, column, item)) = nested_line_block {
+                        if item {
+                            body_items.push(column);
+                        }
+                        i += 1;
+                        while i < lines.len() {
+                            let line = &lines[i];
+                            if !is_blank_line(line) && indent_columns(line) < column {
+                                break;
+                            }
+                            i += 1;
+                            if indent_columns(line) == column
+                                && exact_colon_fence_len(trim_ascii_start(line)) == Some(width)
+                            {
+                                break;
+                            }
+                        }
+                        body_paragraph = false;
+                        continue;
                     }
                     if let Some(open) = detect_fence_open(trim_ascii_start(&lines[i]))
                         .filter(|_| base == 0 || owned_by_item)
@@ -7981,7 +8058,13 @@ fn rebase_body_blocks(
                         }
                     }
                     let line = &lines[i];
-                    if is_blank_line(line) || is_line_comment_any_column(line) {
+                    // A bare colon run closes a nested container, which ends
+                    // its paragraph too (CARVE-P0-014: an unclosed fence below
+                    // then has nothing to interrupt).
+                    if is_blank_line(line)
+                        || is_line_comment_any_column(line)
+                        || (base > 0 && exact_colon_fence_len(trim_ascii_start(line)).is_some())
+                    {
                         body_paragraph = false;
                     } else if detect_fence_open(trim_ascii_start(line)).is_some()
                         || !item_block_opener(trim_ascii_start(line))

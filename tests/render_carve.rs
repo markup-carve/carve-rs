@@ -274,8 +274,7 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     for (slug, source) in corpus_sources() {
         // carve-rs#2642: a fence that leaves a closed nested item is still
         // misread, and the misreading does not survive formatting.
-        if slug.starts_with("581-a-fence-that-leaves-a-closed-nested-item-")
-            && (slug.ends_with("-3") || slug.ends_with("-4"))
+        if slug.starts_with("581-a-fence-that-leaves-a-closed-nested-item-") && slug.ends_with("-4")
         {
             continue;
         }
