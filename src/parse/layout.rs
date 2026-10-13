@@ -1654,8 +1654,11 @@ mod layout_html_tests {
         // three of them are plain link paragraphs this path takes, so 60 to 63
         // is three new documents, not a widening. The scanner is unchanged and
         // the per-document assertion above proves each byte-identical.
+        // The new 588-3 and 588-4 controls contain no attached block. The
+        // layout path accepts both, and the assertion above checks their exact
+        // HTML against the authoritative parser.
         assert_eq!(
-            accepted, 65,
+            accepted, 67,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }

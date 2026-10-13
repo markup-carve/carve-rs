@@ -921,6 +921,7 @@ mod constructed_figure_invariants;
 mod container_scoped_content_columns;
 #[path = "../corpus.rs"]
 mod corpus;
+
 #[path = "../corpus_canonical_form.rs"]
 mod corpus_canonical_form;
 #[path = "../corpus_render_fixtures.rs"]
@@ -991,6 +992,8 @@ mod description_column_closes_overindented_code_fences;
 mod description_fence_paragraph_boundary;
 #[path = "../display_math_on_a_marker_line_takes_its_caption.rs"]
 mod display_math_on_a_marker_line_takes_its_caption;
+#[path = "../quote_note_first_block.rs"]
+mod quote_note_first_block;
 
 #[path = "../destination_parens.rs"]
 mod destination_parens;

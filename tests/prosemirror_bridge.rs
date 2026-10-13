@@ -1620,8 +1620,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // The move to spec fc2c1f02 raises the strict count by 17 and the
     // lossy count by 4. Corpus 451-1 moves from the lossy to the strict set
     // once its link definition registers.
-    const STRICT: usize = 1856;
-    const LOSSY: usize = 578;
+    // The spec pin adds eight corpus 588 documents. The moved 437 footnote
+    // row also round trips strictly after the first-block parser change.
+    const STRICT: usize = 1865;
+    const LOSSY: usize = 577;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

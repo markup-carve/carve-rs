@@ -1764,6 +1764,43 @@ fn extract_footnote_defs(
             let mut body_open_below = false;
             let mut retained_below_comment = false;
             let mut below_comment_span = None;
+            // A lone marker-line `+` gives the note its first flush-left block.
+            // The same block bound is used by a later standalone `+` in a note.
+            if trim_ascii(first) == "+"
+                && !in_container
+                && attaches_flush_left(Some(0), lines.get(i))
+                && lines.get(i).is_some_and(|line| !is_blank_line(line))
+            {
+                let end = attached_block_lines(
+                    CursorLines::Slice(&lines),
+                    i,
+                    &mut comment_closers,
+                    &mut closer_index,
+                    options,
+                    Some(0),
+                    &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+                );
+                if end > i {
+                    def_lines[0].clear();
+                    def_line_map[0] = None;
+                    if positions {
+                        def_col_map[0] = None;
+                    }
+                    while i < end {
+                        def_lines.push(lines[i].to_string());
+                        def_line_map.push(Some(first_source_line + i));
+                        if positions {
+                            def_col_map.push(Some(0));
+                        }
+                        i += 1;
+                    }
+                    def_lines.push(String::new());
+                    def_line_map.push(None);
+                    if positions {
+                        def_col_map.push(None);
+                    }
+                }
+            }
             if !in_container {
                 while i < lines.len() {
                     let line = lines[i];
@@ -11674,6 +11711,7 @@ fn collect_blockquote_body(
     // otherwise walk its whole body once.
     let mut may_hold_fence = false;
     let mut literal_quote_body = None;
+    let mut last_quoted_at = None;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             if strip_description_prefix(trim_ascii_start(stripped)).is_some() {
@@ -11707,6 +11745,75 @@ fn collect_blockquote_body(
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
             cur.consume();
+            // Keep the prior quoted line by index. Only a line ending in `+`
+            // asks for nested depth, so a deep quote does not rescan its chain
+            // on every ordinary line.
+            let prior_quoted_at = last_quoted_at.replace(at);
+            let first_block = stripped.trim_end_matches([' ', '\t']).ends_with('+')
+                && cur.peek().is_some_and(|next| {
+                    !is_blank_line(next) && strip_blockquote_prefix(next).is_none()
+                })
+                && attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
+            let mut deepest = stripped;
+            let mut levels = 0;
+            if first_block {
+                while let Some(next) = strip_blockquote_prefix(deepest) {
+                    deepest = next;
+                    levels += 1;
+                }
+            }
+            let prior_levels = if first_block && levels > 0 {
+                prior_quoted_at.map_or(0, |prior| {
+                    let mut content = strip_blockquote_prefix(cur.lines.at(prior)).unwrap_or("");
+                    let mut depth = 0;
+                    while let Some(next) = strip_blockquote_prefix(content) {
+                        content = next;
+                        depth += 1;
+                    }
+                    depth
+                })
+            } else {
+                0
+            };
+            if first_block
+                && trim_ascii(deepest) == "+"
+                && (levels > prior_levels || (levels == 0 && inner.lines.is_empty()))
+            {
+                // Preserve a nested quote marker for its own parse. The
+                // innermost quote consumes the `+` and takes the block.
+                if deepest != stripped {
+                    inner.push_at(
+                        stripped.to_string(),
+                        source_line,
+                        stripped_col(cur.source_col(at), line, stripped),
+                    );
+                }
+                let attach_col = cur.source_col(cur.pos);
+                let end = attached_block_lines(
+                    cur.lines,
+                    cur.pos,
+                    &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
+                    options,
+                    attach_col,
+                    &mut |next, _| {
+                        is_blank_line(next)
+                            || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+                    },
+                );
+                while cur.pos < end {
+                    let next = cur.lines.at(cur.pos);
+                    inner.push_at(
+                        next.to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.pos += 1;
+                }
+                inner.push_synthetic_blank();
+                para_open = ParaOpen::Closed;
+                continue;
+            }
             nested_verdict = None;
             let after_nested = last_nested && may_hold_fence;
             last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
