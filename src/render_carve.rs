@@ -3185,6 +3185,54 @@ fn render_table_separator(table: &Table, widths: &[u64]) -> Option<String> {
     Some(separator)
 }
 
+fn cell_blocks_have_thematic_break(blocks: &[BlockNode]) -> bool {
+    fn push_table<'a>(pending: &mut Vec<&'a BlockNode>, table: &'a Table) {
+        for row in &table.rows {
+            for cell in &row.cells {
+                if let Some(blocks) = &cell.blocks {
+                    pending.extend(blocks);
+                }
+            }
+        }
+    }
+
+    let mut pending: Vec<_> = blocks.iter().collect();
+    while let Some(block) = pending.pop() {
+        match block {
+            BlockNode::ThematicBreak(_) => return true,
+            BlockNode::BlockQuote(node) => pending.extend(&node.children),
+            BlockNode::List(node) => {
+                for item in &node.items {
+                    pending.extend(&item.children);
+                }
+            }
+            BlockNode::Table(node) => push_table(&mut pending, node),
+            BlockNode::Admonition(node) => pending.extend(&node.children),
+            BlockNode::Directive(node) => pending.extend(&node.children),
+            BlockNode::Div(node) => pending.extend(&node.children),
+            BlockNode::Section(node) => pending.extend(&node.children),
+            BlockNode::LineBlock(node) => pending.extend(&node.children),
+            BlockNode::DefinitionList(node) => {
+                for item in &node.items {
+                    for definition in &item.definitions {
+                        pending.extend(&definition.children);
+                    }
+                }
+            }
+            BlockNode::Figure(node) => match node.target.as_ref() {
+                FigureTarget::BlockQuote(target) => pending.extend(&target.children),
+                FigureTarget::Table(target) => push_table(&mut pending, target),
+                _ => {}
+            },
+            BlockNode::FigureGroup(node) => pending.extend(&node.children),
+            BlockNode::BlockExtension(node) => pending.push(&node.fallback),
+            BlockNode::ExtensionCarrier(node) => pending.extend(&node.children),
+            _ => {}
+        }
+    }
+    false
+}
+
 fn render_table_cell(
     session: &RenderSession,
     cell: &TableCell,
@@ -3250,11 +3298,19 @@ fn render_table_cell(
     );
     ctx.table_cell_depth += 1;
     let mut content = match &cell.blocks {
-        Some(blocks) => render_inlines(
-            session,
-            &crate::render_plain::flatten_cell_block_inlines(blocks),
-            ctx,
-        ),
+        Some(blocks) => {
+            if cell_blocks_have_thematic_break(blocks) {
+                crate::render_carve_error::record_unspellable(
+                    "thematic_break",
+                    "a thematic break has no inline spelling in a table cell",
+                );
+            }
+            render_inlines(
+                session,
+                &crate::render_plain::flatten_cell_block_inlines(blocks),
+                ctx,
+            )
+        }
         None => match merge_break_layout(&cell.children) {
             Some(merged) => render_inlines(session, &merged, ctx),
             None => render_inlines(session, &cell.children, ctx),

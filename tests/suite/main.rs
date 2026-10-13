@@ -535,6 +535,8 @@ mod a_tab_control_is_a_button_and_one_item_is_selected;
 mod a_table_caption_is_numbered_among_the_tables_children;
 #[path = "../a_table_carries_the_separator_row_it_was_written_with.rs"]
 mod a_table_carries_the_separator_row_it_was_written_with;
+#[path = "../a_table_cell_cannot_drop_a_thematic_break.rs"]
+mod a_table_cell_cannot_drop_a_thematic_break;
 #[path = "../a_table_cells_blocks_contribute_only_their_payload.rs"]
 mod a_table_cells_blocks_contribute_only_their_payload;
 #[path = "../a_table_section_keeps_the_attributes_it_has_a_slot_for.rs"]
