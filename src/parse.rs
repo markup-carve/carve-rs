@@ -3143,8 +3143,18 @@ fn term_folded_lines(
                 index += 1;
                 continue;
             }
+            // A column-zero term after a blank starts its own block. Its
+            // immediate definition marker cannot continue an earlier paragraph.
+            let direct_term_body = index >= 2
+                && after_term
+                && term_start == Some(index - 1)
+                && strip_definition_marker(trim_ascii_start(view_line)).is_some()
+                && view(lines[index - 1]).1 == quotes
+                && term_start_column(view(lines[index - 1]).0) == Some(0)
+                && is_blank_line(view(lines[index - 2]).0);
             if fence_markers == 1
                 && (admitted_term_fence
+                    || direct_term_body
                     || marker_admitted(
                         index,
                         &mut term_probe_budget,

@@ -116,6 +116,41 @@ fn the_terms_own_text_is_positioned_past_the_separator() {
 }
 
 #[test]
+fn a_definition_body_fence_after_a_blank_keeps_the_earlier_paragraph() {
+    for fence in ["```", "~~~"] {
+        let source = format!("a\n\n:: t\n: {fence}\n  body\n  {fence}\n");
+        let output = html(&source);
+        assert!(
+            output.starts_with("<p>a</p>\n<dl>\n"),
+            "{source:?}: {output}"
+        );
+        assert!(output.contains("<dt>t</dt>"), "{source:?}: {output}");
+        assert!(
+            output.contains("<pre><code>body\n</code></pre>"),
+            "{source:?}: {output}"
+        );
+    }
+}
+
+#[test]
+fn a_list_fence_after_a_term_starts_its_own_list() {
+    let source = "a\n\n:: t\n- ```\n  body\n  ```\n";
+    let output = html(source);
+    assert!(output.contains("<dt>t</dt>\n</dl>\n<ul>"), "{output}");
+    assert!(
+        output.contains("<pre><code>body\n</code></pre>"),
+        "{output}"
+    );
+}
+
+#[test]
+fn a_fence_outside_a_quoted_term_is_not_its_definition_body() {
+    let source = "\n> :: t\n: ```\nx\n```\n";
+    let output = html(source);
+    assert!(output.contains("</blockquote>\n<p>: <code>"), "{output}");
+}
+
+#[test]
 fn an_unclosed_code_opener_at_the_container_column_ends_a_term() {
     for fence in ["```", "~~~", "``` rust", "```=html"] {
         for ending in ["", "\n"] {
