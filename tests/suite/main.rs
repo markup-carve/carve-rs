@@ -94,6 +94,8 @@ mod a_bare_marker_does_not_close_inside_a_braced_inline;
 mod a_bare_opener_the_writer_would_refuse_takes_braces;
 #[path = "../a_below_column_colon_fence_run_folds.rs"]
 mod a_below_column_colon_fence_run_folds;
+#[path = "../a_below_column_comment_after_a_marker_line_opener_ends_the_item.rs"]
+mod a_below_column_comment_after_a_marker_line_opener_ends_the_item;
 #[path = "../a_below_column_comment_ends_no_item.rs"]
 mod a_below_column_comment_ends_no_item;
 #[path = "../a_below_column_marker_after_a_lazy_line_folds.rs"]

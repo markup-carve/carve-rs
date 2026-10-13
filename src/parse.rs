@@ -17202,6 +17202,25 @@ fn collect_indented_block_mapped_with_columns(
         if marker_colon_closed && indent < strip_cols && !fence_owns_flush_left {
             break;
         }
+        // A below-column comment stays only to close an open paragraph; with
+        // none in the marker-line container it ends the item, as its closed
+        // twin does (corpus 556-13).
+        if marker_colon.is_some()
+            && !literal_marker_body
+            && fence.is_none()
+            && comment_fence.is_none()
+            && !fence_owns_flush_left
+            && indent < strip_cols
+            && (is_line_comment_any_column(line)
+                || detect_comment_fence_line_any_column(line).is_some())
+            && !lines
+                .iter()
+                .rev()
+                .find(|line| !is_blank_line(line) && !is_line_comment_any_column(line))
+                .is_some_and(|line| line_starts_paragraph(line))
+        {
+            break;
+        }
         if let Some(open) = nested_fence {
             if indent < open.content_col {
                 nested_fence = None;
