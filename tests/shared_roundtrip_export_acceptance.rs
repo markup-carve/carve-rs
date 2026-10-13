@@ -682,6 +682,37 @@ fn shared_markdown_import_negative_rows_match_their_contract() {
 }
 
 #[test]
+fn markdown_list_style_loss_names_each_dropped_style() {
+    for (source, style, expected) in [
+        ("a. one\na. two\n", "lower-alpha", "1. one\n2. two\n"),
+        ("A. one\n", "upper-alpha", "1. one\n"),
+        ("i. one\n", "lower-roman", "1. one\n"),
+        ("I. one\n", "upper-roman", "1. one\n"),
+        ("iv) x\nv) y\n", "lower-roman", "4) x\n5) y\n"),
+    ] {
+        for roundtrip in [false, true] {
+            let result = carve::with_render_loss_report(
+                carve::RenderTarget::Markdown,
+                CheckedRenderOptions::default(),
+                || {
+                    carve::render_markdown_with_options(
+                        &parse(source),
+                        &Options::default().with_roundtrip(roundtrip),
+                    )
+                    .unwrap()
+                },
+            )
+            .unwrap();
+            assert_eq!(result.value, expected);
+            assert_eq!(result.losses.len(), 1);
+            assert_eq!(result.losses[0].code, "list-style-dropped");
+            assert_eq!(result.losses[0].style, Some(style));
+            assert!(result.losses[0].pos.is_none());
+        }
+    }
+}
+
+#[test]
 fn shared_footnote_recovery_remains_a_complete_separate_resource() {
     let fixtures = fixtures();
     assert_eq!(

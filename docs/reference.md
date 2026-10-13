@@ -67,14 +67,17 @@ Set `strict: true` to return `RenderLossError` before a value is published.
 Reports keep the complete count and retain 100 positioned entries by default;
 the existing string-returning functions remain available.
 
-Five codes reach that report: `raw-format-dropped` for a raw node the target
+The report includes `raw-format-dropped` for a raw node the target
 omits, `ruby-flattened` for a `ruby` node a target cannot carry natively,
 `editorial-comment-flattened` for an editorial comment (`{#note#}`) that the
 Plain or ANSI target writes as bare text, and `destination-denied` for a URL the
 PART 9 section 25 sink denylist blanked. The HTML target also reports
 `carrier-attribute-dropped` when a roundtrip carrier displaces an authored
-attribute, with its name in `attribute` and no `format`. A
-link destination, an autolink destination and an image source each take their
+attribute, with its name in `attribute` and no `format`.
+Markdown export reports `definition-list-flattened` for a nested definition
+list it cannot carry and `list-style-dropped` when it writes an alphabetic or
+roman ordered list as decimal. The latter row names the style in `style`.
+A link destination, an autolink destination and an image source each take their
 own row on the targets that emit a destination, in both safe modes. The emitted
 value does not change: `href=""` is what it always was, and the row is what
 tells a host rendering untrusted input which link it defused. The row's

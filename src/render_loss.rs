@@ -1,4 +1,4 @@
-use crate::ast::{BlockNode, Document, InlineNode, Pos, Ruby};
+use crate::ast::{BlockNode, Document, InlineNode, OrderedListType, Pos, Ruby};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -45,6 +45,7 @@ pub struct RenderLoss {
     pub code: &'static str,
     pub format: Option<String>,
     pub attribute: Option<String>,
+    pub style: Option<&'static str>,
     pub target: RenderTarget,
     pub node_type: RawNodeType,
     pub pos: Option<Pos>,
@@ -147,6 +148,7 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
             c.losses.push(RenderLoss {
                 code: "raw-format-dropped",
                 attribute: None,
+                style: None,
                 format: Some(format.to_string()),
                 target: c.target,
                 node_type,
@@ -201,6 +203,7 @@ pub(crate) fn record_destination_denied(pos: Option<&Pos>, sink: DeniedSink) {
             c.losses.push(RenderLoss {
                 code: "destination-denied",
                 attribute: None,
+                style: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -234,6 +237,7 @@ pub(crate) fn record_carrier_collision(
             c.losses.push(RenderLoss {
                 code: "carrier-attribute-dropped",
                 attribute: Some(authored.to_owned()),
+                style: None,
                 format: None,
                 target: c.target,
                 node_type,
@@ -256,6 +260,7 @@ pub(crate) fn record_ruby_flattened(ruby: &Ruby) {
             c.losses.push(RenderLoss {
                 code: "ruby-flattened",
                 attribute: None,
+                style: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -280,6 +285,7 @@ pub(crate) fn record_editorial_comment_flattened(pos: Option<&Pos>) {
             c.losses.push(RenderLoss {
                 code: "editorial-comment-flattened",
                 attribute: None,
+                style: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Inline,
@@ -302,11 +308,41 @@ pub(crate) fn record_definition_list_flattened(pos: Option<&Pos>) {
             c.losses.push(RenderLoss {
                 code: "definition-list-flattened",
                 attribute: None,
+                style: None,
                 format: None,
                 target: c.target,
                 node_type: RawNodeType::Block,
                 pos: pos.cloned(),
                 message: "Flattened a nested definition list without carrier markers".to_string(),
+            });
+        }
+    });
+}
+
+pub(crate) fn record_list_style_dropped(style: OrderedListType, pos: Option<&Pos>) {
+    let style = match style {
+        OrderedListType::LowerAlpha => "lower-alpha",
+        OrderedListType::UpperAlpha => "upper-alpha",
+        OrderedListType::LowerRoman => "lower-roman",
+        OrderedListType::UpperRoman => "upper-roman",
+    };
+    COLLECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(c) = slot.as_mut() else { return };
+        c.total += 1;
+        *c.totals_by_code.entry("list-style-dropped").or_default() += 1;
+        if c.losses.len() < c.max {
+            c.losses.push(RenderLoss {
+                code: "list-style-dropped",
+                attribute: None,
+                style: Some(style),
+                format: None,
+                target: c.target,
+                node_type: RawNodeType::Block,
+                pos: pos.cloned(),
+                message: format!(
+                    "Wrote a {style} ordered list as decimal while rendering markdown"
+                ),
             });
         }
     });

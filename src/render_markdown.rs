@@ -686,6 +686,9 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             format!("{quoted}\n\n")
         }
         BlockNode::List(list) => {
+            if let Some(style) = list.ol_type {
+                crate::render_loss::record_list_style_dropped(style, list.pos.as_ref());
+            }
             // The marker the list would take, switched when the list written
             // just before it in this flow is of the same kind and used it.
             let usual = if list.ordered {
