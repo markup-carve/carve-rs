@@ -7,6 +7,8 @@
 //! the executable spec's output for `NN.crv` (`scripts/spec` at
 //! markup-carve/carve a61aa4d). Rows 29 and up are controls that already
 //! matched; 40 and 41 keep a lone `+` in an open container paragraph.
+//! Row 32 follows carve `ba7439f`: a below-column comment under a marker-line
+//! container with no open paragraph ends the item (corpus 556-13).
 
 use carve::{to_html, to_html_with_options, Options};
 use std::path::Path;
