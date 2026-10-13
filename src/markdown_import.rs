@@ -2513,6 +2513,7 @@ impl Builder {
                 let row = TableRow {
                     cells,
                     attrs: None,
+                    continuation_lines: None,
                     pos: None,
                 };
                 if let Some(Frame::Table { rows, .. }) = self.frames.last_mut() {

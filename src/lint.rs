@@ -1218,6 +1218,7 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}

@@ -496,6 +496,10 @@ impl Renderer {
         }
         let mut rows = Vec::new();
         for row in &table.rows {
+            if row.continuation_lines.is_some() {
+                // The bridge's rows have no `+` lines to hold them.
+                self.degrade("table_row.continuationLines");
+            }
             let cells = row
                 .cells
                 .iter()
@@ -673,6 +677,10 @@ impl Renderer {
             }
             InlineNode::SoftBreak(_) => {
                 self.degrade("soft_break");
+                self.push_text(out, " ", marks);
+            }
+            InlineNode::CellWrap(_) => {
+                self.degrade("cell_wrap");
                 self.push_text(out, " ", marks);
             }
             InlineNode::HardBreak(_) => {
@@ -1365,6 +1373,7 @@ fn push_plain_text(nodes: &[InlineNode], out: &mut String) {
         match node {
             InlineNode::Text(t) => out.push_str(&t.value),
             InlineNode::NonBreakingSpace(_) => out.push('\u{00a0}'),
+            InlineNode::CellWrap(_) => out.push(' '),
             InlineNode::EscapedText(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(t) => out.push_str(smart_punctuation_glyph(t)),
             InlineNode::Code(c) => out.push_str(&c.value),

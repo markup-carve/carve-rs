@@ -1620,8 +1620,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // existing losses.
     // Spec 0af1cf1a adds 581-8, 581-9 and 581-10. All three round trip
     // strictly once a colon run past the box's column stays code.
-    const STRICT: usize = 1901;
-    const LOSSY: usize = 580;
+    // CARVE-P12-069 records `+` rows as `continuationLines` and `cell_wrap`,
+    // which the bridge has no slot for, so the 27 documents holding a
+    // continuation row now report a degradation.
+    const STRICT: usize = 1874;
+    const LOSSY: usize = 607;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

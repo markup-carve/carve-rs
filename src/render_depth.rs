@@ -397,6 +397,7 @@ pub(crate) fn push_inline_children<'a>(
         | InlineNode::Abbreviation(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => {}

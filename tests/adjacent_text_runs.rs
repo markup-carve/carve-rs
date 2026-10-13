@@ -108,18 +108,19 @@ fn a_nested_link_in_a_label_is_published_as_a_node_between_two_runs() {
 }
 
 #[test]
-fn a_multi_line_table_cell_is_published_as_one_text_node() {
-    // `+` in the first column continues the row above, so the second cell is
-    // rebuilt from two source lines.
+fn a_multi_line_table_cell_keeps_its_cell_wrap_between_two_runs() {
+    // CARVE-P12-069: the join is a `cell_wrap`, not a space inside one run.
     let doc = published("|= a |= b |\n| x | A long description |\n+     | that continues     |\n");
     let table = match &doc.children[0] {
         BlockNode::Table(t) => t,
         other => panic!("expected a table, got {other:?}"),
     };
+    let children = &table.rows[1].cells[1].children;
     assert_eq!(
-        text_values(&table.rows[1].cells[1].children),
-        vec!["A long description that continues"]
+        text_values(children),
+        vec!["A long description", "that continues"]
     );
+    assert!(matches!(&children[1], InlineNode::CellWrap(w) if w.line == 1));
 }
 
 #[test]
@@ -183,22 +184,24 @@ fn a_published_run_beside_a_reference_selects_exactly_its_own_text() {
 }
 
 #[test]
-fn a_run_joined_across_a_gap_in_the_source_publishes_no_span() {
-    // The two halves of a wrapped table cell are separated by a delimiter and a
-    // newline the merged value does not contain, so a span across them would
-    // not select its own text. Absent beats wrong (PART 12 §4).
-    let doc = published("|= a |= b |\n| x | A long description |\n+     | that continues     |\n");
+fn each_half_of_a_wrapped_cell_places_its_own_text() {
+    // With the join a `cell_wrap`, no run crosses the gap between the lines.
+    let source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n";
+    let doc = published(source);
     let table = match &doc.children[0] {
         BlockNode::Table(t) => t,
         other => panic!("expected a table, got {other:?}"),
     };
-    match &table.rows[1].cells[1].children[0] {
-        InlineNode::Text(t) => assert!(
-            t.pos.is_none(),
-            "a run joined across a gap should carry no span, got {:?}",
-            t.pos
-        ),
-        other => panic!("expected text, got {other:?}"),
+    for node in &table.rows[1].cells[1].children {
+        if let InlineNode::Text(t) = node {
+            let pos = t.pos.as_ref().expect("each half is placed");
+            let selected: String = source
+                .chars()
+                .skip(pos.start_offset)
+                .take(pos.end_offset - pos.start_offset)
+                .collect();
+            assert_eq!(selected, t.value);
+        }
     }
 }
 
@@ -208,10 +211,8 @@ fn the_merge_happens_in_the_tree_because_section_6_requires_it() {
     // the merge cannot be a serialization step -- an encoder that joined runs
     // on the way out would satisfy §1a and break §6 on the same document,
     // because decoding its output could not reproduce the split tree behind it.
-    // A table cell rebuilt from two source lines: the parser holds two runs
-    // where the document has one. It is the vehicle because it is the last
-    // splitter left - the unresolved reference and then the unwrapped autolink
-    // both stopped splitting when PART 12 section 3a kept their nodes.
+    // A table cell rebuilt from two source lines holds two runs around a
+    // `cell_wrap` (CARVE-P12-069), and the tree must keep them apart.
     let source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n";
     let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
     let table = match &doc.children[0] {
@@ -220,8 +221,8 @@ fn the_merge_happens_in_the_tree_because_section_6_requires_it() {
     };
     assert_eq!(
         text_values(&table.rows[1].cells[1].children),
-        vec!["A long description that continues"],
-        "parse() itself must already hold the merged run"
+        vec!["A long description", "that continues"],
+        "parse() keeps the runs on either side of the cell_wrap"
     );
     let decoded = carve::from_json(&carve::to_json(&doc)).expect("decodable");
     assert_eq!(carve::to_json(&decoded), carve::to_json(&doc));
@@ -473,18 +474,9 @@ fn an_admonition_body_and_title_are_coalesced() {
 /// via `from_json`, which is satisfied by an encoder-side merge and so could
 /// never fail while §6 was broken - `parse(x)` kept the split that
 /// `decode(encode(parse(x)))` removed. These are the checks that can fail.
-const ONCE_SPLIT: [(&str, &str); 2] = [
-    // A table cell rebuilt from two source lines: the `+` continuation row
-    // appends to the cell above, so the parser holds two runs where the
-    // document has one. This is the LAST splitter in the language, and the
-    // three that used to stand beside it here were all link labels - an
-    // autolink and two nested links, each dropped to its text. Under PART 12
-    // section 3a they stay nodes and split nothing (markup-carve/carve#817), so
-    // keeping them would have made this table assert nothing.
-    (
-        "|= a |= b |\n| x | A long description |\n+     | that continues     |\n",
-        "A long description that continues",
-    ),
+const ONCE_SPLIT: [(&str, &str); 1] = [
+    // The last splitter, the `+` continuation row, publishes a `cell_wrap`
+    // between its runs now (CARVE-P12-069); see the table tests above.
     // Plain prose, which must not be split in the first place.
     ("just one run\n", "just one run"),
 ];
@@ -540,33 +532,8 @@ fn all_text_values(doc: &Document) -> Vec<String> {
 
 #[test]
 fn a_merged_run_keeps_a_span_only_where_the_source_is_contiguous() {
-    // A multi-line table cell joins across the row delimiter between its two
-    // halves, so the joined value is not a slice of the source at any offset.
-    // PART 12 §4 rates a wrong span as worse than none, so the merged node
-    // publishes no position. (The unwrapped autolink used to stand here, for
-    // the `<` and `>` it left behind; it publishes an `autolink` node now and
-    // joins nothing - PART 12 section 3a.)
-    let doc = carve::parse_with_options(
-        "|= a |= b |\n| x | A long description |\n+     | that continues     |\n",
-        &carve::Options::new().with_positions(true),
-    );
-    let mut checked = 0usize;
-    walk_document(&doc, &mut |inlines| {
-        for node in inlines {
-            if let InlineNode::Text(text) = node {
-                if text.value == "A long description that continues" {
-                    assert!(
-                        text.pos.is_none(),
-                        "a run joined across a gap must publish no span, got {:?}",
-                        text.pos
-                    );
-                    checked += 1;
-                }
-            }
-        }
-    });
-    assert_eq!(checked, 1, "the merged run was not found");
-
+    // No merged run crosses a table cell's continuation any more
+    // (CARVE-P12-069), so only the contiguous case is left to check.
     // A run that WAS contiguous keeps its span, so the rule above is a
     // narrowing rather than "merged runs never place".
     let plain = carve::parse_with_options(

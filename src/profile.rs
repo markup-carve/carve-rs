@@ -295,6 +295,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         }),
         InlineNode::NonBreakingSpace(_) => Some("non_breaking_space"),
         InlineNode::SoftBreak(_) => Some("soft_break"),
+        InlineNode::CellWrap(_) => Some("soft_break"),
         InlineNode::HardBreak(_) => Some("hard_break"),
         InlineNode::CriticInsert(_) => Some("insert"),
         InlineNode::CriticDelete(_) => Some("delete"),

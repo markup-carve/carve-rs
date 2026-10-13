@@ -925,15 +925,23 @@ fn a_continued_table_cell_places_the_text_it_adds() {
         .iter()
         .map(|inline| match inline {
             carve::ast::InlineNode::Text(t) => t.pos.as_ref().map(|pos| slice(source, pos)),
+            carve::ast::InlineNode::CellWrap(_) => Some("<wrap>".to_string()),
             other => panic!("unexpected inline: {other:?}"),
         })
         .collect();
 
-    // PART 12 §1a publishes the cell as ONE text node. The joiners between the
-    // lines are MANUFACTURED - the source has a line break there, not a space -
-    // so the merged value is not a slice of the source at any offset, and the
-    // node carries no position rather than borrowing one it does not own.
-    assert_eq!(texts, vec![None]);
+    // CARVE-P12-069: each join is a `cell_wrap`, so every part is one source
+    // line's own text and places there.
+    assert_eq!(
+        texts,
+        vec![
+            Some("A long description".to_string()),
+            Some("<wrap>".to_string()),
+            Some("that continues".to_string()),
+            Some("<wrap>".to_string()),
+            Some("across lines.".to_string()),
+        ]
+    );
 }
 
 /// Verse lines were refused their columns WHOLESALE: the stanza's column map

@@ -19936,6 +19936,29 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
 struct CellFragment {
     text: String,
     anchor: Option<(usize, isize)>,
+    /// The continuation line of its row it came from, counted from 1.
+    line: usize,
+    /// Rows down from the receiving cell to that row (CARVE-P12-069).
+    row: usize,
+}
+
+thread_local! {
+    /// The joiner offsets of the table cell being parsed, each with the
+    /// `cell_wrap` it becomes (CARVE-P12-069).
+    static CELL_WRAPS: RefCell<Vec<(usize, CellWrap)>> = const { RefCell::new(Vec::new()) };
+}
+
+fn cell_wrap_at(offset: usize) -> Option<CellWrap> {
+    CELL_WRAPS.with(|wraps| {
+        let wraps = wraps.borrow();
+        if wraps.is_empty() {
+            return None;
+        }
+        wraps
+            .iter()
+            .find(|(at, _)| *at == offset)
+            .map(|(_, wrap)| wrap.clone())
+    })
 }
 
 /// What a cell was parsed from, kept so a later continuation can rejoin it.
@@ -19987,9 +20010,16 @@ fn join_marker_continuations(
         if rows[origin.0].cells[origin.1].span.is_some() {
             continue;
         }
-        let moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
+        let mut moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
         if moved.is_empty() {
             continue;
+        }
+        for fragment in &mut moved {
+            fragment.row += marker.0 - origin.0;
+            // A row below the cell's own lies outside the cell's placed span.
+            if marker.0 != origin.0 {
+                fragment.anchor = None;
+            }
         }
         row_inputs[origin.0][origin.1].extra.extend(moved);
         if !dirty.contains(&origin) {
@@ -20088,6 +20118,7 @@ fn parse_table_row(
         TableRow {
             cells,
             attrs,
+            continuation_lines: (!conts.is_empty()).then_some(conts.len()),
             pos: None,
         },
         inputs,
@@ -20122,7 +20153,7 @@ fn collect_continuation_fragments(
     // much as on the row that opened it (carve-rs#1051).
     let mut open_len = row.open_len;
     let mut open_run_at = row.open_run_at;
-    for (line, base) in conts {
+    for (line_index, (line, base)) in conts.iter().enumerate() {
         let mut content = trim_ascii(line);
         if let Some(stripped) = content.strip_prefix('+') {
             content = stripped;
@@ -20155,6 +20186,8 @@ fn collect_continuation_fragments(
                 slot.push(CellFragment {
                     text: text.to_string(),
                     anchor,
+                    line: line_index + 1,
+                    row: 0,
                 });
             }
         }
@@ -20354,8 +20387,17 @@ fn parse_cell_content(
     let mut text = String::from(slice);
     let mut lines = vec![base];
     let mut breaks = Vec::new();
+    let mut wraps = Vec::new();
     for fragment in extra {
         if !text.is_empty() {
+            wraps.push((
+                text.len(),
+                CellWrap {
+                    line: fragment.line,
+                    row: (fragment.row > 0).then_some(fragment.row),
+                    pos: None,
+                },
+            ));
             // The joiner is the LAST character of the segment before it, which
             // is where a newline sits in an ordinary multi-line text. Opening
             // the next segment on it instead puts the exclusive end of a span
@@ -20367,7 +20409,10 @@ fn parse_cell_content(
         text.push_str(&fragment.text);
         lines.push(fragment.anchor);
     }
-    parse_inline_segments_with_anchor(&text, options, lines, breaks)
+    let outer = CELL_WRAPS.with(|cell| cell.replace(wraps));
+    let parsed = parse_inline_segments_with_anchor(&text, options, lines, breaks);
+    CELL_WRAPS.with(|cell| cell.replace(outer));
+    parsed
 }
 
 fn parse_table_cell(
@@ -23334,6 +23379,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::Footnote(n) => n.pos = pos,
         InlineNode::NonBreakingSpace(n) => n.pos = pos,
         InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos = pos,
+        InlineNode::CellWrap(n) => n.pos = pos,
         InlineNode::CriticInsert(n) => n.pos = pos,
         InlineNode::CriticDelete(n) => n.pos = pos,
         InlineNode::CriticSubstitute(n) => n.pos = pos,
@@ -23687,6 +23733,7 @@ fn parse_inline_context_with_pairs(
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
     let mut buf_src_delta: isize = 0;
+    let wraps_live = CELL_WRAPS.with(|wraps| !wraps.borrow().is_empty());
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
@@ -23712,11 +23759,29 @@ fn parse_inline_context_with_pairs(
         // ASCII prose cannot open any core inline construct. Append the whole
         // run at once instead of sending every letter and space through all of
         // the delimiter, link, typography and footnote dispatch below.
+        if c == b' ' && wraps_live {
+            if let Some(wrap) = cell_wrap_at(base + i) {
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                out.push(InlineNode::CellWrap(wrap));
+                i += 1;
+                continue;
+            }
+        }
         if options.extensions.is_empty() && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t') {
             let start = i;
             i += 1;
             while i < bytes.len()
-                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b' ' || bytes[i] == b'\t')
+                && (bytes[i].is_ascii_alphanumeric()
+                    || bytes[i] == b'\t'
+                    || (bytes[i] == b' ' && !(wraps_live && cell_wrap_at(base + i).is_some())))
             {
                 i += 1;
             }
@@ -25273,7 +25338,7 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         // opens on the brace exactly as an unescaped `{` would (corpus 163).
         Some(InlineNode::NonBreakingSpace(_)) => '\u{00a0}',
         // A line break is whitespace to quote flanking (markup-carve/carve#2822).
-        Some(InlineNode::SoftBreak(_) | InlineNode::HardBreak(_)) => '\n',
+        Some(InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) | InlineNode::CellWrap(_)) => '\n',
         Some(InlineNode::EscapedText(t)) => t.value.chars().last().unwrap_or('x'),
         None => '\0',
         Some(_) => 'x',
@@ -28490,6 +28555,7 @@ fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
         | InlineNode::Footnote(_)
         | InlineNode::NonBreakingSpace(_)
         | InlineNode::SoftBreak(_)
+        | InlineNode::CellWrap(_)
         | InlineNode::HardBreak(_)
         | InlineNode::CriticComment(_)
         | InlineNode::Comment(_) => false,

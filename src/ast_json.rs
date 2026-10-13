@@ -1019,6 +1019,9 @@ fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
                 w.field("cells", |out| out.push('['));
                 tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                     let mut w = Writer { out, first: false };
+                    if let Some(lines) = n.continuation_lines {
+                        w.field("continuationLines", |out| write_usize(out, lines));
+                    }
                     write_attrs_field(&mut w, &n.attrs);
                     write_pos_field(&mut w, &n.pos);
                     w.finish();
@@ -2176,6 +2179,9 @@ fn write_body_group(out: &mut String, n: &TableBodyGroup) {
 fn write_table_row(out: &mut String, n: &TableRow) {
     let mut w = typed(out, "table_row");
     w.field("cells", |out| write_array(out, &n.cells, write_table_cell));
+    if let Some(lines) = n.continuation_lines {
+        w.field("continuationLines", |out| write_usize(out, lines));
+    }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();
@@ -2472,6 +2478,15 @@ fn write_inline_leaf(out: &mut String, node: &InlineNode) {
         }
         InlineNode::SoftBreak(n) => {
             let mut w = typed(out, "soft_break");
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        InlineNode::CellWrap(n) => {
+            let mut w = typed(out, "cell_wrap");
+            w.field("line", |out| write_usize(out, n.line));
+            if let Some(row) = n.row {
+                w.field("row", |out| write_usize(out, row));
+            }
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
@@ -3300,6 +3315,10 @@ fn decode_table_row(value: &Json) -> Result<TableRow, AstJsonError> {
             .map(decode_table_cell)
             .collect::<Result<_, _>>()?,
         attrs: optional_attrs(obj)?,
+        continuation_lines: positive_usize(
+            optional_usize(obj, "continuationLines")?,
+            "table_row.continuationLines",
+        )?,
         pos: optional_pos(obj, "table_row")?,
     })
 }
@@ -3724,6 +3743,15 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         "soft_break" => Ok(InlineNode::SoftBreak(Break {
             pos: optional_pos(obj, "soft_break")?,
         })),
+        "cell_wrap" => Ok(InlineNode::CellWrap(CellWrap {
+            line: positive_usize(
+                Some(required_usize(obj, "cell_wrap", "line")?),
+                "cell_wrap.line",
+            )?
+            .unwrap_or(1),
+            row: positive_usize(optional_usize(obj, "row")?, "cell_wrap.row")?,
+            pos: optional_pos(obj, "cell_wrap")?,
+        })),
         "hard_break" => Ok(InlineNode::HardBreak(Break {
             pos: optional_pos(obj, "hard_break")?,
         })),
@@ -4067,6 +4095,13 @@ fn optional_bool(obj: &Map<String, Json>, field: &str) -> Result<Option<bool>, A
     obj.get(field)
         .map(|value| value.expect_bool(field))
         .transpose()
+}
+
+fn positive_usize(value: Option<usize>, field: &str) -> Result<Option<usize>, AstJsonError> {
+    if value == Some(0) {
+        return Err(AstJsonError::new(format!("{field} must be at least 1")));
+    }
+    Ok(value)
 }
 
 fn optional_usize(obj: &Map<String, Json>, field: &str) -> Result<Option<usize>, AstJsonError> {

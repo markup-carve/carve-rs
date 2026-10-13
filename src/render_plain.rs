@@ -864,7 +864,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             }
         }
         InlineNode::NonBreakingSpace(_) => crate::NBSP_PLACEHOLDER.to_string(),
-        InlineNode::SoftBreak(_) => " ".to_string(),
+        InlineNode::SoftBreak(_) | InlineNode::CellWrap(_) => " ".to_string(),
         InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::CriticInsert(insert) => render_inlines_stateful(&insert.children, depth + 1),
         InlineNode::CriticDelete(delete) => {

@@ -164,6 +164,7 @@ fn hidden_publishing_and_extension_slots_are_checked() {
     nested.rows.push(TableRow {
         cells: vec![content],
         attrs: None,
+        continuation_lines: None,
         pos: None,
     });
     assert_refused(document(BlockNode::Table(nested)));
@@ -349,6 +350,7 @@ fn checked_operations_on_a_small_stack() {
                 target.rows.push(TableRow {
                     cells: vec![content],
                     attrs: None,
+                    continuation_lines: None,
                     pos: None,
                 });
                 mixed = BlockNode::Figure(figure(FigureTarget::Table(target)));

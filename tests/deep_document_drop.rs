@@ -242,6 +242,7 @@ fn dropping_deep_content_inside_figures_citations_and_definitions_uses_bounded_s
                         pos: None,
                     }],
                     attrs: None,
+                    continuation_lines: None,
                     pos: None,
                 }],
                 row_groups: None,

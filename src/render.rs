@@ -2033,7 +2033,9 @@ fn plain_inlines_typography_at(
             // A soft/hard break is a word separator for slug/plain-text
             // purposes, not a join. (No parse puts one in a heading now;
             // an ingested AST still can, PART 12.)
-            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) | InlineNode::CellWrap(_) => {
+                out.push(' ')
+            }
             _ => {}
         }
     }
@@ -4372,6 +4374,7 @@ fn render_inline_after(
             }
         }
         InlineNode::SoftBreak(_) => out.push('\n'),
+        InlineNode::CellWrap(_) => out.push(' '),
         InlineNode::HardBreak(_) => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
             out.push_str("<ins");
