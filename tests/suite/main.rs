@@ -645,6 +645,8 @@ mod an_empty_footnote_body_is_written_with_the_empty_sentinel;
 mod an_empty_footnote_body_still_carries_the_backlink;
 #[path = "../an_empty_inline_element_is_dropped_silently.rs"]
 mod an_empty_inline_element_is_dropped_silently;
+#[path = "../an_empty_left_aligned_cell_is_not_a_colspan.rs"]
+mod an_empty_left_aligned_cell_is_not_a_colspan;
 #[path = "../an_empty_list_is_dropped.rs"]
 mod an_empty_list_is_dropped;
 #[path = "../an_empty_or_refused_class_value_adds_no_token.rs"]

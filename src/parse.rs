@@ -20350,7 +20350,9 @@ fn parse_table_cell(
                                            // which is the one case a glued marker does not win: `|<|` is a colspan in
                                            // every engine. A header cell is already marked by its `=`, so a marker
                                            // glued after it is alignment even when it is the whole content (`|=<|`).
-    let lone_span = !header && (trimmed == "<" || trimmed == "^");
+                                           // `|< |` is not lone: a glued `<` ended by a space is a marker run (T11),
+                                           // so it is an empty left-aligned cell. `^` alone is never a run.
+    let lone_span = !header && (trimmed == "^" || (trimmed == "<" && !body.starts_with("< ")));
     let mut after_markers = body;
     let (mut align, mut valign) = if lone_span {
         (None, None)
