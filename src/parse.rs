@@ -19454,7 +19454,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             ));
             last_cont_at = Some(cont_at);
         }
-        let (mut row, mut inputs) = parse_table_row(
+        let (mut row, inputs) = parse_table_row(
             line,
             &conts,
             options,
@@ -19478,16 +19478,10 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos.end_column = end.end_column;
             pos.end_offset = end.end_offset;
         }
-        join_continuations_under_rowspans(
-            &mut rows,
-            &mut row_inputs,
-            &mut row,
-            &mut inputs,
-            options,
-        );
         rows.push(row);
         row_inputs.push(inputs);
     }
+    join_marker_continuations(&mut rows, &mut row_inputs, options);
     // The caption FIRST, then the span: a caption is one of the table's
     // children and sits after the last row, so a span taken before it is
     // consumed stops short and leaves the caption's inlines outside their own
@@ -19749,39 +19743,51 @@ fn reparse_table_cell(cell: &mut TableCell, input: &CellInput, options: &Options
     };
 }
 
-/// A continuation fragment under a `^` cell joins the cell that owns the
-/// rowspan (PART 5 T6), found by following the carets up the column.
-fn join_continuations_under_rowspans(
+/// T6 under a span: a continuation fragment on a `^` or `<` marker joins the
+/// cell the T5 walk resolves that marker into, in row-major order. A blocked
+/// marker renders empty and keeps none of it.
+fn join_marker_continuations(
     rows: &mut [TableRow],
     row_inputs: &mut [Vec<CellInput>],
-    row: &mut TableRow,
-    inputs: &mut [CellInput],
     options: &Options<'_>,
 ) {
-    for idx in 0..row.cells.len() {
-        if row.cells[idx].span != Some(TableCellSpan::Rowspan) || inputs[idx].extra.is_empty() {
+    let mut dirty: Vec<(usize, usize)> = Vec::new();
+    for (r, row) in rows.iter().enumerate() {
+        for (c, cell) in row.cells.iter().enumerate() {
+            if cell.span.is_some() && !row_inputs[r][c].extra.is_empty() {
+                dirty.push((r, c));
+            }
+        }
+    }
+    if dirty.is_empty() {
+        return;
+    }
+    let widths: Vec<usize> = rows.iter().map(|row| row.cells.len()).collect();
+    let mut absorbed: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    crate::table_spans::resolve_span_grid_absorbing(
+        &widths,
+        |r, c| rows[r].cells[c].span,
+        |origin, marker| absorbed.push((origin, marker)),
+    );
+    for (origin, marker) in absorbed {
+        if rows[origin.0].cells[origin.1].span.is_some() {
             continue;
         }
-        let mut above = rows.len();
-        while above > 0
-            && rows[above - 1]
-                .cells
-                .get(idx)
-                .is_some_and(|cell| cell.span == Some(TableCellSpan::Rowspan))
-        {
-            above -= 1;
-        }
-        let Some(origin) = above.checked_sub(1).filter(|&r| idx < rows[r].cells.len()) else {
+        let moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
+        if moved.is_empty() {
             continue;
-        };
-        let moved = std::mem::take(&mut inputs[idx].extra);
-        row_inputs[origin][idx].extra.extend(moved);
-        reparse_table_cell(
-            &mut rows[origin].cells[idx],
-            &row_inputs[origin][idx],
-            options,
-        );
-        reparse_table_cell(&mut row.cells[idx], &inputs[idx], options);
+        }
+        row_inputs[origin.0][origin.1].extra.extend(moved);
+        if !dirty.contains(&origin) {
+            dirty.push(origin);
+        }
+    }
+    for (r, c) in dirty {
+        if rows[r].cells[c].span.is_some() {
+            // The marker itself renders empty, whether or not its text moved.
+            row_inputs[r][c].extra.clear();
+        }
+        reparse_table_cell(&mut rows[r].cells[c], &row_inputs[r][c], options);
     }
 }
 

@@ -2061,3 +2061,6 @@ mod wave7_2609;
 
 #[path = "../wave7_description_openers.rs"]
 mod wave7_description_openers;
+
+#[path = "../a_continuation_on_a_span_marker_joins_its_origin.rs"]
+mod a_continuation_on_a_span_marker_joins_its_origin;
