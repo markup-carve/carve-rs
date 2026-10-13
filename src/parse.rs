@@ -4122,11 +4122,6 @@ fn extract_link_defs_with_guard_full(
                     // item was kept as text instead of hoisted. Clear the state
                     // so this line can hoist or reopen normally.
                     colon_fence = None;
-                } else if def_indent > fence_col && parse_link_def_line(def_line).is_some() {
-                    // Past the container's own content column: it is the
-                    // container's text, kept rather than hoisted (corpus 451).
-                    body.push(std::borrow::Cow::Borrowed(line));
-                    continue;
                 }
             }
             None => {
@@ -7888,6 +7883,15 @@ fn rebase_body_blocks(
                         {
                             Some(rebased_colon_group_end(&lines, i, base, width))
                         } else if heading_content_starts(&local) || detect_thematic_break(&local) {
+                            Some(i)
+                        } else if !body_paragraph && strip_blockquote_prefix(&local).is_some() {
+                            // CARVE-P0-011: past the box's column it opens on
+                            // its authored base, as a nested list does.
+                            Some(rebased_quote_end(&lines, i, base))
+                        } else if !body_paragraph
+                            && (parse_standalone_attrs(&local).is_some()
+                                || parse_link_def_line_with_value(&local).is_some())
+                        {
                             Some(i)
                         } else {
                             None
