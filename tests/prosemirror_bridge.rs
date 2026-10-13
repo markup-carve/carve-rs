@@ -1618,9 +1618,10 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // first and third note documents to the strict set. Section 580's second
     // document reports the existing soft-break degradation.
     // The move to spec fc2c1f02 raises the strict count by 17 and the
-    // lossy count by 4.
-    const STRICT: usize = 1855;
-    const LOSSY: usize = 579;
+    // lossy count by 4. Corpus 451-1 moves from the lossy to the strict set
+    // once its link definition registers.
+    const STRICT: usize = 1856;
+    const LOSSY: usize = 578;
     assert_measured("strict round trips", covered, STRICT);
     assert_measured("reported-lossy documents", lossy, LOSSY);
     // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in

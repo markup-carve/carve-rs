@@ -990,30 +990,6 @@ const BEHIND_ON_PAIR: &[(&str, &str, &str)] = &[
 </blockquote>
 <p>after</p>"#,
     ),
-    (
-        "587-a-link-definition-or-an-attribute-line-past-a-box-s-column-opens-on-its-authored-base-2",
-        "carve-rs#2639",
-        r#"<ul>
-  <li>
-    <div class="box">
-      <p>{.k}
-para</p>
-    </div>
-  </li>
-</ul>"#,
-    ),
-    (
-        "451-a-container-in-a-host-body-owns-a-line-past-its-own-content-column",
-        "carve-rs#2639",
-        r#"<ul>
-  <li>a
-    <aside class="admonition note" aria-label="Note">
-      <p>[r]: /url</p>
-    </aside>
-  </li>
-</ul>
-<p>[r][]</p>"#,
-    ),
 ];
 
 fn check_pair(slug: &str) {

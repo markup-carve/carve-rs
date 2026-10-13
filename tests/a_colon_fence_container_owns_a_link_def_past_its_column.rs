@@ -1,10 +1,7 @@
-//! A `:::` colon-fence container in a LIST-ITEM host owns a link definition
-//! written past its content column - it is the container's text, not a hoisted
-//! definition (markup-carve/carve corpus 451). A DEFINITION-LIST body still
-//! hoists it, and a definition AT the fence's column registers in either host.
-//!
-//! ORACLE: the executable spec at spec main `1b27b68`; corpus section 451 pins
-//! that a list-item host owns the line while a description host does not.
+//! A link definition past a `:::` container's content column inside a
+//! LIST-ITEM host opens on its authored base and registers (markup-carve/carve
+//! #3087, corpus 451-1 and 587). A DEFINITION-LIST body hoists it too, and a
+//! definition AT the fence's column registers in either host.
 
 use carve::to_html;
 
@@ -13,11 +10,11 @@ fn hoisted(src: &str) -> bool {
     to_html(src).contains("href=\"/url\"")
 }
 
-/// LIST-ITEM host: a link def past the admonition's column is the admonition's
-/// text, so `[r][]` stays literal.
+/// LIST-ITEM host: a link def past the admonition's column opens on its
+/// authored base, so `[r][]` resolves.
 #[test]
-fn a_list_item_host_owns_the_link_def_past_the_fence_column() {
-    assert!(!hoisted("- a\n  ::: note\n   [r]: /url\n  :::\n\n[r][]\n"));
+fn a_list_item_host_registers_the_link_def_past_the_fence_column() {
+    assert!(hoisted("- a\n  ::: note\n   [r]: /url\n  :::\n\n[r][]\n"));
 }
 
 /// A definition AT the fence's own column still registers (it is the container's

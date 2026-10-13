@@ -479,6 +479,8 @@ mod a_raw_span_ending_a_line_in_whitespace_is_degraded;
 #[path = "../roundtrip_import_consumes_an_invalid_span_carrier.rs"]
 mod roundtrip_import_consumes_an_invalid_span_carrier;
 
+#[path = "../a_block_past_a_box_column_in_a_list_item_opens.rs"]
+mod a_block_past_a_box_column_in_a_list_item_opens;
 #[path = "../a_continuation_under_a_caret_joins_the_spanning_cell.rs"]
 mod a_continuation_under_a_caret_joins_the_spanning_cell;
 #[path = "../a_raw_span_ends_at_the_tag_it_recognized.rs"]
