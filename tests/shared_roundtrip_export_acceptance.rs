@@ -713,6 +713,80 @@ fn markdown_list_style_loss_names_each_dropped_style() {
 }
 
 #[test]
+fn fence_title_marker_requires_an_adjacent_code_fence() {
+    for markdown in [
+        "<!-- carve: ```js \"app.js\" [Example] -->\n\n```js\nx\n```\n",
+        "<!-- carve: ```js \"app.js\" [Example] -->\nparagraph\n",
+        "<!-- carve:2 ```js \"app.js\" [Example] -->\n```js\nx\n```\n",
+        "<!-- carve: ```js \"app.js\" [Example] -->\n> quoted\n",
+    ] {
+        let imported = migrate_markdown(markdown);
+        assert!(
+            imported
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "carrier-markers-damaged"),
+            "{markdown}: {:?}",
+            imported.report
+        );
+    }
+}
+
+#[test]
+fn fence_markers_restore_titles_in_containers_and_without_languages() {
+    for source in [
+        "```js \"app.js\" [Example]\nlet x = 1\n```\n",
+        "```js [L]\nx\n```\n",
+        "```\"notes.txt\"\nx\n```\n",
+        "```\"a b.txt\"\nx\n```\n",
+        "```[Example]\nx\n```\n",
+        "{#k}\n```js \"a.js\"\nx\n```\n",
+        "> ```js \"q.js\"\n> x\n> ```\n",
+        "- item\n\n  ````js \"f\" [g]\n  ```\n  ````\n",
+        ":: Outer\n: body\n\n  :: Inner\n  : inner body\n\n    ```js \"in.js\" [I]\n    x\n    ```\n",
+    ] {
+        let exported = to_markdown_with_options(source, &Options::default().with_roundtrip(true));
+        if source.starts_with("```js \"app.js\"") {
+            assert!(exported.contains("<!-- carve: ```js \"app.js\" [Example] -->"));
+        }
+        let imported = migrate_markdown(&exported);
+        assert!(
+            !imported
+                .report
+                .diagnostics
+                .iter()
+                .any(|row| row.code == "carrier-markers-damaged"),
+            "{source}: {exported}: {:?}",
+            imported.report
+        );
+        assert_eq!(
+            to_html(&imported.value),
+            to_html(source),
+            "{source}: {exported}: {}",
+            imported.value
+        );
+        let original = ast(source);
+        let restored = ast(&imported.value);
+        let code = |tree: &Value| {
+            node_list(tree)
+                .into_iter()
+                .find(|node| node["type"] == "code_block")
+                .cloned()
+                .unwrap()
+        };
+        for key in ["header", "label", "attrs"] {
+            assert_eq!(
+                code(&restored)[key],
+                code(&original)[key],
+                "{source}: {exported}: {}",
+                imported.value
+            );
+        }
+    }
+}
+
+#[test]
 fn shared_footnote_recovery_remains_a_complete_separate_resource() {
     let fixtures = fixtures();
     assert_eq!(

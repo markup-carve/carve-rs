@@ -339,15 +339,20 @@ fn definitions_keep_verbatim_lines_and_container_bodies() {
 }
 
 #[test]
-fn fence_titles_already_present_in_markdown_take_no_attribute_marker() {
+fn fence_titles_take_a_marker_after_any_attribute_marker() {
     let options = Options::default().with_roundtrip(true);
+    let plain = carve::to_markdown_with_options("```rs \"file.rs\"\nx\n```\n", &options);
     assert!(
-        !carve::to_markdown_with_options("```rs \"file.rs\"\nx\n```\n", &options)
-            .contains("<!-- carve:")
+        plain.starts_with("<!-- carve: ```rs \"file.rs\" -->\n"),
+        "{plain}"
     );
     let exported =
         carve::to_markdown_with_options("{.code}\n```rs \"file.rs\"\nx\n```\n", &options);
     assert!(exported.contains("<!-- carve: {.code} -->"), "{exported}");
+    assert!(
+        exported.contains("<!-- carve: ```rs \"file.rs\" -->"),
+        "{exported}"
+    );
 }
 
 #[test]

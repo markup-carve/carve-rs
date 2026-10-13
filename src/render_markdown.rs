@@ -663,9 +663,18 @@ fn render_block_kind(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) 
             note_inserted(C_PAYLOAD_BOUNDARY);
             note_inserted(C_PAYLOAD_BOUNDARY);
             let boundary = carrier(C_PAYLOAD_BOUNDARY);
-            format!(
+            let body = format!(
                 "{fence}{info_separator}{info}{boundary}\n{content}{boundary}{ending}{fence}\n\n"
-            )
+            );
+            if ctx.roundtrip {
+                if let Some(marker) = crate::carrier_markers::code_fence_marker(code) {
+                    format!("{marker}\n{body}")
+                } else {
+                    body
+                }
+            } else {
+                body
+            }
         }
         BlockNode::BlockQuote(quote) => {
             let outer = ctx.previous_list.take();
