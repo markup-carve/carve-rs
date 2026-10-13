@@ -32,6 +32,16 @@ pub(crate) fn resolve_span_grid(
     widths: &[usize],
     marker: impl Fn(usize, usize) -> Option<TableCellSpan>,
 ) -> Vec<Vec<SpanEntry>> {
+    resolve_span_grid_absorbing(widths, marker, |_, _| {})
+}
+
+/// [`resolve_span_grid`], reporting each marker as the walk absorbs it into
+/// an origin, as `(origin, marker)` grid coordinates in row-major order.
+pub(crate) fn resolve_span_grid_absorbing(
+    widths: &[usize],
+    marker: impl Fn(usize, usize) -> Option<TableCellSpan>,
+    mut on_absorb: impl FnMut((usize, usize), (usize, usize)),
+) -> Vec<Vec<SpanEntry>> {
     let mut grid: Vec<Vec<SpanEntry>> = widths
         .iter()
         .map(|&width| {
@@ -59,6 +69,7 @@ pub(crate) fn resolve_span_grid(
                         grid[r][at.1].colspan += 1;
                         grid[r][c].skip = true;
                         own[c] = Some(at);
+                        on_absorb(at, (r, c));
                         continue;
                     }
                 }
@@ -72,6 +83,7 @@ pub(crate) fn resolve_span_grid(
                             for k in c..(c + colspan).min(width) {
                                 grid[r][k].skip = true;
                                 own[k] = Some(at);
+                                on_absorb(at, (r, k));
                             }
                             continue;
                         }

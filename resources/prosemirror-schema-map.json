@@ -292,6 +292,7 @@
   },
   "unmapped": {
     "abbreviation_def": "abbreviation definitions ride on the doc node's attrs",
+    "cell_wrap": "the editor does not retain a table cell's continuation-row boundary",
     "citation": "a citation is carried as one typed item inside citation_group.items in the Carve AST; ProseMirror keeps that item inside the carveCitation atom's items attribute rather than as a standalone editor node",
     "citation_definition": "a ProseMirror schema has no node for a definition line, so the bridge drops it and the pair carries it in the sidecar, exactly as the abbreviation definition above",
     "caption_number": "numbered captions are a resolution artifact, not editor content",
@@ -357,8 +358,12 @@
         "kind": "upstream-names-a-node",
         "node": "carveInlineExtension",
         "why": "upstream made this the primary of two names; changing the emitted name is a separate bridge change"
+      },
+      "cell_wrap": {
+        "kind": "prose",
+        "why": "the pinned grammar map predates this source-only table cell boundary"
       }
     },
-    "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` remains unmapped because it is nested group state rather than a standalone editor node."
+    "localUnmapped": "`abbreviation_def`, `citation_definition`, and `figure_group` remain under `unmapped` until this bridge implements their upstream CarveKit nodes. `citation` is nested group state, and `cell_wrap` is a source boundary the editor does not retain."
   }
 }

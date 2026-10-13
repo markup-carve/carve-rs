@@ -1764,6 +1764,43 @@ fn extract_footnote_defs(
             let mut body_open_below = false;
             let mut retained_below_comment = false;
             let mut below_comment_span = None;
+            // A lone marker-line `+` gives the note its first flush-left block.
+            // The same block bound is used by a later standalone `+` in a note.
+            if trim_ascii(first) == "+"
+                && !in_container
+                && attaches_flush_left(Some(0), lines.get(i))
+                && lines.get(i).is_some_and(|line| !is_blank_line(line))
+            {
+                let end = attached_block_lines(
+                    CursorLines::Slice(&lines),
+                    i,
+                    &mut comment_closers,
+                    &mut closer_index,
+                    options,
+                    Some(0),
+                    &mut |line, _| is_blank_line(line) || is_plus_marker(line),
+                );
+                if end > i {
+                    def_lines[0].clear();
+                    def_line_map[0] = None;
+                    if positions {
+                        def_col_map[0] = None;
+                    }
+                    while i < end {
+                        def_lines.push(lines[i].to_string());
+                        def_line_map.push(Some(first_source_line + i));
+                        if positions {
+                            def_col_map.push(Some(0));
+                        }
+                        i += 1;
+                    }
+                    def_lines.push(String::new());
+                    def_line_map.push(None);
+                    if positions {
+                        def_col_map.push(None);
+                    }
+                }
+            }
             if !in_container {
                 while i < lines.len() {
                     let line = lines[i];
@@ -11757,6 +11794,7 @@ fn collect_blockquote_body(
     // otherwise walk its whole body once.
     let mut may_hold_fence = false;
     let mut literal_quote_body = None;
+    let mut last_quoted_at = None;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             if strip_description_prefix(trim_ascii_start(stripped)).is_some() {
@@ -11790,6 +11828,75 @@ fn collect_blockquote_body(
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
             cur.consume();
+            // Keep the prior quoted line by index. Only a line ending in `+`
+            // asks for nested depth, so a deep quote does not rescan its chain
+            // on every ordinary line.
+            let prior_quoted_at = last_quoted_at.replace(at);
+            let first_block = stripped.trim_end_matches([' ', '\t']).ends_with('+')
+                && cur.peek().is_some_and(|next| {
+                    !is_blank_line(next) && strip_blockquote_prefix(next).is_none()
+                })
+                && attaches_flush_left(cur.source_col(cur.pos), cur.lines.line(cur.pos).as_ref());
+            let mut deepest = stripped;
+            let mut levels = 0;
+            if first_block {
+                while let Some(next) = strip_blockquote_prefix(deepest) {
+                    deepest = next;
+                    levels += 1;
+                }
+            }
+            let prior_levels = if first_block && levels > 0 {
+                prior_quoted_at.map_or(0, |prior| {
+                    let mut content = strip_blockquote_prefix(cur.lines.at(prior)).unwrap_or("");
+                    let mut depth = 0;
+                    while let Some(next) = strip_blockquote_prefix(content) {
+                        content = next;
+                        depth += 1;
+                    }
+                    depth
+                })
+            } else {
+                0
+            };
+            if first_block
+                && trim_ascii(deepest) == "+"
+                && (levels > prior_levels || (levels == 0 && inner.lines.is_empty()))
+            {
+                // Preserve a nested quote marker for its own parse. The
+                // innermost quote consumes the `+` and takes the block.
+                if deepest != stripped {
+                    inner.push_at(
+                        stripped.to_string(),
+                        source_line,
+                        stripped_col(cur.source_col(at), line, stripped),
+                    );
+                }
+                let attach_col = cur.source_col(cur.pos);
+                let end = attached_block_lines(
+                    cur.lines,
+                    cur.pos,
+                    &mut cur.comment_closer_last_index,
+                    &mut cur.code_closer_last_index,
+                    options,
+                    attach_col,
+                    &mut |next, _| {
+                        is_blank_line(next)
+                            || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+                    },
+                );
+                while cur.pos < end {
+                    let next = cur.lines.at(cur.pos);
+                    inner.push_at(
+                        next.to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.pos += 1;
+                }
+                inner.push_synthetic_blank();
+                para_open = ParaOpen::Closed;
+                continue;
+            }
             nested_verdict = None;
             let after_nested = last_nested && may_hold_fence;
             last_nested = in_fence.is_none() && (stripped == ">" || stripped.starts_with("> "));
@@ -19544,7 +19651,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             ));
             last_cont_at = Some(cont_at);
         }
-        let (mut row, mut inputs) = parse_table_row(
+        let (mut row, inputs) = parse_table_row(
             line,
             &conts,
             options,
@@ -19568,16 +19675,10 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos.end_column = end.end_column;
             pos.end_offset = end.end_offset;
         }
-        join_continuations_under_rowspans(
-            &mut rows,
-            &mut row_inputs,
-            &mut row,
-            &mut inputs,
-            options,
-        );
         rows.push(row);
         row_inputs.push(inputs);
     }
+    join_marker_continuations(&mut rows, &mut row_inputs, options);
     // The caption FIRST, then the span: a caption is one of the table's
     // children and sits after the last row, so a span taken before it is
     // consumed stops short and leaves the caption's inlines outside their own
@@ -19839,39 +19940,51 @@ fn reparse_table_cell(cell: &mut TableCell, input: &CellInput, options: &Options
     };
 }
 
-/// A continuation fragment under a `^` cell joins the cell that owns the
-/// rowspan (PART 5 T6), found by following the carets up the column.
-fn join_continuations_under_rowspans(
+/// T6 under a span: a continuation fragment on a `^` or `<` marker joins the
+/// cell the T5 walk resolves that marker into, in row-major order. A blocked
+/// marker renders empty and keeps none of it.
+fn join_marker_continuations(
     rows: &mut [TableRow],
     row_inputs: &mut [Vec<CellInput>],
-    row: &mut TableRow,
-    inputs: &mut [CellInput],
     options: &Options<'_>,
 ) {
-    for idx in 0..row.cells.len() {
-        if row.cells[idx].span != Some(TableCellSpan::Rowspan) || inputs[idx].extra.is_empty() {
+    let mut dirty: Vec<(usize, usize)> = Vec::new();
+    for (r, row) in rows.iter().enumerate() {
+        for (c, cell) in row.cells.iter().enumerate() {
+            if cell.span.is_some() && !row_inputs[r][c].extra.is_empty() {
+                dirty.push((r, c));
+            }
+        }
+    }
+    if dirty.is_empty() {
+        return;
+    }
+    let widths: Vec<usize> = rows.iter().map(|row| row.cells.len()).collect();
+    let mut absorbed: Vec<((usize, usize), (usize, usize))> = Vec::new();
+    crate::table_spans::resolve_span_grid_absorbing(
+        &widths,
+        |r, c| rows[r].cells[c].span,
+        |origin, marker| absorbed.push((origin, marker)),
+    );
+    for (origin, marker) in absorbed {
+        if rows[origin.0].cells[origin.1].span.is_some() {
             continue;
         }
-        let mut above = rows.len();
-        while above > 0
-            && rows[above - 1]
-                .cells
-                .get(idx)
-                .is_some_and(|cell| cell.span == Some(TableCellSpan::Rowspan))
-        {
-            above -= 1;
-        }
-        let Some(origin) = above.checked_sub(1).filter(|&r| idx < rows[r].cells.len()) else {
+        let moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
+        if moved.is_empty() {
             continue;
-        };
-        let moved = std::mem::take(&mut inputs[idx].extra);
-        row_inputs[origin][idx].extra.extend(moved);
-        reparse_table_cell(
-            &mut rows[origin].cells[idx],
-            &row_inputs[origin][idx],
-            options,
-        );
-        reparse_table_cell(&mut row.cells[idx], &inputs[idx], options);
+        }
+        row_inputs[origin.0][origin.1].extra.extend(moved);
+        if !dirty.contains(&origin) {
+            dirty.push(origin);
+        }
+    }
+    for (r, c) in dirty {
+        if rows[r].cells[c].span.is_some() {
+            // The marker itself renders empty, whether or not its text moved.
+            row_inputs[r][c].extra.clear();
+        }
+        reparse_table_cell(&mut rows[r].cells[c], &row_inputs[r][c], options);
     }
 }
 

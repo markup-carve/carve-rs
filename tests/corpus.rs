@@ -607,6 +607,7 @@ const IMPLEMENTED: &[&str] = &[
     "below-a-definition-body-s-column-an-invisible-line-folds-as-text",
     "a-colon-followed-by-only-whitespace-is-not-a-description",
     "a-leading-continuation-marker-in-a-footnote-body-or-a-quote-is-text",
+    "a-block-quote-and-a-footnote-body-take-the-first-block-form",
     "an-empty-description-body-claims-no-line-below-column-0",
     "an-empty-description-body-is-written-with-the-empty-sentinel",
     "the-continuation-marker-s-column-gate-reaches-every-container",

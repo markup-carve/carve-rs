@@ -558,6 +558,7 @@ fn shared_markdown_container_carriers_restore_ast_fields() {
                     "nested-definition-list"
                         | "nested-definition-list-two-levels"
                         | "code-fence-title-and-label"
+                        | "list-style-marker-under-attribute-line"
                 )
             )
         {
@@ -629,6 +630,7 @@ fn shared_markdown_import_negative_rows_match_their_contract() {
     for fixture in required_rows(&fixtures(), "markdownImportNegative") {
         if fixture["aheadOfPin"] == true
             && fixture["id"] != "nested-definition-marker-without-outer-list"
+            && fixture["id"] != "attribute-marker-over-a-block-between-it-and-the-list-style-marker"
         {
             continue;
         }
