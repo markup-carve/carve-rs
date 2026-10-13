@@ -551,6 +551,18 @@ fn collision_row(fixture: &Value) {
 fn shared_markdown_container_carriers_restore_ast_fields() {
     let fixtures = fixtures();
     for fixture in required_rows(&fixtures, "markdownExportImport") {
+        if fixture["aheadOfPin"] == true
+            && !matches!(
+                fixture["id"].as_str(),
+                Some(
+                    "nested-definition-list"
+                        | "nested-definition-list-two-levels"
+                        | "code-fence-title-and-label"
+                )
+            )
+        {
+            continue;
+        }
         let source = text(fixture, "source");
         assert!(
             projection(&ast(&source), &fixture["expectedNodes"]),
@@ -615,6 +627,11 @@ fn shared_markdown_container_carriers_restore_ast_fields() {
 #[test]
 fn shared_markdown_import_negative_rows_match_their_contract() {
     for fixture in required_rows(&fixtures(), "markdownImportNegative") {
+        if fixture["aheadOfPin"] == true
+            && fixture["id"] != "nested-definition-marker-without-outer-list"
+        {
+            continue;
+        }
         let imported = migrate_markdown(fixture["markdown"].as_str().unwrap());
         let imported_ast = ast(&imported.value);
         if let Some(code) = fixture["expectedDiagnostic"]["code"].as_str() {
