@@ -3294,7 +3294,16 @@ fn render_line_block(
     }
 
     indent(out, level);
-    out.push_str(&format!("<div{}>", render_attrs_for(&Some(attrs), "div")));
+    // PART 10 §13a: the class alone also names a `line-block` admonition.
+    let carrier = if options.html_carriers() {
+        format!(" {}", crate::roundtrip::LINE_BLOCK)
+    } else {
+        String::new()
+    };
+    out.push_str(&format!(
+        "<div{carrier}{}>",
+        render_attrs_for(&Some(attrs), "div")
+    ));
     let visible = render_children(out, &lb.children, level + 1, options, state);
     close_block_container(out, level, "div", visible);
 }
@@ -3316,7 +3325,13 @@ fn render_div(
     state: &mut RenderState,
 ) {
     indent(out, level);
-    out.push_str(&format!("<div{}>", render_attrs_for(&d.attrs, "div")));
+    let attrs = render_attrs_for(&d.attrs, "div");
+    // PART 10 §13a: a `<div>` with no attribute is any foreign div.
+    if attrs.is_empty() && options.html_carriers() {
+        out.push_str(&format!("<div {}>", crate::roundtrip::DIV));
+    } else {
+        out.push_str(&format!("<div{attrs}>"));
+    }
     // Graceful degradation: surface an unconsumed grouping `[label]` as a
     // visible caption (see render_admonition for rationale).
     if let Some(label) = &d.label {
@@ -4388,11 +4403,18 @@ fn render_inline_after(
             out.push_str("</del>");
         }
         InlineNode::CriticSubstitute(c) => {
+            let carried = options.html_carriers();
+            if carried {
+                write!(out, "<span {}>", crate::roundtrip::SUBSTITUTION).unwrap();
+            }
             out.push_str("<del>");
             render_inlines_stateful(out, &c.old, options, state);
             out.push_str("</del><ins>");
             render_inlines_stateful(out, &c.new, options, state);
             out.push_str("</ins>");
+            if carried {
+                out.push_str("</span>");
+            }
         }
         InlineNode::CriticComment(c) => out.push_str(&format!(
             "<span class=\"critic-comment\">{}</span>",

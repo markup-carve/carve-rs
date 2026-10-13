@@ -267,14 +267,6 @@ fn shared_export_inventory_restores_approved_ast_fields() {
     let fixtures = fixtures();
     let mut failures = Vec::new();
     for fixture in required_rows(&fixtures, "exportImport") {
-        // These HTML presence carriers belong to the separate importer and
-        // renderer work tracked in carve-rs #2657.
-        if matches!(
-            fixture["id"].as_str(),
-            Some("bare-div-carrier" | "line-block-carrier" | "substitution-carrier")
-        ) {
-            continue;
-        }
         let result =
             std::panic::catch_unwind(|| {
                 let source = text(fixture, "source");

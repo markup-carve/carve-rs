@@ -66,9 +66,16 @@ pub(crate) const ABBREVIATIONS: &str = "data-carve-abbreviations";
 pub(crate) const XREF: &str = "data-carve-xref";
 /// Presence: a caption number's text-only span.
 pub(crate) const CAPTION_NUMBER: &str = "data-carve-caption-number";
+/// Presence: a `div` node with no attribute of its own.
+pub(crate) const DIV: &str = "data-carve-div";
+/// Presence: a `line_block` node, which `class="line-block"` alone does not
+/// tell from an admonition of that kind.
+pub(crate) const LINE_BLOCK: &str = "data-carve-line-block";
+/// Presence: the span wrapping a substitution's `<del>` and `<ins>`.
+pub(crate) const SUBSTITUTION: &str = "data-carve-substitution";
 
 /// Every name a reader consumes: the §13a inventory plus [`SRC`], which no writer emits.
-pub(crate) const CARRIERS: [&str; 18] = [
+pub(crate) const CARRIERS: [&str; 21] = [
     MARKER,
     CHAR,
     EXPLICIT_ID,
@@ -87,6 +94,9 @@ pub(crate) const CARRIERS: [&str; 18] = [
     ABBREVIATIONS,
     XREF,
     CAPTION_NUMBER,
+    DIV,
+    LINE_BLOCK,
+    SUBSTITUTION,
 ];
 
 /// The canonical §13a name an attribute spells, or `None` for a name outside

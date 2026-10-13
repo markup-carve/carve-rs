@@ -1995,6 +1995,11 @@ impl<'a> Importer<'a> {
             crate::roundtrip::TIGHT => {
                 matches!(tag, "ul" | "ol") && Self::reads_tight(handle).is_some()
             }
+            crate::roundtrip::LINE_BLOCK => tag == "div",
+            crate::roundtrip::DIV => {
+                tag == "div" && Self::carrier(handle, crate::roundtrip::LINE_BLOCK).is_none()
+            }
+            crate::roundtrip::SUBSTITUTION => tag == "span" && Self::reads_substitution(handle),
             _ => false,
         }
     }
@@ -2178,6 +2183,45 @@ impl<'a> Importer<'a> {
     fn reads_xref(handle: &Handle) -> bool {
         Self::carries_xref(handle)
             && Self::contradictory_carriers(handle, "a", HtmlImportMode::Safe).is_none()
+    }
+
+    /// PART 10 §13a `data-carve-line-block`: the `line-block` class is the
+    /// node's own output, not an author's. Kept out of the block walk's frame,
+    /// which recursion depth multiplies.
+    #[inline(never)]
+    fn carried_line_block(
+        &mut self,
+        children: &[Handle],
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let attrs = attrs.and_then(|mut attrs| {
+            attrs.classes.retain(|class| class != "line-block");
+            if attrs.classes.is_empty() {
+                attrs.order.retain(|slot| *slot != AttrSlot::Class);
+            }
+            (attrs.id.is_some() || !attrs.classes.is_empty() || !attrs.key_values.is_empty())
+                .then_some(attrs)
+        });
+        Ok(vec![BlockNode::LineBlock(LineBlock {
+            attrs,
+            children: self.blocks(children, path, depth + 1)?,
+            lines: None,
+            pos: None,
+        })])
+    }
+
+    /// A bare carrier span holding one bare `<del>` then one bare `<ins>`.
+    fn reads_substitution(handle: &Handle) -> bool {
+        let bare = |node: &Handle| matches!(&node.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty());
+        let own = matches!(&handle.data, NodeData::Element { attrs, .. } if attrs.borrow().iter().all(|attr| crate::roundtrip::canonical(attr.name.local.as_ref()) == Some(crate::roundtrip::SUBSTITUTION)));
+        let children = handle.children.borrow();
+        own && Self::carrier(handle, crate::roundtrip::SUBSTITUTION).is_some()
+            && children.len() == 2
+            && Self::tag(&children[0]).as_deref() == Some("del")
+            && Self::tag(&children[1]).as_deref() == Some("ins")
+            && children.iter().all(bare)
     }
 
     fn reads_caption_number(handle: &Handle) -> bool {
@@ -3586,8 +3630,12 @@ impl<'a> Importer<'a> {
             }
             return Ok(vec![table]);
         }
+        if tag == "div" && Self::carrier(h, crate::roundtrip::LINE_BLOCK).is_some() {
+            return self.carried_line_block(&children, path, depth, attrs);
+        }
+        let carried_div = tag == "div" && Self::carrier(h, crate::roundtrip::DIV).is_some();
         if tag == "div" {
-            if let Some(math) = Self::carve_math(h, attrs.as_ref()) {
+            if let Some(math) = Self::carve_math(h, attrs.as_ref()).filter(|_| !carried_div) {
                 // Charged because this arm returns without walking the children
                 // `blocks` would have counted one by one - the same reason the
                 // `<math>` arm charges by hand. Which arm an element takes must
@@ -3612,7 +3660,7 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })]);
             }
-            if let Some(kind) = Self::container_from(&tag, &attrs) {
+            if let Some(kind) = Self::container_from(&tag, &attrs).filter(|_| !carried_div) {
                 let attrs = Self::without_structural_class(attrs, &kind);
                 // A Tier-2 container carries a title the same way a callout
                 // does, and renders it with no generated id - so the lift has to
@@ -3666,7 +3714,7 @@ impl<'a> Importer<'a> {
             let (label, body, body_paths) =
                 self.container_label(children.to_vec(), body_paths, depth)?;
             let blocks = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
-            if attrs.is_none() && label.is_none() {
+            if attrs.is_none() && label.is_none() && !carried_div {
                 return Ok(blocks);
             }
             return Ok(vec![BlockNode::Div(Div {
@@ -6798,6 +6846,15 @@ impl<'a> Importer<'a> {
                 number: None,
                 pos: None,
             })]);
+        }
+        if tag == "span" && Self::reads_substitution(h) {
+            if let [InlineNode::CriticDelete(old), InlineNode::CriticInsert(new)] = &children[..] {
+                return Ok(vec![InlineNode::CriticSubstitute(CriticSubstitute {
+                    old: old.children.clone(),
+                    new: new.children.clone(),
+                    pos: None,
+                })]);
+            }
         }
         if tag == "span" {
             // AFTER the children have been walked, which is what keeps the
