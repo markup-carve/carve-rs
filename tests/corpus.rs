@@ -825,7 +825,9 @@ const IMPLEMENTED: &[&str] = &[
     "a-line-block-takes-a-lazy-line-whatever-its-last-payload-line",
     "a-quoted-term-takes-a-lazy-line",
     "a-shifted-fence-in-a-quoted-container-s-body-stores-no-continuation-claim",
+    "a-titled-footnotes-marker-names-the-endnotes-section",
     "an-at-column-comment-retains-nothing",
+    "an-at-sign-before-a-space-and-a-doubled-delimiter-inside-bold-italic-are-text",
     "an-opener-past-a-hosted-container-s-column-interrupts-its-open-paragraph",
     "an-opener-past-a-hosted-container-s-column-opens-there",
 ];
