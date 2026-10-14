@@ -2335,14 +2335,14 @@ fn blocks_with_slot_inner(
         if previous_blank
             && definition_columns
                 .last()
-                .is_some_and(|column| indent >= *column)
+                .is_some_and(|column| indent + 1 >= *column)
         {
             definition_body = true;
         }
         if (block || marker.is_match(visible))
             && definition_columns.last().is_some_and(|column| {
                 if definition_body {
-                    indent < *column
+                    indent + 1 < *column
                 } else {
                     indent + 2 <= *column
                 }
@@ -2350,7 +2350,7 @@ fn blocks_with_slot_inner(
         {
             while definition_columns.last().is_some_and(|column| {
                 if definition_body {
-                    indent < *column
+                    indent + 1 < *column
                 } else {
                     indent + 2 <= *column
                 }
@@ -2611,7 +2611,7 @@ fn blocks_with_slot_inner(
         } else if previous_blank {
             while definition_columns
                 .last()
-                .is_some_and(|column| indent < *column)
+                .is_some_and(|column| indent + 1 < *column)
             {
                 definition_columns.pop();
             }
@@ -5001,7 +5001,6 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             &fenced,
             OpaqueOptions::default(),
             Some(&mut spans),
-            false,
         );
         let container = cached_regex!(r"\n[ \t]*:{3,}(?:[ \t]+[^\n]*)?(?:\n|$)").unwrap();
         let mut line_end = source.find('\n');
