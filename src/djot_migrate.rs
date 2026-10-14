@@ -3285,8 +3285,8 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
                     == Some(&b'>')
             });
             let Some(prefix) = prefix else {
-                let text = lines[end].trim_start();
-                let visible = masks[end].trim_start();
+                let text = lines[end].trim_start_matches([' ', '\t']);
+                let visible = masks[end].trim_start_matches([' ', '\t']);
                 let block = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:(?:[ \t]|$)|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(visible)
                     || visible.starts_with('|') && text.ends_with('|')
                     || cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t]*$").unwrap().is_match(text);
@@ -3302,8 +3302,8 @@ fn convert_definition_lists_at(source: &str, empty_term: &str, depth: usize) -> 
             let body = quoted(child).1;
             if let Some(term) = cached_regex!(r"^([ \t]*(?:(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+)*):(?:[ \t]|$)").unwrap().captures(body) {
                 term_column = Some(term[1].len());
-            } else if body.trim().is_empty() || term_column.is_some_and(|column| leading_indent(body).0 <= column)
-                && cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(body.trim_start()) {
+            } else if body.trim_matches([' ', '\t']).is_empty() || term_column.is_some_and(|column| leading_indent(body).0 <= column)
+                && cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(body.trim_start_matches([' ', '\t'])) {
                 term_column = None;
             }
             nested.push(child);
@@ -3371,17 +3371,21 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
             ));
         }
         let prefix = &accepted[1];
-        let column = leading_indent(prefix).0 + prefix.trim_start().replace('\t', " ").len();
+        let column = leading_indent(prefix).0
+            + prefix
+                .trim_start_matches([' ', '\t'])
+                .replace('\t', " ")
+                .len();
         let mut nested = vec![&line[prefix.len()..]];
         let mut end = at + 1;
         let mut blank = false;
         while end < lines.len() {
             let next = lines[end];
             let indent = leading_indent(next).0;
-            let text = next.trim_start();
+            let text = next.trim_start_matches([' ', '\t']);
             if !text.is_empty()
                 && indent < column
-                && (blank || block.is_match(masks[end].trim_start()))
+                && (blank || block.is_match(masks[end].trim_start_matches([' ', '\t'])))
             {
                 break;
             }
@@ -3396,17 +3400,17 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
         let mut removed = HashSet::new();
         let mut index = 0;
         while index < converted.len() {
-            if !converted[index].trim().is_empty() {
+            if !converted[index].trim_matches([' ', '\t']).is_empty() {
                 index += 1;
                 continue;
             }
             let mut end = index;
-            while end < converted.len() && converted[end].trim().is_empty() {
+            while end < converted.len() && converted[end].trim_matches([' ', '\t']).is_empty() {
                 end += 1;
             }
             if converted
                 .get(end)
-                .is_some_and(|line| line.trim_start().starts_with(":  "))
+                .is_some_and(|line| line.trim_start_matches([' ', '\t']).starts_with(":  "))
             {
                 removed.extend(index..end);
             }
@@ -3418,12 +3422,12 @@ fn convert_unquoted_definition_lists(source: &str, empty_term: &str, depth: usiz
                 continue;
             }
             let mut end = index + 1;
-            while end < converted.len() && converted[end].trim().is_empty() {
+            while end < converted.len() && converted[end].trim_matches([' ', '\t']).is_empty() {
                 end += 1;
             }
             if end > index + 1
                 && end < converted.len()
-                && !converted[end].starts_with(char::is_whitespace)
+                && !converted[end].starts_with([' ', '\t'])
                 && !converted[end].starts_with("::")
             {
                 removed.extend(index + 1..end);
@@ -3476,7 +3480,9 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
             let payload = &lines[index][content..];
             (payload.starts_with("~~~")
                 || (payload.starts_with("```") && !payload.trim_start_matches('`').contains('`')))
-                && masked[index].trim_start().starts_with(':')
+                && masked[index]
+                    .trim_start_matches([' ', '\t'])
+                    .starts_with(':')
         });
         let container_body = raw_term.is_some_and(|(_, content)| {
             cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
@@ -3485,7 +3491,10 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
         });
         let starts_definition_body = raw_fence || container_body;
         if let (Some((indent, _)), Some((raw_indent, content))) = (
-            if masked[index].trim_start().starts_with(':') {
+            if masked[index]
+                .trim_start_matches([' ', '\t'])
+                .starts_with(':')
+            {
                 raw_term
             } else {
                 definition_term(masked[index])
@@ -3501,7 +3510,7 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
             let top = stack.last().copied();
             let may_start = top.is_some()
                 || index == 0
-                || lines[index - 1].trim().is_empty()
+                || lines[index - 1].trim_matches([' ', '\t']).is_empty()
                 || cached_regex!(r"^ *:{3,}(?:[ \t]+[A-Za-z0-9_-]+)?[ \t]*$")
                     .unwrap()
                     .is_match(masked[index - 1])
@@ -3514,8 +3523,8 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
                     .contains(&source_at);
             if may_start {
                 let mut term = lines[index][content..].to_owned();
-                if term.trim().is_empty()
-                    || term.trim_start().starts_with('{')
+                if term.trim_matches([' ', '\t']).is_empty()
+                    || term.trim_start_matches([' ', '\t']).starts_with('{')
                         && cached_regex!(r"^(?:[ \t]|\{%%\})*$")
                             .unwrap()
                             .is_match(&normalize::image_label_attributes(&term))
@@ -3616,12 +3625,12 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
         if stack.is_empty() {
             continue;
         }
-        if lines[index].trim().is_empty() {
+        if lines[index].trim_matches([' ', '\t']).is_empty() {
             if let Some(frame) = stack.last_mut() {
                 if !frame.body
-                    && lines
-                        .get(index + 1)
-                        .is_some_and(|line| rejected_comment_starts_block(line.trim_start()))
+                    && lines.get(index + 1).is_some_and(|line| {
+                        rejected_comment_starts_block(line.trim_start_matches([' ', '\t']))
+                    })
                 {
                     lines[index] = format!("{}:  {empty_term}\n", " ".repeat(frame.target));
                     frame.body = true;
@@ -3631,7 +3640,7 @@ fn convert_root_definition_lists(source: &str, empty_term: &str) -> String {
             continue;
         }
         if !stack.last().is_some_and(|frame| frame.ready) {
-            let continuation = lines[index].trim_start();
+            let continuation = lines[index].trim_start_matches([' ', '\t']);
             let indent = leading_indent(&lines[index]).0;
             let first = leading_indent(&lines[index]).1;
             let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first)
