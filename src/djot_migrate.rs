@@ -3172,17 +3172,14 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             let first = leading_indent(&lines[index]).1;
             let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first);
             let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|\||:{3,}|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation) || cached_regex!(r"^(?:[*-][ \t]*){3,}$").unwrap().is_match(continuation);
-            let thematic_term_exit = cached_regex!(r"^(?:[*-][ \t]*){3,}$")
-                .unwrap()
-                .is_match(continuation);
             if visible && indent <= stack.last().unwrap().source && marker {
                 while stack.last().is_some_and(|frame| frame.source >= indent) {
                     finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
                 }
+                if index > 0 {
+                    lines[index - 1].push('\n');
+                }
                 if stack.is_empty() {
-                    if thematic_term_exit {
-                        lines[index] = format!("\n{}", lines[index]);
-                    }
                     continue;
                 }
             } else {
