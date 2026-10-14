@@ -30603,6 +30603,24 @@ mod promote_block_images_is_iterative {
 pub(crate) fn lint_opens_code_fence(line: &str) -> bool {
     detect_fence_open(line).is_some()
 }
+/// Byte ranges of a table row's cells within `row`, split with the parser's own
+/// pipe rules (escapes and verbatim runs do not split).
+pub(crate) fn lint_table_cell_ranges(row: &str) -> Vec<(usize, usize)> {
+    let (_, body) = split_row_attrs(row);
+    let content = strip_row_closing_pipe(body.strip_prefix('|').unwrap_or(body));
+    let prefix = content.as_ptr() as usize - row.as_ptr() as usize;
+    let offsets: Vec<_> = content
+        .char_indices()
+        .map(|(at, _)| at)
+        .chain(std::iter::once(content.len()))
+        .collect();
+    split_table_cells_ranged(content)
+        .cells
+        .into_iter()
+        .map(|cell| (prefix + offsets[cell.start], prefix + offsets[cell.end]))
+        .collect()
+}
+
 pub(crate) fn lint_reversed_cell_markers(line: &str) -> Vec<(usize, usize)> {
     if !is_table_start(line) {
         return Vec::new();

@@ -18,6 +18,8 @@ fn blocked_markers_report_the_marker_and_reason() {
         ("- item\n\n  | ^ | b |\n", 3, 5, "There is no cell above it to extend."),
         ("x[^n]\n\n[^n]: note\n\n    | ^ | b |\n", 5, 7, "There is no cell above it to extend."),
         ("| ^ | b |\n^ Table: cap\n", 1, 3, "There is no cell above it to extend."),
+        ("| a |\n| b | ^ |\n", 2, 7, "There is no cell above it to extend."),
+        ("| `a|b` | ^ |\n+ x | y |\n", 1, 11, "There is no cell above it to extend."),
     ];
     for (source, line, column, reason) in cases {
         let warnings = findings(source);
