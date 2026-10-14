@@ -144,6 +144,8 @@ mod a_caret_before_a_bracket_that_opens_no_note;
 mod a_carried_run_keeps_its_width_across_the_row_boundary;
 #[path = "../a_cell_alignment_imports_as_the_native_marker.rs"]
 mod a_cell_alignment_imports_as_the_native_marker;
+#[path = "../a_cell_wrap_points_at_its_plus_marker.rs"]
+mod a_cell_wrap_points_at_its_plus_marker;
 #[path = "../a_citation_definition_is_a_node.rs"]
 mod a_citation_definition_is_a_node;
 #[path = "../a_citation_item_carries_its_own_mode.rs"]

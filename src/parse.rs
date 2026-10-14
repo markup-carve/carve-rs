@@ -20080,6 +20080,8 @@ struct CellFragment {
     line: usize,
     /// Rows down from the receiving cell to that row (CARVE-P12-069).
     row: usize,
+    /// Where the line's `+` sits, which is where its `cell_wrap` points.
+    marker: Option<(usize, isize)>,
 }
 
 thread_local! {
@@ -20210,6 +20212,12 @@ fn join_marker_continuations(
         let mut moved = std::mem::take(&mut row_inputs[marker.0][marker.1].extra);
         if moved.is_empty() {
             continue;
+        }
+        // A row that gives or takes a later row's text no longer holds every
+        // child span, so it is not placed (absent beats wrong).
+        if marker.0 != origin.0 {
+            rows[origin.0].pos = None;
+            rows[marker.0].pos = None;
         }
         for fragment in &mut moved {
             fragment.row += marker.0 - origin.0;
@@ -20348,6 +20356,11 @@ fn collect_continuation_fragments(
     let mut open_run_at = row.open_run_at;
     for (line_index, (line, base)) in conts.iter().enumerate() {
         let mut content = trim_ascii(line);
+        let marker = base.and_then(|(line_no, stripped)| {
+            content
+                .starts_with('+')
+                .then(|| (line_no, stripped + char_offset_of(line, content) as isize))
+        });
         if let Some(stripped) = content.strip_prefix('+') {
             content = stripped;
         }
@@ -20381,6 +20394,7 @@ fn collect_continuation_fragments(
                     anchor,
                     line: line_index + 1,
                     row: 0,
+                    marker,
                 });
             }
         }
@@ -20588,7 +20602,16 @@ fn parse_cell_content(
                 CellWrap {
                     line: fragment.line,
                     row: (fragment.row > 0).then_some(fragment.row),
-                    pos: None,
+                    pos: fragment.marker.map(|(line_no, column)| Pos {
+                        start_line: line_no,
+                        end_line: line_no,
+                        start_column: document_column(column, 0),
+                        end_column: document_column(column, 1),
+                        // Filled from the line table once the document is parsed.
+                        start_offset: 0,
+                        end_offset: 0,
+                        file: None,
+                    }),
                 },
             ));
             // The joiner is the LAST character of the segment before it, which
