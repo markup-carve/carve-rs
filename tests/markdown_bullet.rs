@@ -24,3 +24,11 @@ fn markdown_import_keeps_authored_bullet() {
     assert_eq!(carve::markdown_to_carve("* one\n* two\n"), "* one\n* two\n");
     assert_eq!(carve::markdown_to_carve("- one\n- two\n"), "- one\n- two\n");
 }
+
+#[test]
+fn markdown_import_writes_a_plus_bullet_as_carve_js_does() {
+    assert_eq!(carve::markdown_to_carve("+ one\n+ two\n"), "- one\n- two\n");
+    assert_eq!(carve::markdown_to_carve("* x\n+ y\n"), "* x\n\n- y\n");
+    assert_eq!(carve::markdown_to_carve("+ x\n- y\n"), "- x\n\n* y\n");
+    assert_eq!(carve::markdown_to_carve("- x\n+ y\n"), "- x\n\n* y\n");
+}

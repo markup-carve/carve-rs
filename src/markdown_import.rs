@@ -2098,8 +2098,8 @@ impl Builder {
                         .trim_start_matches([' ', '\t'])
                         .chars()
                         .next()
-                        .filter(|marker| *marker != '+')
-                        .unwrap_or('*')
+                        .map(|marker| if marker == '+' { '-' } else { marker })
+                        .unwrap_or('-')
                 }),
                 items: Vec::new(),
                 tight: true,
@@ -2775,7 +2775,7 @@ impl Builder {
         }
     }
 
-    fn block(&mut self, node: BlockNode) {
+    fn block(&mut self, mut node: BlockNode) {
         match self.frames.last_mut() {
             // A block ends the item's content column, so whatever inline run
             // was still open closes as its own paragraph FIRST. Without this a
@@ -2787,12 +2787,17 @@ impl Builder {
                     self.html_code_depth = 0;
                 }
                 flush_inline_run(pending, children, self.needs_email_walk);
+                separate_from_previous_list(children.last(), &mut node);
                 children.push(node);
             }
             Some(Frame::BlockQuote(children)) | Some(Frame::FootnoteDef { children, .. }) => {
+                separate_from_previous_list(children.last(), &mut node);
                 children.push(node)
             }
-            _ => self.blocks.push(node),
+            _ => {
+                separate_from_previous_list(self.blocks.last(), &mut node);
+                self.blocks.push(node)
+            }
         }
     }
 
@@ -2909,6 +2914,21 @@ impl Builder {
 /// arrives with nothing to collect it into. The content still needs a
 /// paragraph; what it does not need is one per node, which is what wrapping
 /// each arriving node separately produced (markup-carve/carve-rs#969).
+/// A bullet list right after another one takes the other bullet, as carve-js
+/// writes it: with the same character the two would read as one list.
+fn separate_from_previous_list(previous: Option<&BlockNode>, node: &mut BlockNode) {
+    let (Some(BlockNode::List(previous)), BlockNode::List(list)) = (previous, node) else {
+        return;
+    };
+    if previous.ordered || list.ordered {
+        return;
+    }
+    let bullet = |list: &List| list.bullet_char.unwrap_or('-');
+    if bullet(previous) == bullet(list) {
+        list.bullet_char = Some(if bullet(list) == '-' { '*' } else { '-' });
+    }
+}
+
 fn flush_inline_run(
     pending: &mut Vec<InlineNode>,
     children: &mut Vec<BlockNode>,
