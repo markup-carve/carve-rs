@@ -1,0 +1,306 @@
+[
+  {
+    "source": "![x\\[b\\]](u)",
+    "html": "<p><img alt=\"x[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\[b\\]](u)](u)",
+    "html": "<p><img alt=\"x[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\[b\\]](u)](u)](u)",
+    "html": "<p><img alt=\"x[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\[b\\]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![\\[x\\]](u)",
+    "html": "<p><img alt=\"[x]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![\\[x\\]](u)](u)",
+    "html": "<p><img alt=\"[x]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![\\[x\\]](u)](u)](u)",
+    "html": "<p><img alt=\"[x]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![\\[x\\]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"[x]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\\\y](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\\\y](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\\\y](u)](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\\\y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![ä\\[b\\]](u)",
+    "html": "<p><img alt=\"ä[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![ä\\[b\\]](u)](u)",
+    "html": "<p><img alt=\"ä[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![ä\\[b\\]](u)](u)](u)",
+    "html": "<p><img alt=\"ä[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![ä\\[b\\]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"ä[b]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\!\\[y\\]](u)",
+    "html": "<p><img alt=\"x![y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\!\\[y\\]](u)](u)",
+    "html": "<p><img alt=\"x![y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\!\\[y\\]](u)](u)](u)",
+    "html": "<p><img alt=\"x![y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\!\\[y\\]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x![y]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\ y](u)",
+    "html": "<p><img alt=\"xy\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\ y](u)](u)",
+    "html": "<p><img alt=\"xy\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\ y](u)](u)](u)",
+    "html": "<p><img alt=\"xy\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\ y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"xy\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\\ty](u)",
+    "html": "<p><img alt=\"x\\\ty\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\\ty](u)](u)",
+    "html": "<p><img alt=\"x\\\ty\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\\ty](u)](u)](u)",
+    "html": "<p><img alt=\"x\\\ty\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\\ty](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\\\ty\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\q](u)",
+    "html": "<p><img alt=\"x\\q\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\q](u)](u)",
+    "html": "<p><img alt=\"x\\q\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\q](u)](u)](u)",
+    "html": "<p><img alt=\"x\\q\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\q](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\\q\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![\\]x\\[](u)",
+    "html": "<p><img alt=\"]x[\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![\\]x\\[](u)](u)",
+    "html": "<p><img alt=\"]x[\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![\\]x\\[](u)](u)](u)",
+    "html": "<p><img alt=\"]x[\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![\\]x\\[](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"]x[\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\\\[y](u)",
+    "html": "<p>![x\\<a href=\"u\">y</a></p>\n"
+  },
+  {
+    "source": "![![x\\\\[y](u)](u)",
+    "html": "<p>![<img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\\\[y](u)](u)](u)",
+    "html": "<p>![<img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\\\[y](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p>![<img alt=\"x\\y\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x\\](u)",
+    "html": "<p>![x](u)</p>\n"
+  },
+  {
+    "source": "![![x\\](u)](u)",
+    "html": "<p>![<img alt=\"x](u)\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x\\](u)](u)](u)",
+    "html": "<p>![<img alt=\"x](u)\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x\\](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p>![<img alt=\"x](u)\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![a [b] c](u)",
+    "html": "<p>![a <a href=\"u\">b] c</a></p>\n"
+  },
+  {
+    "source": "![![a [b] c](u)](u)",
+    "html": "<p>![<img alt=\"a b] c\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![a [b] c](u)](u)](u)",
+    "html": "<p>![<img alt=\"a b] c\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![a [b] c](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p>![<img alt=\"a b] c\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![[x](v)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![[x](v)](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![[x](v)](u)](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![[x](v)](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![x[^n]](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x[^n]](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![x[^n]](u)](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![![![![![![![x[^n]](u)](u)](u)](u)](u)](u)](u)](u)",
+    "html": "<p><img alt=\"x\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "> ![![x\\[b\\]](inner)](outer)",
+    "html": "<blockquote>\n<p><img alt=\"x[b]\" src=\"outer\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\[b\\]](inner)](outer)",
+    "html": "<ul>\n<li>\n<img alt=\"x[b]\" src=\"outer\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "# ![![x\\[b\\]](inner)](outer)",
+    "html": "<section id=\"x-b\">\n<h1><img alt=\"x[b]\" src=\"outer\"></h1>\n</section>\n"
+  },
+  {
+    "source": "> ![![\\[x\\]](inner)](outer)",
+    "html": "<blockquote>\n<p><img alt=\"[x]\" src=\"outer\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![\\[x\\]](inner)](outer)",
+    "html": "<ul>\n<li>\n<img alt=\"[x]\" src=\"outer\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "# ![![\\[x\\]](inner)](outer)",
+    "html": "<section id=\"x\">\n<h1><img alt=\"[x]\" src=\"outer\"></h1>\n</section>\n"
+  },
+  {
+    "source": "> ![![x\\\\y](inner)](outer)",
+    "html": "<blockquote>\n<p><img alt=\"x\\y\" src=\"outer\"></p>\n</blockquote>\n"
+  },
+  {
+    "source": "- ![![x\\\\y](inner)](outer)",
+    "html": "<ul>\n<li>\n<img alt=\"x\\y\" src=\"outer\">\n</li>\n</ul>\n"
+  },
+  {
+    "source": "# ![![x\\\\y](inner)](outer)",
+    "html": "<section id=\"x-y\">\n<h1><img alt=\"x\\y\" src=\"outer\"></h1>\n</section>\n"
+  },
+  {
+    "source": "`![![x\\[b\\]](u)](u)`",
+    "html": "<p><code>![![x\\[b\\]](u)](u)</code></p>\n"
+  },
+  {
+    "source": "```\n![![x\\[b\\]](u)](u)\n```",
+    "html": "<pre><code>![![x\\[b\\]](u)](u)\n</code></pre>\n"
+  },
+  {
+    "source": "$`![![x\\[b\\]](u)](u)`",
+    "html": "<p><span class=\"math inline\">\\(![![x\\[b\\]](u)](u)\\)</span></p>\n"
+  },
+  {
+    "source": "{% ![![x\\[b\\]](u)](u) %}",
+    "html": ""
+  },
+  {
+    "source": "{title=\"![![x\\[b\\]](u)](u)\"}\na",
+    "html": "<p title=\"![![x[b]](u)](u)\">a</p>\n"
+  },
+  {
+    "source": "\\![![x\\[b\\]](u)](u)",
+    "html": "<p>!<a href=\"u\"><img alt=\"x[b]\" src=\"u\"></a></p>\n"
+  },
+  {
+    "source": "![![x\\]](u)](u)",
+    "html": "<p><img alt=\"x]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\\\](u)](u)",
+    "html": "<p><img alt=\"x\\\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![`x\\[b\\]`](u)](u)",
+    "html": "<p><img alt=\"x\\[b\\]\" src=\"u\"></p>\n"
+  },
+  {
+    "source": "![![x\\[b\\]](inner?q=1&n=2)](outer)",
+    "html": "<p><img alt=\"x[b]\" src=\"outer\"></p>\n"
+  },
+  {
+    "source": "![![x\\[b\\]](u) tail](v)",
+    "html": "<p><img alt=\"x[b] tail\" src=\"v\"></p>\n"
+  }
+]
