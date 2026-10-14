@@ -2819,6 +2819,42 @@ impl PrepassParagraph {
     }
 }
 
+/// The last line in `lines[run_start..start]` where the block parser starts a
+/// document-level block after a blank line, flush left and with no block
+/// attribute pending, together with the end of a closed container that opens
+/// the run. Nothing above such a line reaches the parse of the lines below it.
+fn last_document_root(
+    lines: &[&str],
+    run_start: usize,
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(usize, Option<usize>)> {
+    let run = &lines[run_start..start];
+    // The probe rejoins its run, which drops a trailing CR these lines keep.
+    if !options.extensions.is_empty() || run.iter().any(|line| line.ends_with('\r')) {
+        return None;
+    }
+    let scanned = document_block_starts(run, options);
+    let root = scanned.starts.into_iter().rev().find(|&root| {
+        root > 0 && is_blank_line(run[root - 1]) && !run[root].starts_with([' ', '\t'])
+    })?;
+    Some((run_start + root, scanned.closed_initial_container_end))
+}
+
+// Bytes of run the marker probe in `term_folded_lines` hands to the definition
+// passes and the block parser, counted so the regression guard reads work
+// rather than a clock.
+#[cfg(test)]
+thread_local! {
+    static TERM_MARKER_PROBE_BYTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Can the probe's definition passes rewrite `line`? Every definition they
+/// lift starts on a `]:` line, so a run holding none is parsed as written.
+fn probe_may_rewrite(line: &str) -> bool {
+    line.contains("]:") || line.contains('\r')
+}
+
 /// Lines folded into a term and fences that end one at its container column.
 #[derive(Default)]
 struct TermLineOwnership {
@@ -2920,9 +2956,19 @@ fn term_folded_lines(
         {
             return false;
         }
+        // Parse from the last document-level block start above the marker
+        // rather than the whole run, but charge the budget for the whole run.
+        // The run's root is reported only when the skipped lines hold nothing
+        // the definition passes could rewrite, as the whole run would require.
+        let restart = last_document_root(lines, run_start, start, options);
+        let probe_start = restart.map_or(run_start, |(root, _)| root);
+        #[cfg(test)]
+        TERM_MARKER_PROBE_BYTES.with(|bytes| {
+            bytes.set(bytes.get() + prefix_costs[start] - prefix_costs[probe_start]);
+        });
         let mut unaffordable = false;
-        let (folds, proved_start) = paragraph_continuation_probe_with_start(
-            &lines[run_start..start],
+        let (folds, mut proved_start) = paragraph_continuation_probe_with_start(
+            &lines[probe_start..start],
             lines[start],
             options,
             budget,
@@ -2930,6 +2976,25 @@ fn term_folded_lines(
             true,
             true,
         );
+        if let Some((root, closed_initial_container_end)) = restart {
+            *budget = budget.saturating_sub(
+                prefix_costs[root]
+                    .saturating_sub(prefix_costs[run_start])
+                    .saturating_mul(2),
+            );
+            proved_start = if lines[run_start..root]
+                .iter()
+                .any(|line| probe_may_rewrite(line))
+            {
+                ProbeRootBoundary::default()
+            } else {
+                ProbeRootBoundary {
+                    start: proved_start.start.map(|proved| proved + root - run_start),
+                    closed_initial_container_end: closed_initial_container_end
+                        .filter(|_| proved_start.start.is_some()),
+                }
+            };
+        }
         if run_start == 0
             && !unresolved_code_delimiter
             && proved_start
@@ -5051,6 +5116,46 @@ fn parse_blocks_with_options_at_level_into_reached_with_start(
     )
 }
 
+/// Where the block parser starts DOCUMENT-LEVEL blocks in `lines`, with no
+/// block attribute pending, plus the end of a closed container opening on line 0.
+///
+/// Container and item bodies are collected but never parsed: a top-level block
+/// boundary is decided before any body is, so these are the parser's own.
+struct DocumentBlockStarts {
+    starts: Vec<usize>,
+    closed_initial_container_end: Option<usize>,
+}
+
+fn document_block_starts<'a>(lines: &'a [&'a str], options: &Options<'_>) -> DocumentBlockStarts {
+    let _recording = definition_regions::RecordingPause::enter();
+    let _probing = ProbeGuard::enter();
+    let _source_ending = SourceEndingGuard::fragment();
+    let want_lines = options.source_lines || options.positions || needs_source_ending_map();
+    let line_map: Vec<Option<usize>> = if want_lines {
+        (1..=lines.len()).map(Some).collect()
+    } else {
+        Vec::new()
+    };
+    let col_map: Vec<Option<isize>> = if options.positions {
+        vec![Some(0); lines.len()]
+    } else {
+        Vec::new()
+    };
+    let mut cursor = LineCursor::new_with_cols(
+        lines,
+        want_lines.then_some(line_map.as_slice()),
+        options.positions.then_some(col_map.as_slice()),
+    );
+    cursor.at_document_level = true;
+    cursor.reached = Some(&[]);
+    cursor.block_starts = Some(Vec::new());
+    parse_blocks(&mut cursor, options, &mut Vec::new());
+    DocumentBlockStarts {
+        starts: cursor.block_starts.take().unwrap_or_default(),
+        closed_initial_container_end: cursor.closed_initial_container_end,
+    }
+}
+
 #[derive(Clone, Copy)]
 enum CursorLines<'a> {
     Slice(&'a [&'a str]),
@@ -5190,6 +5295,9 @@ struct LineCursor<'a> {
     col_map: Option<&'a [Option<isize>]>,
     pos: usize,
     last_block_start: Option<usize>,
+    /// Every line this cursor started a block on with no block attributes
+    /// pending, recorded only for [`document_block_starts`].
+    block_starts: Option<Vec<usize>>,
     closed_initial_container_end: Option<usize>,
     at_document_level: bool,
     /// True for the cursor reading a LIST ITEM's own body, and that body only.
@@ -5257,6 +5365,7 @@ impl<'a> LineCursor<'a> {
             col_map,
             pos: 0,
             last_block_start: None,
+            block_starts: None,
             closed_initial_container_end: None,
             at_document_level: false,
             in_item_body: false,
@@ -8762,6 +8871,11 @@ fn parse_blocks(
             CommentBlock::Consumed(Some(node)) => {
                 out.push(*node);
                 cur.last_block_start = Some(comment_start);
+                if pending_attrs.is_none() {
+                    if let Some(starts) = cur.block_starts.as_mut() {
+                        starts.push(comment_start);
+                    }
+                }
                 continue;
             }
         }
@@ -8791,6 +8905,11 @@ fn parse_blocks(
             parse_block(cur, options, &mut item_bodies)
         };
         if let Some(node) = parsed {
+            if pending_attrs.is_none() {
+                if let Some(starts) = cur.block_starts.as_mut() {
+                    starts.push(start_line);
+                }
+            }
             append_parsed_block(
                 &mut out,
                 node,
@@ -32458,5 +32577,40 @@ impl BodyCodeColumns {
         let after = runs.partition_point(|&(index, _)| index <= at);
         runs.get(after)
             .is_some_and(|&(_, width)| width >= open.fence_len)
+    }
+}
+
+#[cfg(test)]
+mod term_marker_probe_work_tests {
+    use super::*;
+
+    fn probed_bytes(source: &str) -> usize {
+        let lines: Vec<&str> = source.lines().collect();
+        let maxima = fence_closer_suffix_maxima(&lines);
+        TERM_MARKER_PROBE_BYTES.with(|bytes| bytes.set(0));
+        drop(term_folded_lines(&lines, &maxima, &Options::default()));
+        TERM_MARKER_PROBE_BYTES.with(std::cell::Cell::get)
+    }
+
+    // carve-rs#2690: every marker probe here used to parse the whole document
+    // above it, until the probe budget ran out.
+    #[test]
+    fn a_marker_probe_parses_the_block_holding_its_marker() {
+        let unit = "A paragraph that only adds bytes above the next marker, see[^n].\n\n\
+                    - ::: |\n  - ```\n- :: term\n    ```\n";
+        for separator in ["\n", "\n\n", "\n\n\n"] {
+            let source = vec![unit; 200].join(separator);
+            let probed = probed_bytes(&source);
+            assert!(
+                probed > 0,
+                "no marker probe ran with separator {separator:?}"
+            );
+            assert!(
+                probed * 16 < source.len(),
+                "marker probes parsed {probed} bytes of a {}-byte document with separator \
+                 {separator:?}",
+                source.len()
+            );
+        }
     }
 }
