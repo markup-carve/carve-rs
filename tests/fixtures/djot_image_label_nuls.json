@@ -1192,6 +1192,26 @@
     "html": "<p><img alt=\"a\u0000'b' c\" src=\"img\"></p>\n"
   },
   {
+    "source": "![x{.a\u0000b}][]\n\n[x{.a\u0000b}]: img",
+    "html": "<p><img alt=\"x{.a\u0000b}\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![<http://a\u0000b>][]\n\n[http://a\u0000b]: img",
+    "html": "<p><img alt=\"http://a\u0000b\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![:a\u0000b:][]\n\n[:a\u0000b:]: img",
+    "html": "<p><img alt=\":a\u0000b:\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a\u0000_x_ y][]\n\n[a\u0000x y]: img",
+    "html": "<p><img alt=\"a\u0000x y\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![DJOTNOTEATTR0Z U\u0000x][]\n\n[DJOTNOTEATTR0Z U\u0000x]: img",
+    "html": "<p><img alt=\"DJOTNOTEATTR0Z U\u0000x\" src=\"img\"></p>\n"
+  },
+  {
     "source": "![x][a\u0000b] ![x][a�b]\n\n[a\u0000b]: zero\n[a�b]: replacement",
     "html": "<p><img alt=\"x\" src=\"zero\"> <img alt=\"x\" src=\"replacement\"></p>\n"
   },
@@ -1210,6 +1230,26 @@
   {
     "source": "![a\u0000U\u0000'b' c][]\n\n[a\u0000U\u0000'b' c]: img",
     "html": "<p><img alt=\"a\u0000U\u0000'b' c\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![x{.a\u0000U\u0000b}][]\n\n[x{.a\u0000U\u0000b}]: img",
+    "html": "<p><img alt=\"x{.a\u0000U\u0000b}\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![<http://a\u0000U\u0000b>][]\n\n[http://a\u0000U\u0000b]: img",
+    "html": "<p><img alt=\"http://a\u0000U\u0000b\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![:a\u0000U\u0000b:][]\n\n[:a\u0000U\u0000b:]: img",
+    "html": "<p><img alt=\":a\u0000U\u0000b:\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![a\u0000U\u0000_x_ y][]\n\n[a\u0000U\u0000x y]: img",
+    "html": "<p><img alt=\"a\u0000U\u0000x y\" src=\"img\"></p>\n"
+  },
+  {
+    "source": "![DJOTNOTEATTR0Z U\u0000U\u0000x][]\n\n[DJOTNOTEATTR0Z U\u0000U\u0000x]: img",
+    "html": "<p><img alt=\"DJOTNOTEATTR0Z U\u0000U\u0000x\" src=\"img\"></p>\n"
   },
   {
     "source": "![x][a\u0000U\u0000b] ![x][a�b]\n\n[a\u0000U\u0000b]: zero\n[a�b]: replacement",
