@@ -802,6 +802,7 @@ fn quoted_list_boundaries<'a>(
     let mut depth = 0;
     let mut boundary = String::new();
     let mut paragraph = false;
+    let mut definition_term_column = None;
     let mut previous_blank = true;
     let mut lists: Vec<(usize, usize, usize, usize, usize, usize)> = Vec::new();
     for (row_index, ((line, masked), fenced)) in source
@@ -877,6 +878,33 @@ fn quoted_list_boundaries<'a>(
         };
         let text = &remainder[raw_indent..];
         let visible = masked.get(prefix.len() + raw_indent..).unwrap_or("");
+
+        if has_definition_syntax {
+            if line.trim_matches([' ', '\t']).is_empty() {
+                definition_term_column = None;
+            } else if quote_depth == 0
+                && visible.starts_with(':')
+                && (!paragraph || definition_term_column.is_some())
+            {
+                if let Some((column, _)) = definition_term(line) {
+                    definition_term_column = Some(column);
+                }
+            } else if quote_depth > 0
+                && definition_term_column.is_some_and(|column| leading_indent(line).0 <= column)
+            {
+                paragraph = false;
+                definition_term_column = None;
+            } else if quote_depth == 0
+                && definition_term_column.is_some_and(|column| leading_indent(line).0 <= column)
+                && (marker.is_match(visible)
+                    || heading.is_match(visible)
+                    || thematic(visible)
+                    || visible.starts_with(":::")
+                    || visible.starts_with('|'))
+            {
+                definition_term_column = None;
+            }
+        }
 
         if let Some(caps) = cached_regex!(r"^\x00DJOTITEMATTR\x00(?:[0-9]+\x00)?(B?)[0-9]+\x00$")
             .unwrap()
