@@ -1351,17 +1351,25 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
 
 /// The block whose own markup opens this child's Markdown output.
 ///
-/// A div with no label is written as its children alone, so the block that
-/// meets the text above is the first child of the outermost such wrapper, and
-/// `rendered` still begins with that block's own bytes. A LABEL is written
-/// ahead of the children as bold text, so a labelled div opens with itself.
+/// Unlabelled containers and line blocks write their first child's opener.
+/// A label or title writes text before that child and opens as its own block.
 fn opening_block(node: &BlockNode) -> &BlockNode {
     let mut node = node;
-    while let BlockNode::Div(div) = node {
-        if !div.label.as_deref().unwrap_or_default().is_empty() {
-            break;
-        }
-        match div.children.first() {
+    loop {
+        let children = match node {
+            BlockNode::Div(div) if div.label.as_deref().unwrap_or_default().is_empty() => {
+                &div.children
+            }
+            BlockNode::Admonition(admonition)
+                if admonition.label.as_deref().unwrap_or_default().is_empty()
+                    && admonition.title.as_ref().map_or(true, Vec::is_empty) =>
+            {
+                &admonition.children
+            }
+            BlockNode::LineBlock(line) => &line.children,
+            _ => break,
+        };
+        match children.first() {
             Some(first) => node = first,
             None => break,
         }

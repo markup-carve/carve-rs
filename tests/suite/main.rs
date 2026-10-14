@@ -2124,3 +2124,6 @@ mod djot_deep_escaped_images;
 mod djot_nested_literal_punctuation;
 #[path = "../djot_root_code_container_losses.rs"]
 mod djot_root_code_container_losses;
+
+#[path = "../djot_unicode_quote_attributes.rs"]
+mod djot_unicode_quote_attributes;

@@ -298,7 +298,7 @@ fn a_quote_the_block_above_wrote_keeps_the_next_quote_separate() {
     // written tail is what sees it; the node kind above does not.
     let source = "- x\n+\n::: note\n> q\n:::\n+\n> r\n";
     let out = carve::to_markdown(source);
-    assert_eq!(out, "- x\n\n  > q\n\n  > r\n");
+    assert_eq!(out, "- x\n  > q\n\n  > r\n");
     assert_eq!(count_quotes(&reads_back_children(source)), 2);
 }
 
