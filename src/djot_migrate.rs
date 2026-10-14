@@ -6950,6 +6950,12 @@ fn djot_inline_boundaries_with_div_closers(
                 0
             };
             let mut body = &trimmed[marker_width..];
+            if starts_item && matches!(trimmed.as_bytes()[0], b'-' | b'*' | b'+') {
+                if let Some(task) = cached_regex!(r"^\[[ xX]\][ \t]+").unwrap().find(body) {
+                    body = &body[task.end()..];
+                }
+            }
+
             let padding = body.len() - body.trim_start_matches([' ', '\t']).len();
             body = &body[padding..];
             let nested_quote = scope_quote.find(body).unwrap().as_str();

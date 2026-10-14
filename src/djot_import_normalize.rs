@@ -664,7 +664,9 @@ fn compact_djot_list_prefix(text: &str) -> std::borrow::Cow<'_, str> {
         at += item.end();
         if matches!(prefix.as_bytes()[0], b'-' | b'*' | b'+') {
             if let Some(prefix) = task.find(&text[at..]) {
-                result.push_str(prefix.as_str());
+                changed |= &prefix.as_str()[3..] != " ";
+                result.push_str(&prefix.as_str()[..3]);
+                result.push(' ');
                 at += prefix.end();
             }
         }
@@ -686,7 +688,7 @@ fn quoted_list_boundaries<'a>(
     has_definition_syntax: bool,
     mut literal_quotes: Option<&mut HashMap<usize, usize>>,
 ) -> std::borrow::Cow<'a, str> {
-    if !source.contains('>') || !source.contains('\n') {
+    if !source.contains('>') || !source.contains('\n') && !source.contains('\t') {
         return std::borrow::Cow::Borrowed(source);
     }
     let quote = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
@@ -2649,6 +2651,9 @@ fn blocks_with_slot_inner(
                     }
                 }
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             } else if bare && divs.iter().any(|(open, _, _, _, _)| width >= *open) {
                 let boundary = if divs.iter().any(|(_, _, invalid, _, _)| *invalid) {
                     divs.iter()
@@ -2665,6 +2670,9 @@ fn blocks_with_slot_inner(
                     result.push(format!("{prefix}{}", ":".repeat(open)));
                 }
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             } else if paragraph {
                 result.push(format!("{}\\{text}", &raw[..indent_bytes]));
             } else {
@@ -2680,6 +2688,9 @@ fn blocks_with_slot_inner(
                 ));
                 result.push(display.clone());
                 paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
             }
         } else if paragraph
             && (heading.is_match(visible)
