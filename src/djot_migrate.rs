@@ -3224,6 +3224,19 @@ fn normalize_djot_div_openers(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+fn empty_djot_footnote_task_attributes(line: &str) -> bool {
+    let Some(at) = line.find("[^") else {
+        return false;
+    };
+    let Some(head) = cached_regex!(r"^\[\^[^\]\n]+\]:[ \t]+(.*)$")
+        .unwrap()
+        .captures(&line[at..])
+    else {
+        return false;
+    };
+    head[1].contains('{') && empty_djot_task_tail_end(&head[1], true).is_some()
+}
+
 fn empty_djot_task_tail_end(text: &str, allow_attributes: bool) -> Option<usize> {
     let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
     let task = cached_regex!(r"^\[[ xX]\](?:[ \t]+|$)").unwrap();
@@ -8426,6 +8439,10 @@ pub(super) fn fold_djot_references_with_decisions(
                 }
             }
         }
+        let empty_note_task_attributes = !definition.is_match(content)
+            && content.starts_with('{')
+            && previous_note.is_some()
+            && empty_djot_footnote_task_attributes(previous_line);
         let separator = if (metadata_exit && !has_item
             || row_entry
             || definition.is_match(content)
@@ -8433,6 +8450,7 @@ pub(super) fn fold_djot_references_with_decisions(
                 && !has_item
                 && (owner_exit || definition_owner.is_none()))
             && !previous.is_empty()
+            && !empty_note_task_attributes
         {
             format!("{physical_prefix}\n")
         } else {
@@ -11196,6 +11214,7 @@ pub(crate) fn strip_footnote_definition_attributes(input: &str) -> DjotFootnoteA
             && read_djot_word_attributes(content, 0).is_some_and(|(end, _)| end == content.len())
             && n > 0
             && !lines[n - 1].trim().is_empty()
+            && !empty_djot_footnote_task_attributes(&lines[n - 1])
         {
             lines[n] = format!("{prefix}\n{}", lines[n]);
         }

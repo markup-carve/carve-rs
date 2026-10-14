@@ -1296,6 +1296,7 @@ struct NoteBuffer {
     label: String,
     body: Vec<String>,
     converted_body: Option<String>,
+    carry_task_attributes: bool,
     paragraph: bool,
     blank: bool,
     paragraph_depth: usize,
@@ -1310,6 +1311,16 @@ fn normalize_note_body(
     item_attributes: &mut Vec<String>,
 ) -> Vec<String> {
     let mut body_lines = note.body.clone();
+    let mut returned = Vec::new();
+    if note.carry_task_attributes {
+        if let Some(first) = body_lines.first_mut() {
+            let (_, indent) = leading_indent(first);
+            if let Some(end) = empty_djot_task_tail_end(&first[indent..], true) {
+                returned.push(first[indent + end..].trim().to_owned());
+                first.truncate(indent + end);
+            }
+        }
+    }
     let allow_attributes = body_lines
         .get(1)
         .map_or(true, |line| line.trim().is_empty());
@@ -1330,7 +1341,6 @@ fn normalize_note_body(
     let body = convert_djot_block_markers_with(&body, true);
     let deep = deep_quoted_item_attributes(&body, attribute_prefix, item_attributes);
     let quoted = quoted_list_attribute_layout(&deep, attribute_prefix, item_attributes);
-    let mut returned = Vec::new();
     note.converted_body = Some(super::convert_djot_block_markers(&blocks_with_slot_inner(
         &quoted,
         None,
@@ -1662,9 +1672,7 @@ pub(super) fn note_blocks(
                     .map_or(true, |line| line.trim().is_empty()),
             )
             .is_some();
-            let first_padding = if empty_task {
-                2
-            } else if item.is_match(body) || quoted_item {
+            let first_padding = if item.is_match(body) || quoted_item {
                 caps[1].encode_utf16().count()
             } else if code.is_match(body) {
                 2
@@ -1679,14 +1687,16 @@ pub(super) fn note_blocks(
                 label: caps[1].to_owned(),
                 body: vec![format!("{}{body}", " ".repeat(first_padding))],
                 converted_body: None,
-                item_column: item.is_match(body).then_some(
-                    header_column
-                        + if empty_task {
-                            2
-                        } else {
-                            caps[1].encode_utf16().count()
-                        },
-                ),
+                carry_task_attributes: !empty_task
+                    && empty_djot_task_tail_end(body, true).is_some()
+                    && lines.get(note_line_index + 1).is_some_and(|line| {
+                        let text = &line[djot_content_start(line)..];
+                        read_djot_word_attributes(text, 0)
+                            .is_some_and(|(end, _)| text[end..].trim().is_empty())
+                    }),
+                item_column: item
+                    .is_match(body)
+                    .then_some(header_column + caps[1].encode_utf16().count()),
                 paragraph_depth: depth
                     + body[..djot_content_start(body)]
                         .bytes()
@@ -1745,6 +1755,7 @@ pub(super) fn note_blocks(
                         format!("{}{nested_body}", " ".repeat(child_padding))
                     }],
                     converted_body: None,
+                    carry_task_attributes: false,
                     item_column: child_item
                         .then_some(child_column + nested.as_str().encode_utf16().count()),
                     paragraph_depth: depth,

@@ -2930,5 +2930,45 @@
   {
     "source": "x[^1]\n\n[^1]: * [ ]\n  * [x] b",
     "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n<li>\n<input disabled=\"\" type=\"checkbox\" checked=\"\"/>\nb\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  para",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>para</p>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  - x",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<ul>\n<li>\nx\n</li>\n</ul>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {#i}\n\n  > q",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<blockquote>\n<p>q</p>\n</blockquote>\n</li>\n</ul>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n  para\n- b",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n<p>para</p>\n</li>\n</ul>\n<ul>\n<li>\nb\n</li>\n</ul>\n"
+  },
+  {
+    "source": "[^1]: - [ ] {.c}\n\n  para\n\nt[^1]",
+    "html": "<p>t<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>para<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\ntext",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text</p>\n"
+  },
+  {
+    "source": "- [ ] {.c}\n\n- x",
+    "html": "<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<ul>\n<li>\nx\n</li>\n</ul>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {}\n\n    text",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {%c%}\n\n      text",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p>text<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
+  },
+  {
+    "source": "x[^a]\n\n[^a]: - [ ] {.a}\n{.z}\ntext",
+    "html": "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<p class=\"a z\">text</p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<ul class=\"task-list\">\n<li>\n<input disabled=\"\" type=\"checkbox\"/>\n</li>\n</ul>\n<p><a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n"
   }
 ]
