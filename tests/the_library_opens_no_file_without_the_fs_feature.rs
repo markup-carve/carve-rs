@@ -95,7 +95,10 @@ fn every_library_filesystem_call_is_accounted_for() {
             "includes.rs",
             "let real = std::fs::canonicalize(&candidate).map_err(|e| match e.kind() {",
         ),
-        ("includes.rs", "if std::fs::metadata(&real)"),
+        (
+            "includes.rs",
+            "let metadata = std::fs::metadata(&real).map_err(|_| IncludeDenial::Denied)?;",
+        ),
         (
             "includes.rs",
             "let source = std::fs::read_to_string(&real).map_err(|_| IncludeDenial::Denied)?;",
