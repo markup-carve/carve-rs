@@ -3177,6 +3177,12 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                     finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
                 }
                 if stack.is_empty() {
+                    if cached_regex!(r"^(?:[*-][ \t]*){3,}$")
+                        .unwrap()
+                        .is_match(continuation)
+                    {
+                        lines[index] = format!("\n{}", lines[index]);
+                    }
                     continue;
                 }
             } else {
