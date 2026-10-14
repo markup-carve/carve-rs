@@ -2117,7 +2117,7 @@ mod djot_image_label_nuls;
 #[path = "../span_marker_continuation_col.rs"]
 mod span_marker_continuation_col;
 
-#[path = "../djot_nested_literal_punctuation.rs"]
-mod djot_nested_literal_punctuation;
 #[path = "../djot_deep_escaped_images.rs"]
 mod djot_deep_escaped_images;
+#[path = "../djot_nested_literal_punctuation.rs"]
+mod djot_nested_literal_punctuation;
