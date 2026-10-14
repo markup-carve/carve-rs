@@ -40,8 +40,8 @@ struct List {
 /// Djot attaches an attribute line with no block after it to nothing, so drop it.
 fn drop_orphan_attribute_line(result: &mut Vec<String>) {
     let Some(last) = result.last() else { return };
-    let last = last.trim_end();
-    let at = last.find(|c: char| !c.is_whitespace());
+    let last = last.trim_end_matches(DJOT_LINE_SPACING);
+    let at = last.find(|c: char| !DJOT_LINE_SPACING.contains(&c));
     let Some(at) = at else { return };
     if !last[at..].starts_with('{') {
         return;
@@ -183,7 +183,7 @@ fn deep_quoted_item_attributes(
             && !block.is_match(visible)
             && !(visible.starts_with('{')
                 && read_djot_word_attributes(body, indent)
-                    .is_some_and(|(end, _)| end == body.trim_end_matches([' ', '\t', '\r']).len()));
+                    .is_some_and(|(end, _)| end == body.trim_end_matches(DJOT_LINE_SPACING).len()));
         if depth == 0 {
             if let Some(item) = marker.captures(visible) {
                 let (quote_depth, quote_body) = quoted(&text[item[0].len()..]);
@@ -325,11 +325,11 @@ fn deep_quoted_item_attributes(
         } else if visible.starts_with('{') {
             if depth >= 1 && stack.is_empty() && !prior_paragraph {
                 if let Some((end, wire)) = read_djot_word_attributes(body, indent) {
-                    if end == body.trim_end_matches([' ', '\t', '\r']).len() {
+                    if end == body.trim_end_matches(DJOT_LINE_SPACING).len() {
                         replacements.insert(row, format!("{prefix}{wire}"));
                         let mut next = row + 1;
                         while next < lines.len()
-                            && lines[next].trim_end_matches([' ', '\t', '\r'])
+                            && lines[next].trim_end_matches(DJOT_LINE_SPACING)
                                 == prefix.trim_end_matches([' ', '\t'])
                         {
                             removed[next] = true;
@@ -342,7 +342,7 @@ fn deep_quoted_item_attributes(
                 if indent <= frame.column && !lazy {
                     stack.clear();
                 } else if let Some((end, wire)) = read_djot_word_attributes(body, indent) {
-                    if end == body.trim_end_matches([' ', '\t', '\r']).len() {
+                    if end == body.trim_end_matches(DJOT_LINE_SPACING).len() {
                         if depth >= 2 && !comment_continues_paragraph(source, at) {
                             frame.attributes.push((row, wire));
                         }
@@ -395,7 +395,8 @@ fn quoted_list_attribute_layout(
     if !lines.iter().any(|line| {
         (line.starts_with('>') || quoted(line).0 > 0) && {
             let body = quoted(line).1;
-            body.starts_with([' ', '\t']) && body.trim_start().starts_with('{')
+            body.starts_with([' ', '\t'])
+                && body.trim_start_matches(DJOT_LINE_SPACING).starts_with('{')
         }
     }) {
         return source.to_owned();
@@ -437,11 +438,11 @@ fn quoted_list_attribute_layout(
         ends[n] = open.last().copied().unwrap_or(lines.len());
         open.push(n);
         let body = quoted(lines[n]).1;
-        let text = body.trim_start();
+        let text = body.trim_start_matches(DJOT_LINE_SPACING);
         if body.len() > text.len()
             && text.starts_with('{')
             && read_djot_word_attributes(text, 0)
-                .is_some_and(|(end, _)| end == text.trim_end().len())
+                .is_some_and(|(end, _)| end == text.trim_end_matches(DJOT_LINE_SPACING).len())
         {
             next_attributes.insert(depths[n], n);
         }
@@ -465,8 +466,9 @@ fn quoted_list_attribute_layout(
                 && !prior_block.is_match(previous_body)
                 && !list_marker.is_match(previous_body)
                 && !thematic(previous_body)
-                && !read_djot_word_attributes(previous_body, 0)
-                    .is_some_and(|(end, _)| end == previous_body.trim_end().len()))
+                && !read_djot_word_attributes(previous_body, 0).is_some_and(|(end, _)| {
+                    end == previous_body.trim_end_matches(DJOT_LINE_SPACING).len()
+                }))
                 || comment_continues_paragraph(
                     source,
                     starts[n]
@@ -491,7 +493,10 @@ fn quoted_list_attribute_layout(
             opening += lines[n][opening..].len()
                 - lines[n][opening..].trim_start_matches([' ', '\t']).len();
             let literal_empty = previous_body.starts_with('|')
-                && quoted(lines[n]).1.trim().is_empty()
+                && quoted(lines[n])
+                    .1
+                    .trim_matches(DJOT_LINE_SPACING)
+                    .is_empty()
                 && masks[n].as_bytes().get(opening) == Some(&b'>')
                 && comment_continues_paragraph(source, starts[n] + opening);
             while n < lines.len() && depths[n] >= depth {
@@ -523,12 +528,13 @@ fn quoted_list_attribute_layout(
             || quoted(lines[n]).0 == 0
             || masks[n].as_bytes().get(lines[n].find('>').unwrap_or(0)) != Some(&b'>')
             || (n > 0
-                && !lines[n - 1].trim().is_empty()
+                && !lines[n - 1].trim_matches(DJOT_LINE_SPACING).is_empty()
                 && quoted(lines[n - 1]).0 == 0
-                && !prior_block.is_match(lines[n - 1].trim_start())
+                && !prior_block.is_match(lines[n - 1].trim_start_matches(DJOT_LINE_SPACING))
                 && !thematic(lines[n - 1])
-                && !read_djot_word_attributes(lines[n - 1], 0)
-                    .is_some_and(|(end, _)| end == lines[n - 1].trim_end().len()))
+                && !read_djot_word_attributes(lines[n - 1], 0).is_some_and(|(end, _)| {
+                    end == lines[n - 1].trim_end_matches(DJOT_LINE_SPACING).len()
+                }))
         {
             result.push(lines[n].to_owned());
             n += 1;
@@ -558,13 +564,13 @@ fn quoted_list_attribute_layout(
             })
             .collect();
         let has_list_attributes = bodies.iter().any(|body| {
-            let text = body.trim_start();
+            let text = body.trim_start_matches(DJOT_LINE_SPACING);
             body.len() > text.len()
                 && text.starts_with('{')
                 && read_djot_word_attributes(text, 0)
-                    .is_some_and(|(end, _)| end == text.trim_end().len())
+                    .is_some_and(|(end, _)| end == text.trim_end_matches(DJOT_LINE_SPACING).len())
         }) && bodies.iter().any(|body| {
-            let text = body.trim_start();
+            let text = body.trim_start_matches(DJOT_LINE_SPACING);
             list_marker.is_match(text)
         });
         if has_list_attributes {
@@ -862,7 +868,7 @@ fn quoted_list_boundaries<'a>(
         if quote_depth < depth
             && visible.starts_with('{')
             && read_djot_word_attributes(text, 0)
-                .is_some_and(|(end, _)| end == visible.trim_end_matches([' ', '\t', '\r']).len())
+                .is_some_and(|(end, _)| end == visible.trim_end_matches(DJOT_LINE_SPACING).len())
         {
             depth = quote_depth;
             boundary = prefix.trim_end().to_owned();
@@ -1118,7 +1124,7 @@ fn quoted_list_boundaries<'a>(
                 || (!paragraph
                     && visible.starts_with('{')
                     && read_djot_word_attributes(text, 0).is_some_and(|(end, _)| {
-                        end == visible.trim_end_matches([' ', '\t', '\r']).len()
+                        end == visible.trim_end_matches(DJOT_LINE_SPACING).len()
                     }))
                 || thematic(visible)
                 || visible.starts_with(":::")
@@ -1129,8 +1135,9 @@ fn quoted_list_boundaries<'a>(
             || heading.is_match(visible)
             || (!paragraph
                 && visible.starts_with('{')
-                && read_djot_word_attributes(text, 0)
-                    .is_some_and(|(end, _)| end == visible.trim_end().len()))
+                && read_djot_word_attributes(text, 0).is_some_and(|(end, _)| {
+                    end == visible.trim_end_matches(DJOT_LINE_SPACING).len()
+                }))
             || visible.starts_with('|')
             || visible.starts_with(":::")
             || thematic(visible)
@@ -1909,7 +1916,7 @@ fn blocks_with_slot_inner(
         let mut following_source_depth = None;
         for (n, line) in lines.iter().enumerate().rev() {
             let (depth, body) = quoted(line);
-            let body = body.trim();
+            let body = body.trim_matches(DJOT_LINE_SPACING);
             let attributes = body.starts_with('{')
                 && read_djot_word_attributes(body, 0).is_some_and(|(end, _)| end == body.len());
             if body.is_empty() || attributes {
@@ -1981,9 +1988,11 @@ fn blocks_with_slot_inner(
     for (n, raw) in lines.iter().enumerate() {
         if track_quote_owners && n > 0 {
             let (depth, body) = quoted(lines[n - 1]);
-            if body.trim().is_empty() {
+            if body.trim_matches(DJOT_LINE_SPACING).is_empty() {
                 owned_quote_depths.clear();
-            } else if marker.is_match(body.trim_start()) || heading.is_match(body.trim_start()) {
+            } else if marker.is_match(body.trim_start_matches(DJOT_LINE_SPACING))
+                || heading.is_match(body.trim_start_matches(DJOT_LINE_SPACING))
+            {
                 owned_quote_depths.insert(depth);
             }
         }
@@ -1997,7 +2006,11 @@ fn blocks_with_slot_inner(
         let prior_move = moved_quote_attributes.take();
         if let Some((from, to)) = prior_move {
             let (row_depth, row_body) = quoted(raw);
-            if row_body.trim().is_empty() && row_depth > 0 && row_depth <= from && row_depth >= to {
+            if row_body.trim_matches(DJOT_LINE_SPACING).is_empty()
+                && row_depth > 0
+                && row_depth <= from
+                && row_depth >= to
+            {
                 moved_quote_attributes = Some((row_depth, to));
                 previous_blank = true;
                 continue;
@@ -2005,7 +2018,7 @@ fn blocks_with_slot_inner(
         }
         if let Some(attribute_depth) = quote_attribute_depth {
             let (row_depth, row_body) = quoted(raw);
-            if row_body.trim().is_empty() && attribute_depth == row_depth {
+            if row_body.trim_matches(DJOT_LINE_SPACING).is_empty() && attribute_depth == row_depth {
                 previous_blank = true;
                 continue;
             }
@@ -2031,12 +2044,12 @@ fn blocks_with_slot_inner(
         let visible = if carried_block { text } else { masked_visible };
         let attribute_only = visible.starts_with('{')
             && read_djot_word_attributes(text, 0)
-                .is_some_and(|(end, _)| end == text.trim_end().len());
+                .is_some_and(|(end, _)| end == text.trim_end_matches(DJOT_LINE_SPACING).len());
         if !raw.trim_matches([' ', '\t']).is_empty() && !attribute_only {
             pending_root_attributes.clear();
         }
         if !pending_item_attributes.is_empty()
-            && !raw.trim().is_empty()
+            && !raw.trim_matches(DJOT_LINE_SPACING).is_empty()
             && (!attribute_only || !lists.iter().any(|list| indent > list.source))
             && (!marker.is_match(visible) || thematic(text))
         {
@@ -2177,7 +2190,7 @@ fn blocks_with_slot_inner(
             result.push(display.clone());
             continue;
         }
-        if visible.trim().is_empty() {
+        if visible.trim_matches(DJOT_LINE_SPACING).is_empty() {
             if fence_masks[n].trim().is_empty() {
                 if let Some((kind, width, _)) = &open_code {
                     let length = text.bytes().take_while(|byte| byte == kind).count();
@@ -2211,7 +2224,7 @@ fn blocks_with_slot_inner(
             && indent == 0
             && visible.starts_with('{')
             && read_djot_word_attributes(text, 0)
-                .is_some_and(|(end, _)| end == text.trim_end().len())
+                .is_some_and(|(end, _)| end == text.trim_end_matches(DJOT_LINE_SPACING).len())
         {
             result.push(String::new());
             in_quote = false;
@@ -2227,7 +2240,7 @@ fn blocks_with_slot_inner(
             && (in_quote || !paragraph || n > 0 && masks[n - 1].trim_start().starts_with('>'))
         {
             let (depth, body) = quoted(raw);
-            let block_body = body.trim_start();
+            let block_body = body.trim_start_matches(DJOT_LINE_SPACING);
             if rejected_comment_starts_block(block_body) {
                 let owned = owned_quote_depths.contains(&depth);
                 if owned || depth < quote_paragraph_depth.unwrap_or(depth) {
@@ -2236,8 +2249,9 @@ fn blocks_with_slot_inner(
                 }
             }
             let standalone_attributes = block_body.starts_with('{')
-                && read_djot_word_attributes(block_body, 0)
-                    .is_some_and(|(end, _)| end == block_body.trim_end().len());
+                && read_djot_word_attributes(block_body, 0).is_some_and(|(end, _)| {
+                    end == block_body.trim_end_matches(DJOT_LINE_SPACING).len()
+                });
             let attribute_only =
                 standalone_attributes && quote_paragraph_depth.map_or(true, |held| depth < held);
             let attribute_depth = if attribute_only {
@@ -2268,7 +2282,7 @@ fn blocks_with_slot_inner(
             }
             if let Some(held) = quote_paragraph_depth.filter(|&held| {
                 depth > held
-                    && !body.trim().is_empty()
+                    && !body.trim_matches(DJOT_LINE_SPACING).is_empty()
                     && !quote_paragraph_item_column.is_some_and(|(item_depth, column)| {
                         item_depth == held
                             && djot_attribute_line(raw, held)
@@ -2304,10 +2318,11 @@ fn blocks_with_slot_inner(
             let metadata_body = quote_paragraph_depth.is_none()
                 && (reference.is_match(block_body)
                     || block_body.starts_with('{')
-                        && read_djot_word_attributes(block_body, 0)
-                            .is_some_and(|(end, _)| end == block_body.trim_end().len()));
+                        && read_djot_word_attributes(block_body, 0).is_some_and(|(end, _)| {
+                            end == block_body.trim_end_matches(DJOT_LINE_SPACING).len()
+                        }));
 
-            quote_paragraph_depth = (!body.trim().is_empty()
+            quote_paragraph_depth = (!body.trim_matches(DJOT_LINE_SPACING).is_empty()
                 && !metadata_body
                 && !heading.is_match(block_body)
                 && (!marker.is_match(block_body)
@@ -2357,7 +2372,7 @@ fn blocks_with_slot_inner(
             moved_quote_attributes =
                 (attribute_only && attribute_depth < depth).then_some((depth, attribute_depth));
             paragraph = false;
-            previous_blank = body.trim().is_empty();
+            previous_blank = body.trim_matches(DJOT_LINE_SPACING).is_empty();
             continue;
         }
         if !paragraph && definition_term(raw).is_some() {

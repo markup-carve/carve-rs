@@ -2121,3 +2121,5 @@ mod span_marker_continuation_col;
 mod djot_deep_escaped_images;
 #[path = "../djot_nested_literal_punctuation.rs"]
 mod djot_nested_literal_punctuation;
+#[path = "../djot_unicode_quote_attributes.rs"]
+mod djot_unicode_quote_attributes;

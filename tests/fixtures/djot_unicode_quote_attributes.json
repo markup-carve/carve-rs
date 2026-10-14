@@ -1,0 +1,462 @@
+[
+  {
+    "source": "> a\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n> b",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x}\nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n> b",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x} \nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}\t\nb",
+    "html": "<blockquote>\n<p>a\n\t\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x}\t\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\t\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\t\n\nb",
+    "html": "<blockquote>\n<p>a\n\t</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}\t\n> b",
+    "html": "<blockquote>\n<p>a\n\t\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\t\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x}\t\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x}\t\nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n\n> {.x}\t\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a\n </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n> b",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x} \nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n> b",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p>\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x}\nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p>\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p></p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a\n </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n> b",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x} \nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}  \nb",
+    "html": "<blockquote>\n<p>a\n  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x}  \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n  \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}  \n\nb",
+    "html": "<blockquote>\n<p>a\n  </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}  \n> b",
+    "html": "<blockquote>\n<p>a\n  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}  \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x}  \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p>  \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x}  \nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n  \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x}  \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p>  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}  \n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>  </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a\n </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x} \n> b",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x} \n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x} \nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x} \n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}x\nb",
+    "html": "<blockquote>\n<p>a\nx\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> > {.x}x\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\nx\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}x\n\nb",
+    "html": "<blockquote>\n<p>a\nx</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n> {.x}x\n> b",
+    "html": "<blockquote>\n<p>a\nx\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}x\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>x\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> >\n> > {.x}x\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n<p>x\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\n> {.x}x\nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a\nx\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n\n> {.x}x\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p>x\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}x\n\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>x</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n>  \n> {.x}\nb",
+    "html": "<blockquote>\n<p>a\n \n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n>  \nb",
+    "html": "<blockquote>\n<p>a\n\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>  \n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n \n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> > a\n> >  \n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> \n> {.x}\nb",
+    "html": "<blockquote>\n<p>a\n\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n> \nb",
+    "html": "<blockquote>\n<p>a\n\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> \n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n\n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> > a\n> > \n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>  \n> {.x}\nb",
+    "html": "<blockquote>\n<p>a\n \n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n>  \nb",
+    "html": "<blockquote>\n<p>a\n\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>  \n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n \n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> > a\n> >  \n> > {.x}\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\r\n> {.x}\r\nb",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\r\n> > {.x}\r\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\r\n> {.x}\r\n\r\nb",
+    "html": "<blockquote>\n<p>a\n</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\r\n> {.x}\r\n> b",
+    "html": "<blockquote>\n<p>a\n\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\r\n>\r\n> {.x}\r\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> > a\r\n> >\r\n> > {.x}\r\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n<p class=\"x\">b</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\r\n> {.x}\r\nb",
+    "html": "<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\r\n\r\n> {.x}\r\nb",
+    "html": "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n</blockquote>\n<p class=\"x\">b</p>\n"
+  },
+  {
+    "source": "> a\r\n> {.x} \r\nb",
+    "html": "<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> > a\r\n> > {.x} \r\n> b",
+    "html": "<blockquote>\n<blockquote>\n<p>a\n \nb</p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+    "source": " {.x}",
+    "html": "<p> </p>\n"
+  },
+  {
+    "source": "> a\n>\n>  {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>  {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n>\n>  {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "{.x}",
+    "html": "<p><span class=\"x\"></span></p>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p><span class=\"x\"></span>\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n<span class=\"x\"></span></p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n>\n> {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p><span class=\"x\"></span>\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": " {.x}",
+    "html": "<p> </p>\n"
+  },
+  {
+    "source": "> a\n>\n>  {.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p> \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n>  {.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n </p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n>\n>  {.x} \nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>  \nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "　{.x}",
+    "html": "<p>　</p>\n"
+  },
+  {
+    "source": "> a\n>\n> 　{.x}\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>　\nb</p>\n</blockquote>\n"
+  },
+  {
+    "source": "> a\n> 　{.x}\n\nb",
+    "html": "<blockquote>\n<p>a\n　</p>\n</blockquote>\n<p>b</p>\n"
+  },
+  {
+    "source": "> a\n>\n> 　{.x}　\nb",
+    "html": "<blockquote>\n<p>a</p>\n<p>　　\nb</p>\n</blockquote>\n"
+  }
+]
