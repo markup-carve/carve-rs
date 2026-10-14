@@ -3224,6 +3224,31 @@ fn normalize_djot_div_openers(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+fn empty_djot_task_tail_end(text: &str, allow_attributes: bool) -> Option<usize> {
+    let marker = cached_regex!(r"^(?:[-*+]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]+").unwrap();
+    let task = cached_regex!(r"^\[[ xX]\](?:[ \t]+|$)").unwrap();
+    let mut at = 0;
+    while at < text.len() {
+        let prefix = marker.find(&text[at..])?;
+        at += prefix.end();
+        if matches!(prefix.as_str(), "- " | "* " | "+ ") {
+            if let Some(checkbox) = task.find(&text[at..]) {
+                at += checkbox.end();
+                if at == text.len() {
+                    return Some(at);
+                }
+                if allow_attributes
+                    && read_djot_word_attributes(text, at)
+                        .is_some_and(|(end, _)| text[end..].trim().is_empty())
+                {
+                    return Some(at);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn convert_djot_block_markers(source: &str) -> String {
     convert_djot_block_markers_with(source, false)
 }
@@ -3255,6 +3280,7 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
     let mut thematic_lines = HashSet::new();
     let mut quote_depth = 0;
     let mut quote_exit_items = HashMap::new();
+    let mut empty_task_breaks = HashMap::new();
     let empty_marker = cached_regex!(
         r"^(?:[-*+](?: \[[ xX]\])?|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]*$"
     )
@@ -3363,19 +3389,51 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
         let sibling = item_columns
             .iter()
             .any(|&(held_depth, held_column)| held_depth == depth && held_column == column);
-        if empty_marker.is_match(content)
-            && empty_marker.is_match(authored)
+        let allow_task_attributes = lines
+            .get(index + 1)
+            .map_or(true, |line| line.trim().is_empty());
+        let empty_task_end = empty_djot_task_tail_end(authored, allow_task_attributes);
+        let empty_task = empty_task_end.is_some()
+            && empty_djot_task_tail_end(content, allow_task_attributes).is_some();
+        if (empty_marker.is_match(content) && empty_marker.is_match(authored) || empty_task)
             && (boundary || sibling)
         {
             if exits_quote {
                 quote_exit_items.insert(index, lines[index][..prefix].trim_end().to_owned());
             }
-            let marker = content.trim_end();
+            let marker = empty_task_end
+                .map_or(content, |end| &authored[..end])
+                .trim_end();
             let marker = if marker == "+" && !only_empty {
                 "-"
             } else {
                 marker
             };
+            if empty_task {
+                let ends_before_text = lines.get(index + 1).is_some_and(|next| {
+                    let next_prefix = quote_prefix_len(next);
+                    let next_depth = next[..next_prefix]
+                        .bytes()
+                        .filter(|byte| *byte == b'>')
+                        .count();
+                    let (next_column, next_indent) = leading_indent(&next[next_prefix..]);
+                    let next_content = &next[next_prefix + next_indent..];
+                    next_depth == depth
+                        && next_column <= column
+                        && !next_content.trim().is_empty()
+                        && !full_marker.is_match(next_content)
+                        && !empty_marker.is_match(next_content)
+                        && !heading.is_match(next_content)
+                        && !next_content.starts_with(['>', '{', '|'])
+                        && !next_content.starts_with(":::")
+                        && !cached_regex!(r"^\[[^\]\n]+\]:")
+                            .unwrap()
+                            .is_match(next_content)
+                });
+                if ends_before_text {
+                    empty_task_breaks.insert(index, lines[index][..prefix].trim_end().to_owned());
+                }
+            }
             lines[index] = format!("{}{}{} +", &lines[index][..prefix], &rest[..indent], marker);
             item_columns.retain(|&(held_depth, held_column)| {
                 held_depth < depth || held_depth == depth && held_column < column
@@ -3401,8 +3459,13 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
             .into_iter()
             .enumerate()
             .map(|(index, line)| {
-                if let Some(prefix) = quote_exit_items.get(&index) {
+                let line = if let Some(prefix) = quote_exit_items.get(&index) {
                     format!("{prefix}\n{line}")
+                } else {
+                    line
+                };
+                if let Some(prefix) = empty_task_breaks.get(&index) {
+                    format!("{line}\n{prefix}")
                 } else {
                     line
                 }
@@ -3531,8 +3594,13 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
         .into_iter()
         .enumerate()
         .map(|(index, line)| {
-            if let Some(prefix) = quote_exit_items.get(&index) {
+            let line = if let Some(prefix) = quote_exit_items.get(&index) {
                 format!("{prefix}\n{line}")
+            } else {
+                line
+            };
+            if let Some(prefix) = empty_task_breaks.get(&index) {
+                format!("{line}\n{prefix}")
             } else {
                 line
             }
