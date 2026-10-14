@@ -62,7 +62,7 @@ fn escaped_nested_labels_preserve_native_output_and_opaque_text() {
 #[test]
 fn escaped_bracket_labels_remain_stack_safe() {
     for depth in [128, 512, 1600, 6400] {
-        for leaf in ["x\\[b\\]", "\\[x\\]", "x\\\\y"] {
+        for leaf in ["x\\[b\\]", "\\[x\\]", "x\\\\y", "x\\q", "\\]x\\["] {
             let source = format!("{}{leaf}{}", "![".repeat(depth), "](u)".repeat(depth));
             assert_eq!(
                 carve::to_html(&carve::djot_to_carve(&source)),
