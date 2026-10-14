@@ -3168,7 +3168,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                     }
                     continue;
                 }
-                if top.is_some_and(|frame| frame.ready && indent >= frame.source + 1) {
+                if top.is_some_and(|frame| frame.ready && indent > frame.source) {
                     let frame = top.expect("checked above");
                     let target = frame.target + 3;
                     let lead = if frame.body {
@@ -3258,7 +3258,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             }
         }
         let (indent, _) = leading_indent(&lines[index]);
-        while stack.last().is_some_and(|frame| indent < frame.source + 1) {
+        while stack.last().is_some_and(|frame| indent <= frame.source) {
             finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
         }
         let Some(frame) = stack.last_mut() else {

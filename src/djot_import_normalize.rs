@@ -2166,7 +2166,6 @@ fn blocks_with_slot_inner(
     let mut lists: Vec<List> = Vec::new();
     let mut definition_columns = Vec::new();
     let mut definition_div_columns = HashSet::new();
-    let mut definition_body = false;
     let mut divs: Vec<(usize, String, bool, Option<usize>, usize)> = Vec::new();
     let mut paragraph = false;
     let mut previous_blank = true;
@@ -2269,7 +2268,6 @@ fn blocks_with_slot_inner(
                 .is_some_and(|column| indent < *column);
             if outside_definition {
                 definition_columns.clear();
-                definition_body = false;
                 paragraph = false;
                 previous_blank = true;
             }
@@ -2332,13 +2330,6 @@ fn blocks_with_slot_inner(
                 }
             }
         }
-        if previous_blank
-            && definition_columns
-                .last()
-                .is_some_and(|column| indent + 1 >= *column)
-        {
-            definition_body = true;
-        }
         if (block || marker.is_match(visible))
             && definition_columns
                 .last()
@@ -2350,7 +2341,6 @@ fn blocks_with_slot_inner(
             {
                 definition_columns.pop();
             }
-            definition_body = !definition_columns.is_empty();
             paragraph = false;
             in_heading = false;
         }
@@ -2587,7 +2577,7 @@ fn blocks_with_slot_inner(
             definition_columns.push(indent + 2);
             let content = definition_term(raw).unwrap().1;
             definition_div_columns.remove(&(indent + 2));
-            definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+            let definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
                 .unwrap()
                 .is_match(&raw[content..]);
             if definition_body {
