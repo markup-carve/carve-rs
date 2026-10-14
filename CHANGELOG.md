@@ -15,7 +15,7 @@ which the published crate does not carry.
 
 ### Breaking
 
-- Markdown import reads a `*[TERM]: expansion` line as an abbreviation definition, always on, instead of keeping it as text (#2662).
+- Markdown import reads a `*[TERM]: expansion` line as an abbreviation definition, always on, instead of keeping it as text (#2655, #2662).
 
 - New loss and migration codes. Render losses `carrier-attribute-dropped`, `definition-list-flattened`, `list-style-dropped` and `list-delimiter-changed` are reported and accepted by `--allow-loss` (#2523, #2562, #2624, #2635, #2647, #2648). Markdown and Djot import report `frontmatter-synthesized`, `raw-span-whitespace-trimmed`, `raw-code-fallback`, `carrier-markers-damaged` and `djot-footnote-definition-attributes-dropped` (#2390, #2403, #2408, #2416, #2441, #2662). A gate that fails on unknown codes has to list them.
 
@@ -42,6 +42,8 @@ which the published crate does not carry.
 - Djot import derives collapsed image reference keys from the image's child text, as Djot does, and reads simple chains of nested image labels once instead of overflowing the stack (#2697, #2742).
 
 - Djot import adds the space Carve needs after a compact or tab-separated DIV opener such as `:::x`, keeps a quote after a multiline attribute line, and keeps the checkbox on an empty task item (#2724, #2729, #2738).
+
+- Djot import keeps a DIV that opens a definition item in the definition body instead of reading it as the term (#2759).
 
 - Djot import keeps Unicode spacing (NBSP, NEL, em space, U+3000) in a quote as paragraph payload instead of ending the quote or moving its attributes (#2744).
 
