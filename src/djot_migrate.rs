@@ -3046,6 +3046,18 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
     let mut lines: Vec<String> = source.split('\n').map(str::to_owned).collect();
     let masked_source = mask_code_and_destinations(source);
     let masked: Vec<&str> = masked_source.split('\n').collect();
+    let fence_starts = std::cell::RefCell::new(HashSet::new());
+    if source.contains("```") || source.contains("~~~") {
+        let _ = mask_djot_fences_with_open(
+            source,
+            None,
+            &[],
+            true,
+            Some(&|line| {
+                fence_starts.borrow_mut().insert(line);
+            }),
+        );
+    }
     let mut stack: Vec<DefinitionFrame> = Vec::new();
     let mut boundaries: Option<HashSet<usize>> = None;
     let mut source_offset = 0;
@@ -3212,7 +3224,8 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             let continuation = lines[index].trim_start();
             let indent = leading_indent(&lines[index]).0;
             let first = leading_indent(&lines[index]).1;
-            let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first);
+            let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first)
+                || fence_starts.borrow().contains(&index);
             let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|\||:{3,}|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation) || cached_regex!(r"^(?:[*-][ \t]*){3,}$").unwrap().is_match(continuation);
             if visible && indent <= stack.last().unwrap().source && marker {
                 while stack.last().is_some_and(|frame| frame.source >= indent) {
