@@ -3288,6 +3288,12 @@ fn reference_label(text: &str, explicit: &str) -> String {
         return label(text);
     }
     let source = reference_labels_as_spans(&image_label_attributes(text));
+    let source = if source.contains('\0') {
+        let (attributes, inherited) = escape_invalid_djot_attributes(&source);
+        remove_inherited_attribute_markers(&attributes, &inherited)
+    } else {
+        source
+    };
     let converted =
         emphasis::convert_image_child(&source, &mask_code_and_destinations(&source), |text| {
             escape_plain_carve_syntax(text, HandledDelimiters::DJOT)
@@ -3297,20 +3303,8 @@ fn reference_label(text: &str, explicit: &str) -> String {
         ..Default::default()
     };
     let nul_token = if converted.contains('\0') {
-        let projected: String = converted
-            .chars()
-            .filter(char::is_ascii_alphanumeric)
-            .collect();
-        let reserved: HashSet<String> = cached_regex!(r"DJOTKEYNUL([0-9]+)Z")
-            .unwrap()
-            .captures_iter(&projected)
-            .map(|caps| caps[1].to_string())
-            .collect();
-        let mut serial = 0;
-        while reserved.contains(&serial.to_string()) {
-            serial += 1;
-        }
-        Some(format!("DJOTKEYNUL{serial}Z"))
+        let occupied = crate::sentinel_run::occupied_private_use(&converted);
+        Some(crate::sentinel_run::pick_sentinel_run::<1>(&occupied, 0xe001)[0].to_string())
     } else {
         None
     };
