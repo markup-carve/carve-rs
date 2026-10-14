@@ -2979,6 +2979,7 @@ fn blocks_with_slot_inner(
             result.push(
                 if previous_blank
                     && lists.is_empty()
+                    && definition_columns.is_empty()
                     && outer_source.is_some_and(|source| indent <= source)
                 {
                     text.to_owned()
