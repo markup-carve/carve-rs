@@ -1,0 +1,46 @@
+[
+ {
+  "s": "| a | b |\n| ^ | c |\n+ more | d |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a more</td><td>b</td></tr>\n    <tr><td>c d</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | b |\n+ more | d |\n| ^ | c |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a more</td><td>b d</td></tr>\n    <tr><td>c</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | b |\n| ^ | c |\n| ^ | e |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"3\">a x</td><td>b</td></tr>\n    <tr><td>c</td></tr>\n    <tr><td>e y</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | < |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a x y</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | < | c |\n| ^ | ^ | d |\n+ x | y | z |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\" colspan=\"2\">a x y</td><td>c</td></tr>\n    <tr><td>d z</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| A |\n|---|\n| ^ |\n+ x |\n",
+  "html": "<table>\n  <tbody>\n    <tr><th scope=\"col\" rowspan=\"2\">A x</th></tr>\n    <tr></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | b |\n| < | c |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n    <tr><td>x</td><td>c y</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| ^ | b |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td>x</td><td>b y</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | b | c |\n| ^ | d | e |\n| f | ^ | g |\n+ x | y | z |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td rowspan=\"2\">a</td><td>b</td><td>c</td></tr>\n    <tr><td rowspan=\"2\">d y</td><td>e</td></tr>\n    <tr><td>f x</td><td>g z</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "| a | < |\n| ^ | b |\n+ x | y |\n",
+  "html": "<table>\n  <tbody>\n    <tr><td colspan=\"2\">a</td></tr>\n    <tr><td>x</td><td>b y</td></tr>\n  </tbody>\n</table>"
+ },
+ {
+  "s": "|= h |= i |\n| a | b |\n| ^ | c |\n+ more | |\n+ again | d |\n",
+  "html": "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th><th scope=\"col\">i</th></tr>\n  </thead>\n  <tbody>\n    <tr><td rowspan=\"2\">a more again</td><td>b</td></tr>\n    <tr><td>c d</td></tr>\n  </tbody>\n</table>"
+ }
+]

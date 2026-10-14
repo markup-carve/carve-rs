@@ -3167,7 +3167,7 @@ fn convert_djot_block_markers_with(source: &str, only_empty: bool) -> String {
     let mut quote_depth = 0;
     let mut quote_exit_items = HashMap::new();
     let empty_marker = cached_regex!(
-        r"^(?:[-*+]|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]*$"
+        r"^(?:[-*+](?:[ \t]+\[[ xX]\])?|(?:[0-9]+|[ivxlcdm]+|[IVXLCDM]+|[a-zA-Z])[.)]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\))[ \t]*$"
     )
     .unwrap();
     let full_marker = cached_regex!(
@@ -5636,6 +5636,17 @@ fn find_braced_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn empty_task_items_keep_their_checkboxes() {
+        for (source, expected) in [
+            ("- [ ]\n", "- [ ] +\n"),
+            ("- [ ] a\n- [x]\n", "- [ ] a\n- [x] +\n"),
+            ("- [ ] a\n- [x] b\n", "- [ ] a\n- [x] b\n"),
+            ("1. [ ]\n", "1. [ ]\n"),
+        ] {
+            assert_eq!(super::djot_to_carve(source), expected, "{source:?}");
+        }
+    }
     use super::*;
 
     #[test]

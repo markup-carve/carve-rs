@@ -555,7 +555,10 @@ impl Renderer {
                         a.insert("carveCellBlocks".into(), Json::Bool(true));
                         self.blocks(blocks)
                     } else {
-                        self.inlines(&cell.children, &[])
+                        if matches!(cell.children.first(), Some(InlineNode::CellWrap(_))) {
+                            self.degrade("cell_wrap");
+                        }
+                        self.inlines(crate::ast::visible_table_cell_children(&cell.children), &[])
                     };
                     Some(node_with(name, a, content))
                 })

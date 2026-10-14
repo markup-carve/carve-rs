@@ -20139,6 +20139,7 @@ struct CellFragment {
     line: usize,
     /// Rows down from the receiving cell to that row (CARVE-P12-069).
     row: usize,
+    col: usize,
 }
 
 thread_local! {
@@ -20179,6 +20180,7 @@ fn verbatim_cell_wraps(
                 offset: 0,
                 line: wrap.line,
                 row: wrap.row,
+                col: wrap.col,
             });
         }
     }
@@ -20191,6 +20193,7 @@ fn verbatim_cell_wraps(
                 offset,
                 line: wrap.line,
                 row: wrap.row,
+                col: wrap.col,
             });
         }
     }
@@ -20200,6 +20203,7 @@ fn verbatim_cell_wraps(
                 offset: value.chars().count(),
                 line: wrap.line,
                 row: wrap.row,
+                col: wrap.col,
             });
         }
     }
@@ -20272,6 +20276,7 @@ fn join_marker_continuations(
         }
         for fragment in &mut moved {
             fragment.row += marker.0 - origin.0;
+            fragment.col += marker.1 - origin.1;
             // A row below the cell's own lies outside the cell's placed span.
             if marker.0 != origin.0 {
                 fragment.anchor = None;
@@ -20440,6 +20445,7 @@ fn collect_continuation_fragments(
                     anchor,
                     line: line_index + 1,
                     row: 0,
+                    col: 0,
                 });
             }
         }
@@ -20641,12 +20647,13 @@ fn parse_cell_content(
     let mut breaks = Vec::new();
     let mut wraps = Vec::new();
     for fragment in extra {
-        if !text.is_empty() {
+        if !text.is_empty() || fragment.line > 1 {
             wraps.push((
                 text.len(),
                 CellWrap {
                     line: fragment.line,
                     row: (fragment.row > 0).then_some(fragment.row),
+                    col: (fragment.col > 0).then_some(fragment.col),
                     pos: None,
                 },
             ));
@@ -20655,15 +20662,24 @@ fn parse_cell_content(
             // the next segment on it instead puts the exclusive end of a span
             // that stops just short of it into the following segment, and every
             // node at the end of a fragment loses its position.
-            text.push(' ');
+            if !text.is_empty() {
+                text.push(' ');
+            }
         }
         breaks.push(text.len());
         text.push_str(&fragment.text);
         lines.push(fragment.anchor);
     }
+    let leading_wrap = wraps
+        .first()
+        .filter(|(offset, _)| *offset == 0)
+        .map(|(_, wrap)| wrap.clone());
     let outer = CELL_WRAPS.with(|cell| cell.replace(wraps));
-    let parsed = parse_inline_segments_with_anchor(&text, options, lines, breaks);
+    let mut parsed = parse_inline_segments_with_anchor(&text, options, lines, breaks);
     CELL_WRAPS.with(|cell| cell.replace(outer));
+    if let Some(wrap) = leading_wrap {
+        parsed.insert(0, InlineNode::CellWrap(wrap));
+    }
     parsed
 }
 

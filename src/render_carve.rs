@@ -3004,6 +3004,10 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             vec![vec![" ".to_string(); row.cells.len()]; row.continuation_lines.unwrap_or(0)]
         })
         .collect();
+    let mut occupied: Vec<Vec<Vec<bool>>> = continuations
+        .iter()
+        .map(|lines| lines.iter().map(|slots| vec![false; slots.len()]).collect())
+        .collect();
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
         for (cell_index, cell) in row.cells.iter().enumerate() {
@@ -3017,8 +3021,22 @@ fn render_table(session: &RenderSession, node: &Table, ctx: &mut CarveContext) -
             // cell to carry it and keeps its own marker.
             let suppress_align =
                 row_index == 0 && authored_widths.is_some_and(|widths| cell_index < widths.len());
-            let rendered = render_table_cell(session, cell, ctx, mark_header, suppress_align);
-            match place_cell_wraps(&rendered, row_index, cell_index, &mut continuations) {
+            let rendered = render_table_cell(
+                session,
+                cell,
+                ctx,
+                mark_header,
+                suppress_align,
+                row.continuation_lines.unwrap_or(0) > 0,
+            );
+            match place_cell_wraps(
+                &rendered,
+                cell.span.is_some(),
+                row_index,
+                cell_index,
+                &mut continuations,
+                &mut occupied,
+            ) {
                 Ok(own) => cells.push(own),
                 Err(reason) => {
                     crate::render_carve_error::record_unspellable("table_row", reason);
@@ -3087,26 +3105,39 @@ fn pad_cell(prefix: &str, content: &str) -> String {
 }
 
 /// Splits a rendered cell at its `cell_wrap` sentinels: the part before the
-/// first stays on the standard row, each later part fills the next free slot
-/// at or after the cell's column on the continuation line it names.
+/// first stays on the standard row; each later part fills its named column
+/// on the continuation line it names.
 fn place_cell_wraps(
     rendered: &str,
+    span: bool,
     row_index: usize,
     cell_index: usize,
     continuations: &mut [Vec<Vec<String>>],
+    occupied: &mut [Vec<Vec<bool>>],
 ) -> Result<String, &'static str> {
     let Some(first) = rendered.find('\u{2}') else {
         return Ok(rendered.to_string());
     };
-    let own = format!("{} ", &rendered[..first]);
+    let own = if span {
+        rendered[..first].to_string()
+    } else {
+        format!("{} ", &rendered[..first])
+    };
     let mut rest = &rendered[first..];
     while let Some(tail) = rest.strip_prefix('\u{2}') {
         let close = tail
             .find('\u{3}')
             .ok_or("cell_wrap sentinel is not closed")?;
-        let (row, line) = tail[..close]
+        let (row, line, col) = tail[..close]
             .split_once(',')
-            .and_then(|(row, line)| Some((row.parse::<usize>().ok()?, line.parse::<usize>().ok()?)))
+            .and_then(|(row, tail)| {
+                let (line, col) = tail.split_once(',')?;
+                Some((
+                    row.parse::<usize>().ok()?,
+                    line.parse::<usize>().ok()?,
+                    col.parse::<usize>().ok()?,
+                ))
+            })
             .ok_or("cell_wrap sentinel is malformed")?;
         let body = &tail[close + 1..];
         let next = body.find('\u{2}');
@@ -3121,9 +3152,15 @@ fn place_cell_wraps(
             .and_then(|line| continuations.get_mut(row_index + row)?.get_mut(line))
             .filter(|slots| cell_index < slots.len())
             .ok_or("cell_wrap points outside its continuation row")?;
-        let slot = (cell_index..slots.len())
-            .find(|&index| slots[index] == " ")
-            .ok_or("cell_wrap has no free continuation cell")?;
+        let slot = cell_index
+            .checked_add(col)
+            .filter(|&slot| slot < slots.len())
+            .ok_or("cell_wrap points outside its continuation row")?;
+        let used = &mut occupied[row_index + row][line - 1][slot];
+        if *used {
+            return Err("cell_wrap continuation cell is occupied or out of bounds");
+        }
+        *used = true;
         slots[slot] = pad_cell("", part);
         rest = &body[part.len()..];
         rest = rest
@@ -3243,6 +3280,7 @@ fn render_table_cell(
     ctx: &mut CarveContext,
     mark_header: bool,
     suppress_align: bool,
+    has_continuations: bool,
 ) -> String {
     if cell.blocks.is_some() && !cell.children.is_empty() {
         crate::render_carve_error::record_unspellable(
@@ -3268,7 +3306,22 @@ fn render_table_cell(
         } else {
             "<"
         };
-        return pad_cell(&attrs, marker);
+        let own = pad_cell(&attrs, marker);
+        if cell.children.is_empty() || !has_continuations {
+            return own;
+        }
+        // A blocked marker keeps its continuation in its own cell. Its first
+        // fragment has no cell_wrap node because the marker has no inline
+        // content on the ordinary row; place it on continuation line one.
+        ctx.table_cell_depth += 1;
+        let content = render_inlines(session, &cell.children, ctx);
+        ctx.table_cell_depth -= 1;
+        let first_wrap = if matches!(cell.children.first(), Some(InlineNode::CellWrap(_))) {
+            ""
+        } else {
+            "\u{2}0,1,0\u{3}"
+        };
+        return format!("{own}{first_wrap}{content}");
     }
     let align = if suppress_align {
         ""
@@ -4578,7 +4631,12 @@ fn render_inline_body(
             }
         }
         InlineNode::CellWrap(n) if ctx.table_cell_depth > 0 => {
-            format!("\u{2}{},{}\u{3}", n.row.unwrap_or(0), n.line)
+            format!(
+                "\u{2}{},{},{}\u{3}",
+                n.row.unwrap_or(0),
+                n.line,
+                n.col.unwrap_or(0)
+            )
         }
         InlineNode::CellWrap(_) => " ".to_string(),
         InlineNode::HardBreak(_) => {
@@ -5527,7 +5585,12 @@ fn spell_verbatim(fence: &str, content: &str, needs_pad: bool) -> String {
         };
     };
     let marker = |wrap: &crate::ast::VerbatimCellWrap| {
-        format!("\u{2}{},{}\u{3}", wrap.row.unwrap_or(0), wrap.line)
+        format!(
+            "\u{2}{},{},{}\u{3}",
+            wrap.row.unwrap_or(0),
+            wrap.line,
+            wrap.col.unwrap_or(0)
+        )
     };
     let mut chars: Vec<String> = content.chars().map(String::from).collect();
     let len = chars.len();

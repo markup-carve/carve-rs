@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-continuation-on-a-span-marker-joins-the-cell-the-marker-resolves-into",
+    "a-table-row-ends-a-description-body-and-a-lone-plus-folds-into-a-term",
     "a-below-column-line-continues-a-paragraph-only-where-one-is-open",
     "a-closed-fence-in-a-nested-child-leaves-no-paragraph-open",
     "a-code-line-left-of-an-authored-base-fence-opener-is-measured-from-that-base",
@@ -1663,3 +1665,12 @@ fn declared_population_refuses_invalid_source() {
         );
     }
 }
+
+corpus_test!(
+    c_span_marker_continuation,
+    "a-continuation-on-a-span-marker-joins-the-cell-the-marker-resolves-into"
+);
+corpus_test!(
+    c_table_row_ends_description_body,
+    "a-table-row-ends-a-description-body-and-a-lone-plus-folds-into-a-term"
+);

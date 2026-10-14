@@ -2119,3 +2119,6 @@ mod djot_unresolved_nul_references;
 
 #[path = "../djot_raw_format_nel_losses.rs"]
 mod djot_raw_format_nel_losses;
+
+#[path = "../span_marker_continuation_col.rs"]
+mod span_marker_continuation_col;
