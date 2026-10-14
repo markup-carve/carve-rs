@@ -715,12 +715,18 @@ fn simple_nested_image_label(label: &str) -> Option<&str> {
         end = open;
         count += 1;
     }
-    (count == start / 2
-        && start < end
-        && !bytes[start..end]
-            .iter()
-            .any(|byte| matches!(byte, b'[' | b']' | b'\\')))
-    .then_some(&label[start..end])
+    if count != start / 2 || start >= end {
+        return None;
+    }
+    let mut at = start;
+    while at < end {
+        match bytes[at] {
+            b'\\' if at + 1 < end && !matches!(bytes[at + 1], b'\n' | b'\r') => at += 2,
+            b'[' | b']' | b'\\' => return None,
+            _ => at += 1,
+        }
+    }
+    Some(&label[start..end])
 }
 
 #[cfg(test)]
