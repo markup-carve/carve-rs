@@ -192,7 +192,7 @@ fn convert_djot_document(
     );
     let (literal_attributes, inherited) = escape_invalid_djot_attributes(&carried);
     let attributes =
-        definition_term_table_boundaries(&normalize_djot_attribute_lines(&literal_attributes));
+        definition_term_block_boundaries(&normalize_djot_attribute_lines(&literal_attributes));
     let owned_references = fold_djot_references(&attributes);
     let fences = normalize_djot_fences(&owned_references);
     let empty_note = djot_placeholder_prefix(body, "\0DJOTEMPTYNOTE\0");
@@ -2992,14 +2992,32 @@ fn definition_term(line: &str) -> Option<(usize, usize)> {
     (byte > whitespace || byte == bytes.len()).then_some((columns, byte))
 }
 
-fn definition_term_table_boundaries(source: &str) -> String {
-    if !source.contains(':') || !source.contains('|') {
+fn definition_term_block_boundaries(source: &str) -> String {
+    if !source.contains(':')
+        || !(source.contains('|') || source.contains("```") || source.contains("~~~"))
+    {
         return source.to_owned();
     }
     let mask = mask_code_and_destinations(source);
     let boundaries: HashSet<usize> = djot_inline_boundaries_with_code_scopes(source, &mask, true)
         .into_iter()
         .collect();
+    let mut spans = Vec::new();
+    let has_fences = source.contains("```") || source.contains("~~~");
+    if has_fences {
+        let _ = mask_djot_opaque_with_comments_and_code(
+            source,
+            OpaqueOptions {
+                destinations: false,
+                ..OpaqueOptions::default()
+            },
+            Some(&mut spans),
+            true,
+        );
+    }
+    let destinations = has_fences.then(|| djot_destination_ranges(source, &mask));
+    let fence = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t\r]*$").unwrap();
+    let mut span_index = 0;
     let mut column = None;
     let mut previous_blank = true;
     let mut offset = 0;
@@ -3019,12 +3037,27 @@ fn definition_term_table_boundaries(source: &str) -> String {
                     column = Some(next);
                 }
             }
-        } else if column.is_some_and(|held| indent <= held)
-            && visible.as_bytes().get(first) == Some(&b'|')
-            && line.trim_end().ends_with('|')
-        {
+        } else if column.is_some_and(|held| indent <= held) {
+            let at = offset + first;
+            while spans.get(span_index).is_some_and(|span| span.end <= at) {
+                span_index += 1;
+            }
+            let inside_code = spans
+                .get(span_index)
+                .is_some_and(|span| span.start < at && at < span.end);
+            let inside_destination = destinations
+                .as_ref()
+                .is_some_and(|ranges| ranges.iter().any(|(&start, &end)| start < at && at < end));
+            let pipe =
+                visible.as_bytes().get(first) == Some(&b'|') && line.trim_end().ends_with('|');
+            let code =
+                has_fences && fence.is_match(&line[first..]) && !inside_code && !inside_destination;
+            if pipe || code {
             lines.push(String::new());
-            column = None;
+                column = None;
+            } else if cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(&visible[first..]) {
+                column = None;
+            }
         }
         lines.push(line.to_owned());
         previous_blank = blank;
@@ -5179,7 +5212,7 @@ fn mask_djot_opaque_with_comments(
     source: &str,
     options: OpaqueOptions<'_>,
 ) -> (Vec<u8>, Vec<(usize, usize)>) {
-    mask_djot_opaque_with_comments_and_code(source, options, None)
+    mask_djot_opaque_with_comments_and_code(source, options, None, false)
 }
 
 struct DjotCodeSpan {
@@ -5192,6 +5225,7 @@ fn mask_djot_opaque_with_comments_and_code(
     source: &str,
     options: OpaqueOptions,
     mut code_spans: Option<&mut Vec<DjotCodeSpan>>,
+    include_raw_math: bool,
 ) -> (Vec<u8>, Vec<(usize, usize)>) {
     let reference_boundary =
         cached_regex!(r"^(?:#{1,6} |:{3,}|[`~]{3,}|\{|\[[^\]]+\]:|(?:[*-][ \t]*){3,}$)").unwrap();
@@ -5360,8 +5394,7 @@ fn mask_djot_opaque_with_comments_and_code(
                 .filter(|close| close + width <= paragraph_end);
             let end = close.map_or(paragraph_end, |close| close + width);
             let math = at > 0 && bytes[at - 1] == b'$' && !is_escaped(bytes, at - 1);
-            if !math
-                && !raw_formats.contains_key(&end)
+            if (include_raw_math || !math && !raw_formats.contains_key(&end))
                 && (close.is_some() || options.unclosed_code)
             {
                 spans.push(DjotCodeSpan {

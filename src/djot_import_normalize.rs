@@ -5001,6 +5001,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             &fenced,
             OpaqueOptions::default(),
             Some(&mut spans),
+            false,
         );
         let container = cached_regex!(r"\n[ \t]*:{3,}(?:[ \t]+[^\n]*)?(?:\n|$)").unwrap();
         let mut line_end = source.find('\n');
