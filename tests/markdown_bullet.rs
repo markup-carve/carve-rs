@@ -18,3 +18,9 @@ fn keeps_the_bullet_on_a_task_list() {
 fn leaves_a_hyphen_list_alone() {
     assert!(carve::to_markdown("- a\n").contains("- a"));
 }
+
+#[test]
+fn markdown_import_keeps_authored_bullet() {
+    assert_eq!(carve::markdown_to_carve("* one\n* two\n"), "* one\n* two\n");
+    assert_eq!(carve::markdown_to_carve("- one\n- two\n"), "- one\n- two\n");
+}

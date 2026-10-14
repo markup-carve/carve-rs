@@ -1,0 +1,2774 @@
+[
+  {
+    "source": "![plain][]\n\n[plain]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"plain\" src=\"img\"></p>\n",
+    "key": "plain",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![plain][]\n\n[plain]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"plain\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "plain",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![plain][]\n\n[plain]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"plain\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "plain",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![plain][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "plain",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![plain][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "plain",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![plain][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "plain",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![\"quoted\"][]\n\n[\"quoted\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![\"quoted\"][]\n\n[\"quoted\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![\"quoted\"][]\n\n[\"quoted\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![\"quoted\"][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"quoted\" src=\"img\"></p>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![\"quoted\"][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"quoted\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![\"quoted\"][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"quoted\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![\"quoted\"][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![\"quoted\"][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![\"quoted\"][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "!['quoted'][]\n\n['quoted']: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> !['quoted'][]\n\n['quoted']: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- !['quoted'][]\n\n['quoted']: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "!['quoted'][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"quoted\" src=\"img\"></p>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> !['quoted'][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"quoted\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- !['quoted'][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"quoted\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "!['quoted'][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> !['quoted'][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- !['quoted'][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{\"quoted\"}][]\n\n[{\"quoted\"}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{\"quoted\"}][]\n\n[{\"quoted\"}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{\"quoted\"}][]\n\n[{\"quoted\"}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{\"quoted\"}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"quoted\" src=\"img\"></p>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{\"quoted\"}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"quoted\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{\"quoted\"}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"quoted\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{\"quoted\"}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{\"quoted\"}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{\"quoted\"}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{'quoted'}][]\n\n[{'quoted'}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{'quoted'}][]\n\n[{'quoted'}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{'quoted'}][]\n\n[{'quoted'}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{'quoted'}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"quoted\" src=\"img\"></p>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{'quoted'}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"quoted\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{'quoted'}][]\n\n[quoted]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"quoted\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{'quoted'}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{'quoted'}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{'quoted'}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "quoted",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![_a_][]\n\n[_a_]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![_a_][]\n\n[_a_]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![_a_][]\n\n[_a_]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![_a_][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![_a_][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![_a_][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![_a_][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![_a_][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![_a_][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![*a*][]\n\n[*a*]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![*a*][]\n\n[*a*]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![*a*][]\n\n[*a*]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![*a*][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![*a*][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![*a*][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![*a*][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![*a*][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![*a*][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x _a_ y][]\n\n[x _a_ y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![x _a_ y][]\n\n[x _a_ y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![x _a_ y][]\n\n[x _a_ y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x _a_ y][]\n\n[x a y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"x a y\" src=\"img\"></p>\n",
+    "key": "x a y",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![x _a_ y][]\n\n[x a y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"x a y\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "x a y",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![x _a_ y][]\n\n[x a y]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"x a y\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "x a y",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![x _a_ y][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![x _a_ y][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![x _a_ y][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "x a y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![`a`][]\n\n[`a`]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![`a`][]\n\n[`a`]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![`a`][]\n\n[`a`]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![`a`][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![`a`][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![`a`][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![`a`][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![`a`][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![`a`][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![` \"a\" `][]\n\n[` \"a\" `]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![` \"a\" `][]\n\n[` \"a\" `]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![` \"a\" `][]\n\n[` \"a\" `]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![` \"a\" `][]\n\n[\"a\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\" &quot;a&quot; \" src=\"img\"></p>\n",
+    "key": "\"a\"",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![` \"a\" `][]\n\n[\"a\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\" &quot;a&quot; \" src=\"img\"></p>\n</blockquote>\n",
+    "key": "\"a\"",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![` \"a\" `][]\n\n[\"a\"]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\" &quot;a&quot; \" src=\"img\">\n</li>\n</ul>\n",
+    "key": "\"a\"",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![` \"a\" `][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![` \"a\" `][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![` \"a\" `][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "\"a\"",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\*b][]\n\n[a\\*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\*b][]\n\n[a\\*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\*b][]\n\n[a\\*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\*b][]\n\n[a*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a*b\" src=\"img\"></p>\n",
+    "key": "a*b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\*b][]\n\n[a*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a*b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a*b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\*b][]\n\n[a*b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a*b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a*b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\*b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\*b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\*b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a*b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\ b][]\n\n[a\\ b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\ b][]\n\n[a\\ b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\ b][]\n\n[a\\ b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\ b][]\n\n[ab]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\ b][]\n\n[ab]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"ab\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\ b][]\n\n[ab]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"ab\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\ b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\ b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\ b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\tb][]\n\n[a\tb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\tb\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\tb][]\n\n[a\tb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\tb\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\tb][]\n\n[a\tb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\tb\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\tb][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\tb\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\tb][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\tb\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\tb][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\tb\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\tb][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\tb][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\tb][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a  b][]\n\n[a  b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a  b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a  b][]\n\n[a  b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a  b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a  b][]\n\n[a  b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a  b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a  b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a  b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a  b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a  b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a  b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a  b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a  b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a  b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a  b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\nb][]\n\n[a\nb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a\nb]: img</p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\n> b][]\n\n[a\nb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a\nb]: img</p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\nb][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\nb\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\n> b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\nb\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\nb][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\n> b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\r\nb][]\n\n[a\r\nb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a\nb]: img</p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\r\n> b][]\n\n[a\r\nb]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a\nb]: img</p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\r\nb][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\nb\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\r\n> b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\nb\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\r\nb][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\r\n> b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a&b][]\n\n[a&b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a&amp;b\" src=\"img\"></p>\n",
+    "key": "a&b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a&b][]\n\n[a&b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a&amp;b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a&b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a&b][]\n\n[a&b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a&amp;b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a&b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a&b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a&b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a&b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a&b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a&b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a&b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a&amp;b][]\n\n[a&amp;b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a&amp;amp;b\" src=\"img\"></p>\n",
+    "key": "a&amp;b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a&amp;b][]\n\n[a&amp;b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a&amp;amp;b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a&amp;b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a&amp;b][]\n\n[a&amp;b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a&amp;amp;b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a&amp;b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a&amp;b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a&amp;b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a&amp;b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a&amp;b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a&amp;b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a&amp;b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\[b\\]][]\n\n[a\\[b\\]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\[b\\]][]\n\n[a\\[b\\]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\[b\\]][]\n\n[a\\[b\\]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\[b\\]][]\n\n[a[b]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\[b\\]][]\n\n[a[b]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\[b\\]][]\n\n[a[b]]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[a[b]]: img</p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\[b\\]][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\\[b\\]][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a\\[b\\]][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a[b]",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n] b][]\n\n[a[^n] b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> b]: img</p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n] b][]\n\n[a[^n] b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> b]: img</p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n] b][]\n\n[a[^n] b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[a<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> b]: img</p>\n<section role=\"doc-endnotes\">\n<hr>\n<ol>\n<li id=\"fn1\">\n<p>note<a href=\"#fnref1\" role=\"doc-backlink\">↩︎</a></p>\n</li>\n</ol>\n</section>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n] b][]\n\n[an b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n] b][]\n\n[an b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n] b][]\n\n[an b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n] b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n] b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n] b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a](link)][]\n\n[[a](link)]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[<a href=\"link\">a</a>]: img</p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a](link)][]\n\n[[a](link)]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[<a href=\"link\">a</a>]: img</p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a](link)][]\n\n[[a](link)]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[<a href=\"link\">a</a>]: img</p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a](link)][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a](link)][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a](link)][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a](link)][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a](link)][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a](link)][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a [b][r] c][]\n\n[a [b][r] c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a <a href=\"link\">b</a> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a [b][r] c][]\n\n[a [b][r] c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a <a href=\"link\">b</a> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a [b][r] c][]\n\n[a [b][r] c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[a <a href=\"link\">b</a> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a [b][r] c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a b c\" src=\"img\"></p>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a [b][r] c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a b c\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a [b][r] c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a b c\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a [b][r] c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a [b][r] c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a [b][r] c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![b](img) c][]\n\n[a ![b](img) c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n<p>[a <img alt=\"b\" src=\"img\"> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![b](img) c][]\n\n[a ![b](img) c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n<p>[a <img alt=\"b\" src=\"img\"> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![b](img) c][]\n\n[a ![b](img) c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n<p>[a <img alt=\"b\" src=\"img\"> c]: img</p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![b](img) c][]\n\n[b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![b](img) c][]\n\n[b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![b](img) c][]\n\n[b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![b](img) c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![b](img) c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![b](img) c][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{.x}][]\n\n[a{.x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{.x}][]\n\n[a{.x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{.x}][]\n\n[a{.x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{.x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{.x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{.x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{.x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{.x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{.x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{.x}a][]\n\n[{.x}a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{.x}a][]\n\n[{.x}a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{.x}a][]\n\n[{.x}a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{.x}a][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{.x}a][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{.x}a][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{.x}a][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![{.x}a][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![{.x}a][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{#x}][]\n\n[a{#x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{#x}][]\n\n[a{#x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{#x}][]\n\n[a{#x}]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{#x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{#x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{#x}][]\n\n[a]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{#x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a{#x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a{#x}][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![“a”][]\n\n[“a”]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"“a”\" src=\"img\"></p>\n",
+    "key": "“a”",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![“a”][]\n\n[“a”]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"“a”\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "“a”",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![“a”][]\n\n[“a”]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"“a”\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "“a”",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![“a”][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "“a”",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![“a”][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "“a”",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![“a”][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "“a”",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a--b][]\n\n[a--b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a--b\" src=\"img\"></p>\n",
+    "key": "a--b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a--b][]\n\n[a--b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a--b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a--b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a--b][]\n\n[a--b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a--b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a--b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a--b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a--b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a--b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a--b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a--b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a--b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a...b][]\n\n[a...b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a...b\" src=\"img\"></p>\n",
+    "key": "a...b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a...b][]\n\n[a...b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a...b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a...b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a...b][]\n\n[a...b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a...b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a...b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a...b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img></p>\n",
+    "key": "a...b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a...b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a...b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a...b][]\n\n[unmatched]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a...b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n] b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n] b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n] b][]\n\n[a b]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![b](img) c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<p><img alt=\"a b c\" src=\"img\"></p>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![b](img) c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<blockquote>\n<p><img alt=\"a b c\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![b](img) c][]\n\n[a b c]: img\n\n[r]: link\n\n[^n]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a b c\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{.x} a][]\n\n[a]: img",
+    "html": "<p><img alt=\" a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{.x} a][]\n\n[{.x} a]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x{.x}][]\n\n[x]: img",
+    "html": "<p><img alt=\"x\" src=\"img\"></p>\n",
+    "key": "x",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![x{.x}][]\n\n[x{.x}]: img",
+    "html": "<p><img></p>\n",
+    "key": "x",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![\"a\"{.x}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![\"a\"{.x}][]\n\n[\"a\"{.x}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![{'a'}{.x}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![{'a'}{.x}][]\n\n[{'a'}{.x}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c}][]\n\n[a{%c}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c%}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c%}][]\n\n[a{%c%}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c% k=\"}\"}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{%c% k=\"}\"}][]\n\n[a{%c% k=\"}\"}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{}b][]\n\n[ab]: img",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{}b][]\n\n[a{}b]: img",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a]{}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a]{}][]\n\n[[a]{}]: img",
+    "html": "<p><img></p>\n<p>[<span>a</span>]: img</p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a {} b][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a  b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a {} b][]\n\n[a {} b]: img",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x *a*{.x}][]\n\n[x a]: img",
+    "html": "<p><img alt=\"x a\" src=\"img\"></p>\n",
+    "key": "x a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![x *a*{.x}][]\n\n[x *a*{.x}]: img",
+    "html": "<p><img></p>\n",
+    "key": "x a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x _a_{.x}][]\n\n[x a]: img",
+    "html": "<p><img alt=\"x a\" src=\"img\"></p>\n",
+    "key": "x a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![x _a_{.x}][]\n\n[x _a_{.x}]: img",
+    "html": "<p><img></p>\n",
+    "key": "x a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{title=\"b\"}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{title=\"b\"}][]\n\n[a{title=\"b\"}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{.x}{.y}][]\n\n[a]: img",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a{.x}{.y}][]\n\n[a{.x}{.y}]: img",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\n{.x}\nb][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a\n\nb\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": true
+  },
+  {
+    "source": "![a\n{.x}\nb][]\n\n[a\n{.x}\nb]: img",
+    "html": "<p><img></p>\n<p>[a\n\nb]: img</p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\ b][]\n\n[ab]: img",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a\\ b][]\n\n[a\\ b]: img",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a b][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![ab][]\n\n[ab]: img",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a\n> {.x}\n> b][]\n\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a\n\nb\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": true
+  },
+  {
+    "source": "![!`b`][]\n\n[!b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"!b\" src=\"img\"></p>\n",
+    "key": "!b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![!`b`][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "!b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![!`b`][]\n\n[!b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"!b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "!b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![!`b`][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "!b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![!`b`][]\n\n[!b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"!b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "!b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![!`b`][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "!b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![/b/][]\n\n[/b/]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"/b/\" src=\"img\"></p>\n",
+    "key": "/b/",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![/b/][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "/b/",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![/b/][]\n\n[/b/]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"/b/\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "/b/",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![/b/][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "/b/",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![/b/][]\n\n[/b/]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"/b/\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "/b/",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![/b/][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "/b/",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![=b=][]\n\n[=b=]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"=b=\" src=\"img\"></p>\n",
+    "key": "=b=",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![=b=][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "=b=",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![=b=][]\n\n[=b=]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"=b=\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "=b=",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![=b=][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "=b=",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![=b=][]\n\n[=b=]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"=b=\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "=b=",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![=b=][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "=b=",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x ^b^](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"a x b\" src=\"img\"></p>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x ^b^](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x ^b^](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"a x b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x ^b^](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x ^b^](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a x b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x ^b^](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x `b`](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"a x b\" src=\"img\"></p>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x `b`](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x `b`](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"a x b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x `b`](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x `b`](c)][]\n\n[a x b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a x b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a x b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x `b`](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a x b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a][^n]][]\n\n[a]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"a\" src=\"img\"></p>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a][^n]][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a][^n]][]\n\n[a]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"a\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a][^n]][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a][^n]][]\n\n[a]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a][^n]][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a [b](x)](y)][]\n\n[a b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"a b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![[a [b](x)](y)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a [b](x)](y)][]\n\n[a b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"a b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![[a [b](x)](y)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a [b](x)](y)][]\n\n[a b]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![[a [b](x)](y)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n][^m]b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n][^m]b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n][^m]b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"ab\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n][^m]b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n][^m]b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"ab\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n][^m]b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n]{.x}b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a[^n]{.x}b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n]{.x}b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"ab\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a[^n]{.x}b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n]{.x}b][]\n\n[ab]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"ab\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a[^n]{.x}b][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x \\_b\\_](c)][]\n\n[a x _b_]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img alt=\"a x _b_\" src=\"img\"></p>\n",
+    "key": "a x _b_",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a ![x \\_b\\_](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<p><img></p>\n",
+    "key": "a x _b_",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x \\_b\\_](c)][]\n\n[a x _b_]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img alt=\"a x _b_\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a x _b_",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a ![x \\_b\\_](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a x _b_",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x \\_b\\_](c)][]\n\n[a x _b_]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img alt=\"a x _b_\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a x _b_",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a ![x \\_b\\_](c)][]\n\n[unmatched]: img\n\n[^n]: note\n\n[^m]: note",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a x _b_",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![<a@b>][]\n\n[a@b]: img",
+    "html": "<p><img alt=\"a@b\" src=\"img\"></p>\n",
+    "key": "a@b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![<a@b>][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "a@b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![<a@b>][]\n\n[a@b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a@b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a@b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![<a@b>][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a@b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![<a@b>][]\n\n[a@b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a@b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a@b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![<a@b>][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a@b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![<http://x>][]\n\n[http://x]: img",
+    "html": "<p><img alt=\"http://x\" src=\"img\"></p>\n",
+    "key": "http://x",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![<http://x>][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "http://x",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![<http://x>][]\n\n[http://x]: img",
+    "html": "<blockquote>\n<p><img alt=\"http://x\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "http://x",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![<http://x>][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "http://x",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![<http://x>][]\n\n[http://x]: img",
+    "html": "<ul>\n<li>\n<img alt=\"http://x\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "http://x",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![<http://x>][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "http://x",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a :smile: b][]\n\n[a b]: img",
+    "html": "<p><img alt=\"a  b\" src=\"img\"></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a :smile: b][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a :smile: b][]\n\n[a b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a  b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a :smile: b][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a :smile: b][]\n\n[a b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a  b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a :smile: b][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![_a:smile:b_][]\n\n[ab]: img",
+    "html": "<p><img alt=\"ab\" src=\"img\"></p>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![_a:smile:b_][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![_a:smile:b_][]\n\n[ab]: img",
+    "html": "<blockquote>\n<p><img alt=\"ab\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![_a:smile:b_][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![_a:smile:b_][]\n\n[ab]: img",
+    "html": "<ul>\n<li>\n<img alt=\"ab\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![_a:smile:b_][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "ab",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a <a`b@c> b][]\n\n[a a`b@c b]: img",
+    "html": "<p><img alt=\"a a`b@c b\" src=\"img\"></p>\n",
+    "key": "a a`b@c b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a <a`b@c> b][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "a a`b@c b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a <a`b@c> b][]\n\n[a a`b@c b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a a`b@c b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a a`b@c b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a <a`b@c> b][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a a`b@c b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a <a`b@c> b][]\n\n[a a`b@c b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a a`b@c b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a a`b@c b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a <a`b@c> b][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a a`b@c b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a :é: b][]\n\n[a :é: b]: img",
+    "html": "<p><img alt=\"a :é: b\" src=\"img\"></p>\n",
+    "key": "a :é: b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a :é: b][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "a :é: b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a :é: b][]\n\n[a :é: b]: img",
+    "html": "<blockquote>\n<p><img alt=\"a :é: b\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a :é: b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a :é: b][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a :é: b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a :é: b][]\n\n[a :é: b]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a :é: b\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a :é: b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a :é: b][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a :é: b",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![a `<b>`{=html} c][]\n\n[a <b> c]: img",
+    "html": "<p><img alt=\"a &lt;b&gt; c\" src=\"img\"></p>\n",
+    "key": "a <b> c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![a `<b>`{=html} c][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "a <b> c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a `<b>`{=html} c][]\n\n[a <b> c]: img",
+    "html": "<blockquote>\n<p><img alt=\"a &lt;b&gt; c\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "a <b> c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> ![a `<b>`{=html} c][]\n\n[unmatched]: img",
+    "html": "<blockquote>\n<p><img></p>\n</blockquote>\n",
+    "key": "a <b> c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a `<b>`{=html} c][]\n\n[a <b> c]: img",
+    "html": "<ul>\n<li>\n<img alt=\"a &lt;b&gt; c\" src=\"img\">\n</li>\n</ul>\n",
+    "key": "a <b> c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "- ![a `<b>`{=html} c][]\n\n[unmatched]: img",
+    "html": "<ul>\n<li>\n<img>\n</li>\n</ul>\n",
+    "key": "a <b> c",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x [^a`]`b]][]\n\n[x]: img",
+    "html": "<p><img alt=\"x \" src=\"img\"></p>\n",
+    "key": "x",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> a\n> > ![x\n> > y][]\n\n[x > y]: img",
+    "html": "<blockquote>\n<p>a\n&gt; <img alt=\"x\n&gt; y\" src=\"img\"></p>\n</blockquote>\n",
+    "key": "x > y",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![<http://a`b> :smile: `c`][]\n\n[http://a`b c]: img",
+    "html": "<p><img alt=\"http://a`b  c\" src=\"img\"></p>\n",
+    "key": "http://a`b c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "{title=t}\n[c]: two\n\n[a`b]: one\n\n![c][]",
+    "html": "<p><img alt=\"c\" src=\"two\" title=\"t\"></p>\n",
+    "key": "c",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "[*a* :smile: b][]\n\n[a b]: url",
+    "html": "<p><a href=\"url\"><strong>a</strong> :smile: b</a></p>\n",
+    "key": "a b",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "![x {a y][]\n\n[x {a y]: img",
+    "html": "<p><img alt=\"x {a y\" src=\"img\"></p>\n",
+    "key": "x {a y",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> a\n> > ![x\n> > y][]\n\n[x y]: img",
+    "html": "<blockquote>\n<p>a\n&gt; <img></p>\n</blockquote>\n",
+    "key": "x > y",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "![x [^a`]`b]][]\n\n[unmatched]: img",
+    "html": "<p><img></p>\n",
+    "key": "x",
+    "loss": true,
+    "blankAlt": false
+  },
+  {
+    "source": "x\n> ![a\n> b][]\n\n[a > b]: img",
+    "html": "<p>x\n&gt; <img alt=\"a\n&gt; b\" src=\"img\"></p>\n",
+    "key": "",
+    "loss": false,
+    "blankAlt": false
+  },
+  {
+    "source": "> x\n> > [a\n> > \\`b][]\n\n[a > `b]: /u",
+    "html": "<blockquote>\n<p>x\n&gt; <a href=\"/u\">a\n&gt; `b</a></p>\n</blockquote>\n",
+    "key": "",
+    "loss": false,
+    "blankAlt": false
+  }
+]

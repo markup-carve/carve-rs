@@ -125,6 +125,13 @@ Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages. Like Markdown,
 it reports unverified fidelity and fails closed under `--check-loss`.
 
+Djot derives collapsed image-reference keys from child text. Paired quote
+wrappers, footnotes, symbols and ignored attributes do not contribute to the
+key. An unresolved image without a destination has no Carve image spelling. The
+same applies when removing ignored markup leaves a blank line in the alternative
+text. The migration report records `structure-unspellable`. HTML rendered from
+the converted source does not preserve that image.
+
 BBCode migration is `bbcode_to_carve`, or
 `carve migrate --from bbcode input.bbcode`. It converts forum formatting,
 links, images, quotes, lists, code, spoilers and tables while keeping ordinary

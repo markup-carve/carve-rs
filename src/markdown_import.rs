@@ -3,8 +3,8 @@
 //! AST-first, the way [`crate::html_import`] is: the source is parsed to a real
 //! syntax tree, walked into a Carve [`Document`], and written by the canonical
 //! writer. carve-js and carve-php instead rewrite Markdown source line by line,
-//! which is why their output keeps the author's spelling and this one does not
-//! - both produce the same document, spelled canonically here.
+//! which is why they keep more source spelling. The tree records the authored
+//! bullet and ordered delimiter before the canonical writer runs.
 //!
 //! Parsing to a tree is what makes the hard parts free. A line rewriter has to
 //! carry fence state, a stack of list content columns and CommonMark's lazy
@@ -1508,6 +1508,7 @@ enum Frame {
         ordered: bool,
         start: Option<usize>,
         delim: Option<char>,
+        bullet_char: Option<char>,
         items: Vec<ListItem>,
         /// A list is loose when any item holds more than one block, which
         /// CommonMark decides by blank lines between items; the parser has
@@ -2078,6 +2079,13 @@ impl Builder {
                         .count();
                     (digits > 0 && marker.as_bytes().get(digits) == Some(&b')')).then_some(')')
                 }),
+                bullet_char: start.is_none().then(|| {
+                    source
+                        .trim_start_matches([' ', '\t'])
+                        .chars()
+                        .next()
+                        .unwrap_or('-')
+                }),
                 items: Vec::new(),
                 tight: true,
             },
@@ -2288,6 +2296,7 @@ impl Builder {
                 ordered,
                 start,
                 delim,
+                bullet_char,
                 items,
                 tight,
             } => self.block(BlockNode::List(List {
@@ -2299,7 +2308,7 @@ impl Builder {
                 ol_type: None,
                 bare_marker: false,
                 delim,
-                bullet_char: None,
+                bullet_char,
                 tight,
                 items,
                 pos: None,

@@ -122,6 +122,19 @@ fn convert_djot_document(
     let (frontmatter, separator, body) = split_frontmatter(normalized);
     let table_attributes = escape_djot_table_attribute_boundaries(body);
     let body = table_attributes.as_ref();
+    let early_references = if body.lines().any(|line| {
+        cached_regex!(r"^\[([^\]\n]*)\]:")
+            .unwrap()
+            .captures(&line[djot_content_start(line)..])
+            .is_some_and(|caps| {
+                !caps[1].starts_with('^') && normalize::reference_key_needs_alias(&caps[1])
+            })
+    }) {
+        std::borrow::Cow::Owned(normalize::literal_reference_keys(body))
+    } else {
+        std::borrow::Cow::Borrowed(body)
+    };
+    let body = early_references.as_ref();
     let caret_references = if body.contains("[^")
         && body.contains("]:")
         && body.lines().any(|line| {
@@ -233,7 +246,10 @@ fn convert_djot_document(
     let collapsed_blank = cached_regex!(r"\n[ \t]*\n").unwrap();
     let folded = collapsed.replace_all(&folded, |caps: &regex::Captures<'_>| {
         let at = caps.get(0).unwrap().start();
-        if collapsed_mask.as_bytes()[at] != caps[0].as_bytes()[0]
+        let bracket_at = at + usize::from(caps[1].starts_with('!'));
+        if definitions.is_empty()
+            || is_escaped(folded.as_bytes(), bracket_at)
+            || collapsed_mask.as_bytes()[at] != caps[0].as_bytes()[0]
             || collapsed_mask.as_bytes()[at + caps[0].len() - 3] != b']'
             || caps[2].starts_with('^') && caps[2].len() > 1
         {
@@ -241,7 +257,6 @@ fn convert_djot_document(
         }
         let mut key = caps[2].to_owned();
         if key.contains('\n') {
-            let bracket_at = at + usize::from(caps[1].starts_with('!'));
             if collapsed_blank.is_match(&key) || is_escaped(folded.as_bytes(), bracket_at) {
                 return caps[0].to_string();
             }
@@ -260,7 +275,7 @@ fn convert_djot_document(
                     child_text_cache
                         .entry(format!("0:{normalized}"))
                         .or_insert_with(|| {
-                            djot_image_label_child_text(&normalized, &inherited, false)
+                            djot_image_label_child_text(&normalized, &inherited, true)
                         })
                         .trim_matches([' ', '\t', '\r', '\n']),
                     " ",
@@ -298,7 +313,7 @@ fn convert_djot_document(
             return image.to_string();
         }
         if !label.contains('\n')
-            && !label.bytes().any(|byte| b"_*`{^~[]".contains(&byte))
+            && !label.bytes().any(|byte| b"_*`{^~[]<:".contains(&byte))
             && !b"\"'"
                 .iter()
                 .any(|quote| label.bytes().filter(|byte| byte == quote).take(2).count() >= 2)
@@ -616,6 +631,8 @@ fn djot_image_label_child_text(
         smart_typography: crate::SmartTypographyMode::Source,
         ..crate::Options::default()
     };
+    let normalized = normalize::image_label_attributes(label);
+    let label = normalized.as_str();
     let (protected_label, scalars, scalar_prefix) = protect_image_alt_scalars(label);
     let native = djot_to_carve_prepared_with_quotes(
         &strip_footnote_definition_attributes(&format!("DJOTALT {} DJOTEND", protected_label)),
@@ -697,10 +714,7 @@ fn image_quote_layout(source: &str, omit_quote_delimiters: bool) -> String {
             &source,
             &mask_code_and_destinations(&source),
             |image, label, at| {
-                if source[at + image.len()..].starts_with("[]")
-                    || label.starts_with('^')
-                    || cached_regex!(r"\n[ \t]*\n").unwrap().is_match(label)
-                {
+                if label.starts_with('^') || cached_regex!(r"\n[ \t]*\n").unwrap().is_match(label) {
                     return image.to_owned();
                 }
                 while image_lines[line].0 <= at {
@@ -5466,6 +5480,15 @@ fn escape_plain_carve_syntax_masked(
         }
     }
 
+    for (i, byte) in source.bytes().enumerate() {
+        if byte == b'!'
+            && source.as_bytes().get(i + 1) == Some(&b'`')
+            && mask[i] == b'!'
+            && !is_escaped(source.as_bytes(), i)
+        {
+            at.push(i);
+        }
+    }
     if at.is_empty() {
         return source.to_string();
     }

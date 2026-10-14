@@ -678,6 +678,7 @@ fn quoted_list_boundaries<'a>(
     rows: &[bool],
     slot_prefix: Option<&str>,
     has_definition_syntax: bool,
+    mut literal_quotes: Option<&mut HashMap<usize, usize>>,
 ) -> std::borrow::Cow<'a, str> {
     if !source.contains('>') || !source.contains('\n') {
         return std::borrow::Cow::Borrowed(source);
@@ -868,6 +869,9 @@ fn quoted_list_boundaries<'a>(
             paragraph = false;
         }
         if quote_depth > depth && paragraph && !outside_item {
+            if let Some(depths) = literal_quotes.as_deref_mut() {
+                depths.insert(line_offset, depth);
+            }
             let mut owned = vec![None; depth];
             for &(owner_depth, column, width, _source_prefix, target, _) in lists
                 .iter()
@@ -1874,6 +1878,7 @@ fn blocks_with_slot_inner(
         &initial_rows,
         slot_prefix,
         has_definition_syntax,
+        None,
     );
     let changed = matches!(&normalized, std::borrow::Cow::Owned(_));
     let source = normalized.as_ref();
@@ -3091,14 +3096,202 @@ fn label(text: &str) -> String {
     definition_label(&decoded)
 }
 
+pub(super) fn image_label_attributes(source: &str) -> String {
+    let mut mask = mask_djot_forms_with_options(
+        source,
+        true,
+        false,
+        None,
+        &[],
+        OpaqueOptions {
+            autolinks: false,
+            ..Default::default()
+        },
+    )
+    .into_bytes();
+    let (_, comments) = mask_djot_opaque_with_comments(source, OpaqueOptions::default());
+    for (start, _) in comments {
+        mask[start] = source.as_bytes()[start];
+    }
+    let framed = format!("DJOTALT {source}");
+    let bytes = source.as_bytes();
+    let mut result = String::new();
+    let mut cursor = 0;
+    let mut note_end = None;
+    let mut at = 0;
+    while at < bytes.len() {
+        if mask[at] != bytes[at] || is_escaped(bytes, at) {
+            at += 1;
+            continue;
+        }
+        if bytes[at] == b':' {
+            if let Some(symbol) = cached_regex!(r"^:[a-zA-Z0-9_+-]+:")
+                .unwrap()
+                .find(&source[at..])
+            {
+                result.push_str(&source[cursor..at]);
+                result.push_str("{%%}");
+                cursor = at + symbol.end();
+                at = cursor;
+                continue;
+            }
+        }
+        if bytes[at] == b'<' {
+            if let Some(autolink) = cached_regex!(r"^<([^<>\s]+)>")
+                .unwrap()
+                .captures(&source[at..])
+            {
+                let body = &autolink[1];
+                if cached_regex!(r"[^:]@|[A-Za-z]:").unwrap().is_match(body) {
+                    let width = cached_regex!(r"`+")
+                        .unwrap()
+                        .find_iter(body)
+                        .map(|run| run.len())
+                        .max()
+                        .unwrap_or(0)
+                        + 1;
+                    let ticks = "`".repeat(width);
+                    result.push_str(&source[cursor..at]);
+                    result.push_str(&format!("{ticks} {body} {ticks}"));
+                    cursor = at + autolink[0].len();
+                    at = cursor;
+                    continue;
+                }
+            }
+        }
+        if bytes[at] == b'['
+            && bytes.get(at + 1) == Some(&b'^')
+            && !(note_end != Some(at)
+                && at > 0
+                && bytes[at - 1] == b']'
+                && !is_escaped(bytes, at - 1))
+        {
+            let mut end = at + 2;
+            while end < bytes.len()
+                && !(mask[end] == bytes[end]
+                    && !is_escaped(bytes, end)
+                    && matches!(bytes[end], b'[' | b']'))
+            {
+                end += 1;
+            }
+            if bytes.get(end) == Some(&b']') {
+                result.push_str(&source[cursor..at]);
+                result.push_str("{%%}");
+                cursor = end + 1;
+                note_end = Some(cursor);
+                at = cursor;
+                continue;
+            }
+        }
+        if bytes[at] == b'{' {
+            if let Some((end, _)) = read_djot_word_attributes(&framed, at + 8) {
+                result.push_str(&source[cursor..at]);
+                result.push_str(
+                    if note_end != Some(at)
+                        && at > 0
+                        && bytes[at - 1] == b']'
+                        && !is_escaped(bytes, at - 1)
+                    {
+                        "{}"
+                    } else {
+                        "{%%}"
+                    },
+                );
+                cursor = end - 8;
+                at = cursor;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    result.push_str(&source[cursor..]);
+    result
+}
+
+fn reference_labels_as_spans(source: &str) -> String {
+    let mask = mask_code_and_destinations(source);
+    let bytes = source.as_bytes();
+    let destinations = djot_simple_destination_ranges(source).unwrap_or_else(|| {
+        djot_destination_ranges(
+            source,
+            &mask_djot_forms_with_options(
+                source,
+                false,
+                false,
+                None,
+                &[],
+                OpaqueOptions {
+                    destinations: false,
+                    ..Default::default()
+                },
+            ),
+        )
+    });
+    let destinations: HashMap<_, _> = destinations.into_iter().collect();
+    let mut reference_ends = vec![None; bytes.len() + 1];
+    let mut end = None;
+    for at in (0..bytes.len()).rev() {
+        if !is_escaped(bytes, at) {
+            if bytes[at] == b'[' {
+                end = None;
+            } else if bytes[at] == b']' {
+                end = Some(at + 1);
+            }
+        }
+        reference_ends[at] = end;
+    }
+    let mut brackets = Vec::new();
+    let mut edits = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if mask.as_bytes()[at] == bytes[at] && !is_escaped(bytes, at) {
+            if bytes[at] == b'[' {
+                brackets.push(at);
+            } else if bytes[at] == b']' {
+                if let Some(open) = brackets.pop() {
+                    if bytes.get(open + 1) != Some(&b'^') {
+                        let end = destinations.get(&(at + 1)).copied().or_else(|| {
+                            (bytes.get(at + 1) == Some(&b'['))
+                                .then(|| reference_ends[at + 2])
+                                .flatten()
+                        });
+                        if let Some(end) = end {
+                            if open > 0 && bytes[open - 1] == b'!' && !is_escaped(bytes, open - 1) {
+                                edits.push((open - 1, open, ""));
+                            }
+                            edits.push((at + 1, end, "{}"));
+                            at = end - 1;
+                        }
+                    }
+                }
+            }
+        }
+        at += 1;
+    }
+    edits.sort_unstable_by_key(|edit| edit.0);
+    let mut result = String::new();
+    let mut cursor = 0;
+    for (start, end, replacement) in edits {
+        result.push_str(&source[cursor..start]);
+        result.push_str(replacement);
+        cursor = end;
+    }
+    result.push_str(&source[cursor..]);
+    result
+}
+
 fn reference_label(text: &str, explicit: &str) -> String {
     if !explicit.is_empty() {
         return label(explicit);
     }
-    if !text.bytes().any(|b| b"_*`~^\\".contains(&b)) {
+    if !text.bytes().any(|b| b"_*`{~^\\[]=!/<:\n\r\"'".contains(&b)) {
         return label(text);
     }
-    let converted = emphasis::convert(text, &emphasis_mask(text), str::to_owned);
+    let source = reference_labels_as_spans(&image_label_attributes(text));
+    let converted =
+        emphasis::convert_image_child(&source, &mask_code_and_destinations(&source), |text| {
+            escape_plain_carve_syntax(text, HandledDelimiters::DJOT)
+        });
     let options = crate::Options {
         smart_typography: crate::SmartTypographyMode::Source,
         ..Default::default()
@@ -3109,7 +3302,15 @@ fn reference_label(text: &str, explicit: &str) -> String {
     while let Some(node) = pending.pop() {
         use crate::ast::InlineNode;
         let children: Option<&[InlineNode]> = match node {
-            InlineNode::NonBreakingSpace(_) => continue,
+            InlineNode::NonBreakingSpace(_) | InlineNode::Footnote(_) => continue,
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => {
+                text.push('\n');
+                continue;
+            }
+            InlineNode::RawInline(node) => {
+                text.push_str(&node.content);
+                continue;
+            }
             InlineNode::Emphasis(node) => Some(&node.children),
             InlineNode::Span(node) => Some(&node.children),
             InlineNode::Link(node) => Some(&node.children),
@@ -3128,25 +3329,72 @@ fn reference_label(text: &str, explicit: &str) -> String {
     definition_label(&text)
 }
 
+fn literal_quote_depths(source: &str, mask: &str, rows: &[bool]) -> HashMap<usize, usize> {
+    let mut depths = HashMap::new();
+    let fences = mask_djot_fences(source, None, &[], false);
+    let has_definitions = cached_regex!(r"(?:^|\n)(?:[ \t]*>(?:[ \t]|$))*[ \t]*:[ \t]")
+        .unwrap()
+        .is_match(mask);
+    quoted_list_boundaries(
+        source,
+        mask,
+        &fences,
+        rows,
+        None,
+        has_definitions,
+        Some(&mut depths),
+    );
+    depths
+}
+
+fn projected_reference_text(text: &str, depth: usize) -> String {
+    let mut projected = String::new();
+    for (n, line) in text.split('\n').enumerate() {
+        let mut line = line;
+        if n > 0 {
+            projected.push('\n');
+            for _ in 0..depth {
+                let trimmed = line.trim_start_matches([' ', '\t']);
+                if !starts_quote(trimmed) {
+                    break;
+                }
+                line = &trimmed[1..];
+                if line.starts_with([' ', '\t']) {
+                    line = &line[1..];
+                }
+            }
+        }
+        projected.push_str(line);
+    }
+    projected
+}
+
 fn cached_reference_label<'a>(
     text: &'a str,
     explicit: &str,
-    cache: &mut HashMap<&'a str, String>,
+    depth: usize,
+    cache: &mut HashMap<(&'a str, usize), String>,
 ) -> String {
     const MAX_CACHED_REFERENCE_LABEL_BYTES: usize = 256;
     if !explicit.is_empty() {
         return label(explicit);
     }
-    if !text.bytes().any(|byte| b"_*`~^\\".contains(&byte)) {
+    if !text
+        .bytes()
+        .any(|byte| b"_*`{~^\\[]=!/<:\n\r\"'".contains(&byte))
+    {
         return label(text);
     }
     // Bound retained values when nested labels overlap in the source.
     if text.len() > MAX_CACHED_REFERENCE_LABEL_BYTES {
-        return reference_label(text, explicit);
+        return reference_label(&projected_reference_text(text, depth), explicit);
     }
     cache
-        .entry(text)
-        .or_insert_with(|| reference_label(text, explicit))
+        .entry((text, depth))
+        .or_insert_with(|| {
+            let projected = projected_reference_text(text, depth);
+            reference_label(&projected, explicit)
+        })
         .clone()
 }
 
@@ -3194,6 +3442,7 @@ struct ReferenceUse<'a> {
     end: usize,
     text: &'a str,
     label: &'a str,
+    quote_depth: usize,
 }
 
 struct AttributedReferenceUse<'a> {
@@ -3254,6 +3503,22 @@ fn reference_uses<'a>(source: &'a str, mask: &str) -> Vec<ReferenceUse<'a>> {
             offset += line.len() + 1;
         }
     }
+    let mut line_depths = Vec::new();
+    let mut line_at = 0;
+    for line in source.split_inclusive('\n') {
+        let prefix = &line[..djot_content_start(line)];
+        line_depths.push((line_at, prefix.bytes().filter(|&byte| byte == b'>').count()));
+        line_at += line.len();
+    }
+    if line_depths.iter().any(|&(_, depth)| depth > 0) {
+        let rows = djot_table_rows(source, mask);
+        let literal = literal_quote_depths(source, mask, &rows);
+        for (at, depth) in &mut line_depths {
+            if let Some(&owner) = literal.get(at) {
+                *depth = owner;
+            }
+        }
+    }
     let mut stack = Vec::new();
     let mut uses = Vec::new();
     let mut i = 0;
@@ -3302,6 +3567,10 @@ fn reference_uses<'a>(source: &'a str, mask: &str) -> Vec<ReferenceUse<'a>> {
                             end: end + 1,
                             text: &source[start + 1..i],
                             label: &source[i + 2..end],
+                            quote_depth: line_depths[line_depths
+                                .partition_point(|&(at, _)| at <= start)
+                                .saturating_sub(1)]
+                            .1,
                         });
                         i = end;
                     }
@@ -3387,17 +3656,30 @@ fn reference_attribute_text(attrs: &[(String, Vec<String>)], table: bool) -> Str
 }
 
 pub(super) fn references(source: &str) -> String {
-    references_impl(source, None)
+    references_impl(source, None, false)
 }
 
 pub(super) fn caret_references(
     source: &str,
     accepted: &HashMap<usize, ReferenceDecision>,
 ) -> String {
-    references_impl(source, Some(accepted))
+    references_impl(source, Some(accepted), false)
 }
 
-fn references_impl(source: &str, accepted: Option<&HashMap<usize, ReferenceDecision>>) -> String {
+pub(super) fn reference_key_needs_alias(key: &str) -> bool {
+    key.bytes().any(|byte| b"`{^\\|[".contains(&byte))
+        || key.bytes().any(|byte| b"_*~\"'<:".contains(&byte)) && reference_label(key, "") != key
+}
+
+pub(super) fn literal_reference_keys(source: &str) -> String {
+    references_impl(source, None, true)
+}
+
+fn references_impl(
+    source: &str,
+    accepted: Option<&HashMap<usize, ReferenceDecision>>,
+    aliases_only: bool,
+) -> String {
     let _paragraph_cache = ParagraphCacheScope::new(source);
     let definition = cached_regex!(r"(?m)^\[([^\]\n]+)\]:[ \t]*([^ \t\r\n]*)\r?$").unwrap();
     let quote_prefix = cached_regex!(r"^(?:[ \t]*>[ \t]*)*[ \t]*").unwrap();
@@ -3450,7 +3732,7 @@ fn references_impl(source: &str, accepted: Option<&HashMap<usize, ReferenceDecis
         if accepted.is_some_and(|decisions| !caret || !decisions.contains_key(&line_number)) {
             continue;
         }
-        if content_start > 0
+        if (content_start > 0 || aliases_only)
             && !valid_definition_lines
                 .get_or_insert_with(|| reference_definitions(source, &mask).1)
                 .contains(&line_number)
@@ -3475,7 +3757,7 @@ fn references_impl(source: &str, accepted: Option<&HashMap<usize, ReferenceDecis
         let mut attribute_depth: Option<usize> = None;
         while let Some(previous) = source[..previous_end]
             .strip_suffix('\n')
-            .filter(|_| accepted.is_none())
+            .filter(|_| accepted.is_none() && !aliases_only)
         {
             let previous_start = previous.rfind('\n').map_or(0, |at| at + 1);
             let previous_line = &previous[previous_start..];
@@ -3630,7 +3912,12 @@ fn references_impl(source: &str, accepted: Option<&HashMap<usize, ReferenceDecis
         .into_iter()
         .filter(|reference| !reference.text.starts_with('^') || reference.text.len() == 1)
         .map(|reference| {
-            let key = cached_reference_label(reference.text, reference.label, &mut label_cache);
+            let key = cached_reference_label(
+                reference.text,
+                reference.label,
+                reference.quote_depth,
+                &mut label_cache,
+            );
             let mut end = reference.end;
             let mut own = Vec::new();
             if definitions.get(&key).is_some_and(|(target, _, inherited)| {
@@ -3677,14 +3964,42 @@ fn references_impl(source: &str, accepted: Option<&HashMap<usize, ReferenceDecis
     let mut serial = 0;
     let mut aliases = HashMap::new();
     for key in &definition_keys {
-        if (key.starts_with('^') || key.contains('\\') || key.contains('|') || key.contains('['))
-            && !aliases.contains_key(key)
-        {
+        if reference_key_needs_alias(key) && !aliases.contains_key(key) {
             aliases.insert(
                 key.clone(),
                 next_reference_alias(&mut occupied, &mut serial),
             );
         }
+    }
+    if aliases_only {
+        let mut edits = Vec::new();
+        for (key, alias) in &aliases {
+            for &(start, end) in definition_ranges.get(key).into_iter().flatten() {
+                if let Some(close) = source[start..end].find("]:") {
+                    edits.push((start + 1, start + close, alias.as_str()));
+                }
+            }
+        }
+        for attributed in &uses {
+            if let Some(alias) = aliases.get(&attributed.key) {
+                let reference = &attributed.reference;
+                edits.push((
+                    reference.end - reference.label.len() - 1,
+                    reference.end - 1,
+                    alias.as_str(),
+                ));
+            }
+        }
+        edits.sort_unstable_by_key(|edit| edit.0);
+        let mut result = String::new();
+        let mut cursor = 0;
+        for (start, end, replacement) in edits {
+            result.push_str(&source[cursor..start]);
+            result.push_str(replacement);
+            cursor = end;
+        }
+        result.push_str(&source[cursor..]);
+        return result;
     }
     let mut moved_definitions = Vec::new();
     let mut lifted_attributes = HashSet::new();
@@ -4093,6 +4408,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             definitions.get(&cached_reference_label(
                 reference.text,
                 reference.label,
+                reference.quote_depth,
                 &mut label_cache,
             ))
         };
@@ -4113,6 +4429,16 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                     "An unresolved Djot reference loses its link element."
                 },
             )),
+            Some(_) if image && reference.text.contains('\n') => {
+                let projected = projected_reference_text(reference.text, reference.quote_depth);
+                let child = djot_image_label_child_text(&projected, &HashSet::new(), true);
+                if cached_regex!(r"\n[ \t]*\n").unwrap().is_match(&child) {
+                    findings.push((
+                        at,
+                        "An image alternative text with a blank line cannot be spelled in Carve.",
+                    ));
+                }
+            }
             _ => (),
         }
     }
@@ -4133,7 +4459,6 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         djot_destination_ranges(source, &destination_mask)
     });
     let reference_starts: HashSet<_> = references.iter().map(|reference| reference.start).collect();
-    let quote_prefix = cached_regex!(r"^(?:[ \t]*>(?:[ \t]|$))*").unwrap();
     let mut line_offsets = Vec::new();
     let mut quote_depths = Vec::new();
     let mut layout_offset = 0;
@@ -4141,14 +4466,20 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
         line_offsets.push(layout_offset);
         layout_offset += line.len() + 1;
         quote_depths.push(
-            quote_prefix
-                .find(line)
-                .unwrap()
-                .as_str()
+            line[..djot_content_start(line)]
                 .bytes()
                 .filter(|&byte| byte == b'>')
                 .count(),
         );
+    }
+    if quote_depths.iter().any(|&depth| depth > 0) {
+        let rows = djot_table_rows(source, &mask);
+        let literal = literal_quote_depths(source, &mask, &rows);
+        for (line, at) in line_offsets.iter().enumerate() {
+            if let Some(&owner) = literal.get(at) {
+                quote_depths[line] = owner;
+            }
+        }
     }
     let mut source_line = 0;
     let boundaries = djot_inline_boundaries(source, &mask);
@@ -4195,6 +4526,18 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                             "A link with an empty destination cannot be written in Carve."
                         },
                     ));
+                }
+                if image
+                    && source[start + 1..i].contains('\n')
+                    && destinations.get(&(i + 1)).is_some_and(|&end| {
+                        !djot_destination_lines(&source[i + 2..end - 1], depth).is_empty()
+                    })
+                {
+                    let projected = projected_reference_text(&source[start + 1..i], depth);
+                    let child = djot_image_label_child_text(&projected, &HashSet::new(), true);
+                    if cached_regex!(r"\n[ \t]*\n").unwrap().is_match(&child) {
+                        findings.push((start, "An image alternative text with a blank line cannot be spelled in Carve."));
+                    }
                 }
                 if is_link && nested {
                     findings.push((start, "A link nested inside another link is flattened."));
@@ -5101,6 +5444,27 @@ mod tests {
         assert_eq!(
             crate::to_html(&migrate_djot(&source).value),
             format!("<p>{}</p>", source.trim_end())
+        );
+    }
+}
+
+#[cfg(test)]
+mod collapsed_key_controls {
+    use super::*;
+    #[test]
+    fn nested_image_code_contributes_child_text() {
+        let source = "a ![x `b`](c)";
+        let projected = reference_labels_as_spans(&image_label_attributes(source));
+        let converted = emphasis::convert_image_child(
+            &projected,
+            &mask_code_and_destinations(&projected),
+            |text| escape_plain_carve_syntax(text, HandledDelimiters::DJOT),
+        );
+        assert_eq!(
+            reference_label(source, ""),
+            "a x b",
+            "projected={projected:?}; converted={converted:?}; mask={:?}",
+            mask_code_and_destinations(source)
         );
     }
 }
