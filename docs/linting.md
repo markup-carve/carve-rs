@@ -50,6 +50,10 @@ no block, and these Markdown/Djot habits in literal text:
 
 A plus line consumed by a table continuation does not trigger the bullet rule.
 
+A pipe-table `^` or `<` that cannot extend a neighboring cell triggers
+`table-span-marker-blocked` at the marker. The warning explains why the T5 span
+walk left it as a cell of its own.
+
 The compact semantic span attribute rules (spec PART 9 §10):
 
 | rule | fires on |

@@ -3003,6 +3003,12 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                 || (payload.starts_with("```") && !payload.trim_start_matches('`').contains('`')))
                 && masked[index].trim_start().starts_with(':')
         });
+        let container_body = raw_term.is_some_and(|(_, content)| {
+            cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&lines[index][content..])
+        });
+        let starts_definition_body = raw_fence || container_body;
         if let (Some((indent, _)), Some((raw_indent, content))) = (
             if raw_fence
                 || raw_term.is_some_and(|(_, content)| lines[index][content..].starts_with('`'))
@@ -3045,10 +3051,22 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                             String::new()
                         },
                         " ".repeat(target),
-                        if raw_fence { empty_term } else { &term }
+                        if starts_definition_body {
+                            empty_term
+                        } else {
+                            &term
+                        }
                     );
-                    if raw_fence {
-                        lines[index].push_str(&format!("\n{}:  {term}", " ".repeat(target)));
+                    if starts_definition_body {
+                        if container_body {
+                            lines[index].push_str(&format!(
+                                "\n{}:  {empty_term}\n{}{term}",
+                                " ".repeat(target),
+                                " ".repeat(target + 3)
+                            ));
+                        } else {
+                            lines[index].push_str(&format!("\n{}:  {term}", " ".repeat(target)));
+                        }
                         let frame = stack.last_mut().unwrap();
                         frame.body = true;
                         frame.ready = true;
@@ -3066,12 +3084,31 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                     if let Some(parent) = stack.last_mut() {
                         parent.body = true;
                     }
-                    lines[index] = format!("{lead}{{loose}}\n{}:: {term}", " ".repeat(target));
+                    lines[index] = format!(
+                        "{lead}{{loose}}\n{}:: {}",
+                        " ".repeat(target),
+                        if starts_definition_body {
+                            empty_term
+                        } else {
+                            &term
+                        }
+                    );
+                    if starts_definition_body {
+                        if container_body {
+                            lines[index].push_str(&format!(
+                                "\n{}:  {empty_term}\n{}{term}",
+                                " ".repeat(target),
+                                " ".repeat(target + 3)
+                            ));
+                        } else {
+                            lines[index].push_str(&format!("\n{}:  {term}", " ".repeat(target)));
+                        }
+                    }
                     stack.push(DefinitionFrame {
                         source: indent,
                         target,
-                        body: false,
-                        ready: false,
+                        body: starts_definition_body,
+                        ready: starts_definition_body,
                     });
                     continue;
                 }
@@ -4852,14 +4889,21 @@ fn mask_djot_fences_with_open(
             };
             let attribute_boundary = can_normalize
                 && line_attributes.is_some_and(|(end, _)| end == content.trim_end().len());
+            let definition_div_boundary = can_normalize
+                && cached_regex!(r"^[ \t]*:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                    .unwrap()
+                    .is_match(content);
             normalize_boundary = thematic_pattern.is_match(content.trim())
                 || block_definition.is_match(content)
                 || content.trim().is_empty()
                 || empty_footnote.is_match(content)
                 || normalize_boundary_pattern.is_match(content)
+                || definition_div_boundary
                 || attribute_boundary;
-            previous_block =
-                content.trim().is_empty() || boundary.is_match(content) || attribute_boundary;
+            previous_block = content.trim().is_empty()
+                || boundary.is_match(content)
+                || definition_div_boundary
+                || attribute_boundary;
         }
         offset += raw.len();
     }
@@ -4935,7 +4979,7 @@ fn mask_djot_forms_with_options(
             }
         }
     }
-    let metadata = cached_regex!(r"(?m)^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)])[ \t]+)?:{3,}[ \t]+([A-Za-z_][A-Za-z0-9_.-]*)").unwrap();
+    let metadata = cached_regex!(r"(?m)^(?:[ \t]*>)*[ \t]*(?:(?:[-*+]|[0-9]+[.)]|:)[ \t]+)?:{3,}[ \t]+([A-Za-z_][A-Za-z0-9_.-]*)").unwrap();
     let item_metadata = cached_regex!(r"(?:[-*+]|[0-9]+[.)])[ \t]+:{3,}").unwrap();
     for caps in metadata.captures_iter(source) {
         let value = caps.get(0).unwrap();
@@ -4944,7 +4988,26 @@ fn mask_djot_forms_with_options(
             .rev()
             .nth(1)
             .unwrap_or("");
-        if previous.trim().is_empty() || item_metadata.is_match(value.as_str()) {
+        if cached_regex!(r"^(?:[ \t]*>)*[ \t]*:[ \t]+:{3,}")
+            .unwrap()
+            .is_match(value.as_str())
+        {
+            let line_end = source[value.start()..]
+                .find('\n')
+                .map_or(source.len(), |end| value.start() + end);
+            if !cached_regex!(r"^(?:[ \t]*>)*[ \t]*:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&source[value.start()..line_end])
+            {
+                continue;
+            }
+        }
+        if previous.trim().is_empty()
+            || cached_regex!(r"^[ \t]*:{1,2}[ \t]+\x00DJOTEMPTYTERM\x00")
+                .unwrap()
+                .is_match(previous)
+            || item_metadata.is_match(value.as_str())
+        {
             mask[caps.get(1).unwrap().range()].fill(b' ');
         }
     }

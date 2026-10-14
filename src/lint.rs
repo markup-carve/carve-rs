@@ -19,6 +19,7 @@ use crate::extension::Options;
 use crate::parse::parse_with_options;
 use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::source_positions::CodepointLineStarts;
+use crate::table_spans::TableSpanPlan;
 
 /// One diagnostic: a silent degradation, located in the source the caller
 /// passed.
@@ -183,6 +184,10 @@ pub(crate) fn lint_with_recovery(source: &str, options: &Options<'_>) -> (Vec<Li
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
+    collect_table_span_marker_warnings(source, &doc.children, &to_byte, &mut out);
+    for body in doc.footnote_defs.values() {
+        collect_table_span_marker_warnings(source, body, &to_byte, &mut out);
+    }
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     (out, recovered_metadata)
 }
@@ -375,6 +380,121 @@ fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
         }
         line_start += line.len() + 1;
     }
+}
+
+fn collect_table_span_marker_warnings(
+    source: &str,
+    blocks: &[BlockNode],
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    walk_all_blocks(blocks, &mut |block| {
+        let table = match block {
+            BlockNode::Table(table) => table,
+            BlockNode::Figure(figure) => match &*figure.target {
+                FigureTarget::Table(table) => table,
+                _ => return,
+            },
+            _ => return,
+        };
+        let plan = TableSpanPlan::new(table);
+        for (r, row) in table.rows.iter().enumerate() {
+            for (c, cell) in row.cells.iter().enumerate() {
+                let Some(span) = cell.span else { continue };
+                if plan.entry(r, c).skip {
+                    continue;
+                }
+                let (marker, reason) = match span {
+                    TableCellSpan::Rowspan if r == 0 || c >= table.rows[r - 1].cells.len() =>
+                        ('^', "There is no cell above it to extend."),
+                    TableCellSpan::Rowspan =>
+                        ('^', "Extending the cell above would cover another cell."),
+                    TableCellSpan::Colspan if c == 0 =>
+                        ('<', "There is no cell to its left to widen."),
+                    TableCellSpan::Colspan =>
+                        ('<', "The cell to its left starts in an earlier row, so widening it would cover cells already placed."),
+                };
+                let located = cell
+                    .pos
+                    .as_ref()
+                    .and_then(|pos| {
+                        let start = to_byte(pos.start_offset);
+                        let end = to_byte(pos.end_offset).min(source.len());
+                        source
+                            .get(start..end)
+                            .and_then(|s| s.find(marker))
+                            .map(|at| {
+                                let marker_start = start + at;
+                                (
+                                    pos.start_line,
+                                    pos.start_column + source[start..marker_start].chars().count(),
+                                    marker_start,
+                                )
+                            })
+                    })
+                    .or_else(|| locate_marker_in_row(source, row, c, marker));
+                let Some((line, column, start)) = located else {
+                    continue;
+                };
+                out.push(LintWarning {
+                    line,
+                    column,
+                    start,
+                    end: start + marker.len_utf8(),
+                    rule: "table-span-marker-blocked",
+                    message: format!(
+                        "The \"{marker}\" span marker cannot extend a cell. {reason} It renders as a cell of its own; escape it as \"\\{marker}\" to keep the character as text, or remove it."
+                    ),
+                });
+            }
+        }
+    });
+}
+
+/// The byte start and text of 1-based `line`, breaking at CRLF, lone CR or LF
+/// as the parser does.
+fn source_line(source: &str, line: usize) -> Option<(usize, &str)> {
+    let bytes = source.as_bytes();
+    let mut start = 0;
+    let mut current = 1;
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\r' || bytes[at] == b'\n' {
+            if current == line {
+                return Some((start, &source[start..at]));
+            }
+            at += if bytes[at] == b'\r' && bytes.get(at + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+            start = at;
+            current += 1;
+        } else {
+            at += 1;
+        }
+    }
+    (current == line).then(|| (start, &source[start..]))
+}
+
+fn locate_marker_in_row(
+    source: &str,
+    row: &TableRow,
+    cell: usize,
+    marker: char,
+) -> Option<(usize, usize, usize)> {
+    let line = row.pos.as_ref()?.start_line;
+    let (line_start, line_text) = source_line(source, line)?;
+    let row_column = row.pos.as_ref()?.start_column;
+    let row_at = line_text
+        .char_indices()
+        .nth(row_column.checked_sub(1)?)
+        .map_or(line_text.len(), |(at, _)| at);
+    let (from, to) = crate::parse::lint_table_cell_ranges(&line_text[row_at..])
+        .get(cell)
+        .map(|&(from, to)| (row_at + from, row_at + to))?;
+    let at = line_text.get(from..to)?.find(marker)? + from;
+    Some((line, line_text[..at].chars().count() + 1, line_start + at))
 }
 
 /// PART 9 §15 A4: a floating `{…}` that ran out of blocks to attach to.

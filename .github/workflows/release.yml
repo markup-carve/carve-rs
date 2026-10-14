@@ -39,7 +39,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       id-token: write # OIDC for crates.io Trusted Publishing
-      contents: read
+      # write, not read: a draft release is invisible to a read-only token, and the
+      # notes gate has to read the draft before the tag exists.
+      contents: write
     env:
       # First publish of a brand-new crate cannot use OIDC Trusted Publishing
       # (no crate yet = no trusted-publisher config to point at). Set a
@@ -100,6 +102,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Skip OIDC when a bootstrap token is present; otherwise mint a
       # short-lived token via Trusted Publishing (configured on crates.io).
@@ -211,6 +215,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # A fresh mint: an OIDC token cannot cross a job boundary, so the one the
       # gate used for its dry run is not available here.
@@ -310,6 +316,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # musl needs its own libc toolchain; the GNU and MSVC targets are native.
       - name: Install the musl toolchain

@@ -1583,6 +1583,8 @@ mod table_row_counts;
 mod table_section_attributes;
 #[path = "../table_span_covers_caption.rs"]
 mod table_span_covers_caption;
+#[path = "../table_span_marker_blocked_lint.rs"]
+mod table_span_marker_blocked_lint;
 #[path = "../task_state_enumeration.rs"]
 mod task_state_enumeration;
 #[path = "../text_target_structure.rs"]
@@ -2136,6 +2138,9 @@ mod djot_unicode_quote_attributes;
 
 #[path = "../djot_nul_heading_references.rs"]
 mod djot_nul_heading_references;
+
+#[path = "../djot_definition_div_openers.rs"]
+mod djot_definition_div_openers;
 
 #[path = "../djot_task_marker_tabs.rs"]
 mod djot_task_marker_tabs;
