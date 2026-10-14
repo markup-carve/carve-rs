@@ -43,6 +43,8 @@ fn markdown_autolinks_outside_carve_grammar_stay_links() {
         "<https://a.com/{x}>",
         "<https://a.com/`x`>",
         "<https://a.com/a\\b>",
+        "<a!b@x.com>",
+        "<a@x.c0m>",
     ] {
         let carve_source = carve::markdown_to_carve(source);
         assert!(
