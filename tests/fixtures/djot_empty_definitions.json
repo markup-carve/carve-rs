@@ -1182,5 +1182,29 @@
   {
     "source": ": [A](u\r\n```\r\nv)",
     "html": "<dl>\n<dt>[A](u</dt>\n<dd>\n</dd>\n</dl>\n<pre><code>v)</code></pre>\n"
+  },
+  {
+    "source": ": term\n| a",
+    "html": "<dl>\n<dt>term\n| a</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n| a",
+    "html": "<dl>\n<dt>term\n| a</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n``` foo bar",
+    "html": "<dl>\n<dt>term\n<code> foo bar</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n``` foo bar",
+    "html": "<dl>\n<dt>term\n<code> foo bar</code></dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\n~~~ foo bar",
+    "html": "<dl>\n<dt>term\n~~~ foo bar</dt>\n<dd>\n</dd>\n</dl>\n"
+  },
+  {
+    "source": ": term\r\n~~~ foo bar",
+    "html": "<dl>\n<dt>term\n~~~ foo bar</dt>\n<dd>\n</dd>\n</dl>\n"
   }
 ]

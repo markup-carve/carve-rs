@@ -3027,7 +3027,7 @@ fn definition_term_block_boundaries(source: &str) -> String {
                 visible.as_bytes().get(first) == Some(&b'|') && line.trim_end().ends_with('|');
             let code = fence.is_match(&line[first..]);
             if pipe || code {
-            lines.push(String::new());
+                lines.push(String::new());
                 column = None;
             } else if cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|(?:[*-][ \t]*){3,}$)").unwrap().is_match(&visible[first..]) {
                 column = None;
@@ -3233,7 +3233,8 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             let first = leading_indent(&lines[index]).1;
             let visible = masked[index].as_bytes().get(first) == lines[index].as_bytes().get(first)
                 || fence_starts.borrow().contains(&index);
-            let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|\||:{3,}|[`~]{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation) || cached_regex!(r"^(?:[*-][ \t]*){3,}$").unwrap().is_match(continuation);
+            let marker = cached_regex!(r"^(?:#{1,6}(?:[ \t]|$)|>|:{3,}|[-*+][ \t]|(?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)[.)][ \t]|\((?:[0-9]+|[A-Za-z]|[ivxlcdm]+|[IVXLCDM]+)\)[ \t])").unwrap().is_match(continuation) || cached_regex!(r"^(?:[*-][ \t]*){3,}$").unwrap().is_match(continuation)
+                || fence_starts.borrow().contains(&index);
             if visible && indent <= stack.last().unwrap().source && marker {
                 while stack.last().is_some_and(|frame| frame.source >= indent) {
                     finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);

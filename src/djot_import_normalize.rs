@@ -2340,21 +2340,14 @@ fn blocks_with_slot_inner(
             definition_body = true;
         }
         if (block || marker.is_match(visible))
-            && definition_columns.last().is_some_and(|column| {
-                if definition_body {
-                    indent + 1 < *column
-                } else {
-                    indent + 2 <= *column
-                }
-            })
+            && definition_columns
+                .last()
+                .is_some_and(|column| indent + 2 <= *column)
         {
-            while definition_columns.last().is_some_and(|column| {
-                if definition_body {
-                    indent + 1 < *column
-                } else {
-                    indent + 2 <= *column
-                }
-            }) {
+            while definition_columns
+                .last()
+                .is_some_and(|column| indent + 2 <= *column)
+            {
                 definition_columns.pop();
             }
             definition_body = !definition_columns.is_empty();
