@@ -3015,7 +3015,12 @@ fn definition_term_block_boundaries(source: &str) -> String {
             true,
         );
     }
-    let destinations = has_fences.then(|| djot_destination_ranges(source, &mask));
+    let destinations = has_fences.then(|| {
+        let mut ranges: Vec<_> = djot_destination_ranges(source, &mask).into_iter().collect();
+        ranges.sort_unstable_by_key(|range| range.0);
+        ranges
+    });
+    let mut destination_index = 0;
     let fence = cached_regex!(r"^(?:`{3,}|~{3,})[ \t]*=?[A-Za-z0-9_+#.-]*[ \t\r]*$").unwrap();
     let mut span_index = 0;
     let mut column = None;
@@ -3045,9 +3050,17 @@ fn definition_term_block_boundaries(source: &str) -> String {
             let inside_code = spans
                 .get(span_index)
                 .is_some_and(|span| span.start < at && at < span.end);
-            let inside_destination = destinations
-                .as_ref()
-                .is_some_and(|ranges| ranges.iter().any(|(&start, &end)| start < at && at < end));
+            let inside_destination = destinations.as_ref().is_some_and(|ranges| {
+                while ranges
+                    .get(destination_index)
+                    .is_some_and(|range| range.1 <= at)
+                {
+                    destination_index += 1;
+                }
+                ranges
+                    .get(destination_index)
+                    .is_some_and(|&(start, end)| start < at && at < end)
+            });
             let pipe =
                 visible.as_bytes().get(first) == Some(&b'|') && line.trim_end().ends_with('|');
             let code =
@@ -3194,7 +3207,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
                     }
                     continue;
                 }
-                if top.is_some_and(|frame| frame.ready && indent >= frame.source + 2) {
+                if top.is_some_and(|frame| frame.ready && indent >= frame.source + 1) {
                     let frame = top.expect("checked above");
                     let target = frame.target + 3;
                     let lead = if frame.body {
@@ -3283,7 +3296,7 @@ fn convert_definition_lists(source: &str, empty_term: &str) -> String {
             }
         }
         let (indent, _) = leading_indent(&lines[index]);
-        while stack.last().is_some_and(|frame| indent < frame.source + 2) {
+        while stack.last().is_some_and(|frame| indent < frame.source + 1) {
             finish_definition_frame(stack.pop().unwrap(), &mut lines, empty_term);
         }
         let Some(frame) = stack.last_mut() else {
@@ -11590,6 +11603,23 @@ mod placeholder_namespace_tests {
                     format!("{base}{namespace}\0")
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod definition_term_block_boundary_tests {
+    use super::definition_term_block_boundaries;
+
+    #[test]
+    fn opaque_spans_keep_their_fence_lines() {
+        for source in [
+            ": `A\n```\nB`",
+            ": $`A\n```\nB`",
+            ": `A\n```\nB`{=html}",
+            ": [A](u\n```\nv)",
+        ] {
+            assert_eq!(definition_term_block_boundaries(source), source, "{source}");
         }
     }
 }
