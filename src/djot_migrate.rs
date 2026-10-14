@@ -4819,6 +4819,20 @@ fn mask_djot_opaque_with_comments(
     source: &str,
     options: OpaqueOptions,
 ) -> (Vec<u8>, Vec<(usize, usize)>) {
+    mask_djot_opaque_with_comments_and_code(source, options, None)
+}
+
+struct DjotCodeSpan {
+    start: usize,
+    end: usize,
+    closed: bool,
+}
+
+fn mask_djot_opaque_with_comments_and_code(
+    source: &str,
+    options: OpaqueOptions,
+    mut code_spans: Option<&mut Vec<DjotCodeSpan>>,
+) -> (Vec<u8>, Vec<(usize, usize)>) {
     let reference_boundary =
         cached_regex!(r"^(?:#{1,6} |:{3,}|[`~]{3,}|\{|\[[^\]]+\]:|(?:[*-][ \t]*){3,}$)").unwrap();
     let paragraph_break = cached_regex!(r"\n[ \t]*(?:>[ \t]*)*\n").unwrap();
@@ -4897,7 +4911,8 @@ fn mask_djot_opaque_with_comments(
         breaks.sort_unstable();
     }
     let mut boundary = 0;
-    let mut tick_closers: Option<HashMap<usize, usize>> = None;
+    let mut tick_closers: Option<HashMap<usize, usize>> =
+        code_spans.as_ref().map(|_| djot_backtick_closers(bytes));
     let mut brackets = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
@@ -4977,6 +4992,25 @@ fn mask_djot_opaque_with_comments(
             continue;
         }
         let width = bytes[at..].iter().take_while(|b| **b == b'`').count();
+        if let Some(spans) = code_spans.as_mut() {
+            let close = tick_closers
+                .as_ref()
+                .and_then(|closers| closers.get(&at))
+                .copied()
+                .filter(|close| close + width <= paragraph_end);
+            let end = close.map_or(paragraph_end, |close| close + width);
+            let math = at > 0 && bytes[at - 1] == b'$' && !is_escaped(bytes, at - 1);
+            if !math
+                && !raw_formats.contains_key(&end)
+                && (close.is_some() || options.unclosed_code)
+            {
+                spans.push(DjotCodeSpan {
+                    start: at,
+                    end,
+                    closed: close.is_some(),
+                });
+            }
+        }
         let close = if let Some(closers) = &tick_closers {
             closers
                 .get(&at)

@@ -4481,6 +4481,72 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             }
         }
     }
+    if source.contains('`') && source.contains(":::") {
+        let code_source = replace_image_labels(
+            source,
+            &mask_code_and_destinations(source),
+            |image, _, _| {
+                String::from_utf8(
+                    image
+                        .bytes()
+                        .map(|byte| if byte == b'\n' { byte } else { b' ' })
+                        .collect(),
+                )
+                .unwrap()
+            },
+        );
+        let mut code_source = code_source.into_bytes();
+        for (line, value) in source.split('\n').enumerate() {
+            let mut depth = 0;
+            for (i, byte) in value.as_bytes()[..djot_content_start(value)]
+                .iter()
+                .enumerate()
+            {
+                if *byte == b'>' {
+                    depth += 1;
+                    if depth > quote_depths[line] {
+                        code_source[line_offsets[line] + i] = b' ';
+                    }
+                }
+            }
+        }
+        let code_source = String::from_utf8(code_source).unwrap();
+        let fenced = mask_djot_fences(&code_source, None, &[], true);
+        let mut spans = Vec::new();
+        let _ = mask_djot_opaque_with_comments_and_code(
+            &fenced,
+            OpaqueOptions::default(),
+            Some(&mut spans),
+        );
+        let container = cached_regex!(r"\n[ \t]*:{3,}(?:[ \t]+[^\n]*)?(?:\n|$)").unwrap();
+        let mut line_start = 0;
+        let mut line_end = source.find('\n');
+        let mut code_line = 0;
+        let mut span_end = 0;
+        for span in spans {
+            if span.start < span_end {
+                continue;
+            }
+            while let Some(end) = line_end.filter(|end| *end < span.start) {
+                line_start = end + 1;
+                line_end = source[line_start..].find('\n').map(|end| line_start + end);
+                code_line += 1;
+            }
+            if quote_depths.get(code_line).copied().unwrap_or(0) > 0 {
+                continue;
+            }
+            let width = source.as_bytes()[span.start..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            span_end = span.end;
+            let content =
+                &source[span.start + width..span.end - if span.closed { width } else { 0 }];
+            if container.is_match(content) {
+                findings.push((span.start, "A multiline code span contains a Carve container opener on a continuation line."));
+            }
+        }
+    }
     let mut source_line = 0;
     let boundaries = djot_inline_boundaries(source, &mask);
     let mut boundary = 0;
