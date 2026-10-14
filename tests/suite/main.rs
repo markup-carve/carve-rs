@@ -2136,3 +2136,6 @@ mod djot_unicode_quote_attributes;
 
 #[path = "../djot_nul_heading_references.rs"]
 mod djot_nul_heading_references;
+
+#[path = "../djot_definition_div_openers.rs"]
+mod djot_definition_div_openers;

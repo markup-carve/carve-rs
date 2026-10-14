@@ -1132,6 +1132,9 @@ fn quoted_list_boundaries<'a>(
                 || rows[row_index]
                 || heading.is_match(visible));
         } else if reference.is_match(text)
+            || cached_regex!(r"^:[ \t]+:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(visible)
             || heading.is_match(visible)
             || (!paragraph
                 && visible.starts_with('{')
@@ -2383,7 +2386,17 @@ fn blocks_with_slot_inner(
                 definition_columns.pop();
             }
             definition_columns.push(indent + 2);
-            definition_body = false;
+            let content = definition_term(raw).unwrap().1;
+            definition_body = cached_regex!(r"^:{3,}(?:[ \t]*[A-Za-z0-9_-]+)?[ \t]*$")
+                .unwrap()
+                .is_match(&raw[content..]);
+            if definition_body {
+                result.push(display.clone());
+                paragraph = false;
+                in_heading = false;
+                previous_blank = true;
+                continue;
+            }
         } else if previous_blank {
             while definition_columns
                 .last()
@@ -2507,7 +2520,15 @@ fn blocks_with_slot_inner(
             let mut separate = false;
             if let Some(parent) = &top {
                 if nested {
-                    target = parent.target_column;
+                    target = if definition_body
+                        && definition_columns
+                            .last()
+                            .is_some_and(|column| indent >= *column)
+                    {
+                        indent
+                    } else {
+                        parent.target_column
+                    };
                 } else {
                     target = parent.target;
                     written = parent.written;
