@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 
 fn elements(html: &str) -> Vec<Value> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html.to_owned());
-    let mut nodes: Vec<Handle> = vec![dom.document];
+    let mut nodes: Vec<(Handle, usize)> = vec![(dom.document, 0)];
     let mut values = Vec::new();
-    while let Some(node) = nodes.pop() {
+    while let Some((node, depth)) = nodes.pop() {
         if let NodeData::Element { name, attrs, .. } = &node.data {
             if !matches!(name.local.as_ref(), "html" | "head" | "body") {
                 let mut attributes = attrs
@@ -18,10 +18,17 @@ fn elements(html: &str) -> Vec<Value> {
                     .map(|attr| (attr.name.local.to_string(), attr.value.to_string()))
                     .collect::<Vec<_>>();
                 attributes.sort();
-                values.push(json!([name.local.to_string(), attributes]));
+                values.push(json!([name.local.to_string(), depth, attributes]));
             }
         }
-        nodes.extend(node.children.borrow().iter().rev().cloned());
+        nodes.extend(
+            node.children
+                .borrow()
+                .iter()
+                .rev()
+                .cloned()
+                .map(|child| (child, depth + 1)),
+        );
     }
     values
 }
