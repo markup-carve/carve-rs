@@ -89,10 +89,7 @@ fn markdown_percent_encodes_destination_breakouts() {
             .trim(),
         "![x](https://e.com/a%20b%3Cc%3E)"
     );
-    assert_eq!(
-        md("<https://example.com>"),
-        "[https://example.com](https://example.com)"
-    );
+    assert_eq!(md("<https://example.com>"), "<https://example.com>");
 }
 
 #[test]

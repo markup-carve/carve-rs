@@ -41,7 +41,7 @@
   {
     "name": "bracket-label-generated-context-3",
     "carve": "<https://x/[b]>",
-    "markdown": "[https://x/\\[b\\]](https://x/[b])\n"
+    "markdown": "<https://x/[b]>\n"
   },
   {
     "name": "bracket-label-generated-context-4",

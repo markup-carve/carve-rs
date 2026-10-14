@@ -18,6 +18,8 @@ mod footnote_container_paragraph_breaks;
 #[path = "../verbatim_continuation_guards.rs"]
 mod verbatim_continuation_guards;
 
+#[path = "../markdown_autolink_roundtrip.rs"]
+mod markdown_autolink_roundtrip;
 #[path = "../markdown_unicode_marker_exhaustion.rs"]
 mod markdown_unicode_marker_exhaustion;
 

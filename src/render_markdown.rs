@@ -2922,22 +2922,27 @@ fn render_inline_body(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize
         }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
-            IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
-
-            let label = escape_text(&strip_controls(&link.text));
-
-            IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
-            let title = link
+            let raw_label = strip_controls(&link.text);
+            let destination =
+                encode_markdown_destination(&link.href, link.pos.as_ref(), DeniedSink::Destination);
+            let title_value = link
                 .attrs
                 .as_ref()
-                .and_then(|attrs| attrs.key_values.get("title"))
+                .and_then(|attrs| attrs.key_values.get("title"));
+            if title_value.is_none()
+                && markdown_angle_autolink(&raw_label, &link.href, &destination)
+            {
+                return format!("<{raw_label}>");
+            }
+            IN_LINK_TEXT.with(|d| d.set(d.get() + 1));
+
+            let label = escape_text(&raw_label);
+
+            IN_LINK_TEXT.with(|d| d.set(d.get() - 1));
+            let title = title_value
                 .map(|title| format!(" \"{}\"", escape_md_title(&strip_controls(title))))
                 .unwrap_or_default();
-            format!(
-                "[{}]({}{title})",
-                label,
-                encode_markdown_destination(&link.href, link.pos.as_ref(), DeniedSink::Destination)
-            )
+            format!("[{label}]({destination}{title})")
         }
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => escape_text(&format!("#{}", strip_controls(&tag.name))),
@@ -3836,6 +3841,48 @@ fn sanitize_md_url(url: &str, pos: Option<&Pos>, sink: DeniedSink) -> String {
 /// authored form and normalizing afterwards means the writer itself
 /// manufactures the live URL out of one the probe had already dismissed
 /// (`markup-carve/carve-rs#806`).
+fn markdown_angle_autolink(label: &str, href: &str, destination: &str) -> bool {
+    if destination == label {
+        if let Some((scheme, body)) = label.split_once(':') {
+            let scheme = scheme.as_bytes();
+            if (2..=32).contains(&scheme.len())
+                && scheme[0].is_ascii_alphabetic()
+                && scheme[1..]
+                    .iter()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'+' | b'.' | b'-'))
+                && !body.is_empty()
+                && body.chars().all(|ch| {
+                    !ch.is_whitespace() && !ch.is_control() && !matches!(ch, '<' | '>' | '\\')
+                })
+            {
+                return true;
+            }
+        }
+    }
+    if href.strip_prefix("mailto:") != Some(label) || destination != href {
+        return false;
+    }
+    let Some((local, domain)) = label.split_once('@') else {
+        return false;
+    };
+    let local_valid = !local.is_empty()
+        && local
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ".!#$%&'*+/=?^_`{|}~-".contains(ch));
+    let labels: Vec<&str> = domain.split('.').collect();
+    local_valid
+        && labels.len() >= 2
+        && labels.iter().all(|part| {
+            let bytes = part.as_bytes();
+            (1..=63).contains(&bytes.len())
+                && bytes[0].is_ascii_alphanumeric()
+                && bytes[bytes.len() - 1].is_ascii_alphanumeric()
+                && bytes
+                    .iter()
+                    .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        })
+}
+
 fn encode_markdown_destination(url: &str, pos: Option<&Pos>, sink: DeniedSink) -> String {
     // 1. Strip first, probe second. The strip drops all of `\p{Cc}`, the probe
     //    skips only up to U+0020 plus whitespace, so `java<DEL>script:` and the
