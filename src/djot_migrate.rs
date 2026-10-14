@@ -7613,11 +7613,14 @@ fn normalize_djot_links(source: &str, inherited: &HashSet<String>) -> String {
                 crate::render_plain_text_with_options(&document, &options).unwrap_or_default();
             let plain = alt_end.replace(&plain, "");
             label = plain[8..]
-                .replace('\\', "\\\\")
-                .replace('[', "\\[")
-                .replace(']', "\\]")
-                .replace('"', "\\\"")
-                .replace('\'', "\\'")
+                .chars()
+                .fold(String::new(), |mut escaped, ch| {
+                    if ch.is_ascii_punctuation() {
+                        escaped.push('\\');
+                    }
+                    escaped.push(ch);
+                    escaped
+                })
                 .into_bytes();
         }
         let mut target = String::new();
