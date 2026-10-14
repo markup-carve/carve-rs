@@ -1357,11 +1357,21 @@ fn interrupts_a_paragraph(node: &BlockNode, rendered: &str) -> bool {
 /// ahead of the children as bold text, so a labelled div opens with itself.
 fn opening_block(node: &BlockNode) -> &BlockNode {
     let mut node = node;
-    while let BlockNode::Div(div) = node {
-        if !div.label.as_deref().unwrap_or_default().is_empty() {
-            break;
-        }
-        match div.children.first() {
+    loop {
+        let children = match node {
+            BlockNode::Div(div) if div.label.as_deref().unwrap_or_default().is_empty() => {
+                &div.children
+            }
+            BlockNode::Admonition(admonition)
+                if admonition.label.as_deref().unwrap_or_default().is_empty()
+                    && admonition.title.as_ref().map_or(true, Vec::is_empty) =>
+            {
+                &admonition.children
+            }
+            BlockNode::LineBlock(line) => &line.children,
+            _ => break,
+        };
+        match children.first() {
             Some(first) => node = first,
             None => break,
         }
