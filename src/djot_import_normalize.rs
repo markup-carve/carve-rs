@@ -4519,7 +4519,6 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
             Some(&mut spans),
         );
         let container = cached_regex!(r"\n[ \t]*:{3,}(?:[ \t]+[^\n]*)?(?:\n|$)").unwrap();
-        let mut line_start = 0;
         let mut line_end = source.find('\n');
         let mut code_line = 0;
         let mut span_end = 0;
@@ -4528,7 +4527,7 @@ pub(super) fn losses(source: &str) -> Vec<crate::MigrationDiagnostic> {
                 continue;
             }
             while let Some(end) = line_end.filter(|end| *end < span.start) {
-                line_start = end + 1;
+                let line_start = end + 1;
                 line_end = source[line_start..].find('\n').map(|end| line_start + end);
                 code_line += 1;
             }
