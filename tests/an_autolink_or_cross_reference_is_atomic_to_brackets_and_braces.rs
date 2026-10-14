@@ -54,6 +54,14 @@ fn a_braced_closer_inside_a_cross_reference_does_not_close() {
 }
 
 #[test]
+fn an_escaped_cross_reference_hides_nothing() {
+    assert_eq!(
+        html("{*a \\</#x*}> b*}\n"),
+        "<p><strong>a &lt;/<span class=\"tag\"><strong>#x</strong></span></strong>&gt; b*}</p>"
+    );
+}
+
+#[test]
 fn a_substitution_separator_overlapping_a_reference_still_splits() {
     assert_eq!(
         html("{~a </#x~>y> b~}\n"),
