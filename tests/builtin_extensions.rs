@@ -191,6 +191,41 @@ fn wikilinks_empty_stays_literal_anchor_only_links() {
     );
 }
 
+#[test]
+fn wikilinks_escaped_bracket_does_not_close() {
+    let ext = Wikilinks::new();
+    let opts = Options::new().with_extension(&ext);
+    // Goldens from carve-js `wikilinks()` with the escaped-closer fix.
+    let cases = [
+        (
+            r"a [[http\:\/\/u\/\]](http://u/])",
+            r#"<p>a [<a href="http://u/]">http://u/]</a></p>"#,
+        ),
+        (r"[[a\]]]", "<p>[[a]]]</p>"),
+        (r"[[x\]]", "<p>[[x]]</p>"),
+        (r"[[a\\\]]]", r"<p>[[a\]]]</p>"),
+        (
+            r"[[a\\]]",
+            r#"<p><a href="a" class="wikilink" data-wikilink="a\\">a\\</a></p>"#,
+        ),
+        (
+            r"[[a|x\]y]]",
+            r#"<p><a href="a" class="wikilink" data-wikilink="a">x\]y</a></p>"#,
+        ),
+        (
+            r"[[a\é]]",
+            r#"<p><a href="a" class="wikilink" data-wikilink="a\é">a\é</a></p>"#,
+        ),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(
+            carve::to_html_with_options(input, &opts),
+            expected,
+            "input: {input}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // external-links
 // ---------------------------------------------------------------------------
